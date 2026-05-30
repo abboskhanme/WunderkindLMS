@@ -1,10 +1,10 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using SchoolLms.Server.Data;
-using SchoolLms.Server.Dtos;
-using SchoolLms.Server.Models;
-using SchoolLms.Server.Services;
+using SchoolLms.Infrastructure.Data;
+using SchoolLms.Application.Dtos;
+using SchoolLms.Domain;
+using SchoolLms.Application.Services;
 using System.Security.Claims;
 
 namespace SchoolLms.Server.Controllers;
@@ -453,7 +453,7 @@ public class TeacherPortalController(
             imageUrl = $"/uploads/{stored}";
         }
 
-        db.Feedbacks.Add(new Models.Feedback
+        db.Feedbacks.Add(new Feedback
         {
             StudentId = "",
             ParentName = "",

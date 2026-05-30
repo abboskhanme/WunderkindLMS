@@ -89,7 +89,10 @@
       "Bash(git --version)",
       "Bash(git init *)",
       "Bash(git add *)",
-      "Bash(git -c user.name=\"snapshot\" -c user.email=\"snapshot@local\" commit -q -m \"Snapshot before Clean Architecture split \\(Domain/Application/Infrastructure\\)\")"
+      "Bash(git -c user.name=\"snapshot\" -c user.email=\"snapshot@local\" commit -q -m \"Snapshot before Clean Architecture split \\(Domain/Application/Infrastructure\\)\")",
+      "Bash(git mv *)",
+      "Bash(rmdir SchoolLms.Server/Models)",
+      "Bash(git -c user.name=snapshot -c user.email=snapshot@local commit -q -m 'Refactor SchoolLms.Server into Domain/Application/Infrastructure layers *)"
     ]
   }
 }

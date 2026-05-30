@@ -1,8 +1,10 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using SchoolLms.Server.Data;
-using SchoolLms.Server.Dtos;
+using SchoolLms.Infrastructure.Data;
+using SchoolLms.Application.Dtos;
+
+using SchoolLms.Domain;
 
 namespace SchoolLms.Server.Controllers;
 
@@ -28,7 +30,7 @@ public class ParentsController(AppDbContext db) : ControllerBase
         var users = await db.Users.Where(u => userIds.Contains(u.Id))
             .ToDictionaryAsync(u => u.Id, u => u);
 
-        ParentChildDto ChildOf(Models.Student s)
+        ParentChildDto ChildOf(Student s)
         {
             string? firstLogin = null;
             string? lastLogin = null;
@@ -41,7 +43,7 @@ public class ParentsController(AppDbContext db) : ControllerBase
         }
 
         // Guruhlash kaliti: telefon (raqamlar normallashtirilgan) yoki nom (telefon bo'sh bo'lsa).
-        string Key(Models.Student s)
+        string Key(Student s)
         {
             var phone = new string((s.ParentPhone ?? "").Where(char.IsDigit).ToArray());
             if (!string.IsNullOrEmpty(phone)) return "tel:" + phone;

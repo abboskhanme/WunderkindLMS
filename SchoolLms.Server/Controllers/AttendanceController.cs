@@ -1,10 +1,12 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using SchoolLms.Server.Data;
-using SchoolLms.Server.Dtos;
-using SchoolLms.Server.Services;
+using SchoolLms.Infrastructure.Data;
+using SchoolLms.Application.Dtos;
+using SchoolLms.Application.Services;
 using System.Globalization;
+
+using SchoolLms.Domain;
 
 namespace SchoolLms.Server.Controllers;
 
@@ -13,7 +15,7 @@ namespace SchoolLms.Server.Controllers;
 [Route("api/admin/attendance")]
 public class AttendanceController(AppDbContext db) : ControllerBase
 {
-    private static StudentDto Map(Models.Student s) => new(
+    private static StudentDto Map(Student s) => new(
         s.Id, s.FullName, s.BirthDate, s.Address, s.Gender,
         s.ParentFullName, s.ParentPhone, s.ClassName, s.EnrollmentDate, s.Balance);
 
@@ -95,7 +97,7 @@ public class AttendanceController(AppDbContext db) : ControllerBase
         var reasons = await db.AbsenceReasons.ToDictionaryAsync(r => r.Id, r => r.Name);
 
         var entries = q is null
-            ? new List<Models.JournalEntry>()
+            ? new List<JournalEntry>()
             : await db.JournalEntries.Where(e =>
                 e.ClassId == classId && e.SubjectId == subjectId && e.Quarter == q.Quarter &&
                 e.Date == date && e.ReasonId != null).ToListAsync();

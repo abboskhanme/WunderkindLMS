@@ -1,8 +1,10 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using SchoolLms.Server.Data;
-using SchoolLms.Server.Dtos;
+using SchoolLms.Infrastructure.Data;
+using SchoolLms.Application.Dtos;
+
+using SchoolLms.Domain;
 
 namespace SchoolLms.Server.Controllers;
 
@@ -29,7 +31,7 @@ public class DashboardController(AppDbContext db) : ControllerBase
         var lateReasonIds = (await db.AbsenceReasons.Where(r => r.IsLate).Select(r => r.Id).ToListAsync())
             .ToHashSet();
 
-        double AvgGrade(IEnumerable<Models.JournalEntry> es)
+        double AvgGrade(IEnumerable<JournalEntry> es)
         {
             var grades = es.Where(e => e.Grade.HasValue).Select(e => (double)e.Grade!.Value).ToList();
             return grades.Count > 0 ? Math.Round(grades.Average(), 1) : 0;
@@ -37,7 +39,7 @@ public class DashboardController(AppDbContext db) : ControllerBase
 
         // Sinf davomati: o'tilgan darslar × o'quvchilar = imkoniyatlar; davomatsizliklar ayriladi.
         // O'tilgan dars bo'lmasa — ma'lumot yo'q (null), o'rtachaga qo'shilmaydi.
-        (long Opp, int Abs) ClassAttParts(Models.SchoolClass c)
+        (long Opp, int Abs) ClassAttParts(SchoolClass c)
         {
             if (!conductedByClass.TryGetValue(c.Id, out var set) || set.Count == 0) return (0, 0);
             var studentsN = students.Count(s => s.ClassName == c.Name);

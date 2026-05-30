@@ -1,9 +1,11 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using SchoolLms.Server.Auth;
-using SchoolLms.Server.Data;
-using SchoolLms.Server.Dtos;
+using SchoolLms.Infrastructure.Auth;
+using SchoolLms.Infrastructure.Data;
+using SchoolLms.Application.Dtos;
+
+using SchoolLms.Domain;
 
 namespace SchoolLms.Server.Controllers;
 
@@ -35,10 +37,10 @@ public class AuthController(AppDbContext db, JwtTokenService jwt) : ControllerBa
     /// Ruxsat etilgan bo'limlar: o'qituvchi → Teacher.Permissions; xodim → AppUser.Permissions
     /// (admin bo'limlari); admin/superadmin/o'quvchi → null (cheklov yo'q / kerak emas).
     /// </summary>
-    private async Task<List<string>?> PermsFor(Models.AppUser user) => user.Role switch
+    private async Task<List<string>?> PermsFor(AppUser user) => user.Role switch
     {
-        Models.Roles.Teacher => (await db.Teachers.FirstOrDefaultAsync(t => t.UserId == user.Id))?.Permissions,
-        Models.Roles.Staff => user.Permissions,
+        Roles.Teacher => (await db.Teachers.FirstOrDefaultAsync(t => t.UserId == user.Id))?.Permissions,
+        Roles.Staff => user.Permissions,
         _ => null,
     };
 

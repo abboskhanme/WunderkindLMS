@@ -1,10 +1,10 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using SchoolLms.Server.Data;
-using SchoolLms.Server.Dtos;
-using SchoolLms.Server.Models;
-using SchoolLms.Server.Services;
+using SchoolLms.Infrastructure.Data;
+using SchoolLms.Application.Dtos;
+using SchoolLms.Domain;
+using SchoolLms.Application.Services;
 using System.Security.Claims;
 
 namespace SchoolLms.Server.Controllers;
@@ -497,7 +497,7 @@ public class StudentPortalController(
         var st = await db.UserSettings.FindAsync(uid);
         if (st is null)
         {
-            st = new Models.UserSettings { UserId = uid };
+            st = new UserSettings { UserId = uid };
             db.UserSettings.Add(st);
         }
         if (!string.IsNullOrWhiteSpace(req.Language)) st.Language = req.Language!.Trim();
@@ -549,7 +549,7 @@ public class StudentPortalController(
         var existing = await db.DeviceTokens.FirstOrDefaultAsync(d => d.Token == token);
         if (existing is null)
         {
-            db.DeviceTokens.Add(new Models.DeviceToken
+            db.DeviceTokens.Add(new DeviceToken
             {
                 UserId = uid,
                 Token = token,

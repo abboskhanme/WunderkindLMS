@@ -1,11 +1,11 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using SchoolLms.Server.Auth;
-using SchoolLms.Server.Data;
-using SchoolLms.Server.Dtos;
-using SchoolLms.Server.Models;
-using SchoolLms.Server.Services;
+using SchoolLms.Infrastructure.Auth;
+using SchoolLms.Infrastructure.Data;
+using SchoolLms.Application.Dtos;
+using SchoolLms.Domain;
+using SchoolLms.Application.Services;
 
 namespace SchoolLms.Server.Controllers;
 

@@ -1,6 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using SchoolLms.Server.Dtos;
+using SchoolLms.Application.Dtos;
 
 namespace SchoolLms.Server.Controllers;
 

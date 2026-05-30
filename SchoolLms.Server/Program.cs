@@ -3,10 +3,11 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
-using SchoolLms.Server.Auth;
-using SchoolLms.Server.Data;
-using SchoolLms.Server.Hubs;
-using SchoolLms.Server.Services;
+using SchoolLms.Application.Abstractions;
+using SchoolLms.Application.Hubs;
+using SchoolLms.Application.Services;
+using SchoolLms.Infrastructure.Auth;
+using SchoolLms.Infrastructure.Data;
 using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -19,6 +20,10 @@ builder.Services.AddDbContext<AppDbContext>(opt =>
             maxRetryCount: 5,
             maxRetryDelay: TimeSpan.FromSeconds(10),
             errorNumbersToAdd: null)));
+
+// Application qatlamidagi xizmatlar konkret AppDbContext o'rniga IAppDbContext'ga
+// bog'lanadi — uni o'sha scoped AppDbContext instansiyasiga ulaymiz.
+builder.Services.AddScoped<IAppDbContext>(sp => sp.GetRequiredService<AppDbContext>());
 
 // Kam o'zgaradigan ma'lumotlar (meta, fan/o'qituvchi nomlari) uchun qisqa-TTL kesh.
 builder.Services.AddMemoryCache();
@@ -65,7 +70,7 @@ builder.Services.AddSignalR();
 builder.Services.AddScoped<ChatService>();
 
 // Oylik to'lovlarni avtomatik hisoblovchi fon xizmati
-builder.Services.AddHostedService<SchoolLms.Server.Services.TuitionAccrualService>();
+builder.Services.AddHostedService<SchoolLms.Application.Services.TuitionAccrualService>();
 
 // Telegram bot (e'lon yuborish + ota-onalarni kontakt orqali ro'yxatga olish).
 // Token appsettings "Telegram:BotToken" da; bo'sh bo'lsa bot ishga tushmaydi.
@@ -75,10 +80,10 @@ builder.Services.AddHostedService<TelegramBotService>();
 
 // O'zgarishlar tarixi (audit) — joriy foydalanuvchini aniqlash uchun HttpContext kerak
 builder.Services.AddHttpContextAccessor();
-builder.Services.AddScoped<SchoolLms.Server.Services.AuditService>();
+builder.Services.AddScoped<SchoolLms.Application.Services.AuditService>();
 
 // Shartnoma andozasini (Word) to'ldirish xizmati
-builder.Services.AddScoped<SchoolLms.Server.Services.ContractService>();
+builder.Services.AddScoped<SchoolLms.Application.Services.ContractService>();
 
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
