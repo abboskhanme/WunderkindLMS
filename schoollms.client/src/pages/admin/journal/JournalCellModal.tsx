@@ -1,0 +1,146 @@
+import { useEffect, useState } from 'react'
+import type { AbsenceReason, JournalEntry } from '@/types'
+import { Modal } from '@/components/ui/Modal'
+import { Button } from '@/components/ui/Button'
+import { cn } from '@/lib/utils'
+
+interface Props {
+  open: boolean
+  studentName: string
+  dateLabel: string
+  entry: JournalEntry | null
+  reasons: AbsenceReason[]
+  onClose: () => void
+  /** Baho va davomat sababini birga saqlaydi (kech kelgan o'quvchiga baho ham qo'yiladi). */
+  onSave: (grade: number | null, reasonId: string | null) => void
+  onClear: () => void
+}
+
+const grades = [1, 2, 3, 4, 5]
+
+export function JournalCellModal({
+  open,
+  studentName,
+  dateLabel,
+  entry,
+  reasons,
+  onClose,
+  onSave,
+  onClear,
+}: Props) {
+  const [grade, setGrade] = useState<number | null>(null)
+  const [reasonId, setReasonId] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!open) return
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- modal ochilganda joriy katak qiymatini yuklash (maqsadli)
+    setGrade(entry?.grade ?? null)
+    setReasonId(entry?.reasonId ?? null)
+  }, [open, entry])
+
+  const lateReasons = reasons.filter((r) => r.isLate)
+  const absentReasons = reasons.filter((r) => !r.isLate)
+  const selectedLate = reasonId != null && lateReasons.some((r) => r.id === reasonId)
+
+  const toggleReason = (id: string) => setReasonId((cur) => (cur === id ? null : id))
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      size="sm"
+      title={studentName}
+      footer={
+        <>
+          {entry && (
+            <Button variant="danger" className="mr-auto" onClick={onClear}>
+              Tozalash
+            </Button>
+          )}
+          <Button variant="secondary" onClick={onClose}>
+            Bekor qilish
+          </Button>
+          <Button onClick={() => onSave(grade, reasonId)}>Saqlash</Button>
+        </>
+      }
+    >
+      <p className="mb-4 text-sm text-slate-400">{dateLabel}</p>
+
+      <div className="space-y-4">
+        <div>
+          <p className="mb-2 text-sm font-medium text-slate-600">Baho</p>
+          <div className="flex gap-2">
+            {grades.map((g) => (
+              <button
+                key={g}
+                type="button"
+                onClick={() => setGrade((cur) => (cur === g ? null : g))}
+                className={cn(
+                  'flex h-10 w-10 items-center justify-center rounded-lg border text-sm font-semibold transition-colors',
+                  grade === g
+                    ? 'border-brand-500 bg-brand-600 text-white'
+                    : 'border-slate-200 text-slate-700 hover:bg-slate-50',
+                )}
+              >
+                {g}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {lateReasons.length > 0 && (
+          <div>
+            <p className="mb-2 text-sm font-medium text-slate-600">Kech keldi</p>
+            <div className="flex flex-wrap gap-2">
+              {lateReasons.map((r) => (
+                <button
+                  key={r.id}
+                  type="button"
+                  onClick={() => toggleReason(r.id)}
+                  className={cn(
+                    'rounded-lg border px-3 py-2 text-sm font-medium transition-colors',
+                    reasonId === r.id
+                      ? 'border-amber-400 bg-amber-50 text-amber-700'
+                      : 'border-slate-200 text-slate-700 hover:bg-slate-50',
+                  )}
+                >
+                  {r.name}
+                </button>
+              ))}
+            </div>
+            {selectedLate && (
+              <p className="mt-1.5 text-xs text-amber-600">
+                Kech kelgan — darsda qatnashgan, baho ham qo'yishingiz mumkin.
+              </p>
+            )}
+          </div>
+        )}
+
+        <div>
+          <p className="mb-2 text-sm font-medium text-slate-600">Davomat (kelmadi)</p>
+          {absentReasons.length === 0 ? (
+            <p className="text-xs text-slate-400">Sabablar yo'q — Sozlamalarda qo'shing</p>
+          ) : (
+            <div className="flex flex-wrap gap-2">
+              {absentReasons.map((r) => (
+                <button
+                  key={r.id}
+                  type="button"
+                  onClick={() => toggleReason(r.id)}
+                  className={cn(
+                    'rounded-lg border px-3 py-2 text-sm font-medium transition-colors',
+                    reasonId === r.id
+                      ? 'border-red-400 bg-red-50 text-red-600'
+                      : 'border-slate-200 text-slate-700 hover:bg-slate-50',
+                  )}
+                >
+                  {r.name}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </Modal>
+  )
+}

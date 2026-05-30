@@ -1,0 +1,42 @@
+@host = http://localhost:5211
+
+### Login (token oling). Javobdagi "token" ni quyidagi @token ga qo'ying.
+# @name login
+POST {{host}}/api/auth/login
+Content-Type: application/json
+
+{
+  "email": "admin@maktab.uz",
+  "password": "admin123"
+}
+
+### Token (yuqoridagi login javobidan nusxa oling)
+@token = {{login.response.body.token}}
+
+### Joriy foydalanuvchi
+GET {{host}}/api/auth/me
+Authorization: Bearer {{token}}
+
+### Admin dashboard
+GET {{host}}/api/admin/dashboard
+Authorization: Bearer {{token}}
+
+### O'quvchilar
+GET {{host}}/api/admin/students
+Authorization: Bearer {{token}}
+
+### Sinflar
+GET {{host}}/api/admin/classes
+Authorization: Bearer {{token}}
+
+### Sozlamalar (choraklar, dars vaqtlari, davomat sabablari)
+GET {{host}}/api/admin/settings
+Authorization: Bearer {{token}}
+
+### Jurnal ustunlari (dars sanalari)
+GET {{host}}/api/admin/journal/columns?classId=c1&subjectId=sb1&quarter=4
+Authorization: Bearer {{token}}
+
+### Sinf ko'rsatkichlari
+GET {{host}}/api/admin/classes/c1/performance
+Authorization: Bearer {{token}}

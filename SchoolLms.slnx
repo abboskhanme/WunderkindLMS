@@ -1,0 +1,10 @@
+<Solution>
+  <Project Path="SchoolLms.Application/SchoolLms.Application.csproj" Id="3fccf54a-c194-4df6-92b9-b0cdbb7fb220" />
+  <Project Path="schoollms.client/schoollms.client.esproj">
+    <Build />
+    <Deploy />
+  </Project>
+  <Project Path="SchoolLms.Domain/SchoolLms.Domain.csproj" Id="540abc86-f434-46cc-85db-a83beb9db3e9" />
+  <Project Path="SchoolLms.Infrastructure/SchoolLms.Infrastructure.csproj" Id="aadde119-2484-45a9-bb7d-82d2cf85a17d" />
+  <Project Path="SchoolLms.Server/SchoolLms.Server.csproj" />
+</Solution>
