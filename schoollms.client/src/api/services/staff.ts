@@ -32,6 +32,12 @@ export async function getStaffCredentials(id: string): Promise<Credentials> {
   return data
 }
 
+/** Xodimga yangi tasodifiy parol generatsiya qiladi — parol bir marta qaytadi. */
+export async function resetStaffPassword(id: string): Promise<Credentials> {
+  const { data } = await api.post<Credentials>(`/admin/staff/${id}/reset-password`)
+  return data
+}
+
 /** Xodim bo'lim ruxsatlarini saqlash (faqat superadmin) */
 export async function setStaffPermissions(id: string, permissions: string[]): Promise<Staff> {
   const { data } = await api.put<Staff>(`/admin/staff/${id}/permissions`, { permissions })

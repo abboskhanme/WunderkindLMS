@@ -14,12 +14,6 @@ public class AppUser
     public string Email { get; set; } = string.Empty;
     public string? AvatarUrl { get; set; }
     public string PasswordHash { get; set; } = string.Empty;
-    /// <summary>
-    /// Avtomatik yaratilgan akkauntlar uchun ochiq parol — admin profil oynasida
-    /// ko'rsatib, o'quvchi/o'qituvchiga topshirishi uchun saqlanadi (hash'dan tiklab bo'lmaydi).
-    /// Qo'lda yaratilgan akkauntlar (masalan, seed admin) uchun null.
-    /// </summary>
-    public string? PlainPassword { get; set; }
     /// <summary>Birinchi muvaffaqiyatli login vaqti (ISO "yyyy-MM-ddTHH:mm:ss") — "ilova aktivlashtirilgan" sifatida ishlatiladi.</summary>
     public string? FirstLoginAt { get; set; }
     /// <summary>Oxirgi muvaffaqiyatli login vaqti — har kirilganda yangilanadi.</summary>

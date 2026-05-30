@@ -14,6 +14,9 @@ namespace SchoolLms.Server.Controllers;
 [Route("api/admin/teachers")]
 public class TeachersController(AppDbContext db, AuditService audit) : ControllerBase
 {
+    private const int MinPasswordLength = 8;
+    private const string WeakPasswordMessage = "Parol kamida 8 belgidan iborat bo'lsin";
+
     /// <summary>
     /// Faol (arxivlanmagan) o'qituvchilar. <paramref name="includeArchived"/>=true bo'lsa hammasi.
     /// </summary>
@@ -92,12 +95,11 @@ public class TeachersController(AppDbContext db, AuditService audit) : Controlle
         if (!string.IsNullOrWhiteSpace(p.NewPassword))
         {
             var pwd = p.NewPassword.Trim();
-            if (pwd.Length < 4) return BadRequest(new { message = "Parol kamida 4 belgidan iborat bo'lsin" });
+            if (pwd.Length < MinPasswordLength) return BadRequest(new { message = WeakPasswordMessage });
             // Akkaunt yo'q bo'lsa — yaratib biriktiramiz.
             user ??= AccountFactory.CreateAccountFor(db, "teacher", teacher.FullName);
             teacher.UserId = user.Id;
             user.PasswordHash = PasswordHasher.Hash(pwd);
-            user.PlainPassword = pwd; // admin profilda ko'rsatish uchun saqlanadi
         }
         if (user is not null) user.FullName = teacher.FullName;
 
@@ -152,11 +154,11 @@ public class TeachersController(AppDbContext db, AuditService audit) : Controlle
         teacher.ArchivedAt = DateOnly.FromDateTime(DateTime.Now).ToString("yyyy-MM-dd");
         teacher.ArchiveReason = (req.Reason ?? "").Trim();
 
-        // Login bloklash — PasswordHash bo'shaltiriladi, PlainPassword tozalanadi.
+        // Login bloklash — PasswordHash bo'shaltiriladi (login imkonsiz bo'ladi).
         if (teacher.UserId is not null)
         {
             var user = await db.Users.FindAsync(teacher.UserId);
-            if (user is not null) { user.PasswordHash = ""; user.PlainPassword = null; }
+            if (user is not null) user.PasswordHash = "";
         }
 
         audit.Record(AuditService.EntityTeacherSalary, teacher.Id, "update",
@@ -186,12 +188,11 @@ public class TeachersController(AppDbContext db, AuditService audit) : Controlle
         var newPwd = (req?.NewPassword ?? "").Trim();
         if (!string.IsNullOrEmpty(newPwd))
         {
-            if (newPwd.Length < 4) return BadRequest(new { message = "Parol kamida 4 belgidan iborat bo'lsin" });
+            if (newPwd.Length < MinPasswordLength) return BadRequest(new { message = WeakPasswordMessage });
             var user = teacher.UserId is null ? null : await db.Users.FindAsync(teacher.UserId);
             user ??= AccountFactory.CreateAccountFor(db, "teacher", teacher.FullName);
             teacher.UserId = user.Id;
             user.PasswordHash = PasswordHasher.Hash(newPwd);
-            user.PlainPassword = newPwd;
         }
 
         audit.Record(AuditService.EntityTeacherSalary, teacher.Id, "update",
@@ -216,7 +217,27 @@ public class TeachersController(AppDbContext db, AuditService audit) : Controlle
             await db.SaveChangesAsync();
         }
 
-        return new CredentialsDto(user.Email, user.PlainPassword ?? "", user.Role);
+        // Parol xavfsizlik uchun saqlanmaydi — bo'sh qaytadi. Ko'rsatish kerak bo'lsa reset-password.
+        return new CredentialsDto(user.Email, "", user.Role);
+    }
+
+    /// <summary>O'qituvchiga yangi tasodifiy parol generatsiya qiladi va BIR MARTA qaytaradi
+    /// (DB'da faqat hash saqlanadi).</summary>
+    [HttpPost("{id}/reset-password")]
+    public async Task<ActionResult<CredentialsDto>> ResetPassword(string id)
+    {
+        var teacher = await db.Teachers.FindAsync(id);
+        if (teacher is null) return NotFound();
+        var user = teacher.UserId is null ? null : await db.Users.FindAsync(teacher.UserId);
+        if (user is null)
+        {
+            user = AccountFactory.CreateAccountFor(db, "teacher", teacher.FullName);
+            teacher.UserId = user.Id;
+        }
+        var pwd = AccountFactory.GeneratePassword();
+        user.PasswordHash = PasswordHasher.Hash(pwd);
+        await db.SaveChangesAsync();
+        return new CredentialsDto(user.Email, pwd, user.Role);
     }
 
     /// <summary>O'qituvchiga maosh berish — moliyaga chiqim (salary) sifatida yoziladi.</summary>

@@ -7,6 +7,7 @@ import {
   updateStaff,
   deleteStaff,
   getStaffCredentials,
+  resetStaffPassword,
   type StaffPayload,
 } from '@/api/services/staff'
 import { cn, randomPassword } from '@/lib/utils'
@@ -215,7 +216,18 @@ export function StaffPage() {
           </Button>
         }
       >
-        <CredentialsBox credentials={creds} loading={credLoading} />
+        <CredentialsBox
+          credentials={creds}
+          loading={credLoading}
+          onReset={
+            credOf
+              ? async () => {
+                  const c = await resetStaffPassword(credOf.id)
+                  setCreds(c)
+                }
+              : undefined
+          }
+        />
       </Modal>
     </div>
   )

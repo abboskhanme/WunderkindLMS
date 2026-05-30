@@ -86,6 +86,16 @@ export async function getTeacherCredentials(id: string): Promise<Credentials> {
   return data
 }
 
+/** O'qituvchiga yangi tasodifiy parol generatsiya qiladi — parol bir marta qaytadi. */
+export async function resetTeacherPassword(id: string): Promise<Credentials> {
+  if (USE_MOCK) {
+    await delay(200)
+    return { login: 'umarovaziz', password: 'yangi' + Math.random().toString(36).slice(2, 8), role: 'teacher' }
+  }
+  const { data } = await api.post<Credentials>(`/admin/teachers/${id}/reset-password`)
+  return data
+}
+
 /** O'qituvchi maoshi bo'yicha batafsil hisob (davr bo'yicha): oma-oy taqsimot */
 export async function getSalaryLedger(id: string, from?: string, to?: string): Promise<SalaryLedger> {
   if (USE_MOCK) {

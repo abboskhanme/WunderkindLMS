@@ -16,8 +16,8 @@ public static class AccountFactory
     // Chalkashtirmaydigan belgilar (0/O, 1/l/I kabilar yo'q) — qo'lda terish oson.
     private static readonly char[] Alphabet = "abcdefghijkmnpqrstuvwxyz23456789".ToCharArray();
 
-    /// <summary>Tasodifiy parol (standart 6 belgi).</summary>
-    public static string GeneratePassword(int length = 6)
+    /// <summary>Tasodifiy parol (standart 8 belgi).</summary>
+    public static string GeneratePassword(int length = 8)
     {
         var bytes = RandomNumberGenerator.GetBytes(length);
         var sb = new StringBuilder(length);
@@ -54,22 +54,27 @@ public static class AccountFactory
 
     /// <summary>
     /// Berilgan rol va FISH uchun yangi akkaunt yaratadi (db.Users ga qo'shadi, lekin saqlamaydi —
-    /// chaqiruvchi SaveChanges qiladi). Generatsiya qilingan parol AppUser.PlainPassword da saqlanadi.
+    /// chaqiruvchi SaveChanges qiladi). Parol XAVFSIZLIK uchun ochiq matnda SAQLANMAYDI — faqat
+    /// hash'lanadi. Ochiq parolni ko'rsatish kerak bo'lsa, chaqiruvchi <paramref name="plainPassword"/>
+    /// orqali oladi va uni bir martagina foydalanuvchiga ko'rsatadi.
     /// </summary>
-    public static AppUser CreateAccountFor(AppDbContext db, string role, string fullName)
+    public static AppUser CreateAccountFor(AppDbContext db, string role, string fullName, out string plainPassword)
     {
-        var password = GeneratePassword();
+        plainPassword = GeneratePassword();
         var user = new AppUser
         {
             FullName = fullName,
             Role = role,
             Email = GenerateUsername(db, fullName),
-            PasswordHash = PasswordHasher.Hash(password),
-            PlainPassword = password,
+            PasswordHash = PasswordHasher.Hash(plainPassword),
         };
         db.Users.Add(user);
         return user;
     }
+
+    /// <summary>Ochiq parol kerak bo'lmaganda (masalan, darhol o'rnatiladigan parol bilan) qulay ortuk-yuk.</summary>
+    public static AppUser CreateAccountFor(AppDbContext db, string role, string fullName) =>
+        CreateAccountFor(db, role, fullName, out _);
 
     /// <summary>FISH ning birinchi ikkita so'zini (familiya + ism) lotinlashtirib qo'shadi.</summary>
     private static string BuildBase(string fullName)

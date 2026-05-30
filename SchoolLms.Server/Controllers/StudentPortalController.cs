@@ -77,7 +77,7 @@ public class StudentPortalController(
     {
         var dir = System.IO.Path.Combine(env.ContentRootPath, "uploads");
         System.IO.Directory.CreateDirectory(dir);
-        var stored = $"{Guid.NewGuid():N}{System.IO.Path.GetExtension(file.FileName)}";
+        var stored = Application.Services.UploadGuard.SafeName(file);
         await using var fs = System.IO.File.Create(System.IO.Path.Combine(dir, stored));
         await file.CopyToAsync(fs);
         return $"/uploads/{stored}";
@@ -98,8 +98,8 @@ public class StudentPortalController(
         if (s is null) return Unauthorized();
         var body = (text ?? "").Trim();
         if (body.Length == 0) return BadRequest(new { message = "Matn bo'sh" });
-        if (image is not null && image.Length > 20_000_000)
-            return BadRequest(new { message = "Rasm 20 MB dan katta" });
+        if (image is not null && Application.Services.UploadGuard.Validate(image) is { } imgError)
+            return BadRequest(new { message = imgError });
 
         var feedbackType = type == "complaint" ? "complaint" : "suggestion";
         var senderName = s.ParentFullName ?? "";
@@ -686,12 +686,12 @@ public class StudentPortalController(
     {
         var s = await MeAsync();
         if (s is null) return NotFound();
-        if (file is null || file.Length == 0) return BadRequest(new { message = "Fayl bo'sh" });
-        if (file.Length > 20_000_000) return BadRequest(new { message = "Fayl 20 MB dan katta" });
+        if (Application.Services.UploadGuard.Validate(file) is { } error)
+            return BadRequest(new { message = error });
 
         var dir = System.IO.Path.Combine(env.ContentRootPath, "uploads");
         System.IO.Directory.CreateDirectory(dir);
-        var stored = $"{Guid.NewGuid():N}{System.IO.Path.GetExtension(file.FileName)}";
+        var stored = Application.Services.UploadGuard.SafeName(file);
         await using (var fs = System.IO.File.Create(System.IO.Path.Combine(dir, stored)))
             await file.CopyToAsync(fs);
 

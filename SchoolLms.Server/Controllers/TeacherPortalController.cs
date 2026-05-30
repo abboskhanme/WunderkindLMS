@@ -362,13 +362,12 @@ public class TeacherPortalController(
     public async Task<ActionResult<UploadedFileDto>> Upload(IFormFile file)
     {
         if (!await HasPerm(TeacherPermissions.Assignments)) return Forbid();
-        if (file is null || file.Length == 0) return BadRequest(new { message = "Fayl bo'sh" });
-        if (file.Length > 20_000_000) return BadRequest(new { message = "Fayl 20 MB dan katta" });
+        if (Application.Services.UploadGuard.Validate(file) is { } error)
+            return BadRequest(new { message = error });
 
         var dir = System.IO.Path.Combine(env.ContentRootPath, "uploads");
         System.IO.Directory.CreateDirectory(dir);
-        var ext = System.IO.Path.GetExtension(file.FileName);
-        var stored = $"{Guid.NewGuid():N}{ext}";
+        var stored = Application.Services.UploadGuard.SafeName(file);
         await using (var fs = System.IO.File.Create(System.IO.Path.Combine(dir, stored)))
             await file.CopyToAsync(fs);
 
@@ -439,15 +438,15 @@ public class TeacherPortalController(
         if (t is null) return NotFound();
         var body = (text ?? "").Trim();
         if (body.Length == 0) return BadRequest(new { message = "Matn bo'sh" });
-        if (image is not null && image.Length > 20_000_000)
-            return BadRequest(new { message = "Rasm 20 MB dan katta" });
+        if (image is not null && Application.Services.UploadGuard.Validate(image) is { } imgError)
+            return BadRequest(new { message = imgError });
 
         string? imageUrl = null;
         if (image is { Length: > 0 })
         {
             var dir = System.IO.Path.Combine(env.ContentRootPath, "uploads");
             System.IO.Directory.CreateDirectory(dir);
-            var stored = $"{Guid.NewGuid():N}{System.IO.Path.GetExtension(image.FileName)}";
+            var stored = Application.Services.UploadGuard.SafeName(image);
             await using var fs = System.IO.File.Create(System.IO.Path.Combine(dir, stored));
             await image.CopyToAsync(fs);
             imageUrl = $"/uploads/{stored}";

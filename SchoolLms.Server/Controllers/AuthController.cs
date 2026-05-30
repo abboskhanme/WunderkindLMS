@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using SchoolLms.Infrastructure.Auth;
 using SchoolLms.Infrastructure.Data;
@@ -11,15 +12,21 @@ namespace SchoolLms.Server.Controllers;
 
 [ApiController]
 [Route("api/auth")]
-public class AuthController(AppDbContext db, JwtTokenService jwt) : ControllerBase
+public class AuthController(AppDbContext db, JwtTokenService jwt, ILogger<AuthController> logger) : ControllerBase
 {
     [HttpPost("login")]
     [AllowAnonymous]
+    [EnableRateLimiting("login")]
     public async Task<ActionResult<LoginResponse>> Login(LoginRequest req)
     {
         var user = await db.Users.FirstOrDefaultAsync(u => u.Email == req.Email);
         if (user is null || !PasswordHasher.Verify(req.Password, user.PasswordHash))
+        {
+            // Brute-force/credential-stuffing kuzatuvi uchun — IP va urinilgan login bilan.
+            logger.LogWarning("Muvaffaqiyatsiz login urinishi: login={Login}, IP={IP}",
+                req.Email, HttpContext.Connection.RemoteIpAddress?.ToString() ?? "?");
             return Unauthorized(new { message = "Email yoki parol noto'g'ri" });
+        }
 
         // Login kuzatuvi: birinchi marta kirayotgan bo'lsa FirstLoginAt ham, har safar LastLoginAt
         // yoziladi. "Ilova aktivlashtirilgan" ota-onalar bo'limida shu maydon orqali aniqlanadi.
@@ -77,10 +84,9 @@ public class AuthController(AppDbContext db, JwtTokenService jwt) : ControllerBa
 
         if (!string.IsNullOrEmpty(req.NewPassword))
         {
-            if (req.NewPassword.Length < 4)
-                return BadRequest(new { message = "Yangi parol kamida 4 belgidan iborat bo'lsin" });
+            if (req.NewPassword.Length < 8)
+                return BadRequest(new { message = "Yangi parol kamida 8 belgidan iborat bo'lsin" });
             user.PasswordHash = PasswordHasher.Hash(req.NewPassword);
-            user.PlainPassword = null; // o'zi tanlagan parol — boshqa joyda ko'rsatilmaydi
         }
 
         await db.SaveChangesAsync();

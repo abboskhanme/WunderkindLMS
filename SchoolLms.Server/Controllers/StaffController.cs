@@ -19,6 +19,10 @@ namespace SchoolLms.Server.Controllers;
 [Route("api/admin/staff")]
 public class StaffController(AppDbContext db) : ControllerBase
 {
+    private const int MinPasswordLength = 8;
+    private const string WeakPasswordMessage = "Parol kamida 8 belgidan iborat bo'lsin";
+
+
     [HttpGet]
     public async Task<ActionResult<IEnumerable<StaffDto>>> GetAll() =>
         (await db.Users.Where(u => u.Role == Roles.Staff).OrderBy(u => u.FullName).ToListAsync())
@@ -32,10 +36,9 @@ public class StaffController(AppDbContext db) : ControllerBase
         user.Position = (p.Position ?? "").Trim();
         if (!string.IsNullOrWhiteSpace(p.NewPassword))
         {
-            if (p.NewPassword.Trim().Length < 4)
-                return BadRequest(new { message = "Parol kamida 4 belgidan iborat bo'lsin" });
+            if (p.NewPassword.Trim().Length < MinPasswordLength)
+                return BadRequest(new { message = WeakPasswordMessage });
             user.PasswordHash = PasswordHasher.Hash(p.NewPassword.Trim());
-            user.PlainPassword = p.NewPassword.Trim();
         }
         await db.SaveChangesAsync();
         return ToDto(user);
@@ -50,10 +53,9 @@ public class StaffController(AppDbContext db) : ControllerBase
         user.Position = (p.Position ?? "").Trim();
         if (!string.IsNullOrWhiteSpace(p.NewPassword))
         {
-            if (p.NewPassword.Trim().Length < 4)
-                return BadRequest(new { message = "Parol kamida 4 belgidan iborat bo'lsin" });
+            if (p.NewPassword.Trim().Length < MinPasswordLength)
+                return BadRequest(new { message = WeakPasswordMessage });
             user.PasswordHash = PasswordHasher.Hash(p.NewPassword.Trim());
-            user.PlainPassword = p.NewPassword.Trim();
         }
         await db.SaveChangesAsync();
         return ToDto(user);
@@ -69,13 +71,27 @@ public class StaffController(AppDbContext db) : ControllerBase
         return NoContent();
     }
 
-    /// <summary>Xodim akkaunti (login/parol).</summary>
+    /// <summary>Xodim akkaunti logini. Parol xavfsizlik uchun saqlanmaydi — bo'sh qaytadi
+    /// (ko'rsatish kerak bo'lsa <see cref="ResetPassword"/> orqali yangisini yarating).</summary>
     [HttpGet("{id}/credentials")]
     public async Task<ActionResult<CredentialsDto>> Credentials(string id)
     {
         var user = await db.Users.FindAsync(id);
         if (user is null || user.Role != Roles.Staff) return NotFound();
-        return new CredentialsDto(user.Email, user.PlainPassword ?? "", user.Role);
+        return new CredentialsDto(user.Email, "", user.Role);
+    }
+
+    /// <summary>Xodimga yangi tasodifiy parol generatsiya qiladi va uni BIR MARTA qaytaradi
+    /// (DB'da faqat hash saqlanadi).</summary>
+    [HttpPost("{id}/reset-password")]
+    public async Task<ActionResult<CredentialsDto>> ResetPassword(string id)
+    {
+        var user = await db.Users.FindAsync(id);
+        if (user is null || user.Role != Roles.Staff) return NotFound();
+        var pwd = AccountFactory.GeneratePassword();
+        user.PasswordHash = PasswordHasher.Hash(pwd);
+        await db.SaveChangesAsync();
+        return new CredentialsDto(user.Email, pwd, user.Role);
     }
 
     /// <summary>Xodimning admin bo'lim ruxsatlari (Rollar) — FAQAT superadmin.</summary>

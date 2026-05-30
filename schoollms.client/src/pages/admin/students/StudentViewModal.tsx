@@ -3,7 +3,7 @@ import type { Credentials, Student } from '@/types'
 import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
 import { CredentialsBox } from '@/components/ui/CredentialsBox'
-import { getStudentCredentials } from '@/api/services/students'
+import { getStudentCredentials, resetStudentPassword } from '@/api/services/students'
 import { genderLabels } from '@/config/constants'
 import { formatDate, formatMoney } from '@/lib/utils'
 
@@ -73,7 +73,13 @@ export function StudentViewModal({ student, onClose }: Props) {
               }
             />
           )}
-          <CredentialsBox credentials={credentials} />
+          <CredentialsBox
+            credentials={credentials}
+            onReset={async () => {
+              const c = await resetStudentPassword(student.id)
+              setCredentials(c)
+            }}
+          />
         </div>
       )}
     </Modal>

@@ -123,6 +123,16 @@ export async function getStudentCredentials(id: string): Promise<Credentials> {
   return data
 }
 
+/** O'quvchiga yangi tasodifiy parol generatsiya qiladi — parol bir marta qaytadi. */
+export async function resetStudentPassword(id: string): Promise<Credentials> {
+  if (USE_MOCK) {
+    await delay(200)
+    return { login: 'aliyevvali', password: 'yangi' + Math.random().toString(36).slice(2, 8), role: 'student' }
+  }
+  const { data } = await api.post<Credentials>(`/admin/students/${id}/reset-password`)
+  return data
+}
+
 /** O'quvchiga to'lov kiritish — balansga qo'shiladi.
  *  `month` ("YYYY-MM") berilsa, to'lov shu oy uchun hisoblanadi. */
 export async function addPayment(id: string, amount: number, month?: string): Promise<void> {

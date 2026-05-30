@@ -18,14 +18,12 @@ public class UploadsController(IWebHostEnvironment env) : ControllerBase
     [RequestSizeLimit(20_000_000)]
     public async Task<ActionResult<UploadedFileDto>> Upload(IFormFile file)
     {
-        if (file is null || file.Length == 0)
-            return BadRequest(new { message = "Fayl bo'sh" });
-        if (file.Length > 20_000_000)
-            return BadRequest(new { message = "Fayl 20 MB dan katta" });
+        if (Application.Services.UploadGuard.Validate(file) is { } error)
+            return BadRequest(new { message = error });
 
         var dir = System.IO.Path.Combine(env.ContentRootPath, "uploads");
         System.IO.Directory.CreateDirectory(dir);
-        var stored = $"{Guid.NewGuid():N}{System.IO.Path.GetExtension(file.FileName)}";
+        var stored = Application.Services.UploadGuard.SafeName(file);
         await using (var fs = System.IO.File.Create(System.IO.Path.Combine(dir, stored)))
             await file.CopyToAsync(fs);
 

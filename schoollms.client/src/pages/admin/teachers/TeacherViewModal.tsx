@@ -3,7 +3,7 @@ import type { Credentials, Subject, Teacher } from '@/types'
 import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
 import { CredentialsBox } from '@/components/ui/CredentialsBox'
-import { getTeacherCredentials } from '@/api/services/teachers'
+import { getTeacherCredentials, resetTeacherPassword } from '@/api/services/teachers'
 import { genderLabels, formatMonth } from '@/config/constants'
 import { formatDate, formatMoney } from '@/lib/utils'
 
@@ -71,7 +71,13 @@ export function TeacherViewModal({ teacher, subjects, onClose }: Props) {
             value={teacher.salaryStartMonth ? `${formatMonth(teacher.salaryStartMonth)} dan` : '—'}
           />
           <Row label="Fanlar" value={subjectNames || '—'} />
-          <CredentialsBox credentials={credentials} />
+          <CredentialsBox
+            credentials={credentials}
+            onReset={async () => {
+              const c = await resetTeacherPassword(teacher.id)
+              setCredentials(c)
+            }}
+          />
         </div>
       )}
     </Modal>

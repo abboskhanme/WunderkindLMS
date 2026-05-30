@@ -14,6 +14,9 @@ namespace SchoolLms.Server.Controllers;
 [Route("api/admin/students")]
 public class StudentsController(AppDbContext db, AuditService audit) : ControllerBase
 {
+    private const int MinPasswordLength = 8;
+    private const string WeakPasswordMessage = "Parol kamida 8 belgidan iborat bo'lsin";
+
     /// <summary>
     /// Faol (arxivlanmagan) o'quvchilar ro'yxati. <paramref name="includeArchived"/>=true bo'lsa
     /// arxivlangan o'quvchilar ham qaytadi.
@@ -206,12 +209,11 @@ public class StudentsController(AppDbContext db, AuditService audit) : Controlle
         if (!string.IsNullOrWhiteSpace(p.NewPassword))
         {
             var pwd = p.NewPassword.Trim();
-            if (pwd.Length < 4) return BadRequest(new { message = "Parol kamida 4 belgidan iborat bo'lsin" });
+            if (pwd.Length < MinPasswordLength) return BadRequest(new { message = WeakPasswordMessage });
             // Akkaunt yo'q bo'lsa — yaratib biriktiramiz.
             user ??= AccountFactory.CreateAccountFor(db, "student", student.FullName);
             student.UserId = user.Id;
             user.PasswordHash = PasswordHasher.Hash(pwd);
-            user.PlainPassword = pwd; // admin profilda ko'rsatish uchun saqlanadi
         }
         if (user is not null) user.FullName = student.FullName;
 
@@ -297,15 +299,12 @@ public class StudentsController(AppDbContext db, AuditService audit) : Controlle
         student.ArchivedAt = DateOnly.FromDateTime(DateTime.Now).ToString("yyyy-MM-dd");
         student.ArchiveReason = (req.Reason ?? "").Trim();
 
-        // Login bloklash — PasswordHash bo'shaltiriladi, PlainPassword tozalanadi.
+        // Login bloklash — PasswordHash bo'shaltiriladi (login imkonsiz bo'ladi).
         if (student.UserId is not null)
         {
             var user = await db.Users.FindAsync(student.UserId);
             if (user is not null)
-            {
                 user.PasswordHash = "";
-                user.PlainPassword = null;
-            }
         }
 
         audit.Record(AuditService.EntityStudentDiscount, student.Id, "update",
@@ -336,7 +335,7 @@ public class StudentsController(AppDbContext db, AuditService audit) : Controlle
         var newPwd = (req?.NewPassword ?? "").Trim();
         if (!string.IsNullOrEmpty(newPwd))
         {
-            if (newPwd.Length < 4) return BadRequest(new { message = "Yangi parol kamida 4 belgidan iborat bo'lsin" });
+            if (newPwd.Length < MinPasswordLength) return BadRequest(new { message = WeakPasswordMessage });
             if (student.UserId is not null)
             {
                 var user = await db.Users.FindAsync(student.UserId);
@@ -346,7 +345,6 @@ public class StudentsController(AppDbContext db, AuditService audit) : Controlle
                     student.UserId = user.Id;
                 }
                 user.PasswordHash = PasswordHasher.Hash(newPwd);
-                user.PlainPassword = newPwd;
             }
         }
 
@@ -373,7 +371,27 @@ public class StudentsController(AppDbContext db, AuditService audit) : Controlle
             await db.SaveChangesAsync();
         }
 
-        return new CredentialsDto(user.Email, user.PlainPassword ?? "", user.Role);
+        // Parol xavfsizlik uchun saqlanmaydi — bo'sh qaytadi. Ko'rsatish kerak bo'lsa reset-password.
+        return new CredentialsDto(user.Email, "", user.Role);
+    }
+
+    /// <summary>O'quvchiga yangi tasodifiy parol generatsiya qiladi va BIR MARTA qaytaradi
+    /// (DB'da faqat hash saqlanadi).</summary>
+    [HttpPost("{id}/reset-password")]
+    public async Task<ActionResult<CredentialsDto>> ResetPassword(string id)
+    {
+        var student = await db.Students.FindAsync(id);
+        if (student is null) return NotFound();
+        var user = student.UserId is null ? null : await db.Users.FindAsync(student.UserId);
+        if (user is null)
+        {
+            user = AccountFactory.CreateAccountFor(db, "student", student.FullName);
+            student.UserId = user.Id;
+        }
+        var pwd = AccountFactory.GeneratePassword();
+        user.PasswordHash = PasswordHasher.Hash(pwd);
+        await db.SaveChangesAsync();
+        return new CredentialsDto(user.Email, pwd, user.Role);
     }
 
     /// <summary>O'quvchiga to'lov kiritish — balansga qo'shiladi va moliyaga kirim sifatida yoziladi.

@@ -29,8 +29,26 @@ builder.Services.AddScoped<IAppDbContext>(sp => sp.GetRequiredService<AppDbConte
 builder.Services.AddMemoryCache();
 builder.Services.AddSingleton<ReferenceCache>();
 
-// JWT sozlamalari
+// JWT sozlamalari. Imzo kaliti appsettings'da SAQLANMAYDI (repoga tushmasligi uchun) —
+// uni `Jwt__Key` muhit o'zgaruvchisi yoki `dotnet user-secrets` orqali bering.
 var jwtOptions = builder.Configuration.GetSection("Jwt").Get<JwtOptions>() ?? new JwtOptions();
+if (string.IsNullOrWhiteSpace(jwtOptions.Key) || jwtOptions.Key.Length < 32)
+{
+    if (builder.Environment.IsDevelopment())
+    {
+        // Dev'da kalit berilmasa — vaqtinchalik tasodifiy kalit (server restartida tokenlar bekor bo'ladi).
+        jwtOptions.Key = Convert.ToBase64String(
+            System.Security.Cryptography.RandomNumberGenerator.GetBytes(48));
+        Console.WriteLine("[WARN] Jwt:Key berilmagan — DEV uchun vaqtinchalik tasodifiy kalit ishlatilmoqda. "
+            + "Prod'da Jwt__Key muhit o'zgaruvchisini o'rnating.");
+    }
+    else
+    {
+        throw new InvalidOperationException(
+            "Jwt:Key sozlanmagan yoki 32 belgidan qisqa. Uni `Jwt__Key` muhit o'zgaruvchisi "
+            + "yoki user-secrets orqali bering (hech qachon appsettings.json'ga yozmang).");
+    }
+}
 builder.Services.AddSingleton(jwtOptions);
 builder.Services.AddSingleton<JwtTokenService>();
 
@@ -64,6 +82,22 @@ builder.Services
         };
     });
 builder.Services.AddAuthorization();
+
+// Login endpoint uchun rate-limit — parol brute-force / credential-stuffing'ni sekinlashtiradi
+// (IP bo'yicha daqiqada 10 urinish). Oshib ketsa 429 qaytadi.
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.AddPolicy("login", httpContext =>
+        System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            factory: _ => new System.Threading.RateLimiting.FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 10,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0,
+            }));
+});
 
 // Real-time guruh chati (SignalR)
 builder.Services.AddSignalR();
@@ -119,6 +153,34 @@ using (var scope = app.Services.CreateScope())
 }
 
 // ---------- Pipeline ----------
+
+// Xavfsizlik sarlavhalari — barcha javoblarga (statik fayllar va /uploads ham). MIME-sniffing,
+// clickjacking va (prod'da) saqlangan XSS'ga qarshi himoya.
+app.Use(async (context, next) =>
+{
+    var headers = context.Response.Headers;
+    headers["X-Content-Type-Options"] = "nosniff";
+    headers["X-Frame-Options"] = "DENY";
+    headers["Referrer-Policy"] = "no-referrer";
+    // CSP faqat prod'da — dev'da Swagger UI inline skript/uslublardan foydalanadi, SPA esa Vite
+    // serverida alohida beriladi. Leaflet xaritasi unpkg/openstreetmap'dan rasm yuklaydi (img https:).
+    if (!app.Environment.IsDevelopment())
+    {
+        headers["Content-Security-Policy"] =
+            "default-src 'self'; " +
+            "img-src 'self' data: blob: https:; " +
+            "style-src 'self' 'unsafe-inline'; " +
+            "script-src 'self'; " +
+            "connect-src 'self' ws: wss:; " +
+            "font-src 'self' data:; " +
+            "frame-ancestors 'none'; object-src 'none'; base-uri 'self'";
+    }
+    await next();
+});
+
+if (!app.Environment.IsDevelopment())
+    app.UseHsts();
+
 app.UseDefaultFiles();
 app.UseStaticFiles();
 
@@ -141,6 +203,7 @@ app.UseHttpsRedirection();
 
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseRateLimiter();
 
 app.MapControllers();
 app.MapHub<ChatHub>("/hubs/chat");
