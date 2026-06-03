@@ -15,6 +15,7 @@ import { Loader } from '@/components/ui/Loader'
 export function TelegramSettings() {
   const [token, setToken] = useState('')
   const [username, setUsername] = useState('')
+  const [name, setName] = useState('')
   const [configured, setConfigured] = useState(false)
   const [loading, setLoading] = useState(true)
   const [status, setStatus] = useState<'idle' | 'saving' | 'saved'>('idle')
@@ -24,6 +25,7 @@ export function TelegramSettings() {
       .then((c: TelegramConfig) => {
         setToken(c.botToken)
         setUsername(c.botUsername)
+        setName(c.botName)
         setConfigured(c.configured)
       })
       .finally(() => setLoading(false))
@@ -35,6 +37,7 @@ export function TelegramSettings() {
     const saved = await saveTelegramSettings({
       botToken: token.trim(),
       botUsername: username.trim(),
+      botName: name.trim(),
     })
     setConfigured(saved.configured)
     setStatus('saved')
@@ -72,7 +75,14 @@ export function TelegramSettings() {
           autoComplete="off"
         />
         <Input
-          label="Bot foydalanuvchi nomi (ixtiyoriy)"
+          label="Bot nomi (ko'rsatish uchun)"
+          placeholder="Maktab LMS Bot"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          autoComplete="off"
+        />
+        <Input
+          label="Bot foydalanuvchi nomi (@username)"
           placeholder="MaktabBot"
           value={username}
           onChange={(e) => setUsername(e.target.value)}

@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using SchoolLms.Application.Abstractions;
 using SchoolLms.Application.Dtos;
+using SchoolLms.Domain;
 
 namespace SchoolLms.Application.Services;
 
@@ -30,7 +31,7 @@ public static class SubjectProgressService
         public string? Homework { get; init; }
     }
 
-    private static string Today => DateOnly.FromDateTime(DateTime.Now).ToString("yyyy-MM-dd");
+    private static string Today => AppClock.Today.ToString("yyyy-MM-dd");
 
     private static int Pct(int a, int b) => b <= 0 ? 0 : (int)Math.Round(a * 100.0 / b);
 

@@ -33,7 +33,7 @@ public class AuditService(IAppDbContext db, IHttpContextAccessor http)
             EntityType = entityType,
             EntityId = entityId,
             Action = action,
-            Timestamp = DateTime.Now.ToString("yyyy-MM-ddTHH:mm:ss"),
+            Timestamp = AppClock.Now.ToString("yyyy-MM-ddTHH:mm:ss"),
             ActorId = user?.FindFirst(ClaimTypes.NameIdentifier)?.Value
                       ?? user?.FindFirst("sub")?.Value,
             ActorName = user?.FindFirst(ClaimTypes.Name)?.Value ?? "Tizim",

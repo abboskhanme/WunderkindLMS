@@ -23,6 +23,11 @@ public static class Roles
     /// kiradi, lekin faqat <see cref="AppUser.Permissions"/> dagi bo'limlarni ko'radi.</summary>
     public const string Staff = "staff";
 
+    /// <summary>Loyiha boshlig'i — Control Plane (asosiy domen) egasi. Maktab rollaridan
+    /// butunlay alohida: faqat maktablarni (tenant) ochish/boshqarish uchun. Hech bir maktab
+    /// DB'siga kirmaydi.</summary>
+    public const string PlatformOwner = "platformowner";
+
     /// <summary>
     /// Admin endpoint'larida ishlatish uchun: ikkala rol ham ruxsat etiladi.
     /// <c>[Authorize(Roles = Roles.AdminOrSuper)]</c> ko'rinishida foydalaniladi.

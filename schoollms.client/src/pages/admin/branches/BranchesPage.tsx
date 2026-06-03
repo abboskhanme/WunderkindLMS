@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
-import { MapContainer, TileLayer, Marker, Circle, useMapEvents } from 'react-leaflet'
+import { MapContainer, TileLayer, Marker, Circle, useMapEvents, useMap } from 'react-leaflet'
 import L from 'leaflet'
-import { Plus, Pencil, Trash2, MapPin } from 'lucide-react'
+import { Plus, Pencil, Trash2, MapPin, LocateFixed } from 'lucide-react'
 import type { Branch } from '@/types'
 import {
   getBranches,
@@ -36,6 +36,9 @@ export function BranchesPage() {
   const [formOpen, setFormOpen] = useState(false)
   const [editing, setEditing] = useState<Branch | null>(null)
   const [form, setForm] = useState<BranchPayload>(empty)
+  // Joriy joyni aniqlash holati + xaritani markazlash uchun nishon nuqta
+  const [locating, setLocating] = useState(false)
+  const [flyTo, setFlyTo] = useState<[number, number] | null>(null)
 
   useEffect(() => {
     getBranches()
@@ -46,6 +49,7 @@ export function BranchesPage() {
   const openCreate = () => {
     setEditing(null)
     setForm(empty)
+    setFlyTo(null)
     setFormOpen(true)
   }
   const openEdit = (b: Branch) => {
@@ -57,7 +61,34 @@ export function BranchesPage() {
       longitude: b.longitude,
       radiusMeters: b.radiusMeters,
     })
+    setFlyTo(null)
     setFormOpen(true)
+  }
+
+  // Brauzer GPS'idan joriy joyni olib, formaga qo'yadi va xaritani o'sha yerga markazlaydi.
+  const useCurrentLocation = () => {
+    if (!('geolocation' in navigator)) {
+      alert("Brauzer joylashuvni qo'llab-quvvatlamaydi.")
+      return
+    }
+    setLocating(true)
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const { latitude, longitude } = pos.coords
+        setForm((f) => ({ ...f, latitude, longitude }))
+        setFlyTo([latitude, longitude])
+        setLocating(false)
+      },
+      (err) => {
+        setLocating(false)
+        alert(
+          err.code === err.PERMISSION_DENIED
+            ? "Joylashuvga ruxsat berilmadi. Brauzer sozlamalaridan ruxsat bering."
+            : "Joriy joyni aniqlab bo'lmadi. Qaytadan urinib ko'ring.",
+        )
+      },
+      { enableHighAccuracy: true, timeout: 10000 },
+    )
   }
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -188,9 +219,20 @@ export function BranchesPage() {
             onChange={(e) => setForm((f) => ({ ...f, radiusMeters: Number(e.target.value) }))}
           />
           <div>
-            <label className="mb-1 block text-sm font-medium text-slate-600">
-              Joylashuv — xaritani bosing yoki markerni suring
-            </label>
+            <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
+              <label className="block text-sm font-medium text-slate-600">
+                Joylashuv — xaritani bosing yoki markerni suring
+              </label>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={useCurrentLocation}
+                disabled={locating}
+              >
+                <LocateFixed className="h-4 w-4" />
+                {locating ? 'Aniqlanmoqda...' : 'Joriy joyni tanlash'}
+              </Button>
+            </div>
             <div className="h-72 overflow-hidden rounded-lg border border-slate-200">
               <MapContainer
                 key={editing?.id ?? 'new'}
@@ -199,6 +241,7 @@ export function BranchesPage() {
                 style={{ height: '100%', width: '100%' }}
               >
                 <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+                <FlyTo target={flyTo} />
                 <ClickPicker onPick={(lat, lng) => setForm((f) => ({ ...f, latitude: lat, longitude: lng }))} />
                 {hasPoint && (
                   <>
@@ -236,5 +279,14 @@ function ClickPicker({ onPick }: { onPick: (lat: number, lng: number) => void })
       onPick(e.latlng.lat, e.latlng.lng)
     },
   })
+  return null
+}
+
+// Nishon nuqta o'zgarganda xaritani o'sha joyga markazlaydi (masalan "Joriy joyni tanlash" bosilganda).
+function FlyTo({ target }: { target: [number, number] | null }) {
+  const map = useMap()
+  useEffect(() => {
+    if (target) map.setView(target, 16)
+  }, [target, map])
   return null
 }

@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using SchoolLms.Infrastructure.Data;
+using SchoolLms.Application.Abstractions;
 using SchoolLms.Application.Dtos;
 using SchoolLms.Domain;
 using SchoolLms.Application.Services;
@@ -20,8 +21,23 @@ namespace SchoolLms.Server.Controllers;
 [Authorize(Roles = "student,parent,admin")]
 [Route("api/student")]
 public class StudentPortalController(
-    AppDbContext db, ChatService chat, IWebHostEnvironment env, ReferenceCache refCache) : ControllerBase
+    AppDbContext db, ChatService chat, IWebHostEnvironment env, ReferenceCache refCache,
+    ITenantContext tenant, TelegramService telegram, FcmService fcm) : ControllerBase
 {
+    /// <summary>Berilgan foydalanuvchining qurilmalariga push yuboradi (fire-and-forget).</summary>
+    private async Task PushToUserAsync(string userId, string title, string body)
+    {
+        var meta = await db.SchoolMeta.FirstOrDefaultAsync();
+        var json = meta?.FcmServiceAccountJson ?? "";
+        if (!FcmService.IsConfigured(json)) return;
+        var tokens = await db.DeviceTokens.Where(d => d.UserId == userId)
+            .Select(d => d.Token).Distinct().ToListAsync();
+        if (tokens.Count > 0) _ = fcm.SendAsync(json, tokens, title, body);
+    }
+
+    private static PickupRequestDto PickupDto(PickupRequest p) =>
+        new(p.Id, p.StudentId, p.StudentName, p.ClassName, p.Status, p.CreatedAt, p.AcceptedAt, p.AcceptedByName);
+
     /// <summary>
     /// Maqsadli o'quvchini topadi.
     /// • student → o'z akkauntidan (UserId bo'yicha)
@@ -84,6 +100,29 @@ public class StudentPortalController(
     }
 
     /// <summary>
+    /// Ilova (ota-ona/o'quvchi) uchun Telegram bot holati va shu o'quvchi botda ro'yxatdan o'tganmi.
+    /// Ilova birinchi kirilganda — agar <c>configured=true</c> va <c>registered=false</c> bo'lsa —
+    /// foydalanuvchini botga (<c>deepLink</c>) yo'naltirib, e'lon olish uchun ro'yxatdan o'tishni taklif qiladi.
+    /// </summary>
+    [HttpGet("telegram")]
+    [Authorize(Roles = "student,parent")]
+    public async Task<ActionResult<object>> TelegramInfo([FromQuery] string? studentId)
+    {
+        var s = User.IsInRole("parent") ? await TargetAsync(null) : await MeAsync();
+        if (s is null) return NotFound();
+        var registered = await db.TelegramRegistrations.AnyAsync(r => r.StudentId == s.Id);
+        var username = telegram.BotUsername ?? "";
+        return Ok(new
+        {
+            configured = telegram.IsConfigured,
+            botUsername = username,
+            botName = telegram.BotName ?? "",
+            deepLink = string.IsNullOrEmpty(username) ? "" : $"https://t.me/{username}",
+            registered,
+        });
+    }
+
+    /// <summary>
     /// Ota-ona (o'quvchi akkaunti orqali) taklif yoki shikoyat yuboradi. Faqat student rolida.
     /// Admin "Taklif va shikoyatlar" bo'limida ko'radi.
     /// </summary>
@@ -112,7 +151,7 @@ public class StudentPortalController(
             Type = feedbackType,
             Text = body,
             ImageUrl = image is { Length: > 0 } ? await SaveUploadAsync(image) : null,
-            CreatedAt = DateTime.UtcNow,
+            CreatedAt = AppClock.Now,
             Status = "new",
         });
         await db.SaveChangesAsync();
@@ -158,13 +197,131 @@ public class StudentPortalController(
         if (s is null) return NotFound();
         return new StudentProfileDto(
             s.Id, s.FullName, s.ClassName, s.BirthDate, s.Gender,
-            s.ParentFullName, s.ParentPhone, s.EnrollmentDate);
+            s.ParentFullName, s.ParentPhone, s.EnrollmentDate,
+            s.BirthCertificateUrl, s.ParentPassportUrl);
     }
 
     /// <summary>Maktab meta'si (chorak/dars vaqtlari/sabablar + joriy chorak/hafta) —
     /// hammaga bir xil, `studentId` shart emas.</summary>
     [HttpGet("meta")]
-    public async Task<ActionResult<PortalMetaDto>> Meta() => await refCache.MetaAsync();
+    public async Task<ActionResult<PortalMetaDto>> Meta() => await refCache.MetaAsync(tenant.TenantId ?? "");
+
+    /// <summary>Joriy maktab nomi — ilova brendingi/sarlavhasi uchun.</summary>
+    [HttpGet("school")]
+    public async Task<ActionResult<SchoolNameDto>> School()
+    {
+        var m = await db.SchoolMeta.FirstOrDefaultAsync();
+        return new SchoolNameDto(m?.Name ?? "");
+    }
+
+    /// <summary>Bayram/dam olish kunlari — bu sanalarda dars bo'lmaydi (jadvalda "Bayram" deb ko'rsating).</summary>
+    [HttpGet("holidays")]
+    public async Task<ActionResult<IEnumerable<HolidayDto>>> Holidays() =>
+        await db.Holidays.OrderBy(h => h.Date).Select(h => new HolidayDto(h.Date, h.Name)).ToListAsync();
+
+    // ---------- Farzandni olib ketish (pickup) ----------
+
+    /// <summary>
+    /// "Farzandimni olishga keldim" — pickup so'rovi yaratadi va sinf rahbariga push yuboradi.
+    /// Allaqachon kutilayotgan (pending) so'rov bo'lsa — o'shani qaytaradi (takror yaratmaydi).
+    /// </summary>
+    [HttpPost("pickup")]
+    [Authorize(Roles = "student,parent")]
+    public async Task<ActionResult<PickupRequestDto>> CreatePickup(CreatePickupRequest req)
+    {
+        var uid = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        var s = await ResolveOwnStudentAsync(req.StudentId, uid);
+        if (s is null) return NotFound(new { message = "O'quvchi topilmadi" });
+
+        // Pickup KUNLIK — faqat bugungi (o'qish kuni) so'rovi hisobga olinadi; kechagisi qolib ketmaydi.
+        var today = AppClock.Now.ToString("yyyy-MM-dd");
+        var pr = await db.PickupRequests
+            .FirstOrDefaultAsync(p => p.StudentId == s.Id && p.Status == "pending" && p.CreatedAt.StartsWith(today));
+        if (pr is null)
+        {
+            pr = new PickupRequest
+            {
+                StudentId = s.Id,
+                StudentName = s.FullName,
+                ClassName = s.ClassName,
+                RequestedByUserId = uid ?? s.UserId ?? "",
+                Status = "pending",
+                CreatedAt = AppClock.Now.ToString("o"),
+            };
+            db.PickupRequests.Add(pr);
+            await db.SaveChangesAsync();
+        }
+
+        // Sinf rahbariga push.
+        var teacher = await db.Teachers.FirstOrDefaultAsync(t => !t.IsArchived && t.HomeroomClass == s.ClassName);
+        if (teacher?.UserId is not null)
+            await PushToUserAsync(teacher.UserId, "Farzandni olib ketish",
+                $"{s.FullName} ({s.ClassName}) — ota-ona olib ketishga keldi. Qabul qiling.");
+
+        return PickupDto(pr);
+    }
+
+    /// <summary>Farzandning oxirgi pickup so'rovi holati (yo'q bo'lsa — null).</summary>
+    [HttpGet("pickup")]
+    public async Task<ActionResult<PickupRequestDto?>> GetPickup([FromQuery] string? studentId)
+    {
+        var s = await TargetAsync(studentId);
+        if (s is null) return Ok((PickupRequestDto?)null);
+        // Faqat bugungi so'rov — har kuni holatni qaytadan boshlaymiz.
+        var today = AppClock.Now.ToString("yyyy-MM-dd");
+        var pr = await db.PickupRequests.Where(p => p.StudentId == s.Id && p.CreatedAt.StartsWith(today))
+            .OrderByDescending(p => p.CreatedAt).FirstOrDefaultAsync();
+        return Ok(pr is null ? null : PickupDto(pr));
+    }
+
+    /// <summary>So'rovchining o'z farzandini topadi (multi-farzand: studentId bilan, egalik tekshiriladi).</summary>
+    private async Task<Student?> ResolveOwnStudentAsync(string? studentId, string? uid)
+    {
+        if (string.IsNullOrWhiteSpace(studentId)) return await TargetAsync(null);
+        var s = await db.Students.FindAsync(studentId);
+        if (s is null) return null;
+        if (User.IsInRole("student")) return s.UserId == uid ? s : null;
+        if (User.IsInRole("parent"))
+        {
+            var user = uid is null ? null : await db.Users.FindAsync(uid);
+            return NormalizePhone(user?.Email) == NormalizePhone(s.ParentPhone) ? s : null;
+        }
+        return s;
+    }
+
+    /// <summary>
+    /// O'quvchining intizomiy balli: qoldi (100 dan boshlanadi) + rag'bat(+)/jazo(−) + tarix.
+    /// Tarix qo'lda kiritilgan ballar va jurnal davomati (sabab balli != 0) yozuvlaridan iborat.
+    /// </summary>
+    [HttpGet("discipline")]
+    public async Task<ActionResult<StudentDisciplineDto>> Discipline([FromQuery] string? studentId)
+    {
+        if (User.IsInRole("admin") && string.IsNullOrWhiteSpace(studentId)) return NeedStudentId();
+        var s = await TargetAsync(studentId);
+        if (s is null) return NotFound();
+
+        var manual = await db.DisciplinePoints.Where(p => p.StudentId == s.Id).ToListAsync();
+        var drNames = await db.DisciplineReasons.ToDictionaryAsync(r => r.Id, r => r.Name);
+        var absReasons = await db.AbsenceReasons.ToDictionaryAsync(r => r.Id, r => new { r.Name, r.Points });
+
+        var items = manual.Select(p => new DisciplinePointDto(
+            p.Id, p.StudentId,
+            string.IsNullOrEmpty(p.ReasonName) ? drNames.GetValueOrDefault(p.ReasonId, "—") : p.ReasonName,
+            p.Points, p.Note, p.CreatedAt, p.CreatedBy, "manual")).ToList();
+
+        var journal = await db.JournalEntries
+            .Where(e => e.StudentId == s.Id && e.ReasonId != null).ToListAsync();
+        foreach (var e in journal)
+        {
+            if (e.ReasonId is null || !absReasons.TryGetValue(e.ReasonId, out var r) || r.Points == 0) continue;
+            items.Add(new DisciplinePointDto(e.Id, s.Id, r.Name, r.Points, "Jurnal davomati", e.Date, "", "attendance"));
+        }
+
+        var plus = items.Where(i => i.Points > 0).Sum(i => i.Points);
+        var minus = items.Where(i => i.Points < 0).Sum(i => -i.Points);
+        var ordered = items.OrderByDescending(i => i.CreatedAt, StringComparer.Ordinal).ToList();
+        return new StudentDisciplineDto(100 + plus - minus, plus, minus, ordered);
+    }
 
     // ---------- Jadval (o'z sinfi) ----------
 
@@ -209,6 +366,38 @@ public class StudentPortalController(
         var s = await TargetAsync(studentId);
         if (s is null) return NotFound();
         return await StudentReportBuilder.BuildAsync(db, s);
+    }
+
+    /// <summary>
+    /// O'quvchi reytingi (admin "Reyting"i bilan bir xil hisob — o'rtacha baho bo'yicha):
+    /// <b>o'z sinfini to'liq</b>, <b>maktab bo'yicha esa faqat TOP 15</b> ko'radi.
+    /// O'z qatori `MeStudentId` bilan, maktab o'rni (top 15 dan tashqarida bo'lsa ham) `MeSchoolRank` bilan beriladi.
+    /// Parent farzandi nomidan; admin uchun `?studentId=` shart.
+    /// </summary>
+    [HttpGet("rating")]
+    public async Task<ActionResult<PortalRatingDto>> Rating([FromQuery] string? studentId)
+    {
+        if (User.IsInRole("admin") && string.IsNullOrWhiteSpace(studentId)) return NeedStudentId();
+        var s = await TargetAsync(studentId);
+        if (s is null) return NotFound();
+
+        // O'rtacha baho bo'yicha kamayish tartibida — adminnikidek (index = o'rin).
+        var school = (await RatingService.SchoolAsync(db))
+            .OrderByDescending(r => r.Average)
+            .ToList();
+
+        static PortalRatingRowDto Map(StudentRatingRowDto r, int i) =>
+            new(i + 1, r.Student.Id, r.Student.FullName, r.ClassName, r.Average, r.Attendance);
+
+        var classRows = school
+            .Where(r => r.ClassName == s.ClassName)
+            .Select(Map).ToList();                       // o'z sinfi — to'liq
+        var schoolRows = school.Take(15).Select(Map).ToList(); // maktab — top 15
+
+        var meIdx = school.FindIndex(r => r.Student.Id == s.Id);
+        int? meSchoolRank = meIdx >= 0 ? meIdx + 1 : null;
+
+        return new PortalRatingDto(s.Id, classRows, schoolRows, meSchoolRank, school.Count);
     }
 
     // ---------- Uyga vazifa va dars mavzulari (o'z sinfi) ----------
@@ -387,14 +576,15 @@ public class StudentPortalController(
 
         var profile = new StudentProfileDto(
             s.Id, s.FullName, s.ClassName, s.BirthDate, s.Gender,
-            s.ParentFullName, s.ParentPhone, s.EnrollmentDate);
-        var meta = await refCache.MetaAsync();
+            s.ParentFullName, s.ParentPhone, s.EnrollmentDate,
+            s.BirthCertificateUrl, s.ParentPassportUrl);
+        var meta = await refCache.MetaAsync(tenant.TenantId ?? "");
 
         var cls = await db.Classes.FirstOrDefaultAsync(c => c.Name == s.ClassName);
 
         // Bugungi darslar (joriy chorak + joriy hafta, kun = today.DayOfWeek 0=Du..5=Sha).
-        var today = DateOnly.FromDateTime(DateTime.Now).ToString("yyyy-MM-dd");
-        var apiDay = ((int)DateTime.Now.DayOfWeek + 6) % 7; // C# Sun=0..Sat=6 → Mon=0..Sun=6 (sun=6=ignore)
+        var today = AppClock.Today.ToString("yyyy-MM-dd");
+        var apiDay = ((int)AppClock.Now.DayOfWeek + 6) % 7; // C# Sun=0..Sat=6 → Mon=0..Sun=6 (sun=6=ignore)
 
         var todayLessons = new List<StudentLessonDto>();
         var todayGrades = new List<HomeworkItemDto>();
@@ -503,7 +693,7 @@ public class StudentPortalController(
         if (!string.IsNullOrWhiteSpace(req.Language)) st.Language = req.Language!.Trim();
         if (!string.IsNullOrWhiteSpace(req.Theme)) st.Theme = req.Theme!.Trim();
         if (req.NotificationsEnabled.HasValue) st.NotificationsEnabled = req.NotificationsEnabled.Value;
-        st.UpdatedAt = DateTime.UtcNow;
+        st.UpdatedAt = AppClock.Now;
         await db.SaveChangesAsync();
         return new UserSettingsDto(st.Language, st.Theme, st.NotificationsEnabled);
     }
@@ -511,23 +701,34 @@ public class StudentPortalController(
     // ---------- Joylashuv (GPS) ----------
 
     /// <summary>
-    /// O'quvchi o'z uy joylashuvini yangilash — mobil ilova GPS dan keladi (latitude/longitude,
-    /// ixtiyoriy address). Faqat student rolida (admin impersonate emas).
+    /// Uy joylashuvini yangilash — mobil ilova GPS dan keladi (latitude/longitude, ixtiyoriy address).
+    /// Ilova foydalanuvchisi (o'quvchi/ota-ona — bitta akkaunt) o'z joylashuvini kiritadi (admin impersonate emas).
+    /// Saqlangan joylashuv admin "Ilova → Joylashuv" xaritasida (Leaflet) ko'rinadi.
     /// </summary>
     [HttpPut("location")]
-    [Authorize(Roles = "student")]
+    [Authorize(Roles = "student,parent")]
     public async Task<ActionResult> UpdateLocation(UpdateLocationRequest req)
     {
-        var s = await MeAsync();
+        var s = await TargetAsync(null);   // akkauntga bog'langan o'quvchi
         if (s is null) return NotFound();
         if (req.Latitude is < -90 or > 90 || req.Longitude is < -180 or > 180)
             return BadRequest(new { message = "Koordinatalar noto'g'ri" });
         s.Latitude = req.Latitude;
         s.Longitude = req.Longitude;
         s.LocationAddress = (req.Address ?? "").Trim();
-        s.LocationUpdatedAt = DateTime.Now.ToString("yyyy-MM-ddTHH:mm:ss");
+        s.LocationUpdatedAt = AppClock.Now.ToString("yyyy-MM-ddTHH:mm:ss");
         await db.SaveChangesAsync();
         return Ok(new { ok = true });
+    }
+
+    /// <summary>Joriy saqlangan joylashuvni o'qish (ilova xaritada ko'rsatishi uchun). Hali yo'q bo'lsa null'lar.</summary>
+    [HttpGet("location")]
+    public async Task<ActionResult<StudentLocationDto>> GetLocation([FromQuery] string? studentId)
+    {
+        if (User.IsInRole("admin") && string.IsNullOrWhiteSpace(studentId)) return NeedStudentId();
+        var s = await TargetAsync(studentId);
+        if (s is null) return NotFound();
+        return new StudentLocationDto(s.Latitude, s.Longitude, s.LocationAddress, s.LocationUpdatedAt);
     }
 
     // ---------- Push bildirishnoma (qurilma tokeni) ----------
@@ -545,6 +746,8 @@ public class StudentPortalController(
         var token = req.Token?.Trim();
         if (string.IsNullOrWhiteSpace(token)) return BadRequest(new { message = "Token bo'sh" });
         var platform = string.IsNullOrWhiteSpace(req.Platform) ? "android" : req.Platform!.Trim().ToLowerInvariant();
+        var deviceName = (req.DeviceName ?? "").Trim();
+        var appId = (req.AppId ?? "").Trim();
 
         var existing = await db.DeviceTokens.FirstOrDefaultAsync(d => d.Token == token);
         if (existing is null)
@@ -554,13 +757,17 @@ public class StudentPortalController(
                 UserId = uid,
                 Token = token,
                 Platform = platform,
+                DeviceName = deviceName,
+                AppId = appId,
             });
         }
         else
         {
             existing.UserId = uid;
             existing.Platform = platform;
-            existing.LastSeenAt = DateTime.UtcNow;
+            if (deviceName.Length > 0) existing.DeviceName = deviceName;
+            if (appId.Length > 0) existing.AppId = appId;
+            existing.LastSeenAt = AppClock.Now;
         }
         await db.SaveChangesAsync();
         return Ok(new { ok = true });

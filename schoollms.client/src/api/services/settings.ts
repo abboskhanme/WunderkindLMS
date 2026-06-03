@@ -80,6 +80,8 @@ export async function saveSchoolInfo(info: SchoolInfo): Promise<void> {
 export interface TelegramConfig {
   botToken: string
   botUsername: string
+  /** Bot ko'rsatiladigan nomi (masalan "Maktab LMS Bot") */
+  botName: string
   /** Token bo'sh emasligini bildiradi (bot ishlashga tayyor) */
   configured: boolean
 }
@@ -87,7 +89,7 @@ export interface TelegramConfig {
 export async function getTelegramSettings(): Promise<TelegramConfig> {
   if (USE_MOCK) {
     await delay()
-    return { botToken: '', botUsername: '', configured: false }
+    return { botToken: '', botUsername: '', botName: '', configured: false }
   }
   const { data } = await api.get<TelegramConfig>('/admin/settings/telegram')
   return data
@@ -96,12 +98,40 @@ export async function getTelegramSettings(): Promise<TelegramConfig> {
 export async function saveTelegramSettings(cfg: {
   botToken: string
   botUsername: string
+  botName: string
 }): Promise<TelegramConfig> {
   if (USE_MOCK) {
     await delay(250)
     return { ...cfg, configured: !!cfg.botToken.trim() }
   }
   const { data } = await api.put<TelegramConfig>('/admin/settings/telegram', cfg)
+  return data
+}
+
+/* ---------- Push (Firebase / FCM) sozlamasi ---------- */
+
+export interface FirebaseConfig {
+  /** Firebase service account (JSON, to'liq) */
+  serviceAccountJson: string
+  /** JSON to'g'ri kiritilgan (push yuborishga tayyor) */
+  configured: boolean
+}
+
+export async function getFirebaseSettings(): Promise<FirebaseConfig> {
+  if (USE_MOCK) {
+    await delay()
+    return { serviceAccountJson: '', configured: false }
+  }
+  const { data } = await api.get<FirebaseConfig>('/admin/settings/firebase')
+  return data
+}
+
+export async function saveFirebaseSettings(serviceAccountJson: string): Promise<FirebaseConfig> {
+  if (USE_MOCK) {
+    await delay(250)
+    return { serviceAccountJson, configured: !!serviceAccountJson.trim() }
+  }
+  const { data } = await api.put<FirebaseConfig>('/admin/settings/firebase', { serviceAccountJson })
   return data
 }
 

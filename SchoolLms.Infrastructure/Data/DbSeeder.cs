@@ -1,51 +1,43 @@
 using SchoolLms.Infrastructure.Auth;
 using SchoolLms.Domain;
+using SchoolLms.Domain.Platform;
 
 namespace SchoolLms.Infrastructure.Data;
 
 /// <summary>
-/// Bo'sh bazaga FAQAT bitta tizim egasi (superadmin) akkauntini yuklaydi.
-/// Qolgan barcha ma'lumotlar (o'quvchi, o'qituvchi, sinf, fan, lead, moliya,
-/// jadval, jurnal, sozlamalar) tizim ichidan qo'lda kiritiladi.
+/// Boot'da bo'sh shared-bazaga bitta default Control Plane egasini (loyiha boshlig'i) yuklaydi.
+/// Maktablar (tenant) va ularning superadminlari ProvisioningService orqali yaratiladi.
 /// </summary>
 public static class DbSeeder
 {
-    public static void Seed(AppDbContext db)
+    /// <summary>
+    /// Default platform owner (agar hech biri bo'lmasa) yaratadi. Parol koddan EMAS — chaqiruvchi
+    /// bergan <paramref name="configuredPassword"/> (env/config) dan olinadi; berilmasa kuchli
+    /// tasodifiy parol generatsiya qilinadi. Yangi yaratilgan bo'lsa — ishlatilgan ochiq parolni
+    /// qaytaradi (operator bir marta log'dan oladi); allaqachon mavjud bo'lsa null.
+    /// </summary>
+    public static string? SeedPlatformOwner(AppDbContext db, string? configuredPassword = null)
     {
-        if (!db.Users.Any())
-        {
-            db.Users.Add(new AppUser
-            {
-                Id = "a1",
-                FullName = "Administrator",
-                Role = Roles.SuperAdmin,
-                Email = "admin@maktab.uz",
-                PasswordHash = PasswordHasher.Hash("admin123"),
-            });
-        }
-        else if (!db.Users.Any(u => u.Role == Roles.SuperAdmin))
-        {
-            // Eski bazada superadmin yo'q — seed admin (Id="a1") ni yoki shunday topilmasa
-            // birinchi "admin" rolli foydalanuvchini superadmin'ga ko'taramiz. Shu bilan tizim
-            // egasi tiklanadi va u guruhlash kabi muzlatilgan amallarni override qila oladi.
-            var promote = db.Users.FirstOrDefault(u => u.Id == "a1")
-                          ?? db.Users.FirstOrDefault(u => u.Role == Roles.Admin);
-            if (promote is not null) promote.Role = Roles.SuperAdmin;
-        }
+        if (db.Owners.Any()) return null;
 
-        // Joriy o'quv yili (singleton) — mavjud bazaga ham qo'shiladi (idempotent).
-        if (!db.SchoolMeta.Any())
-        {
-            db.SchoolMeta.Add(new SchoolMeta { Id = "current", CurrentYear = DefaultYear() });
-        }
+        var password = string.IsNullOrWhiteSpace(configuredPassword)
+            ? AccountFactory.GeneratePassword(16)
+            : configuredPassword.Trim();
 
+        db.Owners.Add(new PlatformOwner
+        {
+            FullName = "Loyiha boshlig'i",
+            Email = "owner@schoollms.uz",
+            PasswordHash = PasswordHasher.Hash(password),
+        });
         db.SaveChanges();
+        return password;
     }
 
-    /// <summary>Joriy sanaga qarab o'quv yili: sentabrdan boshlab yangi yil.</summary>
-    private static string DefaultYear()
+    /// <summary>Joriy o'quv yili: sentabrdan boshlab yangi yil.</summary>
+    public static string DefaultYear()
     {
-        var now = DateTime.Now;
+        var now = AppClock.Now;
         var start = now.Month >= 9 ? now.Year : now.Year - 1;
         return $"{start}/{start + 1}";
     }

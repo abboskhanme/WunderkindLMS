@@ -3,6 +3,7 @@ import { Outlet } from 'react-router-dom'
 import { UnreadProvider } from '@/context/unread-context'
 import { Sidebar } from './Sidebar'
 import { Topbar } from './Topbar'
+import { CommandPalette } from './CommandPalette'
 
 export function AppLayout() {
   // Desktopda ochiq, mobil ekranda yopiq holatda boshlanadi
@@ -16,6 +17,7 @@ export function AppLayout() {
 
   return (
     <UnreadProvider>
+      <CommandPalette />
       <div className="flex h-screen overflow-hidden">
         {/* Mobil uchun fon (orqa qoplama) */}
         {open && (

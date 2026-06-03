@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Plus, Search, Eye, Pencil, Trash2, Archive, RotateCcw } from 'lucide-react'
+import { Plus, Search, Eye, Pencil, Trash2, Archive, RotateCcw, Download } from 'lucide-react'
 import type { Gender, SchoolClass, Subject, Teacher } from '@/types'
 import type { TeacherPayload } from '@/api/services/teachers'
 import {
@@ -10,7 +10,9 @@ import {
   deleteTeacher,
   archiveTeacher,
   restoreTeacher,
+  downloadTeacherCredentials,
 } from '@/api/services/teachers'
+import { useAuth } from '@/context/auth-context'
 import { getSubjects } from '@/api/services/subjects'
 import { getClasses } from '@/api/services/classes'
 import { genderLabels } from '@/config/constants'
@@ -29,6 +31,7 @@ const control =
 type Tab = 'active' | 'archived'
 
 export function TeachersPage() {
+  const { user } = useAuth()
   const [teachers, setTeachers] = useState<Teacher[]>([])
   const [archived, setArchived] = useState<Teacher[]>([])
   const [subjects, setSubjects] = useState<Subject[]>([])
@@ -125,16 +128,25 @@ export function TeachersPage() {
             Faol {teachers.length} ta · Arxivda {archived.length} ta
           </p>
         </div>
-        {tab === 'active' && (
-          <Button
-            onClick={() => {
-              setEditing(null)
-              setFormOpen(true)
-            }}
-          >
-            <Plus className="h-4 w-4" /> Yangi qo'shish
-          </Button>
-        )}
+        <div className="flex items-center gap-2">
+          {/* Faqat superadmin: o'qituvchilarni login/parol bilan Excel'ga yuklab olish.
+              Parol faqat o'qituvchi hali kirmagan bo'lsa ko'rinadi. */}
+          {user?.role === 'superadmin' && (
+            <Button variant="secondary" onClick={() => downloadTeacherCredentials()}>
+              <Download className="h-4 w-4" /> Login/parollar
+            </Button>
+          )}
+          {tab === 'active' && (
+            <Button
+              onClick={() => {
+                setEditing(null)
+                setFormOpen(true)
+              }}
+            >
+              <Plus className="h-4 w-4" /> Yangi qo'shish
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* Faol | Arxiv toggle */}

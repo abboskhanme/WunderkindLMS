@@ -44,6 +44,7 @@ public class TeachersController(AppDbContext db, AuditService audit) : Controlle
             Address = p.Address,
             Gender = p.Gender,
             Phone = p.Phone ?? "",
+            PhotoUrl = p.PhotoUrl,
             HomeroomClass = p.HomeroomClass,
             SubjectIds = p.SubjectIds ?? new(),
             Salary = p.Salary,
@@ -83,6 +84,7 @@ public class TeachersController(AppDbContext db, AuditService audit) : Controlle
         teacher.Address = p.Address;
         teacher.Gender = p.Gender;
         teacher.Phone = p.Phone ?? "";
+        teacher.PhotoUrl = p.PhotoUrl;
         teacher.HomeroomClass = p.HomeroomClass;
         teacher.SubjectIds = p.SubjectIds ?? new();
         teacher.Salary = p.Salary;
@@ -99,7 +101,7 @@ public class TeachersController(AppDbContext db, AuditService audit) : Controlle
             // Akkaunt yo'q bo'lsa — yaratib biriktiramiz.
             user ??= AccountFactory.CreateAccountFor(db, "teacher", teacher.FullName);
             teacher.UserId = user.Id;
-            user.PasswordHash = PasswordHasher.Hash(pwd);
+            user.SetInitialPassword(pwd);
         }
         if (user is not null) user.FullName = teacher.FullName;
 
@@ -151,14 +153,14 @@ public class TeachersController(AppDbContext db, AuditService audit) : Controlle
         if (teacher.IsArchived) return BadRequest(new { message = "O'qituvchi allaqachon arxivda" });
 
         teacher.IsArchived = true;
-        teacher.ArchivedAt = DateOnly.FromDateTime(DateTime.Now).ToString("yyyy-MM-dd");
+        teacher.ArchivedAt = AppClock.Today.ToString("yyyy-MM-dd");
         teacher.ArchiveReason = (req.Reason ?? "").Trim();
 
         // Login bloklash — PasswordHash bo'shaltiriladi (login imkonsiz bo'ladi).
         if (teacher.UserId is not null)
         {
             var user = await db.Users.FindAsync(teacher.UserId);
-            if (user is not null) user.PasswordHash = "";
+            if (user is not null) user.BlockLogin();
         }
 
         audit.Record(AuditService.EntityTeacherSalary, teacher.Id, "update",
@@ -192,7 +194,7 @@ public class TeachersController(AppDbContext db, AuditService audit) : Controlle
             var user = teacher.UserId is null ? null : await db.Users.FindAsync(teacher.UserId);
             user ??= AccountFactory.CreateAccountFor(db, "teacher", teacher.FullName);
             teacher.UserId = user.Id;
-            user.PasswordHash = PasswordHasher.Hash(newPwd);
+            user.SetInitialPassword(newPwd);
         }
 
         audit.Record(AuditService.EntityTeacherSalary, teacher.Id, "update",
@@ -217,8 +219,8 @@ public class TeachersController(AppDbContext db, AuditService audit) : Controlle
             await db.SaveChangesAsync();
         }
 
-        // Parol xavfsizlik uchun saqlanmaydi — bo'sh qaytadi. Ko'rsatish kerak bo'lsa reset-password.
-        return new CredentialsDto(user.Email, "", user.Role);
+        // O'qituvchi hali kirmagan bo'lsa dastlabki parol ko'rinadi; kirgach bo'sh (faqat reset-password).
+        return new CredentialsDto(user.Email, user.InitialPassword ?? "", user.Role);
     }
 
     /// <summary>O'qituvchiga yangi tasodifiy parol generatsiya qiladi va BIR MARTA qaytaradi
@@ -240,6 +242,37 @@ public class TeachersController(AppDbContext db, AuditService audit) : Controlle
         return new CredentialsDto(user.Email, pwd, user.Role);
     }
 
+    /// <summary>
+    /// Barcha (faol) o'qituvchilarni login/parol bilan Excel (.xlsx) ga eksport qiladi.
+    /// Parol FAQAT o'qituvchi hali kirmagan bo'lsa ko'rinadi (kirgach bo'sh). Faqat superadmin.
+    /// Ustunlar: F.I.SH., Telefon, Sinf rahbarligi, Login, Parol.
+    /// </summary>
+    [HttpGet("export")]
+    [Authorize(Roles = Roles.SuperAdmin)]
+    public async Task<IActionResult> Export()
+    {
+        var teachers = await db.Teachers.Where(t => !t.IsArchived)
+            .OrderBy(t => t.FullName).ToListAsync();
+        var userIds = teachers.Where(t => t.UserId != null).Select(t => t.UserId!).ToList();
+        var byId = (await db.Users.Where(u => userIds.Contains(u.Id)).ToListAsync())
+            .ToDictionary(u => u.Id);
+
+        var headers = new[] { "F.I.SH.", "Telefon", "Sinf rahbarligi", "Login", "Parol" };
+        var rows = teachers.Select(t =>
+        {
+            byId.TryGetValue(t.UserId ?? "", out var u);
+            return (IReadOnlyList<string>)new[]
+            {
+                t.FullName, t.Phone, t.HomeroomClass, u?.Email ?? "", u?.InitialPassword ?? "",
+            };
+        });
+
+        var bytes = ExcelExport.Build("O'qituvchilar", headers, rows);
+        return File(bytes,
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            $"oqituvchilar_{AppClock.Now:yyyy-MM-dd}.xlsx");
+    }
+
     /// <summary>O'qituvchiga maosh berish — moliyaga chiqim (salary) sifatida yoziladi.</summary>
     [HttpPost("{id}/salary-payments")]
     public async Task<IActionResult> PaySalary(string id, SalaryPaymentRequest req)
@@ -247,9 +280,12 @@ public class TeachersController(AppDbContext db, AuditService audit) : Controlle
         var teacher = await db.Teachers.FindAsync(id);
         if (teacher is null) return NotFound();
 
+        if (req.Amount <= 0)
+            return BadRequest(new { message = "Maosh summasi musbat bo'lishi kerak" });
+
         var tx = new FinanceTransaction
         {
-            Date = DateOnly.FromDateTime(DateTime.Now).ToString("yyyy-MM-dd"),
+            Date = AppClock.Today.ToString("yyyy-MM-dd"),
             Direction = "expense",
             Category = "salary",
             Amount = req.Amount,

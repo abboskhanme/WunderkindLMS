@@ -48,6 +48,9 @@ public class FinanceController(AppDbContext db, AuditService audit) : Controller
     [HttpPost("transactions")]
     public async Task<ActionResult<FinanceTransactionDto>> Create(FinanceTransactionPayload p)
     {
+        if (p.Amount <= 0)
+            return BadRequest(new { message = "Summa musbat bo'lishi kerak" });
+
         var tx = new FinanceTransaction
         {
             Date = p.Date,
@@ -76,6 +79,9 @@ public class FinanceController(AppDbContext db, AuditService audit) : Controller
     {
         var tx = await db.FinanceTransactions.FindAsync(id);
         if (tx is null) return NotFound();
+
+        if (p.Amount <= 0)
+            return BadRequest(new { message = "Summa musbat bo'lishi kerak" });
 
         var before = AuditService.Snapshot(tx);
         var changes = new List<string>();
@@ -109,7 +115,7 @@ public class FinanceController(AppDbContext db, AuditService audit) : Controller
     public async Task<ActionResult<IEnumerable<SalaryReportRowDto>>> SalaryReport(
         [FromQuery] string? from, [FromQuery] string? to)
     {
-        var fromMonth = string.IsNullOrEmpty(from) ? $"{DateTime.Now.Year:D4}-01" : from[..7];
+        var fromMonth = string.IsNullOrEmpty(from) ? $"{AppClock.Now.Year:D4}-01" : from[..7];
         var toMonth = string.IsNullOrEmpty(to) ? TuitionService.CurrentMonth() : to[..7];
 
         var paid = await db.FinanceTransactions
@@ -246,7 +252,7 @@ public class FinanceController(AppDbContext db, AuditService audit) : Controller
     [HttpGet("monthly")]
     public async Task<ActionResult<IEnumerable<FinanceMonthlyDto>>> Monthly([FromQuery] int? year)
     {
-        var y = year ?? DateTime.Now.Year;
+        var y = year ?? AppClock.Now.Year;
         var prefix = y.ToString("D4") + "-";
         var txs = await db.FinanceTransactions
             .Where(t => t.Date.StartsWith(prefix))

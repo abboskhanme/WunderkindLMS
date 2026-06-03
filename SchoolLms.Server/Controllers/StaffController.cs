@@ -12,7 +12,7 @@ namespace SchoolLms.Server.Controllers;
 /// Xodimlar — o'qituvchi BO'LMAGAN ishchilar (kassir, administrator, ...). Har biriga admin
 /// paneliga kiruvchi tizim akkaunti (role="staff") generatsiya qilinadi. Qaysi bo'limlarni
 /// ko'rishi <see cref="AppUser.Permissions"/> bilan boshqariladi — uni FAQAT superadmin
-/// (Rollar bo'limi / <see cref="SetPermissions"/>) o'zgartiradi.
+/// ("Xodimlar va rollar" bo'limi / <see cref="SetPermissions"/>) o'zgartiradi.
 /// </summary>
 [ApiController]
 [Authorize(Roles = "admin,superadmin")]
@@ -38,7 +38,7 @@ public class StaffController(AppDbContext db) : ControllerBase
         {
             if (p.NewPassword.Trim().Length < MinPasswordLength)
                 return BadRequest(new { message = WeakPasswordMessage });
-            user.PasswordHash = PasswordHasher.Hash(p.NewPassword.Trim());
+            user.SetInitialPassword(p.NewPassword.Trim());
         }
         await db.SaveChangesAsync();
         return ToDto(user);
@@ -55,7 +55,7 @@ public class StaffController(AppDbContext db) : ControllerBase
         {
             if (p.NewPassword.Trim().Length < MinPasswordLength)
                 return BadRequest(new { message = WeakPasswordMessage });
-            user.PasswordHash = PasswordHasher.Hash(p.NewPassword.Trim());
+            user.SetInitialPassword(p.NewPassword.Trim());
         }
         await db.SaveChangesAsync();
         return ToDto(user);
@@ -78,7 +78,7 @@ public class StaffController(AppDbContext db) : ControllerBase
     {
         var user = await db.Users.FindAsync(id);
         if (user is null || user.Role != Roles.Staff) return NotFound();
-        return new CredentialsDto(user.Email, "", user.Role);
+        return new CredentialsDto(user.Email, user.InitialPassword ?? "", user.Role);
     }
 
     /// <summary>Xodimga yangi tasodifiy parol generatsiya qiladi va uni BIR MARTA qaytaradi
@@ -89,7 +89,7 @@ public class StaffController(AppDbContext db) : ControllerBase
         var user = await db.Users.FindAsync(id);
         if (user is null || user.Role != Roles.Staff) return NotFound();
         var pwd = AccountFactory.GeneratePassword();
-        user.PasswordHash = PasswordHasher.Hash(pwd);
+        user.SetInitialPassword(pwd);
         await db.SaveChangesAsync();
         return new CredentialsDto(user.Email, pwd, user.Role);
     }

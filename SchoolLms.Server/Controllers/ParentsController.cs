@@ -30,16 +30,26 @@ public class ParentsController(AppDbContext db) : ControllerBase
         var users = await db.Users.Where(u => userIds.Contains(u.Id))
             .ToDictionaryAsync(u => u.Id, u => u);
 
+        // Har foydalanuvchining oxirgi faol qurilmasi (push token).
+        var latestDevice = (await db.DeviceTokens.Where(d => userIds.Contains(d.UserId)).ToListAsync())
+            .GroupBy(d => d.UserId)
+            .ToDictionary(g => g.Key, g => g.OrderByDescending(x => x.LastSeenAt).First());
+
         ParentChildDto ChildOf(Student s)
         {
             string? firstLogin = null;
             string? lastLogin = null;
+            var devName = ""; var platform = ""; var appId = "";
             if (s.UserId is not null && users.TryGetValue(s.UserId, out var u))
             {
                 firstLogin = u.FirstLoginAt;
                 lastLogin = u.LastLoginAt;
             }
-            return new ParentChildDto(s.Id, s.FullName, s.ClassName, firstLogin, lastLogin);
+            if (s.UserId is not null && latestDevice.TryGetValue(s.UserId, out var d))
+            {
+                devName = d.DeviceName; platform = d.Platform; appId = d.AppId;
+            }
+            return new ParentChildDto(s.Id, s.FullName, s.ClassName, firstLogin, lastLogin, devName, platform, appId);
         }
 
         // Guruhlash kaliti: telefon (raqamlar normallashtirilgan) yoki nom (telefon bo'sh bo'lsa).
@@ -60,6 +70,10 @@ public class ParentsController(AppDbContext db) : ControllerBase
                 var lastLogins = children.Where(c => c.LastLoginAt != null).Select(c => c.LastLoginAt!).ToList();
                 var activatedAt = firstLogins.Count > 0 ? firstLogins.Min(StringComparer.Ordinal) : null;
                 var lastSeenAt = lastLogins.Count > 0 ? lastLogins.Max(StringComparer.Ordinal) : null;
+                // Oxirgi faol qurilma (farzandlar bo'yicha).
+                var dev = g.Where(s => s.UserId != null && latestDevice.ContainsKey(s.UserId!))
+                    .Select(s => latestDevice[s.UserId!])
+                    .OrderByDescending(d => d.LastSeenAt).FirstOrDefault();
                 return new ParentRowDto(
                     first.ParentFullName ?? "",
                     first.ParentPhone ?? "",
@@ -67,7 +81,9 @@ public class ParentsController(AppDbContext db) : ControllerBase
                     activatedAt != null,
                     activatedAt,
                     lastSeenAt,
-                    children);
+                    children,
+                    dev?.DeviceName ?? "",
+                    dev?.Platform ?? "");
             })
             // Oxirgi kirgani eng yangi bo'lganlari yuqorida.
             .OrderByDescending(p => p.LastSeenAt, StringComparer.Ordinal)

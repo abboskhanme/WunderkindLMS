@@ -15,7 +15,7 @@ public static class SalaryLedger
     public static async Task<SalaryLedgerDto> BuildAsync(
         IAppDbContext db, Teacher teacher, string? from, string? to)
     {
-        var fromMonth = string.IsNullOrEmpty(from) ? $"{DateTime.Now.Year:D4}-01" : from[..7];
+        var fromMonth = string.IsNullOrEmpty(from) ? $"{AppClock.Now.Year:D4}-01" : from[..7];
         var toMonth = string.IsNullOrEmpty(to) ? TuitionService.CurrentMonth() : to[..7];
 
         // Oylik o'qituvchi boshlagan oydan hisoblanadi — undan oldingi oylar uchun qarz yozilmaydi.

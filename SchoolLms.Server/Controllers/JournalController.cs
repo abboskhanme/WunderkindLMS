@@ -10,7 +10,7 @@ namespace SchoolLms.Server.Controllers;
 [ApiController]
 [Authorize(Roles = "admin,superadmin")]
 [Route("api/admin/journal")]
-public class JournalController(AppDbContext db) : ControllerBase
+public class JournalController(AppDbContext db, FcmService fcm) : ControllerBase
 {
     /// <summary>Fanning chorakdagi darslari (sana + dars raqami). Bir kunda bir fan bir necha marta bo'lishi mumkin.</summary>
     [HttpGet("columns")]
@@ -42,7 +42,7 @@ public class JournalController(AppDbContext db) : ControllerBase
     [HttpPut]
     public async Task<IActionResult> SetEntry(SetJournalEntryRequest req)
     {
-        await JournalService.SetEntryAsync(db, req);
+        await JournalService.SetEntryAsync(db, req, fcm);
         return NoContent();
     }
 

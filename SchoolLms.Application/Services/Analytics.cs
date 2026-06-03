@@ -35,10 +35,10 @@ public static class Analytics
         var students = allStudents.Where(s => s.ClassName == cls.Name).ToList();
 
         // Davomat FAQAT o'tilgan darslar bo'yicha (ptichka/baho/davomat). Bir kun ichidagi har dars
-        // (sana+dars raqami) alohida hisoblanadi.
-        var conductedSet = classNotes.Where(n => n.Conducted)
-            .Select(n => (n.SubjectId, n.Date, n.Period)).ToHashSet();
-        var conducted = conductedSet.Count;
+        // (sana+dars raqami) alohida hisoblanadi. SubGroup saqlanadi — bo'lingan darslarda har
+        // o'quvchi faqat o'z guruhi (yoki butun sinf, SubGroup=0) darslari bo'yicha baholanadi.
+        var conductedNotes = classNotes.Where(n => n.Conducted)
+            .Select(n => (n.SubjectId, n.Date, n.Period, n.SubGroup)).ToHashSet();
 
         var fromSchedule = classTemplates.SelectMany(t => t.Lessons).Select(l => l.SubjectId).Distinct().ToList();
         var subjectIds = fromSchedule.Count > 0 ? fromSchedule : allSubjects.Select(s => s.Id).ToList();
@@ -94,11 +94,19 @@ public static class Analytics
                 average = allGrades.Count > 0 ? Round1(allGrades.Average()) : 0;
             }
 
+            // Shu o'quvchi qatnashadigan o'tilgan darslar: butun sinf (SubGroup=0) YOKI o'quvchining
+            // o'z guruhi. Boshqa guruh darslari maxrajga (va davomatsizlikka) kirmaydi.
+            var studentConducted = conductedNotes
+                .Where(c => c.SubGroup == 0 || c.SubGroup == student.SubGroup)
+                .Select(c => (c.SubjectId, c.Date, c.Period))
+                .ToHashSet();
+            var conducted = studentConducted.Count;
+
             // O'tilgan darslardagi davomatsizliklar (sababli/sababsiz/kasal — KECH KELDI bundan mustasno).
             // Dars o'tilmagan bo'lsa — null.
             var absent = studentEntries.Count(e =>
                 e.ReasonId != null && !lateSet.Contains(e.ReasonId)
-                && conductedSet.Contains((e.SubjectId, e.Date, e.Period)));
+                && studentConducted.Contains((e.SubjectId, e.Date, e.Period)));
             double? attendance = conducted > 0 ? Math.Round((double)(conducted - absent) / conducted * 100) : null;
 
             return new ClassStudentRowDto(Map(student), grades, average, attendance);

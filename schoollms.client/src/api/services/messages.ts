@@ -3,6 +3,8 @@ import type {
   Broadcast,
   ChatMessage,
   MessageClass,
+  PushMessage,
+  PushRecipient,
   TelegramParent,
   TelegramStatus,
 } from '@/types'
@@ -43,9 +45,22 @@ export async function getBroadcasts(className?: string): Promise<Broadcast[]> {
   return data
 }
 
-/** Sinf ota-onalariga Telegram bot orqali e'lon yuborish */
-export async function sendBroadcast(className: string, text: string): Promise<Broadcast> {
-  const { data } = await api.post<Broadcast>('/admin/messages/broadcast', { className, text })
+/** E'lon yuborish so'rovi. Matnda o'rinbosarlar: {fish} {sinf} {qarzdorlik} {balans} {ota-ona} {telefon}. */
+export interface SendBroadcastReq {
+  /** Qamrov: tanlangan sinf / barcha sinf / tanlangan o'quvchilar */
+  scope: 'class' | 'all' | 'selected'
+  /** scope === 'class' bo'lganda sinf nomi */
+  className?: string
+  /** Faqat balansi manfiy (qarzdor) o'quvchilar */
+  onlyDebtors: boolean
+  /** scope === 'selected' bo'lganda tanlangan o'quvchi id'lari */
+  studentIds?: string[]
+  text: string
+}
+
+/** Ota-onalarga Telegram bot orqali e'lon yuborish (har o'quvchiga moslab) */
+export async function sendBroadcast(req: SendBroadcastReq): Promise<Broadcast> {
+  const { data } = await api.post<Broadcast>('/admin/messages/broadcast', req)
   return data
 }
 
@@ -62,6 +77,46 @@ export async function getTelegramRegistrations(className?: string): Promise<Tele
 export async function getTelegramStatus(): Promise<TelegramStatus> {
   if (USE_MOCK) return { configured: false, botUsername: '' }
   const { data } = await api.get<TelegramStatus>('/admin/messages/telegram/status')
+  return data
+}
+
+/* ---------- Push (Firebase / FCM) ---------- */
+
+export interface SendPushReq {
+  /** Kimga: ota-onalar / o'qituvchilar / tanlangan (custom) */
+  audience: 'parents' | 'teachers' | 'selected'
+  /** parents uchun sinf (bo'sh = barcha sinf) */
+  className?: string
+  /** selected uchun tanlangan akkaunt id'lari */
+  userIds?: string[]
+  title: string
+  body: string
+}
+
+/** Firebase push sozlanganmi (service account bormi) */
+export async function getPushStatus(): Promise<{ configured: boolean }> {
+  if (USE_MOCK) return { configured: false }
+  const { data } = await api.get<{ configured: boolean }>('/admin/messages/push/status')
+  return data
+}
+
+/** "Tanlab" push uchun oluvchilar ro'yxati (ota-onalar + o'qituvchilar) */
+export async function getPushRecipients(): Promise<PushRecipient[]> {
+  if (USE_MOCK) return []
+  const { data } = await api.get<PushRecipient[]>('/admin/messages/push/recipients')
+  return data
+}
+
+/** Yuborilgan push tarixi */
+export async function getPushMessages(): Promise<PushMessage[]> {
+  if (USE_MOCK) return []
+  const { data } = await api.get<PushMessage[]>('/admin/messages/push')
+  return data
+}
+
+/** Ilovaga push yuborish */
+export async function sendPush(req: SendPushReq): Promise<PushMessage> {
+  const { data } = await api.post<PushMessage>('/admin/messages/push/send', req)
   return data
 }
 

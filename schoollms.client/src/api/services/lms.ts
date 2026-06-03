@@ -1,4 +1,4 @@
-import type { LmsMaterial, LmsSubject, LmsTopic, LmsUnlockMode } from '@/types'
+import type { LmsMaterial, LmsProgressReport, LmsSubject, LmsTopic, LmsUnlockMode } from '@/types'
 import { api } from '../client'
 
 /* ─── Fanlar ─────────────────────────────────────────────── */
@@ -46,6 +46,14 @@ export async function deleteLmsTopic(id: string): Promise<void> {
 
 export async function reorderLmsTopics(subjectId: string, topicIds: string[]): Promise<void> {
   await api.put(`/admin/lms/subjects/${subjectId}/topics/reorder`, { topicIds })
+}
+
+/* ─── O'quvchilar progressi ──────────────────────────────── */
+
+/** Sinf o'quvchilari × mavzular progress matritsasi (kim qaysi mavzuni tugatgan). */
+export async function getLmsProgress(subjectId: string): Promise<LmsProgressReport> {
+  const { data } = await api.get<LmsProgressReport>(`/admin/lms/subjects/${subjectId}/progress`)
+  return data
 }
 
 /* ─── Fayl yuklash ───────────────────────────────────────── */

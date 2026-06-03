@@ -56,9 +56,16 @@ export function AttendancePage() {
 
   useEffect(() => {
     if (!classId) return
+    // Poyga (race) himoyasi: tez almashtirilganda faqat eng oxirgi so'rov javobi qabul qilinadi.
+    let active = true
     // eslint-disable-next-line react-hooks/set-state-in-effect -- yangi so'rovdan oldin holatni tozalaymiz (maqsadli)
     setData(null)
-    getDailyAttendance(classId, date).then(setData)
+    getDailyAttendance(classId, date).then((d) => {
+      if (active) setData(d)
+    })
+    return () => {
+      active = false
+    }
   }, [classId, date])
 
   const subjects = data?.subjects ?? []

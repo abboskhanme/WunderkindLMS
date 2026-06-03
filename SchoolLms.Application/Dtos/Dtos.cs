@@ -7,7 +7,10 @@ namespace SchoolLms.Application.Dtos;
 public record LoginRequest(string Email, string Password);
 public record UserDto(
     string Id, string FullName, string Role, string Email, string? AvatarUrl,
-    List<string>? Permissions = null);
+    List<string>? Permissions = null,
+    // Maktab obunasida ochilgan bo'limlar (AdminModules kalitlari). null = cheklovsiz (hamma bo'lim).
+    // Maktab admin/superadmin nav'i shu bo'yicha yashiriladi.
+    List<string>? Modules = null);
 public record LoginResponse(string Token, UserDto User);
 /// <summary>O'quvchi/o'qituvchiga biriktirilgan tizim akkaunti ma'lumotlari (admin uchun).</summary>
 public record CredentialsDto(string Login, string Password, string Role);
@@ -37,7 +40,8 @@ public record PaymentRequest(decimal Amount, string? Month);
 public record TeacherPayload(
     string FullName, string BirthDate, string Address, string Gender,
     string HomeroomClass, List<string> SubjectIds, decimal Salary, string? SalaryStartMonth,
-    string? NewPassword = null, List<string>? Permissions = null, string? Phone = null);
+    string? NewPassword = null, List<string>? Permissions = null, string? Phone = null,
+    string? PhotoUrl = null);
 public record SalaryPaymentRequest(decimal Amount, string? Note);
 public record SalaryHistoryDto(
     string TeacherId, string FullName, decimal Salary, decimal TotalPaid, List<PaymentDto> Payments);
@@ -166,6 +170,32 @@ public record StudentDto(
 
 /// <summary>O'quvchini arxivlash so'rovi — sababini saqlaydi.</summary>
 public record ArchiveStudentRequest(string Reason);
+
+/// <summary>Bayram/dam olish kuni (butun maktab). Date — "YYYY-MM-DD".</summary>
+public record HolidayDto(string Date, string Name);
+/// <summary>Bayram kunini qo'shish/yangilash so'rovi.</summary>
+public record SaveHolidayRequest(string Date, string? Name);
+
+/* ---------- Intizomiy ball ---------- */
+/// <summary>
+/// Intizomiy ball sababi (nomi + ball). <c>Kind</c>: "other" — mustaqil intizomiy sabab;
+/// "attendance" — davomat sababi (jurnalda ishlatiladi, manbai bitta).
+/// </summary>
+public record DisciplineReasonDto(string Id, string Name, int Points, string Kind);
+public record SaveDisciplineReasonRequest(string Name, int Points);
+/// <summary>Davomat sababiga ball belgilash so'rovi.</summary>
+public record SetReasonPointsRequest(int Points);
+/// <summary>Ballar nazorati qatori: o'quvchi, sinf, plus (rag'bat), minus (jazo), qoldi (100+plus−minus).</summary>
+public record DisciplineScoreRowDto(
+    string StudentId, string FullName, string ClassName, int Plus, int Minus, int Remaining);
+/// <summary>O'quvchiga ball kiritish so'rovi (sabab bo'yicha).</summary>
+public record AddDisciplinePointRequest(string StudentId, string ReasonId, string? Note);
+/// <summary>Bitta intizomiy ball yozuvi (tarix). <c>Source</c>: "manual" (qo'lda, o'chirsa bo'ladi) yoki "attendance" (jurnal davomati, faqat ko'rish).</summary>
+public record DisciplinePointDto(
+    string Id, string StudentId, string ReasonName, int Points, string Note, string CreatedAt,
+    string CreatedBy, string Source);
+/// <summary>O'quvchi/ota-ona ilovasi uchun intizomiy ball: qoldi + plus/minus + tarix (100 dan boshlanadi).</summary>
+public record StudentDisciplineDto(int Remaining, int Plus, int Minus, List<DisciplinePointDto> Items);
 /// <summary>O'quvchini arxivdan qaytarish — ixtiyoriy yangi parol (arxivlanganda parol bloklangan edi).</summary>
 public record RestoreStudentRequest(string? NewPassword);
 
@@ -201,25 +231,35 @@ public record TeacherReportDetailDto(
 
 /// <summary>O'quvchi (mobil ilova) o'z joylashuvini yangilash so'rovi — GPS dan keladi.</summary>
 public record UpdateLocationRequest(double Latitude, double Longitude, string? Address);
+/// <summary>Joriy saqlangan joylashuvni o'qish (ilova xaritada ko'rsatishi uchun). Hali yo'q bo'lsa null'lar.</summary>
+public record StudentLocationDto(double? Latitude, double? Longitude, string? Address, string? UpdatedAt);
 /// <summary>Admin xarita uchun — joylashuvi bor o'quvchi qatori.</summary>
 public record StudentLocationRowDto(
     string StudentId, string FullName, string ClassName,
     double Latitude, double Longitude, string? Address, string? UpdatedAt);
 
-/// <summary>Ota-ona bo'limidagi bitta farzand (qisqacha).</summary>
+/// <summary>Ota-ona bo'limidagi bitta farzand (qisqacha) + qurilma ma'lumoti.</summary>
 public record ParentChildDto(
     string StudentId, string FullName, string ClassName,
-    string? FirstLoginAt, string? LastLoginAt);
+    string? FirstLoginAt, string? LastLoginAt,
+    string DeviceName = "", string Platform = "", string AppId = "");
 
 /// <summary>
 /// Admin "Ota-onalar" bo'limidagi bir ota-ona qatori — telefon bo'yicha guruhlangan.
 /// IsActivated = farzandlardan kamida bittasi ilovaga kirgan (FirstLoginAt mavjud).
 /// ActivatedAt = farzandlar orasida eng erta FirstLoginAt; LastSeenAt = eng kech LastLoginAt.
+/// DeviceName/Platform = oxirgi faol qurilma (farzandlar bo'yicha).
 /// </summary>
 public record ParentRowDto(
     string FullName, string Phone, int ChildrenCount,
     bool IsActivated, string? ActivatedAt, string? LastSeenAt,
-    List<ParentChildDto> Children);
+    List<ParentChildDto> Children, string DeviceName = "", string Platform = "");
+
+/// <summary>Admin "Ilova → O'qituvchilar" bo'limidagi bir o'qituvchi qatori (ilova faolligi + qurilma).</summary>
+public record TeacherAppRowDto(
+    string TeacherId, string FullName, string Phone,
+    bool IsActivated, string? ActivatedAt, string? LastSeenAt,
+    string DeviceName, string Platform, string AppId);
 /// <summary>Sinf hisobotidagi bitta o'quvchi qatori. Studentga SubGroup ham kiradi (StudentDto orqali).</summary>
 public record ClassStudentRowDto(StudentDto Student, Dictionary<string, double> Grades, double Average, double? Attendance);
 public record ClassPerformanceDataDto(List<SubjectDto> Subjects, List<ClassStudentRowDto> Rows);
@@ -259,6 +299,21 @@ public record StudentReportDto(
     List<SubjectDto> Subjects, Dictionary<string, Dictionary<int, double>> Grades,
     StudentAttendanceDto Attendance);
 
+/// <summary>Portal reytingidagi bitta qator (o'quvchi/parent ko'rinishi — shaxsiy ma'lumotsiz: telefon/balans/manzil yo'q).</summary>
+public record PortalRatingRowDto(
+    int Rank, string StudentId, string FullName, string ClassName, double Average, double? Attendance);
+
+/// <summary>
+/// O'quvchi/parent reytingi (adminniki bilan bir xil hisob, o'rtacha baho bo'yicha): o'z sinfi TO'LIQ
+/// ranglangan, maktab bo'yicha esa faqat TOP 15. `MeStudentId` — o'z qatorini ajratish uchun;
+/// `MeSchoolRank` top 15 dan tashqarida bo'lsa ham o'quvchining maktab o'rnini beradi (`SchoolSize` — jami).
+/// </summary>
+public record PortalRatingDto(
+    string MeStudentId,
+    List<PortalRatingRowDto> ClassRows,
+    List<PortalRatingRowDto> SchoolRows,
+    int? MeSchoolRank, int SchoolSize);
+
 /* ---------- Yangi o'quv yiliga o'tish ---------- */
 public record AcademicYearInfoDto(
     string CurrentYear, int Students, int Classes, int JournalEntries,
@@ -278,9 +333,12 @@ public record SchoolInfoDto(
 /// <summary>Maktab nomi (brending — barcha foydalanuvchilar uchun).</summary>
 public record SchoolNameDto(string Name);
 /// <summary>Telegram bot sozlamasi (admin). Configured = token bo'sh emasligini bildiradi.</summary>
-public record TelegramSettingsDto(string BotToken, string BotUsername, bool Configured);
+public record TelegramSettingsDto(string BotToken, string BotUsername, string BotName, bool Configured);
 /// <summary>Telegram bot sozlamasini saqlash so'rovi.</summary>
-public record SaveTelegramSettingsRequest(string? BotToken, string? BotUsername);
+public record SaveTelegramSettingsRequest(string? BotToken, string? BotUsername, string? BotName);
+/// <summary>Firebase (FCM push) sozlamasi. Configured = service account JSON to'g'ri kiritilgan.</summary>
+public record FirebaseSettingsDto(string ServiceAccountJson, bool Configured);
+public record SaveFirebaseSettingsRequest(string? ServiceAccountJson);
 
 /* ---------- Finance (Moliya) ---------- */
 public record FinanceTransactionDto(
@@ -321,7 +379,7 @@ public record AuditLogDto(
 /// <summary>O'qituvchining o'z profili (ilovada ko'rsatish uchun).</summary>
 public record TeacherProfileDto(
     string Id, string FullName, string Email, string HomeroomClass, List<SubjectDto> Subjects,
-    List<string> Permissions);
+    List<string> Permissions, string? PhotoUrl = null);
 /// <summary>O'qituvchi dars beradigan bitta sinf (qaysi fanlarni va sinf rahbarimi).</summary>
 public record TeacherClassDto(
     string ClassId, string ClassName, int Grade, bool IsHomeroom, List<SubjectDto> Subjects);
@@ -334,7 +392,8 @@ public record TeacherLessonDto(
 /// <summary>O'quvchining o'z profili (ilovada ko'rsatish uchun).</summary>
 public record StudentProfileDto(
     string Id, string FullName, string ClassName, string BirthDate, string Gender,
-    string ParentFullName, string ParentPhone, string EnrollmentDate);
+    string ParentFullName, string ParentPhone, string EnrollmentDate,
+    string? PhotoUrl = null, string? ParentPhotoUrl = null);
 /// <summary>O'quvchi jadvalidagi bitta dars (fan, o'qituvchi, kun, dars raqami, vaqt).</summary>
 public record StudentLessonDto(
     int Day, int Period, string? StartTime, string? EndTime,
@@ -374,11 +433,24 @@ public record StudentDashboardDto(
 
 /// <summary>O'quvchi/foydalanuvchi shaxsiy sozlamasi (til, tema, bildirishnoma).</summary>
 public record UserSettingsDto(string Language, string Theme, bool NotificationsEnabled);
+
+/* ---------- Farzandni olib ketish (pickup) ---------- */
+/// <summary>Ota-ona "Farzandimni olishga keldim" so'rovi (ixtiyoriy studentId — bir nechta farzand bo'lsa).</summary>
+public record CreatePickupRequest(string? StudentId);
+/// <summary>Pickup so'rovi holati. Status: "pending" | "accepted".</summary>
+public record PickupRequestDto(
+    string Id, string StudentId, string StudentName, string ClassName, string Status,
+    string CreatedAt, string? AcceptedAt, string? AcceptedByName);
+/// <summary>Sinf rahbarligi ro'yxatidagi bitta o'quvchi — ota-onasi kelgan (pending) bo'lsa belgilanadi.</summary>
+public record HomeroomStudentDto(
+    string StudentId, string FullName, bool HasPendingPickup, string? Status, string? RequestedAt);
+/// <summary>Sinf rahbari farzandni ota-onasiga topshirish so'rovi.</summary>
+public record HandoverRequest(string StudentId);
 /// <summary>Sozlamani yangilash so'rovi. Berilgan maydonlar yangilanadi, qolganlari saqlanadi.</summary>
 public record SaveUserSettingsRequest(string? Language, string? Theme, bool? NotificationsEnabled);
 
 /// <summary>Push qurilma tokenini ro'yxatdan o'tkazish so'rovi.</summary>
-public record RegisterDeviceRequest(string Token, string? Platform);
+public record RegisterDeviceRequest(string Token, string? Platform, string? DeviceName, string? AppId);
 
 /// <summary>Portal umumiy konteksti: choraklar, dars vaqtlari, davomat sabablari + joriy chorak/hafta.</summary>
 public record PortalMetaDto(
@@ -436,13 +508,30 @@ public record BroadcastDto(
     string Id, string ClassName, string Text, string SenderName, string CreatedAt,
     int RecipientCount, int SentCount);
 
-/// <summary>Sinf ota-onalariga e'lon yuborish so'rovi.</summary>
-public record SendBroadcastRequest(string ClassName, string Text);
+/// <summary>
+/// E'lon yuborish so'rovi. <c>Scope</c>: "class" (ClassName sinfi), "all" (barcha sinf),
+/// "selected" (StudentIds tanlangan o'quvchilar). <c>OnlyDebtors</c> — faqat balansi manfiylar.
+/// <c>Text</c> ichida o'rinbosarlar bo'lishi mumkin: {fish} {sinf} {qarzdorlik} {balans} {ota-ona} {telefon}.
+/// </summary>
+public record SendBroadcastRequest(
+    string? Scope, string? ClassName, bool OnlyDebtors, List<string>? StudentIds, string Text);
 
-/// <summary>Telegramda ro'yxatdan o'tgan ota-ona (sinf bo'yicha). ChatId string (JS aniqligi uchun).</summary>
+/// <summary>Telegramda ro'yxatdan o'tgan ota-ona. ChatId string (JS aniqligi uchun). Balance — qarz aniqlash uchun.</summary>
 public record TelegramParentDto(
-    string StudentId, string StudentName, string ParentName, string Phone,
-    string ChatId, string CreatedAt);
+    string StudentId, string StudentName, string ClassName, decimal Balance,
+    string ParentName, string Phone, string ChatId, string CreatedAt);
+
+/// <summary>
+/// Ilovaga push yuborish so'rovi. Audience: "parents" (ClassName ixtiyoriy) | "teachers" |
+/// "selected" (UserIds tanlangan foydalanuvchilar).
+/// </summary>
+public record SendPushRequest(string Audience, string? ClassName, List<string>? UserIds, string Title, string Body);
+/// <summary>Push uchun tanlanadigan oluvchi. UserId — akkaunt id; HasDevice = qurilma ulangan (push yetadi).</summary>
+public record PushRecipientDto(string UserId, string Name, string Group, string Detail, bool HasDevice);
+/// <summary>Yuborilgan push (tarix). CreatedAt — ISO.</summary>
+public record PushMessageDto(
+    string Id, string Audience, string Title, string Body, string SenderName, string CreatedAt,
+    int RecipientCount, int SentCount);
 
 /* ---------- Assignments (qo'shimcha topshiriqlar) ---------- */
 

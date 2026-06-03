@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, BookOpen, ChevronRight, Layers, Lock, Pencil, Trash2, Plus } from 'lucide-react'
+import { ArrowLeft, BookOpen, ChevronRight, Layers, Pencil, Trash2, Plus } from 'lucide-react'
 import type { LmsSubject, LmsUnlockMode, SchoolClass } from '@/types'
 import {
   getLmsSubjects, createLmsSubject, updateLmsSubject, deleteLmsSubject,

@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore;
 using SchoolLms.Application.Abstractions;
 using System.Text;
 using System.Text.Json;
@@ -16,16 +17,19 @@ public class TelegramService(
 {
     private volatile string _token = "";
     private volatile string _username = "";
+    private volatile string _name = "";
 
     public string BotToken => _token;
     public string BotUsername => _username;
+    public string BotName => _name;
     public bool IsConfigured => !string.IsNullOrWhiteSpace(_token);
 
-    /// <summary>Xotiradagi token/username'ni yangilaydi (admin sozlamani saqlaganda chaqiriladi).</summary>
-    public void Set(string? token, string? username)
+    /// <summary>Xotiradagi token/username/nom'ni yangilaydi (admin sozlamani saqlaganda chaqiriladi).</summary>
+    public void Set(string? token, string? username, string? name = null)
     {
         _token = (token ?? "").Trim();
         _username = (username ?? "").Trim().TrimStart('@');
+        _name = (name ?? "").Trim();
     }
 
     /// <summary>
@@ -34,18 +38,29 @@ public class TelegramService(
     /// </summary>
     public void Load(IAppDbContext db)
     {
-        var meta = db.SchoolMeta.Find("current");
-        if (meta is not null && string.IsNullOrWhiteSpace(meta.TelegramBotToken))
+        // Shared-DB: boot'da so'rov (tenant) konteksti yo'q — global filter SchoolMeta'ni yashiradi.
+        // Tokenli maktab qatorini tenant'lararo qidiramiz (xotirada bitta token — amalda bitta maktab uchun).
+        var meta = db.SchoolMeta.IgnoreQueryFilters()
+            .FirstOrDefault(m => m.TelegramBotToken != "");
+
+        // Hech kimda token yo'q — eski appsettings urug'i (mavjud birinchi qatorga bir marta ko'chiriladi).
+        if (meta is null)
         {
             var cfgToken = config["Telegram:BotToken"];
             if (!string.IsNullOrWhiteSpace(cfgToken))
             {
-                meta.TelegramBotToken = cfgToken.Trim();
-                meta.TelegramBotUsername = (config["Telegram:BotUsername"] ?? "").Trim().TrimStart('@');
-                db.SaveChanges();
+                var any = db.SchoolMeta.IgnoreQueryFilters().FirstOrDefault();
+                if (any is not null)
+                {
+                    any.TelegramBotToken = cfgToken.Trim();
+                    any.TelegramBotUsername = (config["Telegram:BotUsername"] ?? "").Trim().TrimStart('@');
+                    db.SaveChanges();
+                    meta = any;
+                }
             }
         }
-        Set(meta?.TelegramBotToken, meta?.TelegramBotUsername);
+
+        Set(meta?.TelegramBotToken, meta?.TelegramBotUsername, meta?.TelegramBotName);
     }
 
     private HttpClient Client() => httpFactory.CreateClient("telegram");

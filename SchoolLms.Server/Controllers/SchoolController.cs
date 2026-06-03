@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using SchoolLms.Infrastructure.Data;
 using SchoolLms.Application.Dtos;
 
@@ -14,7 +15,7 @@ public class SchoolController(AppDbContext db) : ControllerBase
     [HttpGet]
     public async Task<ActionResult<SchoolNameDto>> Get()
     {
-        var m = await db.SchoolMeta.FindAsync("current");
+        var m = await db.SchoolMeta.FirstOrDefaultAsync();
         return new SchoolNameDto(m?.Name ?? "");
     }
 }

@@ -58,7 +58,7 @@ export function LoginPage() {
             <GraduationCap className="h-6 w-6" />
           </div>
           <div>
-            <h1 className="text-lg font-semibold text-slate-800">Maktab LMS</h1>
+            <h1 className="text-lg font-semibold text-slate-800">Intellect School</h1>
             <p className="text-sm text-slate-400">Tizimga kirish</p>
           </div>
         </div>

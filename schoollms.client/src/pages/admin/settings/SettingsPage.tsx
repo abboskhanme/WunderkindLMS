@@ -16,6 +16,7 @@ import { Loader } from '@/components/ui/Loader'
 import { Time24Input } from '@/components/ui/Input'
 import { SchoolSettings } from './SchoolSettings'
 import { TelegramSettings } from './TelegramSettings'
+import { FirebaseSettings } from './FirebaseSettings'
 
 type Status = 'idle' | 'saving' | 'saved'
 
@@ -28,6 +29,7 @@ const sectionTitles: Record<string, string> = {
   reasons: 'Davomat sabablari',
   school: "Maktab ma'lumotlari",
   telegram: 'Telegram bot',
+  firebase: 'Push (Firebase)',
   'assignment-types': 'Topshiriq turlari',
 }
 
@@ -311,6 +313,9 @@ export function SettingsPage() {
 
           {/* Telegram bot */}
           {section === 'telegram' && <TelegramSettings />}
+
+          {/* Push (Firebase) */}
+          {section === 'firebase' && <FirebaseSettings />}
 
           {/* Topshiriq turlari */}
           {section === 'assignment-types' && (

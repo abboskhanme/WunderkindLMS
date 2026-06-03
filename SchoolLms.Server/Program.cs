@@ -2,24 +2,49 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.IdentityModel.Tokens;
-using Microsoft.OpenApi.Models;
+using Microsoft.AspNetCore.HttpOverrides;
+using Microsoft.AspNetCore.ResponseCompression;
+using System.IO.Compression;
+using System.Security.Claims;
+using SchoolLms.Domain;
 using SchoolLms.Application.Abstractions;
 using SchoolLms.Application.Hubs;
 using SchoolLms.Application.Services;
 using SchoolLms.Infrastructure.Auth;
 using SchoolLms.Infrastructure.Data;
+using SchoolLms.Infrastructure.Tenancy;
+using SchoolLms.Server.Tenancy;
 using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// ---------- Multi-tenant sozlamalari ----------
+var defaultConn = builder.Configuration.GetConnectionString("Default")
+    ?? throw new InvalidOperationException("ConnectionStrings:Default sozlanmagan.");
+
+var tenancy = builder.Configuration.GetSection("Tenancy").Get<TenantingOptions>() ?? new TenantingOptions();
+builder.Services.AddSingleton(tenancy);
+builder.Services.AddScoped<TenantContext>();
+builder.Services.AddScoped<ITenantContext>(sp => sp.GetRequiredService<TenantContext>());
+builder.Services.AddScoped<ITenantStore, TenantStore>();
+builder.Services.AddScoped<ITenantDbRunner, TenantDbRunner>();
+builder.Services.AddScoped<ProvisioningService>();
+
 // ---------- Xizmatlar ----------
+// Shared (yagona) baza — barcha maktablar + Control Plane (Owners/Tenants) shu yerda.
+// Har so'rovning joriy tenanti (ITenantContext) global query filter orqali qatorlarni ajratadi.
 builder.Services.AddDbContext<AppDbContext>(opt =>
-    opt.UseSqlServer(builder.Configuration.GetConnectionString("Default"),
-        // Vaqtinchalik DB uzilishlarini (ayniqsa Azure SQL) avtomatik qayta urinish bilan chidaydi.
-        sql => sql.EnableRetryOnFailure(
-            maxRetryCount: 5,
-            maxRetryDelay: TimeSpan.FromSeconds(10),
-            errorNumbersToAdd: null)));
+    opt.UseSqlServer(defaultConn,
+            // Vaqtinchalik DB uzilishlarini (ayniqsa Azure SQL) avtomatik qayta urinish bilan chidaydi.
+            sql => sql.EnableRetryOnFailure(
+                maxRetryCount: 5,
+                maxRetryDelay: TimeSpan.FromSeconds(10),
+                errorNumbersToAdd: null))
+        // Global query filter + majburiy navigatsiya o'zaro ta'siri haqidagi ogohlantirishni o'chiramiz
+        // (barcha entity'larda bir xil TenantId filtri — xavfsiz).
+        .ConfigureWarnings(w => w.Ignore(
+            Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId
+                .PossibleIncorrectRequiredNavigationWithQueryFilterInteractionWarning)));
 
 // Application qatlamidagi xizmatlar konkret AppDbContext o'rniga IAppDbContext'ga
 // bog'lanadi — uni o'sha scoped AppDbContext instansiyasiga ulaymiz.
@@ -79,6 +104,35 @@ builder.Services
                     context.Token = accessToken;
                 return Task.CompletedTask;
             },
+
+            // Token bekor qilish (revocation): imzo/muddat to'g'ri bo'lsa ham, akkaunt holatini
+            // HAR so'rovda tekshiramiz — arxivlangan o'qituvchi/o'quvchi yoki o'chirilgan xodim/admin
+            // eski tokeni bilan KIRA OLMAYDI. Parent (telefon orqali bog'lanadi) va platformowner
+            // (AppUser emas) tekshirilmaydi. Filtrlardan xoli (IgnoreQueryFilters) — tenant kontekstidan
+            // mustaqil. GUID id'lar global unikal, shuning uchun tenantlararo to'qnashuv yo'q.
+            OnTokenValidated = async context =>
+            {
+                var p = context.Principal;
+                var userId = p?.FindFirst(ClaimTypes.NameIdentifier)?.Value
+                             ?? p?.FindFirst("sub")?.Value;
+                if (p is null || string.IsNullOrEmpty(userId)) return;
+
+                var db = context.HttpContext.RequestServices.GetRequiredService<AppDbContext>();
+
+                bool blocked;
+                if (p.IsInRole(Roles.Teacher))
+                    blocked = !await db.Teachers.IgnoreQueryFilters()
+                        .AnyAsync(t => t.UserId == userId && !t.IsArchived);
+                else if (p.IsInRole(Roles.Student))
+                    blocked = !await db.Students.IgnoreQueryFilters()
+                        .AnyAsync(s => s.UserId == userId && !s.IsArchived);
+                else if (p.IsInRole(Roles.Staff) || p.IsInRole(Roles.Admin) || p.IsInRole(Roles.SuperAdmin))
+                    blocked = !await db.Users.IgnoreQueryFilters().AnyAsync(u => u.Id == userId);
+                else
+                    blocked = false; // parent / platformowner / boshqa — tegmaymiz
+
+                if (blocked) context.Fail("Akkaunt arxivlangan yoki o'chirilgan");
+            },
         };
     });
 builder.Services.AddAuthorization();
@@ -111,6 +165,8 @@ builder.Services.AddHostedService<SchoolLms.Application.Services.TuitionAccrualS
 builder.Services.AddHttpClient();
 builder.Services.AddSingleton<TelegramService>();
 builder.Services.AddHostedService<TelegramBotService>();
+// FCM (Firebase push) — service account SchoolMeta'da; token keshi uchun singleton.
+builder.Services.AddSingleton<FcmService>();
 
 // O'zgarishlar tarixi (audit) — joriy foydalanuvchini aniqlash uchun HttpContext kerak
 builder.Services.AddHttpContextAccessor();
@@ -119,26 +175,29 @@ builder.Services.AddScoped<SchoolLms.Application.Services.AuditService>();
 // Shartnoma andozasini (Word) to'ldirish xizmati
 builder.Services.AddScoped<SchoolLms.Application.Services.ContractService>();
 
-builder.Services.AddControllers();
-builder.Services.AddEndpointsApiExplorer();
-
-// Swagger — Bearer token bilan
-builder.Services.AddSwaggerGen(c =>
+// Javoblarni siqish (Brotli + Gzip). Level.Fastest — TTFB ga ortiqcha CPU yuk qo'ymaydi.
+// Eslatma: Cloudflare orqasida bo'lsa, CF chetda allaqachon siqadi — bu origin uchun foydali.
+builder.Services.AddResponseCompression(options =>
 {
-    c.SwaggerDoc("v1", new OpenApiInfo { Title = "SchoolLms API", Version = "v1" });
-    var scheme = new OpenApiSecurityScheme
-    {
-        Name = "Authorization",
-        Type = SecuritySchemeType.Http,
-        Scheme = "bearer",
-        BearerFormat = "JWT",
-        In = ParameterLocation.Header,
-        Description = "JWT tokenni kiriting (Bearer prefiksisiz).",
-        Reference = new OpenApiReference { Type = ReferenceType.SecurityScheme, Id = "Bearer" },
-    };
-    c.AddSecurityDefinition("Bearer", scheme);
-    c.AddSecurityRequirement(new OpenApiSecurityRequirement { [scheme] = Array.Empty<string>() });
+    options.EnableForHttps = true;
+    options.Providers.Add<BrotliCompressionProvider>();
+    options.Providers.Add<GzipCompressionProvider>();
 });
+builder.Services.Configure<BrotliCompressionProviderOptions>(o => o.Level = CompressionLevel.Fastest);
+builder.Services.Configure<GzipCompressionProviderOptions>(o => o.Level = CompressionLevel.Fastest);
+
+// OutputCache — DIQQAT (multi-tenant): javoblarni FAQAT X-Tenant bo'yicha ajratib keshlash mumkin,
+// aks holda bir maktab javobi boshqasiga ketadi. Bu siyosat faqat OCHIQ (auth talab qilmaydigan)
+// endpointlar uchun. Auth talab qiladigan (Authorization sarlavhali) so'rovlarni default policy
+// baribir keshlamaydi. Shuning uchun [OutputCache] ni HAMMA GET'ga qo'yMAYMIZ (pastdagi izohga qarang).
+builder.Services.AddOutputCache(options =>
+{
+    options.AddPolicy("public-tenant", b => b
+        .Expire(TimeSpan.FromSeconds(30))
+        .SetVaryByHeader("X-Tenant"));
+});
+
+builder.Services.AddControllers();
 
 var app = builder.Build();
 
@@ -147,12 +206,42 @@ using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
     db.Database.Migrate();
-    DbSeeder.Seed(db);
-    // Telegram bot tokenini bazadan (yoki bir martalik appsettings urug'idan) yuklaymiz.
+
+    // Default Control Plane egasi (loyiha boshlig'i). Parol Owner:Password (env Owner__Password)
+    // dan olinadi; berilmasa kuchli tasodifiy parol generatsiya qilinib LOG'ga bir marta yoziladi.
+    var ownerPassword = builder.Configuration["Owner:Password"];
+    var seededPassword = DbSeeder.SeedPlatformOwner(db, ownerPassword);
+    if (seededPassword is not null)
+        Console.WriteLine(
+            "[WARN] Default platform owner yaratildi: owner@schoollms.uz — parol: "
+            + $"{seededPassword}\n[WARN] Bu parolni hoziroq saqlang, Control Plane'ga kirib ALMASHTIRING. "
+            + "(Barqaror parol uchun Owner__Password env o'rnating.)");
+
+    // Telegram bot tokeni (shared-DB: tenant'lararo birinchi tokenli maktabdan yuklanadi — restartdan
+    // keyin bot avtomatik ishga tushadi; token yo'q bo'lsa admin Sozlamadan kiritguncha kutadi).
     scope.ServiceProvider.GetRequiredService<TelegramService>().Load(db);
 }
 
 // ---------- Pipeline ----------
+
+// Cloudflare Tunnel / reverse-proxy orqasida: haqiqiy mijoz IP'si (X-Forwarded-For) va
+// HTTPS sxemasi (X-Forwarded-Proto) tiklanadi. Busiz login rate-limit hamma uchun bitta
+// IP'ga (tunnel) tushib qoladi va HTTPS-redirect tsikli yuzaga kelishi mumkin.
+// FAQAT prod'da yoqamiz (dev'da Vite proxy bu sarlavhalarni yubormaydi).
+// MUHIM: konteyner portini internetga OCHMANG — unga faqat cloudflared kirsin.
+if (!app.Environment.IsDevelopment())
+{
+    var fwd = new ForwardedHeadersOptions
+    {
+        ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto,
+    };
+    fwd.KnownNetworks.Clear();
+    fwd.KnownProxies.Clear();
+    app.UseForwardedHeaders(fwd);
+}
+
+// Javoblarni siqish — pipeline boshida (statik fayllar va API javoblari ham siqilsin).
+app.UseResponseCompression();
 
 // Xavfsizlik sarlavhalari — barcha javoblarga (statik fayllar va /uploads ham). MIME-sniffing,
 // clickjacking va (prod'da) saqlangan XSS'ga qarshi himoya.
@@ -162,8 +251,8 @@ app.Use(async (context, next) =>
     headers["X-Content-Type-Options"] = "nosniff";
     headers["X-Frame-Options"] = "DENY";
     headers["Referrer-Policy"] = "no-referrer";
-    // CSP faqat prod'da — dev'da Swagger UI inline skript/uslublardan foydalanadi, SPA esa Vite
-    // serverida alohida beriladi. Leaflet xaritasi unpkg/openstreetmap'dan rasm yuklaydi (img https:).
+    // CSP faqat prod'da — dev'da SPA Vite serverida alohida beriladi.
+    // Leaflet xaritasi unpkg/openstreetmap'dan rasm yuklaydi (img https:).
     if (!app.Environment.IsDevelopment())
     {
         headers["Content-Security-Policy"] =
@@ -181,33 +270,84 @@ app.Use(async (context, next) =>
 if (!app.Environment.IsDevelopment())
     app.UseHsts();
 
-app.UseDefaultFiles();
-app.UseStaticFiles();
+// DIQQAT: UseDefaultFiles ATAYLAB ishlatilmaydi — `/` ni o'zimiz fallback'da hostga qarab beramiz
+// (apex → landing, subdomen → SPA). Statik fayllar (assets, landing.css/js) quyida xizmat qilinadi.
+// SPA statik fayllari: Vite assetlari kontent-hash bilan (immutable, 1 yil); index.html/landing — no-cache.
+app.UseStaticFiles(new StaticFileOptions
+{
+    OnPrepareResponse = ctx =>
+    {
+        var headers = ctx.Context.Response.Headers;
+        if (ctx.File.Name.EndsWith(".html", StringComparison.OrdinalIgnoreCase))
+            headers.CacheControl = "no-cache";
+        else
+            headers.CacheControl = "public,max-age=31536000,immutable";
+    },
+});
 
-// Yuklangan materiallar (/uploads) — alohida papkadan xizmat ko'rsatiladi.
+// Yuklangan materiallar (/uploads) — alohida papkadan, 1 kunlik kesh bilan.
 var uploadsDir = Path.Combine(app.Environment.ContentRootPath, "uploads");
 Directory.CreateDirectory(uploadsDir);
 app.UseStaticFiles(new StaticFileOptions
 {
     FileProvider = new PhysicalFileProvider(uploadsDir),
     RequestPath = "/uploads",
+    OnPrepareResponse = ctx => ctx.Context.Response.Headers.CacheControl = "public,max-age=86400",
 });
 
-if (app.Environment.IsDevelopment())
-{
-    app.UseSwagger();
-    app.UseSwaggerUI();
-}
+// Swagger ATAYLAB o'chirilgan (global) — butun API yuzasini ochib qo'ymaslik uchun
+// `/api/swagger` UI/JSON endpointlari berilmaydi.
 
 app.UseHttpsRedirection();
 
 app.UseAuthentication();
+// Joriy maktab (tenant)ni aniqlaydi — autentifikatsiyadan KEYIN, chunki kirgan foydalanuvchi uchun
+// tokendagi tenant claim ASOSIY manba (tenantlararo kirishni bloklaydi). Global query filter shu
+// kontekstdan o'qiydi, shuning uchun controller'lardan (AppDbContext'dan foydalanish) OLDIN turadi.
+app.UseMiddleware<TenantResolutionMiddleware>();
 app.UseAuthorization();
 app.UseRateLimiter();
+// OutputCache middleware — tayyor turadi, lekin [OutputCache] faqat ochiq endpointlarga qo'yiladi
+// (multi-tenant xavfsizligi uchun; pastdagi izohga qarang). Auth'dan keyin turishi shart.
+app.UseOutputCache();
 
 app.MapControllers();
 app.MapHub<ChatHub>("/hubs/chat");
 
-app.MapFallbackToFile("/index.html");
+// API "tirikligi": https://<domen>/api ochilganda SPA HTML emas, JSON qaytaradi va qaysi maktab
+// (tenant) aniqlanganini ko'rsatadi — subdomen yo'naltirishni tekshirish uchun qulay.
+app.MapGet("/api", (ITenantContext t) => Results.Ok(new
+{
+    name = "SchoolLms API",
+    status = "ok",
+    environment = app.Environment.EnvironmentName,
+    tenant = t.IsPlatform ? "platform" : t.Slug,
+    timeUtc = DateTime.UtcNow,
+}));
+app.MapGet("/api/health", () => Results.Ok(new { status = "healthy" }));
+
+// Noma'lum /api/* yo'llari — SPA HTML emas, 404 JSON qaytsin (mobil/klient uchun toza).
+app.MapFallback("/api/{**slug}", () => Results.NotFound(new { message = "API endpoint topilmadi" }));
+
+// SPA / landing fallback:
+//  • apex (bare domen `intellectschool.uz`) yoki `www` → landing sahifa (public/landing.html);
+//  • `admin` va maktab subdomenlari → React SPA (index.html).
+var webRoot = app.Environment.WebRootPath
+    ?? Path.Combine(app.Environment.ContentRootPath, "wwwroot");
+var landingRoots = tenancy.Roots();
+bool IsLandingHost(string h) => landingRoots.Any(r =>
+    h.Equals(r, StringComparison.OrdinalIgnoreCase) ||
+    h.Equals("www." + r, StringComparison.OrdinalIgnoreCase));
+
+app.MapFallback(async ctx =>
+{
+    var landing = Path.Combine(webRoot, "landing.html");
+    var spa = Path.Combine(webRoot, "index.html");
+    var file = IsLandingHost(ctx.Request.Host.Host) && File.Exists(landing) ? landing : spa;
+    if (!File.Exists(file)) { ctx.Response.StatusCode = StatusCodes.Status404NotFound; return; }
+    ctx.Response.ContentType = "text/html; charset=utf-8";
+    ctx.Response.Headers.CacheControl = "no-cache";
+    await ctx.Response.SendFileAsync(file);
+});
 
 app.Run();

@@ -28,6 +28,9 @@ public interface IAppDbContext
     DbSet<AbsenceReason> AbsenceReasons { get; }
     DbSet<QuarterPeriod> Quarters { get; }
     DbSet<LessonTime> LessonTimes { get; }
+    DbSet<Holiday> Holidays { get; }
+    DbSet<DisciplineReason> DisciplineReasons { get; }
+    DbSet<DisciplinePoint> DisciplinePoints { get; }
     DbSet<FinanceTransaction> FinanceTransactions { get; }
     DbSet<MonthlyCharge> MonthlyCharges { get; }
     DbSet<AuditLog> AuditLogs { get; }
@@ -35,6 +38,8 @@ public interface IAppDbContext
     DbSet<SchoolYearArchive> SchoolYearArchives { get; }
     DbSet<ChatMessage> ChatMessages { get; }
     DbSet<Broadcast> Broadcasts { get; }
+    DbSet<PushMessage> PushMessages { get; }
+    DbSet<PickupRequest> PickupRequests { get; }
     DbSet<TelegramRegistration> TelegramRegistrations { get; }
     DbSet<Assignment> Assignments { get; }
     DbSet<AssignmentType> AssignmentTypes { get; }

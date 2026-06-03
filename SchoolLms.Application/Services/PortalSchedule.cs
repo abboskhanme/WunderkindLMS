@@ -15,7 +15,7 @@ public static class PortalSchedule
     /// Sana hech bir chorakka tushmasa (ta'til) — (1, 1) qaytadi.</summary>
     public static async Task<(int Quarter, int Week)> CurrentQuarterWeekAsync(IAppDbContext db)
     {
-        var today = DateOnly.FromDateTime(DateTime.Now).ToString("yyyy-MM-dd");
+        var today = AppClock.Today.ToString("yyyy-MM-dd");
         foreach (var q in await db.Quarters.OrderBy(x => x.Quarter).ToListAsync())
         {
             if (string.CompareOrdinal(today, q.StartDate) < 0 || string.CompareOrdinal(today, q.EndDate) > 0)

@@ -13,6 +13,28 @@ export interface UploadedFile {
   contentType: string
 }
 
+/**
+ * Barcha o'quvchilarni login/parol bilan Excel (.xlsx) ga yuklab oladi (faqat superadmin).
+ * Parol faqat foydalanuvchi hali kirmagan bo'lsa to'ldiriladi (kirgach bo'sh).
+ */
+export async function downloadStudentCredentials(): Promise<void> {
+  if (USE_MOCK) {
+    alert('Eksport faqat real serverda ishlaydi (VITE_USE_MOCK=false).')
+    return
+  }
+  const res = await api.get('/admin/students/export', { responseType: 'blob' })
+  const url = URL.createObjectURL(res.data as Blob)
+  const a = document.createElement('a')
+  a.href = url
+  const cd = (res.headers['content-disposition'] as string | undefined) ?? ''
+  const m = cd.match(/filename="?([^"]+)"?/)
+  a.download = m?.[1] ?? `oquvchilar_${new Date().toISOString().slice(0, 10)}.xlsx`
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  URL.revokeObjectURL(url)
+}
+
 /** Faylni serverga yuklash (rasm/PDF, ~20 MB). URL qaytaradi — uni keyin entity'da saqlash mumkin. */
 export async function uploadAdminFile(file: File): Promise<UploadedFile> {
   if (USE_MOCK) {

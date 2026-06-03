@@ -11,7 +11,7 @@ namespace SchoolLms.Application.Services;
 /// </summary>
 public static class TuitionService
 {
-    public static string CurrentMonth() => DateTime.Now.ToString("yyyy-MM");
+    public static string CurrentMonth() => AppClock.Now.ToString("yyyy-MM");
 
     /// <summary>
     /// Sinf oylik to'lovidan o'quvchining chegirmasini ayirib, hisoblanishi kerak bo'lgan

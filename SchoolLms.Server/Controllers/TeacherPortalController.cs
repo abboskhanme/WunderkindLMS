@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using SchoolLms.Infrastructure.Data;
+using SchoolLms.Application.Abstractions;
 using SchoolLms.Application.Dtos;
 using SchoolLms.Domain;
 using SchoolLms.Application.Services;
@@ -19,7 +20,8 @@ namespace SchoolLms.Server.Controllers;
 [Authorize(Roles = "teacher")]
 [Route("api/teacher")]
 public class TeacherPortalController(
-    AppDbContext db, ChatService chat, IWebHostEnvironment env, ReferenceCache refCache) : ControllerBase
+    AppDbContext db, ChatService chat, IWebHostEnvironment env, ReferenceCache refCache,
+    ITenantContext tenant, FcmService fcm) : ControllerBase
 {
     /// <summary>Tokendagi foydalanuvchi id'si bo'yicha joriy o'qituvchini topadi.</summary>
     private async Task<Teacher?> Me()
@@ -59,11 +61,212 @@ public class TeacherPortalController(
         var names = (await db.Subjects.Where(s => t.SubjectIds.Contains(s.Id)).ToListAsync())
             .Select(s => new SubjectDto(s.Id, s.Name))
             .OrderBy(s => s.Name, StringComparer.OrdinalIgnoreCase).ToList();
-        return new TeacherProfileDto(t.Id, t.FullName, user?.Email ?? "", t.HomeroomClass, names, t.Permissions);
+        return new TeacherProfileDto(t.Id, t.FullName, user?.Email ?? "", t.HomeroomClass, names, t.Permissions, t.PhotoUrl);
     }
 
     [HttpGet("meta")]
-    public async Task<ActionResult<PortalMetaDto>> Meta() => await refCache.MetaAsync();
+    public async Task<ActionResult<PortalMetaDto>> Meta() => await refCache.MetaAsync(tenant.TenantId ?? "");
+
+    /// <summary>Joriy maktab nomi — ilova brendingi/sarlavhasi uchun.</summary>
+    [HttpGet("school")]
+    public async Task<ActionResult<SchoolNameDto>> School()
+    {
+        var m = await db.SchoolMeta.FirstOrDefaultAsync();
+        return new SchoolNameDto(m?.Name ?? "");
+    }
+
+    /// <summary>Bayram/dam olish kunlari — bu sanalarda dars bo'lmaydi (jadvalda "Bayram" deb ko'rsating).</summary>
+    [HttpGet("holidays")]
+    public async Task<ActionResult<IEnumerable<HolidayDto>>> Holidays() =>
+        await db.Holidays.OrderBy(h => h.Date).Select(h => new HolidayDto(h.Date, h.Name)).ToListAsync();
+
+    // ---------- Farzandni olib ketish (pickup) — sinf rahbari ----------
+
+    private static PickupRequestDto PickupDto(PickupRequest p) =>
+        new(p.Id, p.StudentId, p.StudentName, p.ClassName, p.Status, p.CreatedAt, p.AcceptedAt, p.AcceptedByName);
+
+    /// <summary>Sinf rahbari sinfidagi pickup so'rovlari (kutilayotgan + so'nggilar).</summary>
+    [HttpGet("pickups")]
+    public async Task<ActionResult<IEnumerable<PickupRequestDto>>> Pickups()
+    {
+        var t = await Me();
+        if (t is null) return NotFound();
+        if (string.IsNullOrEmpty(t.HomeroomClass)) return new List<PickupRequestDto>();
+        // Faqat bugungi so'rovlar — har o'qish kuni mustaqil.
+        var today = AppClock.Now.ToString("yyyy-MM-dd");
+        var list = await db.PickupRequests
+            .Where(p => p.ClassName == t.HomeroomClass && p.CreatedAt.StartsWith(today))
+            .OrderByDescending(p => p.CreatedAt).Take(50).ToListAsync();
+        return list.Select(PickupDto).ToList();
+    }
+
+    /// <summary>
+    /// Sinf rahbarligi bo'limi: shu rahbar sinfidagi o'quvchilar ro'yxati. Ota-onasi kelgan
+    /// (pending pickup) o'quvchilar <c>hasPendingPickup=true</c> bilan belgilanadi.
+    /// </summary>
+    [HttpGet("homeroom")]
+    public async Task<ActionResult<object>> Homeroom()
+    {
+        var t = await Me();
+        if (t is null) return NotFound();
+        var cls = t.HomeroomClass ?? "";
+        if (string.IsNullOrEmpty(cls))
+            return Ok(new { className = "", students = new List<HomeroomStudentDto>() });
+
+        var students = await db.Students.Where(s => !s.IsArchived && s.ClassName == cls)
+            .OrderBy(s => s.FullName).ToListAsync();
+        var ids = students.Select(s => s.Id).ToList();
+        // Pickup holati KUNLIK — faqat bugungi (o'qish kuni) so'rovlari; har kuni o'zi yangilanadi.
+        var today = AppClock.Now.ToString("yyyy-MM-dd");
+        var latest = (await db.PickupRequests
+                .Where(p => ids.Contains(p.StudentId) && p.CreatedAt.StartsWith(today)).ToListAsync())
+            .GroupBy(p => p.StudentId)
+            .ToDictionary(g => g.Key, g => g.OrderByDescending(x => x.CreatedAt, StringComparer.Ordinal).First());
+
+        var rows = students.Select(s =>
+        {
+            latest.TryGetValue(s.Id, out var pr);
+            return new HomeroomStudentDto(s.Id, s.FullName, pr?.Status == "pending", pr?.Status, pr?.CreatedAt);
+        }).ToList();
+        return Ok(new { className = cls, students = rows });
+    }
+
+    /// <summary>"Topshirish" — farzandni ota-onasiga topshiradi (sana qoldiradi) va ota-onaga push yuboradi.</summary>
+    [HttpPost("homeroom/handover")]
+    public async Task<ActionResult<PickupRequestDto>> Handover(HandoverRequest req)
+    {
+        var t = await Me();
+        if (t is null) return NotFound();
+        var s = await db.Students.FindAsync(req.StudentId);
+        if (s is null || s.ClassName != t.HomeroomClass) return Forbid();
+
+        var now = AppClock.Now.ToString("o");
+        var today = AppClock.Now.ToString("yyyy-MM-dd");
+        var pr = await db.PickupRequests.FirstOrDefaultAsync(
+            p => p.StudentId == s.Id && p.Status == "pending" && p.CreatedAt.StartsWith(today));
+        if (pr is null)
+        {
+            pr = new PickupRequest
+            {
+                StudentId = s.Id,
+                StudentName = s.FullName,
+                ClassName = s.ClassName,
+                RequestedByUserId = s.UserId ?? "",
+                Status = "accepted",
+                CreatedAt = now,
+            };
+            db.PickupRequests.Add(pr);
+        }
+        else
+        {
+            pr.Status = "accepted";
+        }
+        pr.AcceptedAt = now;
+        pr.AcceptedByTeacherId = t.Id;
+        pr.AcceptedByName = t.FullName;
+        await db.SaveChangesAsync();
+
+        if (s.UserId is not null)
+        {
+            var meta = await db.SchoolMeta.FirstOrDefaultAsync();
+            var json = meta?.FcmServiceAccountJson ?? "";
+            if (FcmService.IsConfigured(json))
+            {
+                var tokens = await db.DeviceTokens.Where(d => d.UserId == s.UserId)
+                    .Select(d => d.Token).Distinct().ToListAsync();
+                if (tokens.Count > 0)
+                    _ = fcm.SendAsync(json, tokens, "Farzandingiz topshirildi",
+                        $"Farzandingiz {s.FullName}ni olib ketishingiz mumkin — {t.FullName} topshirdi.");
+            }
+        }
+        return PickupDto(pr);
+    }
+
+    /// <summary>"Qabul qildim" — so'rovni tasdiqlaydi va ota-onaga ruxsat push'i yuboradi.</summary>
+    [HttpPost("pickups/{id}/accept")]
+    public async Task<ActionResult<PickupRequestDto>> AcceptPickup(string id)
+    {
+        var t = await Me();
+        if (t is null) return NotFound();
+        var pr = await db.PickupRequests.FindAsync(id);
+        if (pr is null) return NotFound();
+        if (pr.ClassName != t.HomeroomClass) return Forbid();
+
+        if (pr.Status != "accepted")
+        {
+            pr.Status = "accepted";
+            pr.AcceptedAt = AppClock.Now.ToString("o");
+            pr.AcceptedByTeacherId = t.Id;
+            pr.AcceptedByName = t.FullName;
+            await db.SaveChangesAsync();
+
+            // Ota-onaga (oila akkaunti — o'quvchi UserId) ruxsat push'i.
+            var student = await db.Students.FindAsync(pr.StudentId);
+            if (student?.UserId is not null)
+            {
+                var meta = await db.SchoolMeta.FirstOrDefaultAsync();
+                var json = meta?.FcmServiceAccountJson ?? "";
+                if (FcmService.IsConfigured(json))
+                {
+                    var tokens = await db.DeviceTokens.Where(d => d.UserId == student.UserId)
+                        .Select(d => d.Token).Distinct().ToListAsync();
+                    if (tokens.Count > 0)
+                        _ = fcm.SendAsync(json, tokens, "Ruxsat berildi",
+                            $"Farzandingiz {pr.StudentName}ni olib ketishingiz mumkin — {t.FullName} qabul qildi.");
+                }
+            }
+        }
+        return PickupDto(pr);
+    }
+
+    // ---------- Push qurilma (bildirishnoma) ----------
+
+    /// <summary>Qurilma push tokenini ro'yxatdan o'tkazadi (token, platform, qurilma nomi, app_id).</summary>
+    [HttpPost("notifications/register")]
+    public async Task<ActionResult> RegisterDevice(RegisterDeviceRequest req)
+    {
+        var uid = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (uid is null) return Unauthorized();
+        var token = req.Token?.Trim();
+        if (string.IsNullOrWhiteSpace(token)) return BadRequest(new { message = "Token bo'sh" });
+        var platform = string.IsNullOrWhiteSpace(req.Platform) ? "android" : req.Platform!.Trim().ToLowerInvariant();
+        var deviceName = (req.DeviceName ?? "").Trim();
+        var appId = (req.AppId ?? "").Trim();
+
+        var existing = await db.DeviceTokens.FirstOrDefaultAsync(d => d.Token == token);
+        if (existing is null)
+        {
+            db.DeviceTokens.Add(new DeviceToken
+            {
+                UserId = uid,
+                Token = token,
+                Platform = platform,
+                DeviceName = deviceName,
+                AppId = appId,
+            });
+        }
+        else
+        {
+            existing.UserId = uid;
+            existing.Platform = platform;
+            if (deviceName.Length > 0) existing.DeviceName = deviceName;
+            if (appId.Length > 0) existing.AppId = appId;
+            existing.LastSeenAt = AppClock.Now;
+        }
+        await db.SaveChangesAsync();
+        return Ok(new { ok = true });
+    }
+
+    /// <summary>Qurilma tokenini o'chiradi (logout). Topilmasa ham 200.</summary>
+    [HttpDelete("notifications/register")]
+    public async Task<ActionResult> UnregisterDevice([FromQuery] string token)
+    {
+        if (string.IsNullOrWhiteSpace(token)) return BadRequest(new { message = "Token bo'sh" });
+        var uid = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        var d = await db.DeviceTokens.FirstOrDefaultAsync(x => x.Token == token && x.UserId == uid);
+        if (d is not null) { db.DeviceTokens.Remove(d); await db.SaveChangesAsync(); }
+        return Ok(new { ok = true });
+    }
 
     // ---------- Dars beradigan sinflar ----------
 
@@ -196,7 +399,7 @@ public class TeacherPortalController(
     public async Task<IActionResult> SetEntry(SetJournalEntryRequest req)
     {
         if (!await Authorized(req.ClassId, req.SubjectId)) return Forbid();
-        await JournalService.SetEntryAsync(db, req);
+        await JournalService.SetEntryAsync(db, req, fcm);
         return NoContent();
     }
 
@@ -462,7 +665,7 @@ public class TeacherPortalController(
             Type = type == "complaint" ? "complaint" : "suggestion",
             Text = body,
             ImageUrl = imageUrl,
-            CreatedAt = DateTime.UtcNow,
+            CreatedAt = AppClock.Now,
             Status = "new",
         });
         await db.SaveChangesAsync();

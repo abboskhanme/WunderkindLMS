@@ -58,8 +58,8 @@ export const teacherPermissions: { key: string; label: string }[] = [
 
 /**
  * Xodim (role="staff") admin panelida ko'ra oladigan bo'limlar. Kalitlar nav (navigation.ts)
- * va route himoyasi (RequirePerm) bilan bir xil. Superadmin "Rollar" bo'limida belgilaydi.
- * (Filiallar/Rollar bu ro'yxatda yo'q — ular faqat superadmin uchun.)
+ * va route himoyasi (RequirePerm) bilan bir xil. Superadmin "Xodimlar va rollar" bo'limida belgilaydi.
+ * (Filiallar bu ro'yxatda yo'q — u faqat superadmin uchun.)
  */
 export const adminPermissions: { key: string; label: string }[] = [
   { key: 'leads', label: 'Lidlar' },
@@ -79,6 +79,7 @@ export const adminPermissions: { key: string; label: string }[] = [
   { key: 'settings', label: 'Sozlamalar' },
   { key: 'staff', label: 'Xodimlar' },
   { key: 'feedback', label: 'Taklif va shikoyatlar' },
+  { key: 'discipline', label: 'Intizomiy ball' },
 ]
 
 /** Oshxona — kunlik 3 mahal */

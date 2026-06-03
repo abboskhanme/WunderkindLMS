@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Plus, Eye, Pencil, Trash2 } from 'lucide-react'
+import { Plus, Eye, Pencil, Trash2, Check } from 'lucide-react'
 import type { Staff, Credentials } from '@/types'
 import {
   getStaff,
@@ -8,8 +8,11 @@ import {
   deleteStaff,
   getStaffCredentials,
   resetStaffPassword,
+  setStaffPermissions,
   type StaffPayload,
 } from '@/api/services/staff'
+import { adminPermissions } from '@/config/constants'
+import { useAuth } from '@/context/auth-context'
 import { cn, randomPassword } from '@/lib/utils'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
@@ -21,26 +24,44 @@ import { CredentialsBox } from '@/components/ui/CredentialsBox'
 const POSITIONS = ['Kassir', 'Administrator', "Direktor o'rinbosari", 'Qorovul', 'Hisobchi']
 
 export function StaffPage() {
+  const { user } = useAuth()
+  // Rollar (ruxsatlar)ni faqat tizim egasi (superadmin) o'zgartira oladi — backend ham shuni talab qiladi.
+  const canManageRoles = user?.role === 'superadmin'
+
   const [staff, setStaff] = useState<Staff[]>([])
   const [loading, setLoading] = useState(true)
   const [formOpen, setFormOpen] = useState(false)
   const [editing, setEditing] = useState<Staff | null>(null)
   const [form, setForm] = useState<StaffPayload>({ fullName: '', position: '' })
+  // Yangi xodim yaratishda darrov beriladigan ruxsatlar
+  const [formPerms, setFormPerms] = useState<Set<string>>(new Set())
+  const [saving, setSaving] = useState(false)
+
+  // Har bir xodim uchun tahrirlanayotgan ruxsatlar (id → kalitlar to'plami)
+  const [draft, setDraft] = useState<Record<string, Set<string>>>({})
+  const [savingPermsId, setSavingPermsId] = useState<string | null>(null)
 
   // Login/parol oynasi
   const [credOf, setCredOf] = useState<Staff | null>(null)
   const [creds, setCreds] = useState<Credentials | null>(null)
   const [credLoading, setCredLoading] = useState(false)
 
+  const syncDraft = (list: Staff[]) =>
+    setDraft(Object.fromEntries(list.map((s) => [s.id, new Set(s.permissions)])))
+
   useEffect(() => {
     getStaff()
-      .then(setStaff)
+      .then((list) => {
+        setStaff(list)
+        syncDraft(list)
+      })
       .finally(() => setLoading(false))
   }, [])
 
   const openCreate = () => {
     setEditing(null)
     setForm({ fullName: '', position: '' })
+    setFormPerms(new Set())
     setFormOpen(true)
   }
   const openEdit = (s: Staff) => {
@@ -58,33 +79,79 @@ export function StaffPage() {
       .finally(() => setCredLoading(false))
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!form.fullName.trim()) return
-    if (editing) {
-      updateStaff(editing.id, form).then((u) => setStaff((p) => p.map((x) => (x.id === u.id ? u : x))))
-      setFormOpen(false)
-    } else {
-      createStaff(form).then((c) => {
-        setStaff((p) => [c, ...p])
+    setSaving(true)
+    try {
+      if (editing) {
+        const u = await updateStaff(editing.id, form)
+        setStaff((p) => p.map((x) => (x.id === u.id ? u : x)))
         setFormOpen(false)
-        showCredentials(c) // yangi xodim login/parolini darrov ko'rsatamiz
-      })
+      } else {
+        let created = await createStaff(form)
+        // Yangi xodimga tanlangan rollarni darrov beramiz (faqat superadmin)
+        if (canManageRoles && formPerms.size > 0) {
+          created = await setStaffPermissions(created.id, [...formPerms])
+        }
+        setStaff((p) => [created, ...p])
+        setDraft((d) => ({ ...d, [created.id]: new Set(created.permissions) }))
+        setFormOpen(false)
+        showCredentials(created) // login/parolni darrov ko'rsatamiz
+      }
+    } finally {
+      setSaving(false)
     }
   }
 
   const handleDelete = (s: Staff) => {
     if (!confirm(`"${s.fullName}" xodimni o'chirasizmi? Akkaunti ham o'chadi.`)) return
-    deleteStaff(s.id).then(() => setStaff((p) => p.filter((x) => x.id !== s.id)))
+    deleteStaff(s.id).then(() => {
+      setStaff((p) => p.filter((x) => x.id !== s.id))
+      setDraft((d) => {
+        const { [s.id]: _, ...rest } = d
+        return rest
+      })
+    })
   }
+
+  const toggle = (staffId: string, key: string) =>
+    setDraft((d) => {
+      const next = new Set(d[staffId] ?? [])
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return { ...d, [staffId]: next }
+    })
+
+  const dirty = (s: Staff) => {
+    const cur = draft[s.id] ?? new Set()
+    return cur.size !== s.permissions.length || s.permissions.some((p) => !cur.has(p))
+  }
+
+  const savePerms = (s: Staff) => {
+    const perms = [...(draft[s.id] ?? new Set())]
+    setSavingPermsId(s.id)
+    setStaffPermissions(s.id, perms)
+      .then((u) => setStaff((p) => p.map((x) => (x.id === u.id ? u : x))))
+      .finally(() => setSavingPermsId(null))
+  }
+
+  const toggleFormPerm = (key: string) =>
+    setFormPerms((s) => {
+      const next = new Set(s)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
 
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-xl font-semibold text-slate-800">Xodimlar</h1>
+          <h1 className="text-xl font-semibold text-slate-800">Xodimlar va rollar</h1>
           <p className="text-sm text-slate-400">
-            O'qituvchi bo'lmagan ishchilar (kassir, administrator, ...). Ruxsatlar — Rollar bo'limida.
+            O'qituvchi bo'lmagan ishchilar (kassir, administrator, ...)
+            {canManageRoles ? ' — har biriga kerakli bo\'limlarni (rollarni) shu yerda belgilang.' : '.'}
           </p>
         </div>
         <Button onClick={openCreate}>
@@ -92,49 +159,90 @@ export function StaffPage() {
         </Button>
       </div>
 
-      <Card className="p-0">
-        {loading ? (
-          <Loader label="Yuklanmoqda..." />
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
-                <tr>
-                  <th className="w-10 px-4 py-3">#</th>
-                  <th className="px-4 py-3">F.I.SH</th>
-                  <th className="px-4 py-3">Lavozim</th>
-                  <th className="px-4 py-3">Login</th>
-                  <th className="px-4 py-3 text-right">Amallar</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {staff.map((s, i) => (
-                  <tr key={s.id} className="hover:bg-slate-50/60">
-                    <td className="px-4 py-3 text-slate-400">{i + 1}</td>
-                    <td className="px-4 py-3 font-medium text-slate-800">{s.fullName}</td>
-                    <td className="px-4 py-3 text-slate-600">{s.position || '—'}</td>
-                    <td className="px-4 py-3"><code className="text-slate-600">{s.login}</code></td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center justify-end gap-0.5">
-                        <IconBtn icon={Eye} title="Login/parol" onClick={() => showCredentials(s)} />
-                        <IconBtn icon={Pencil} title="Tahrirlash" onClick={() => openEdit(s)} />
-                        <IconBtn icon={Trash2} title="O'chirish" danger onClick={() => handleDelete(s)} />
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-                {staff.length === 0 && (
-                  <tr>
-                    <td colSpan={5} className="px-4 py-12 text-center text-slate-400">
-                      Hali xodim qo'shilmagan
-                    </td>
-                  </tr>
+      {loading ? (
+        <Loader label="Yuklanmoqda..." />
+      ) : staff.length === 0 ? (
+        <Card>
+          <p className="py-12 text-center text-slate-400">
+            Hali xodim qo'shilmagan. "Yangi xodim" tugmasi orqali qo'shing.
+          </p>
+        </Card>
+      ) : (
+        <div className="space-y-4">
+          {staff.map((s) => {
+            const cur = draft[s.id] ?? new Set<string>()
+            return (
+              <Card key={s.id}>
+                <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
+                  <div>
+                    <p className="font-semibold text-slate-800">{s.fullName}</p>
+                    <p className="text-xs text-slate-400">
+                      {s.position || 'Xodim'} · <code>{s.login}</code>
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-0.5">
+                    <IconBtn icon={Eye} title="Login/parol" onClick={() => showCredentials(s)} />
+                    <IconBtn icon={Pencil} title="Tahrirlash" onClick={() => openEdit(s)} />
+                    <IconBtn icon={Trash2} title="O'chirish" danger onClick={() => handleDelete(s)} />
+                  </div>
+                </div>
+
+                {canManageRoles ? (
+                  <>
+                    <div className="flex flex-wrap gap-2">
+                      {adminPermissions.map((p) => {
+                        const active = cur.has(p.key)
+                        return (
+                          <button
+                            key={p.key}
+                            type="button"
+                            onClick={() => toggle(s.id, p.key)}
+                            className={cn(
+                              'inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-sm transition-colors',
+                              active
+                                ? 'border-brand-500 bg-brand-50 text-brand-700'
+                                : 'border-slate-200 text-slate-600 hover:bg-slate-50',
+                            )}
+                          >
+                            {active && <Check className="h-3.5 w-3.5" />}
+                            {p.label}
+                          </button>
+                        )
+                      })}
+                    </div>
+                    <div className="mt-3 flex justify-end">
+                      <Button
+                        onClick={() => savePerms(s)}
+                        disabled={!dirty(s) || savingPermsId === s.id}
+                      >
+                        {savingPermsId === s.id ? 'Saqlanmoqda...' : 'Ruxsatlarni saqlash'}
+                      </Button>
+                    </div>
+                  </>
+                ) : (
+                  <div className="flex flex-wrap gap-1.5">
+                    {s.permissions.length === 0 ? (
+                      <span className="text-xs text-slate-400">Ruxsatlar belgilanmagan</span>
+                    ) : (
+                      s.permissions.map((key) => {
+                        const label = adminPermissions.find((p) => p.key === key)?.label ?? key
+                        return (
+                          <span
+                            key={key}
+                            className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs text-slate-600"
+                          >
+                            {label}
+                          </span>
+                        )
+                      })
+                    )}
+                  </div>
                 )}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </Card>
+              </Card>
+            )
+          })}
+        </div>
+      )}
 
       {/* Yaratish / tahrirlash */}
       <Modal
@@ -146,8 +254,8 @@ export function StaffPage() {
             <Button variant="secondary" onClick={() => setFormOpen(false)}>
               Bekor qilish
             </Button>
-            <Button type="submit" form="staff-form">
-              Saqlash
+            <Button type="submit" form="staff-form" disabled={saving}>
+              {saving ? 'Saqlanmoqda...' : 'Saqlash'}
             </Button>
           </>
         }
@@ -196,10 +304,40 @@ export function StaffPage() {
               </div>
             </div>
           )}
+          {!editing && canManageRoles && (
+            <div>
+              <label className="mb-1 block text-sm font-medium text-slate-600">
+                Ruxsatlar (rollar)
+              </label>
+              <div className="flex flex-wrap gap-2">
+                {adminPermissions.map((p) => {
+                  const active = formPerms.has(p.key)
+                  return (
+                    <button
+                      key={p.key}
+                      type="button"
+                      onClick={() => toggleFormPerm(p.key)}
+                      className={cn(
+                        'inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-sm transition-colors',
+                        active
+                          ? 'border-brand-500 bg-brand-50 text-brand-700'
+                          : 'border-slate-200 text-slate-600 hover:bg-slate-50',
+                      )}
+                    >
+                      {active && <Check className="h-3.5 w-3.5" />}
+                      {p.label}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          )}
           {!editing && (
             <p className="text-xs text-slate-400">
               Saqlangach tizimga kirish uchun login va parol avtomatik yaratiladi va ko'rsatiladi.
-              Ruxsatlar (bo'limlar) Rollar bo'limida belgilanadi.
+              {canManageRoles
+                ? ' Ruxsatlarni keyinroq ham har bir xodim kartasidan o\'zgartirishingiz mumkin.'
+                : ' Ruxsatlarni (bo\'limlarni) tizim egasi belgilaydi.'}
             </p>
           )}
         </form>

@@ -34,7 +34,7 @@ public class AcademicYearController(AppDbContext db, AuditService audit) : Contr
     [HttpGet]
     public async Task<ActionResult<AcademicYearInfoDto>> Info()
     {
-        var meta = await db.SchoolMeta.FindAsync("current");
+        var meta = await db.SchoolMeta.FirstOrDefaultAsync();
         return new AcademicYearInfoDto(
             meta?.CurrentYear ?? "",
             await db.Students.CountAsync(),
@@ -197,10 +197,10 @@ public class AcademicYearController(AppDbContext db, AuditService audit) : Contr
         if (string.IsNullOrWhiteSpace(req.NewYear))
             return BadRequest(new { message = "Yangi o'quv yilini kiriting" });
 
-        var meta = await db.SchoolMeta.FindAsync("current");
+        var meta = await db.SchoolMeta.FirstOrDefaultAsync();
         if (meta is null)
         {
-            meta = new SchoolMeta { Id = "current", CurrentYear = "" };
+            meta = new SchoolMeta { CurrentYear = "" };
             db.SchoolMeta.Add(meta);
         }
         var oldYear = meta.CurrentYear;
@@ -226,7 +226,7 @@ public class AcademicYearController(AppDbContext db, AuditService audit) : Contr
         db.SchoolYearArchives.Add(new SchoolYearArchive
         {
             Year = string.IsNullOrEmpty(oldYear) ? "—" : oldYear,
-            CreatedAt = DateTime.Now.ToString("yyyy-MM-ddTHH:mm:ss"),
+            CreatedAt = AppClock.Now.ToString("yyyy-MM-ddTHH:mm:ss"),
             StudentsCount = snapshot.Students.Count,
             ClassesCount = snapshot.Classes.Count,
             JournalCount = snapshot.Journal.Count,

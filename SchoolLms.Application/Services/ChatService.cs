@@ -12,10 +12,11 @@ namespace SchoolLms.Application.Services;
 /// o'qituvchi/o'quvchi portal controllerlari shu xizmatdan foydalanadi. Xabar saqlangach
 /// SignalR orqali shu sinf guruhiga (real-time) push qilinadi.
 /// </summary>
-public class ChatService(IAppDbContext db, IHubContext<ChatHub> hub)
+public class ChatService(IAppDbContext db, IHubContext<ChatHub> hub, ITenantContext tenant)
 {
-    /// <summary>Sinf nomidan SignalR guruh nomi.</summary>
-    public static string Group(string className) => $"class:{className}";
+    /// <summary>Sinf nomidan SignalR guruh nomi. Tenant bilan prefikslanadi —
+    /// turli maktablardagi bir xil nomli sinflar (mas. "5-A") guruhlari aralashmasligi uchun.</summary>
+    public static string Group(string? tenantId, string className) => $"t:{tenantId}:class:{className}";
 
     /// <summary>
     /// Barcha xodimlar (o'qituvchilar + adminlar) uchun umumiy guruh chati kanali kaliti.
@@ -124,13 +125,13 @@ public class ChatService(IAppDbContext db, IHubContext<ChatHub> hub)
             SenderName = user?.FullName ?? "Foydalanuvchi",
             SenderRole = user?.Role ?? "",
             Text = text,
-            CreatedAt = DateTime.UtcNow,
+            CreatedAt = AppClock.Now,
         };
         db.ChatMessages.Add(msg);
         await db.SaveChangesAsync();
 
         var dto = ToDto(msg);
-        await hub.Clients.Group(Group(className)).SendAsync("message", dto);
+        await hub.Clients.Group(Group(tenant.TenantId, className)).SendAsync("message", dto);
         return dto;
     }
 

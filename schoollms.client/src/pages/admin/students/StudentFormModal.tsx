@@ -203,7 +203,7 @@ export function StudentFormModal({ open, onClose, onSubmit, initial }: Props) {
           </div>
           <div className="mt-3">
             <FileField
-              label="Metrika (tug'ilganlik haqida guvohnoma)"
+              label="O'quvchi rasmi"
               url={form.birthCertificateUrl ?? null}
               uploading={uploading.birth}
               onUpload={(f) => handleUpload('birthCertificateUrl', f)}
@@ -241,7 +241,7 @@ export function StudentFormModal({ open, onClose, onSubmit, initial }: Props) {
           </div>
           <div className="mt-3">
             <FileField
-              label="Ota-ona passport rasm/skani"
+              label="Ota-ona rasmi"
               url={form.parentPassportUrl ?? null}
               uploading={uploading.passport}
               onUpload={(f) => handleUpload('parentPassportUrl', f)}
@@ -395,7 +395,7 @@ function FileField({
           <input
             ref={ref}
             type="file"
-            accept="image/*,application/pdf"
+            accept="image/*"
             className="hidden"
             onChange={(e) => {
               const f = e.target.files?.[0]

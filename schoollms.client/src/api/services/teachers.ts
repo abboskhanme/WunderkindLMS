@@ -13,6 +13,28 @@ import { financeMock } from '../mock/finance'
 /** newPassword — ixtiyoriy: tahrirda kiritilsa o'qituvchi akkaunti paroli almashtiriladi. */
 export type TeacherPayload = Omit<Teacher, 'id'> & { newPassword?: string }
 
+/**
+ * Barcha o'qituvchilarni login/parol bilan Excel (.xlsx) ga yuklab oladi (faqat superadmin).
+ * Parol faqat o'qituvchi hali kirmagan bo'lsa to'ldiriladi (kirgach bo'sh).
+ */
+export async function downloadTeacherCredentials(): Promise<void> {
+  if (USE_MOCK) {
+    alert('Eksport faqat real serverda ishlaydi (VITE_USE_MOCK=false).')
+    return
+  }
+  const res = await api.get('/admin/teachers/export', { responseType: 'blob' })
+  const url = URL.createObjectURL(res.data as Blob)
+  const a = document.createElement('a')
+  a.href = url
+  const cd = (res.headers['content-disposition'] as string | undefined) ?? ''
+  const m = cd.match(/filename="?([^"]+)"?/)
+  a.download = m?.[1] ?? `oqituvchilar_${new Date().toISOString().slice(0, 10)}.xlsx`
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  URL.revokeObjectURL(url)
+}
+
 export async function getTeachers(): Promise<Teacher[]> {
   if (USE_MOCK) {
     await delay()

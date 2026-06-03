@@ -167,7 +167,7 @@ public static class TeacherActivityReport
         }
 
         // --- Reja (Expected): jadval × biriktirilgan haftalar, bugungacha ---
-        var today = DateOnly.FromDateTime(DateTime.Now).ToString("yyyy-MM-dd");
+        var today = AppClock.Today.ToString("yyyy-MM-dd");
         foreach (var q in quarters)
         {
             var weeks = ScheduleMath.GetQuarterWeeks(q.StartDate, q.EndDate);

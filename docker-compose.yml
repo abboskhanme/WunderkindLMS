@@ -1,0 +1,57 @@
+# SchoolLms — prod: app (API + SPA) + SQL Server + Cloudflare Tunnel.
+# Sozlamalar .env faylidan keladi (.env.example dan nusxa oling).
+# Diqqat: app porti TASHQARIGA OCHILMAGAN — unga faqat cloudflared (ichki tarmoq) kiradi.
+
+services:
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: schoollms-sql
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: "${SA_PASSWORD}"
+      MSSQL_PID: "Express"          # bepul nashr; xohlasangiz "Developer"
+    volumes:
+      - mssql-data:/var/opt/mssql   # yagona SchoolLms bazasi shu yerda (backup = shu volume)
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa -P \"$$MSSQL_SA_PASSWORD\" -Q 'SELECT 1' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    restart: unless-stopped
+
+  app:
+    build:
+      context: .
+      args:
+        VITE_ROOT_DOMAIN: "${ROOT_DOMAIN}"   # frontend subdomenni shu domenga nisbatan aniqlaydi
+        VITE_USE_MOCK: "false"
+    container_name: schoollms-app
+    environment:
+      ASPNETCORE_ENVIRONMENT: "Production"
+      ASPNETCORE_URLS: "http://+:8080"
+      # Yagona shared baza — barcha maktablar + Control Plane shu yerda (har qator TenantId bilan).
+      ConnectionStrings__Default: "Server=sqlserver,1433;Database=SchoolLms;User Id=sa;Password=${SA_PASSWORD};TrustServerCertificate=True;Encrypt=False"
+      Tenancy__RootDomain: "${ROOT_DOMAIN}"
+      Jwt__Key: "${JWT_KEY}"               # >=32 belgi; prod'da MAJBURIY
+    volumes:
+      - uploads:/app/uploads               # yuklangan fayllar (rasm, hujjat) saqlanadi
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+    restart: unless-stopped
+    # Diqqat: bu yerda `ports:` YO'Q — internetga ochilmaydi.
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: schoollms-tunnel
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: "${TUNNEL_TOKEN}"      # Cloudflare Zero Trust → Tunnels → token
+    depends_on:
+      - app
+    restart: unless-stopped
+
+volumes:
+  mssql-data:
+  uploads:

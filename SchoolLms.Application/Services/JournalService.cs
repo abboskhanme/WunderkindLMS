@@ -23,6 +23,8 @@ public static class JournalService
             .Where(a => a.ClassId == classId && a.Quarter == quarter).ToListAsync();
         var templates = await db.ScheduleTemplates.Include(t => t.Lessons)
             .Where(t => t.ClassId == classId).ToListAsync();
+        // Bayram kunlari — bu sanalarda dars yo'q, jurnal ustuni chiqmaydi.
+        var holidays = (await db.Holidays.Select(h => h.Date).ToListAsync()).ToHashSet();
 
         var cols = new List<JournalColumnDto>();
         foreach (var w in weeks)
@@ -35,7 +37,8 @@ public static class JournalService
             foreach (var l in tpl.Lessons.Where(l => l.SubjectId == subjectId))
             {
                 var d = ScheduleMath.AddDaysISO(ScheduleMath.MondayOfISO(w.StartISO), l.Day);
-                if (string.CompareOrdinal(d, q.StartDate) >= 0 && string.CompareOrdinal(d, q.EndDate) <= 0)
+                if (string.CompareOrdinal(d, q.StartDate) >= 0 && string.CompareOrdinal(d, q.EndDate) <= 0
+                    && !holidays.Contains(d))
                     cols.Add(new JournalColumnDto(d, l.Period, l.SubGroup));
             }
         }
@@ -57,11 +60,14 @@ public static class JournalService
     /// SubGroup o'quvchining Student.SubGroup'idan olinadi — guruh o'zgarsa journal yozuvi
     /// yangi guruh ostida ko'rinadi.
     /// </summary>
-    public static async Task SetEntryAsync(IAppDbContext db, SetJournalEntryRequest req)
+    public static async Task SetEntryAsync(IAppDbContext db, SetJournalEntryRequest req, FcmService? fcm = null)
     {
         var entry = await db.JournalEntries.FirstOrDefaultAsync(e =>
             e.ClassId == req.ClassId && e.SubjectId == req.SubjectId && e.Quarter == req.Quarter &&
             e.StudentId == req.StudentId && e.Date == req.Date && e.Period == req.Period);
+        // Push uchun — yangi/o'zgargan baho yoki sababnigina xabar qilamiz.
+        var oldGrade = entry?.Grade;
+        var oldReason = entry?.ReasonId;
 
         // O'quvchining guruhi — yozuvga ham, mos LessonNote'ga ham SubGroup sifatida yoziladi.
         var student = await db.Students.FindAsync(req.StudentId);
@@ -108,6 +114,44 @@ public static class JournalService
         }
 
         await db.SaveChangesAsync();
+
+        // Avtomatik push: farzandi baho olsa yoki davomatda belgilansa, oila ilovasiga xabar.
+        await NotifyEntryAsync(db, fcm, req, student, oldGrade, oldReason);
+    }
+
+    /// <summary>Baho/davomat yozuvi o'zgarganda oila ilovasiga push yuboradi (fire-and-forget).</summary>
+    private static async Task NotifyEntryAsync(
+        IAppDbContext db, FcmService? fcm, SetJournalEntryRequest req, Student? student,
+        int? oldGrade, string? oldReason)
+    {
+        if (fcm is null || student?.UserId is null) return;
+        var notifyGrade = req.Grade.HasValue && req.Grade != oldGrade;
+        var notifyAbsence = !notifyGrade && req.ReasonId is not null && req.ReasonId != oldReason;
+        if (!notifyGrade && !notifyAbsence) return;
+
+        var meta = await db.SchoolMeta.FirstOrDefaultAsync();
+        var json = meta?.FcmServiceAccountJson ?? "";
+        if (!FcmService.IsConfigured(json)) return;
+
+        var tokens = await db.DeviceTokens.Where(d => d.UserId == student.UserId)
+            .Select(d => d.Token).Distinct().ToListAsync();
+        if (tokens.Count == 0) return;
+
+        var subject = (await db.Subjects.FindAsync(req.SubjectId))?.Name ?? "";
+        string title, body;
+        if (notifyGrade)
+        {
+            title = "Yangi baho";
+            body = $"{student.FullName}: {subject} fanidan {req.Grade} baho ({req.Date})";
+        }
+        else
+        {
+            var reason = (await db.AbsenceReasons.FindAsync(req.ReasonId!))?.Name ?? "Davomat";
+            title = "Davomat";
+            body = $"{student.FullName}: {subject} darsida — {reason} ({req.Date})";
+        }
+        // FCM faqat HTTP (db'ga tegmaydi) — jurnal javobini bloklamaslik uchun kutmaymiz.
+        _ = fcm.SendAsync(json, tokens, title, body);
     }
 
     public static async Task ClearEntryAsync(

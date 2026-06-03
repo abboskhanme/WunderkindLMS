@@ -159,6 +159,7 @@ export function ParentsPage() {
                   <th className="px-4 py-3">Telefon</th>
                   <th className="px-4 py-3">Farzandlar</th>
                   <th className="px-4 py-3">Holat</th>
+                  <th className="px-4 py-3">Qurilma</th>
                   <th className="px-4 py-3">Aktivlashtirilgan</th>
                   <th className="px-4 py-3">Oxirgi kirish</th>
                 </tr>
@@ -204,6 +205,19 @@ export function ParentsPage() {
                           )}
                         </td>
                         <td className="px-4 py-3 text-sm text-slate-600">
+                          {r.deviceName ? (
+                            <span className="inline-flex items-center gap-1">
+                              <Smartphone className="h-3.5 w-3.5 text-slate-400" />
+                              {r.deviceName}
+                              {r.platform && (
+                                <span className="text-[11px] text-slate-400">({r.platform})</span>
+                              )}
+                            </span>
+                          ) : (
+                            '—'
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-slate-600">
                           {formatDateTime(r.activatedAt)}
                         </td>
                         <td className="px-4 py-3">
@@ -215,7 +229,7 @@ export function ParentsPage() {
                       </tr>
                       {isOpen && (
                         <tr key={`${key}-detail`} className="bg-slate-50/40">
-                          <td colSpan={7} className="px-4 py-3">
+                          <td colSpan={8} className="px-4 py-3">
                             <div className="rounded-lg border border-slate-200 bg-white">
                               <table className="w-full text-sm">
                                 <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
@@ -224,6 +238,8 @@ export function ParentsPage() {
                                     <th className="px-3 py-2 text-left">Sinf</th>
                                     <th className="px-3 py-2 text-left">Birinchi kirish</th>
                                     <th className="px-3 py-2 text-left">Oxirgi kirish</th>
+                                    <th className="px-3 py-2 text-left">Qurilma</th>
+                                    <th className="px-3 py-2 text-left">App ID</th>
                                   </tr>
                                 </thead>
                                 <tbody>
@@ -233,6 +249,13 @@ export function ParentsPage() {
                                       <td className="px-3 py-2 text-slate-600">{c.className}</td>
                                       <td className="px-3 py-2 text-slate-600">{formatDateTime(c.firstLoginAt)}</td>
                                       <td className="px-3 py-2 text-slate-600">{formatDateTime(c.lastLoginAt)}</td>
+                                      <td className="px-3 py-2 text-slate-600">
+                                        {c.deviceName || '—'}
+                                        {c.platform ? ` (${c.platform})` : ''}
+                                      </td>
+                                      <td className="px-3 py-2 text-slate-500">
+                                        <code className="text-xs">{c.appId || '—'}</code>
+                                      </td>
                                     </tr>
                                   ))}
                                 </tbody>

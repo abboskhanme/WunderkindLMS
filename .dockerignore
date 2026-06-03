@@ -1,0 +1,15 @@
+# Build kontekstini kichik va toza saqlash (qurilgan/keshlangan narsalar obrazga kirmaydi).
+**/bin
+**/obj
+**/node_modules
+**/dist
+**/.vs
+**/.git
+**/.github
+.git
+schoollms.client/multitanent
+**/*.user
+**/appsettings.*.local.json
+DEPLOY.md
+README.md
+**/*.md

@@ -18,6 +18,7 @@ import {
   FileSignature,
   Building2,
   BookOpen,
+  ShieldAlert,
 } from 'lucide-react'
 import type { Role } from '@/types'
 
@@ -60,6 +61,7 @@ export const navByRole: Record<Role, NavItem[]> = {
         { label: 'Sinf jadvali', to: '/admin/schedule', end: true },
         { label: "O'qituvchi jadvali", to: '/admin/schedule/teachers' },
         { label: 'Dars jadvali yaratish', to: '/admin/schedule/manage' },
+        { label: 'Bayram kunlari', to: '/admin/schedule/holidays' },
         { label: 'Fanlar', to: '/admin/subjects' },
         { label: 'Choraklar', to: '/admin/settings/quarters' },
         { label: 'Dars vaqtlari', to: '/admin/settings/lesson-times' },
@@ -90,6 +92,7 @@ export const navByRole: Record<Role, NavItem[]> = {
         { label: 'Joylashuv', to: '/admin/locations' },
         { label: 'Oshxona', to: '/admin/canteen' },
         { label: 'Ota-onalar', to: '/admin/parents' },
+        { label: "O'qituvchilar", to: '/admin/app/teachers' },
         // Topshiriq turlari sozlamadan ko'chirildi; route hamon settings — perm 'settings'
         { label: 'Topshiriq turlari', to: '/admin/settings/assignment-types', perm: 'settings' },
       ],
@@ -106,6 +109,16 @@ export const navByRole: Record<Role, NavItem[]> = {
       ],
     },
     { label: "O'qituvchilar hisoboti", to: '/admin/teacher-reports', icon: BarChart3, perm: 'teacherReports' },
+    {
+      label: 'Intizomiy ball',
+      to: '/admin/discipline',
+      icon: ShieldAlert,
+      perm: 'discipline',
+      children: [
+        { label: 'Ballar nazorati', to: '/admin/discipline', end: true },
+        { label: 'Ball sabablar', to: '/admin/discipline/reasons' },
+      ],
+    },
     { label: 'Shartnomalar', to: '/admin/contracts', icon: FileSignature, perm: 'contracts' },
     { label: 'Moliya', to: '/admin/finance', icon: Wallet, perm: 'finance' },
     {
@@ -114,8 +127,7 @@ export const navByRole: Record<Role, NavItem[]> = {
       icon: Building2,
       children: [
         { label: 'Filiallar', to: '/admin/boshqaruv/branches', roles: ['superadmin'] },
-        { label: 'Rollar', to: '/admin/boshqaruv/roles', roles: ['superadmin'] },
-        { label: 'Xodimlar', to: '/admin/boshqaruv/staff', perm: 'staff' },
+        { label: 'Xodimlar va rollar', to: '/admin/boshqaruv/staff', perm: 'staff' },
         { label: 'Taklif va shikoyatlar', to: '/admin/boshqaruv/feedback', perm: 'feedback' },
       ],
     },
@@ -127,6 +139,7 @@ export const navByRole: Record<Role, NavItem[]> = {
       children: [
         { label: "Maktab ma'lumotlari", to: '/admin/settings/school' },
         { label: 'Telegram bot', to: '/admin/settings/telegram' },
+        { label: 'Push (Firebase)', to: '/admin/settings/firebase' },
         { label: "Yangi o'quv yiliga o'tish", to: '/admin/academic-year', perm: 'academicYear' },
       ],
     },

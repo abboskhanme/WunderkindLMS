@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { PortalMeta, TeacherLesson } from '@/types'
-import { getTeacherMeta, getTeacherSchedule } from '@/api/services/teacher'
+import { getTeacherMeta, getTeacherSchedule, getTeacherHolidays } from '@/api/services/teacher'
 import { quarters, weekDays } from '@/config/constants'
-import { getQuarterWeeks } from '@/lib/weeks'
+import { getQuarterWeeks, mondayOfISO, addDaysISO } from '@/lib/weeks'
 import { formatDate, cn } from '@/lib/utils'
 import { Card } from '@/components/ui/Card'
 import { Loader } from '@/components/ui/Loader'
@@ -16,6 +16,7 @@ export function TeacherSchedulePage() {
   const [quarter, setQuarter] = useState(1)
   const [week, setWeek] = useState(1)
   const [lessons, setLessons] = useState<TeacherLesson[]>([])
+  const [holidays, setHolidays] = useState<Map<string, string>>(new Map())
   const [dataLoading, setDataLoading] = useState(false)
 
   useEffect(() => {
@@ -28,6 +29,7 @@ export function TeacherSchedulePage() {
         }
       })
       .finally(() => setLoading(false))
+    getTeacherHolidays().then((hs) => setHolidays(new Map(hs.map((h) => [h.date, h.name]))))
   }, [])
 
   const weeks = useMemo(() => {
@@ -60,6 +62,17 @@ export function TeacherSchedulePage() {
   }, [meta, lessons])
 
   const timeFor = (period: number) => meta?.lessonTimes.find((t) => t.period === period)
+
+  // Tanlangan haftaning har kuni: sana, chorakdan tashqarimi (clamp), bayrammi.
+  const selectedWeek = weeks.find((w) => w.week === week) ?? null
+  const monday = selectedWeek ? mondayOfISO(selectedWeek.startISO) : null
+  const dayMeta = (day: number) => {
+    if (!selectedWeek || !monday) return { date: '', out: true, holiday: null as string | null }
+    const date = addDaysISO(monday, day)
+    const out = date < selectedWeek.startISO || date > selectedWeek.endISO
+    const holiday = holidays.has(date) ? holidays.get(date) || 'Bayram' : null
+    return { date, out, holiday }
+  }
 
   // grid[period][day] => darslar
   const grid = useMemo(() => {
@@ -128,11 +141,27 @@ export function TeacherSchedulePage() {
                   <thead>
                     <tr className="bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
                       <th className="w-16 px-2 py-2 text-center">Dars</th>
-                      {weekDays.map((d) => (
-                        <th key={d} className="min-w-[120px] px-2 py-2 text-left font-medium">
-                          {d}
-                        </th>
-                      ))}
+                      {weekDays.map((d, day) => {
+                        const m = dayMeta(day)
+                        return (
+                          <th
+                            key={d}
+                            className={cn('min-w-[120px] px-2 py-2 text-left font-medium', m.out && 'opacity-40')}
+                          >
+                            <div className="flex items-center gap-1.5">
+                              <span>{d}</span>
+                              {m.holiday && (
+                                <span
+                                  title={m.holiday}
+                                  className="rounded bg-red-100 px-1 text-[9px] font-semibold normal-case text-red-600"
+                                >
+                                  Bayram
+                                </span>
+                              )}
+                            </div>
+                          </th>
+                        )
+                      })}
                     </tr>
                   </thead>
                   <tbody>
@@ -153,6 +182,19 @@ export function TeacherSchedulePage() {
                             )}
                           </td>
                           {weekDays.map((_, day) => {
+                            const m = dayMeta(day)
+                            if (m.out || m.holiday) {
+                              return (
+                                <td key={day} className="px-1 py-1 align-top">
+                                  <div
+                                    className={cn(
+                                      'min-h-[52px] rounded-lg border border-dashed',
+                                      m.holiday ? 'border-red-100 bg-red-50/60' : 'border-slate-100 bg-slate-50/50',
+                                    )}
+                                  />
+                                </td>
+                              )
+                            }
                             const cell = grid[period]?.[day] ?? []
                             return (
                               <td key={day} className="px-1 py-1 align-top">

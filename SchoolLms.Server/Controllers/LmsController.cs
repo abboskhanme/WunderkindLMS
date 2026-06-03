@@ -109,6 +109,52 @@ public class LmsController(AppDbContext db, IWebHostEnvironment env) : Controlle
         return topics.Select(t => ToTopicDto(t, completedMap.GetValueOrDefault(t.Id, 0))).ToList();
     }
 
+    /// <summary>
+    /// Fan bo'yicha o'quvchilar progress matritsasi (admin): sinfdagi har o'quvchi qaysi mavzularni
+    /// tugatgan. O'qituvchi tomonidagi hisobotning aynan o'zi, lekin egalik tekshiruvisiz.
+    /// </summary>
+    [HttpGet("subjects/{subjectId}/progress")]
+    public async Task<ActionResult<LmsProgressReportDto>> Progress(string subjectId)
+    {
+        var subject = await db.LmsSubjects.FindAsync(subjectId);
+        if (subject is null) return NotFound();
+
+        var topics = await db.LmsTopics.Where(x => x.SubjectId == subjectId)
+            .OrderBy(x => x.Order).ToListAsync();
+        var topicIds = topics.Select(x => x.Id).ToList();
+
+        // Asosiy ro'yxat — fan biriktirilgan sinf o'quvchilari (sinf o'chirilgan bo'lsa bo'sh).
+        var cls = await db.Classes.FindAsync(subject.ClassId);
+        var roster = cls is null
+            ? new List<Student>()
+            : await db.Students.Where(s => s.ClassName == cls.Name && !s.IsArchived).ToListAsync();
+
+        // Mavzularni tugatgan o'quvchilarning progressi (sinfga qarab cheklamaymiz).
+        var byStudent = (await db.LmsProgresses
+                .Where(p => topicIds.Contains(p.TopicId))
+                .ToListAsync())
+            .GroupBy(p => p.StudentId)
+            .ToDictionary(g => g.Key, g => g.Select(x => x.TopicId).ToList());
+
+        // Sinf ro'yxatiga, sinfda bo'lmagan lekin tugatgan o'quvchilarni ham qo'shamiz — aks holda
+        // ularning bajargani ko'rinmay qoladi (boshqa sinfga ko'chgan/arxivlangan bo'lishi mumkin).
+        var rosterIds = roster.Select(s => s.Id).ToHashSet();
+        var extraIds = byStudent.Keys.Where(id => !rosterIds.Contains(id)).ToList();
+        var extras = extraIds.Count == 0
+            ? new List<Student>()
+            : await db.Students.Where(s => extraIds.Contains(s.Id)).ToListAsync();
+
+        var students = roster.Concat(extras).OrderBy(s => s.FullName).ToList();
+
+        return new LmsProgressReportDto(
+            topics.Select(x => new LmsTopicBriefDto(x.Id, x.Title, x.Order)).ToList(),
+            students.Select(s =>
+            {
+                var done = byStudent.GetValueOrDefault(s.Id, new List<string>());
+                return new LmsStudentProgressDto(s.Id, s.FullName, done, done.Count, topics.Count);
+            }).ToList());
+    }
+
     [HttpPost("subjects/{subjectId}/topics")]
     public async Task<ActionResult<LmsTopicDto>> CreateTopic(string subjectId, SaveLmsTopicRequest req)
     {

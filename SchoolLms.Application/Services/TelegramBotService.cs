@@ -102,60 +102,66 @@ public class TelegramBotService(
             return;
         }
 
+        var digits = PhoneUtil.DigitsOnly(phone);
+        var linked = new List<string>();
+
+        // Bot fon xizmatida so'rov (tenant) konteksti yo'q — global query filter aks holda hamma
+        // o'quvchini yashiradi. Shuning uchun HAR aktiv maktab DB'si bo'ylab to'g'ri tenant kontekstida
+        // qidiramiz; topilgan joyda ro'yxat yozuvi o'sha maktabning TenantId'si bilan saqlanadi.
         using var scope = sp.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<IAppDbContext>();
+        var runner = scope.ServiceProvider.GetRequiredService<ITenantDbRunner>();
+        await runner.ForEachActiveTenantAsync(async db =>
+        {
+            var matchedStudents = (await db.Students.ToListAsync(ct))
+                .Where(s => PhoneUtil.Key(s.ParentPhone) == key).ToList();
+            var matchedTeachers = (await db.Teachers.Where(t => !t.IsArchived).ToListAsync(ct))
+                .Where(t => PhoneUtil.Key(t.Phone) == key).ToList();
 
-        var students = await db.Students.ToListAsync(ct);
-        var matchedStudents = students.Where(s => PhoneUtil.Key(s.ParentPhone) == key).ToList();
+            if (matchedStudents.Count == 0 && matchedTeachers.Count == 0) return;
 
-        var teachers = await db.Teachers.Where(t => !t.IsArchived).ToListAsync(ct);
-        var matchedTeachers = teachers.Where(t => PhoneUtil.Key(t.Phone) == key).ToList();
+            foreach (var s in matchedStudents)
+            {
+                var exists = await db.TelegramRegistrations.AnyAsync(
+                    r => r.StudentId == s.Id && r.ChatId == chatId, ct);
+                if (!exists)
+                    db.TelegramRegistrations.Add(new TelegramRegistration
+                    {
+                        StudentId = s.Id,
+                        ChatId = chatId,
+                        ParentName = senderName,
+                        Phone = digits,
+                        CreatedAt = AppClock.Now,
+                    });
+                linked.Add($"{s.FullName} ({s.ClassName})");
+            }
 
-        if (matchedStudents.Count == 0 && matchedTeachers.Count == 0)
+            foreach (var t in matchedTeachers)
+            {
+                var exists = await db.TelegramRegistrations.AnyAsync(
+                    r => r.TeacherId == t.Id && r.ChatId == chatId, ct);
+                if (!exists)
+                    db.TelegramRegistrations.Add(new TelegramRegistration
+                    {
+                        TeacherId = t.Id,
+                        StudentId = "",
+                        ChatId = chatId,
+                        ParentName = senderName,
+                        Phone = digits,
+                        CreatedAt = AppClock.Now,
+                    });
+                linked.Add($"{t.FullName} (xodim)");
+            }
+
+            await db.SaveChangesAsync(ct);
+        }, ct);
+
+        if (linked.Count == 0)
         {
             await telegram.SendMessageAsync(chatId,
                 $"Bu raqam ({phone}) hech bir ota-ona yoki xodim raqami bilan mos kelmadi. " +
                 "Iltimos, maktab ma'muriyatiga murojaat qiling.", ct: ct);
             return;
         }
-
-        var digits = PhoneUtil.DigitsOnly(phone);
-        var linked = new List<string>();
-
-        foreach (var s in matchedStudents)
-        {
-            var exists = await db.TelegramRegistrations.AnyAsync(
-                r => r.StudentId == s.Id && r.ChatId == chatId, ct);
-            if (!exists)
-                db.TelegramRegistrations.Add(new TelegramRegistration
-                {
-                    StudentId = s.Id,
-                    ChatId = chatId,
-                    ParentName = senderName,
-                    Phone = digits,
-                    CreatedAt = DateTime.UtcNow,
-                });
-            linked.Add($"{s.FullName} ({s.ClassName})");
-        }
-
-        foreach (var t in matchedTeachers)
-        {
-            var exists = await db.TelegramRegistrations.AnyAsync(
-                r => r.TeacherId == t.Id && r.ChatId == chatId, ct);
-            if (!exists)
-                db.TelegramRegistrations.Add(new TelegramRegistration
-                {
-                    TeacherId = t.Id,
-                    StudentId = "",
-                    ChatId = chatId,
-                    ParentName = senderName,
-                    Phone = digits,
-                    CreatedAt = DateTime.UtcNow,
-                });
-            linked.Add($"{t.FullName} (xodim)");
-        }
-
-        await db.SaveChangesAsync(ct);
 
         await telegram.SendMessageAsync(chatId,
             "✅ Ro'yxatdan o'tdingiz. Endi quyidagilar bo'yicha e'lon va shartnomalarni olasiz:\n• " +

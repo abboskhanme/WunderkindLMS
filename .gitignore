@@ -1,3 +1,8 @@
+# Secrets / environment (HECH QACHON git'ga tushmasin)
+.env
+*.env
+!.env.example
+
 # Build output
 [Bb]in/
 [Oo]bj/
@@ -17,3 +22,6 @@ SchoolLms.Server/uploads/
 
 # Local secrets
 appsettings.*.local.json
+
+# Server statik (Docker build dist'dan yaratadi)
+SchoolLms.Server/wwwroot/

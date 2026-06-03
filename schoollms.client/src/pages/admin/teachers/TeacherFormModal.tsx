@@ -4,6 +4,7 @@ import type { TeacherPayload } from '@/api/services/teachers'
 import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
 import { Input, Select } from '@/components/ui/Input'
+import { PhotoUpload } from '@/components/ui/PhotoUpload'
 import { genderOptions, teacherPermissions } from '@/config/constants'
 import { cn, randomPassword } from '@/lib/utils'
 
@@ -26,6 +27,7 @@ const empty: TeacherPayload = {
   subjectIds: [],
   salary: 0,
   salaryStartMonth: '',
+  photoUrl: null,
   // Yangi o'qituvchiga standart — barcha bo'limlar ochiq.
   permissions: teacherPermissions.map((p) => p.key),
 }
@@ -48,6 +50,7 @@ export function TeacherFormModal({ open, onClose, onSubmit, initial, subjects, c
             subjectIds: [...initial.subjectIds],
             salary: initial.salary,
             salaryStartMonth: initial.salaryStartMonth ?? '',
+            photoUrl: initial.photoUrl ?? null,
             permissions: [...(initial.permissions ?? [])],
           }
         : empty,
@@ -101,6 +104,11 @@ export function TeacherFormModal({ open, onClose, onSubmit, initial, subjects, c
           required
           value={form.fullName}
           onChange={(e) => update('fullName', e.target.value)}
+        />
+        <PhotoUpload
+          label="O'qituvchi rasmi"
+          value={form.photoUrl ?? null}
+          onChange={(url) => update('photoUrl', url)}
         />
         <div className="grid grid-cols-2 gap-4">
           <Input

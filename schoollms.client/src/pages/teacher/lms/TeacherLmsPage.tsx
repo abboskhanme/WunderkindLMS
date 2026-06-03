@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { BookOpen, ChevronRight, Layers, Lock, ArrowRight } from 'lucide-react'
+import { BookOpen, ChevronRight, Layers } from 'lucide-react'
 import type { LmsSubject, LmsUnlockMode } from '@/types'
 import { getTeacherLmsSubjects } from '@/api/services/teacher'
 import { Loader } from '@/components/ui/Loader'

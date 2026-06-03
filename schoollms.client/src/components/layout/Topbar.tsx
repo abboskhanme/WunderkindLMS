@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Bell, ChevronDown, LogOut, Menu, Settings } from 'lucide-react'
+import { Bell, ChevronDown, LogOut, Menu, Search, Settings } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '@/context/auth-context'
 import { roleLabels } from '@/config/navigation'
@@ -68,6 +68,26 @@ export function Topbar({ onMenuClick }: TopbarProps) {
       </div>
 
       <div className="flex items-center gap-3 sm:gap-4">
+        {/* Buyruq paneli (Ctrl+K) — desktopda keng tugma, mobil ekranda faqat ikona */}
+        <button
+          onClick={() => window.dispatchEvent(new Event('cmdk:open'))}
+          className="hidden items-center gap-2 rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-400 transition-colors hover:bg-slate-50 sm:flex"
+          title="Qidirish (Ctrl+K)"
+        >
+          <Search className="h-4 w-4" />
+          <span>Qidirish...</span>
+          <kbd className="rounded border border-slate-200 bg-slate-50 px-1.5 text-[10px] text-slate-400">
+            Ctrl K
+          </kbd>
+        </button>
+        <button
+          onClick={() => window.dispatchEvent(new Event('cmdk:open'))}
+          className="rounded-lg p-2 text-slate-500 transition-colors hover:bg-slate-100 sm:hidden"
+          title="Qidirish"
+        >
+          <Search className="h-5 w-5" />
+        </button>
+
         <button className="relative rounded-lg p-2 text-slate-500 transition-colors hover:bg-slate-50">
           <Bell className="h-5 w-5" />
           <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-red-500" />

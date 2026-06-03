@@ -16,10 +16,14 @@ public class TuitionAccrualService(IServiceProvider services, ILogger<TuitionAcc
             try
             {
                 using var scope = services.CreateScope();
-                var db = scope.ServiceProvider.GetRequiredService<IAppDbContext>();
-                var accrued = await TuitionService.AccrueDue(db);
-                if (accrued.Count > 0)
-                    logger.LogInformation("Oylik to'lov hisoblandi: {Months}", string.Join(", ", accrued));
+                // Har aktiv maktab DB'si bo'ylab alohida hisoblaymiz (DB-per-tenant).
+                var runner = scope.ServiceProvider.GetRequiredService<ITenantDbRunner>();
+                await runner.ForEachActiveTenantAsync(async db =>
+                {
+                    var accrued = await TuitionService.AccrueDue(db);
+                    if (accrued.Count > 0)
+                        logger.LogInformation("Oylik to'lov hisoblandi: {Months}", string.Join(", ", accrued));
+                }, stoppingToken);
             }
             catch (Exception ex)
             {

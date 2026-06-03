@@ -2,15 +2,17 @@ import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, ChevronUp, ChevronDown, Video, FileText,
-  Paperclip, Pencil, Trash2, Plus,
+  Paperclip, Pencil, Trash2, Plus, Users,
 } from 'lucide-react'
-import type { LmsSubject, LmsTopic } from '@/types'
+import type { LmsSubject, LmsTopic, LmsProgressReport } from '@/types'
 import {
   getLmsSubjects, getLmsTopics, createLmsTopic, updateLmsTopic,
-  deleteLmsTopic, reorderLmsTopics, updateLmsSubject,
+  deleteLmsTopic, reorderLmsTopics, updateLmsSubject, getLmsProgress,
 } from '@/api/services/lms'
 import { Loader } from '@/components/ui/Loader'
 import { Card } from '@/components/ui/Card'
+import { LmsProgressMatrix } from '@/components/lms/LmsProgressMatrix'
+import { cn } from '@/lib/utils'
 import { LmsSubjectModal } from './LmsSubjectModal'
 import { LmsTopicModal } from './LmsTopicModal'
 
@@ -31,6 +33,21 @@ export function LmsTopicsPage() {
   const [subjectModal, setSubjectModal] = useState(false)
   const [topicModal, setTopicModal] = useState<{ open: boolean; editing?: LmsTopic }>({ open: false })
   const [saving, setSaving] = useState(false)
+
+  const [tab, setTab] = useState<'topics' | 'progress'>('topics')
+  const [progress, setProgress] = useState<LmsProgressReport | null>(null)
+  const [progressLoading, setProgressLoading] = useState(false)
+
+  // Progressni faqat tab ochilganda yuklaymiz; mavzu o'zgarsa keshni bekor qilamiz (ustunlar o'zgaradi).
+  const loadProgress = () => {
+    if (!subjectId || progress) return
+    setProgressLoading(true)
+    getLmsProgress(subjectId).then(setProgress).finally(() => setProgressLoading(false))
+  }
+  const switchTab = (t: 'topics' | 'progress') => {
+    setTab(t)
+    if (t === 'progress') loadProgress()
+  }
 
   useEffect(() => {
     if (!classId || !subjectId) return
@@ -77,6 +94,7 @@ export function LmsTopicsPage() {
         setTopics((prev) => [...prev, created])
       }
       setTopicModal({ open: false })
+      setProgress(null) // mavzular o'zgardi — progress keshini qayta yuklash kerak
     } finally {
       setSaving(false)
     }
@@ -86,6 +104,7 @@ export function LmsTopicsPage() {
     if (!window.confirm("Mavzu va uning materiallari o'chiriladi. Davom etasizmi?")) return
     await deleteLmsTopic(id)
     setTopics((prev) => prev.filter((t) => t.id !== id))
+    setProgress(null)
   }
 
   /* ─── Reorder ─── */
@@ -97,6 +116,7 @@ export function LmsTopicsPage() {
     ;[next[index], next[swap]] = [next[swap], next[index]]
     setTopics(next)
     await reorderLmsTopics(subjectId, next.map((t) => t.id))
+    setProgress(null)
   }
 
   if (loading) return <Loader label="Yuklanmoqda..." />
@@ -176,8 +196,17 @@ export function LmsTopicsPage() {
         <span className="text-slate-400">{topics.length} ta mavzu</span>
       </div>
 
+      {/* Tab: mavzular / o'quvchilar progressi */}
+      <div className="inline-flex rounded-lg border border-slate-200 bg-white p-1">
+        <TabBtn active={tab === 'topics'} onClick={() => switchTab('topics')}>Mavzular</TabBtn>
+        <TabBtn active={tab === 'progress'} onClick={() => switchTab('progress')}>
+          <Users className="h-3.5 w-3.5" />
+          O'quvchilar progressi
+        </TabBtn>
+      </div>
+
       {/* Mavzular ro'yxati */}
-      {topics.length === 0 ? (
+      {tab === 'topics' && (topics.length === 0 ? (
         <Card className="py-16 text-center">
           <p className="text-slate-400">Hali mavzu qo'shilmagan</p>
           <button
@@ -273,6 +302,15 @@ export function LmsTopicsPage() {
             </div>
           ))}
         </div>
+      ))}
+
+      {/* O'quvchilar progressi */}
+      {tab === 'progress' && (
+        progressLoading ? (
+          <Loader label="Progress yuklanmoqda..." />
+        ) : !progress ? null : (
+          <LmsProgressMatrix progress={progress} />
+        )
       )}
 
       {/* Modals */}
@@ -291,5 +329,24 @@ export function LmsTopicsPage() {
         onSave={handleTopicSave}
       />
     </div>
+  )
+}
+
+function TabBtn({ active, onClick, children }: {
+  active: boolean
+  onClick: () => void
+  children: React.ReactNode
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        'inline-flex items-center gap-1.5 rounded-md px-4 py-1.5 text-sm font-medium transition-colors',
+        active ? 'bg-brand-600 text-white' : 'text-slate-600 hover:bg-slate-50',
+      )}
+    >
+      {children}
+    </button>
   )
 }

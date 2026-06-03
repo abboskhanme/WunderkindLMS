@@ -97,7 +97,7 @@ public class ContractsController(AppDbContext db, ContractService contracts, Tel
         if (bytes is null) return BadRequest(new { message = "Andoza fayli topilmadi" });
 
         var number = await db.Contracts.AnyAsync() ? await db.Contracts.MaxAsync(c => c.Number) : 0;
-        var today = DateTime.Now.ToString("dd.MM.yyyy", CultureInfo.InvariantCulture);
+        var today = AppClock.Now.ToString("dd.MM.yyyy", CultureInfo.InvariantCulture);
         var results = new List<SendResultDto>();
         var keys = req.RecipientKeys.Distinct().ToList();
 
@@ -123,7 +123,7 @@ public class ContractsController(AppDbContext db, ContractService contracts, Tel
                     RecipientName = t.FullName,
                     Number = number,
                     TemplateId = tpl.Id,
-                    SentAt = DateTime.UtcNow,
+                    SentAt = AppClock.Now,
                     Delivered = ok,
                 });
                 results.Add(new(key, ok, number, ok ? "Yuborildi" : "Yuborilmadi"));
@@ -150,7 +150,7 @@ public class ContractsController(AppDbContext db, ContractService contracts, Tel
                     RecipientName = g.ParentName,
                     Number = number,
                     TemplateId = tpl.Id,
-                    SentAt = DateTime.UtcNow,
+                    SentAt = AppClock.Now,
                     Delivered = ok,
                 });
                 results.Add(new(key, ok, number, ok ? "Yuborildi" : "Yuborilmadi"));

@@ -57,7 +57,7 @@ public static class AssignmentService
             LatePenaltyPct = req.LatePenaltyPct,
             MaxScore = req.MaxScore > 0 ? req.MaxScore : 100,
             AutoGrade = req.AutoGrade,
-            CreatedAt = DateTime.UtcNow,
+            CreatedAt = AppClock.Now,
         };
         Apply(a, req);
         db.Assignments.Add(a);
@@ -217,7 +217,7 @@ public static class AssignmentService
         }
         sub.Completed = completed;
         sub.Score = score;
-        sub.SubmittedAt = completed ? (sub.SubmittedAt ?? DateTime.UtcNow.ToString("o")) : null;
+        sub.SubmittedAt = completed ? (sub.SubmittedAt ?? AppClock.Now.ToString("o")) : null;
         await db.SaveChangesAsync();
         return true;
     }
@@ -292,7 +292,7 @@ public static class AssignmentService
             sub.FileUrl = string.IsNullOrWhiteSpace(req.FileUrl) ? null : req.FileUrl;
         }
         sub.Completed = true;
-        sub.SubmittedAt = DateTime.UtcNow.ToString("o");
+        sub.SubmittedAt = AppClock.Now.ToString("o");
         await db.SaveChangesAsync();
         return new SubmitResultDto(true, score, correct, total);
     }

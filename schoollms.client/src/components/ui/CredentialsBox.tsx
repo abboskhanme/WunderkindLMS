@@ -44,7 +44,8 @@ export function CredentialsBox({ credentials, loading, onReset }: Props) {
             <CredRow label="Parol" value={credentials.password} />
           ) : (
             <p className="px-1 text-xs text-slate-400">
-              Parol xavfsizlik uchun saqlanmaydi. Yangi parol yarating — u faqat bir marta ko'rsatiladi.
+              Foydalanuvchi allaqachon ilovaga kirgan — dastlabki parol endi ko'rinmaydi. Kerak bo'lsa
+              yangi parol yarating (u faqat bir marta ko'rsatiladi).
             </p>
           )}
           {onReset && (

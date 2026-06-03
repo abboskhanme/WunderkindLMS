@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore;
 using SchoolLms.Infrastructure.Data;
 using SchoolLms.Domain;
 using System.Security.Cryptography;
@@ -37,9 +38,11 @@ public static class AccountFactory
         var baseName = BuildBase(fullName);
         if (baseName.Length == 0) baseName = "user";
 
-        // Band bo'lgan login'lar: bazadagi + hali saqlanmagan (Local) akkauntlar.
+        // Band bo'lgan login'lar: BUTUN baza (barcha maktablar) + hali saqlanmagan (Local) akkauntlar.
+        // IgnoreQueryFilters — tenant filtri chetlab o'tiladi, shunda login HAMMA uchun unikal bo'ladi
+        // (maktab kodisiz login qilish uchun shart).
         var taken = new HashSet<string>(
-            db.Users.Select(u => u.Email).ToList(), StringComparer.OrdinalIgnoreCase);
+            db.Users.IgnoreQueryFilters().Select(u => u.Email).ToList(), StringComparer.OrdinalIgnoreCase);
         foreach (var local in db.Users.Local) taken.Add(local.Email);
 
         var candidate = baseName;
@@ -66,6 +69,8 @@ public static class AccountFactory
             FullName = fullName,
             Role = role,
             Email = GenerateUsername(db, fullName),
+            // Dastlabki parolni ochiq saqlaymiz — superadmin ko'rishi/eksport uchun (birinchi login'da tozalanadi).
+            InitialPassword = plainPassword,
             PasswordHash = PasswordHasher.Hash(plainPassword),
         };
         db.Users.Add(user);

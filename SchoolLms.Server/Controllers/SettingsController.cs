@@ -57,7 +57,7 @@ public class SettingsController(AppDbContext db, TelegramService telegram) : Con
     [HttpGet("school")]
     public async Task<ActionResult<SchoolInfoDto>> GetSchool()
     {
-        var m = await db.SchoolMeta.FindAsync("current");
+        var m = await db.SchoolMeta.FirstOrDefaultAsync();
         return new SchoolInfoDto(
             m?.Name ?? "", m?.Director ?? "", m?.Phone ?? "", m?.Email ?? "",
             m?.Address ?? "", m?.Region ?? "", m?.District ?? "");
@@ -66,10 +66,10 @@ public class SettingsController(AppDbContext db, TelegramService telegram) : Con
     [HttpPut("school")]
     public async Task<IActionResult> SaveSchool(SchoolInfoDto req)
     {
-        var m = await db.SchoolMeta.FindAsync("current");
+        var m = await db.SchoolMeta.FirstOrDefaultAsync();
         if (m is null)
         {
-            m = new SchoolMeta { Id = "current" };
+            m = new SchoolMeta();
             db.SchoolMeta.Add(m);
         }
         m.Name = req.Name;
@@ -88,34 +88,62 @@ public class SettingsController(AppDbContext db, TelegramService telegram) : Con
     [HttpGet("telegram")]
     public async Task<ActionResult<TelegramSettingsDto>> GetTelegram()
     {
-        var m = await db.SchoolMeta.FindAsync("current");
+        var m = await db.SchoolMeta.FirstOrDefaultAsync();
         return new TelegramSettingsDto(
-            m?.TelegramBotToken ?? "", m?.TelegramBotUsername ?? "", telegram.IsConfigured);
+            m?.TelegramBotToken ?? "", m?.TelegramBotUsername ?? "", m?.TelegramBotName ?? "",
+            telegram.IsConfigured);
     }
 
     [HttpPut("telegram")]
     public async Task<ActionResult<TelegramSettingsDto>> SaveTelegram(SaveTelegramSettingsRequest req)
     {
-        var m = await db.SchoolMeta.FindAsync("current");
+        var m = await db.SchoolMeta.FirstOrDefaultAsync();
         if (m is null)
         {
-            m = new SchoolMeta { Id = "current" };
+            m = new SchoolMeta();
             db.SchoolMeta.Add(m);
         }
         m.TelegramBotToken = (req.BotToken ?? "").Trim();
         m.TelegramBotUsername = (req.BotUsername ?? "").Trim().TrimStart('@');
+        m.TelegramBotName = (req.BotName ?? "").Trim();
         await db.SaveChangesAsync();
 
         // Ishlab turgan xizmat (va bot) darrov yangi tokenni ishlatishi uchun keshni yangilaymiz.
-        telegram.Set(m.TelegramBotToken, m.TelegramBotUsername);
+        telegram.Set(m.TelegramBotToken, m.TelegramBotUsername, m.TelegramBotName);
 
-        return new TelegramSettingsDto(m.TelegramBotToken, m.TelegramBotUsername, telegram.IsConfigured);
+        return new TelegramSettingsDto(m.TelegramBotToken, m.TelegramBotUsername, m.TelegramBotName, telegram.IsConfigured);
+    }
+
+    // ---------- Push (Firebase / FCM) ----------
+
+    [HttpGet("firebase")]
+    public async Task<ActionResult<FirebaseSettingsDto>> GetFirebase()
+    {
+        var m = await db.SchoolMeta.FirstOrDefaultAsync();
+        var json = m?.FcmServiceAccountJson ?? "";
+        return new FirebaseSettingsDto(json, FcmService.IsConfigured(json));
+    }
+
+    [HttpPut("firebase")]
+    public async Task<ActionResult<FirebaseSettingsDto>> SaveFirebase(SaveFirebaseSettingsRequest req)
+    {
+        var json = (req.ServiceAccountJson ?? "").Trim();
+        if (json.Length > 0 && !FcmService.IsConfigured(json))
+            return BadRequest(new { message = "Service account JSON noto'g'ri (client_email/private_key/project_id kerak)" });
+        var m = await db.SchoolMeta.FirstOrDefaultAsync();
+        if (m is null) { m = new SchoolMeta(); db.SchoolMeta.Add(m); }
+        m.FcmServiceAccountJson = json;
+        await db.SaveChangesAsync();
+        return new FirebaseSettingsDto(json, FcmService.IsConfigured(json));
     }
 
     [HttpPut("absence-reasons")]
     public async Task<IActionResult> SaveAbsenceReasons(SaveAbsenceReasonsRequest req)
     {
         // Mavjud id'larni saqlab qolamiz (jurnal yozuvlari reasonId orqali bog'langan).
+        // Intizomiy ball (Points) "Ball sabablar"da belgilanadi — bu yerda qayta yaratilganda
+        // id bo'yicha eski ballni saqlab qolamiz (aks holda 0 ga tushib qolardi).
+        var oldPoints = await db.AbsenceReasons.ToDictionaryAsync(r => r.Id, r => r.Points);
         db.AbsenceReasons.RemoveRange(db.AbsenceReasons);
         db.AbsenceReasons.AddRange(req.AbsenceReasons.Select(r => new AbsenceReason
         {
@@ -123,6 +151,7 @@ public class SettingsController(AppDbContext db, TelegramService telegram) : Con
             Name = r.Name,
             Short = r.Short,
             IsLate = r.IsLate,
+            Points = oldPoints.GetValueOrDefault(r.Id, 0),
         }));
         await db.SaveChangesAsync();
         return NoContent();

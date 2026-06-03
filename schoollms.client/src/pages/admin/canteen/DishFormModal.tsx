@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { ImagePlus, X } from 'lucide-react'
 import type { Dish } from '@/types'
 import type { DishPayload } from '@/api/services/canteen'
+import { uploadAdminFile } from '@/api/services/students'
 import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
 import { Input, Textarea } from '@/components/ui/Input'
@@ -18,6 +19,7 @@ export function DishFormModal({ open, title, initial, onClose, onSubmit }: Props
   const [name, setName] = useState('')
   const [ingredients, setIngredients] = useState('')
   const [imageUrl, setImageUrl] = useState<string | undefined>(undefined)
+  const [uploading, setUploading] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -28,12 +30,22 @@ export function DishFormModal({ open, title, initial, onClose, onSubmit }: Props
     setImageUrl(initial?.imageUrl)
   }, [open, initial])
 
-  const onFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Rasmni SERVERGA yuklaymiz va /uploads/... URL'ini saqlaymiz (base64 EMAS) — shunda mobil
+  // ilova ham (Image.network) rasmni ko'rsata oladi. Avval base64 data URL saqlanardi va ilovada
+  // "rasm yuklanmadi" bo'lardi.
+  const onFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
-    const reader = new FileReader()
-    reader.onload = () => setImageUrl(reader.result as string)
-    reader.readAsDataURL(file)
+    setUploading(true)
+    try {
+      const up = await uploadAdminFile(file)
+      setImageUrl(up.url)
+    } catch {
+      alert("Rasm yuklanmadi. Qaytadan urinib ko'ring (faqat rasm, ~20 MB gacha).")
+    } finally {
+      setUploading(false)
+      e.target.value = '' // bir xil faylni qayta tanlash mumkin bo'lsin
+    }
   }
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -95,10 +107,11 @@ export function DishFormModal({ open, title, initial, onClose, onSubmit }: Props
             <button
               type="button"
               onClick={() => fileRef.current?.click()}
-              className="flex h-32 w-full max-w-xs flex-col items-center justify-center gap-1 rounded-lg border-2 border-dashed border-slate-200 text-slate-400 transition-colors hover:border-brand-300 hover:text-brand-600"
+              disabled={uploading}
+              className="flex h-32 w-full max-w-xs flex-col items-center justify-center gap-1 rounded-lg border-2 border-dashed border-slate-200 text-slate-400 transition-colors hover:border-brand-300 hover:text-brand-600 disabled:opacity-60"
             >
               <ImagePlus className="h-6 w-6" />
-              <span className="text-sm">Rasm yuklash</span>
+              <span className="text-sm">{uploading ? 'Yuklanmoqda…' : 'Rasm yuklash'}</span>
             </button>
           )}
           <input

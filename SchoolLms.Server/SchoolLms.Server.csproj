@@ -19,7 +19,6 @@
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
     <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="8.*" />
-    <PackageReference Include="Swashbuckle.AspNetCore" Version="6.6.2" />
   </ItemGroup>
 
   <ItemGroup>
@@ -28,7 +27,10 @@
     <ProjectReference Include="..\SchoolLms.Infrastructure\SchoolLms.Infrastructure.csproj" />
   </ItemGroup>
 
-  <ItemGroup>
+  <!-- Dev/VS'da SPA proxy uchun klient loyihasiga bog'lanadi. Docker'da klient alohida
+       (node) bosqichda quriladi, shuning uchun -p:BuildSpa=false bilan bu havola o'chiriladi
+       (dotnet SDK obrazida npm yo'q). -->
+  <ItemGroup Condition="'$(BuildSpa)' != 'false'">
     <ProjectReference Include="..\schoollms.client\schoollms.client.esproj">
       <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
     </ProjectReference>

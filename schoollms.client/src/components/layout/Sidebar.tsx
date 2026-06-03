@@ -33,10 +33,15 @@ export function Sidebar({ open, onNavigate }: SidebarProps) {
 
   if (!user) return null
   const role = user.role
-  // Element ko'rinadi: roli mos (yoki roles yo'q) VA ruxsati bor (yoki perm yo'q / permissions yo'q).
+  // Maktab obunasida ochilgan bo'limlar (kalitlar). null/bo'sh = cheklovsiz (hamma bo'lim).
+  // Bu maktab darajasidagi litsenziya — barcha rollarga (admin/superadmin ham) tegishli.
+  const modules = user.modules ?? null
+  // Element ko'rinadi: roli mos (yoki roles yo'q) VA xodim ruxsati bor (yoki perm yo'q / permissions yo'q)
+  // VA bo'lim maktab obunasida ochiq (yoki cheklov yo'q / perm yo'q).
   const canSee = (x: { roles?: Role[]; perm?: string }) =>
     (!x.roles || x.roles.includes(role)) &&
-    (!x.perm || !user.permissions || user.permissions.includes(x.perm))
+    (!x.perm || !user.permissions || user.permissions.includes(x.perm)) &&
+    (!x.perm || !modules || modules.includes(x.perm))
 
   // Guruh bolalarini ham filtrlaymiz; barcha bolalari yashirilgan guruhni ko'rsatmaymiz.
   const items = navByRole[role]
@@ -57,7 +62,7 @@ export function Sidebar({ open, onNavigate }: SidebarProps) {
           <GraduationCap className="h-5 w-5" />
         </div>
         <div className="leading-tight">
-          <p className="font-semibold text-slate-800">{schoolName || 'Maktab LMS'}</p>
+          <p className="font-semibold text-slate-800">{schoolName || 'Intellect School'}</p>
           <p className="text-xs text-slate-400">{roleLabels[role]}</p>
         </div>
       </div>

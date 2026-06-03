@@ -11,10 +11,12 @@ import {
   updateStudent,
   deleteStudent,
   addPayment,
+  downloadStudentCredentials,
 } from '@/api/services/students'
 import { getClasses } from '@/api/services/classes'
 import { genderLabels } from '@/config/constants'
 import { formatDate, formatMoney, exportToCsv, cn } from '@/lib/utils'
+import { useAuth } from '@/context/auth-context'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Loader } from '@/components/ui/Loader'
@@ -32,6 +34,7 @@ const control =
   'rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-brand-400'
 
 export function StudentsPage() {
+  const { user } = useAuth()
   const [tab, setTab] = useState<Tab>('active')
   const [students, setStudents] = useState<Student[]>([])
   const [archived, setArchived] = useState<Student[]>([])
@@ -291,6 +294,13 @@ export function StudentsPage() {
               Arxiv ({archived.length})
             </button>
           </div>
+          {/* Faqat superadmin: barcha o'quvchilarni login/parol bilan Excel'ga yuklab olish.
+              Parol faqat foydalanuvchi hali kirmagan bo'lsa ko'rinadi. */}
+          {user?.role === 'superadmin' && (
+            <Button variant="secondary" onClick={() => downloadStudentCredentials()}>
+              <Download className="h-4 w-4" /> Login/parollar
+            </Button>
+          )}
           {tab === 'active' && (
             <Button
               onClick={() => {

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { MessageSquare, Megaphone, Users, Briefcase } from 'lucide-react'
+import { MessageSquare, Megaphone, Users, Briefcase, Bell } from 'lucide-react'
 import type { MessageClass } from '@/types'
 import { getMessageClasses, getChat, sendChat } from '@/api/services/messages'
 import { STAFF_CHANNEL, STAFF_CHANNEL_LABEL } from '@/config/constants'
@@ -9,8 +9,9 @@ import { Loader } from '@/components/ui/Loader'
 import { cn } from '@/lib/utils'
 import { ChatPanel } from '@/components/chat/ChatPanel'
 import { BroadcastPanel } from './BroadcastPanel'
+import { PushComposer } from './PushComposer'
 
-type Tab = 'chat' | 'broadcast'
+type Tab = 'chat' | 'broadcast' | 'push'
 
 export function MessagesPage() {
   const { unreadChannels } = useUnread()
@@ -27,9 +28,6 @@ export function MessagesPage() {
       })
       .finally(() => setLoading(false))
   }, [])
-
-  // E'lon faqat haqiqiy sinfga yuboriladi — xodimlar kanali tanlangan bo'lsa sinf yo'q.
-  const broadcastClass = selected && selected !== STAFF_CHANNEL ? selected : null
 
   return (
     <div className="space-y-6">
@@ -51,40 +49,43 @@ export function MessagesPage() {
           >
             E'lon yuborish
           </TabButton>
+          <TabButton active={tab === 'push'} onClick={() => setTab('push')} icon={Bell}>
+            Push yuborish
+          </TabButton>
         </div>
       </div>
 
       {loading ? (
         <Loader label="Yuklanmoqda..." />
+      ) : tab === 'broadcast' ? (
+        <BroadcastPanel classes={classes} />
+      ) : tab === 'push' ? (
+        <PushComposer classes={classes} />
       ) : (
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-[280px_1fr]">
           <Card className="p-2">
             <div className="max-h-[70vh] space-y-1 overflow-y-auto">
-              {/* Xodimlar kanali — faqat chatda (e'lon emas) */}
-              {tab === 'chat' && (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => setSelected(STAFF_CHANNEL)}
-                    className={cn(
-                      'flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors',
-                      selected === STAFF_CHANNEL
-                        ? 'bg-brand-50 text-brand-700'
-                        : 'text-slate-600 hover:bg-slate-50',
-                    )}
-                  >
-                    <Briefcase className="h-4 w-4 text-slate-400" />
-                    <span className="font-medium">{STAFF_CHANNEL_LABEL}</span>
-                    <span className="ml-auto flex items-center gap-1.5">
-                      <span className="text-xs text-slate-400">barcha</span>
-                      {unreadChannels.has(STAFF_CHANNEL) && (
-                        <span className="h-2 w-2 shrink-0 rounded-full bg-red-500" />
-                      )}
-                    </span>
-                  </button>
-                  <div className="my-1 border-t border-slate-100" />
-                </>
-              )}
+              {/* Xodimlar kanali */}
+              <button
+                type="button"
+                onClick={() => setSelected(STAFF_CHANNEL)}
+                className={cn(
+                  'flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors',
+                  selected === STAFF_CHANNEL
+                    ? 'bg-brand-50 text-brand-700'
+                    : 'text-slate-600 hover:bg-slate-50',
+                )}
+              >
+                <Briefcase className="h-4 w-4 text-slate-400" />
+                <span className="font-medium">{STAFF_CHANNEL_LABEL}</span>
+                <span className="ml-auto flex items-center gap-1.5">
+                  <span className="text-xs text-slate-400">barcha</span>
+                  {unreadChannels.has(STAFF_CHANNEL) && (
+                    <span className="h-2 w-2 shrink-0 rounded-full bg-red-500" />
+                  )}
+                </span>
+              </button>
+              <div className="my-1 border-t border-slate-100" />
 
               {classes.map((c) => (
                 <button
@@ -104,16 +105,7 @@ export function MessagesPage() {
                       <Users className="h-3 w-3" />
                       {c.studentCount}
                     </span>
-                    {tab === 'broadcast' && (
-                      <span
-                        className="inline-flex items-center gap-0.5 text-sky-600"
-                        title="Telegramdagi ota-onalar"
-                      >
-                        <Megaphone className="h-3 w-3" />
-                        {c.parentCount}
-                      </span>
-                    )}
-                    {tab === 'chat' && unreadChannels.has(c.name) && (
+                    {unreadChannels.has(c.name) && (
                       <span className="h-2 w-2 shrink-0 rounded-full bg-red-500" />
                     )}
                   </span>
@@ -129,33 +121,25 @@ export function MessagesPage() {
           </Card>
 
           <div>
-            {tab === 'chat' ? (
-              selected === STAFF_CHANNEL ? (
-                <ChatPanel
-                  key="staff"
-                  className={STAFF_CHANNEL}
-                  fetchMessages={getChat}
-                  sendMessage={sendChat}
-                  title={`${STAFF_CHANNEL_LABEL} — guruh chati`}
-                  subtitle="Barcha o'qituvchilar va adminlar"
-                />
-              ) : selected ? (
-                <ChatPanel
-                  key={selected}
-                  className={selected}
-                  fetchMessages={getChat}
-                  sendMessage={sendChat}
-                />
-              ) : (
-                <Card>
-                  <p className="py-10 text-center text-slate-400">Kanal tanlang</p>
-                </Card>
-              )
-            ) : broadcastClass ? (
-              <BroadcastPanel key={broadcastClass} className={broadcastClass} />
+            {selected === STAFF_CHANNEL ? (
+              <ChatPanel
+                key="staff"
+                className={STAFF_CHANNEL}
+                fetchMessages={getChat}
+                sendMessage={sendChat}
+                title={`${STAFF_CHANNEL_LABEL} — guruh chati`}
+                subtitle="Barcha o'qituvchilar va adminlar"
+              />
+            ) : selected ? (
+              <ChatPanel
+                key={selected}
+                className={selected}
+                fetchMessages={getChat}
+                sendMessage={sendChat}
+              />
             ) : (
               <Card>
-                <p className="py-10 text-center text-slate-400">Sinf tanlang</p>
+                <p className="py-10 text-center text-slate-400">Kanal tanlang</p>
               </Card>
             )}
           </div>

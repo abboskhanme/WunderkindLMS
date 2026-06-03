@@ -18,6 +18,8 @@ export interface User {
   avatarUrl?: string
   /** O'qituvchi uchun ochiq bo'limlar (nav filtri); boshqa rollarda bo'lmaydi */
   permissions?: string[]
+  /** Maktab obunasida ochilgan bo'limlar (kalitlar). null/yo'q = cheklovsiz (hamma bo'lim). */
+  modules?: string[] | null
 }
 
 /** O'quvchi/o'qituvchiga biriktirilgan tizim akkaunti (login/parol) */
@@ -461,6 +463,8 @@ export interface Teacher {
   gender: Gender
   /** Telefon raqami — Telegram bot orqali shartnoma olish uchun ro'yxatdan o'tishda moslashtiriladi */
   phone?: string
+  /** O'qituvchining rasmi (profil surati) URL'i */
+  photoUrl?: string | null
   /** Sinf rahbari bo'lsa — biriktirilgan sinf nomi; aks holda bo'sh */
   homeroomClass: string
   /** Dars beradigan fanlar (Subject id'lari) */
@@ -726,16 +730,87 @@ export interface Broadcast {
 export interface TelegramParent {
   studentId: string
   studentName: string
+  /** O'quvchi sinfi */
+  className: string
+  /** O'quvchi balansi (manfiy = qarz) — qarzdorlar filtri uchun */
+  balance: number
   parentName: string
   phone: string
   chatId: string
   createdAt: string
 }
 
+/* ---------- Intizomiy ball ---------- */
+
+/** Intizomiy ball sababi (nomi + ball, musbat=rag'bat / manfiy=jazo) */
+export interface DisciplineReason {
+  id: string
+  name: string
+  points: number
+  /** "other" — mustaqil intizomiy sabab; "attendance" — davomat sababi (jurnalda ishlatiladi) */
+  kind: 'other' | 'attendance'
+}
+
+/** Ballar nazorati qatori: o'quvchi, sinf, plus, minus, qoldi (100 + plus − minus) */
+export interface DisciplineScoreRow {
+  studentId: string
+  fullName: string
+  className: string
+  plus: number
+  minus: number
+  remaining: number
+}
+
+/** Bitta intizomiy ball yozuvi (tarix) */
+export interface DisciplinePoint {
+  id: string
+  studentId: string
+  reasonName: string
+  points: number
+  note: string
+  createdAt: string
+  createdBy: string
+  /** "manual" — qo'lda (o'chirsa bo'ladi), "attendance" — jurnal davomati (faqat ko'rish) */
+  source: 'manual' | 'attendance'
+}
+
+/** Bayram/dam olish kuni (butun maktab) — bu sanada dars bo'lmaydi */
+export interface Holiday {
+  /** Sana "YYYY-MM-DD" */
+  date: string
+  /** Nomi (ixtiyoriy, masalan "Navro'z") */
+  name: string
+}
+
 /** Telegram bot holati (admin UI uchun) */
 export interface TelegramStatus {
   configured: boolean
   botUsername: string
+}
+
+/** Push uchun tanlanadigan oluvchi */
+export interface PushRecipient {
+  /** Akkaunt id (UserId) */
+  userId: string
+  name: string
+  /** "Ota-ona" yoki "O'qituvchi" */
+  group: string
+  /** Qo'shimcha (ota-ona uchun sinf) */
+  detail: string
+  /** Qurilma ulanganmi (push haqiqatan yetadimi) */
+  hasDevice: boolean
+}
+
+/** Yuborilgan push bildirishnoma (tarix) */
+export interface PushMessage {
+  id: string
+  audience: string
+  title: string
+  body: string
+  senderName: string
+  createdAt: string
+  recipientCount: number
+  sentCount: number
 }
 
 /* ---------- Topshiriqlar (qo'shimcha) ---------- */
@@ -861,6 +936,11 @@ export interface ParentChild {
   className: string
   firstLoginAt: string | null
   lastLoginAt: string | null
+  /** Oxirgi faol qurilma nomi */
+  deviceName?: string
+  platform?: string
+  /** Push provayder app_id */
+  appId?: string
 }
 
 /** Ota-onalar ro'yxati qatori (telefon bo'yicha guruhlangan) */
@@ -872,6 +952,22 @@ export interface ParentRow {
   activatedAt: string | null
   lastSeenAt: string | null
   children: ParentChild[]
+  /** Oxirgi faol qurilma (farzandlar bo'yicha) */
+  deviceName?: string
+  platform?: string
+}
+
+/** Ilova → O'qituvchilar qatori (o'qituvchi ilova faolligi + qurilma) */
+export interface TeacherAppRow {
+  teacherId: string
+  fullName: string
+  phone: string
+  isActivated: boolean
+  activatedAt: string | null
+  lastSeenAt: string | null
+  deviceName: string
+  platform: string
+  appId: string
 }
 
 /** Admin xarita sahifasi uchun — joylashuvi bor bitta o'quvchi qatori */

@@ -14,6 +14,12 @@ public class AppUser
     public string Email { get; set; } = string.Empty;
     public string? AvatarUrl { get; set; }
     public string PasswordHash { get; set; } = string.Empty;
+    /// <summary>
+    /// Admin yaratgan/tiklagan dastlabki parol — OCHIQ matnda, FAQAT foydalanuvchi hali u bilan
+    /// kirmaguncha. Superadmin'ga ko'rsatish/eksport uchun. Birinchi login'da yoki foydalanuvchi
+    /// o'zi parolni o'zgartirsa null bo'ladi (faqat hash qoladi).
+    /// </summary>
+    public string? InitialPassword { get; set; }
     /// <summary>Birinchi muvaffaqiyatli login vaqti (ISO "yyyy-MM-ddTHH:mm:ss") — "ilova aktivlashtirilgan" sifatida ishlatiladi.</summary>
     public string? FirstLoginAt { get; set; }
     /// <summary>Oxirgi muvaffaqiyatli login vaqti — har kirilganda yangilanadi.</summary>
@@ -37,7 +43,7 @@ public class Branch
     public double Longitude { get; set; }
     /// <summary>Ruxsat etilgan radius (metr) — shu doira ichida yo'qlama hisoblanadi.</summary>
     public int RadiusMeters { get; set; }
-    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime CreatedAt { get; set; } = AppClock.Now;
 }
 
 /// <summary>Ota-ona ilova orqali yuborgan taklif yoki shikoyat.</summary>
@@ -58,7 +64,7 @@ public class Feedback
     public string SenderName { get; set; } = string.Empty;
     /// <summary>O'qituvchi yuborgan bo'lsa — uning id'si (parent bo'lsa null).</summary>
     public string? TeacherId { get; set; }
-    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime CreatedAt { get; set; } = AppClock.Now;
     /// <summary>new | resolved</summary>
     public string Status { get; set; } = "new";
 }
@@ -76,7 +82,7 @@ public class Student
     /// <summary>Otasining ismi / Sharifi (alohida).</summary>
     public string MiddleName { get; set; } = string.Empty;
     public string BirthDate { get; set; } = string.Empty;
-    /// <summary>Metrika (tug'ilganlik haqida guvohnoma) rasm/skani manzili (`/uploads/...`).</summary>
+    /// <summary>O'quvchining rasmi (profil surati) manzili (`/uploads/...`). Ilova profilida ko'rinadi.</summary>
     public string? BirthCertificateUrl { get; set; }
     public string Address { get; set; } = string.Empty;
     /// <summary>male | female</summary>
@@ -90,7 +96,7 @@ public class Student
     /// <summary>Ota-ona otasining ismi / sharifi (alohida).</summary>
     public string ParentMiddleName { get; set; } = string.Empty;
     public string ParentPhone { get; set; } = string.Empty;
-    /// <summary>Ota-ona passport rasm/skani manzili (`/uploads/...`).</summary>
+    /// <summary>Ota-onaning rasmi (profil surati) manzili (`/uploads/...`).</summary>
     public string? ParentPassportUrl { get; set; }
     public string ClassName { get; set; } = string.Empty;
     /// <summary>Maktabga kelgan (qabul) sanasi (ISO "YYYY-MM-DD"). Oylik to'lov shu oydan boshlanadi.</summary>
@@ -142,6 +148,8 @@ public class Teacher
     public string BirthDate { get; set; } = string.Empty;
     public string Address { get; set; } = string.Empty;
     public string Gender { get; set; } = "male";
+    /// <summary>O'qituvchining rasmi (profil surati) manzili (`/uploads/...`).</summary>
+    public string? PhotoUrl { get; set; }
     /// <summary>Telefon raqami — Telegram bot orqali ro'yxatdan o'tishda moslashtiriladi (shartnoma).</summary>
     public string Phone { get; set; } = string.Empty;
     /// <summary>Sinf rahbari bo'lsa biriktirilgan sinf nomi; aks holda bo'sh.</summary>
@@ -328,6 +336,44 @@ public class AbsenceReason
     /// (absence) sifatida hisoblanmaydi (davomat foiziga ta'sir qilmaydi) va unga BAHO ham qo'yса bo'ladi.
     /// </summary>
     public bool IsLate { get; set; }
+    /// <summary>
+    /// Intizomiy ball o'zgarishi — jurnalda shu sabab bilan davomat belgilansa, o'quvchining
+    /// intizomiy balliga shu qiymat qo'shiladi (manfiy = jazo). 0 = ballga ta'sir qilmaydi (default).
+    /// "Ball sabablar" bo'limida belgilanadi.
+    /// </summary>
+    public int Points { get; set; }
+}
+
+/// <summary>
+/// Intizomiy ball sababi — nomi va ball o'zgarishi. Musbat = rag'bat (qo'shiladi),
+/// manfiy = jazo (ayriladi). Masalan "Darsga kech qoldi" = −5, "Faol ishtirok" = +3.
+/// </summary>
+public class DisciplineReason
+{
+    public string Id { get; set; } = Guid.NewGuid().ToString();
+    public string Name { get; set; } = string.Empty;
+    /// <summary>Ball o'zgarishi (musbat yoki manfiy).</summary>
+    public int Points { get; set; }
+}
+
+/// <summary>
+/// O'quvchiga qo'yilgan bitta intizomiy ball yozuvi. Har o'quvchi 100 balldan boshlaydi;
+/// qoldi = 100 + barcha yozuvlar ballari yig'indisi.
+/// </summary>
+public class DisciplinePoint
+{
+    public string Id { get; set; } = Guid.NewGuid().ToString();
+    public string StudentId { get; set; } = string.Empty;
+    public string ReasonId { get; set; } = string.Empty;
+    /// <summary>Sabab nomi (nusxa — sabab keyin o'zgarsa/o'chsa ham tarix saqlanadi).</summary>
+    public string ReasonName { get; set; } = string.Empty;
+    /// <summary>Yozuv paytidagi ball (sababdan nusxa — sabab keyin o'zgarsa tarix saqlanadi).</summary>
+    public int Points { get; set; }
+    public string Note { get; set; } = string.Empty;
+    /// <summary>Yaratilgan vaqt (ISO).</summary>
+    public string CreatedAt { get; set; } = string.Empty;
+    /// <summary>Kim qo'ygani (admin F.I.SH yoki login).</summary>
+    public string CreatedBy { get; set; } = string.Empty;
 }
 
 /// <summary>Chorak davri.</summary>
@@ -342,6 +388,20 @@ public class QuarterPeriod
     /// ochilmaguncha o'qituvchi chorak bahosini qo'ya olmaydi (admin baribir qo'ya oladi).
     /// </summary>
     public bool GradesOpen { get; set; }
+}
+
+/// <summary>
+/// Bayram / dam olish kuni — shu sanada hech bir sinfda dars bo'lmaydi. Dars jadvali
+/// ko'rinishlarida "Bayram" deb belgilanadi va jurnal ustunlaridan chiqarib tashlanadi.
+/// Butun maktab uchun (sinfga bog'liq emas).
+/// </summary>
+public class Holiday
+{
+    public string Id { get; set; } = Guid.NewGuid().ToString();
+    /// <summary>Sana "YYYY-MM-DD".</summary>
+    public string Date { get; set; } = string.Empty;
+    /// <summary>Nomi (ixtiyoriy, masalan "Navro'z bayrami").</summary>
+    public string Name { get; set; } = string.Empty;
 }
 
 /// <summary>Dars vaqti (qo'ng'iroqlar jadvali).</summary>
@@ -392,7 +452,9 @@ public class FinanceTransaction
 /// <summary>Maktab umumiy holati va ma'lumotlari (bitta qator) — joriy o'quv yili + maktab profili.</summary>
 public class SchoolMeta
 {
-    public string Id { get; set; } = "current";
+    // Shared-DB: har maktab uchun bitta SchoolMeta qatori — Id unikal (Guid). Eski "current"
+    // qiymati tenantlar bo'ylab to'qnashar edi. Joriy maktab qatori query filter orqali topiladi.
+    public string Id { get; set; } = Guid.NewGuid().ToString();
     /// <summary>Joriy o'quv yili, masalan "2025/2026".</summary>
     public string CurrentYear { get; set; } = string.Empty;
     /// <summary>Maktab nomi.</summary>
@@ -406,8 +468,15 @@ public class SchoolMeta
     public string District { get; set; } = string.Empty;
     /// <summary>Telegram bot tokeni (BotFather'dan). Bo'sh bo'lsa bot ishlamaydi (e'lon yuborilmaydi).</summary>
     public string TelegramBotToken { get; set; } = string.Empty;
-    /// <summary>Telegram bot foydalanuvchi nomi (@siz) — ko'rsatish uchun, ixtiyoriy.</summary>
+    /// <summary>Telegram bot foydalanuvchi nomi (@siz) — t.me havolasi va ro'yxat taklifi uchun.</summary>
     public string TelegramBotUsername { get; set; } = string.Empty;
+    /// <summary>Telegram bot ko'rsatiladigan nomi (masalan "Maktab LMS Bot") — UI/ilovada ko'rsatish uchun.</summary>
+    public string TelegramBotName { get; set; } = string.Empty;
+    /// <summary>
+    /// Firebase service account (JSON, to'liq) — ilovaga push (FCM) yuborish uchun. Bo'sh bo'lsa
+    /// push yuborilmaydi. Admin "Sozlamalar → Push (Firebase)" bo'limidan kiritadi.
+    /// </summary>
+    public string FcmServiceAccountJson { get; set; } = string.Empty;
 }
 
 /// <summary>Yangi o'quv yiliga o'tishda saqlangan eski o'quv yili arxivi (to'liq snapshot).</summary>
@@ -471,7 +540,7 @@ public class ChatMessage
     /// <summary>admin | teacher | student</summary>
     public string SenderRole { get; set; } = string.Empty;
     public string Text { get; set; } = string.Empty;
-    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime CreatedAt { get; set; } = AppClock.Now;
 }
 
 /// <summary>Sinf ota-onalariga Telegram bot orqali yuborilgan e'lon (bir tomonlama xabar).</summary>
@@ -482,11 +551,50 @@ public class Broadcast
     public string Text { get; set; } = string.Empty;
     public string SenderUserId { get; set; } = string.Empty;
     public string SenderName { get; set; } = string.Empty;
-    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime CreatedAt { get; set; } = AppClock.Now;
     /// <summary>Yuborish vaqtida shu sinfda Telegramda ro'yxatdan o'tgan ota-onalar soni.</summary>
     public int RecipientCount { get; set; }
     /// <summary>Telegram orqali muvaffaqiyatli yetkazilganlar soni.</summary>
     public int SentCount { get; set; }
+}
+
+/// <summary>Ilovaga (FCM push) yuborilgan bildirishnoma — tarix uchun.</summary>
+public class PushMessage
+{
+    public string Id { get; set; } = Guid.NewGuid().ToString();
+    /// <summary>Qabul qiluvchi toifa yorlig'i (masalan "Ota-onalar — 9-A", "O'qituvchilar").</summary>
+    public string Audience { get; set; } = string.Empty;
+    public string Title { get; set; } = string.Empty;
+    public string Body { get; set; } = string.Empty;
+    public string SenderUserId { get; set; } = string.Empty;
+    public string SenderName { get; set; } = string.Empty;
+    public DateTime CreatedAt { get; set; } = AppClock.Now;
+    /// <summary>Maqsadli qurilma tokenlari soni.</summary>
+    public int RecipientCount { get; set; }
+    /// <summary>Muvaffaqiyatli yuborilgan push soni.</summary>
+    public int SentCount { get; set; }
+}
+
+/// <summary>
+/// Farzandni olib ketish so'rovi. Ota-ona ilovada "Farzandimni olishga keldim" bossa yaratiladi;
+/// sinf rahbari ilovada "Qabul qildim" bossa Accepted bo'ladi. Har ikki tomonga push boradi.
+/// </summary>
+public class PickupRequest
+{
+    public string Id { get; set; } = Guid.NewGuid().ToString();
+    public string StudentId { get; set; } = string.Empty;
+    /// <summary>O'quvchi F.I.SH (nusxa — ko'rsatish uchun).</summary>
+    public string StudentName { get; set; } = string.Empty;
+    public string ClassName { get; set; } = string.Empty;
+    /// <summary>So'rovchi (ota-ona/oila akkaunti) UserId — javob push'i shu yerga boradi.</summary>
+    public string RequestedByUserId { get; set; } = string.Empty;
+    /// <summary>pending | accepted</summary>
+    public string Status { get; set; } = "pending";
+    public string CreatedAt { get; set; } = string.Empty;
+    public string? AcceptedAt { get; set; }
+    public string? AcceptedByTeacherId { get; set; }
+    /// <summary>Qabul qilgan (sinf rahbari) F.I.SH.</summary>
+    public string? AcceptedByName { get; set; }
 }
 
 /// <summary>
@@ -507,7 +615,7 @@ public class TelegramRegistration
     public string ParentName { get; set; } = string.Empty;
     /// <summary>Ulashilgan telefon raqami (faqat raqamlar — normallashtirilgan).</summary>
     public string Phone { get; set; } = string.Empty;
-    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime CreatedAt { get; set; } = AppClock.Now;
 }
 
 /// <summary>
@@ -538,7 +646,7 @@ public class Assignment
     public int MaxScore { get; set; } = 100;
     /// <summary>Test uchun avto-baholash yoqilganmi.</summary>
     public bool AutoGrade { get; set; }
-    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime CreatedAt { get; set; } = AppClock.Now;
 
     // Eski (oddiy topshiriq) ustunlari — orqaga moslik uchun saqlanadi, yangi forma ishlatmaydi.
     public string ClassId { get; set; } = string.Empty;
@@ -620,7 +728,7 @@ public class UserSettings
     /// <summary>Push bildirishnoma yoqilganmi.</summary>
     public bool NotificationsEnabled { get; set; } = true;
     /// <summary>Oxirgi yangilanish vaqti (UTC, ISO).</summary>
-    public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime UpdatedAt { get; set; } = AppClock.Now;
 }
 
 /// <summary>
@@ -635,8 +743,12 @@ public class DeviceToken
     public string Token { get; set; } = string.Empty;
     /// <summary>android | ios | web</summary>
     public string Platform { get; set; } = "android";
-    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
-    public DateTime LastSeenAt { get; set; } = DateTime.UtcNow;
+    /// <summary>Qurilma nomi (masalan "Samsung A52", "iPhone 13") — ilova yuboradi.</summary>
+    public string DeviceName { get; set; } = string.Empty;
+    /// <summary>Push provayder ilova identifikatori (app_id) — ilova yuboradi.</summary>
+    public string AppId { get; set; } = string.Empty;
+    public DateTime CreatedAt { get; set; } = AppClock.Now;
+    public DateTime LastSeenAt { get; set; } = AppClock.Now;
 }
 
 /// <summary>
@@ -653,7 +765,7 @@ public class ContractTemplate
     public string FileUrl { get; set; } = string.Empty;
     /// <summary>Asl fayl nomi (ko'rsatish uchun).</summary>
     public string FileName { get; set; } = string.Empty;
-    public DateTime UploadedAt { get; set; } = DateTime.UtcNow;
+    public DateTime UploadedAt { get; set; } = AppClock.Now;
 }
 
 /* =========================================================
@@ -672,7 +784,7 @@ public class LmsSubject
     public string UnlockMode { get; set; } = "all";
     /// <summary>UnlockMode="batch" bo'lganda bir vaqtda ochiq mavzular soni.</summary>
     public int BatchSize { get; set; } = 3;
-    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime CreatedAt { get; set; } = AppClock.Now;
     public ICollection<LmsTopic> Topics { get; set; } = new List<LmsTopic>();
 }
 
@@ -713,7 +825,7 @@ public class LmsProgress
     public string StudentId { get; set; } = string.Empty;
     public string TopicId { get; set; } = string.Empty;
     public LmsTopic Topic { get; set; } = null!;
-    public DateTime CompletedAt { get; set; } = DateTime.UtcNow;
+    public DateTime CompletedAt { get; set; } = AppClock.Now;
 }
 
 /// <summary>Yuborilgan shartnoma yozuvi (kim, qachon, qaysi raqam bilan).</summary>
@@ -728,7 +840,7 @@ public class Contract
     /// <summary>Ketma-ket shartnoma raqami.</summary>
     public int Number { get; set; }
     public string TemplateId { get; set; } = string.Empty;
-    public DateTime SentAt { get; set; } = DateTime.UtcNow;
+    public DateTime SentAt { get; set; } = AppClock.Now;
     /// <summary>Telegram orqali muvaffaqiyatli yetkazildimi.</summary>
     public bool Delivered { get; set; }
     /// <summary>sent</summary>

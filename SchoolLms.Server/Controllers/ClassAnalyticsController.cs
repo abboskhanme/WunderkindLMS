@@ -284,16 +284,6 @@ public class ClassAnalyticsController(AppDbContext db) : ControllerBase
         kind, label, "", total, false, 0, 0, "", 0, 0, 0, 0, 0, 0, "", 0, 0, 0);
 
     [HttpGet("api/admin/students/rating")]
-    public async Task<ActionResult<IEnumerable<StudentRatingRowDto>>> Rating()
-    {
-        var (students, subjects) = await LoadCommon();
-        var classes = await db.Classes.ToListAsync();
-        var result = new List<StudentRatingRowDto>();
-        foreach (var cls in classes)
-        {
-            var rows = (await BuildFor(cls, students, subjects)).Rows;
-            result.AddRange(rows.Select(r => new StudentRatingRowDto(r.Student, cls.Name, cls.Grade, r.Average, r.Attendance)));
-        }
-        return result;
-    }
+    public async Task<ActionResult<IEnumerable<StudentRatingRowDto>>> Rating() =>
+        await RatingService.SchoolAsync(db);
 }

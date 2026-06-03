@@ -15,12 +15,14 @@ import { TemplateEditorPage } from '@/pages/admin/classes/TemplateEditorPage'
 import { SchedulePage } from '@/pages/admin/schedule/SchedulePage'
 import { TeacherSchedulePage } from '@/pages/admin/schedule/TeacherSchedulePage'
 import { ClassScheduleViewPage } from '@/pages/admin/schedule/ClassScheduleViewPage'
+import { HolidaysPage } from '@/pages/admin/schedule/HolidaysPage'
+import { BallarNazoratiPage } from '@/pages/admin/discipline/BallarNazoratiPage'
+import { BallSabablarPage } from '@/pages/admin/discipline/BallSabablarPage'
 import { GradesReportPage } from '@/pages/admin/grades-report/GradesReportPage'
 import { TeacherReportsPage } from '@/pages/admin/teacher-reports/TeacherReportsPage'
 import { ContractsPage } from '@/pages/admin/contracts/ContractsPage'
 import { BranchesPage } from '@/pages/admin/branches/BranchesPage'
 import { StaffPage } from '@/pages/admin/staff/StaffPage'
-import { RolesPage } from '@/pages/admin/roles/RolesPage'
 import { FeedbackPage } from '@/pages/admin/feedback/FeedbackPage'
 import { AcademicYearPage } from '@/pages/admin/academic-year/AcademicYearPage'
 import { SubjectsPage } from '@/pages/admin/subjects/SubjectsPage'
@@ -34,6 +36,7 @@ import { LmsTopicsPage } from '@/pages/admin/lms/LmsTopicsPage'
 import { AttendancePage } from '@/pages/admin/attendance/AttendancePage'
 import { LocationPage } from '@/pages/admin/locations/LocationPage'
 import { ParentsPage } from '@/pages/admin/parents/ParentsPage'
+import { TeacherAppPage } from '@/pages/admin/parents/TeacherAppPage'
 import { CanteenPage } from '@/pages/admin/canteen/CanteenPage'
 import { FinancePage } from '@/pages/admin/finance/FinancePage'
 import { SettingsPage } from '@/pages/admin/settings/SettingsPage'
@@ -69,6 +72,9 @@ export default function App() {
           <Route path="schedule" element={<RequirePerm perm="schedule"><ClassScheduleViewPage /></RequirePerm>} />
           <Route path="schedule/teachers" element={<RequirePerm perm="schedule"><TeacherSchedulePage /></RequirePerm>} />
           <Route path="schedule/manage" element={<RequirePerm perm="schedule"><SchedulePage /></RequirePerm>} />
+          <Route path="schedule/holidays" element={<RequirePerm perm="schedule"><HolidaysPage /></RequirePerm>} />
+          <Route path="discipline" element={<RequirePerm perm="discipline"><BallarNazoratiPage /></RequirePerm>} />
+          <Route path="discipline/reasons" element={<RequirePerm perm="discipline"><BallSabablarPage /></RequirePerm>} />
           <Route path="schedule/manage/:id" element={<RequirePerm perm="schedule"><ClassSchedulePage /></RequirePerm>} />
           <Route path="schedule/manage/:id/template/:templateId" element={<RequirePerm perm="schedule"><TemplateEditorPage /></RequirePerm>} />
           <Route path="subjects" element={<RequirePerm perm="schedule"><SubjectsPage /></RequirePerm>} />
@@ -86,6 +92,7 @@ export default function App() {
           <Route path="attendance" element={<RequirePerm perm="attendance"><AttendancePage /></RequirePerm>} />
           <Route path="locations" element={<RequirePerm perm="app"><LocationPage /></RequirePerm>} />
           <Route path="parents" element={<RequirePerm perm="app"><ParentsPage /></RequirePerm>} />
+          <Route path="app/teachers" element={<RequirePerm perm="app"><TeacherAppPage /></RequirePerm>} />
           <Route path="canteen" element={<RequirePerm perm="app"><CanteenPage /></RequirePerm>} />
           <Route path="finance" element={<RequirePerm perm="finance"><FinancePage /></RequirePerm>} />
           <Route path="academic-year" element={<RequirePerm perm="academicYear"><AcademicYearPage /></RequirePerm>} />
@@ -96,9 +103,10 @@ export default function App() {
           {/* Boshqaruv */}
           <Route path="boshqaruv/staff" element={<RequirePerm perm="staff"><StaffPage /></RequirePerm>} />
           <Route path="boshqaruv/feedback" element={<RequirePerm perm="feedback"><FeedbackPage /></RequirePerm>} />
+          {/* Rollar endi "Xodimlar va rollar" sahifasiga birlashtirildi */}
+          <Route path="boshqaruv/roles" element={<Navigate to="/admin/boshqaruv/staff" replace />} />
           <Route element={<ProtectedRoute role="superadmin" />}>
             <Route path="boshqaruv/branches" element={<BranchesPage />} />
-            <Route path="boshqaruv/roles" element={<RolesPage />} />
           </Route>
         </Route>
       </Route>
