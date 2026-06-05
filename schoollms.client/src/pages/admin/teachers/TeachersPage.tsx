@@ -15,8 +15,8 @@ import {
 import { useAuth } from '@/context/auth-context'
 import { getSubjects } from '@/api/services/subjects'
 import { getClasses } from '@/api/services/classes'
-import { genderLabels } from '@/config/constants'
-import { formatDate, formatMoney, cn } from '@/lib/utils'
+import { genderLabels, teacherCategoryLabel } from '@/config/constants'
+import { formatDate, cn } from '@/lib/utils'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Loader } from '@/components/ui/Loader'
@@ -196,7 +196,7 @@ export function TeachersPage() {
                       <th className="px-4 py-3">Tug'ilgan kun</th>
                       <th className="px-4 py-3">Sinf rahbarligi</th>
                       <th className="px-4 py-3">Fanlar</th>
-                      <th className="px-4 py-3 text-right">Oylik</th>
+                      <th className="px-4 py-3">Toifa</th>
                     </>
                   ) : (
                     <>
@@ -229,8 +229,14 @@ export function TeachersPage() {
                         <td className="px-4 py-3">
                           <SubjectTags ids={t.subjectIds} name={subjectName} />
                         </td>
-                        <td className="px-4 py-3 text-right font-medium text-slate-700">
-                          {t.salary ? formatMoney(t.salary) : '—'}
+                        <td className="px-4 py-3">
+                          {t.category ? (
+                            <span className="rounded-md bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-700">
+                              {teacherCategoryLabel(t.category)}
+                            </span>
+                          ) : (
+                            <span className="text-slate-400">—</span>
+                          )}
                         </td>
                       </>
                     ) : (

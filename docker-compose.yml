@@ -11,7 +11,8 @@ services:
       MSSQL_SA_PASSWORD: "${SA_PASSWORD}"
       MSSQL_PID: "Express"          # bepul nashr; xohlasangiz "Developer"
     volumes:
-      - mssql-data:/var/opt/mssql   # yagona SchoolLms bazasi shu yerda (backup = shu volume)
+      - mssql-data:/var/opt/mssql   # baza fayllari shu yerda
+      - mssql-backups:/backups      # kunlik .bak nusxalar (backup xizmati shu yerga yozadi)
     healthcheck:
       test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa -P \"$$MSSQL_SA_PASSWORD\" -Q 'SELECT 1' || exit 1"]
       interval: 10s
@@ -33,14 +34,32 @@ services:
       # Yagona shared baza — barcha maktablar + Control Plane shu yerda (har qator TenantId bilan).
       ConnectionStrings__Default: "Server=sqlserver,1433;Database=SchoolLms;User Id=sa;Password=${SA_PASSWORD};TrustServerCertificate=True;Encrypt=False"
       Tenancy__RootDomain: "${ROOT_DOMAIN}"
+      App__Host: "test.${ROOT_DOMAIN}"     # FAQAT shu host ilovani (SPA) ochadi; qolganlari → landing
       Jwt__Key: "${JWT_KEY}"               # >=32 belgi; prod'da MAJBURIY
     volumes:
       - uploads:/app/uploads               # yuklangan fayllar (rasm, hujjat) saqlanadi
+      - dpkeys:/app/keys                    # DataProtection kalitlari — deploylar oralig'ida saqlanadi
     depends_on:
       sqlserver:
         condition: service_healthy
     restart: unless-stopped
     # Diqqat: bu yerda `ports:` YO'Q — internetga ochilmaydi.
+
+  # Kamera media-shlyuzi: IP kameralar RTSP oqimini brauzer ko'radigan HLS ga o'giradi,
+  # 24/7 yozib boradi (playback + qirqib yuklab olish uchun). Tashqariga OCHILMAGAN —
+  # unga faqat `app` (ichki tarmoq) kiradi; brauzer app proksi orqali ko'radi.
+  mediamtx:
+    image: bluenviron/mediamtx:latest
+    container_name: schoollms-mediamtx
+    environment:
+      MTX_API: "yes"                 # konfiguratsiya API (:9997) — app kamera yo'llarini qo'shadi
+      MTX_HLS: "yes"                 # jonli HLS (:8888)
+      MTX_PLAYBACK: "yes"            # yozuvdan playback/clip (:9996)
+      MTX_HLSVARIANT: "mpegts"       # oddiy .ts segmentlar — proksilash oson
+      MTX_PATHDEFAULTS_RECORDPATH: "/recordings/%path/%Y-%m-%d_%H-%M-%S-%f"
+    volumes:
+      - cam-recordings:/recordings   # kamera yozuvlari (playback manbai)
+    restart: unless-stopped
 
   cloudflared:
     image: cloudflare/cloudflared:latest
@@ -48,10 +67,59 @@ services:
     command: tunnel --no-autoupdate run
     environment:
       TUNNEL_TOKEN: "${TUNNEL_TOKEN}"      # Cloudflare Zero Trust → Tunnels → token
+      # QUIC (UDP) edge ulanishi tez-tez uzilib ("no recent network activity") tunnel butunlay
+      # tushib qolardi → 5xx. HTTP/2 (TCP) ga o'tkazamiz — bu tarmoqda barqarorroq.
+      TUNNEL_TRANSPORT_PROTOCOL: "http2"
     depends_on:
       - app
     restart: unless-stopped
 
+  # Kunlik avtomatik backup. Har kuni BACKUP_HOUR (UTC) da BARCHA foydalanuvchi bazalarini
+  # /backups ga .bak qilib oladi va BACKUP_RETENTION_DAYS dan eski nusxalarni o'chiradi.
+  # sqlcmd uchun aynan sqlserver bilan bir xil image ishlatiladi (qo'shimcha yuklab olish yo'q).
+  backup:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: schoollms-backup
+    user: root
+    environment:
+      SA_PASSWORD: "${SA_PASSWORD}"
+      BACKUP_HOUR: "21"            # 21:00 UTC = 02:00 Toshkent (kechasi, yuk kam paytda)
+      BACKUP_RETENTION_DAYS: "7"   # 7 kundan eski .bak'lar o'chiriladi
+    volumes:
+      - mssql-backups:/backups     # sqlserver yozadigan papka — bu yerda tozalash qilinadi
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+    restart: unless-stopped
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        SQLCMD=/opt/mssql-tools18/bin/sqlcmd
+        # SQL Server 'mssql' (uid 10001) foydalanuvchisi sifatida yozadi — /backups yoziladigan bo'lsin.
+        chmod 777 /backups 2>/dev/null || true
+        echo "[backup] xizmat ishga tushdi; har kuni $${BACKUP_HOUR}:00 UTC da, saqlash $${BACKUP_RETENTION_DAYS} kun"
+        while true; do
+          now=$$(date -u +%s)
+          next=$$(date -u -d "today $${BACKUP_HOUR}:00" +%s)
+          [ "$$next" -le "$$now" ] && next=$$(date -u -d "tomorrow $${BACKUP_HOUR}:00" +%s)
+          sleep $$(( next - now ))
+          ts=$$(date -u +%Y%m%d_%H%M)
+          echo "[backup] $$ts — boshlandi"
+          dbs=$$("$$SQLCMD" -C -S sqlserver -U sa -P "$$SA_PASSWORD" -h -1 -W \
+            -Q "SET NOCOUNT ON; SELECT name FROM sys.databases WHERE database_id > 4 AND state = 0")
+          for db in $$dbs; do
+            echo "[backup] $$db ..."
+            "$$SQLCMD" -C -S sqlserver -U sa -P "$$SA_PASSWORD" \
+              -Q "BACKUP DATABASE [$$db] TO DISK='/backups/$${db}_$${ts}.bak' WITH INIT, FORMAT, STATS=10" \
+              || echo "[backup] XATO: $$db"
+          done
+          find /backups -name '*.bak' -type f -mtime +$${BACKUP_RETENTION_DAYS} -delete
+          echo "[backup] tugadi; eski nusxalar tozalandi"
+        done
+
 volumes:
   mssql-data:
   uploads:
+  dpkeys:
+  mssql-backups:
+  cam-recordings:

@@ -33,13 +33,16 @@ public class ScheduleUtilsController(AppDbContext db) : ControllerBase
             .ToListAsync();
 
         var classNames = await db.Classes
+            .Where(c => !c.IsArchived)
             .ToDictionaryAsync(c => c.Id, c => c.Name);
 
         var result = new Dictionary<string, List<OccupiedSlotDto>>(StringComparer.Ordinal);
 
         foreach (var tpl in templates)
         {
-            var className = classNames.GetValueOrDefault(tpl.ClassId, "");
+            // Sinfi mavjud bo'lmagan (eski o'quv yilidan/o'chirilgan sinf) "yetim" shablon —
+            // ziddiyat tekshiruviga qo'shilmaydi.
+            if (!classNames.TryGetValue(tpl.ClassId, out var className)) continue;
 
             // (teacherId, day, period) bo'yicha guruhlash — bir soatda ikkala guruh bo'lsa bitta yozuv.
             var slots = tpl.Lessons

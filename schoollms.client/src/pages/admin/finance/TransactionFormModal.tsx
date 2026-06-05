@@ -1,12 +1,22 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
-import type { FinanceDirection, FinanceTransaction, MonthSalary, Teacher } from '@/types'
+import type {
+  FinanceDirection,
+  FinanceTransaction,
+  MonthLedger,
+  MonthSalary,
+  SchoolClass,
+  Student,
+  Teacher,
+} from '@/types'
 import type { FinanceTransactionPayload } from '@/api/services/finance'
 import { getTeachers, getSalaryMonth } from '@/api/services/teachers'
+import { getClasses } from '@/api/services/classes'
+import { getStudents, getStudentLedger } from '@/api/services/students'
 import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
 import { Input, Select, Textarea } from '@/components/ui/Input'
-import { categoriesByDirection, financeDirectionLabels, formatMonth } from '@/config/constants'
+import { categoriesByDirection, financeDirectionLabels, formatMonth, monthStatusLabels } from '@/config/constants'
 import { formatMoney, cn } from '@/lib/utils'
 
 interface Props {
@@ -30,9 +40,43 @@ export function TransactionFormModal({ open, onClose, onSubmit, initial }: Props
   const [form, setForm] = useState<FinanceTransactionPayload>(emptyFor('income'))
   const [teachers, setTeachers] = useState<Teacher[]>([])
   const [monthInfo, setMonthInfo] = useState<MonthSalary | null>(null)
+  // O'quvchi to'lovi uchun: sinf/o'quvchi tanlash + tanlangan o'quvchining oylar holati
+  const [classes, setClasses] = useState<SchoolClass[]>([])
+  const [students, setStudents] = useState<Student[]>([])
+  const [classId, setClassId] = useState('')
+  const [ledgerMonths, setLedgerMonths] = useState<MonthLedger[]>([])
 
   const isSalaryExpense = form.direction === 'expense' && form.category === 'salary'
+  const isTuitionIncome = form.direction === 'income' && form.category === 'tuition'
+  const showTuition = isTuitionIncome && !initial
   const month = form.date?.slice(0, 7)
+
+  const studentsInClass = useMemo(
+    () => (classId ? students.filter((s) => s.className === classId && !s.isArchived) : []),
+    [students, classId],
+  )
+
+  // O'quvchi tanlanganda — uning oylar holatini yuklab, eng eski qarzdor oyni standart qilamiz.
+  const onStudentChange = (id: string) => {
+    setForm((f) => ({ ...f, studentId: id || undefined, month: undefined }))
+    setLedgerMonths([])
+    if (!id) return
+    getStudentLedger(id).then((l) => {
+      setLedgerMonths(l.months)
+      const due = l.months.find((m) => m.remaining > 0)
+      const target = due ?? l.months[l.months.length - 1]
+      setForm((f) => ({
+        ...f,
+        month: target?.month ?? f.date?.slice(0, 7),
+        amount: due ? due.remaining : 0,
+      }))
+    })
+  }
+
+  const onMonthChange = (mo: string) => {
+    const ml = ledgerMonths.find((x) => x.month === mo)
+    setForm((f) => ({ ...f, month: mo, amount: ml && ml.remaining > 0 ? ml.remaining : f.amount }))
+  }
 
   useEffect(() => {
     if (!open) return
@@ -52,9 +96,15 @@ export function TransactionFormModal({ open, onClose, onSubmit, initial }: Props
     )
   }, [open, initial])
 
-  // O'qituvchilar ro'yxatini (oylik maosh tanlovi uchun) API'dan olamiz
+  // O'qituvchilar (maosh) + sinf/o'quvchilar (o'quvchi to'lovi) ro'yxatlarini API'dan olamiz
   useEffect(() => {
-    if (open) getTeachers().then(setTeachers)
+    if (!open) return
+    getTeachers().then(setTeachers)
+    getClasses().then(setClasses)
+    getStudents().then(setStudents)
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- modal ochilganda sinf/oylar tanlovini tozalash
+    setClassId('')
+    setLedgerMonths([])
   }, [open])
 
   // Oylik maosh + o'qituvchi tanlanganda: shu oy uchun belgilangan/berilgan/qoldiq
@@ -90,18 +140,43 @@ export function TransactionFormModal({ open, onClose, onSubmit, initial }: Props
   ) => setForm((f) => ({ ...f, [key]: value }))
 
   // Yo'nalish o'zgarsa, toifani shu yo'nalishning birinchi qiymatiga moslaymiz
-  const changeDirection = (direction: FinanceDirection) =>
-    setForm((f) => ({ ...f, direction, category: categoriesByDirection[direction][0].value }))
+  const changeDirection = (direction: FinanceDirection) => {
+    setForm((f) => ({
+      ...f,
+      direction,
+      category: categoriesByDirection[direction][0].value,
+      studentId: undefined,
+      month: undefined,
+      teacherId: undefined,
+    }))
+    setClassId('')
+    setLedgerMonths([])
+  }
+
+  const changeCategory = (category: string) => {
+    setForm((f) => ({
+      ...f,
+      category,
+      ...(category !== 'tuition' ? { studentId: undefined, month: undefined } : {}),
+    }))
+    if (category !== 'tuition') {
+      setClassId('')
+      setLedgerMonths([])
+    }
+  }
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault()
     if (form.amount <= 0 || !form.date) return
     if (isSalaryExpense && !form.teacherId) return
+    if (showTuition && !form.studentId) return
     onSubmit({
       ...form,
       note: form.note?.trim() || undefined,
-      // teacherId faqat oylik maosh chiqimida saqlanadi
+      // teacherId faqat oylik maosh chiqimida; studentId/month faqat o'quvchi to'lovida saqlanadi
       teacherId: isSalaryExpense ? form.teacherId : undefined,
+      studentId: isTuitionIncome ? form.studentId : undefined,
+      month: isTuitionIncome ? form.month : undefined,
     })
   }
 
@@ -118,7 +193,9 @@ export function TransactionFormModal({ open, onClose, onSubmit, initial }: Props
           <Button
             type="submit"
             form="finance-form"
-            disabled={form.amount <= 0 || (isSalaryExpense && !form.teacherId)}
+            disabled={
+              form.amount <= 0 || (isSalaryExpense && !form.teacherId) || (showTuition && !form.studentId)
+            }
           >
             Saqlash
           </Button>
@@ -138,7 +215,7 @@ export function TransactionFormModal({ open, onClose, onSubmit, initial }: Props
           <Select
             label="Toifa"
             value={form.category}
-            onChange={(e) => update('category', e.target.value)}
+            onChange={(e) => changeCategory(e.target.value)}
           >
             {categoriesByDirection[form.direction].map((c) => (
               <option key={c.value} value={c.value}>
@@ -187,6 +264,70 @@ export function TransactionFormModal({ open, onClose, onSubmit, initial }: Props
               <p className="text-xs text-amber-600">
                 Bu oy uchun maosh to'liq berilgan — qo'shimcha summa ortiqcha hisoblanadi.
               </p>
+            )}
+          </div>
+        )}
+
+        {/* O'quvchi to'lovi: sinf → o'quvchi → qaysi oy (o'quvchilar bo'limidagi to'lovdek) */}
+        {showTuition && (
+          <div className="space-y-3 rounded-lg border border-slate-200 bg-slate-50/60 p-3">
+            <div className="grid grid-cols-2 gap-3">
+              <Select
+                label="Sinf"
+                value={classId}
+                onChange={(e) => {
+                  setClassId(e.target.value)
+                  onStudentChange('')
+                }}
+              >
+                <option value="">— sinf —</option>
+                {classes.map((c) => (
+                  <option key={c.id} value={c.name}>
+                    {c.name}
+                  </option>
+                ))}
+              </Select>
+              <Select
+                label="O'quvchi"
+                value={form.studentId ?? ''}
+                onChange={(e) => onStudentChange(e.target.value)}
+                disabled={!classId}
+              >
+                <option value="">{classId ? "— o'quvchi —" : 'avval sinf'}</option>
+                {studentsInClass.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.fullName}
+                  </option>
+                ))}
+              </Select>
+            </div>
+
+            {form.studentId && (
+              <div>
+                <label className="mb-1 block text-sm font-medium text-slate-600">Qaysi oy uchun</label>
+                <select
+                  value={form.month ?? ''}
+                  onChange={(e) => onMonthChange(e.target.value)}
+                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-brand-400"
+                >
+                  {(ledgerMonths.length ? ledgerMonths.map((m) => m.month) : [form.date?.slice(0, 7) ?? '']).map(
+                    (mo) => {
+                      const m = ledgerMonths.find((x) => x.month === mo)
+                      const suffix = m
+                        ? m.remaining > 0
+                          ? ` — ${monthStatusLabels[m.status]} (qoldiq ${formatMoney(m.remaining)})`
+                          : ` — ${monthStatusLabels[m.status]}`
+                        : ''
+                      return (
+                        <option key={mo} value={mo}>
+                          {formatMonth(mo)}
+                          {suffix}
+                        </option>
+                      )
+                    },
+                  )}
+                </select>
+              </div>
             )}
           </div>
         )}

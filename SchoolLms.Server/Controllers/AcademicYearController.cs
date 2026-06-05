@@ -288,14 +288,37 @@ public class AcademicYearController(AppDbContext db, AuditService audit) : Contr
             db.JournalEntries.RemoveRange(await db.JournalEntries.ToListAsync());
             db.LessonNotes.RemoveRange(await db.LessonNotes.ToListAsync());
             db.QuarterGrades.RemoveRange(await db.QuarterGrades.ToListAsync());
+            // Topshiriqlar, intizomiy ball, oylik baholash (feedback), LMS o'zlashtirish — hammasi nolga.
+            db.AssignmentSubmissions.RemoveRange(await db.AssignmentSubmissions.ToListAsync());
+            db.AssignmentMaterials.RemoveRange(await db.AssignmentMaterials.ToListAsync());
+            db.TestQuestions.RemoveRange(await db.TestQuestions.ToListAsync());
+            db.Assignments.RemoveRange(await db.Assignments.ToListAsync());
+            db.DisciplinePoints.RemoveRange(await db.DisciplinePoints.ToListAsync());
+            db.EvaluationGrades.RemoveRange(await db.EvaluationGrades.ToListAsync());
+            db.LmsProgresses.RemoveRange(await db.LmsProgresses.ToListAsync());
+            db.PickupRequests.RemoveRange(await db.PickupRequests.ToListAsync());
+            // Eski yil faoliyati — sinf chati, e'lonlar, taklif/shikoyatlar, o'qituvchi davomati ham nolga.
+            db.ChatMessages.RemoveRange(await db.ChatMessages.ToListAsync());
+            db.Broadcasts.RemoveRange(await db.Broadcasts.ToListAsync());
+            db.Feedbacks.RemoveRange(await db.Feedbacks.ToListAsync());
+            db.TeacherAttendances.RemoveRange(await db.TeacherAttendances.ToListAsync());
         }
         // Yangi yil — o'quvchilar guruhlari ham reset bo'ladi (har yili qayta guruhlash).
         // Bu jurnal yozuvlari tozalansa, locked=false bo'lib admin yangi guruhga bo'la oladi.
         foreach (var s in await db.Students.ToListAsync()) s.SubGroup = 0;
+        // Dars jadvalini tozalash — shablon (ScheduleTemplate) VA hafta biriktirishlari to'liq o'chadi
+        // (avval faqat WeekAssignment o'chardi → shablonlar "yetim" bo'lib qolardi). Default: yoqilgan.
         if (req.ClearSchedule)
+        {
+            db.ScheduleTemplates.RemoveRange(await db.ScheduleTemplates.ToListAsync());
             db.WeekAssignments.RemoveRange(await db.WeekAssignments.ToListAsync());
+        }
         if (req.ClearQuarters)
+        {
             db.Quarters.RemoveRange(await db.Quarters.ToListAsync());
+            // Bayram kunlari ham sanaga bog'liq (kalendar) — eski yil sanalari qolib ketmasin.
+            db.Holidays.RemoveRange(await db.Holidays.ToListAsync());
+        }
         if (req.ClearFinance)
         {
             db.FinanceTransactions.RemoveRange(await db.FinanceTransactions.ToListAsync());

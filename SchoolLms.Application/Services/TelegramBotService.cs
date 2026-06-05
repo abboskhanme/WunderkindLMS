@@ -105,19 +105,13 @@ public class TelegramBotService(
         var digits = PhoneUtil.DigitsOnly(phone);
         var linked = new List<string>();
 
-        // Bot fon xizmatida so'rov (tenant) konteksti yo'q — global query filter aks holda hamma
-        // o'quvchini yashiradi. Shuning uchun HAR aktiv maktab DB'si bo'ylab to'g'ri tenant kontekstida
-        // qidiramiz; topilgan joyda ro'yxat yozuvi o'sha maktabning TenantId'si bilan saqlanadi.
         using var scope = sp.CreateScope();
-        var runner = scope.ServiceProvider.GetRequiredService<ITenantDbRunner>();
-        await runner.ForEachActiveTenantAsync(async db =>
+        var db = scope.ServiceProvider.GetRequiredService<IAppDbContext>();
         {
             var matchedStudents = (await db.Students.ToListAsync(ct))
                 .Where(s => PhoneUtil.Key(s.ParentPhone) == key).ToList();
             var matchedTeachers = (await db.Teachers.Where(t => !t.IsArchived).ToListAsync(ct))
                 .Where(t => PhoneUtil.Key(t.Phone) == key).ToList();
-
-            if (matchedStudents.Count == 0 && matchedTeachers.Count == 0) return;
 
             foreach (var s in matchedStudents)
             {
@@ -153,7 +147,7 @@ public class TelegramBotService(
             }
 
             await db.SaveChangesAsync(ct);
-        }, ct);
+        }
 
         if (linked.Count == 0)
         {

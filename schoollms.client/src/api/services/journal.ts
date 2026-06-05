@@ -106,6 +106,12 @@ interface EntryPayload {
   grade?: number | null
   /** null — davomat sababini o'chiradi */
   reasonId?: string | null
+  /** Uyga vazifa: 0 = belgilanmagan, 1 = qildi, 2 = qilmadi */
+  homework?: number
+  /** Xulq: 0 = belgilanmagan, 1 = yaxshi, 2 = yomon */
+  behavior?: number
+  /** O'zlashtirish foizi 0-100; null = tozalash */
+  mastery?: number | null
 }
 
 /** Bitta katakni belgilash — baho yoki davomat sababi (sana + dars raqami bo'yicha) */
@@ -126,6 +132,9 @@ export async function setJournalEntry(
       studentId, date, period,
       grade: payload.grade ?? undefined,
       reasonId: payload.reasonId ?? undefined,
+      homework: payload.homework ?? 0,
+      behavior: payload.behavior ?? 0,
+      mastery: payload.mastery ?? null,
     }
     const i = arr.findIndex((e) => e.studentId === studentId && e.date === date && e.period === period)
     if (i >= 0) arr[i] = entry

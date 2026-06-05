@@ -115,7 +115,9 @@ public class FinanceController(AppDbContext db, AuditService audit) : Controller
     public async Task<ActionResult<IEnumerable<SalaryReportRowDto>>> SalaryReport(
         [FromQuery] string? from, [FromQuery] string? to)
     {
-        var fromMonth = string.IsNullOrEmpty(from) ? $"{AppClock.Now.Year:D4}-01" : from[..7];
+        // Maosh o'quv yili boshidan hisoblanadi (yanvardan emas) — choraklardagi eng erta oydan.
+        var fromMonth = string.IsNullOrEmpty(from)
+            ? await TuitionService.AcademicYearStartMonthAsync(db) : from[..7];
         var toMonth = string.IsNullOrEmpty(to) ? TuitionService.CurrentMonth() : to[..7];
 
         var paid = await db.FinanceTransactions
@@ -125,24 +127,39 @@ public class FinanceController(AppDbContext db, AuditService audit) : Controller
             .ToListAsync();
 
         var teachers = await db.Teachers.OrderBy(t => t.FullName).ToListAsync();
+        // Oylik maosh — dars jadvali + toifa narxidan; har oy DAVOMATga moslanadi (kelmagan kun chegiriladi).
+        var meta = await db.SchoolMeta.FirstOrDefaultAsync();
+        var byWeekdayAll = await TeacherSalaryCalc.LessonsByWeekdayAsync(db);
+        var quarters = await TeacherSalaryCalc.QuarterRangesAsync(db);
+        var absentAll = await db.TeacherAttendances
+            .Where(a => a.Status == "absent" && a.Date.Length >= 7)
+            .Select(a => new { a.TeacherId, a.Date }).ToListAsync();
         return teachers.Select(te =>
         {
-            // Oylik faqat o'qituvchi boshlagan oydan hisoblanadi (avvalgi oylar uchun qarz yozilmaydi).
-            var startMonth = !string.IsNullOrEmpty(te.SalaryStartMonth)
-                             && string.CompareOrdinal(te.SalaryStartMonth, fromMonth) > 0
-                ? te.SalaryStartMonth
-                : fromMonth;
-            var months = string.CompareOrdinal(startMonth, toMonth) > 0
-                ? 0
-                : TuitionService.MonthRange(startMonth, toMonth).Count();
+            var byWeekday = byWeekdayAll.GetValueOrDefault(te.Id) ?? new int[6];
+            var nominalMonthly = TeacherSalaryCalc.WithBonus(
+                TeacherSalaryCalc.Monthly(byWeekday.Sum(), te.Category, meta), te.BonusPct);
+            var absByMonth = absentAll.Where(a => a.TeacherId == te.Id)
+                .GroupBy(a => a.Date[..7])
+                .ToDictionary(g => g.Key, g => (IEnumerable<string>)g.Select(x => x.Date).ToList());
+
+            // Oylik o'qituvchi ishga kirgan KUNdan hisoblanadi (birinchi oy qisman). Avvalgi oylar — 0.
+            var startDate = TeacherSalaryCalc.StartDateOf(te);
+            var teacherStartMonth = startDate is { Length: >= 7 } ? startDate[..7] : fromMonth;
+            var startMonth = string.CompareOrdinal(teacherStartMonth, fromMonth) > 0 ? teacherStartMonth : fromMonth;
+            var monthList = string.CompareOrdinal(startMonth, toMonth) > 0
+                ? new List<string>()
+                : TuitionService.MonthRange(startMonth, toMonth).ToList();
 
             var rows = paid.Where(t => t.TeacherId == te.Id
                                        && string.Compare(t.Date, $"{startMonth}-01") >= 0).ToList();
             var totalPaid = rows.Sum(r => r.Amount);
-            var expected = te.Salary * months;
+            var expected = monthList.Sum(mn => TeacherSalaryCalc.MonthlyForMonth(
+                byWeekday, te.Category, meta, mn, startDate,
+                absByMonth.GetValueOrDefault(mn) ?? Enumerable.Empty<string>(), te.BonusPct, quarters));
             return new SalaryReportRowDto(
-                te.Id, te.FullName, te.Salary, totalPaid, rows.Count,
-                months, expected, expected - totalPaid);
+                te.Id, te.FullName, nominalMonthly, totalPaid, rows.Count,
+                monthList.Count, expected, expected - totalPaid);
         }).ToList();
     }
 

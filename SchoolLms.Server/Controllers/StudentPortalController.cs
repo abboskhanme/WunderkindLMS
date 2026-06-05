@@ -22,7 +22,7 @@ namespace SchoolLms.Server.Controllers;
 [Route("api/student")]
 public class StudentPortalController(
     AppDbContext db, ChatService chat, IWebHostEnvironment env, ReferenceCache refCache,
-    ITenantContext tenant, TelegramService telegram, FcmService fcm) : ControllerBase
+    TelegramService telegram, FcmService fcm) : ControllerBase
 {
     /// <summary>Berilgan foydalanuvchining qurilmalariga push yuboradi (fire-and-forget).</summary>
     private async Task PushToUserAsync(string userId, string title, string body)
@@ -201,10 +201,27 @@ public class StudentPortalController(
             s.BirthCertificateUrl, s.ParentPassportUrl);
     }
 
+    /// <summary>
+    /// O'quvchining TO'LIQ "shaxsiy daftari" — admin ko'radigan detal sahifasi bilan AYNAN bir xil
+    /// (<see cref="StudentProfileBuilder"/>): profil + shaxsiy ma'lumot (manzil, chegirma, guruh,
+    /// hujjatlar, balans), fan×chorak baholar va o'rtacha, davomat (qoldirgan/kech + sabablar),
+    /// intizomiy ball va tarixi, topshiriqlar ballari, OYLIK BAHOLASH (turlar×oy), uy vazifa/xulq
+    /// jamlamasi va oylik trend — bularning bari bitta javobda.
+    /// student — o'ziniki; parent — farzandiniki; admin — <c>?studentId=...</c>.
+    /// </summary>
+    [HttpGet("notebook")]
+    public async Task<ActionResult<StudentNotebookDto>> Notebook([FromQuery] string? studentId)
+    {
+        if (User.IsInRole("admin") && string.IsNullOrWhiteSpace(studentId)) return NeedStudentId();
+        var s = await TargetAsync(studentId);
+        if (s is null) return NotFound();
+        return await StudentProfileBuilder.BuildAsync(db, s);
+    }
+
     /// <summary>Maktab meta'si (chorak/dars vaqtlari/sabablar + joriy chorak/hafta) —
     /// hammaga bir xil, `studentId` shart emas.</summary>
     [HttpGet("meta")]
-    public async Task<ActionResult<PortalMetaDto>> Meta() => await refCache.MetaAsync(tenant.TenantId ?? "");
+    public async Task<ActionResult<PortalMetaDto>> Meta() => await refCache.MetaAsync();
 
     /// <summary>Joriy maktab nomi — ilova brendingi/sarlavhasi uchun.</summary>
     [HttpGet("school")]
@@ -578,7 +595,7 @@ public class StudentPortalController(
             s.Id, s.FullName, s.ClassName, s.BirthDate, s.Gender,
             s.ParentFullName, s.ParentPhone, s.EnrollmentDate,
             s.BirthCertificateUrl, s.ParentPassportUrl);
-        var meta = await refCache.MetaAsync(tenant.TenantId ?? "");
+        var meta = await refCache.MetaAsync();
 
         var cls = await db.Classes.FirstOrDefaultAsync(c => c.Name == s.ClassName);
 

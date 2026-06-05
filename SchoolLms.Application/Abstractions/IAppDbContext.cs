@@ -15,6 +15,11 @@ public interface IAppDbContext
     DbSet<AppUser> Users { get; }
     DbSet<Student> Students { get; }
     DbSet<Teacher> Teachers { get; }
+    DbSet<TeacherAttendance> TeacherAttendances { get; }
+    DbSet<TurnstileEvent> TurnstileEvents { get; }
+    DbSet<Bus> Buses { get; }
+    DbSet<BusLocation> BusLocations { get; }
+    DbSet<Camera> Cameras { get; }
     DbSet<Subject> Subjects { get; }
     DbSet<SchoolClass> Classes { get; }
     DbSet<Lead> Leads { get; }
@@ -31,6 +36,8 @@ public interface IAppDbContext
     DbSet<Holiday> Holidays { get; }
     DbSet<DisciplineReason> DisciplineReasons { get; }
     DbSet<DisciplinePoint> DisciplinePoints { get; }
+    DbSet<EvaluationType> EvaluationTypes { get; }
+    DbSet<EvaluationGrade> EvaluationGrades { get; }
     DbSet<FinanceTransaction> FinanceTransactions { get; }
     DbSet<MonthlyCharge> MonthlyCharges { get; }
     DbSet<AuditLog> AuditLogs { get; }

@@ -32,6 +32,8 @@ export interface FinanceTransactionPayload {
   studentId?: string
   /** Chiqim "salary" bo'lsa — qaysi o'qituvchiga (oylik maosh) */
   teacherId?: string
+  /** Kirim "tuition" (o'quvchi to'lovi) bo'lsa — qaysi oy uchun ("YYYY-MM") */
+  month?: string
 }
 
 export interface TransactionFilters {

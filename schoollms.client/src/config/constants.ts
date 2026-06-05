@@ -10,6 +10,16 @@ export const genderOptions: { value: Gender; label: string }[] = [
   { value: 'female', label: 'Ayol' },
 ]
 
+/** O'qituvchi toifalari — maosh bir soat narxini belgilaydi (narx "Oylik hisoblash"da kiritiladi) */
+export const teacherCategories: { value: string; label: string }[] = [
+  { value: 'oliy', label: 'Oliy toifa' },
+  { value: '1', label: '1-toifa' },
+  { value: '2', label: '2-toifa' },
+  { value: 'mutaxasis', label: 'Mutaxasis' },
+]
+export const teacherCategoryLabel = (c?: string): string =>
+  teacherCategories.find((x) => x.value === c)?.label ?? '—'
+
 /** 1-11 sinflar */
 export const gradeOptions: number[] = Array.from({ length: 11 }, (_, i) => i + 1)
 
@@ -79,6 +89,8 @@ export const adminPermissions: { key: string; label: string }[] = [
   { key: 'settings', label: 'Sozlamalar' },
   { key: 'staff', label: 'Xodimlar' },
   { key: 'feedback', label: 'Taklif va shikoyatlar' },
+  { key: 'gps', label: 'GPS (avtobus)' },
+  { key: 'cameras', label: 'Kameralar' },
   { key: 'discipline', label: 'Intizomiy ball' },
 ]
 

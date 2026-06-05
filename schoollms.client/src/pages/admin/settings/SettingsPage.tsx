@@ -1,14 +1,13 @@
 import { useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { Check, Plus, Trash2 } from 'lucide-react'
-import type { AbsenceReason, AssignmentType, LessonTime, QuarterPeriod } from '@/types'
+import type { AbsenceReason, LessonTime, QuarterPeriod } from '@/types'
 import {
   getSettings,
   saveQuarters,
   saveLessonTimes,
   saveAbsenceReasons,
 } from '@/api/services/settings'
-import { getAssignmentTypes, saveAssignmentTypes } from '@/api/services/assignments'
 import { uid, cn } from '@/lib/utils'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
@@ -17,6 +16,9 @@ import { Time24Input } from '@/components/ui/Input'
 import { SchoolSettings } from './SchoolSettings'
 import { TelegramSettings } from './TelegramSettings'
 import { FirebaseSettings } from './FirebaseSettings'
+import { TurnstileSettings } from './TurnstileSettings'
+import { GpsSettings } from './GpsSettings'
+import { CameraSettings } from './CameraSettings'
 
 type Status = 'idle' | 'saving' | 'saved'
 
@@ -30,7 +32,9 @@ const sectionTitles: Record<string, string> = {
   school: "Maktab ma'lumotlari",
   telegram: 'Telegram bot',
   firebase: 'Push (Firebase)',
-  'assignment-types': 'Topshiriq turlari',
+  turnstile: 'Turniket integratsiya',
+  gps: 'GPS integratsiya',
+  cameras: 'Kamera integratsiya',
 }
 
 /**
@@ -58,8 +62,6 @@ export function SettingsPage() {
   const [qStatus, setQStatus] = useState<Status>('idle')
   const [tStatus, setTStatus] = useState<Status>('idle')
   const [rStatus, setRStatus] = useState<Status>('idle')
-  const [types, setTypes] = useState<AssignmentType[]>([])
-  const [atStatus, setAtStatus] = useState<Status>('idle')
 
   useEffect(() => {
     getSettings()
@@ -69,10 +71,6 @@ export function SettingsPage() {
         setReasons(s.absenceReasons)
       })
       .finally(() => setLoading(false))
-  }, [])
-
-  useEffect(() => {
-    getAssignmentTypes().then(setTypes)
   }, [])
 
   const updateQuarter = (i: number, field: 'startDate' | 'endDate', value: string) =>
@@ -124,20 +122,6 @@ export function SettingsPage() {
     await saveAbsenceReasons(reasons.filter((r) => r.name.trim()))
     setRStatus('saved')
     setTimeout(() => setRStatus('idle'), 2000)
-  }
-
-  const updateType = (i: number, value: string) =>
-    setTypes((prev) => prev.map((t, idx) => (idx === i ? { ...t, name: value } : t)))
-
-  const addType = () => setTypes((prev) => [...prev, { id: uid(), name: '' }])
-
-  const removeType = (i: number) => setTypes((prev) => prev.filter((_, idx) => idx !== i))
-
-  const onSaveTypes = async () => {
-    setAtStatus('saving')
-    await saveAssignmentTypes(types.filter((t) => t.name.trim()))
-    setAtStatus('saved')
-    setTimeout(() => setAtStatus('idle'), 2000)
   }
 
   return (
@@ -317,45 +301,14 @@ export function SettingsPage() {
           {/* Push (Firebase) */}
           {section === 'firebase' && <FirebaseSettings />}
 
-          {/* Topshiriq turlari */}
-          {section === 'assignment-types' && (
-          <Card>
-            <div className="mb-1 flex items-center justify-between">
-              <h2 className="font-semibold text-slate-800">Topshiriq turlari</h2>
-              <SaveButton status={atStatus} onClick={onSaveTypes} />
-            </div>
-            <p className="mb-4 text-sm text-slate-400">
-              Qo'shimcha topshiriqlarni turlash uchun (Uy vazifasi, Mustaqil ish, Test ...).
-            </p>
-            <div className="space-y-2">
-              {types.map((t, i) => (
-                <div key={t.id} className="flex items-center gap-2">
-                  <input
-                    value={t.name}
-                    onChange={(e) => updateType(i, e.target.value)}
-                    placeholder="Tur nomi (masalan: Uy vazifasi)"
-                    className={`${control} flex-1 min-w-[180px]`}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => removeType(i)}
-                    title="O'chirish"
-                    className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-red-50 hover:text-red-600"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
-                </div>
-              ))}
-              <button
-                type="button"
-                onClick={addType}
-                className="inline-flex items-center gap-1 text-sm font-medium text-brand-600 hover:text-brand-700"
-              >
-                <Plus className="h-4 w-4" /> Tur qo'shish
-              </button>
-            </div>
-          </Card>
-          )}
+          {/* Turniket / FaceID integratsiya */}
+          {section === 'turnstile' && <TurnstileSettings />}
+
+          {/* GPS (avtobus kuzatuvi) integratsiya */}
+          {section === 'gps' && <GpsSettings />}
+
+          {/* Kamera (videokuzatuv) integratsiya */}
+          {section === 'cameras' && <CameraSettings />}
         </div>
       )}
     </div>

@@ -35,6 +35,51 @@ export async function downloadStudentCredentials(): Promise<void> {
   URL.revokeObjectURL(url)
 }
 
+/** Excel'dan ommaviy import natijasi (bitta xato qator). */
+export interface StudentImportRowError {
+  row: number
+  message: string
+}
+
+/** Excel'dan ommaviy import yakuniy hisoboti. */
+export interface StudentImportResult {
+  created: number
+  failed: number
+  skipped: number
+  errors: StudentImportRowError[]
+}
+
+/** O'quvchilarni ommaviy kiritish uchun bo'sh Excel shablonini yuklab oladi (.xlsx). */
+export async function downloadStudentImportTemplate(): Promise<void> {
+  if (USE_MOCK) {
+    alert('Shablon faqat real serverda ishlaydi (VITE_USE_MOCK=false).')
+    return
+  }
+  const res = await api.get('/admin/students/import-template', { responseType: 'blob' })
+  const url = URL.createObjectURL(res.data as Blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = 'oquvchilar_shablon.xlsx'
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  URL.revokeObjectURL(url)
+}
+
+/** To'ldirilgan Excel (.xlsx) shablonini yuklab, o'quvchilarni ommaviy yaratadi. */
+export async function importStudents(file: File): Promise<StudentImportResult> {
+  if (USE_MOCK) {
+    await delay(300)
+    return { created: 0, failed: 0, skipped: 0, errors: [] }
+  }
+  const fd = new FormData()
+  fd.append('file', file)
+  const { data } = await api.post<StudentImportResult>('/admin/students/import', fd, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  })
+  return data
+}
+
 /** Faylni serverga yuklash (rasm/PDF, ~20 MB). URL qaytaradi — uni keyin entity'da saqlash mumkin. */
 export async function uploadAdminFile(file: File): Promise<UploadedFile> {
   if (USE_MOCK) {

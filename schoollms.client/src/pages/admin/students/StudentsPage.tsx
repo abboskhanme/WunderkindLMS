@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
-import { Plus, Search, Eye, Pencil, Trash2, Send, Download, X, Wallet, History, Archive, RotateCcw } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
+import { StudentViewModal } from './StudentViewModal'
+import { Plus, Search, Pencil, Trash2, Send, Download, X, Wallet, History, Archive, RotateCcw, FileDown, Upload } from 'lucide-react'
 import type { Gender, Student } from '@/types'
-import type { StudentPayload } from '@/api/services/students'
+import type { StudentPayload, StudentImportResult } from '@/api/services/students'
 import {
   getStudents,
   getArchivedStudents,
@@ -12,6 +14,8 @@ import {
   deleteStudent,
   addPayment,
   downloadStudentCredentials,
+  downloadStudentImportTemplate,
+  importStudents,
 } from '@/api/services/students'
 import { getClasses } from '@/api/services/classes'
 import { genderLabels } from '@/config/constants'
@@ -22,7 +26,6 @@ import { Button } from '@/components/ui/Button'
 import { Loader } from '@/components/ui/Loader'
 import { Modal } from '@/components/ui/Modal'
 import { StudentFormModal } from './StudentFormModal'
-import { StudentViewModal } from './StudentViewModal'
 import { SmsModal } from './SmsModal'
 import { PaymentModal } from './PaymentModal'
 import { PaymentHistoryModal } from './PaymentHistoryModal'
@@ -35,6 +38,7 @@ const control =
 
 export function StudentsPage() {
   const { user } = useAuth()
+  const navigate = useNavigate()
   const [tab, setTab] = useState<Tab>('active')
   const [students, setStudents] = useState<Student[]>([])
   const [archived, setArchived] = useState<Student[]>([])
@@ -56,10 +60,34 @@ export function StudentsPage() {
   // modallar
   const [formOpen, setFormOpen] = useState(false)
   const [editing, setEditing] = useState<Student | null>(null)
+  // Yangi o'quvchi yaratilgach login/parolni ko'rsatish uchun (Eye tugmasi esa shaxsiy daftarga boradi).
   const [viewing, setViewing] = useState<Student | null>(null)
+  const openNotebook = (s: Student) => navigate(`/admin/students/${s.id}`)
   const [smsOpen, setSmsOpen] = useState(false)
   const [paying, setPaying] = useState<Student | null>(null)
   const [historyOf, setHistoryOf] = useState<Student | null>(null)
+
+  // Excel'dan ommaviy import
+  const [importing, setImporting] = useState(false)
+  const [importResult, setImportResult] = useState<StudentImportResult | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const handleImportFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    e.target.value = '' // bir xil faylni qayta tanlash mumkin bo'lsin
+    if (!file) return
+    setImporting(true)
+    try {
+      const result = await importStudents(file)
+      setImportResult(result)
+      if (result.created > 0) setStudents(await getStudents())
+    } catch (err) {
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message
+      alert('Yuklashda xatolik: ' + (msg ?? 'fayl noto\'g\'ri yoki server xatosi'))
+    } finally {
+      setImporting(false)
+    }
+  }
 
   // Chegirma o'zgarganda — yangi chegirmani joriy oyga qo'llashni so'rash
   const [discountPrompt, setDiscountPrompt] = useState<{
@@ -302,14 +330,33 @@ export function StudentsPage() {
             </Button>
           )}
           {tab === 'active' && (
-            <Button
-              onClick={() => {
-                setEditing(null)
-                setFormOpen(true)
-              }}
-            >
-              <Plus className="h-4 w-4" /> Yangi qo'shish
-            </Button>
+            <>
+              <Button variant="secondary" onClick={() => downloadStudentImportTemplate()}>
+                <FileDown className="h-4 w-4" /> Shablon
+              </Button>
+              <Button
+                variant="secondary"
+                disabled={importing}
+                onClick={() => fileInputRef.current?.click()}
+              >
+                <Upload className="h-4 w-4" /> {importing ? 'Yuklanmoqda…' : 'Excel yuklash'}
+              </Button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".xlsx"
+                className="hidden"
+                onChange={handleImportFile}
+              />
+              <Button
+                onClick={() => {
+                  setEditing(null)
+                  setFormOpen(true)
+                }}
+              >
+                <Plus className="h-4 w-4" /> Yangi qo'shish
+              </Button>
+            </>
           )}
         </div>
       </div>
@@ -411,8 +458,13 @@ export function StudentsPage() {
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {filtered.map((s, i) => (
-                  <tr key={s.id} className="hover:bg-slate-50/60">
-                    <td className="px-4 py-3">
+                  <tr
+                    key={s.id}
+                    onClick={() => openNotebook(s)}
+                    title="Shaxsiy daftarni ochish"
+                    className="cursor-pointer hover:bg-slate-50/60"
+                  >
+                    <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                       <input
                         type="checkbox"
                         checked={selected.has(s.id)}
@@ -421,7 +473,9 @@ export function StudentsPage() {
                       />
                     </td>
                     <td className="px-2 py-3 text-slate-400">{i + 1}</td>
-                    <td className="px-4 py-3 font-medium text-slate-800">{s.fullName}</td>
+                    <td className="px-4 py-3 font-medium text-slate-800">
+                      {s.fullName}
+                    </td>
                     <td className="px-4 py-3">
                       <span className="rounded-md bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
                         {s.className}
@@ -453,13 +507,12 @@ export function StudentsPage() {
                         {s.archiveReason || '—'}
                       </td>
                     )}
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center justify-end gap-0.5">
                         {tab === 'active' ? (
                           <>
                             <IconBtn icon={Wallet} title="To'lov kiritish" onClick={() => setPaying(s)} />
                             <IconBtn icon={History} title="To'lov tarixi" onClick={() => setHistoryOf(s)} />
-                            <IconBtn icon={Eye} title="Ko'rish" onClick={() => setViewing(s)} />
                             <IconBtn
                               icon={Pencil}
                               title="Tahrirlash"
@@ -472,7 +525,6 @@ export function StudentsPage() {
                           </>
                         ) : (
                           <>
-                            <IconBtn icon={Eye} title="Ko'rish" onClick={() => setViewing(s)} />
                             <IconBtn icon={RotateCcw} title="Arxivdan qaytarish" onClick={() => handleRestore(s)} />
                             <IconBtn
                               icon={Trash2}
@@ -513,6 +565,62 @@ export function StudentsPage() {
       <SmsModal open={smsOpen} onClose={() => setSmsOpen(false)} recipients={selectedStudents} />
       <PaymentModal student={paying} onClose={() => setPaying(null)} onSubmit={handlePayment} />
       <PaymentHistoryModal student={historyOf} onClose={() => setHistoryOf(null)} />
+
+      {/* Excel'dan import natijasi */}
+      <Modal
+        open={!!importResult}
+        onClose={() => setImportResult(null)}
+        title="Excel'dan yuklash natijasi"
+        size="md"
+        footer={<Button onClick={() => setImportResult(null)}>Yopish</Button>}
+      >
+        {importResult && (
+          <div className="space-y-3 text-sm">
+            <div className="flex flex-wrap gap-x-5 gap-y-1">
+              <span className="text-emerald-700">
+                ✓ Qo'shildi: <b>{importResult.created}</b>
+              </span>
+              {importResult.failed > 0 && (
+                <span className="text-red-600">
+                  ✗ Xato: <b>{importResult.failed}</b>
+                </span>
+              )}
+              {importResult.skipped > 0 && (
+                <span className="text-slate-500">
+                  O'tkazib yuborildi (bo'sh): <b>{importResult.skipped}</b>
+                </span>
+              )}
+            </div>
+
+            {importResult.errors.length > 0 && (
+              <div className="max-h-72 overflow-auto rounded-lg border border-slate-100">
+                <table className="w-full text-left text-sm">
+                  <thead className="sticky top-0 bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
+                    <tr>
+                      <th className="w-16 px-3 py-2">Qator</th>
+                      <th className="px-3 py-2">Xato</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {importResult.errors.map((e, i) => (
+                      <tr key={i}>
+                        <td className="px-3 py-2 text-slate-500">{e.row}</td>
+                        <td className="px-3 py-2 text-red-600">{e.message}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {importResult.created > 0 && (
+              <p className="text-slate-500">
+                Yangi o'quvchilarning login/parollarini <b>"Login/parollar"</b> tugmasi orqali yuklab olishingiz mumkin.
+              </p>
+            )}
+          </div>
+        )}
+      </Modal>
 
       {/* Arxivga ko'chirish modali — sabab kiritish */}
       <Modal
@@ -607,7 +715,7 @@ export function StudentsPage() {
 }
 
 interface IconBtnProps {
-  icon: typeof Eye
+  icon: typeof Pencil
   title: string
   onClick: () => void
   danger?: boolean

@@ -6,13 +6,18 @@ import { LoginPage } from '@/pages/LoginPage'
 import { AdminDashboard } from '@/pages/admin/AdminDashboard'
 import { LeadsPage } from '@/pages/admin/leads/LeadsPage'
 import { StudentsPage } from '@/pages/admin/students/StudentsPage'
+import { StudentEvaluationPage } from '@/pages/admin/students/StudentEvaluationPage'
+import { EvaluationTypesPage } from '@/pages/admin/students/EvaluationTypesPage'
+import { StudentDetailPage } from '@/pages/admin/students/StudentDetailPage'
 import { TeachersPage } from '@/pages/admin/teachers/TeachersPage'
+import { TeacherAttendancePage } from '@/pages/admin/teachers/TeacherAttendancePage'
 import { ClassesPage } from '@/pages/admin/classes/ClassesPage'
 import { ClassDetailPage } from '@/pages/admin/classes/ClassDetailPage'
 import { ClassRatingPage } from '@/pages/admin/classes/ClassRatingPage'
 import { ClassSchedulePage } from '@/pages/admin/classes/ClassSchedulePage'
 import { TemplateEditorPage } from '@/pages/admin/classes/TemplateEditorPage'
 import { SchedulePage } from '@/pages/admin/schedule/SchedulePage'
+import { SalaryCalcPage } from '@/pages/admin/schedule/SalaryCalcPage'
 import { TeacherSchedulePage } from '@/pages/admin/schedule/TeacherSchedulePage'
 import { ClassScheduleViewPage } from '@/pages/admin/schedule/ClassScheduleViewPage'
 import { HolidaysPage } from '@/pages/admin/schedule/HolidaysPage'
@@ -35,6 +40,8 @@ import { LmsSubjectsPage } from '@/pages/admin/lms/LmsSubjectsPage'
 import { LmsTopicsPage } from '@/pages/admin/lms/LmsTopicsPage'
 import { AttendancePage } from '@/pages/admin/attendance/AttendancePage'
 import { LocationPage } from '@/pages/admin/locations/LocationPage'
+import { GpsPage } from '@/pages/admin/gps/GpsPage'
+import { CamerasPage } from '@/pages/admin/cameras/CamerasPage'
 import { ParentsPage } from '@/pages/admin/parents/ParentsPage'
 import { TeacherAppPage } from '@/pages/admin/parents/TeacherAppPage'
 import { CanteenPage } from '@/pages/admin/canteen/CanteenPage'
@@ -44,6 +51,7 @@ import { AccountPage } from '@/pages/admin/account/AccountPage'
 import { TeacherDashboard } from '@/pages/teacher/TeacherDashboard'
 import { TeacherAssignmentsPage } from '@/pages/teacher/assignments/AssignmentsPage'
 import { TeacherJournalPage } from '@/pages/teacher/journal/JournalPage'
+import { TeacherEvaluationPage } from '@/pages/teacher/evaluation/EvaluationPage'
 import { TeacherSchedulePage as TeacherMySchedulePage } from '@/pages/teacher/schedule/SchedulePage'
 import { TeacherMessagesPage } from '@/pages/teacher/messages/MessagesPage'
 import { TeacherSalaryPage } from '@/pages/teacher/salary/SalaryPage'
@@ -65,13 +73,18 @@ export default function App() {
           <Route index element={<AdminDashboard />} />
           <Route path="leads" element={<RequirePerm perm="leads"><LeadsPage /></RequirePerm>} />
           <Route path="students" element={<RequirePerm perm="students"><StudentsPage /></RequirePerm>} />
+          <Route path="students/baholash" element={<RequirePerm perm="students"><StudentEvaluationPage /></RequirePerm>} />
+          <Route path="students/baholash-turlari" element={<RequirePerm perm="students"><EvaluationTypesPage /></RequirePerm>} />
+          <Route path="students/:id" element={<RequirePerm perm="students"><StudentDetailPage /></RequirePerm>} />
           <Route path="teachers" element={<RequirePerm perm="teachers"><TeachersPage /></RequirePerm>} />
+          <Route path="teachers/attendance" element={<RequirePerm perm="teachers"><TeacherAttendancePage /></RequirePerm>} />
           <Route path="classes" element={<RequirePerm perm="classes"><ClassesPage /></RequirePerm>} />
           <Route path="classes/rating" element={<RequirePerm perm="classes"><ClassRatingPage /></RequirePerm>} />
           <Route path="classes/:id" element={<RequirePerm perm="classes"><ClassDetailPage /></RequirePerm>} />
           <Route path="schedule" element={<RequirePerm perm="schedule"><ClassScheduleViewPage /></RequirePerm>} />
           <Route path="schedule/teachers" element={<RequirePerm perm="schedule"><TeacherSchedulePage /></RequirePerm>} />
           <Route path="schedule/manage" element={<RequirePerm perm="schedule"><SchedulePage /></RequirePerm>} />
+          <Route path="teachers/salary" element={<RequirePerm perm="teachers"><SalaryCalcPage /></RequirePerm>} />
           <Route path="schedule/holidays" element={<RequirePerm perm="schedule"><HolidaysPage /></RequirePerm>} />
           <Route path="discipline" element={<RequirePerm perm="discipline"><BallarNazoratiPage /></RequirePerm>} />
           <Route path="discipline/reasons" element={<RequirePerm perm="discipline"><BallSabablarPage /></RequirePerm>} />
@@ -101,6 +114,8 @@ export default function App() {
           <Route path="account" element={<AccountPage />} />
 
           {/* Boshqaruv */}
+          <Route path="boshqaruv/gps" element={<RequirePerm perm="gps"><GpsPage /></RequirePerm>} />
+          <Route path="boshqaruv/cameras" element={<RequirePerm perm="cameras"><CamerasPage /></RequirePerm>} />
           <Route path="boshqaruv/staff" element={<RequirePerm perm="staff"><StaffPage /></RequirePerm>} />
           <Route path="boshqaruv/feedback" element={<RequirePerm perm="feedback"><FeedbackPage /></RequirePerm>} />
           {/* Rollar endi "Xodimlar va rollar" sahifasiga birlashtirildi */}
@@ -131,6 +146,8 @@ export default function App() {
               </RequirePerm>
             }
           />
+          {/* Baholash — har qaysi o'qituvchi (o'zi o'qitadigan fan+sinf; backend Teaches() tekshiradi) */}
+          <Route path="evaluation" element={<TeacherEvaluationPage />} />
           <Route
             path="schedule"
             element={

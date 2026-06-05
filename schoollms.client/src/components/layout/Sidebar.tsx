@@ -33,15 +33,10 @@ export function Sidebar({ open, onNavigate }: SidebarProps) {
 
   if (!user) return null
   const role = user.role
-  // Maktab obunasida ochilgan bo'limlar (kalitlar). null/bo'sh = cheklovsiz (hamma bo'lim).
-  // Bu maktab darajasidagi litsenziya — barcha rollarga (admin/superadmin ham) tegishli.
-  const modules = user.modules ?? null
-  // Element ko'rinadi: roli mos (yoki roles yo'q) VA xodim ruxsati bor (yoki perm yo'q / permissions yo'q)
-  // VA bo'lim maktab obunasida ochiq (yoki cheklov yo'q / perm yo'q).
+  // Element ko'rinadi: roli mos (yoki roles yo'q) VA xodim ruxsati bor (yoki perm yo'q / permissions yo'q).
   const canSee = (x: { roles?: Role[]; perm?: string }) =>
     (!x.roles || x.roles.includes(role)) &&
-    (!x.perm || !user.permissions || user.permissions.includes(x.perm)) &&
-    (!x.perm || !modules || modules.includes(x.perm))
+    (!x.perm || !user.permissions || user.permissions.includes(x.perm))
 
   // Guruh bolalarini ham filtrlaymiz; barcha bolalari yashirilgan guruhni ko'rsatmaymiz.
   const items = navByRole[role]

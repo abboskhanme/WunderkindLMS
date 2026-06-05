@@ -137,6 +137,96 @@ public class SettingsController(AppDbContext db, TelegramService telegram) : Con
         return new FirebaseSettingsDto(json, FcmService.IsConfigured(json));
     }
 
+    // ---------- Turniket / FaceID integratsiyasi ----------
+
+    [HttpGet("turnstile")]
+    public async Task<ActionResult<TurnstileSettingsDto>> GetTurnstile()
+    {
+        var m = await db.SchoolMeta.FirstOrDefaultAsync();
+        var teachers = (await db.Teachers.Where(t => !t.IsArchived).OrderBy(t => t.FullName).ToListAsync())
+            .Select(t => new TeacherDeviceMapDto(t.Id, t.FullName, t.DeviceUserId)).ToList();
+        return new TurnstileSettingsDto(
+            m?.TurnstileEnabled ?? false,
+            string.IsNullOrEmpty(m?.TurnstileVendor) ? "hikvision" : m!.TurnstileVendor,
+            m?.TurnstileHost ?? "", m?.TurnstilePort ?? 80, m?.TurnstileUsername ?? "",
+            !string.IsNullOrEmpty(m?.TurnstilePassword),
+            string.IsNullOrEmpty(m?.WorkStartTime) ? "08:30" : m!.WorkStartTime,
+            m?.LateGraceMinutes ?? 10, m?.TurnstileLastSync ?? "", teachers);
+    }
+
+    [HttpPut("turnstile")]
+    public async Task<ActionResult<TurnstileSettingsDto>> SaveTurnstile(SaveTurnstileSettingsRequest req)
+    {
+        var m = await db.SchoolMeta.FirstOrDefaultAsync();
+        if (m is null) { m = new SchoolMeta(); db.SchoolMeta.Add(m); }
+        m.TurnstileEnabled = req.Enabled;
+        m.TurnstileVendor = (req.Vendor ?? m.TurnstileVendor).Trim().ToLowerInvariant();
+        m.TurnstileHost = (req.Host ?? "").Trim();
+        m.TurnstilePort = req.Port is > 0 ? req.Port.Value : 80;
+        m.TurnstileUsername = (req.Username ?? "").Trim();
+        // Parol bo'sh kelsa — eskisi saqlanadi (UI parolni qaytarmaydi).
+        if (!string.IsNullOrEmpty(req.Password)) m.TurnstilePassword = req.Password;
+        if (!string.IsNullOrEmpty(req.WorkStartTime)) m.WorkStartTime = req.WorkStartTime.Trim();
+        if (req.LateGraceMinutes is >= 0) m.LateGraceMinutes = req.LateGraceMinutes.Value;
+
+        // O'qituvchi ↔ qurilma ID moslamasi.
+        if (req.Teachers is not null)
+        {
+            var byId = await db.Teachers.ToDictionaryAsync(t => t.Id);
+            foreach (var map in req.Teachers)
+                if (byId.TryGetValue(map.TeacherId, out var te))
+                    te.DeviceUserId = (map.DeviceUserId ?? "").Trim();
+        }
+        await db.SaveChangesAsync();
+        return await GetTurnstile();
+    }
+
+    // ---------- GPS (avtobus kuzatuvi) integratsiyasi ----------
+
+    [HttpGet("gps")]
+    public async Task<ActionResult<GpsSettingsDto>> GetGps()
+    {
+        var m = await db.SchoolMeta.FirstOrDefaultAsync();
+        var busCount = await db.Buses.CountAsync();
+        return new GpsSettingsDto(
+            m?.GpsEnabled ?? false, m?.GpsIngestToken ?? "",
+            m?.GpsOnlineMinutes ?? 5, m?.GpsStopRadiusM ?? 60, m?.GpsStopMinMinutes ?? 3, busCount);
+    }
+
+    [HttpPut("gps")]
+    public async Task<ActionResult<GpsSettingsDto>> SaveGps(SaveGpsSettingsRequest req)
+    {
+        var m = await db.SchoolMeta.FirstOrDefaultAsync();
+        if (m is null) { m = new SchoolMeta(); db.SchoolMeta.Add(m); }
+        m.GpsEnabled = req.Enabled;
+        m.GpsIngestToken = (req.IngestToken ?? "").Trim();
+        if (req.OnlineMinutes is > 0) m.GpsOnlineMinutes = req.OnlineMinutes.Value;
+        if (req.StopRadiusM is > 0) m.GpsStopRadiusM = req.StopRadiusM.Value;
+        if (req.StopMinMinutes is > 0) m.GpsStopMinMinutes = req.StopMinMinutes.Value;
+        await db.SaveChangesAsync();
+        return await GetGps();
+    }
+
+    // ---------- Kamera (videokuzatuv) integratsiyasi ----------
+
+    [HttpGet("cameras")]
+    public async Task<ActionResult<CameraSettingsDto>> GetCameras()
+    {
+        var m = await db.SchoolMeta.FirstOrDefaultAsync();
+        var count = await db.Cameras.CountAsync();
+        return new CameraSettingsDto(m?.CameraEnabled ?? false, count);
+    }
+
+    [HttpPut("cameras")]
+    public async Task<ActionResult<CameraSettingsDto>> SaveCameras(SaveCameraSettingsRequest req)
+    {
+        var m = await db.SchoolMeta.FirstOrDefaultAsync();
+        if (m is null) { m = new SchoolMeta(); db.SchoolMeta.Add(m); }
+        m.CameraEnabled = req.Enabled;
+        await db.SaveChangesAsync();
+        return await GetCameras();
+    }
+
     [HttpPut("absence-reasons")]
     public async Task<IActionResult> SaveAbsenceReasons(SaveAbsenceReasonsRequest req)
     {

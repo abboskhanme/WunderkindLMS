@@ -130,6 +130,9 @@ public class Student
     public string? ArchivedAt { get; set; }
     /// <summary>Arxivga ko'chirish sababi (admin kiritadi: "boshqa maktabga ketdi", ...).</summary>
     public string? ArchiveReason { get; set; }
+    /// <summary>Sinf arxivlanishi tufayli arxivlangan bo'lsa true — sinf arxivdan chiqarilganda
+    /// faqat shu o'quvchilar avtomatik qaytariladi (alohida arxivlanganlar tegilmaydi).</summary>
+    public bool ArchivedWithClass { get; set; }
     /// <summary>O'quvchi uy joylashuvi — kenglik (latitude). Mobil ilovadan GPS orqali keladi.</summary>
     public double? Latitude { get; set; }
     /// <summary>O'quvchi uy joylashuvi — uzunlik (longitude).</summary>
@@ -152,17 +155,31 @@ public class Teacher
     public string? PhotoUrl { get; set; }
     /// <summary>Telefon raqami — Telegram bot orqali ro'yxatdan o'tishda moslashtiriladi (shartnoma).</summary>
     public string Phone { get; set; } = string.Empty;
+    /// <summary>Turniket/FaceID qurilmasidagi xodim ID'si (personId/employeeNo). Davomat hodisalari shu
+    /// ID orqali o'qituvchiga bog'lanadi. Bo'sh = qurilmada moslashtirilmagan.</summary>
+    public string DeviceUserId { get; set; } = string.Empty;
     /// <summary>Sinf rahbari bo'lsa biriktirilgan sinf nomi; aks holda bo'sh.</summary>
     public string HomeroomClass { get; set; } = string.Empty;
     /// <summary>Dars beradigan fanlar (Subject id'lari). EF Core 8 primitive collection.</summary>
     public List<string> SubjectIds { get; set; } = new();
-    /// <summary>Oylik ish haqi (so'm).</summary>
+    /// <summary>Oylik ish haqi (so'm). ESKI — endi oylik dars jadvali + toifa soat narxidan
+    /// avtomatik hisoblanadi (<see cref="Category"/>). Qo'lda kiritilmaydi.</summary>
     public decimal Salary { get; set; }
+    /// <summary>O'qituvchi toifasi — bir soat dars narxini belgilaydi: "oliy" | "1" | "2" | "mutaxasis"
+    /// (bo'sh = hali belgilanmagan, narxi 0). Soat narxlari SchoolMeta'da toifa bo'yicha saqlanadi.</summary>
+    public string Category { get; set; } = string.Empty;
+    /// <summary>Ustama foizi (%). Oylik maoshga shu foiz qo'shiladi (0 = ustama yo'q). Masalan 50 → +50%.</summary>
+    public decimal BonusPct { get; set; }
     /// <summary>
-    /// Oylik qaysi oydan hisoblana boshlasin ("YYYY-MM"). Bo'sh bo'lsa — hisobot davrining
-    /// boshidan. Bu o'qituvchi ishga kirgan oydan oldin maktabni qarzdor qilmaslik uchun.
+    /// Oylik qaysi oydan hisoblana boshlasin ("YYYY-MM"). ESKI maydon — endi <see cref="SalaryStartDate"/>
+    /// ishlatiladi (to'liq sana). Zaxira sifatida qoldirilgan (SalaryStartDate bo'sh bo'lsa o'qiladi).
     /// </summary>
     public string SalaryStartMonth { get; set; } = string.Empty;
+    /// <summary>
+    /// Maosh qaysi KUNdan hisoblana boshlasin ("YYYY-MM-DD"). O'qituvchi oy o'rtasida kelsa — birinchi
+    /// oy shu kundan oy oxirigacha QISMAN (haqiqiy darslar soni bo'yicha) hisoblanadi. Keyingi oylar to'liq.
+    /// </summary>
+    public string SalaryStartDate { get; set; } = string.Empty;
     /// <summary>Shu o'qituvchiga biriktirilgan tizim akkaunti (AppUser) id'si.</summary>
     public string? UserId { get; set; }
     /// <summary>
@@ -196,6 +213,10 @@ public class SchoolClass
     public string Language { get; set; } = "uz";
     public decimal MonthlyFee { get; set; }
     public string? Room { get; set; }
+    /// <summary>Sinf arxivlangan (faol ro'yxatdan olib qo'yilgan). Arxivlanganda unga bog'langan
+    /// o'quvchilar ham arxivlanadi; arxivdan chiqarilganda — qaytariladi.</summary>
+    public bool IsArchived { get; set; }
+    public string? ArchivedAt { get; set; }
 }
 
 /// <summary>Lid (maktabga qiziqqan).</summary>
@@ -249,6 +270,12 @@ public class JournalEntry
     public int Period { get; set; }
     public int? Grade { get; set; }
     public string? ReasonId { get; set; }
+    /// <summary>Uyga vazifa bajarilishi: 0 = belgilanmagan, 1 = qildi, 2 = qilmadi.</summary>
+    public int Homework { get; set; }
+    /// <summary>Xulq: 0 = belgilanmagan, 1 = yaxshi, 2 = yomon.</summary>
+    public int Behavior { get; set; }
+    /// <summary>Shu darsni o'zlashtirish foizi (0-100). null = belgilanmagan.</summary>
+    public int? Mastery { get; set; }
     /// <summary>Bo'linish: 0 = butun sinf, 1 = 1-guruh, 2 = 2-guruh. ScheduleLesson.SubGroup'ga mos.</summary>
     public int SubGroup { get; set; }
 }
@@ -376,6 +403,44 @@ public class DisciplinePoint
     public string CreatedBy { get; set; } = string.Empty;
 }
 
+/// <summary>
+/// O'quvchilarni baholash turi — admin xohlagancha qo'sha oladi (masalan "Og'zaki",
+/// "Yozma", "Nazorat ishi", "Loyiha"). Hozircha faqat nom va izoh; baholash mantig'i keyin qo'shiladi.
+/// </summary>
+public class EvaluationType
+{
+    public string Id { get; set; } = Guid.NewGuid().ToString();
+    public string Name { get; set; } = string.Empty;
+    /// <summary>Ixtiyoriy izoh.</summary>
+    public string Description { get; set; } = string.Empty;
+    /// <summary>Yaratilgan vaqt (ISO) — tartiblash uchun.</summary>
+    public string CreatedAt { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// O'quvchiga bitta baholash turi bo'yicha bir oyda qo'yilgan baho (1-5). Har
+/// (StudentId, EvaluationTypeId, Month) uchun yagona — "har oy bir marta" baholash.
+/// </summary>
+public class EvaluationGrade
+{
+    public string Id { get; set; } = Guid.NewGuid().ToString();
+    public string StudentId { get; set; } = string.Empty;
+    public string EvaluationTypeId { get; set; } = string.Empty;
+    /// <summary>
+    /// Qaysi FAN bo'yicha baholangani — shu fan o'qituvchisi qo'yadi. "" (bo'sh) = umumiy
+    /// (eski/admin fan ko'rsatmasdan qo'ygan). Har (Student, Subject, Type, Month) uchun yagona.
+    /// </summary>
+    public string SubjectId { get; set; } = string.Empty;
+    /// <summary>Baho tegishli oy ("YYYY-MM"). Har oy uchun alohida baho.</summary>
+    public string Month { get; set; } = string.Empty;
+    /// <summary>Oy ichida qaysi haftada baholangani (1..5; 0 = butun oy tanlangan edi).</summary>
+    public int Week { get; set; }
+    /// <summary>Baho 1-5.</summary>
+    public int Score { get; set; }
+    /// <summary>Oxirgi yangilangan vaqt (ISO).</summary>
+    public string UpdatedAt { get; set; } = string.Empty;
+}
+
 /// <summary>Chorak davri.</summary>
 public class QuarterPeriod
 {
@@ -450,6 +515,95 @@ public class FinanceTransaction
 }
 
 /// <summary>Maktab umumiy holati va ma'lumotlari (bitta qator) — joriy o'quv yili + maktab profili.</summary>
+/// <summary>O'qituvchining bir kunlik ish davomati.</summary>
+public class TeacherAttendance
+{
+    public string Id { get; set; } = Guid.NewGuid().ToString();
+    public string TeacherId { get; set; } = string.Empty;
+    /// <summary>Sana "yyyy-MM-dd".</summary>
+    public string Date { get; set; } = string.Empty;
+    /// <summary>Holat: "present" (keldi) | "absent" (kelmadi) | "late" (kechikdi).</summary>
+    public string Status { get; set; } = string.Empty;
+    /// <summary>Izoh / sabab (ixtiyoriy).</summary>
+    public string Note { get; set; } = string.Empty;
+    /// <summary>Kelgan vaqti "HH:mm" (turniketdan birinchi KIRISH). Bo'sh = noma'lum.</summary>
+    public string CheckIn { get; set; } = string.Empty;
+    /// <summary>Ketgan vaqti "HH:mm" (turniketdan oxirgi CHIQISH). Bo'sh = noma'lum.</summary>
+    public string CheckOut { get; set; } = string.Empty;
+    /// <summary>Manba: "manual" (admin qo'lda) | "turnstile" (qurilmadan avtomatik). Sinxronlash
+    /// "manual" yozuvlarni o'zgartirmaydi (admin qo'lda tuzatgan bo'lsa saqlanadi).</summary>
+    public string Source { get; set; } = "manual";
+}
+
+/// <summary>Maktab avtobusi (GPS bilan kuzatiladi).</summary>
+public class Bus
+{
+    public string Id { get; set; } = Guid.NewGuid().ToString();
+    /// <summary>Avtobus nomi/raqami, masalan "1-avtobus".</summary>
+    public string Name { get; set; } = string.Empty;
+    /// <summary>Davlat raqami ("01 A 123 BC").</summary>
+    public string PlateNumber { get; set; } = string.Empty;
+    public string DriverName { get; set; } = string.Empty;
+    public string DriverPhone { get; set; } = string.Empty;
+    /// <summary>GPS tracker qurilma ID'si (IMEI / id) — GPS hodisalari shu orqali avtobusga bog'lanadi.</summary>
+    public string DeviceId { get; set; } = string.Empty;
+    /// <summary>Marshrut nomi (ixtiyoriy).</summary>
+    public string Route { get; set; } = string.Empty;
+    public bool IsActive { get; set; } = true;
+    public string Note { get; set; } = string.Empty;
+}
+
+/// <summary>Avtobusning bitta GPS nuqtasi (iz / trail).</summary>
+public class BusLocation
+{
+    public string Id { get; set; } = Guid.NewGuid().ToString();
+    public string BusId { get; set; } = string.Empty;
+    public double Latitude { get; set; }
+    public double Longitude { get; set; }
+    /// <summary>Tezlik (km/soat).</summary>
+    public double Speed { get; set; }
+    /// <summary>Qurilma vaqti (ISO "yyyy-MM-ddTHH:mm:ss").</summary>
+    public string RecordedAt { get; set; } = string.Empty;
+    /// <summary>Tizimga yozilgan vaqt (ISO).</summary>
+    public string CreatedAt { get; set; } = string.Empty;
+}
+
+/// <summary>Maktab kamerasi (IP/RTSP). Media-shlyuz (MediaMTX) orqali brauzerda jonli + playback.</summary>
+public class Camera
+{
+    public string Id { get; set; } = Guid.NewGuid().ToString();
+    public string Name { get; set; } = string.Empty;
+    /// <summary>Joylashuvi ("1-qavat koridor", "Hovli" ...).</summary>
+    public string Location { get; set; } = string.Empty;
+    /// <summary>Asosiy RTSP oqimi (login/parol bilan): rtsp://user:pass@ip:554/...</summary>
+    public string RtspUrl { get; set; } = string.Empty;
+    /// <summary>Past sifatli (sub) RTSP — grid (ko'p kamera) uchun. Bo'sh bo'lsa asosiy ishlatiladi.</summary>
+    public string RtspSubUrl { get; set; } = string.Empty;
+    /// <summary>Yozuv necha KUN saqlansin — undan eski yozuvlar shlyuz tomonidan avtomatik o'chiriladi.
+    /// 0 = cheksiz (o'chirilmaydi).</summary>
+    public int RetentionDays { get; set; } = 7;
+    public bool IsActive { get; set; } = true;
+    public string Note { get; set; } = string.Empty;
+}
+
+/// <summary>Turniket/FaceID qurilmasidan kelgan bitta o'tish hodisasi (xom log).</summary>
+public class TurnstileEvent
+{
+    public string Id { get; set; } = Guid.NewGuid().ToString();
+    /// <summary>Bog'langan o'qituvchi (DeviceUserId orqali topilgan). Topilmasa bo'sh.</summary>
+    public string TeacherId { get; set; } = string.Empty;
+    /// <summary>Qurilmadagi xodim ID'si.</summary>
+    public string DeviceUserId { get; set; } = string.Empty;
+    /// <summary>Hodisa vaqti (ISO "yyyy-MM-ddTHH:mm:ss").</summary>
+    public string EventAt { get; set; } = string.Empty;
+    /// <summary>Yo'nalish: "in" (kirish) | "out" (chiqish).</summary>
+    public string Direction { get; set; } = "in";
+    /// <summary>Qurilma nomi/manzili (qaysi eshik).</summary>
+    public string DeviceName { get; set; } = string.Empty;
+    /// <summary>Tizimga yozilgan vaqt (ISO).</summary>
+    public string CreatedAt { get; set; } = string.Empty;
+}
+
 public class SchoolMeta
 {
     // Shared-DB: har maktab uchun bitta SchoolMeta qatori — Id unikal (Guid). Eski "current"
@@ -477,6 +631,49 @@ public class SchoolMeta
     /// push yuborilmaydi. Admin "Sozlamalar → Push (Firebase)" bo'limidan kiritadi.
     /// </summary>
     public string FcmServiceAccountJson { get; set; } = string.Empty;
+
+    /// <summary>O'qituvchi maoshi hisoblashda toifa bo'yicha BIR SOAT dars narxi (so'm).
+    /// Oylik maosh = haftalik darslar soni × 4 × shu narx. Admin "Dars jadvali → Oylik hisoblash"da kiritadi.</summary>
+    public decimal SalaryRateOliy { get; set; }
+    public decimal SalaryRate1 { get; set; }
+    public decimal SalaryRate2 { get; set; }
+    public decimal SalaryRateMutaxasis { get; set; }
+
+    // ---------- Turniket / FaceID integratsiyasi (o'qituvchilar davomati avtomatik) ----------
+    /// <summary>Integratsiya yoqilganmi.</summary>
+    public bool TurnstileEnabled { get; set; }
+    /// <summary>Qurilma turi/vendori: "hikvision" | "zkteco".</summary>
+    public string TurnstileVendor { get; set; } = "hikvision";
+    /// <summary>Qurilma manzili (IP yoki host), masalan "192.168.1.64".</summary>
+    public string TurnstileHost { get; set; } = string.Empty;
+    /// <summary>Qurilma porti (Hikvision ISAPI odatda 80).</summary>
+    public int TurnstilePort { get; set; } = 80;
+    public string TurnstileUsername { get; set; } = string.Empty;
+    public string TurnstilePassword { get; set; } = string.Empty;
+    /// <summary>Ish boshlanish vaqti "HH:mm" — kechikishni aniqlash uchun (dars jadvalidagi birinchi
+    /// dars bilan birga, qaysi biri erta bo'lsa). Bo'sh bo'lsa faqat dars jadvali ishlatiladi.</summary>
+    public string WorkStartTime { get; set; } = "08:30";
+    /// <summary>Kechikishga yo'l qo'yiladigan daqiqalar (grace). Kelgan vaqt kutilgan + grace dan
+    /// keyin bo'lsa — "kechikdi".</summary>
+    public int LateGraceMinutes { get; set; } = 10;
+    /// <summary>Oxirgi muvaffaqiyatli sinxronlash vaqti (ISO).</summary>
+    public string TurnstileLastSync { get; set; } = string.Empty;
+
+    // ---------- GPS (maktab avtobuslarini kuzatish) integratsiyasi ----------
+    /// <summary>GPS kuzatuv yoqilganmi.</summary>
+    public bool GpsEnabled { get; set; }
+    /// <summary>Webhook kalit (ixtiyoriy) — tracker hodisa yuborganda shu token tekshiriladi (bo'sh = tekshirilmaydi).</summary>
+    public string GpsIngestToken { get; set; } = string.Empty;
+    /// <summary>"Onlayn" deb hisoblash uchun oxirgi signal necha daqiqa ichida bo'lishi kerak.</summary>
+    public int GpsOnlineMinutes { get; set; } = 5;
+    /// <summary>To'xtash deb hisoblanadigan radius (metr) — shu radiusda turib qolsa to'xtash.</summary>
+    public int GpsStopRadiusM { get; set; } = 60;
+    /// <summary>To'xtash deb hisoblanadigan eng kichik davomiylik (daqiqa).</summary>
+    public int GpsStopMinMinutes { get; set; } = 3;
+
+    // ---------- Kamera (videokuzatuv) integratsiyasi ----------
+    /// <summary>Kamera kuzatuvi yoqilganmi.</summary>
+    public bool CameraEnabled { get; set; }
 }
 
 /// <summary>Yangi o'quv yiliga o'tishda saqlangan eski o'quv yili arxivi (to'liq snapshot).</summary>

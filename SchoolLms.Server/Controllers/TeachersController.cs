@@ -47,8 +47,12 @@ public class TeachersController(AppDbContext db, AuditService audit) : Controlle
             PhotoUrl = p.PhotoUrl,
             HomeroomClass = p.HomeroomClass,
             SubjectIds = p.SubjectIds ?? new(),
-            Salary = p.Salary,
-            SalaryStartMonth = p.SalaryStartMonth ?? "",
+            // Oylik endi avtomatik (jadval + toifa narxi) — qo'lda summa kiritilmaydi; toifa tanlanadi.
+            Category = p.Category ?? "",
+            SalaryStartDate = p.SalaryStartDate ?? "",
+            SalaryStartMonth = !string.IsNullOrEmpty(p.SalaryStartDate) && p.SalaryStartDate.Length >= 7
+                ? p.SalaryStartDate[..7]
+                : p.SalaryStartMonth ?? "",
             // Yangi o'qituvchiga standart — barcha bo'limlar ochiq (admin keyin cheklashi mumkin).
             Permissions = p.Permissions ?? TeacherPermissions.All.ToList(),
         };
@@ -58,14 +62,9 @@ public class TeachersController(AppDbContext db, AuditService audit) : Controlle
         var account = AccountFactory.CreateAccountFor(db, "teacher", teacher.FullName);
         teacher.UserId = account.Id;
 
-        if (teacher.Salary > 0)
-        {
-            var startNote = string.IsNullOrEmpty(teacher.SalaryStartMonth)
-                ? "" : $" ({teacher.SalaryStartMonth} oydan)";
+        if (!string.IsNullOrEmpty(teacher.Category))
             audit.Record(AuditService.EntityTeacherSalary, teacher.Id, "create",
-                $"Oylik belgilandi: {AuditService.Money(teacher.Salary)} so'm{startNote}",
-                after: new { teacher.Salary, teacher.SalaryStartMonth }, teacherId: teacher.Id);
-        }
+                $"Toifa belgilandi: {teacher.Category}", teacherId: teacher.Id);
 
         await db.SaveChangesAsync();
         return teacher;
@@ -77,7 +76,7 @@ public class TeachersController(AppDbContext db, AuditService audit) : Controlle
         var teacher = await db.Teachers.FindAsync(id);
         if (teacher is null) return NotFound();
 
-        var oldSalary = teacher.Salary;
+        var oldCategory = teacher.Category;
         var oldStart = teacher.SalaryStartMonth;
         teacher.FullName = p.FullName;
         teacher.BirthDate = p.BirthDate;
@@ -87,8 +86,12 @@ public class TeachersController(AppDbContext db, AuditService audit) : Controlle
         teacher.PhotoUrl = p.PhotoUrl;
         teacher.HomeroomClass = p.HomeroomClass;
         teacher.SubjectIds = p.SubjectIds ?? new();
-        teacher.Salary = p.Salary;
-        teacher.SalaryStartMonth = p.SalaryStartMonth ?? "";
+        // Toifa — berilsa yangilaymiz (oylik avtomatik shu toifa narxidan hisoblanadi).
+        if (p.Category is not null) teacher.Category = p.Category;
+        teacher.SalaryStartDate = p.SalaryStartDate ?? "";
+        teacher.SalaryStartMonth = !string.IsNullOrEmpty(p.SalaryStartDate) && p.SalaryStartDate.Length >= 7
+            ? p.SalaryStartDate[..7]
+            : p.SalaryStartMonth ?? "";
         // Ruxsatlar (bo'limlar) — berilsa yangilaymiz; berilmasa joriyini saqlaymiz.
         if (p.Permissions is not null) teacher.Permissions = p.Permissions;
 
@@ -105,18 +108,19 @@ public class TeachersController(AppDbContext db, AuditService audit) : Controlle
         }
         if (user is not null) user.FullName = teacher.FullName;
 
-        if (oldSalary != teacher.Salary || oldStart != teacher.SalaryStartMonth)
+        if (oldCategory != teacher.Category || oldStart != teacher.SalaryStartMonth)
         {
             var parts = new List<string>();
-            if (oldSalary != teacher.Salary)
-                parts.Add($"oylik {AuditService.Money(oldSalary)} → {AuditService.Money(teacher.Salary)} so'm");
+            if (oldCategory != teacher.Category)
+                parts.Add($"toifa {(string.IsNullOrEmpty(oldCategory) ? "—" : oldCategory)} → " +
+                          $"{(string.IsNullOrEmpty(teacher.Category) ? "—" : teacher.Category)}");
             if (oldStart != teacher.SalaryStartMonth)
                 parts.Add($"boshlanish oyi {(string.IsNullOrEmpty(oldStart) ? "—" : oldStart)} → " +
                           $"{(string.IsNullOrEmpty(teacher.SalaryStartMonth) ? "—" : teacher.SalaryStartMonth)}");
             audit.Record(AuditService.EntityTeacherSalary, teacher.Id, "update",
-                "Oylik o'zgartirildi: " + string.Join(", ", parts),
-                before: new { Salary = oldSalary, SalaryStartMonth = oldStart },
-                after: new { teacher.Salary, teacher.SalaryStartMonth }, teacherId: teacher.Id);
+                "Oylik sozlamasi: " + string.Join(", ", parts),
+                before: new { Category = oldCategory, SalaryStartMonth = oldStart },
+                after: new { teacher.Category, teacher.SalaryStartMonth }, teacherId: teacher.Id);
         }
 
         await db.SaveChangesAsync();
@@ -315,7 +319,8 @@ public class TeachersController(AppDbContext db, AuditService audit) : Controlle
             .Select(t => new PaymentDto(t.Date, t.Amount, t.Note, t.Month))
             .ToListAsync();
 
-        return new SalaryHistoryDto(teacher.Id, teacher.FullName, teacher.Salary,
+        var monthly = await TeacherSalaryCalc.MonthlyAsync(db, teacher);
+        return new SalaryHistoryDto(teacher.Id, teacher.FullName, monthly,
             payments.Sum(p => p.Amount), payments);
     }
 

@@ -20,6 +20,7 @@ import {
   getStudentReport,
   type FinanceTransactionPayload,
 } from '@/api/services/finance'
+import { addPayment } from '@/api/services/students'
 import { financeCategoryLabel, financeDirectionLabels } from '@/config/constants'
 import { formatDate, formatMoney, exportToCsv, cn } from '@/lib/utils'
 import { Card } from '@/components/ui/Card'
@@ -102,8 +103,15 @@ export function FinancePage() {
   useEffect(() => load(), [load])
 
   const handleSubmit = async (values: FinanceTransactionPayload) => {
-    if (editing) await updateTransaction(editing.id, values)
-    else await createTransaction(values)
+    // Yangi o'quvchi to'lovi (kirim → o'quvchi to'lovi) — o'quvchi balansini yangilaydigan to'lov
+    // mexanizmi orqali (o'quvchilar bo'limidagi to'lov kabi), oddiy xom yozuv emas.
+    if (!editing && values.direction === 'income' && values.category === 'tuition' && values.studentId) {
+      await addPayment(values.studentId, values.amount, values.month)
+    } else if (editing) {
+      await updateTransaction(editing.id, values)
+    } else {
+      await createTransaction(values)
+    }
     setFormOpen(false)
     setEditing(null)
     load()

@@ -18,8 +18,6 @@ export interface User {
   avatarUrl?: string
   /** O'qituvchi uchun ochiq bo'limlar (nav filtri); boshqa rollarda bo'lmaydi */
   permissions?: string[]
-  /** Maktab obunasida ochilgan bo'limlar (kalitlar). null/yo'q = cheklovsiz (hamma bo'lim). */
-  modules?: string[] | null
 }
 
 /** O'quvchi/o'qituvchiga biriktirilgan tizim akkaunti (login/parol) */
@@ -204,6 +202,10 @@ export interface SchoolClass {
   monthlyFee: number
   /** Xona raqami */
   room?: string
+  /** Sinf arxivlangan (arxivlanganda o'quvchilari ham arxivlanadi) */
+  isArchived?: boolean
+  /** Arxivga olingan sana (ISO) */
+  archivedAt?: string | null
 }
 
 /* ---------- Dars jadvali ---------- */
@@ -275,6 +277,12 @@ export interface JournalEntry {
   grade?: number
   /** Davomat sababi id'si, agar kelmagan bo'lsa */
   reasonId?: string
+  /** Uyga vazifa: 0 = belgilanmagan, 1 = qildi, 2 = qilmadi */
+  homework?: number
+  /** Xulq: 0 = belgilanmagan, 1 = yaxshi, 2 = yomon */
+  behavior?: number
+  /** Shu darsni o'zlashtirish foizi (0-100); null/undefined = belgilanmagan */
+  mastery?: number | null
 }
 
 /** Dars ma'lumoti (sana + dars raqami + guruh bo'yicha): mavzu, uyga vazifa, o'tildi */
@@ -469,10 +477,14 @@ export interface Teacher {
   homeroomClass: string
   /** Dars beradigan fanlar (Subject id'lari) */
   subjectIds: string[]
-  /** Oylik ish haqi (so'm) */
+  /** Oylik ish haqi (so'm) — endi jadval + toifa narxidan AVTOMATIK hisoblanadi (faqat ko'rsatish) */
   salary: number
-  /** Oylik qaysi oydan hisoblansin ("YYYY-MM"); bo'sh = hisobot davri boshidan */
+  /** O'qituvchi toifasi: "oliy" | "1" | "2" | "mutaxasis" (bo'sh = belgilanmagan). Soat narxini belgilaydi. */
+  category?: string
+  /** Oylik qaysi oydan hisoblansin ("YYYY-MM"); bo'sh = hisobot davri boshidan (eski maydon) */
   salaryStartMonth: string
+  /** Maosh qaysi KUNdan hisoblansin ("YYYY-MM-DD"); oy o'rtasida kelsa birinchi oy qisman */
+  salaryStartDate?: string
   /** O'qituvchi web panelida ochiq bo'limlar (admin belgilaydi) */
   permissions: string[]
   /** Arxivlanganmi (ishdan ketgan/to'xtatilgan) */
@@ -738,6 +750,57 @@ export interface TelegramParent {
   phone: string
   chatId: string
   createdAt: string
+}
+
+/* ---------- O'quvchilarni baholash ---------- */
+
+/** Baholash turi (admin xohlagancha qo'shadi: nom + ixtiyoriy izoh) */
+export interface EvaluationType {
+  id: string
+  name: string
+  description: string
+}
+
+/** Bitta davomat sababidan o'quvchida necha marta bo'lgani (jurnal belgilaridan) */
+export interface AttendanceReasonCount {
+  reasonId: string
+  name: string
+  short: string
+  isLate: boolean
+  count: number
+}
+
+/** Baholash jadvalidagi bitta o'quvchi qatori */
+export interface EvaluationRow {
+  studentId: string
+  fullName: string
+  className: string
+  /** O'tilgan darslar soni (guruhga mos) */
+  conducted: number
+  /** Qatnashgan darslar = o'tilgan − davomatsizlik (kech keldi mustasno) */
+  attended: number
+  /** Davomat sabablari taqsimoti (har sababdan necha marta) */
+  reasons: AttendanceReasonCount[]
+  /** Baholash turi id → baho (1-5) */
+  grades: Record<string, number>
+  /** Baholar o'rtachasi (0 = baho yo'q) */
+  avgGrade: number
+}
+
+/** Baholash jadvali: oylar katalogi, tanlangan oy/hafta, ustun turlari + o'quvchi qatorlari */
+export interface EvaluationBoard {
+  /** Mavjud oylar ("YYYY-MM"), yangidan eskiga */
+  months: string[]
+  /** Tanlangan (joriy) oy "YYYY-MM" */
+  month: string
+  /** Tanlangan hafta (0 = butun oy, 1..5) */
+  week: number
+  types: EvaluationType[]
+  rows: EvaluationRow[]
+  /** Tanlangan fan id'si ("" yoki "all" = fanlar o'rtachasi, faqat ko'rish). */
+  subjectId?: string
+  /** Mavjud fanlar (admin board fan selektori uchun). */
+  subjects?: { id: string; name: string }[]
 }
 
 /* ---------- Intizomiy ball ---------- */

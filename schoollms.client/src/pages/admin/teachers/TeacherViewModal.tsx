@@ -4,8 +4,8 @@ import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
 import { CredentialsBox } from '@/components/ui/CredentialsBox'
 import { getTeacherCredentials, resetTeacherPassword } from '@/api/services/teachers'
-import { genderLabels, formatMonth } from '@/config/constants'
-import { formatDate, formatMoney } from '@/lib/utils'
+import { genderLabels, formatMonth, teacherCategoryLabel } from '@/config/constants'
+import { formatDate } from '@/lib/utils'
 
 interface Props {
   teacher: Teacher | null
@@ -65,10 +65,16 @@ export function TeacherViewModal({ teacher, subjects, onClose }: Props) {
           <Row label="Tug'ilgan kun" value={formatDate(teacher.birthDate)} />
           <Row label="Manzil" value={teacher.address || '—'} />
           <Row label="Sinf rahbarligi" value={teacher.homeroomClass || '—'} />
-          <Row label="Oylik ish haqi" value={teacher.salary ? formatMoney(teacher.salary) : '—'} />
+          <Row label="Toifa" value={teacherCategoryLabel(teacher.category)} />
           <Row
-            label="Oylik hisoblanadi"
-            value={teacher.salaryStartMonth ? `${formatMonth(teacher.salaryStartMonth)} dan` : '—'}
+            label="Maosh hisoblanadi"
+            value={
+              teacher.salaryStartDate
+                ? `${formatDate(teacher.salaryStartDate)} dan`
+                : teacher.salaryStartMonth
+                  ? `${formatMonth(teacher.salaryStartMonth)} dan`
+                  : 'o\'quv yili boshidan'
+            }
           />
           <Row label="Fanlar" value={subjectNames || '—'} />
           <CredentialsBox

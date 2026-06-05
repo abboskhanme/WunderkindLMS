@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.IdentityModel.Tokens;
@@ -12,39 +13,30 @@ using SchoolLms.Application.Hubs;
 using SchoolLms.Application.Services;
 using SchoolLms.Infrastructure.Auth;
 using SchoolLms.Infrastructure.Data;
-using SchoolLms.Infrastructure.Tenancy;
-using SchoolLms.Server.Tenancy;
 using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// ---------- Multi-tenant sozlamalari ----------
 var defaultConn = builder.Configuration.GetConnectionString("Default")
     ?? throw new InvalidOperationException("ConnectionStrings:Default sozlanmagan.");
 
-var tenancy = builder.Configuration.GetSection("Tenancy").Get<TenantingOptions>() ?? new TenantingOptions();
-builder.Services.AddSingleton(tenancy);
-builder.Services.AddScoped<TenantContext>();
-builder.Services.AddScoped<ITenantContext>(sp => sp.GetRequiredService<TenantContext>());
-builder.Services.AddScoped<ITenantStore, TenantStore>();
-builder.Services.AddScoped<ITenantDbRunner, TenantDbRunner>();
-builder.Services.AddScoped<ProvisioningService>();
+// Apex (asosiy domen) → landing sahifa; subdomen → ilova (SPA). Faqat shu uchun root domen kerak.
+var rootDomains = (builder.Configuration["Tenancy:RootDomain"] ?? "")
+    .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
 // ---------- Xizmatlar ----------
-// Shared (yagona) baza — barcha maktablar + Control Plane (Owners/Tenants) shu yerda.
-// Har so'rovning joriy tenanti (ITenantContext) global query filter orqali qatorlarni ajratadi.
 builder.Services.AddDbContext<AppDbContext>(opt =>
     opt.UseSqlServer(defaultConn,
-            // Vaqtinchalik DB uzilishlarini (ayniqsa Azure SQL) avtomatik qayta urinish bilan chidaydi.
-            sql => sql.EnableRetryOnFailure(
-                maxRetryCount: 5,
-                maxRetryDelay: TimeSpan.FromSeconds(10),
-                errorNumbersToAdd: null))
-        // Global query filter + majburiy navigatsiya o'zaro ta'siri haqidagi ogohlantirishni o'chiramiz
-        // (barcha entity'larda bir xil TenantId filtri — xavfsiz).
-        .ConfigureWarnings(w => w.Ignore(
-            Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId
-                .PossibleIncorrectRequiredNavigationWithQueryFilterInteractionWarning)));
+            sql =>
+            {
+                // Vaqtinchalik DB uzilishlarini avtomatik qayta urinish bilan chidaydi.
+                sql.EnableRetryOnFailure(
+                    maxRetryCount: 5,
+                    maxRetryDelay: TimeSpan.FromSeconds(10),
+                    errorNumbersToAdd: null);
+                // Ko'p kolleksiyali Include'larni alohida so'rovlarga ajratadi — kartezian portlashning oldini oladi.
+                sql.UseQuerySplittingBehavior(QuerySplittingBehavior.SplitQuery);
+            }));
 
 // Application qatlamidagi xizmatlar konkret AppDbContext o'rniga IAppDbContext'ga
 // bog'lanadi — uni o'sha scoped AppDbContext instansiyasiga ulaymiz.
@@ -53,6 +45,16 @@ builder.Services.AddScoped<IAppDbContext>(sp => sp.GetRequiredService<AppDbConte
 // Kam o'zgaradigan ma'lumotlar (meta, fan/o'qituvchi nomlari) uchun qisqa-TTL kesh.
 builder.Services.AddMemoryCache();
 builder.Services.AddSingleton<ReferenceCache>();
+
+// DataProtection kalitlarini DOIMIY volume'ga saqlaymiz. Aks holda kalitlar konteyner ichida
+// (/root/.aspnet) turadi va HAR deploy'da yo'qoladi — natijada eski tokenlar/shifrlangan
+// ma'lumotlar yaroqsiz bo'lib qoladi. /app/keys docker volume'iga ulangan (qarang docker-compose).
+var keysDir = builder.Configuration["DataProtection:KeysPath"] ?? "/app/keys";
+try { Directory.CreateDirectory(keysDir); } catch { /* dev'da yo'l bo'lmasligi mumkin — e'tiborsiz */ }
+if (Directory.Exists(keysDir))
+    builder.Services.AddDataProtection()
+        .PersistKeysToFileSystem(new DirectoryInfo(keysDir))
+        .SetApplicationName("SchoolLms");
 
 // JWT sozlamalari. Imzo kaliti appsettings'da SAQLANMAYDI (repoga tushmasligi uchun) —
 // uni `Jwt__Key` muhit o'zgaruvchisi yoki `dotnet user-secrets` orqali bering.
@@ -107,9 +109,7 @@ builder.Services
 
             // Token bekor qilish (revocation): imzo/muddat to'g'ri bo'lsa ham, akkaunt holatini
             // HAR so'rovda tekshiramiz — arxivlangan o'qituvchi/o'quvchi yoki o'chirilgan xodim/admin
-            // eski tokeni bilan KIRA OLMAYDI. Parent (telefon orqali bog'lanadi) va platformowner
-            // (AppUser emas) tekshirilmaydi. Filtrlardan xoli (IgnoreQueryFilters) — tenant kontekstidan
-            // mustaqil. GUID id'lar global unikal, shuning uchun tenantlararo to'qnashuv yo'q.
+            // eski tokeni bilan KIRA OLMAYDI. Parent (telefon orqali bog'lanadi) tekshirilmaydi.
             OnTokenValidated = async context =>
             {
                 var p = context.Principal;
@@ -121,15 +121,13 @@ builder.Services
 
                 bool blocked;
                 if (p.IsInRole(Roles.Teacher))
-                    blocked = !await db.Teachers.IgnoreQueryFilters()
-                        .AnyAsync(t => t.UserId == userId && !t.IsArchived);
+                    blocked = !await db.Teachers.AnyAsync(t => t.UserId == userId && !t.IsArchived);
                 else if (p.IsInRole(Roles.Student))
-                    blocked = !await db.Students.IgnoreQueryFilters()
-                        .AnyAsync(s => s.UserId == userId && !s.IsArchived);
+                    blocked = !await db.Students.AnyAsync(s => s.UserId == userId && !s.IsArchived);
                 else if (p.IsInRole(Roles.Staff) || p.IsInRole(Roles.Admin) || p.IsInRole(Roles.SuperAdmin))
-                    blocked = !await db.Users.IgnoreQueryFilters().AnyAsync(u => u.Id == userId);
+                    blocked = !await db.Users.AnyAsync(u => u.Id == userId);
                 else
-                    blocked = false; // parent / platformowner / boshqa — tegmaymiz
+                    blocked = false; // parent / boshqa — tegmaymiz
 
                 if (blocked) context.Fail("Akkaunt arxivlangan yoki o'chirilgan");
             },
@@ -175,6 +173,12 @@ builder.Services.AddScoped<SchoolLms.Application.Services.AuditService>();
 // Shartnoma andozasini (Word) to'ldirish xizmati
 builder.Services.AddScoped<SchoolLms.Application.Services.ContractService>();
 
+// Turniket/FaceID integratsiyasi — o'qituvchilar davomatini avtomatik yuklash
+builder.Services.AddScoped<SchoolLms.Application.Services.TurnstileService>();
+
+// Kamera (videokuzatuv) media-shlyuzi (MediaMTX) bilan ishlash
+builder.Services.AddHttpClient<SchoolLms.Application.Services.CameraGateway>();
+
 // Javoblarni siqish (Brotli + Gzip). Level.Fastest — TTFB ga ortiqcha CPU yuk qo'ymaydi.
 // Eslatma: Cloudflare orqasida bo'lsa, CF chetda allaqachon siqadi — bu origin uchun foydali.
 builder.Services.AddResponseCompression(options =>
@@ -186,15 +190,10 @@ builder.Services.AddResponseCompression(options =>
 builder.Services.Configure<BrotliCompressionProviderOptions>(o => o.Level = CompressionLevel.Fastest);
 builder.Services.Configure<GzipCompressionProviderOptions>(o => o.Level = CompressionLevel.Fastest);
 
-// OutputCache — DIQQAT (multi-tenant): javoblarni FAQAT X-Tenant bo'yicha ajratib keshlash mumkin,
-// aks holda bir maktab javobi boshqasiga ketadi. Bu siyosat faqat OCHIQ (auth talab qilmaydigan)
-// endpointlar uchun. Auth talab qiladigan (Authorization sarlavhali) so'rovlarni default policy
-// baribir keshlamaydi. Shuning uchun [OutputCache] ni HAMMA GET'ga qo'yMAYMIZ (pastdagi izohga qarang).
+// OutputCache — faqat OCHIQ (auth talab qilmaydigan) endpointlar uchun ([OutputCache] qo'yilganlar).
 builder.Services.AddOutputCache(options =>
 {
-    options.AddPolicy("public-tenant", b => b
-        .Expire(TimeSpan.FromSeconds(30))
-        .SetVaryByHeader("X-Tenant"));
+    options.AddPolicy("public-tenant", b => b.Expire(TimeSpan.FromSeconds(30)));
 });
 
 builder.Services.AddControllers();
@@ -207,18 +206,166 @@ using (var scope = app.Services.CreateScope())
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
     db.Database.Migrate();
 
-    // Default Control Plane egasi (loyiha boshlig'i). Parol Owner:Password (env Owner__Password)
-    // dan olinadi; berilmasa kuchli tasodifiy parol generatsiya qilinib LOG'ga bir marta yoziladi.
-    var ownerPassword = builder.Configuration["Owner:Password"];
-    var seededPassword = DbSeeder.SeedPlatformOwner(db, ownerPassword);
-    if (seededPassword is not null)
-        Console.WriteLine(
-            "[WARN] Default platform owner yaratildi: owner@schoollms.uz — parol: "
-            + $"{seededPassword}\n[WARN] Bu parolni hoziroq saqlang, Control Plane'ga kirib ALMASHTIRING. "
-            + "(Barqaror parol uchun Owner__Password env o'rnating.)");
+    // EvaluationGrades.SubjectId — fan bo'yicha baholash uchun. Migratsiyasiz, idempotent qo'shamiz
+    // (WDAC `dotnet ef` ni bloklaydi; ustun mavjud bo'lsa hech narsa qilmaydi).
+    db.Database.ExecuteSqlRaw(
+        "IF COL_LENGTH('EvaluationGrades','SubjectId') IS NULL " +
+        "ALTER TABLE [EvaluationGrades] ADD [SubjectId] nvarchar(max) NOT NULL DEFAULT '';");
 
-    // Telegram bot tokeni (shared-DB: tenant'lararo birinchi tokenli maktabdan yuklanadi — restartdan
-    // keyin bot avtomatik ishga tushadi; token yo'q bo'lsa admin Sozlamadan kiritguncha kutadi).
+    // Sinfni arxivlash — Classes.IsArchived/ArchivedAt + Students.ArchivedWithClass (sinf bilan
+    // arxivlangan o'quvchi belgisi). Migratsiyasiz, idempotent (WDAC `dotnet ef` ni bloklaydi).
+    db.Database.ExecuteSqlRaw(
+        "IF COL_LENGTH('Classes','IsArchived') IS NULL " +
+        "ALTER TABLE [Classes] ADD [IsArchived] bit NOT NULL DEFAULT 0;");
+    db.Database.ExecuteSqlRaw(
+        "IF COL_LENGTH('Classes','ArchivedAt') IS NULL " +
+        "ALTER TABLE [Classes] ADD [ArchivedAt] nvarchar(max) NULL;");
+    db.Database.ExecuteSqlRaw(
+        "IF COL_LENGTH('Students','ArchivedWithClass') IS NULL " +
+        "ALTER TABLE [Students] ADD [ArchivedWithClass] bit NOT NULL DEFAULT 0;");
+
+    // O'qituvchi maoshi — toifa bo'yicha avtomatik hisoblash. Teachers.Category (toifa) +
+    // SchoolMeta'da har toifa uchun bir soat narxi. Migratsiyasiz, idempotent.
+    db.Database.ExecuteSqlRaw(
+        "IF COL_LENGTH('Teachers','Category') IS NULL " +
+        "ALTER TABLE [Teachers] ADD [Category] nvarchar(max) NOT NULL DEFAULT '';");
+    db.Database.ExecuteSqlRaw(
+        "IF COL_LENGTH('Teachers','BonusPct') IS NULL " +
+        "ALTER TABLE [Teachers] ADD [BonusPct] decimal(18,2) NOT NULL DEFAULT 0;");
+    db.Database.ExecuteSqlRaw(
+        "IF COL_LENGTH('Teachers','SalaryStartDate') IS NULL " +
+        "ALTER TABLE [Teachers] ADD [SalaryStartDate] nvarchar(max) NOT NULL DEFAULT '';");
+    foreach (var col in new[] { "SalaryRateOliy", "SalaryRate1", "SalaryRate2", "SalaryRateMutaxasis" })
+        db.Database.ExecuteSqlRaw(
+            $"IF COL_LENGTH('SchoolMeta','{col}') IS NULL " +
+            $"ALTER TABLE [SchoolMeta] ADD [{col}] decimal(18,2) NOT NULL DEFAULT 0;");
+
+    // O'qituvchilar davomati — yangi jadval (migratsiyasiz; shadow TenantId ustuni bilan global filterga
+    // mos). Idempotent: faqat yo'q bo'lsa yaratiladi.
+    db.Database.ExecuteSqlRaw(
+        "IF OBJECT_ID('TeacherAttendances') IS NULL " +
+        "CREATE TABLE [TeacherAttendances] (" +
+        "  [Id] nvarchar(450) NOT NULL CONSTRAINT [PK_TeacherAttendances] PRIMARY KEY," +
+        "  [TeacherId] nvarchar(max) NOT NULL DEFAULT ''," +
+        "  [Date] nvarchar(max) NOT NULL DEFAULT ''," +
+        "  [Status] nvarchar(max) NOT NULL DEFAULT ''," +
+        "  [Note] nvarchar(max) NOT NULL DEFAULT ''," +
+        "  [TenantId] nvarchar(64) NOT NULL DEFAULT '');");
+    db.Database.ExecuteSqlRaw(
+        "IF OBJECT_ID('TeacherAttendances') IS NOT NULL AND NOT EXISTS " +
+        "(SELECT 1 FROM sys.indexes WHERE name='IX_TeacherAttendances_TenantId') " +
+        "CREATE INDEX [IX_TeacherAttendances_TenantId] ON [TeacherAttendances]([TenantId]);");
+
+    // Turniket/FaceID integratsiyasi — o'qituvchilar davomatini avtomatik yuklash. Migratsiyasiz, idempotent.
+    db.Database.ExecuteSqlRaw(
+        "IF COL_LENGTH('Teachers','DeviceUserId') IS NULL " +
+        "ALTER TABLE [Teachers] ADD [DeviceUserId] nvarchar(max) NOT NULL DEFAULT '';");
+    foreach (var c in new[] { "CheckIn", "CheckOut" })
+        db.Database.ExecuteSqlRaw(
+            $"IF COL_LENGTH('TeacherAttendances','{c}') IS NULL " +
+            $"ALTER TABLE [TeacherAttendances] ADD [{c}] nvarchar(max) NOT NULL DEFAULT '';");
+    db.Database.ExecuteSqlRaw(
+        "IF COL_LENGTH('TeacherAttendances','Source') IS NULL " +
+        "ALTER TABLE [TeacherAttendances] ADD [Source] nvarchar(max) NOT NULL DEFAULT 'manual';");
+    foreach (var c in new[] { "TurnstileVendor", "TurnstileHost", "TurnstileUsername", "TurnstilePassword", "WorkStartTime", "TurnstileLastSync" })
+        db.Database.ExecuteSqlRaw(
+            $"IF COL_LENGTH('SchoolMeta','{c}') IS NULL " +
+            $"ALTER TABLE [SchoolMeta] ADD [{c}] nvarchar(max) NOT NULL DEFAULT '';");
+    db.Database.ExecuteSqlRaw(
+        "IF COL_LENGTH('SchoolMeta','TurnstileEnabled') IS NULL " +
+        "ALTER TABLE [SchoolMeta] ADD [TurnstileEnabled] bit NOT NULL DEFAULT 0;");
+    db.Database.ExecuteSqlRaw(
+        "IF COL_LENGTH('SchoolMeta','TurnstilePort') IS NULL " +
+        "ALTER TABLE [SchoolMeta] ADD [TurnstilePort] int NOT NULL DEFAULT 80;");
+    db.Database.ExecuteSqlRaw(
+        "IF COL_LENGTH('SchoolMeta','LateGraceMinutes') IS NULL " +
+        "ALTER TABLE [SchoolMeta] ADD [LateGraceMinutes] int NOT NULL DEFAULT 10;");
+    db.Database.ExecuteSqlRaw(
+        "IF OBJECT_ID('TurnstileEvents') IS NULL " +
+        "CREATE TABLE [TurnstileEvents] (" +
+        "  [Id] nvarchar(450) NOT NULL CONSTRAINT [PK_TurnstileEvents] PRIMARY KEY," +
+        "  [TeacherId] nvarchar(max) NOT NULL DEFAULT ''," +
+        "  [DeviceUserId] nvarchar(max) NOT NULL DEFAULT ''," +
+        "  [EventAt] nvarchar(max) NOT NULL DEFAULT ''," +
+        "  [Direction] nvarchar(max) NOT NULL DEFAULT 'in'," +
+        "  [DeviceName] nvarchar(max) NOT NULL DEFAULT ''," +
+        "  [CreatedAt] nvarchar(max) NOT NULL DEFAULT ''," +
+        "  [TenantId] nvarchar(64) NOT NULL DEFAULT '');");
+    db.Database.ExecuteSqlRaw(
+        "IF OBJECT_ID('TurnstileEvents') IS NOT NULL AND NOT EXISTS " +
+        "(SELECT 1 FROM sys.indexes WHERE name='IX_TurnstileEvents_TenantId') " +
+        "CREATE INDEX [IX_TurnstileEvents_TenantId] ON [TurnstileEvents]([TenantId]);");
+
+    // GPS — maktab avtobuslarini kuzatish. Migratsiyasiz, idempotent.
+    foreach (var c in new[] { "GpsIngestToken" })
+        db.Database.ExecuteSqlRaw(
+            $"IF COL_LENGTH('SchoolMeta','{c}') IS NULL " +
+            $"ALTER TABLE [SchoolMeta] ADD [{c}] nvarchar(max) NOT NULL DEFAULT '';");
+    db.Database.ExecuteSqlRaw(
+        "IF COL_LENGTH('SchoolMeta','GpsEnabled') IS NULL " +
+        "ALTER TABLE [SchoolMeta] ADD [GpsEnabled] bit NOT NULL DEFAULT 0;");
+    foreach (var (c, def) in new[] { ("GpsOnlineMinutes", 5), ("GpsStopRadiusM", 60), ("GpsStopMinMinutes", 3) })
+        db.Database.ExecuteSqlRaw(
+            $"IF COL_LENGTH('SchoolMeta','{c}') IS NULL " +
+            $"ALTER TABLE [SchoolMeta] ADD [{c}] int NOT NULL DEFAULT {def};");
+    db.Database.ExecuteSqlRaw(
+        "IF OBJECT_ID('Buses') IS NULL " +
+        "CREATE TABLE [Buses] (" +
+        "  [Id] nvarchar(450) NOT NULL CONSTRAINT [PK_Buses] PRIMARY KEY," +
+        "  [Name] nvarchar(max) NOT NULL DEFAULT ''," +
+        "  [PlateNumber] nvarchar(max) NOT NULL DEFAULT ''," +
+        "  [DriverName] nvarchar(max) NOT NULL DEFAULT ''," +
+        "  [DriverPhone] nvarchar(max) NOT NULL DEFAULT ''," +
+        "  [DeviceId] nvarchar(max) NOT NULL DEFAULT ''," +
+        "  [Route] nvarchar(max) NOT NULL DEFAULT ''," +
+        "  [IsActive] bit NOT NULL DEFAULT 1," +
+        "  [Note] nvarchar(max) NOT NULL DEFAULT ''," +
+        "  [TenantId] nvarchar(64) NOT NULL DEFAULT '');");
+    db.Database.ExecuteSqlRaw(
+        "IF OBJECT_ID('Buses') IS NOT NULL AND NOT EXISTS " +
+        "(SELECT 1 FROM sys.indexes WHERE name='IX_Buses_TenantId') " +
+        "CREATE INDEX [IX_Buses_TenantId] ON [Buses]([TenantId]);");
+    db.Database.ExecuteSqlRaw(
+        "IF OBJECT_ID('BusLocations') IS NULL " +
+        "CREATE TABLE [BusLocations] (" +
+        "  [Id] nvarchar(450) NOT NULL CONSTRAINT [PK_BusLocations] PRIMARY KEY," +
+        "  [BusId] nvarchar(max) NOT NULL DEFAULT ''," +
+        "  [Latitude] float NOT NULL DEFAULT 0," +
+        "  [Longitude] float NOT NULL DEFAULT 0," +
+        "  [Speed] float NOT NULL DEFAULT 0," +
+        "  [RecordedAt] nvarchar(max) NOT NULL DEFAULT ''," +
+        "  [CreatedAt] nvarchar(max) NOT NULL DEFAULT ''," +
+        "  [TenantId] nvarchar(64) NOT NULL DEFAULT '');");
+    db.Database.ExecuteSqlRaw(
+        "IF OBJECT_ID('BusLocations') IS NOT NULL AND NOT EXISTS " +
+        "(SELECT 1 FROM sys.indexes WHERE name='IX_BusLocations_TenantId') " +
+        "CREATE INDEX [IX_BusLocations_TenantId] ON [BusLocations]([TenantId]);");
+
+    // Kamera (videokuzatuv) — media-shlyuz (MediaMTX) orqali. Migratsiyasiz, idempotent.
+    db.Database.ExecuteSqlRaw(
+        "IF COL_LENGTH('SchoolMeta','CameraEnabled') IS NULL " +
+        "ALTER TABLE [SchoolMeta] ADD [CameraEnabled] bit NOT NULL DEFAULT 0;");
+    db.Database.ExecuteSqlRaw(
+        "IF OBJECT_ID('Cameras') IS NULL " +
+        "CREATE TABLE [Cameras] (" +
+        "  [Id] nvarchar(450) NOT NULL CONSTRAINT [PK_Cameras] PRIMARY KEY," +
+        "  [Name] nvarchar(max) NOT NULL DEFAULT ''," +
+        "  [Location] nvarchar(max) NOT NULL DEFAULT ''," +
+        "  [RtspUrl] nvarchar(max) NOT NULL DEFAULT ''," +
+        "  [RtspSubUrl] nvarchar(max) NOT NULL DEFAULT ''," +
+        "  [IsActive] bit NOT NULL DEFAULT 1," +
+        "  [Note] nvarchar(max) NOT NULL DEFAULT ''," +
+        "  [TenantId] nvarchar(64) NOT NULL DEFAULT '');");
+    db.Database.ExecuteSqlRaw(
+        "IF OBJECT_ID('Cameras') IS NOT NULL AND NOT EXISTS " +
+        "(SELECT 1 FROM sys.indexes WHERE name='IX_Cameras_TenantId') " +
+        "CREATE INDEX [IX_Cameras_TenantId] ON [Cameras]([TenantId]);");
+    db.Database.ExecuteSqlRaw(
+        "IF COL_LENGTH('Cameras','RetentionDays') IS NULL " +
+        "ALTER TABLE [Cameras] ADD [RetentionDays] int NOT NULL DEFAULT 7;");
+
+    // Telegram bot tokeni — restartdan keyin bot avtomatik ishga tushadi; token yo'q bo'lsa
+    // admin Sozlamadan kiritguncha kutadi.
     scope.ServiceProvider.GetRequiredService<TelegramService>().Load(db);
 }
 
@@ -278,10 +425,14 @@ app.UseStaticFiles(new StaticFileOptions
     OnPrepareResponse = ctx =>
     {
         var headers = ctx.Context.Response.Headers;
-        if (ctx.File.Name.EndsWith(".html", StringComparison.OrdinalIgnoreCase))
-            headers.CacheControl = "no-cache";
-        else
+        var path = ctx.Context.Request.Path.Value ?? "";
+        // Faqat Vite kontent-hashli assetlar (/assets/...) abadiy keshlanadi (nomi har build'da
+        // o'zgaradi). Qolganlari — html, landing.css/landing.js, favicon (nomi o'zgarmaydi) —
+        // no-cache, aks holda yangilanishlar brauzer/Cloudflare keshida ko'rinmay qoladi.
+        if (path.StartsWith("/assets/", StringComparison.OrdinalIgnoreCase))
             headers.CacheControl = "public,max-age=31536000,immutable";
+        else
+            headers.CacheControl = "no-cache";
     },
 });
 
@@ -301,10 +452,6 @@ app.UseStaticFiles(new StaticFileOptions
 app.UseHttpsRedirection();
 
 app.UseAuthentication();
-// Joriy maktab (tenant)ni aniqlaydi — autentifikatsiyadan KEYIN, chunki kirgan foydalanuvchi uchun
-// tokendagi tenant claim ASOSIY manba (tenantlararo kirishni bloklaydi). Global query filter shu
-// kontekstdan o'qiydi, shuning uchun controller'lardan (AppDbContext'dan foydalanish) OLDIN turadi.
-app.UseMiddleware<TenantResolutionMiddleware>();
 app.UseAuthorization();
 app.UseRateLimiter();
 // OutputCache middleware — tayyor turadi, lekin [OutputCache] faqat ochiq endpointlarga qo'yiladi
@@ -314,14 +461,12 @@ app.UseOutputCache();
 app.MapControllers();
 app.MapHub<ChatHub>("/hubs/chat");
 
-// API "tirikligi": https://<domen>/api ochilganda SPA HTML emas, JSON qaytaradi va qaysi maktab
-// (tenant) aniqlanganini ko'rsatadi — subdomen yo'naltirishni tekshirish uchun qulay.
-app.MapGet("/api", (ITenantContext t) => Results.Ok(new
+// API "tirikligi": https://<domen>/api ochilganda SPA HTML emas, JSON qaytaradi.
+app.MapGet("/api", () => Results.Ok(new
 {
     name = "SchoolLms API",
     status = "ok",
     environment = app.Environment.EnvironmentName,
-    tenant = t.IsPlatform ? "platform" : t.Slug,
     timeUtc = DateTime.UtcNow,
 }));
 app.MapGet("/api/health", () => Results.Ok(new { status = "healthy" }));
@@ -330,20 +475,23 @@ app.MapGet("/api/health", () => Results.Ok(new { status = "healthy" }));
 app.MapFallback("/api/{**slug}", () => Results.NotFound(new { message = "API endpoint topilmadi" }));
 
 // SPA / landing fallback:
-//  • apex (bare domen `intellectschool.uz`) yoki `www` → landing sahifa (public/landing.html);
-//  • `admin` va maktab subdomenlari → React SPA (index.html).
+//  • Faqat ILOVA HOSTI (App:Host, masalan `test.intellectschool.uz`) → React SPA (index.html);
+//  • boshqa hammasi (apex `intellectschool.uz`, `www`, `admin` va h.k.) → landing sahifa (landing.html).
+//  • App:Host sozlanmagan bo'lsa (dev) — apex/www dan boshqa hammasi SPA (eski xulq).
 var webRoot = app.Environment.WebRootPath
     ?? Path.Combine(app.Environment.ContentRootPath, "wwwroot");
-var landingRoots = tenancy.Roots();
-bool IsLandingHost(string h) => landingRoots.Any(r =>
+var appHost = (builder.Configuration["App:Host"] ?? "").Trim();
+bool IsLandingHost(string h) => rootDomains.Any(r =>
     h.Equals(r, StringComparison.OrdinalIgnoreCase) ||
     h.Equals("www." + r, StringComparison.OrdinalIgnoreCase));
 
 app.MapFallback(async ctx =>
 {
-    var landing = Path.Combine(webRoot, "landing.html");
-    var spa = Path.Combine(webRoot, "index.html");
-    var file = IsLandingHost(ctx.Request.Host.Host) && File.Exists(landing) ? landing : spa;
+    var host = ctx.Request.Host.Host;
+    var isApp = appHost.Length > 0
+        ? host.Equals(appHost, StringComparison.OrdinalIgnoreCase)
+        : !IsLandingHost(host); // dev: App:Host yo'q — apex/www dan boshqa hammasi ilova
+    var file = Path.Combine(webRoot, isApp ? "index.html" : "landing.html");
     if (!File.Exists(file)) { ctx.Response.StatusCode = StatusCodes.Status404NotFound; return; }
     ctx.Response.ContentType = "text/html; charset=utf-8";
     ctx.Response.Headers.CacheControl = "no-cache";

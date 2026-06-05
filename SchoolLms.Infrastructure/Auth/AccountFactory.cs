@@ -38,11 +38,9 @@ public static class AccountFactory
         var baseName = BuildBase(fullName);
         if (baseName.Length == 0) baseName = "user";
 
-        // Band bo'lgan login'lar: BUTUN baza (barcha maktablar) + hali saqlanmagan (Local) akkauntlar.
-        // IgnoreQueryFilters — tenant filtri chetlab o'tiladi, shunda login HAMMA uchun unikal bo'ladi
-        // (maktab kodisiz login qilish uchun shart).
+        // Band bo'lgan login'lar: bazadagi + hali saqlanmagan (Local) akkauntlar.
         var taken = new HashSet<string>(
-            db.Users.IgnoreQueryFilters().Select(u => u.Email).ToList(), StringComparer.OrdinalIgnoreCase);
+            db.Users.Select(u => u.Email).ToList(), StringComparer.OrdinalIgnoreCase);
         foreach (var local in db.Users.Local) taken.Add(local.Email);
 
         var candidate = baseName;

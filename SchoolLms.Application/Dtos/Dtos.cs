@@ -7,10 +7,7 @@ namespace SchoolLms.Application.Dtos;
 public record LoginRequest(string Email, string Password);
 public record UserDto(
     string Id, string FullName, string Role, string Email, string? AvatarUrl,
-    List<string>? Permissions = null,
-    // Maktab obunasida ochilgan bo'limlar (AdminModules kalitlari). null = cheklovsiz (hamma bo'lim).
-    // Maktab admin/superadmin nav'i shu bo'yicha yashiriladi.
-    List<string>? Modules = null);
+    List<string>? Permissions = null);
 public record LoginResponse(string Token, UserDto User);
 /// <summary>O'quvchi/o'qituvchiga biriktirilgan tizim akkaunti ma'lumotlari (admin uchun).</summary>
 public record CredentialsDto(string Login, string Password, string Role);
@@ -36,12 +33,16 @@ public record StudentPayload(
     string? ParentPassportUrl = null);
 public record PaymentRequest(decimal Amount, string? Month);
 
+/* ---------- Excel'dan ommaviy import ---------- */
+public record StudentImportRowErrorDto(int Row, string Message);
+public record StudentImportResultDto(int Created, int Failed, int Skipped, List<StudentImportRowErrorDto> Errors);
+
 /* ---------- Teachers ---------- */
 public record TeacherPayload(
     string FullName, string BirthDate, string Address, string Gender,
     string HomeroomClass, List<string> SubjectIds, decimal Salary, string? SalaryStartMonth,
     string? NewPassword = null, List<string>? Permissions = null, string? Phone = null,
-    string? PhotoUrl = null);
+    string? PhotoUrl = null, string? Category = null, string? SalaryStartDate = null);
 public record SalaryPaymentRequest(decimal Amount, string? Note);
 public record SalaryHistoryDto(
     string TeacherId, string FullName, decimal Salary, decimal TotalPaid, List<PaymentDto> Payments);
@@ -53,6 +54,88 @@ public record SalaryLedgerDto(
 public record SalaryReportRowDto(
     string TeacherId, string TeacherName, decimal Salary, decimal TotalPaid, int PaymentsCount,
     int Months, decimal Expected, decimal Remaining);
+
+/// <summary>"Dars jadvali → Oylik hisoblash": toifa soat narxlari + har o'qituvchining hisoblangan oyligi.</summary>
+public record SalaryRatesDto(
+    decimal Oliy, decimal T1, decimal T2, decimal Mutaxasis,
+    int WeeksPerMonth, string Month, List<TeacherPayrollRowDto> Teachers);
+public record TeacherPayrollRowDto(
+    string Id, string FullName, string Category, int WeeklyLessons, int MonthlyLessons,
+    int MissedLessons, decimal BonusPct, decimal MonthlySalary);
+public record SalaryRatesRequest(decimal Oliy, decimal T1, decimal T2, decimal Mutaxasis);
+public record SetTeacherBonusRequest(decimal BonusPct);
+public record SetBonusBulkRequest(List<string> TeacherIds, decimal BonusPct);
+
+/// <summary>Bitta o'qituvchining tanlangan oydagi maosh tafsiloti (kelmagan kunlar + ustama bilan).</summary>
+public record AbsentDayDto(string Date, int Lessons, string Note);
+public record TeacherSalaryDetailDto(
+    string TeacherId, string FullName, string Category, string Month, string StartDate, bool PartialMonth,
+    decimal HourlyRate, int WeeklyLessons, int MonthlyLessons,
+    decimal PlannedSalary, int MissedLessons, decimal Deduction,
+    decimal BaseSalary, decimal BonusPct, decimal BonusAmount, decimal NetSalary,
+    decimal Paid, decimal Remaining, List<AbsentDayDto> AbsentDays);
+
+/// <summary>O'qituvchilar davomati — oylik board (o'qituvchilar + belgilangan kunlar).</summary>
+public record TeacherNameDto(string Id, string FullName, string StartDate = "");
+public record TeacherAttendanceDto(string TeacherId, string Date, string Status, string Note);
+public record DateRangeDto(string Start, string End);
+public record TeacherAttendanceBoardDto(
+    List<TeacherNameDto> Teachers, List<TeacherAttendanceDto> Entries, List<DateRangeDto> Quarters);
+public record SetTeacherAttendanceRequest(string TeacherId, string Date, string? Status, string? Note);
+/// <summary>Bitta kun uchun BARCHA faol o'qituvchini belgilash (status bo'sh = o'sha kun tozalanadi).</summary>
+public record SetTeacherAttendanceDayRequest(string Date, string? Status);
+
+// ---------- Turniket/FaceID: o'qituvchilar davomati dashboard ----------
+/// <summary>Dashboard bitta o'qituvchi qatori (kunlik).</summary>
+public record TeacherDashboardRowDto(
+    string TeacherId, string FullName, string? PhotoUrl, string DeviceUserId,
+    string Status, string CheckIn, string CheckOut, string Expected, int LateMinutes, string Source);
+/// <summary>Kunlik davomat jamlamasi.</summary>
+public record AttendanceSummaryDto(int Total, int Present, int Late, int Absent, int NotArrived);
+/// <summary>O'qituvchilar davomati dashboard (tanlangan kun).</summary>
+public record TeacherAttendanceDashboardDto(
+    string Date, bool TurnstileEnabled, string LastSync, bool InTeachingPeriod,
+    AttendanceSummaryDto Summary, List<TeacherDashboardRowDto> Rows);
+/// <summary>Sinxronlash natijasi.</summary>
+public record TurnstileSyncResultDto(bool Ok, string Message, int EventsFetched, int Updated, string LastSync);
+
+// ---------- GPS: maktab avtobuslari ----------
+public record BusDto(
+    string Id, string Name, string PlateNumber, string DriverName, string DriverPhone,
+    string DeviceId, string Route, bool IsActive, string Note);
+public record SaveBusRequest(
+    string Name, string? PlateNumber, string? DriverName, string? DriverPhone,
+    string? DeviceId, string? Route, bool IsActive = true, string? Note = null);
+/// <summary>Avtobus + so'nggi joylashuvi (umumiy xarita uchun).</summary>
+public record BusLiveDto(
+    BusDto Bus, double? Lat, double? Lng, double? Speed, string? LastSeen, bool Online);
+/// <summary>Iz nuqtasi.</summary>
+public record TrackPointDto(double Lat, double Lng, double Speed, string Time);
+/// <summary>To'xtash joyi (radiusda turib qolgan davr).</summary>
+public record BusStopDto(double Lat, double Lng, string ArrivedAt, string DepartedAt, int DurationMin);
+/// <summary>Bir kunlik iz + to'xtashlar + jamlama.</summary>
+public record BusTrackDto(
+    string Date, List<TrackPointDto> Points, List<BusStopDto> Stops,
+    double DistanceKm, int MovingMin, int StoppedMin);
+/// <summary>GPS tracker'dan kelgan bitta signal (ingest).</summary>
+public record GpsPingRequest(string DeviceId, double Lat, double Lng, double? Speed, string? Time, string? Token);
+
+/// <summary>GPS integratsiya sozlamasi.</summary>
+public record GpsSettingsDto(
+    bool Enabled, string IngestToken, int OnlineMinutes, int StopRadiusM, int StopMinMinutes, int BusCount);
+public record SaveGpsSettingsRequest(
+    bool Enabled, string? IngestToken, int? OnlineMinutes, int? StopRadiusM, int? StopMinMinutes);
+
+// ---------- Kamera (videokuzatuv) ----------
+public record CameraDto(
+    string Id, string Name, string Location, string RtspUrl, string RtspSubUrl,
+    int RetentionDays, bool IsActive, string Note);
+public record SaveCameraRequest(
+    string Name, string? Location, string RtspUrl, string? RtspSubUrl,
+    int RetentionDays = 7, bool IsActive = true, string? Note = null);
+/// <summary>Kamera integratsiya sozlamasi.</summary>
+public record CameraSettingsDto(bool Enabled, int CameraCount);
+public record SaveCameraSettingsRequest(bool Enabled);
 /// <summary>Moliyada o'quvchi qatori. Charged = jami to'liq oylik (chegirmasiz);
 /// Discount = jami berilgan chegirma; Paid = haqiqiy naqd to'lovlar yig'indisi (turli oylar uchun);
 /// Debt / Advance — joriy holatdan (balans). DiscountPct/Amount — qoidani ko'rsatish uchun.</summary>
@@ -91,10 +174,12 @@ public record DayMenuDto(string Date, Dictionary<string, List<DishDto>> Meals);
 /// 1 = 1-guruh, 2 = 2-guruh. Bo'lingan darsda har guruh o'z ustunini oladi.
 /// </summary>
 public record JournalColumnDto(string Date, int Period, int SubGroup = 0);
-public record JournalEntryDto(string StudentId, string Date, int Period, int? Grade, string? ReasonId);
+public record JournalEntryDto(
+    string StudentId, string Date, int Period, int? Grade, string? ReasonId,
+    int Homework, int Behavior, int? Mastery);
 public record SetJournalEntryRequest(
     string ClassId, string SubjectId, int Quarter, string StudentId, string Date, int Period,
-    int? Grade, string? ReasonId);
+    int? Grade, string? ReasonId, int Homework = 0, int Behavior = 0, int? Mastery = null);
 public record JournalTopicDto(string Date, int Period, string Topic, string? Homework, bool Conducted, int SubGroup = 0);
 /// <summary>Berilgan sanada o'tilgan (conducted) darslar — sinf+fan+dars raqami+guruh.</summary>
 public record ConductedLessonDto(string ClassId, string SubjectId, int Period, int SubGroup = 0);
@@ -185,6 +270,51 @@ public record DisciplineReasonDto(string Id, string Name, int Points, string Kin
 public record SaveDisciplineReasonRequest(string Name, int Points);
 /// <summary>Davomat sababiga ball belgilash so'rovi.</summary>
 public record SetReasonPointsRequest(int Points);
+
+/// <summary>O'quvchilarni baholash turi (admin xohlagancha qo'shadi).</summary>
+public record EvaluationTypeDto(string Id, string Name, string Description);
+public record SaveEvaluationTypeRequest(string Name, string? Description);
+
+/// <summary>Bitta davomat sababidan o'quvchida necha marta bo'lgani (jurnal belgilaridan).</summary>
+public record AttendanceReasonCountDto(string ReasonId, string Name, string Short, bool IsLate, int Count);
+
+/// <summary>
+/// Baholash jadvalidagi bitta o'quvchi qatori: qatnashish (o'tilgan/qatnashgan), davomat sabablari
+/// bo'yicha taqsimot va baholash turlari bo'yicha baholar (typeId → 1-5).
+/// </summary>
+public record EvaluationRowDto(
+    string StudentId,
+    string FullName,
+    string ClassName,
+    int Conducted,
+    int Attended,
+    IReadOnlyList<AttendanceReasonCountDto> Reasons,
+    Dictionary<string, int> Grades,
+    double AvgGrade);
+
+/// <summary>
+/// Baholash jadvali: mavjud oylar katalogi, joriy (tanlangan) oy/hafta, ustun turlari va qatorlar.
+/// Qatnashish/davomat tanlangan davr (oy yoki hafta) bo'yicha, baholar tanlangan oy bo'yicha.
+/// </summary>
+public record EvaluationBoardDto(
+    IReadOnlyList<string> Months,
+    string Month,
+    int Week,
+    IReadOnlyList<EvaluationTypeDto> Types,
+    IReadOnlyList<EvaluationRowDto> Rows,
+    string SubjectId = "",
+    IReadOnlyList<SubjectDto>? Subjects = null);
+
+/// <summary>
+/// Baho qo'yish/yangilash/tozalash so'rovi (oy bo'yicha; Score null yoki 1-5 dan tashqari = tozalash).
+/// <c>SubjectId</c> — qaysi fan ("" = umumiy). <c>ClassId</c> — o'qituvchi chaqiruvida egalik tekshiruvi uchun.
+/// </summary>
+public record SetEvaluationGradeRequest(
+    string StudentId, string TypeId, string Month, int Week, int? Score,
+    string? SubjectId = null, string? ClassId = null);
+
+/// <summary>O'quvchining bitta fan bo'yicha oylik baholashlari (shaxsiy daftarda "fan kesimida").</summary>
+public record SubjectEvaluationDto(string SubjectId, string SubjectName, double Avg, List<MonthlyEvaluationDto> Evaluations);
 /// <summary>Ballar nazorati qatori: o'quvchi, sinf, plus (rag'bat), minus (jazo), qoldi (100+plus−minus).</summary>
 public record DisciplineScoreRowDto(
     string StudentId, string FullName, string ClassName, int Plus, int Minus, int Remaining);
@@ -299,6 +429,38 @@ public record StudentReportDto(
     List<SubjectDto> Subjects, Dictionary<string, Dictionary<int, double>> Grades,
     StudentAttendanceDto Attendance);
 
+/// <summary>O'quvchining bitta oydagi baholash turlari bo'yicha baholari.</summary>
+public record MonthlyEvaluationDto(string Month, Dictionary<string, int> Grades, double Avg);
+/// <summary>O'quvchining bitta chorakdagi uy vazifa/xulq jamlamasi.</summary>
+public record QuarterMarksDto(int Quarter, int HomeworkDone, int HomeworkMissed, int BehaviorGood, int BehaviorBad);
+
+/// <summary>
+/// O'quvchi shaxsiy daftari — bitta o'quvchi haqida BARCHA ma'lumot (profil, o'zlashtirish,
+/// davomat, intizom, topshiriqlar, oylik baholash, uy vazifa va xulq).
+/// </summary>
+public record StudentNotebookDto(
+    // Profil
+    string Id, string FullName, string ClassName, string HomeroomTeacher,
+    string ParentFullName, string ParentPhone, string Gender, string BirthDate,
+    string EnrollmentDate, decimal Balance, string? PhotoUrl,
+    // Shaxsiy ma'lumotlar
+    string Address, int DiscountPct, decimal DiscountAmount, string DiscountNote,
+    int SubGroup, string? ParentPassportUrl,
+    // O'zlashtirish
+    List<SubjectDto> Subjects, Dictionary<string, Dictionary<int, double>> Grades, double AvgGrade,
+    // Davomat
+    StudentAttendanceDto Attendance, int Conducted, int Attended, int AttendancePct,
+    List<AttendanceReasonCountDto> Reasons,
+    // Intizom
+    int DisciplineScore, int DisciplinePlus, int DisciplineMinus, List<DisciplinePointDto> DisciplinePoints,
+    // Topshiriqlar
+    StudentAssignmentScoresDto Assignments,
+    // Oylik baholash — umumiy (fanlar o'rtachasi) + fan kesimida
+    List<EvaluationTypeDto> EvaluationTypes, List<MonthlyEvaluationDto> Evaluations,
+    List<SubjectEvaluationDto> EvaluationsBySubject,
+    // Uy vazifa + xulq (choraklik)
+    int HomeworkDone, int HomeworkMissed, int BehaviorGood, int BehaviorBad, List<QuarterMarksDto> MarksTrend);
+
 /// <summary>Portal reytingidagi bitta qator (o'quvchi/parent ko'rinishi — shaxsiy ma'lumotsiz: telefon/balans/manzil yo'q).</summary>
 public record PortalRatingRowDto(
     int Rank, string StudentId, string FullName, string ClassName, double Average, double? Attendance);
@@ -339,6 +501,19 @@ public record SaveTelegramSettingsRequest(string? BotToken, string? BotUsername,
 /// <summary>Firebase (FCM push) sozlamasi. Configured = service account JSON to'g'ri kiritilgan.</summary>
 public record FirebaseSettingsDto(string ServiceAccountJson, bool Configured);
 public record SaveFirebaseSettingsRequest(string? ServiceAccountJson);
+
+/// <summary>Turniket/FaceID integratsiya sozlamasi (o'qituvchilar davomati avtomatik).
+/// Parol javobda BO'SH qaytadi (xavfsizlik); HasPassword saqlanganini bildiradi.</summary>
+public record TurnstileSettingsDto(
+    bool Enabled, string Vendor, string Host, int Port, string Username, bool HasPassword,
+    string WorkStartTime, int LateGraceMinutes, string LastSync,
+    List<TeacherDeviceMapDto> Teachers);
+/// <summary>O'qituvchi ↔ qurilma ID moslamasi.</summary>
+public record TeacherDeviceMapDto(string TeacherId, string FullName, string DeviceUserId);
+/// <summary>Turniket sozlamasini saqlash so'rovi. Password null/bo'sh = o'zgartirilmaydi (eski saqlanadi).</summary>
+public record SaveTurnstileSettingsRequest(
+    bool Enabled, string? Vendor, string? Host, int? Port, string? Username, string? Password,
+    string? WorkStartTime, int? LateGraceMinutes, List<TeacherDeviceMapDto>? Teachers);
 
 /* ---------- Finance (Moliya) ---------- */
 public record FinanceTransactionDto(

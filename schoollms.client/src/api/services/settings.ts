@@ -135,6 +135,100 @@ export async function saveFirebaseSettings(serviceAccountJson: string): Promise<
   return data
 }
 
+/* ---------- Turniket / FaceID integratsiyasi ---------- */
+
+export interface TeacherDeviceMap {
+  teacherId: string
+  fullName: string
+  deviceUserId: string
+}
+
+export interface TurnstileConfig {
+  enabled: boolean
+  vendor: string
+  host: string
+  port: number
+  username: string
+  /** Parol saqlanganmi (parolning o'zi qaytmaydi) */
+  hasPassword: boolean
+  /** Ish boshlanish vaqti "HH:mm" */
+  workStartTime: string
+  /** Kechikishga yo'l qo'yiladigan daqiqalar */
+  lateGraceMinutes: number
+  /** Oxirgi sinxronlash (ISO) */
+  lastSync: string
+  teachers: TeacherDeviceMap[]
+}
+
+export interface SaveTurnstilePayload {
+  enabled: boolean
+  vendor: string
+  host: string
+  port: number
+  username: string
+  /** Bo'sh = o'zgartirilmaydi (eski parol saqlanadi) */
+  password?: string
+  workStartTime: string
+  lateGraceMinutes: number
+  teachers: TeacherDeviceMap[]
+}
+
+export async function getTurnstileSettings(): Promise<TurnstileConfig> {
+  const { data } = await api.get<TurnstileConfig>('/admin/settings/turnstile')
+  return data
+}
+
+export async function saveTurnstileSettings(payload: SaveTurnstilePayload): Promise<TurnstileConfig> {
+  const { data } = await api.put<TurnstileConfig>('/admin/settings/turnstile', payload)
+  return data
+}
+
+/* ---------- GPS (avtobus kuzatuvi) integratsiyasi ---------- */
+
+export interface GpsConfig {
+  enabled: boolean
+  ingestToken: string
+  onlineMinutes: number
+  stopRadiusM: number
+  stopMinMinutes: number
+  busCount: number
+}
+
+export interface SaveGpsPayload {
+  enabled: boolean
+  ingestToken?: string
+  onlineMinutes: number
+  stopRadiusM: number
+  stopMinMinutes: number
+}
+
+export async function getGpsSettings(): Promise<GpsConfig> {
+  const { data } = await api.get<GpsConfig>('/admin/settings/gps')
+  return data
+}
+
+export async function saveGpsSettings(payload: SaveGpsPayload): Promise<GpsConfig> {
+  const { data } = await api.put<GpsConfig>('/admin/settings/gps', payload)
+  return data
+}
+
+/* ---------- Kamera (videokuzatuv) integratsiyasi ---------- */
+
+export interface CameraConfig {
+  enabled: boolean
+  cameraCount: number
+}
+
+export async function getCameraSettings(): Promise<CameraConfig> {
+  const { data } = await api.get<CameraConfig>('/admin/settings/cameras')
+  return data
+}
+
+export async function saveCameraSettings(payload: { enabled: boolean }): Promise<CameraConfig> {
+  const { data } = await api.put<CameraConfig>('/admin/settings/cameras', payload)
+  return data
+}
+
 /** Maktab nomi (brending — barcha rollar uchun) */
 export async function getSchoolName(): Promise<string> {
   if (USE_MOCK) {

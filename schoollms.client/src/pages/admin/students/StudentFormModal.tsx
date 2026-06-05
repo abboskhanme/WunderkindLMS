@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Upload, X, FileText, Loader2 } from 'lucide-react'
 import type { Student } from '@/types'
 import type { StudentPayload } from '@/api/services/students'
-import { uploadAdminFile } from '@/api/services/students'
+import { uploadAdminFile, getStudentCredentials } from '@/api/services/students'
 import { getClasses } from '@/api/services/classes'
 import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
@@ -63,10 +63,24 @@ export function StudentFormModal({ open, onClose, onSubmit, initial }: Props) {
   const [classNames, setClassNames] = useState<string[]>([])
   /** Fayl yuklash holatlari (har maydon uchun alohida). */
   const [uploading, setUploading] = useState<{ birth?: boolean; passport?: boolean }>({})
+  /** Tahrirlanayotgan o'quvchining login (username)i — backend'dan olinadi, faqat ko'rsatish uchun. */
+  const [login, setLogin] = useState('')
 
   useEffect(() => {
     if (open) getClasses().then((cs) => setClassNames(cs.map((c) => c.name)))
   }, [open])
+
+  // Tahrirda o'quvchining login(username)ini yuklab ko'rsatamiz.
+  useEffect(() => {
+    if (!open || !initial) return
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- avvalgi loginni tozalash (maqsadli)
+    setLogin('')
+    let active = true
+    getStudentCredentials(initial.id)
+      .then((c) => { if (active) setLogin(c.login) })
+      .catch(() => { /* tarmoq/mok xatosi — login ko'rsatilmaydi */ })
+    return () => { active = false }
+  }, [open, initial])
 
   useEffect(() => {
     if (!open) return
@@ -138,6 +152,11 @@ export function StudentFormModal({ open, onClose, onSubmit, initial }: Props) {
     const first = (form.firstName ?? '').trim()
     const middle = (form.middleName ?? '').trim()
     if (!last && !first && !middle) return
+    const pwd = (form.newPassword ?? '').trim()
+    if (pwd.length > 0 && pwd.length < 8) {
+      alert("Parol kamida 8 belgidan iborat bo'lsin")
+      return
+    }
     const fullName = joinName(last, first, middle)
     const parentFullName = joinName(form.parentLastName, form.parentFirstName, form.parentMiddleName)
     onSubmit({ ...form, fullName, parentFullName })
@@ -315,12 +334,20 @@ export function StudentFormModal({ open, onClose, onSubmit, initial }: Props) {
           </p>
         </Section>
 
-        {/* ---------- Parol almashtirish (faqat tahrirda) ---------- */}
+        {/* ---------- Login va parol (faqat tahrirda) ---------- */}
         {initial && (
-          <Section title="Parolni almashtirish">
-            <div className="flex items-start gap-2">
+          <Section title="Login va parol">
+            <Input
+              label="Login (username)"
+              value={login}
+              readOnly
+              placeholder="Yuklanmoqda..."
+              className="bg-slate-100 text-slate-600"
+            />
+            <div className="mt-3 flex items-end gap-2">
               <div className="flex-1">
                 <Input
+                  label="Yangi parol"
                   type="text"
                   autoComplete="new-password"
                   placeholder="Bo'sh qoldirilsa — parol o'zgarmaydi"
@@ -331,14 +358,14 @@ export function StudentFormModal({ open, onClose, onSubmit, initial }: Props) {
               <Button
                 type="button"
                 variant="secondary"
-                onClick={() => update('newPassword', randomPassword())}
+                onClick={() => update('newPassword', randomPassword(8))}
               >
                 Generatsiya
               </Button>
             </div>
             <p className="mt-1 text-xs text-slate-400">
-              Login (username) o'zgarmaydi. Yangi parolni kiriting yoki generatsiya qiling — saqlangach
-              o'quvchiga topshiring.
+              Login o'zgarmaydi. Yangi parol kamida 8 belgi — kiriting yoki generatsiya qiling;
+              saqlangach o'quvchiga topshiring.
             </p>
           </Section>
         )}

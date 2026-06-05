@@ -10,28 +10,39 @@ namespace SchoolLms.Application.Services;
 /// </summary>
 public static class ExcelExport
 {
+    /// <summary>Bitta varaq spetsifikatsiyasi (nom + sarlavha + qatorlar) — ko'p varaqli kitob uchun.</summary>
+    public sealed record SheetSpec(string Name, IReadOnlyList<string> Headers, IEnumerable<IReadOnlyList<string>> Rows);
+
     public static byte[] Build(string sheetName, IReadOnlyList<string> headers, IEnumerable<IReadOnlyList<string>> rows)
+        => Build(new[] { new SheetSpec(sheetName, headers, rows) });
+
+    /// <summary>Ko'p varaqli .xlsx — har varaq sarlavha + qatorlardan iborat.</summary>
+    public static byte[] Build(IReadOnlyList<SheetSpec> specs)
     {
         using var ms = new MemoryStream();
         using (var doc = SpreadsheetDocument.Create(ms, SpreadsheetDocumentType.Workbook))
         {
             var wbPart = doc.AddWorkbookPart();
             wbPart.Workbook = new Workbook();
-
-            var wsPart = wbPart.AddNewPart<WorksheetPart>();
-            var sheetData = new SheetData();
-            wsPart.Worksheet = new Worksheet(sheetData);
-
             var sheets = wbPart.Workbook.AppendChild(new Sheets());
-            sheets.Append(new Sheet
-            {
-                Id = wbPart.GetIdOfPart(wsPart),
-                SheetId = 1,
-                Name = sheetName.Length > 31 ? sheetName[..31] : sheetName,
-            });
 
-            sheetData.Append(MakeRow(headers));
-            foreach (var r in rows) sheetData.Append(MakeRow(r));
+            uint sheetId = 1;
+            foreach (var spec in specs)
+            {
+                var wsPart = wbPart.AddNewPart<WorksheetPart>();
+                var sheetData = new SheetData();
+                wsPart.Worksheet = new Worksheet(sheetData);
+
+                sheets.Append(new Sheet
+                {
+                    Id = wbPart.GetIdOfPart(wsPart),
+                    SheetId = sheetId++,
+                    Name = spec.Name.Length > 31 ? spec.Name[..31] : spec.Name,
+                });
+
+                sheetData.Append(MakeRow(spec.Headers));
+                foreach (var r in spec.Rows) sheetData.Append(MakeRow(r));
+            }
 
             wbPart.Workbook.Save();
         }

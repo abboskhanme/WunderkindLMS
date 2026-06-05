@@ -1,5 +1,4 @@
 import axios from 'axios'
-import { detectTenant } from '@/lib/tenant'
 
 /**
  * Markaziy axios klienti.
@@ -10,18 +9,11 @@ export const api = axios.create({
   headers: { 'Content-Type': 'application/json' },
 })
 
-// Joriy maktab (subdomen) — backend tenantni shu sarlavhadan aniqlaydi (dev proxy Host
-// muammolarini chetlab o'tib). Asosiy domenda (Control Plane) yo'q.
-const tenant = detectTenant()
-
-// Har bir so'rovga auth tokenni va tenant sarlavhasini qo'shamiz
+// Har bir so'rovga auth tokenni qo'shamiz
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem('token')
   if (token) {
     config.headers.Authorization = `Bearer ${token}`
-  }
-  if (tenant.slug) {
-    config.headers['X-Tenant'] = tenant.slug
   }
   return config
 })

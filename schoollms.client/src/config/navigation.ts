@@ -49,8 +49,28 @@ export const navByRole: Record<Role, NavItem[]> = {
   admin: [
     { label: 'Bosh sahifa', to: '/admin', icon: LayoutDashboard },
     { label: 'Lidlar', to: '/admin/leads', icon: UserPlus, perm: 'leads' },
-    { label: "O'quvchilar", to: '/admin/students', icon: Users, perm: 'students' },
-    { label: "O'qituvchilar", to: '/admin/teachers', icon: GraduationCap, perm: 'teachers' },
+    {
+      label: "O'quvchilar",
+      to: '/admin/students',
+      icon: Users,
+      perm: 'students',
+      children: [
+        { label: "O'quvchilar ro'yxati", to: '/admin/students', end: true },
+        { label: "O'quvchilarga feedback", to: '/admin/students/baholash' },
+        { label: 'Feedback nomi', to: '/admin/students/baholash-turlari' },
+      ],
+    },
+    {
+      label: "O'qituvchilar",
+      to: '/admin/teachers',
+      icon: GraduationCap,
+      perm: 'teachers',
+      children: [
+        { label: "O'qituvchilar ro'yxati", to: '/admin/teachers', end: true },
+        { label: "O'qituvchilar davomati", to: '/admin/teachers/attendance' },
+        { label: 'Oylik hisoblash', to: '/admin/teachers/salary' },
+      ],
+    },
     { label: 'Davomat', to: '/admin/attendance', icon: CalendarCheck, perm: 'attendance' },
     {
       label: 'Dars jadvali',
@@ -93,8 +113,6 @@ export const navByRole: Record<Role, NavItem[]> = {
         { label: 'Oshxona', to: '/admin/canteen' },
         { label: 'Ota-onalar', to: '/admin/parents' },
         { label: "O'qituvchilar", to: '/admin/app/teachers' },
-        // Topshiriq turlari sozlamadan ko'chirildi; route hamon settings — perm 'settings'
-        { label: 'Topshiriq turlari', to: '/admin/settings/assignment-types', perm: 'settings' },
       ],
     },
     {
@@ -126,6 +144,8 @@ export const navByRole: Record<Role, NavItem[]> = {
       to: '/admin/boshqaruv/staff',
       icon: Building2,
       children: [
+        { label: 'GPS', to: '/admin/boshqaruv/gps', perm: 'gps' },
+        { label: 'Kameralar', to: '/admin/boshqaruv/cameras', perm: 'cameras' },
         { label: 'Filiallar', to: '/admin/boshqaruv/branches', roles: ['superadmin'] },
         { label: 'Xodimlar va rollar', to: '/admin/boshqaruv/staff', perm: 'staff' },
         { label: 'Taklif va shikoyatlar', to: '/admin/boshqaruv/feedback', perm: 'feedback' },
@@ -140,6 +160,9 @@ export const navByRole: Record<Role, NavItem[]> = {
         { label: "Maktab ma'lumotlari", to: '/admin/settings/school' },
         { label: 'Telegram bot', to: '/admin/settings/telegram' },
         { label: 'Push (Firebase)', to: '/admin/settings/firebase' },
+        { label: 'Turniket integratsiya', to: '/admin/settings/turnstile' },
+        { label: 'GPS integratsiya', to: '/admin/settings/gps' },
+        { label: 'Kamera integratsiya', to: '/admin/settings/cameras' },
         { label: "Yangi o'quv yiliga o'tish", to: '/admin/academic-year', perm: 'academicYear' },
       ],
     },
@@ -147,6 +170,7 @@ export const navByRole: Record<Role, NavItem[]> = {
   teacher: [
     { label: 'Bosh sahifa', to: '/teacher', icon: LayoutDashboard },
     { label: 'Jurnal', to: '/teacher/journal', icon: NotebookText, perm: 'journal' },
+    { label: 'Feedback', to: '/teacher/evaluation', icon: ClipboardList },
     { label: 'Topshiriqlar', to: '/teacher/assignments', icon: ClipboardCheck, perm: 'assignments' },
     { label: "Ta'lim (LMS)", to: '/teacher/lms', icon: BookOpen },
     { label: 'Dars jadvali', to: '/teacher/schedule', icon: CalendarRange, perm: 'schedule' },

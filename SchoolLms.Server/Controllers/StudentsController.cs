@@ -1,3 +1,4 @@
+using System.Globalization;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -29,6 +30,15 @@ public class StudentsController(AppDbContext db, AuditService audit) : Controlle
         return await q.OrderBy(s => s.FullName).ToListAsync();
     }
 
+    /// <summary>O'quvchi shaxsiy daftari — bitta o'quvchi haqida barcha ma'lumot (profil, o'zlashtirish, davomat, intizom, topshiriqlar, oylik baholash, uy vazifa/xulq).</summary>
+    [HttpGet("{id}/profile")]
+    public async Task<ActionResult<StudentNotebookDto>> GetProfile(string id)
+    {
+        var st = await db.Students.FirstOrDefaultAsync(s => s.Id == id);
+        if (st is null) return NotFound();
+        return await StudentProfileBuilder.BuildAsync(db, st);
+    }
+
     /// <summary>Faqat arxivlangan o'quvchilar ro'yxati.</summary>
     [HttpGet("archived")]
     public async Task<ActionResult<IEnumerable<Student>>> GetArchived() =>
@@ -45,6 +55,19 @@ public class StudentsController(AppDbContext db, AuditService audit) : Controlle
     public async Task<ActionResult<Student>> Create(StudentPayload p)
     {
         var cls = await db.Classes.FirstOrDefaultAsync(c => c.Name == p.ClassName);
+        var student = AddStudent(p, cls);
+        await db.SaveChangesAsync();
+        return student;
+    }
+
+    /// <summary>
+    /// <see cref="StudentPayload"/>'dan Student yaratib (tizim akkaunti + oylik hisoblar + audit bilan)
+    /// db kontekstiga qo'shadi. SaveChanges QILMAYDI — chaqiruvchi (bitta yaratish yoki ommaviy import)
+    /// hammasini qo'shib bo'lgach bir marta saqlaydi. <paramref name="cls"/> — oldindan topilgan sinf
+    /// (narx/hisob uchun; null bo'lsa oylik hisob yozilmaydi).
+    /// </summary>
+    private Student AddStudent(StudentPayload p, SchoolClass? cls)
+    {
         var enrollment = string.IsNullOrWhiteSpace(p.EnrollmentDate)
             ? AppClock.Today.ToString("yyyy-MM-dd")
             : p.EnrollmentDate;
@@ -122,7 +145,6 @@ public class StudentsController(AppDbContext db, AuditService audit) : Controlle
                 DiscountSummary("O'quvchi yaratildi", student.FullName, 0, 0, student.DiscountPct, student.DiscountAmount, student.DiscountNote),
                 after: DiscountSnapshot(student), studentId: student.Id);
 
-        await db.SaveChangesAsync();
         return student;
     }
 
@@ -364,6 +386,7 @@ public class StudentsController(AppDbContext db, AuditService audit) : Controlle
         student.IsArchived = false;
         student.ArchivedAt = null;
         student.ArchiveReason = null;
+        student.ArchivedWithClass = false;
 
         var newPwd = (req?.NewPassword ?? "").Trim();
         if (!string.IsNullOrEmpty(newPwd))
@@ -457,6 +480,161 @@ public class StudentsController(AppDbContext db, AuditService audit) : Controlle
         return File(bytes,
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             $"oquvchilar_{AppClock.Now:yyyy-MM-dd}.xlsx");
+    }
+
+    /* ---------- Excel'dan ommaviy import ---------- */
+
+    private const string XlsxMime = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+
+    // Import shabloni ustunlari (1-varaq). Tartibi import o'qishi bilan AYNAN bir xil bo'lishi shart.
+    private static readonly string[] ImportHeaders =
+    {
+        "F.I.SH (o'quvchi)*", "Sinf*", "Tug'ilgan sana (YYYY-MM-DD)", "Jinsi (o'g'il/qiz)",
+        "Manzil", "Ota-ona F.I.SH", "Ota-ona telefoni", "Qabul sanasi (YYYY-MM-DD)",
+        "Chegirma %", "Chegirma summa (so'm)",
+    };
+
+    /// <summary>
+    /// O'quvchilarni ommaviy kiritish uchun bo'sh Excel shabloni (.xlsx). 1-varaq "O'quvchilar" —
+    /// to'ldiriladigan sarlavhalar; 2-varaq "Yo'riqnoma" — maydonlar izohi va MAVJUD sinflar ro'yxati.
+    /// Import faqat 1-varaqni o'qiydi, shu sababli yo'riqnoma import'ga ta'sir qilmaydi.
+    /// </summary>
+    [HttpGet("import-template")]
+    public async Task<IActionResult> ImportTemplate()
+    {
+        var classes = await db.Classes.OrderBy(c => c.Name).Select(c => c.Name).ToListAsync();
+
+        var info = new List<IReadOnlyList<string>>
+        {
+            new[] { "F.I.SH (o'quvchi)*", "Majburiy. Masalan: Aliyev Vali Aliyevich" },
+            new[] { "Sinf*", "Majburiy — pastdagi ro'yxatdagi aniq nom" },
+            new[] { "Tug'ilgan sana", "YYYY-MM-DD, masalan 2015-03-21" },
+            new[] { "Jinsi", "o'g'il yoki qiz (bo'sh bo'lsa — o'g'il)" },
+            new[] { "Manzil", "ixtiyoriy" },
+            new[] { "Ota-ona F.I.SH", "ixtiyoriy" },
+            new[] { "Ota-ona telefoni", "masalan +998901234567" },
+            new[] { "Qabul sanasi", "YYYY-MM-DD (bo'sh bo'lsa — bugun)" },
+            new[] { "Chegirma %", "0–100 (ixtiyoriy)" },
+            new[] { "Chegirma summa", "so'mda (ixtiyoriy)" },
+            new[] { "", "" },
+            new[] { "Mavjud sinflar:", classes.Count == 0 ? "(sinf yaratilmagan)" : "" },
+        };
+        info.AddRange(classes.Select(c => (IReadOnlyList<string>)new[] { c, "" }));
+
+        var bytes = ExcelExport.Build(new[]
+        {
+            new ExcelExport.SheetSpec("O'quvchilar", ImportHeaders, Array.Empty<IReadOnlyList<string>>()),
+            new ExcelExport.SheetSpec("Yo'riqnoma", new[] { "Maydon", "Izoh" }, info),
+        });
+        return File(bytes, XlsxMime, "oquvchilar_shablon.xlsx");
+    }
+
+    /// <summary>
+    /// To'ldirilgan Excel (.xlsx) shablonidan o'quvchilarni ommaviy yaratadi. Har qator alohida
+    /// tekshiriladi: F.I.SH va Sinf majburiy, Sinf mavjud bo'lishi shart. To'g'ri qatorlar yaratiladi
+    /// (akkaunt + oylik hisob bilan), xato qatorlar raqami/sababi bilan qaytariladi (qisman import).
+    /// </summary>
+    [HttpPost("import")]
+    [RequestSizeLimit(10 * 1024 * 1024)]
+    public async Task<ActionResult<StudentImportResultDto>> Import(IFormFile? file)
+    {
+        if (file is null || file.Length == 0)
+            return BadRequest(new { message = "Fayl tanlanmagan" });
+        if (!file.FileName.EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase))
+            return BadRequest(new { message = "Faqat .xlsx (Excel) fayl qabul qilinadi" });
+
+        List<string[]> rows;
+        try
+        {
+            await using var stream = file.OpenReadStream();
+            rows = ExcelImport.ReadRows(stream, ImportHeaders.Length);
+        }
+        catch
+        {
+            return BadRequest(new { message = "Faylni o'qib bo'lmadi — buzilmagan .xlsx ekanini tekshiring" });
+        }
+
+        // Sinflar oldindan yuklab olinadi (har qatorda DB so'rovi bo'lmasligi uchun).
+        var classByName = (await db.Classes.ToListAsync())
+            .GroupBy(c => c.Name, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+
+        var errors = new List<StudentImportRowErrorDto>();
+        int created = 0, skipped = 0;
+
+        // 0-qator — sarlavha; ma'lumot 1-indeksdan boshlanadi (Excel'dagi 2-qator).
+        for (var i = 1; i < rows.Count; i++)
+        {
+            var r = rows[i];
+            var excelRow = i + 1; // Excel'da 1-asosli qator raqami
+
+            if (r.All(string.IsNullOrWhiteSpace)) { skipped++; continue; }
+
+            var fullName = r[0].Trim();
+            var className = r[1].Trim();
+            if (string.IsNullOrWhiteSpace(fullName))
+            { errors.Add(new StudentImportRowErrorDto(excelRow, "F.I.SH bo'sh")); continue; }
+            if (string.IsNullOrWhiteSpace(className))
+            { errors.Add(new StudentImportRowErrorDto(excelRow, "Sinf bo'sh")); continue; }
+            if (!classByName.TryGetValue(className, out var cls))
+            { errors.Add(new StudentImportRowErrorDto(excelRow, $"Sinf topilmadi: \"{className}\"")); continue; }
+
+            var payload = new StudentPayload(
+                FullName: fullName,
+                BirthDate: NormalizeDate(r[2]),
+                Address: r[4].Trim(),
+                Gender: NormalizeGender(r[3]),
+                ParentFullName: r[5].Trim(),
+                ParentPhone: r[6].Trim(),
+                ClassName: cls.Name,
+                EnrollmentDate: NormalizeDate(r[7]) is { Length: > 0 } e ? e : null,
+                DiscountPct: ParseIntOrNull(r[8]),
+                DiscountAmount: ParseDecimalOrNull(r[9]));
+
+            AddStudent(payload, cls);
+            created++;
+        }
+
+        if (created > 0) await db.SaveChangesAsync();
+        return new StudentImportResultDto(created, errors.Count, skipped, errors);
+    }
+
+    private static string NormalizeGender(string raw)
+    {
+        var v = (raw ?? "").Trim().ToLowerInvariant();
+        // qiz/female/ayol → female; qolgan hammasi (bo'sh, o'g'il, erkak, male, ...) → male
+        return v is "qiz" or "female" or "ayol" or "f" or "q" or "2" ? "female" : "male";
+    }
+
+    private static readonly string[] DateFormats =
+    {
+        "yyyy-MM-dd", "yyyy/MM/dd", "dd.MM.yyyy", "d.M.yyyy", "dd/MM/yyyy", "d/M/yyyy", "MM/dd/yyyy",
+    };
+
+    /// <summary>Sanani "YYYY-MM-DD" ga keltiradi. Excel matn sanasini ham, raqamli (OADate) sanasini ham qabul qiladi.</summary>
+    private static string NormalizeDate(string raw)
+    {
+        var v = (raw ?? "").Trim();
+        if (v.Length == 0) return "";
+        if (DateTime.TryParseExact(v, DateFormats, CultureInfo.InvariantCulture, DateTimeStyles.None, out var d))
+            return d.ToString("yyyy-MM-dd");
+        if (double.TryParse(v, NumberStyles.Any, CultureInfo.InvariantCulture, out var oa) && oa is > 1 and < 600000)
+        {
+            try { return DateTime.FromOADate(oa).ToString("yyyy-MM-dd"); } catch { /* e'tiborsiz */ }
+        }
+        return v; // ixtiyoriy maydon — noma'lum format bo'lsa, kiritilganicha qoladi
+    }
+
+    private static int? ParseIntOrNull(string raw)
+    {
+        var v = (raw ?? "").Replace("%", "").Trim();
+        return int.TryParse(v, NumberStyles.Any, CultureInfo.InvariantCulture, out var n) ? n : null;
+    }
+
+    private static decimal? ParseDecimalOrNull(string raw)
+    {
+        var v = (raw ?? "").Replace(" ", "").Replace(",", "").Trim();
+        return decimal.TryParse(v, NumberStyles.Any, CultureInfo.InvariantCulture, out var d) ? d : null;
     }
 
     /// <summary>O'quvchiga to'lov kiritish — balansga qo'shiladi va moliyaga kirim sifatida yoziladi.

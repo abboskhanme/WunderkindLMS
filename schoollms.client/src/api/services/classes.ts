@@ -50,6 +50,28 @@ export async function deleteClass(id: string): Promise<void> {
   await api.delete(`/admin/classes/${id}`)
 }
 
+/** Arxivlangan sinflar ro'yxati. */
+export async function getArchivedClasses(): Promise<SchoolClass[]> {
+  if (USE_MOCK) {
+    await delay()
+    return []
+  }
+  const { data } = await api.get<SchoolClass[]>('/admin/classes/archived')
+  return data
+}
+
+/** Sinfni arxivlash — o'quvchilari ham arxivlanadi. */
+export async function archiveClass(id: string): Promise<{ archivedStudents: number }> {
+  const { data } = await api.post<{ archivedStudents: number }>(`/admin/classes/${id}/archive`)
+  return data
+}
+
+/** Sinfni arxivdan chiqarish — sinf bilan arxivlangan o'quvchilar ham qaytariladi. */
+export async function unarchiveClass(id: string): Promise<{ restoredStudents: number }> {
+  const { data } = await api.post<{ restoredStudents: number }>(`/admin/classes/${id}/unarchive`)
+  return data
+}
+
 /** Sinfdagi guruhlar (1/2) holati va lock holati. */
 export async function getClassGroups(classId: string): Promise<ClassGroups> {
   if (USE_MOCK) {

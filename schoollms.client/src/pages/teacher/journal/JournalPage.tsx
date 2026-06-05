@@ -69,6 +69,14 @@ export function TeacherJournalPage() {
   const [editing, setEditing] = useState<{ student: Student; date: string; period: number } | null>(null)
   const [editingQuarter, setEditingQuarter] = useState<Student | null>(null)
 
+  // Bugungi sana (yyyy-MM-dd, mahalliy). Sanasi kelmagan (kelajakdagi) darslarga baho/jurnal
+  // kiritib bo'lmaydi — dars hali o'tilmagan.
+  const today = useMemo(() => {
+    const d = new Date()
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  }, [])
+  const isFuture = (date: string) => date > today
+
   useEffect(() => {
     Promise.all([getMyClasses(), getTeacherMeta()])
       .then(([cl, meta]) => {
@@ -170,18 +178,36 @@ export function TeacherJournalPage() {
       return [...prev.filter((t) => !(t.date === date && t.period === period)), merged]
     })
 
-  const handleSaveCell = (grade: number | null, reasonId: string | null) => {
+  const handleSaveCell = (
+    grade: number | null,
+    reasonId: string | null,
+    homework: number,
+    behavior: number,
+    mastery: number | null,
+  ) => {
     if (!editing) return
     const { student, date, period } = editing
-    if (grade == null && reasonId == null) {
+    if (grade == null && reasonId == null && homework === 0 && behavior === 0 && mastery == null) {
       setEntries((prev) =>
         prev.filter((e) => !(e.studentId === student.id && e.date === date && e.period === period)),
       )
       clearTeacherEntry(classId, subjectId, quarter, student.id, date, period)
     } else {
-      upsertLocal(student.id, date, period, { grade: grade ?? undefined, reasonId: reasonId ?? undefined })
+      upsertLocal(student.id, date, period, {
+        grade: grade ?? undefined,
+        reasonId: reasonId ?? undefined,
+        homework,
+        behavior,
+        mastery,
+      })
       markConductedLocal(date, period)
-      setTeacherEntry(classId, subjectId, quarter, student.id, date, period, { grade, reasonId })
+      setTeacherEntry(classId, subjectId, quarter, student.id, date, period, {
+        grade,
+        reasonId,
+        homework,
+        behavior,
+        mastery,
+      })
     }
     setEditing(null)
   }
@@ -368,13 +394,16 @@ export function TeacherJournalPage() {
                             <div className="text-[10px] text-slate-400">{c.period}-dars</div>
                             <button
                               type="button"
+                              disabled={isFuture(c.date)}
                               onClick={() => handleToggleConducted(c.date, c.period)}
-                              title={conductedFor(c.date, c.period) ? "Dars o'tildi" : "Dars o'tilmadi"}
+                              title={isFuture(c.date) ? "Dars hali o'tilmagan" : conductedFor(c.date, c.period) ? "Dars o'tildi" : "Dars o'tilmadi"}
                               className={cn(
                                 'mx-auto mt-1 flex h-5 w-5 items-center justify-center rounded transition-colors',
-                                conductedFor(c.date, c.period)
-                                  ? 'bg-emerald-100 text-emerald-600'
-                                  : 'bg-slate-100 text-slate-300 hover:text-slate-400',
+                                isFuture(c.date)
+                                  ? 'cursor-not-allowed bg-slate-50 text-slate-200'
+                                  : conductedFor(c.date, c.period)
+                                    ? 'bg-emerald-100 text-emerald-600'
+                                    : 'bg-slate-100 text-slate-300 hover:text-slate-400',
                               )}
                             >
                               <Check className="h-3.5 w-3.5" />
@@ -403,23 +432,27 @@ export function TeacherJournalPage() {
                             {columns.map((c) => {
                               const entry = entryFor(s.id, c.date, c.period)
                               const late = entry?.reasonId ? reasonIsLate(entry.reasonId) : false
+                              const future = isFuture(c.date)
                               return (
                                 <td key={`${c.date}-${c.period}`} className="px-1 py-1 text-center">
                                   <button
                                     type="button"
+                                    disabled={future}
                                     onClick={() => setEditing({ student: s, date: c.date, period: c.period })}
-                                    title={entry?.reasonId ? reasonShort(entry.reasonId) : undefined}
+                                    title={future ? "Dars hali o'tilmagan" : entry?.reasonId ? reasonShort(entry.reasonId) : undefined}
                                     className={cn(
                                       'relative flex h-9 w-11 items-center justify-center rounded-md border text-sm font-semibold transition-colors',
-                                      entry?.grade != null
-                                        ? late
-                                          ? 'border-amber-300 bg-amber-50'
-                                          : 'border-slate-200 bg-white'
-                                        : entry?.reasonId
+                                      future
+                                        ? 'cursor-not-allowed border-dashed border-slate-200 bg-slate-50/60 opacity-40'
+                                        : entry?.grade != null
                                           ? late
-                                            ? 'border-amber-200 bg-amber-50'
-                                            : 'border-red-200 bg-red-50'
-                                          : 'border-slate-200 bg-slate-50 hover:border-brand-300 hover:bg-brand-50',
+                                            ? 'border-amber-300 bg-amber-50'
+                                            : 'border-slate-200 bg-white'
+                                          : entry?.reasonId
+                                            ? late
+                                              ? 'border-amber-200 bg-amber-50'
+                                              : 'border-red-200 bg-red-50'
+                                            : 'border-slate-200 bg-slate-50 hover:border-brand-300 hover:bg-brand-50',
                                     )}
                                   >
                                     {entry?.grade != null ? (
@@ -436,6 +469,32 @@ export function TeacherJournalPage() {
                                     ) : null}
                                     {entry?.grade != null && late && (
                                       <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-amber-400" />
+                                    )}
+                                    {entry?.homework ? (
+                                      <span
+                                        title={entry.homework === 1 ? 'Uy vazifa: qildi' : 'Uy vazifa: qilmadi'}
+                                        className={cn(
+                                          'absolute -bottom-0.5 -left-0.5 h-2 w-2 rounded-sm',
+                                          entry.homework === 1 ? 'bg-emerald-500' : 'bg-red-500',
+                                        )}
+                                      />
+                                    ) : null}
+                                    {entry?.behavior ? (
+                                      <span
+                                        title={entry.behavior === 1 ? 'Xulq: yaxshi' : 'Xulq: yomon'}
+                                        className={cn(
+                                          'absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full',
+                                          entry.behavior === 1 ? 'bg-emerald-500' : 'bg-red-500',
+                                        )}
+                                      />
+                                    ) : null}
+                                    {entry?.mastery != null && (
+                                      <span
+                                        title={`O'zlashtirish: ${entry.mastery}%`}
+                                        className="absolute inset-x-0 bottom-0 text-center text-[8px] font-semibold leading-none text-brand-600"
+                                      >
+                                        {entry.mastery}%
+                                      </span>
                                     )}
                                   </button>
                                 </td>
@@ -508,12 +567,18 @@ export function TeacherJournalPage() {
                         </span>
                         <label
                           className={cn(
-                            'flex cursor-pointer items-center gap-1 rounded px-1.5 py-0.5 text-xs font-medium',
-                            conductedFor(c.date, c.period) ? 'text-emerald-600' : 'text-slate-400',
+                            'flex items-center gap-1 rounded px-1.5 py-0.5 text-xs font-medium',
+                            isFuture(c.date)
+                              ? 'cursor-not-allowed text-slate-300'
+                              : conductedFor(c.date, c.period)
+                                ? 'cursor-pointer text-emerald-600'
+                                : 'cursor-pointer text-slate-400',
                           )}
+                          title={isFuture(c.date) ? "Dars hali o'tilmagan" : undefined}
                         >
                           <input
                             type="checkbox"
+                            disabled={isFuture(c.date)}
                             checked={conductedFor(c.date, c.period)}
                             onChange={() => handleToggleConducted(c.date, c.period)}
                           />

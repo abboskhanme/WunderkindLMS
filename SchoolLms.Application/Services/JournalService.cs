@@ -52,7 +52,7 @@ public static class JournalService
         IAppDbContext db, string classId, string subjectId, int quarter) =>
         await db.JournalEntries
             .Where(e => e.ClassId == classId && e.SubjectId == subjectId && e.Quarter == quarter)
-            .Select(e => new JournalEntryDto(e.StudentId, e.Date, e.Period, e.Grade, e.ReasonId))
+            .Select(e => new JournalEntryDto(e.StudentId, e.Date, e.Period, e.Grade, e.ReasonId, e.Homework, e.Behavior, e.Mastery))
             .ToListAsync();
 
     /// <summary>
@@ -89,10 +89,13 @@ public static class JournalService
         }
         entry.Grade = req.Grade;
         entry.ReasonId = req.ReasonId;
+        entry.Homework = req.Homework;
+        entry.Behavior = req.Behavior;
+        entry.Mastery = req.Mastery;
         entry.SubGroup = subGroup;
 
-        // Baho yoki davomat kiritilsa — shu darsni (sana+dars+guruh) "o'tildi" deb avtomatik belgilaymiz.
-        if (req.Grade.HasValue || req.ReasonId is not null)
+        // Baho/davomat/uyga vazifa/xulq/o'zlashtirish kiritilsa — shu darsni "o'tildi" deb avtomatik belgilaymiz.
+        if (req.Grade.HasValue || req.ReasonId is not null || req.Homework != 0 || req.Behavior != 0 || req.Mastery.HasValue)
         {
             var note = await db.LessonNotes.FirstOrDefaultAsync(n =>
                 n.ClassId == req.ClassId && n.SubjectId == req.SubjectId &&

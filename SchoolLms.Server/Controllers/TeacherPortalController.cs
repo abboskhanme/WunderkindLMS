@@ -21,7 +21,7 @@ namespace SchoolLms.Server.Controllers;
 [Route("api/teacher")]
 public class TeacherPortalController(
     AppDbContext db, ChatService chat, IWebHostEnvironment env, ReferenceCache refCache,
-    ITenantContext tenant, FcmService fcm) : ControllerBase
+    FcmService fcm) : ControllerBase
 {
     /// <summary>Tokendagi foydalanuvchi id'si bo'yicha joriy o'qituvchini topadi.</summary>
     private async Task<Teacher?> Me()
@@ -65,7 +65,7 @@ public class TeacherPortalController(
     }
 
     [HttpGet("meta")]
-    public async Task<ActionResult<PortalMetaDto>> Meta() => await refCache.MetaAsync(tenant.TenantId ?? "");
+    public async Task<ActionResult<PortalMetaDto>> Meta() => await refCache.MetaAsync();
 
     /// <summary>Joriy maktab nomi — ilova brendingi/sarlavhasi uchun.</summary>
     [HttpGet("school")]
@@ -399,6 +399,9 @@ public class TeacherPortalController(
     public async Task<IActionResult> SetEntry(SetJournalEntryRequest req)
     {
         if (!await Authorized(req.ClassId, req.SubjectId)) return Forbid();
+        // Hali o'tilmagan (sanasi kelmagan) darsga baho/jurnal kiritib bo'lmaydi.
+        if (string.CompareOrdinal(req.Date, AppClock.Now.ToString("yyyy-MM-dd")) > 0)
+            return BadRequest(new { message = "Dars hali o'tilmagan — kelajakdagi sanaga baho qo'yib bo'lmaydi" });
         await JournalService.SetEntryAsync(db, req, fcm);
         return NoContent();
     }
@@ -446,6 +449,110 @@ public class TeacherPortalController(
         if (q is null || !q.GradesOpen)
             return StatusCode(403, new { message = "Bu chorak uchun baho kiritish yopiq — administrator ochishi kerak." });
         await JournalService.SetQuarterGradeAsync(db, req);
+        return NoContent();
+    }
+
+    // ---------- O'quvchilarni baholash (fan o'qituvchisi o'z fanidan) ----------
+
+    /// <summary>Baholash turlari (admin belgilaydi; o'qituvchi shular bo'yicha o'z fanidan baho qo'yadi).</summary>
+    [HttpGet("evaluation/types")]
+    public async Task<ActionResult<IEnumerable<EvaluationTypeDto>>> EvalTypes() =>
+        await db.EvaluationTypes.OrderBy(t => t.CreatedAt)
+            .Select(t => new EvaluationTypeDto(t.Id, t.Name, t.Description)).ToListAsync();
+
+    /// <summary>
+    /// O'qituvchining shu sinf+fan bo'yicha baholash jadvali (tanlangan oy): o'quvchilar × baholash
+    /// turlari bo'yicha 1-5 baho. Faqat o'qituvchi shu sinfda shu fanni o'qitsa (aks holda 403).
+    /// </summary>
+    [HttpGet("evaluation/board")]
+    public async Task<ActionResult<EvaluationBoardDto>> EvalBoard(
+        [FromQuery] string classId, [FromQuery] string subjectId, [FromQuery] string? month)
+    {
+        var t = await Me();
+        if (t is null) return NotFound();
+        if (!await Teaches(t.Id, classId, subjectId)) return Forbid();
+        var cls = await db.Classes.FindAsync(classId);
+        if (cls is null) return NotFound();
+
+        var current = AppClock.Now.ToString("yyyy-MM");
+        var gradeMonths = await db.EvaluationGrades
+            .Where(g => g.SubjectId == subjectId && g.Month.Length >= 7)
+            .Select(g => g.Month).Distinct().ToListAsync();
+        var months = gradeMonths.Append(current).Distinct()
+            .OrderByDescending(x => x, StringComparer.Ordinal).ToList();
+        if (string.IsNullOrEmpty(month) || month.Length < 7 || !months.Contains(month))
+            month = months.FirstOrDefault() ?? current;
+
+        var types = await db.EvaluationTypes.OrderBy(x => x.CreatedAt)
+            .Select(x => new EvaluationTypeDto(x.Id, x.Name, x.Description)).ToListAsync();
+        var students = await db.Students.Where(s => s.ClassName == cls.Name && !s.IsArchived)
+            .OrderBy(s => s.FullName).Select(s => new { s.Id, s.FullName, s.ClassName }).ToListAsync();
+        var gradesByStudent = (await db.EvaluationGrades
+                .Where(g => g.SubjectId == subjectId && g.Month == month).ToListAsync())
+            .GroupBy(g => g.StudentId).ToDictionary(g => g.Key, g => g.ToList());
+
+        var rows = students.Select(s =>
+        {
+            var dict = (gradesByStudent.GetValueOrDefault(s.Id) ?? [])
+                .GroupBy(g => g.EvaluationTypeId).ToDictionary(g => g.Key, g => g.First().Score);
+            var avg = dict.Count > 0 ? Math.Round(dict.Values.Average(), 1) : 0;
+            return new EvaluationRowDto(s.Id, s.FullName, s.ClassName, 0, 0,
+                Array.Empty<AttendanceReasonCountDto>(), dict, avg);
+        }).ToList();
+
+        return new EvaluationBoardDto(months, month, 0, types, rows, subjectId, Array.Empty<SubjectDto>());
+    }
+
+    /// <summary>
+    /// O'qituvchi o'z fanidan bitta o'quvchiga bitta tur bo'yicha bir oyda baho qo'yadi (1-5).
+    /// Score bo'sh/1-5 dan tashqari = o'sha bahoni tozalash. So'rovda <c>ClassId</c> va <c>SubjectId</c>
+    /// majburiy (egalik tekshiruvi); o'quvchi shu sinfga tegishli bo'lishi shart.
+    /// </summary>
+    [HttpPost("evaluation/grade")]
+    public async Task<IActionResult> EvalGrade(SetEvaluationGradeRequest req)
+    {
+        var t = await Me();
+        if (t is null) return NotFound();
+        if (string.IsNullOrWhiteSpace(req.ClassId) || string.IsNullOrWhiteSpace(req.SubjectId))
+            return BadRequest(new { message = "Sinf va fan ko'rsatilishi shart" });
+        if (string.IsNullOrEmpty(req.Month) || req.Month.Length < 7)
+            return BadRequest(new { message = "Oy tanlanmagan" });
+        if (!await Teaches(t.Id, req.ClassId!, req.SubjectId!)) return Forbid();
+
+        var cls = await db.Classes.FindAsync(req.ClassId);
+        var student = await db.Students.FindAsync(req.StudentId);
+        if (cls is null || student is null || student.ClassName != cls.Name)
+            return BadRequest(new { message = "O'quvchi bu sinfga tegishli emas" });
+
+        var subj = req.SubjectId!;
+        var existing = await db.EvaluationGrades.FirstOrDefaultAsync(g =>
+            g.StudentId == req.StudentId && g.EvaluationTypeId == req.TypeId
+            && g.Month == req.Month && g.SubjectId == subj);
+
+        if (req.Score is null or < 1 or > 5)
+        {
+            if (existing is not null) db.EvaluationGrades.Remove(existing);
+        }
+        else if (existing is null)
+        {
+            db.EvaluationGrades.Add(new EvaluationGrade
+            {
+                StudentId = req.StudentId,
+                EvaluationTypeId = req.TypeId,
+                SubjectId = subj,
+                Month = req.Month,
+                Week = req.Week,
+                Score = req.Score.Value,
+                UpdatedAt = AppClock.Now.ToString("o"),
+            });
+        }
+        else
+        {
+            existing.Score = req.Score.Value;
+            existing.Week = req.Week;
+            existing.UpdatedAt = AppClock.Now.ToString("o");
+        }
+        await db.SaveChangesAsync();
         return NoContent();
     }
 

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useParams, Link } from 'react-router-dom'
+import { useParams, useNavigate, Link } from 'react-router-dom'
 import { ArrowLeft, Users, Star, CalendarCheck } from 'lucide-react'
 import type { SchoolClass } from '@/types'
 import { getClasses } from '@/api/services/classes'
@@ -28,6 +28,7 @@ function attColor(a: number): string {
 
 export function ClassDetailPage() {
   const { id = '' } = useParams()
+  const navigate = useNavigate()
   const [cls, setCls] = useState<SchoolClass | null>(null)
   const [data, setData] = useState<ClassPerformanceData | null>(null)
   const [loading, setLoading] = useState(true)
@@ -116,7 +117,12 @@ export function ClassDetailPage() {
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {rows.map((r, i) => (
-                    <tr key={r.student.id} className="hover:bg-slate-50/60">
+                    <tr
+                      key={r.student.id}
+                      onClick={() => navigate(`/admin/students/${r.student.id}`)}
+                      className="cursor-pointer hover:bg-slate-50/60"
+                      title="O'quvchining baholari dinamikasini ko'rish"
+                    >
                       <td className="px-4 py-3 text-slate-400">{i + 1}</td>
                       <td className="px-4 py-3 font-medium text-slate-800">
                         {r.student.fullName}

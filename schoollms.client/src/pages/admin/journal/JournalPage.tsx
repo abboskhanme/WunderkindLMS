@@ -220,10 +220,16 @@ export function JournalPage() {
     })
 
   // Baho va davomat sababini birga saqlaymiz (ikkalasi ham bo'sh bo'lsa — katakni tozalaymiz).
-  const handleSaveCell = (grade: number | null, reasonId: string | null) => {
+  const handleSaveCell = (
+    grade: number | null,
+    reasonId: string | null,
+    homework: number,
+    behavior: number,
+    mastery: number | null,
+  ) => {
     if (!editing) return
     const { student, date, period } = editing
-    if (grade == null && reasonId == null) {
+    if (grade == null && reasonId == null && homework === 0 && behavior === 0 && mastery == null) {
       setEntries((prev) =>
         prev.filter((e) => !(e.studentId === student.id && e.date === date && e.period === period)),
       )
@@ -232,10 +238,19 @@ export function JournalPage() {
       upsertLocal(student.id, date, period, {
         grade: grade ?? undefined,
         reasonId: reasonId ?? undefined,
+        homework,
+        behavior,
+        mastery,
       })
       // O'quvchining guruhi mos darsni "o'tildi" deb belgilash uchun ishlatiladi.
       markConductedLocal(date, period, student.subGroup ?? 0)
-      setJournalEntry(classId, subjectId, quarter, student.id, date, period, { grade, reasonId })
+      setJournalEntry(classId, subjectId, quarter, student.id, date, period, {
+        grade,
+        reasonId,
+        homework,
+        behavior,
+        mastery,
+      })
     }
     setEditing(null)
   }
@@ -567,6 +582,35 @@ export function JournalPage() {
                                         {/* Baho + kech kelgan bo'lsa — kichik sariq belgi */}
                                         {entry?.grade != null && late && (
                                           <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-amber-400" />
+                                        )}
+                                        {/* Uyga vazifa: chap-past (yashil=qildi, qizil=qilmadi) */}
+                                        {entry?.homework ? (
+                                          <span
+                                            title={entry.homework === 1 ? 'Uy vazifa: qildi' : 'Uy vazifa: qilmadi'}
+                                            className={cn(
+                                              'absolute -bottom-0.5 -left-0.5 h-2 w-2 rounded-sm',
+                                              entry.homework === 1 ? 'bg-emerald-500' : 'bg-red-500',
+                                            )}
+                                          />
+                                        ) : null}
+                                        {/* Xulq: o'ng-past (yashil=yaxshi, qizil=yomon) */}
+                                        {entry?.behavior ? (
+                                          <span
+                                            title={entry.behavior === 1 ? 'Xulq: yaxshi' : 'Xulq: yomon'}
+                                            className={cn(
+                                              'absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full',
+                                              entry.behavior === 1 ? 'bg-emerald-500' : 'bg-red-500',
+                                            )}
+                                          />
+                                        ) : null}
+                                        {/* O'zlashtirish foizi — katak ichida pastda */}
+                                        {entry?.mastery != null && (
+                                          <span
+                                            title={`O'zlashtirish: ${entry.mastery}%`}
+                                            className="absolute inset-x-0 bottom-0 text-center text-[8px] font-semibold leading-none text-brand-600"
+                                          >
+                                            {entry.mastery}%
+                                          </span>
                                         )}
                                       </button>
                                     )

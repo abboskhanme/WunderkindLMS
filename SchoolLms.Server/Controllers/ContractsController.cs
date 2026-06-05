@@ -105,6 +105,9 @@ public class ContractsController(AppDbContext db, ContractService contracts, Tel
         {
             var subjects = await db.Subjects.ToDictionaryAsync(s => s.Id, s => s.Name);
             var teachers = await db.Teachers.ToListAsync();
+            // Oylik — dars jadvali + toifa narxidan avtomatik hisoblanadi.
+            var meta = await db.SchoolMeta.FirstOrDefaultAsync();
+            var weekly = await TeacherSalaryCalc.WeeklyLessonsAsync(db);
             foreach (var key in keys)
             {
                 var t = teachers.FirstOrDefault(x => x.Id == key);
@@ -114,7 +117,8 @@ public class ContractsController(AppDbContext db, ContractService contracts, Tel
                 if (chatIds.Count == 0) { results.Add(new(key, false, null, "Telegramda ro'yxatdan o'tmagan")); continue; }
 
                 number++;
-                var filled = contracts.FillTemplate(bytes, StaffTokens(t, subjects, number, today));
+                var monthly = TeacherSalaryCalc.Monthly(weekly.GetValueOrDefault(t.Id), t.Category, meta);
+                var filled = contracts.FillTemplate(bytes, StaffTokens(t, subjects, number, today, monthly));
                 var ok = await DeliverAsync(chatIds, filled, number);
                 db.Contracts.Add(new Contract
                 {
@@ -225,7 +229,7 @@ public class ContractsController(AppDbContext db, ContractService contracts, Tel
     };
 
     private static Dictionary<string, string> StaffTokens(
-        Teacher t, Dictionary<string, string> subjects, int number, string today) => new()
+        Teacher t, Dictionary<string, string> subjects, int number, string today, decimal monthlySalary) => new()
         {
             ["@fish"] = t.FullName,
             ["@telefon"] = t.Phone,
@@ -234,7 +238,7 @@ public class ContractsController(AppDbContext db, ContractService contracts, Tel
             t.SubjectIds.Select(id => subjects.GetValueOrDefault(id, "")).Where(n => n.Length > 0)),
             ["@tugilgan_kun"] = FormatDate(t.BirthDate),
             ["@manzil"] = t.Address,
-            ["@oylik"] = t.Salary > 0 ? AuditService.Money(t.Salary) : "",
+            ["@oylik"] = monthlySalary > 0 ? AuditService.Money(monthlySalary) : "",
             ["@sana"] = today,
             ["@raqam"] = number.ToString(),
         };

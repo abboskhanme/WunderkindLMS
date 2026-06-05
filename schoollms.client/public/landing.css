@@ -445,20 +445,13 @@ section { position:relative; }
   .nav-links { display:none; }
   .nav-burger { display:flex; }
   .nav-cta .btn--ghost { display:none; }
-  .hero-grid { grid-template-columns:1fr; gap:20px; }
-  .hero-phone { margin-top:20px; }
+  .hero-grid { grid-template-columns:1fr; gap:24px; }
+  .hero-phone { margin-top:8px; }
   .show-grid { grid-template-columns:1fr; gap:40px; }
   .show-phones { min-height:auto; }
   .role-grid, .feat-grid, .testi-grid, .price-grid, .stats-grid { grid-template-columns:1fr 1fr; }
   .foot-grid { grid-template-columns:1fr 1fr; gap:32px; }
-}
-@media (max-width:620px) {
-  .wrap { padding:0 18px; }
-  .role-grid, .feat-grid, .testi-grid, .price-grid, .stats-grid, .foot-grid { grid-template-columns:1fr; }
-  .stats-grid { gap:32px; }
-  .cta-box { padding:44px 24px; }
-  .hero-actions .btn, .cta-actions .btn { flex:1; }
-  .float-card { display:none; }
+  .roles, .features, .testi, .faq, .pricing, .showcase { padding:74px 0; }
 }
 
 /* ── Mobil menyu (burger bosilganda nav-links pastga ochiladi) ── */
@@ -473,13 +466,50 @@ section { position:relative; }
   .nav.menu-open .nav-burger { background:var(--bg-soft); }
 }
 
+/* ── Planshet / katta telefon ── */
+@media (max-width:620px) {
+  .wrap { padding:0 18px; }
+  .role-grid, .feat-grid, .testi-grid, .price-grid, .foot-grid { grid-template-columns:1fr; }
+  .stats-grid { grid-template-columns:1fr 1fr; gap:30px 18px; }
+  .cta-box { padding:44px 22px; border-radius:26px; }
+  .sec-head { margin-bottom:38px; }
+  .float-card { display:none; }
+
+  /* Knopkalar — telefonlarda to'liq enli va ustma-ust (toshib ketmaydi) */
+  .hero-actions, .cta-actions { flex-direction:column; align-items:stretch; width:100%; }
+  .hero-actions .btn, .cta-actions .btn { width:100%; }
+  .hero-lead, .sub-sec, .cta-box p { max-width:none; }
+
+  /* Showcase'da orqadagi telefon yashiriladi — bittasi to'liq ko'rinadi */
+  .show-phones .phone.sm { display:none; }
+  .show-phones .phone { margin:0 !important; transform:none !important; }
+}
+
+/* ── Telefon maketi kichik ekranga moslashadi ── */
+@media (max-width:520px) {
+  .hero-phone .phone, .show-phones .phone { width:min(300px,84vw); }
+}
+
 /* ── Kichik telefonlar ── */
 @media (max-width:480px) {
-  .wrap { padding:0 14px; }
-  .nav-inner { height:64px; }
-  .nav.menu-open .nav-links { top:64px; }
+  .wrap { padding:0 16px; }
+  /* Nav ixcham — brand + Demo tugmasi + burger eng kichik ekranda ham sig'adi */
+  .nav-inner { height:62px; gap:8px; }
+  .nav.menu-open .nav-links { top:62px; }
+  .brand { font-size:16px; gap:9px; }
+  .brand-mark { width:36px; height:36px; border-radius:11px; }
   .brand small { display:none; }
-  .hero { padding:34px 0 26px; }
-  .hero-actions { flex-direction:column; }
-  .hero-actions .btn { width:100%; }
+  .nav-cta { gap:8px; }
+  .nav-cta .btn--sm { height:40px; padding:0 13px; font-size:13.5px; }
+  .nav-burger { width:40px; height:40px; }
+  .hero { padding:30px 0 22px; }
+  .roles, .features, .testi, .faq, .pricing, .showcase { padding:56px 0; }
+  .btn--lg { height:54px; font-size:15.5px; padding:0 22px; }
+  .cta { padding:30px 0 64px; }
+}
+
+/* ── Juda kichik (≤360px) — Demo tugmasidagi matn qisqaradi ── */
+@media (max-width:360px) {
+  .nav-cta .btn--sm { padding:0 11px; }
+  .hero h1 { font-size:33px; }
 }

@@ -1,27 +1,24 @@
-using System.Reflection;
 using Microsoft.EntityFrameworkCore;
 using SchoolLms.Application.Abstractions;
 using SchoolLms.Domain;
-using SchoolLms.Domain.Platform;
 
 namespace SchoolLms.Infrastructure.Data;
 
 /// <summary>
-/// Yagona (shared) baza: barcha maktablar ma'lumotlari + Control Plane (Owners/Tenants) shu yerda.
-/// Har bir maktab qatori shadow <c>TenantId</c> ustuni bilan belgilanadi; global query filter
-/// (<see cref="_tenant"/>'dagi joriy TenantId bo'yicha) avtomatik faqat o'sha maktab qatorlarini
-/// ko'rsatadi. <c>SaveChanges</c> yangi qatorlarga TenantId qo'yadi va boshqa maktab qatorini
-/// o'zgartirishni bloklaydi.
+/// Maktab ma'lumotlar bazasi (bitta maktab — multi-tenant emas).
 /// </summary>
-public class AppDbContext(DbContextOptions<AppDbContext> options, ITenantContext tenant)
+public class AppDbContext(DbContextOptions<AppDbContext> options)
     : DbContext(options), IAppDbContext
 {
-    private readonly ITenantContext _tenant = tenant;
-
-    // Maktab ma'lumotlari (har biri TenantId bilan filtrlanadi)
+    // Maktab ma'lumotlari
     public DbSet<AppUser> Users => Set<AppUser>();
     public DbSet<Student> Students => Set<Student>();
     public DbSet<Teacher> Teachers => Set<Teacher>();
+    public DbSet<TeacherAttendance> TeacherAttendances => Set<TeacherAttendance>();
+    public DbSet<TurnstileEvent> TurnstileEvents => Set<TurnstileEvent>();
+    public DbSet<Bus> Buses => Set<Bus>();
+    public DbSet<BusLocation> BusLocations => Set<BusLocation>();
+    public DbSet<Camera> Cameras => Set<Camera>();
     public DbSet<Subject> Subjects => Set<Subject>();
     public DbSet<SchoolClass> Classes => Set<SchoolClass>();
     public DbSet<Lead> Leads => Set<Lead>();
@@ -38,6 +35,8 @@ public class AppDbContext(DbContextOptions<AppDbContext> options, ITenantContext
     public DbSet<Holiday> Holidays => Set<Holiday>();
     public DbSet<DisciplineReason> DisciplineReasons => Set<DisciplineReason>();
     public DbSet<DisciplinePoint> DisciplinePoints => Set<DisciplinePoint>();
+    public DbSet<EvaluationType> EvaluationTypes => Set<EvaluationType>();
+    public DbSet<EvaluationGrade> EvaluationGrades => Set<EvaluationGrade>();
     public DbSet<FinanceTransaction> FinanceTransactions => Set<FinanceTransaction>();
     public DbSet<MonthlyCharge> MonthlyCharges => Set<MonthlyCharge>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
@@ -66,18 +65,10 @@ public class AppDbContext(DbContextOptions<AppDbContext> options, ITenantContext
     public DbSet<LmsMaterial> LmsMaterials => Set<LmsMaterial>();
     public DbSet<LmsProgress> LmsProgresses => Set<LmsProgress>();
 
-    // Control Plane (tenantga BOG'LIQ EMAS — filtrlanmaydi)
-    public DbSet<PlatformOwner> Owners => Set<PlatformOwner>();
-    public DbSet<Tenant> Tenants => Set<Tenant>();
-
-    /// <summary>Tenantga bog'liq bo'lmagan (filtrlanmaydigan) entity'lar.</summary>
-    private static bool IsPlatformEntity(Type t) => t == typeof(PlatformOwner) || t == typeof(Tenant);
-
     protected override void OnModelCreating(ModelBuilder b)
     {
-        // Login (Email) BUTUN baza bo'ylab unikal (AccountFactory shu invariantni dastur darajasida
-        // ta'minlaydi — maktab kodisiz login uchun). DB darajasidagi unique indeks TOCTOU poyga holatida
-        // ham dublikatni bloklaydi (parallel ro'yxatdan o'tish login'ni buzmasin).
+        // Login (Email) unikal — DB darajasidagi unique indeks TOCTOU poyga holatida ham dublikatni
+        // bloklaydi (parallel ro'yxatdan o'tish login'ni buzmasin).
         b.Entity<AppUser>().HasIndex(u => u.Email).IsUnique();
 
         // Pul maydonlari uchun aniqlik (SQL Server decimal(18,2))
@@ -157,70 +148,5 @@ public class AppDbContext(DbContextOptions<AppDbContext> options, ITenantContext
             .HasIndex(p => p.StudentId);
         b.Entity<LmsTopic>()
             .HasIndex(t => new { t.SubjectId, t.Order });
-
-        // Control Plane jadvallari
-        b.Entity<PlatformOwner>().HasIndex(o => o.Email).IsUnique();
-        b.Entity<Tenant>().HasIndex(t => t.Slug).IsUnique();
-        b.Entity<Tenant>().HasIndex(t => t.Status);
-        b.Entity<Tenant>().Property(t => t.SubscriptionPrice).HasPrecision(18, 2);
-
-        // ----- Multi-tenant: har maktab entity'siga shadow TenantId + global filter -----
-        var apply = typeof(AppDbContext).GetMethod(nameof(ApplyTenantFilter),
-            BindingFlags.Instance | BindingFlags.NonPublic)!;
-        foreach (var et in b.Model.GetEntityTypes().ToList())
-        {
-            var clr = et.ClrType;
-            if (IsPlatformEntity(clr) || et.IsOwned() || et.BaseType != null) continue;
-            apply.MakeGenericMethod(clr).Invoke(this, [b]);
-        }
-    }
-
-    /// <summary>Bir entity turiga shadow <c>TenantId</c> ustuni, indeks va global filter qo'shadi.</summary>
-    private void ApplyTenantFilter<TEntity>(ModelBuilder b) where TEntity : class
-    {
-        b.Entity<TEntity>().Property<string>("TenantId").HasMaxLength(64).IsRequired().HasDefaultValue("");
-        b.Entity<TEntity>().HasIndex("TenantId");
-        // _tenant.TenantId query bajarilganda o'qiladi (parametr) — middleware o'rnatgan joriy maktab.
-        b.Entity<TEntity>().HasQueryFilter(e => EF.Property<string>(e, "TenantId") == _tenant.TenantId);
-    }
-
-    public override int SaveChanges()
-    {
-        TagTenant();
-        return base.SaveChanges();
-    }
-
-    public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
-    {
-        TagTenant();
-        return base.SaveChangesAsync(cancellationToken);
-    }
-
-    /// <summary>Yangi qatorlarga joriy TenantId qo'yadi; boshqa maktab qatorini o'zgartirishni bloklaydi.</summary>
-    private void TagTenant()
-    {
-        var tid = _tenant.TenantId;
-        foreach (var entry in ChangeTracker.Entries())
-        {
-            if (IsPlatformEntity(entry.Entity.GetType())) continue;
-            if (entry.Metadata.FindProperty("TenantId") is null) continue;
-
-            switch (entry.State)
-            {
-                case EntityState.Added:
-                    // Provisioning kabi hollarda chaqiruvchi TenantId'ni oldindan qo'ygan bo'lishi mumkin.
-                    var cur = (string?)entry.Property("TenantId").CurrentValue;
-                    if (string.IsNullOrEmpty(cur) && !string.IsNullOrEmpty(tid))
-                        entry.Property("TenantId").CurrentValue = tid;
-                    break;
-                case EntityState.Modified:
-                case EntityState.Deleted:
-                    var owner = (string?)entry.Property("TenantId").CurrentValue;
-                    if (!string.IsNullOrEmpty(tid) && owner != tid)
-                        throw new InvalidOperationException(
-                            "Tenant chegarasi buzildi: boshqa maktab qatorini o'zgartirib bo'lmaydi.");
-                    break;
-            }
-        }
     }
 }

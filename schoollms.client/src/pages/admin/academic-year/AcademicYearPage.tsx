@@ -143,20 +143,20 @@ export function AcademicYearPage() {
               <Toggle
                 checked={clearGrades}
                 onChange={setClearGrades}
-                label="Baholar va jurnalni tozalash"
-                hint="Barcha baholar va davomat yozuvlari o'chiriladi (arxivda saqlanadi)."
+                label="Baho, jurnal, topshiriq va faoliyatni tozalash"
+                hint="Baho/davomat, topshiriqlar, intizomiy ball, oylik baholash (feedback), LMS o'zlashtirish, sinf chati, e'lon va taklif/shikoyatlar o'chiriladi (arxivda saqlanadi)."
               />
               <Toggle
                 checked={clearSchedule}
                 onChange={setClearSchedule}
                 label="Dars jadvalini tozalash"
-                hint="Haftalik jadval biriktirishlari o'chiriladi (jadval shablonlari qoladi)."
+                hint="Jadval shablonlari va haftalik biriktirishlar to'liq o'chiriladi — yangi yil yangi jadval bilan boshlanadi."
               />
               <Toggle
                 checked={clearQuarters}
                 onChange={setClearQuarters}
-                label="Choraklar sanasini tozalash"
-                hint="Chorak sanalari tozalanadi — yangi yil sanalarini kiritasiz."
+                label="Choraklar va bayram kunlari sanasini tozalash"
+                hint="Chorak va bayram kunlari sanalari tozalanadi — yangi yil sanalarini kiritasiz."
               />
               <Toggle
                 checked={clearFinance}
@@ -253,10 +253,11 @@ export function AcademicYearPage() {
             <li>
               <b>{info?.currentYear || '—'}</b> → <b>{newYear}</b>
             </li>
-            {promoteStudents && <li>O'quvchilar keyingi sinfga ko'tariladi</li>}
-            {clearGrades && <li>Baholar/jurnal tozalanadi</li>}
-            {clearSchedule && <li>Dars jadvali tozalanadi</li>}
-            {clearQuarters && <li>Choraklar sanasi tozalanadi</li>}
+            {promoteStudents && <li>Sinflar va o'quvchilar keyingi sinfga ko'tariladi</li>}
+            <li>O'qituvchilar saqlanadi</li>
+            {clearGrades && <li>Baho, jurnal, topshiriq, intizom, feedback, chat, e'lon tozalanadi</li>}
+            {clearSchedule && <li>Dars jadvali (shablonlar) tozalanadi</li>}
+            {clearQuarters && <li>Choraklar va bayram kunlari sanasi tozalanadi</li>}
             {clearFinance && <li className="text-red-600">Moliya/balanslar tozalanadi</li>}
           </ul>
           {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-red-600">{error}</p>}

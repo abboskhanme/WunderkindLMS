@@ -5,7 +5,7 @@ import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
 import { Input, Select } from '@/components/ui/Input'
 import { PhotoUpload } from '@/components/ui/PhotoUpload'
-import { genderOptions, teacherPermissions } from '@/config/constants'
+import { genderOptions, teacherPermissions, teacherCategories } from '@/config/constants'
 import { cn, randomPassword } from '@/lib/utils'
 
 interface Props {
@@ -26,7 +26,9 @@ const empty: TeacherPayload = {
   homeroomClass: '',
   subjectIds: [],
   salary: 0,
+  category: '',
   salaryStartMonth: '',
+  salaryStartDate: '',
   photoUrl: null,
   // Yangi o'qituvchiga standart — barcha bo'limlar ochiq.
   permissions: teacherPermissions.map((p) => p.key),
@@ -49,7 +51,9 @@ export function TeacherFormModal({ open, onClose, onSubmit, initial, subjects, c
             homeroomClass: initial.homeroomClass,
             subjectIds: [...initial.subjectIds],
             salary: initial.salary,
+            category: initial.category ?? '',
             salaryStartMonth: initial.salaryStartMonth ?? '',
+            salaryStartDate: initial.salaryStartDate ?? '',
             photoUrl: initial.photoUrl ?? null,
             permissions: [...(initial.permissions ?? [])],
           }
@@ -156,24 +160,30 @@ export function TeacherFormModal({ open, onClose, onSubmit, initial, subjects, c
               </option>
             ))}
           </Select>
-          <Input
-            label="Oylik ish haqi (so'm)"
-            type="number"
-            min={0}
-            step={100000}
-            value={form.salary}
-            onChange={(e) => update('salary', Number(e.target.value))}
-          />
+          <Select
+            label="Toifa"
+            value={form.category ?? ''}
+            onChange={(e) => update('category', e.target.value)}
+          >
+            <option value="">Tanlanmagan</option>
+            {teacherCategories.map((c) => (
+              <option key={c.value} value={c.value}>
+                {c.label}
+              </option>
+            ))}
+          </Select>
         </div>
         <div>
           <Input
-            label="Oylik qaysi oydan hisoblansin"
-            type="month"
-            value={form.salaryStartMonth}
-            onChange={(e) => update('salaryStartMonth', e.target.value)}
+            label="Maosh qaysi kundan hisoblansin"
+            type="date"
+            value={form.salaryStartDate ?? ''}
+            onChange={(e) => update('salaryStartDate', e.target.value)}
           />
           <p className="mt-1 text-xs text-slate-400">
-            Bo'sh qoldirilsa — hisobot davri boshidan. Ishga kirgan oydan oldin maktab qarzdor bo'lmaydi.
+            Oylik maosh — <b>dars jadvali</b> va toifaning bir soat narxidan <b>avtomatik</b> hisoblanadi
+            ("O'qituvchilar → Oylik hisoblash"). O'qituvchi <b>oy o'rtasida</b> kelsa — shu kunni belgilang,
+            birinchi oy o'sha kundan oy oxirigacha qisman hisoblanadi. Bo'sh = o'quv yili boshidan.
           </p>
         </div>
 
