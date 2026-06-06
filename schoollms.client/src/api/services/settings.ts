@@ -111,27 +111,43 @@ export async function saveTelegramSettings(cfg: {
 /* ---------- Push (Firebase / FCM) sozlamasi ---------- */
 
 export interface FirebaseConfig {
-  /** Firebase service account (JSON, to'liq) */
+  /** Firebase service account (JSON, to'liq) — push YUBORISH uchun */
   serviceAccountJson: string
-  /** JSON to'g'ri kiritilgan (push yuborishga tayyor) */
+  /** Service account to'g'ri kiritilgan (push yuborishga tayyor) */
   configured: boolean
+  /** Firebase WEB app config (JSON) — web (PWA) push OLISH uchun */
+  webConfigJson: string
+  /** Web Push VAPID ochiq kaliti */
+  vapidKey: string
+  /** Web push to'liq sozlangan (service account + web config + VAPID) */
+  webConfigured: boolean
+}
+
+export interface SaveFirebaseInput {
+  serviceAccountJson: string
+  webConfigJson: string
+  vapidKey: string
 }
 
 export async function getFirebaseSettings(): Promise<FirebaseConfig> {
   if (USE_MOCK) {
     await delay()
-    return { serviceAccountJson: '', configured: false }
+    return { serviceAccountJson: '', configured: false, webConfigJson: '', vapidKey: '', webConfigured: false }
   }
   const { data } = await api.get<FirebaseConfig>('/admin/settings/firebase')
   return data
 }
 
-export async function saveFirebaseSettings(serviceAccountJson: string): Promise<FirebaseConfig> {
+export async function saveFirebaseSettings(input: SaveFirebaseInput): Promise<FirebaseConfig> {
   if (USE_MOCK) {
     await delay(250)
-    return { serviceAccountJson, configured: !!serviceAccountJson.trim() }
+    return {
+      ...input,
+      configured: !!input.serviceAccountJson.trim(),
+      webConfigured: !!(input.serviceAccountJson.trim() && input.webConfigJson.trim() && input.vapidKey.trim()),
+    }
   }
-  const { data } = await api.put<FirebaseConfig>('/admin/settings/firebase', { serviceAccountJson })
+  const { data } = await api.put<FirebaseConfig>('/admin/settings/firebase', input)
   return data
 }
 

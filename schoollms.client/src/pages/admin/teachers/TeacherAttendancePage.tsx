@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
+import type { HubConnection } from '@microsoft/signalr'
 import { RefreshCw, Wifi, WifiOff, CheckCircle2, Search } from 'lucide-react'
 import {
   getTeacherAttendance,
@@ -10,6 +11,7 @@ import {
   type TeacherAttendanceBoard,
   type AttendanceDashboard,
 } from '@/api/services/teacherAttendance'
+import { connectLiveTopic } from '@/api/services/live'
 import { cn } from '@/lib/utils'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
@@ -77,6 +79,17 @@ function DashboardSection() {
   }, [])
 
   useEffect(() => load(date), [date, load])
+
+  // Real-time: turniketdan yangi o'tish kelganda joriy kun dashboard'ini jonli yangilaymiz (SignalR).
+  const reloadRef = useRef<() => void>(() => {})
+  reloadRef.current = () => load(date)
+  useEffect(() => {
+    let conn: HubConnection | null = null
+    connectLiveTopic('turnstile', { turnstileChanged: () => reloadRef.current() })
+      .then((c) => { conn = c })
+      .catch(() => {})
+    return () => { conn?.stop() }
+  }, [])
 
   const onSync = async () => {
     setSyncing(true)

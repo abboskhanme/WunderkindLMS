@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react'
-import { NotebookText, Check } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { NotebookText, Check, Download, Upload } from 'lucide-react'
 import type {
   AbsenceReason,
   JournalColumn,
@@ -25,12 +25,17 @@ import {
   setLessonNote,
   getQuarterGrades,
   setQuarterGrade,
+  downloadTopicsTemplate,
+  importTopics,
+  type TopicImportResult,
 } from '@/api/services/journal'
 import { quarters } from '@/config/constants'
 import { getCurrentQuarterAndWeek } from '@/lib/weeks'
 import { formatDate, cn } from '@/lib/utils'
 import { Card } from '@/components/ui/Card'
 import { Loader } from '@/components/ui/Loader'
+import { Button } from '@/components/ui/Button'
+import { Modal } from '@/components/ui/Modal'
 import { JournalCellModal } from './JournalCellModal'
 import { QuarterGradeModal } from './QuarterGradeModal'
 
@@ -81,6 +86,35 @@ export function JournalPage() {
     null,
   )
   const [editingQuarter, setEditingQuarter] = useState<Student | null>(null)
+
+  // Mavzularni Excel'dan yuklash.
+  const fileRef = useRef<HTMLInputElement>(null)
+  const [importing, setImporting] = useState(false)
+  const [importResult, setImportResult] = useState<TopicImportResult | null>(null)
+
+  const onDownloadTemplate = async () => {
+    if (!classId || !subjectId) return
+    try {
+      await downloadTopicsTemplate(classId, subjectId, quarter)
+    } catch {
+      alert("Shablonni yuklab bo'lmadi")
+    }
+  }
+  const onImportFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0]
+    e.target.value = ''
+    if (!f || !classId || !subjectId) return
+    setImporting(true)
+    try {
+      const res = await importTopics(f, classId, subjectId, quarter)
+      setImportResult(res)
+      setTopics(await getLessonNotes(classId, subjectId, quarter))
+    } catch (err) {
+      alert((err as { response?: { data?: { message?: string } } })?.response?.data?.message ?? 'Import xatosi')
+    } finally {
+      setImporting(false)
+    }
+  }
 
   useEffect(() => {
     Promise.all([getClasses(), getSubjects(), getStudents(), getSettings()])
@@ -440,6 +474,22 @@ export function JournalPage() {
             )}
           </div>
 
+          {/* Mavzularni Excel'dan ommaviy yuklash — sinf+fan tanlangan bo'lsa */}
+          {classSubjects.length > 0 && subjectId && (
+            <div className="flex flex-wrap items-center gap-2">
+              <Button variant="secondary" onClick={onDownloadTemplate}>
+                <Download className="h-4 w-4" /> Mavzular shabloni
+              </Button>
+              <Button onClick={() => fileRef.current?.click()} disabled={importing}>
+                <Upload className="h-4 w-4" /> {importing ? 'Yuklanmoqda...' : "Excel'dan yuklash"}
+              </Button>
+              <input ref={fileRef} type="file" accept=".xlsx" className="hidden" onChange={onImportFile} />
+              <span className="text-xs text-slate-400">
+                Mavzu va uy vazifani to'ldiradi — darsni "o'tilgan" qilmaydi.
+              </span>
+            </div>
+          )}
+
           {dataLoading ? (
             <Loader label="Yuklanmoqda..." />
           ) : classSubjects.length === 0 ? (
@@ -748,6 +798,48 @@ export function JournalPage() {
         onSetGrade={handleSetQuarterGrade}
         onClear={handleClearQuarterGrade}
       />
+
+      <Modal
+        open={!!importResult}
+        onClose={() => setImportResult(null)}
+        title="Mavzular import natijasi"
+        footer={<Button onClick={() => setImportResult(null)}>Yopish</Button>}
+      >
+        {importResult && (
+          <div className="space-y-3 text-sm">
+            <div className="flex flex-wrap gap-4">
+              <span className="font-semibold text-emerald-600">{importResult.imported} ta to'ldirildi</span>
+              <span className="text-slate-400">{importResult.skipped} ta bo'sh (o'tkazib yuborildi)</span>
+              {importResult.errors > 0 && (
+                <span className="font-semibold text-red-600">{importResult.errors} ta xato</span>
+              )}
+            </div>
+            <p className="text-xs text-slate-400">
+              Eslatma: import faqat mavzu va uy vazifani to'ldirdi — darslar "o'tilgan" deb belgilanmadi.
+            </p>
+            {importResult.rowErrors.length > 0 && (
+              <div className="max-h-60 overflow-y-auto rounded-lg border border-slate-100">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-50 text-slate-400">
+                    <tr>
+                      <th className="px-3 py-1.5">Qator</th>
+                      <th className="px-3 py-1.5">Sabab</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {importResult.rowErrors.map((er) => (
+                      <tr key={er.row}>
+                        <td className="px-3 py-1.5 text-slate-500">{er.row}</td>
+                        <td className="px-3 py-1.5 text-red-600">{er.reason}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+      </Modal>
     </div>
   )
 }

@@ -68,6 +68,43 @@ public class TurnstileService
             date, meta?.TurnstileEnabled ?? false, meta?.TurnstileLastSync ?? "", inPeriod, summary, rows);
     }
 
+    /// <summary>
+    /// Tanlangan kun uchun O'QUVCHILAR turniketi: har o'quvchining kirgan (birinchi o'tish) va
+    /// chiqqan (oxirgi o'tish) vaqti. Xom turniket hodisalari (<see cref="TurnstileEvent"/>) o'quvchining
+    /// <c>DeviceUserId</c>'si bo'yicha moslanadi — alohida jadval shart emas, hodisalar tarix sifatida saqlanadi.
+    /// </summary>
+    public async Task<StudentTurnstileDashboardDto> BuildStudentDashboardAsync(IAppDbContext db, string date)
+    {
+        var meta = await db.SchoolMeta.FirstOrDefaultAsync();
+        var students = await db.Students.Where(s => !s.IsArchived)
+            .OrderBy(s => s.ClassName).ThenBy(s => s.FullName).ToListAsync();
+
+        // Tanlangan kundagi hodisalar → qurilma ID bo'yicha tartiblangan "HH:mm" ro'yxati.
+        var events = await db.TurnstileEvents
+            .Where(e => e.DeviceUserId != "" && e.EventAt.StartsWith(date))
+            .ToListAsync();
+        var byDevice = events
+            .Where(e => e.EventAt.Length >= 16)
+            .GroupBy(e => e.DeviceUserId)
+            .ToDictionary(g => g.Key, g => g.Select(e => e.EventAt.Substring(11, 5))
+                .OrderBy(x => x, StringComparer.Ordinal).ToList());
+
+        var rows = new List<StudentTurnstileRowDto>();
+        var present = 0;
+        foreach (var s in students)
+        {
+            List<string>? times = null;
+            if (!string.IsNullOrEmpty(s.DeviceUserId)) byDevice.TryGetValue(s.DeviceUserId, out times);
+            var checkIn = times is { Count: > 0 } ? times[0] : "";
+            var checkOut = times is { Count: > 1 } ? times[^1] : "";
+            var passes = times?.Count ?? 0;
+            if (passes > 0) present++;
+            rows.Add(new StudentTurnstileRowDto(s.Id, s.FullName, s.ClassName, s.DeviceUserId, checkIn, checkOut, passes));
+        }
+        return new StudentTurnstileDashboardDto(
+            date, meta?.TurnstileEnabled ?? false, meta?.TurnstileLastSync ?? "", present, students.Count, rows);
+    }
+
     /// <summary>Qurilmadan so'nggi (≈2 kun) hodisalarni tortib olib, davomatni qayta hisoblaydi.</summary>
     public async Task<TurnstileSyncResultDto> SyncAsync(IAppDbContext db)
     {

@@ -167,8 +167,8 @@ Reja jadvaldan, o'tilgan jurnaldagi **"dars o'tildi"** belgisidan. `quarter` ber
 
 ## 8. Sinf rahbarligi (homeroom)
 
-`GET /api/teacher/homeroom` → `{ className, students: [ { id, fullName, hasPendingPickup, pickupStatus, pickupAt } ] }`
-(faqat rahbar sinfi; `hasPendingPickup=true` → ota-ona kelgan).
+`GET /api/teacher/homeroom` → `{ className, students: [ { studentId, fullName, hasPendingPickup, status, requestedAt } ] }`
+(faqat rahbar sinfi; `hasPendingPickup=true` → ota-ona kelgan; `status` = pickup holati, `requestedAt` = so'rov vaqti).
 
 `GET /api/teacher/pickups` → **bugungi** pickup so'rovlari:
 `[ { id, studentId, studentName, className, status, createdAt, acceptedAt, acceptedByName } ]`.
@@ -223,9 +223,10 @@ yozma, og'zaki/suhbat...) bo'yicha oylik 1-5 qo'yadi.
   { "months":["2026-06","2026-05"], "month":"2026-06", "week":0,
     "types":[ { "id":"type-1", "name":"Yozma", "description":"" } ],
     "rows":[ { "studentId":"s-1", "fullName":"Aliyev Ali", "className":"9-A",
-               "grades":{ "type-1":5 }, "avg":5.0 } ],
+               "conducted":0, "attended":0, "reasons":[], "grades":{ "type-1":5 }, "avgGrade":5.0 } ],
     "subjectId":"subj-1", "subjects":[] }
   ```
+  - O'qituvchi board'ida `conducted`/`attended`/`reasons` ishlatilmaydi (har doim 0/0/[]) — faqat `grades` va `avgGrade` muhim.
   - O'qituvchi shu sinfda shu fanni o'qitmasa `403`. `month` berilmasa — eng so'nggi oy.
 - **`POST /api/teacher/evaluation/grade`** — bitta baho:
   ```json

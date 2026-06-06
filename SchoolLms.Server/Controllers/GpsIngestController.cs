@@ -1,7 +1,9 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using SchoolLms.Application.Dtos;
+using SchoolLms.Application.Hubs;
 using SchoolLms.Domain;
 using SchoolLms.Infrastructure.Data;
 
@@ -15,7 +17,7 @@ namespace SchoolLms.Server.Controllers;
 [ApiController]
 [AllowAnonymous]
 [Route("api/devices/gps")]
-public class GpsIngestController(AppDbContext db) : ControllerBase
+public class GpsIngestController(AppDbContext db, IHubContext<LiveHub> live) : ControllerBase
 {
     [HttpPost]
     public async Task<IActionResult> Push(GpsPingRequest req)
@@ -47,6 +49,11 @@ public class GpsIngestController(AppDbContext db) : ControllerBase
             CreatedAt = AppClock.Iso(),
         });
         await db.SaveChangesAsync();
+
+        // Real-time: admin GPS xaritasiga jonli marker yangilanishi uchun push.
+        await live.Clients.Group(LiveHub.Group("gps")).SendAsync("busLocation",
+            new BusLivePingDto(bus.Id, req.Lat, req.Lng, req.Speed ?? 0, at));
+
         return Ok(new { ok = true });
     }
 }

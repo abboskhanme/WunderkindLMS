@@ -277,3 +277,58 @@ export async function setQuarterGrade(
   }
   await api.put('/admin/journal/quarter-grades', { classId, subjectId, quarter, studentId, grade })
 }
+
+/* ---------- Mavzularni Excel'dan ommaviy yuklash ---------- */
+
+export interface TopicImportRowError {
+  row: number
+  reason: string
+}
+export interface TopicImportResult {
+  imported: number
+  skipped: number
+  errors: number
+  rowErrors: TopicImportRowError[]
+}
+
+/** Tanlangan sinf+fan+chorak uchun mavzular shabloni (.xlsx) — jadval kunlari oldindan to'ldirilgan. */
+export async function downloadTopicsTemplate(
+  classId: string,
+  subjectId: string,
+  quarter: number,
+): Promise<void> {
+  if (USE_MOCK) {
+    alert('Shablon faqat real serverda ishlaydi (VITE_USE_MOCK=false).')
+    return
+  }
+  const res = await api.get('/admin/journal/topics-template', {
+    params: { classId, subjectId, quarter },
+    responseType: 'blob',
+  })
+  const url = URL.createObjectURL(res.data as Blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = 'mavzular_shablon.xlsx'
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  URL.revokeObjectURL(url)
+}
+
+/** To'ldirilgan Excel'dan mavzu+uy vazifani import qiladi (darsni "o'tilgan" qilmaydi). */
+export async function importTopics(
+  file: File,
+  classId: string,
+  subjectId: string,
+  quarter: number,
+): Promise<TopicImportResult> {
+  const fd = new FormData()
+  fd.append('file', file)
+  fd.append('classId', classId)
+  fd.append('subjectId', subjectId)
+  fd.append('quarter', String(quarter))
+  const { data } = await api.post<TopicImportResult>('/admin/journal/topics-import', fd, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  })
+  return data
+}

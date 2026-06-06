@@ -117,26 +117,38 @@ public static class TuitionService
         return (count, total);
     }
 
-    /// <summary>Oxirgi hisoblangan oydan joriy oygacha bo'lgan barcha oylarni hisoblaydi.</summary>
+    /// <summary>
+    /// Hisoblanishi kerak bo'lgan BARCHA oylarni (eng erta o'quvchi kelgan oydan / o'quv yili
+    /// boshidan — qaysi biri ertaroq — joriy oygacha) to'ldiradi. Har oy uchun
+    /// <see cref="AccrueMonth"/> chaqiriladi: u idempotent (allaqachon hisoblangan o'quvchini
+    /// o'tkazib yuboradi) va har o'quvchini faqat o'z EnrollmentDate'idan boshlab hisoblaydi.
+    /// Shu sabab: import/seed orqali qo'shilgan, hali hisoblanmagan o'quvchilar ham tutiladi,
+    /// va oraliqdagi "tushib qolgan" oylar to'ldiriladi (avvalgi xulq faqat oxirgi oydan
+    /// keyingi oylarni qo'shardi — yangi/eski o'quvchilar 0 bo'lib qolardi).
+    /// </summary>
     public static async Task<List<string>> AccrueDue(IAppDbContext db)
     {
         var cur = CurrentMonth();
-        var months = await db.MonthlyCharges.Select(c => c.Month).Distinct().ToListAsync();
-        var accrued = new List<string>();
+        var start = await AcademicYearStartMonthAsync(db);
 
-        if (months.Count == 0)
+        // Faol o'quvchilarning eng erta kelgan oyi (o'quv yili boshidan oldin kelgan bo'lsa,
+        // o'sha oydan boshlab). AccrueMonth har o'quvchini o'z enrollment'idan tekshiradi.
+        var enrolls = await db.Students
+            .Where(s => !s.IsArchived && s.EnrollmentDate != null && s.EnrollmentDate.Length >= 7)
+            .Select(s => s.EnrollmentDate).ToListAsync();
+        if (enrolls.Count > 0)
         {
-            await AccrueMonth(db, cur);
-            accrued.Add(cur);
-            return accrued;
+            var minEnroll = enrolls.Min()![..7];
+            if (string.CompareOrdinal(minEnroll, start) < 0) start = minEnroll;
         }
 
-        var next = NextMonth(months.Max()!);
-        while (string.CompareOrdinal(next, cur) <= 0)
+        if (string.CompareOrdinal(start, cur) > 0) start = cur; // o'quv yili hali boshlanmagan bo'lsa
+
+        var accrued = new List<string>();
+        foreach (var month in MonthRange(start, cur))
         {
-            await AccrueMonth(db, next);
-            accrued.Add(next);
-            next = NextMonth(next);
+            var (count, _) = await AccrueMonth(db, month);
+            if (count > 0) accrued.Add(month);
         }
         return accrued;
     }

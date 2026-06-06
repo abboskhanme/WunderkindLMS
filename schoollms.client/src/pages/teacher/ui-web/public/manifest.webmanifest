@@ -1,0 +1,19 @@
+{
+  "name": "O'qituvchi kabineti",
+  "short_name": "O'qituvchi",
+  "description": "Maktab o'qituvchilari uchun ilova — jurnal, jadval, topshiriqlar, suhbat.",
+  "id": "/teacher/",
+  "start_url": "/teacher/",
+  "scope": "/teacher/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#fbfcfc",
+  "theme_color": "#0d9488",
+  "lang": "uz",
+  "dir": "ltr",
+  "categories": ["education", "productivity"],
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "maskable.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "maskable" }
+  ]
+}

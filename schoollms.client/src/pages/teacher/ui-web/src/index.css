@@ -1,0 +1,76 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ──────────────────────────────────────────────────────────────
+   Theme-aware tokens. Light is :root, dark is .dark — flipped by a
+   class on <html>, mirroring Flutter's AppColors light()/dark().
+   ────────────────────────────────────────────────────────────── */
+:root {
+  --bg: #fbfcfc;
+  --bg-alt: #f4f6f5;
+  --surface: #ffffff;
+  --surface2: #f8fafa;
+  --surface3: #eff3f2;
+  --border: #e7eceb;
+  --border-soft: #f0f3f2;
+  --text: #0f1a17;
+  --muted: #5a6360;
+  --faint: #94a09b;
+  --primary: #0d9488; /* teal600 */
+  --primary-soft: #dbf5f0;
+  --chip: #f0f4f3;
+}
+
+.dark {
+  --bg: #07120f;
+  --bg-alt: #0c1a17;
+  --surface: #11201c;
+  --surface2: #162822;
+  --surface3: #1c322b;
+  --border: #1f352e;
+  --border-soft: #1f352e;
+  --text: #ecf5f2;
+  --muted: #95a8a2;
+  --faint: #5e726c;
+  --primary: #2dd4bf; /* teal400 */
+  --primary-soft: #0f2e29;
+  --chip: #162822;
+}
+
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  margin: 0;
+  font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Hide scrollbars inside the phone viewport / horizontal chip rows */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Press-scale interaction used everywhere (TapScale in Flutter) */
+.tap-scale {
+  transition: transform 0.1s ease-out;
+}
+.tap-scale:active {
+  transform: scale(0.97);
+}
+
+@keyframes pulse-dot {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
+}
