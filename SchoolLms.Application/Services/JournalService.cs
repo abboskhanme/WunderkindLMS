@@ -264,4 +264,101 @@ public static class JournalService
         }
         await db.SaveChangesAsync();
     }
+
+    // ---------- Mavzular Excel shablon / import (mavzu + uy vazifa; darsni "o'tilgan" QILMAYDI) ----------
+
+    public static readonly string[] TopicHeaders =
+        { "Dars raqami", "Mavzu", "Uy vazifa" };
+
+    /// <summary>Tanlangan sinf+fan+chorak uchun mavzular shabloni (.xlsx): "Dars raqami" jadval tartibida
+    /// (1, 2, 3, ...) oldindan to'ldirilgan — sana va guruh shu raqamdan avtomatik aniqlanadi;
+    /// "Mavzu"/"Uy vazifa" ustunlari foydalanuvchi to'ldirishi uchun (mavjudi ham ko'rsatiladi).</summary>
+    public static async Task<byte[]> TopicTemplateXlsxAsync(IAppDbContext db, string classId, string subjectId, int quarter)
+    {
+        var cols = await ComputeColumnsAsync(db, classId, subjectId, quarter);
+        var notes = (await db.LessonNotes
+                .Where(n => n.ClassId == classId && n.SubjectId == subjectId && n.Quarter == quarter).ToListAsync())
+            .GroupBy(n => (n.Date, n.Period, n.SubGroup)).ToDictionary(g => g.Key, g => g.First());
+
+        // Har bir dars slotiga jadval tartibidagi raqam beriladi (1-asosli); sana/guruh shu raqamdan kelib chiqadi.
+        var rows = cols.Select((c, i) =>
+        {
+            notes.TryGetValue((c.Date, c.Period, c.SubGroup), out var n);
+            return (IReadOnlyList<string>)new[]
+            {
+                (i + 1).ToString(), n?.Topic ?? "", n?.Homework ?? "",
+            };
+        }).ToList();
+
+        var info = new List<IReadOnlyList<string>>
+        {
+            new[] { "Dars raqami", "O'zgartirmang — jadval tartibidagi dars raqami (sana va guruh avtomatik aniqlanadi)" },
+            new[] { "Mavzu", "Dars mavzusini yozing" },
+            new[] { "Uy vazifa", "Uyga vazifani yozing (ixtiyoriy)" },
+            new[] { "", "" },
+            new[] { "Eslatma:", "Import faqat mavzu/uy vazifani to'ldiradi — darsni \"o'tilgan\" QILMAYDI (buni jurnalda o'zingiz belgilaysiz)." },
+        };
+
+        return ExcelExport.Build(new[]
+        {
+            new ExcelExport.SheetSpec("Mavzular", TopicHeaders, rows),
+            new ExcelExport.SheetSpec("Yo'riqnoma", new[] { "Ustun", "Izoh" }, info),
+        });
+    }
+
+    /// <summary>Excel qatorlaridan mavzu+uy vazifani jurnalga import qiladi. MUHIM: darsni "o'tilgan"
+    /// QILMAYDI — yangi yozuvda Conducted=false, mavjud yozuvda Conducted o'zgarmaydi. Faqat "Dars raqami"
+    /// (jadval tartibidagi 1-asosli raqam) o'qiladi; mos sana/dars/guruh shu raqamdan avtomatik aniqlanadi.</summary>
+    public static async Task<TopicImportResultDto> ImportTopicsAsync(
+        IAppDbContext db, string classId, string subjectId, int quarter, List<string[]> rows)
+    {
+        // Tartiblangan dars ketma-ketligi — "Dars raqami" shu ro'yxatga 1-asosli indeks.
+        var cols = await ComputeColumnsAsync(db, classId, subjectId, quarter);
+        var notes = (await db.LessonNotes
+                .Where(n => n.ClassId == classId && n.SubjectId == subjectId && n.Quarter == quarter).ToListAsync())
+            .GroupBy(n => (n.Date, n.Period, n.SubGroup)).ToDictionary(g => g.Key, g => g.First());
+
+        var errors = new List<TopicImportRowErrorDto>();
+        int imported = 0, skipped = 0;
+        for (var i = 1; i < rows.Count; i++) // 0-qator = sarlavha
+        {
+            var r = rows[i];
+            var excelRow = i + 1;
+            if (r.All(string.IsNullOrWhiteSpace)) { skipped++; continue; }
+
+            var lessonOk = int.TryParse((r.ElementAtOrDefault(0) ?? "").Trim(), out var lessonNo);
+            var topic = (r.ElementAtOrDefault(1) ?? "").Trim();
+            var homework = (r.ElementAtOrDefault(2) ?? "").Trim();
+
+            if (!lessonOk || lessonNo <= 0)
+            { errors.Add(new TopicImportRowErrorDto(excelRow, "Dars raqami noto'g'ri")); continue; }
+            if (topic.Length == 0 && homework.Length == 0) { skipped++; continue; }
+            if (lessonNo > cols.Count)
+            { errors.Add(new TopicImportRowErrorDto(excelRow, $"Dars raqami {lessonNo} jadvalda yo'q (jami {cols.Count} ta dars)")); continue; }
+
+            var slot = cols[lessonNo - 1];
+            var key = (slot.Date, slot.Period, slot.SubGroup);
+
+            if (notes.TryGetValue(key, out var n))
+            {
+                n.Topic = topic;
+                n.Homework = homework;
+                // Conducted O'ZGARMAYDI — import darsni o'tilgan qilmaydi.
+            }
+            else
+            {
+                var fresh = new LessonNote
+                {
+                    ClassId = classId, SubjectId = subjectId, Quarter = quarter,
+                    Date = slot.Date, Period = slot.Period, SubGroup = slot.SubGroup,
+                    Topic = topic, Homework = homework, Conducted = false,
+                };
+                db.LessonNotes.Add(fresh);
+                notes[key] = fresh; // bir slot ikki marta kelsa qayta qo'shmaymiz
+            }
+            imported++;
+        }
+        if (imported > 0) await db.SaveChangesAsync();
+        return new TopicImportResultDto(imported, skipped, errors.Count, errors);
+    }
 }

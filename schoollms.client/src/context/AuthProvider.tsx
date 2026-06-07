@@ -8,10 +8,16 @@ import { USE_MOCK } from '@/api/client'
 const TOKEN_KEY = 'token'
 const USER_KEY = 'user'
 
+// O'quvchi va ota-ona web orqali kira olmaydi — ular faqat mobil ilovadan foydalanadi.
+const WEB_BLOCKED_ROLES = ['student', 'parent']
+
 function readStoredUser(): User | null {
   try {
     const raw = localStorage.getItem(USER_KEY)
-    return raw ? (JSON.parse(raw) as User) : null
+    const u = raw ? (JSON.parse(raw) as User) : null
+    // Eski sessiya o'quvchi/ota-ona bo'lsa — webda tiklamaymiz.
+    if (u && WEB_BLOCKED_ROLES.includes(u.role)) return null
+    return u
   } catch {
     return null
   }
@@ -31,6 +37,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = useCallback(async (email: string, password: string) => {
     const { token, user: u } = await loginRequest(email, password)
+    // O'quvchi/ota-ona web orqali kira olmaydi — sessiyani saqlamaymiz.
+    if (WEB_BLOCKED_ROLES.includes(u.role)) {
+      throw new Error("O'quvchi va ota-ona hisobi web orqali kira olmaydi. Mobil ilovadan foydalaning.")
+    }
     localStorage.setItem(TOKEN_KEY, token)
     localStorage.setItem(USER_KEY, JSON.stringify(u))
     setUser(u)
@@ -47,6 +57,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (USE_MOCK || !localStorage.getItem(TOKEN_KEY)) return
     fetchMe()
       .then((u) => {
+        // O'quvchi/ota-ona webda ishlay olmaydi — tokenni tozalaymiz.
+        if (WEB_BLOCKED_ROLES.includes(u.role)) { logout(); return }
         localStorage.setItem(USER_KEY, JSON.stringify(u))
         setUser(u)
       })

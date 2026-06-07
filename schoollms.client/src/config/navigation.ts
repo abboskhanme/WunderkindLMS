@@ -56,6 +56,7 @@ export const navByRole: Record<Role, NavItem[]> = {
       perm: 'students',
       children: [
         { label: "O'quvchilar ro'yxati", to: '/admin/students', end: true },
+        { label: 'Turniket', to: '/admin/students/turniket' },
         { label: "O'quvchilarga feedback", to: '/admin/students/baholash' },
         { label: 'Feedback nomi', to: '/admin/students/baholash-turlari' },
       ],
@@ -144,7 +145,7 @@ export const navByRole: Record<Role, NavItem[]> = {
       to: '/admin/boshqaruv/staff',
       icon: Building2,
       children: [
-        { label: 'GPS', to: '/admin/boshqaruv/gps', perm: 'gps' },
+        { label: 'Avtobus-gps', to: '/admin/boshqaruv/gps', perm: 'gps' },
         { label: 'Kameralar', to: '/admin/boshqaruv/cameras', perm: 'cameras' },
         { label: 'Filiallar', to: '/admin/boshqaruv/branches', roles: ['superadmin'] },
         { label: 'Xodimlar va rollar', to: '/admin/boshqaruv/staff', perm: 'staff' },
@@ -194,8 +195,9 @@ export const homeByRole: Record<Role, string> = {
   superadmin: '/admin',
   admin: '/admin',
   teacher: '/teacher',
-  student: '/student',
-  parent: '/parent',
+  // O'quvchi/ota-ona web orqali kira olmaydi (mobil ilova) — login sahifasiga.
+  student: '/login',
+  parent: '/login',
   staff: '/admin',
 }
 

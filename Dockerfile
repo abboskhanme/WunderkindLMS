@@ -15,6 +15,13 @@ ARG VITE_USE_MOCK=false
 ENV VITE_ROOT_DOMAIN=$VITE_ROOT_DOMAIN VITE_USE_MOCK=$VITE_USE_MOCK
 RUN npm run build        # natija: /client/dist
 
+# O'qituvchi PWA (alohida Vite ilovasi) — /teacher/ ostida. node_modules .dockerignore'da
+# chiqarib tashlangani uchun shu yerda qaytadan o'rnatiladi; vite outDir = /client/dist/teacher,
+# shuning uchun pastdagi `COPY client/dist -> wwwroot` uni avtomatik wwwroot/teacher ga oladi.
+WORKDIR "/client/src/pages/teacher/ui-web"
+RUN npm ci && npm run build
+WORKDIR /client
+
 # ---------- 2) Backend (.NET) publish ----------
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
 WORKDIR /src

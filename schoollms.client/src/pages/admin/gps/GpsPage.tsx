@@ -2,10 +2,12 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { MapContainer, TileLayer, Marker, Popup, Polyline, CircleMarker } from 'react-leaflet'
 import L from 'leaflet'
 import { Bus as BusIcon, Plus, Pencil, Trash2, MapPin, Navigation, Clock, Route as RouteIcon } from 'lucide-react'
+import type { HubConnection } from '@microsoft/signalr'
 import {
   getBuses, createBus, updateBus, deleteBus, getBusTrack,
   type BusLive, type Bus, type BusTrack, type SaveBusPayload,
 } from '@/api/services/gps'
+import { connectLiveTopic } from '@/api/services/live'
 import { cn } from '@/lib/utils'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
@@ -34,6 +36,14 @@ export function GpsPage() {
   const [date, setDate] = useState(today())
   const [track, setTrack] = useState<BusTrack | null>(null)
   const [trackLoading, setTrackLoading] = useState(false)
+  // Xaritada avtobus yo'nalishini (iz) ko'rsatish/yashirish — test paytida qulay bo'lishi uchun.
+  // Tanlov localStorage'da saqlanadi — sahifa yangilansa/qayta yuklansa default'ga qaytmaydi.
+  const [showRoute, setShowRoute] = useState<boolean>(
+    () => localStorage.getItem('gps:showRoute') !== '0',
+  )
+  useEffect(() => {
+    localStorage.setItem('gps:showRoute', showRoute ? '1' : '0')
+  }, [showRoute])
   const [modalOpen, setModalOpen] = useState(false)
   const [editing, setEditing] = useState<Bus | null>(null)
 
@@ -41,12 +51,32 @@ export function GpsPage() {
     getBuses().then(setBuses).finally(() => setLoading(false))
   }, [])
 
-  // Jonli holat — har 20 soniyada yangilanadi.
+  // Jonli holat — boshlang'ich yuklash + 30s fallback poll (onlayn/oflayn holatini yangilab turish uchun).
   useEffect(() => {
     loadBuses()
-    const t = setInterval(loadBuses, 20000)
+    const t = setInterval(loadBuses, 30000)
     return () => clearInterval(t)
   }, [loadBuses])
+
+  // Real-time: GPS ping kelganda avtobus markerini BIR ZUMDA yangilaymiz (SignalR — kutmaymiz).
+  useEffect(() => {
+    let conn: HubConnection | null = null
+    connectLiveTopic('gps', {
+      busLocation: (...args) => {
+        const p = args[0] as { busId: string; latitude: number; longitude: number; speed: number; recordedAt: string }
+        setBuses((prev) =>
+          prev.map((b) =>
+            b.bus.id === p.busId
+              ? { ...b, lat: p.latitude, lng: p.longitude, speed: p.speed, lastSeen: p.recordedAt, online: true }
+              : b,
+          ),
+        )
+      },
+    })
+      .then((c) => { conn = c })
+      .catch(() => {})
+    return () => { conn?.stop() }
+  }, [])
 
   // Tanlangan avtobus + sana → iz.
   useEffect(() => {
@@ -170,12 +200,28 @@ export function GpsPage() {
                   {selected ? `${selected.bus.name} — izi` : 'Barcha avtobuslar (jonli)'}
                 </span>
                 {selected && (
-                  <input
-                    type="date"
-                    value={date}
-                    onChange={(e) => setDate(e.target.value)}
-                    className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 outline-none focus:border-brand-400"
-                  />
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowRoute((v) => !v)}
+                      title="Xaritada avtobus yo'nalishini (iz) ko'rsatish yoki yashirish"
+                      className={cn(
+                        'inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors',
+                        showRoute
+                          ? 'border-brand-300 bg-brand-50 text-brand-700'
+                          : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50',
+                      )}
+                    >
+                      <RouteIcon className="h-3.5 w-3.5" />
+                      {showRoute ? "Yo'nalishni yashirish" : "Yo'nalishni ko'rsatish"}
+                    </button>
+                    <input
+                      type="date"
+                      value={date}
+                      onChange={(e) => setDate(e.target.value)}
+                      className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 outline-none focus:border-brand-400"
+                    />
+                  </div>
                 )}
               </div>
               <div className="isolate" style={{ height: 460 }}>
@@ -196,8 +242,8 @@ export function GpsPage() {
                       </Popup>
                     </Marker>
                   ))}
-                  {/* Tanlangan — iz (polyline) + boshlanish/tugash + to'xtashlar */}
-                  {selected && path.length > 0 && (
+                  {/* Tanlangan — iz (polyline) + boshlanish/tugash + to'xtashlar (tugma bilan yashiriladi) */}
+                  {selected && showRoute && path.length > 0 && (
                     <>
                       <Polyline positions={path} pathOptions={{ color: '#3b82f6', weight: 4, opacity: 0.8 }} />
                       <Marker position={path[0]} icon={defaultIcon}>
