@@ -12,7 +12,8 @@ namespace SchoolLms.Server.Controllers;
 /// oxirgi faol qurilmasi (qurilma nomi, platforma, app_id). "Ota-onalar" bo'limiga o'xshash.
 /// </summary>
 [ApiController]
-[Authorize(Roles = "admin,superadmin")]
+[Authorize]
+[AdminPerm("app")]
 [Route("api/admin/app/teachers")]
 public class AppTeachersController(AppDbContext db) : ControllerBase
 {

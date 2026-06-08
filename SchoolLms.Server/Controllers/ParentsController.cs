@@ -14,7 +14,8 @@ namespace SchoolLms.Server.Controllers;
 /// Ilova aktivlashtirilganligi (birinchi login) va oxirgi kirish vaqti ko'rsatiladi.
 /// </summary>
 [ApiController]
-[Authorize(Roles = "admin,superadmin")]
+[Authorize]
+[AdminPerm("app")]
 [Route("api/admin/parents")]
 public class ParentsController(AppDbContext db) : ControllerBase
 {

@@ -1,4 +1,4 @@
-import type { LmsMaterial, LmsProgressReport, LmsSubject, LmsTopic, LmsUnlockMode } from '@/types'
+import type { LmsMaterial, LmsModule, LmsProgressReport, LmsSubject, LmsTopic, LmsUnlockMode } from '@/types'
 import { api } from '../client'
 
 /* ─── Fanlar ─────────────────────────────────────────────── */
@@ -24,15 +24,39 @@ export async function deleteLmsSubject(id: string): Promise<void> {
   await api.delete(`/admin/lms/subjects/${id}`)
 }
 
-/* ─── Mavzular ───────────────────────────────────────────── */
+/* ─── Modullar ───────────────────────────────────────────── */
 
-export async function getLmsTopics(subjectId: string): Promise<LmsTopic[]> {
-  const { data } = await api.get<LmsTopic[]>(`/admin/lms/subjects/${subjectId}/topics`)
+export async function getLmsModules(subjectId: string): Promise<LmsModule[]> {
+  const { data } = await api.get<LmsModule[]>(`/admin/lms/subjects/${subjectId}/modules`)
   return data
 }
 
-export async function createLmsTopic(subjectId: string, payload: SaveTopicPayload): Promise<LmsTopic> {
-  const { data } = await api.post<LmsTopic>(`/admin/lms/subjects/${subjectId}/topics`, payload)
+export async function createLmsModule(subjectId: string, payload: SaveModulePayload): Promise<LmsModule> {
+  const { data } = await api.post<LmsModule>(`/admin/lms/subjects/${subjectId}/modules`, payload)
+  return data
+}
+
+export async function updateLmsModule(id: string, payload: SaveModulePayload): Promise<void> {
+  await api.put(`/admin/lms/modules/${id}`, payload)
+}
+
+export async function deleteLmsModule(id: string): Promise<void> {
+  await api.delete(`/admin/lms/modules/${id}`)
+}
+
+export async function reorderLmsModules(subjectId: string, moduleIds: string[]): Promise<void> {
+  await api.put(`/admin/lms/subjects/${subjectId}/modules/reorder`, { moduleIds })
+}
+
+/* ─── Mavzular ───────────────────────────────────────────── */
+
+export async function getLmsTopics(moduleId: string): Promise<LmsTopic[]> {
+  const { data } = await api.get<LmsTopic[]>(`/admin/lms/modules/${moduleId}/topics`)
+  return data
+}
+
+export async function createLmsTopic(moduleId: string, payload: SaveTopicPayload): Promise<LmsTopic> {
+  const { data } = await api.post<LmsTopic>(`/admin/lms/modules/${moduleId}/topics`, payload)
   return data
 }
 
@@ -44,8 +68,8 @@ export async function deleteLmsTopic(id: string): Promise<void> {
   await api.delete(`/admin/lms/topics/${id}`)
 }
 
-export async function reorderLmsTopics(subjectId: string, topicIds: string[]): Promise<void> {
-  await api.put(`/admin/lms/subjects/${subjectId}/topics/reorder`, { topicIds })
+export async function reorderLmsTopics(moduleId: string, topicIds: string[]): Promise<void> {
+  await api.put(`/admin/lms/modules/${moduleId}/topics/reorder`, { topicIds })
 }
 
 /* ─── O'quvchilar progressi ──────────────────────────────── */
@@ -84,6 +108,11 @@ export interface MaterialInput {
   url: string
   size: number
   contentType: string
+}
+
+export interface SaveModulePayload {
+  title: string
+  description: string
 }
 
 export interface SaveTopicPayload {

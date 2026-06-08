@@ -13,7 +13,8 @@ namespace SchoolLms.Server.Controllers;
 /// joylashuv (jonli xarita), kunlik iz (trail) va to'xtashlar (qayerda qancha turgan).
 /// </summary>
 [ApiController]
-[Authorize(Roles = "admin,superadmin,staff")]
+[Authorize]
+[AdminPerm("gps")]
 [Route("api/admin/gps")]
 public class GpsController(AppDbContext db) : ControllerBase
 {

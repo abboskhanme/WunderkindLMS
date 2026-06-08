@@ -11,7 +11,8 @@ using SchoolLms.Domain;
 namespace SchoolLms.Server.Controllers;
 
 [ApiController]
-[Authorize(Roles = "admin,superadmin")]
+[Authorize]
+[AdminPerm("attendance")]
 [Route("api/admin/attendance")]
 public class AttendanceController(AppDbContext db) : ControllerBase
 {

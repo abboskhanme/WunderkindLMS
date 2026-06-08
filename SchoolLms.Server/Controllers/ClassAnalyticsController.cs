@@ -9,7 +9,7 @@ using SchoolLms.Application.Services;
 namespace SchoolLms.Server.Controllers;
 
 [ApiController]
-[Authorize(Roles = "admin,superadmin")]
+[Authorize(Roles = "admin,superadmin,staff")]
 public class ClassAnalyticsController(AppDbContext db) : ControllerBase
 {
     private async Task<(List<Student>, List<Subject>)> LoadCommon() =>

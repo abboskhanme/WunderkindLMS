@@ -11,7 +11,8 @@ namespace SchoolLms.Server.Controllers;
 /// bermoqdami. <c>quarter=0</c> → barcha choraklar; aks holda tanlangan chorak.
 /// </summary>
 [ApiController]
-[Authorize(Roles = "admin,superadmin")]
+[Authorize]
+[AdminPerm("teacherReports")]
 [Route("api/admin/teacher-reports")]
 public class TeacherReportsController(AppDbContext db) : ControllerBase
 {

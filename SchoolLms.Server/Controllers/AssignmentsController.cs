@@ -14,7 +14,8 @@ namespace SchoolLms.Server.Controllers;
 /// Yaratish/tahrirlash o'qituvchida ham bor (`/api/teacher/assignments`).
 /// </summary>
 [ApiController]
-[Authorize(Roles = "admin,superadmin")]
+[Authorize]
+[AdminPerm("app")]
 [Route("api/admin/assignments")]
 public class AssignmentsController(AppDbContext db, IWebHostEnvironment env) : ControllerBase
 {

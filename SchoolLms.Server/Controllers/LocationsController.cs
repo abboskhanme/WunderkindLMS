@@ -11,7 +11,8 @@ namespace SchoolLms.Server.Controllers;
 /// o'z joylashuvini PUT /api/student/location orqali yuborishadi; bu yerda jamlanma ko'rinish.
 /// </summary>
 [ApiController]
-[Authorize(Roles = "admin,superadmin")]
+[Authorize]
+[AdminPerm("app")]
 [Route("api/admin/locations")]
 public class LocationsController(AppDbContext db) : ControllerBase
 {

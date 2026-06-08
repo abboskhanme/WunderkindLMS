@@ -10,7 +10,7 @@ namespace SchoolLms.Server.Controllers;
 /// keyin tegishli entity (Student, Contract, ...) maydonida saqlanadi.
 /// </summary>
 [ApiController]
-[Authorize(Roles = "admin,superadmin")]
+[Authorize(Roles = "admin,superadmin,staff")]
 [Route("api/admin/uploads")]
 public class UploadsController(IWebHostEnvironment env) : ControllerBase
 {

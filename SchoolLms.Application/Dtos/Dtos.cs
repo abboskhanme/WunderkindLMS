@@ -14,6 +14,9 @@ public record CredentialsDto(string Login, string Password, string Role);
 /// <summary>Joriy foydalanuvchi o'z login (email) va/yoki parolini o'zgartirishi uchun.
 /// NewPassword bo'sh bo'lsa — parol o'zgarmaydi. CurrentPassword har doim talab qilinadi.</summary>
 public record UpdateAccountRequest(string? Email, string CurrentPassword, string? NewPassword);
+/// <summary>O'quvchi/ota-ona ilova ichida o'z parolini almashtirishi uchun.
+/// Joriy parol bilan tasdiqlanadi; yangi parol kamida 8 belgi.</summary>
+public record ChangePasswordRequest(string CurrentPassword, string NewPassword);
 
 /* ---------- Students ---------- */
 /// <summary>
@@ -99,6 +102,20 @@ public record TeacherAttendanceDashboardDto(
 /// <summary>Sinxronlash natijasi.</summary>
 public record TurnstileSyncResultDto(bool Ok, string Message, int EventsFetched, int Updated, string LastSync);
 
+// ---------- Turniket: o'quvchilar kirgan/chiqqan vaqti ----------
+/// <summary>O'quvchi turniket qatori: FISH, sinf, qurilma ID, kirgan/chiqqan vaqt (tanlangan kun).</summary>
+public record StudentTurnstileRowDto(
+    string StudentId, string FullName, string ClassName, string DeviceUserId,
+    string CheckIn, string CheckOut, int Passes);
+/// <summary>O'quvchilar turniket dashboard (tanlangan kun).</summary>
+public record StudentTurnstileDashboardDto(
+    string Date, bool TurnstileEnabled, string LastSync, int Present, int Total,
+    List<StudentTurnstileRowDto> Rows);
+/// <summary>O'quvchiga qurilma (turniket) ID biriktirish.</summary>
+public record SetStudentDeviceRequest(string StudentId, string? DeviceUserId);
+/// <summary>SignalR jonli avtobus joylashuvi (LiveHub "gps" → busLocation).</summary>
+public record BusLivePingDto(string BusId, double Latitude, double Longitude, double Speed, string RecordedAt);
+
 // ---------- GPS: maktab avtobuslari ----------
 public record BusDto(
     string Id, string Name, string PlateNumber, string DriverName, string DriverPhone,
@@ -119,6 +136,16 @@ public record BusTrackDto(
     double DistanceKm, int MovingMin, int StoppedMin);
 /// <summary>GPS tracker'dan kelgan bitta signal (ingest).</summary>
 public record GpsPingRequest(string DeviceId, double Lat, double Lng, double? Speed, string? Time, string? Token);
+
+/// <summary>O'quvchi/ota-ona uchun avtobus + so'nggi joylashuvi. XAVFSIZLIK: tracker IMEI'si (DeviceId)
+/// va ichki izoh berilmaydi.</summary>
+public record StudentBusDto(
+    string Id, string Name, string PlateNumber, string DriverName, string DriverPhone,
+    string Route, double? Lat, double? Lng, double? Speed, string? LastSeen, bool Online);
+/// <summary>Avtobuslar jonli joylashuvi (o'quvchi/ota-ona ilovasi). Faqat ertalabki oynada ko'rinadi
+/// (FromHour–ToHour, Asia/Tashkent); oynadan tashqarida Available=false va Buses bo'sh bo'ladi.</summary>
+public record StudentBusesDto(
+    bool Available, int FromHour, int ToHour, string ServerTime, IReadOnlyList<StudentBusDto> Buses);
 
 /// <summary>GPS integratsiya sozlamasi.</summary>
 public record GpsSettingsDto(
@@ -174,6 +201,10 @@ public record DayMenuDto(string Date, Dictionary<string, List<DishDto>> Meals);
 /// 1 = 1-guruh, 2 = 2-guruh. Bo'lingan darsda har guruh o'z ustunini oladi.
 /// </summary>
 public record JournalColumnDto(string Date, int Period, int SubGroup = 0);
+/// <summary>Mavzular Excel importidagi xato qator (Excel qator raqami + sabab).</summary>
+public record TopicImportRowErrorDto(int Row, string Reason);
+/// <summary>Mavzular Excel import natijasi: to'ldirilgan / o'tkazib yuborilgan (bo'sh) / xato qatorlar.</summary>
+public record TopicImportResultDto(int Imported, int Skipped, int Errors, List<TopicImportRowErrorDto> RowErrors);
 public record JournalEntryDto(
     string StudentId, string Date, int Period, int? Grade, string? ReasonId,
     int Homework, int Behavior, int? Mastery);
@@ -499,8 +530,13 @@ public record TelegramSettingsDto(string BotToken, string BotUsername, string Bo
 /// <summary>Telegram bot sozlamasini saqlash so'rovi.</summary>
 public record SaveTelegramSettingsRequest(string? BotToken, string? BotUsername, string? BotName);
 /// <summary>Firebase (FCM push) sozlamasi. Configured = service account JSON to'g'ri kiritilgan.</summary>
-public record FirebaseSettingsDto(string ServiceAccountJson, bool Configured);
-public record SaveFirebaseSettingsRequest(string? ServiceAccountJson);
+public record FirebaseSettingsDto(
+    string ServiceAccountJson, bool Configured,
+    string WebConfigJson, string VapidKey, bool WebConfigured);
+public record SaveFirebaseSettingsRequest(
+    string? ServiceAccountJson, string? WebConfigJson, string? VapidKey);
+/// <summary>Web (PWA) push uchun klient konfiguratsiyasi — brauzer FCM token olishi uchun.</summary>
+public record PushClientConfigDto(bool Enabled, string WebConfigJson, string VapidKey);
 
 /// <summary>Turniket/FaceID integratsiya sozlamasi (o'qituvchilar davomati avtomatik).
 /// Parol javobda BO'SH qaytadi (xavfsizlik); HasPassword saqlanganini bildiradi.</summary>
@@ -827,9 +863,19 @@ public record LmsSubjectDto(
     string UnlockMode, int BatchSize,
     int TopicsCount, string CreatedAt);
 
-/// <summary>LMS mavzusi (admin).</summary>
+/// <summary>LMS moduli (admin) — fan ichidagi mavzular guruhi.</summary>
+public record LmsModuleDto(
+    string Id, string SubjectId, string Title, string Description, int Order, int TopicsCount);
+
+/// <summary>LMS moduli yaratish/tahrirlash so'rovi.</summary>
+public record SaveLmsModuleRequest(string Title, string? Description);
+
+/// <summary>LMS modullar tartibini qayta belgilash.</summary>
+public record ReorderLmsModulesRequest(List<string> ModuleIds);
+
+/// <summary>LMS mavzusi (admin). Endi modulga tegishli (ModuleId).</summary>
 public record LmsTopicDto(
-    string Id, string SubjectId, string Title, string Description,
+    string Id, string ModuleId, string Title, string Description,
     string? VideoUrl, string? TextContent, int Order,
     List<LmsMaterialRowDto> Materials,
     int CompletedCount);
@@ -859,12 +905,17 @@ public record ReorderLmsTopicsRequest(List<string> TopicIds);
 /// </summary>
 public record OccupiedSlotDto(int Day, int Period, string ClassName, string TemplateName);
 
-/// <summary>O'quvchi uchun LMS mavzu (ochilganmi, tugallanganmi).</summary>
+/// <summary>O'quvchi uchun LMS mavzu (ochilganmi, tugallanganmi). Endi modulga tegishli (ModuleId).</summary>
 public record StudentLmsTopicDto(
-    string Id, string SubjectId, string Title, string Description,
+    string Id, string ModuleId, string Title, string Description,
     string? VideoUrl, string? TextContent, int Order,
     List<LmsMaterialRowDto> Materials,
     bool IsUnlocked, bool IsCompleted);
+
+/// <summary>O'quvchi uchun LMS moduli — ichidagi mavzular (ochilish/progress bilan).</summary>
+public record StudentLmsModuleDto(
+    string Id, string Title, string Description, int Order,
+    int TopicsCount, int CompletedCount, List<StudentLmsTopicDto> Topics);
 
 /// <summary>O'quvchi uchun LMS fani ro'yxatdagi element.</summary>
 public record StudentLmsSubjectDto(

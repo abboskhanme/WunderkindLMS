@@ -13,7 +13,8 @@ namespace SchoolLms.Server.Controllers;
 /// Ochilish tartibi: all / sequential / batch — har fanda alohida sozlanadi.
 /// </summary>
 [ApiController]
-[Authorize(Roles = "admin,superadmin,staff")]
+[Authorize]
+[AdminPerm("app")]
 [Route("api/admin/lms")]
 public class LmsController(AppDbContext db, IWebHostEnvironment env) : ControllerBase
 {
@@ -23,7 +24,7 @@ public class LmsController(AppDbContext db, IWebHostEnvironment env) : Controlle
     [HttpGet("subjects")]
     public async Task<ActionResult<IEnumerable<LmsSubjectDto>>> Subjects([FromQuery] string? classId)
     {
-        var q = db.LmsSubjects.Include(s => s.Topics).AsQueryable();
+        var q = db.LmsSubjects.Include(s => s.Modules).ThenInclude(m => m.Topics).AsQueryable();
         if (!string.IsNullOrEmpty(classId)) q = q.Where(s => s.ClassId == classId);
         var list = await q.OrderBy(s => s.CreatedAt).ToListAsync();
 
@@ -82,19 +83,111 @@ public class LmsController(AppDbContext db, IWebHostEnvironment env) : Controlle
     {
         var s = await db.LmsSubjects.FindAsync(id);
         if (s is null) return NotFound();
+
+        // DB endi subject→module→topic kaskadini bajarmaydi (FK olib tashlangan).
+        // Qo'lda o'chiramiz: avval mavzular (DB ular orqali material/progressni kaskadlaydi),
+        // keyin modullar, so'ng fanning o'zi.
+        var moduleIds = await db.LmsModules.Where(m => m.SubjectId == id).Select(m => m.Id).ToListAsync();
+        var topics = await db.LmsTopics.Where(t => moduleIds.Contains(t.ModuleId)).ToListAsync();
+        var modules = await db.LmsModules.Where(m => m.SubjectId == id).ToListAsync();
+        db.LmsTopics.RemoveRange(topics);
+        db.LmsModules.RemoveRange(modules);
         db.LmsSubjects.Remove(s);
+        await db.SaveChangesAsync();
+        return NoContent();
+    }
+
+    /* ─── Modullar (Modules) ────────────────────────────────── */
+
+    /// <summary>Fanga tegishli modullar (tartib bo'yicha).</summary>
+    [HttpGet("subjects/{subjectId}/modules")]
+    public async Task<ActionResult<IEnumerable<LmsModuleDto>>> Modules(string subjectId)
+    {
+        var modules = await db.LmsModules
+            .Include(m => m.Topics)
+            .Where(m => m.SubjectId == subjectId)
+            .OrderBy(m => m.Order)
+            .ToListAsync();
+
+        return modules
+            .Select(m => new LmsModuleDto(m.Id, m.SubjectId, m.Title, m.Description, m.Order, m.Topics.Count))
+            .ToList();
+    }
+
+    [HttpPost("subjects/{subjectId}/modules")]
+    public async Task<ActionResult<LmsModuleDto>> CreateModule(string subjectId, SaveLmsModuleRequest req)
+    {
+        if (string.IsNullOrWhiteSpace(req.Title))
+            return BadRequest(new { message = "Modul nomi kerak" });
+        if (!await db.LmsSubjects.AnyAsync(s => s.Id == subjectId))
+            return NotFound(new { message = "Fan topilmadi" });
+
+        var maxOrder = await db.LmsModules
+            .Where(m => m.SubjectId == subjectId)
+            .Select(m => (int?)m.Order)
+            .MaxAsync() ?? 0;
+
+        var module = new LmsModule
+        {
+            SubjectId = subjectId,
+            Title = req.Title.Trim(),
+            Description = req.Description?.Trim() ?? "",
+            Order = maxOrder + 1,
+        };
+        db.LmsModules.Add(module);
+        await db.SaveChangesAsync();
+        return new LmsModuleDto(module.Id, module.SubjectId, module.Title, module.Description, module.Order, 0);
+    }
+
+    [HttpPut("modules/{id}")]
+    public async Task<IActionResult> UpdateModule(string id, SaveLmsModuleRequest req)
+    {
+        var module = await db.LmsModules.FirstOrDefaultAsync(m => m.Id == id);
+        if (module is null) return NotFound();
+        if (string.IsNullOrWhiteSpace(req.Title))
+            return BadRequest(new { message = "Modul nomi kerak" });
+
+        module.Title = req.Title.Trim();
+        module.Description = req.Description?.Trim() ?? "";
+        await db.SaveChangesAsync();
+        return NoContent();
+    }
+
+    [HttpDelete("modules/{id}")]
+    public async Task<IActionResult> DeleteModule(string id)
+    {
+        var module = await db.LmsModules.FindAsync(id);
+        if (module is null) return NotFound();
+
+        // DB topic→material/progress kaskadini bajaradi; modul mavzularini qo'lda o'chiramiz.
+        var topics = await db.LmsTopics.Where(t => t.ModuleId == id).ToListAsync();
+        db.LmsTopics.RemoveRange(topics);
+        db.LmsModules.Remove(module);
+        await db.SaveChangesAsync();
+        return NoContent();
+    }
+
+    [HttpPut("subjects/{subjectId}/modules/reorder")]
+    public async Task<IActionResult> ReorderModules(string subjectId, ReorderLmsModulesRequest req)
+    {
+        var modules = await db.LmsModules.Where(m => m.SubjectId == subjectId).ToListAsync();
+        for (var i = 0; i < req.ModuleIds.Count; i++)
+        {
+            var m = modules.FirstOrDefault(x => x.Id == req.ModuleIds[i]);
+            if (m is not null) m.Order = i + 1;
+        }
         await db.SaveChangesAsync();
         return NoContent();
     }
 
     /* ─── Mavzular (Topics) ─────────────────────────────────── */
 
-    [HttpGet("subjects/{subjectId}/topics")]
-    public async Task<ActionResult<IEnumerable<LmsTopicDto>>> Topics(string subjectId)
+    [HttpGet("modules/{moduleId}/topics")]
+    public async Task<ActionResult<IEnumerable<LmsTopicDto>>> Topics(string moduleId)
     {
         var topics = await db.LmsTopics
             .Include(t => t.Materials)
-            .Where(t => t.SubjectId == subjectId)
+            .Where(t => t.ModuleId == moduleId)
             .OrderBy(t => t.Order)
             .ToListAsync();
 
@@ -119,8 +212,17 @@ public class LmsController(AppDbContext db, IWebHostEnvironment env) : Controlle
         var subject = await db.LmsSubjects.FindAsync(subjectId);
         if (subject is null) return NotFound();
 
-        var topics = await db.LmsTopics.Where(x => x.SubjectId == subjectId)
-            .OrderBy(x => x.Order).ToListAsync();
+        // Mavzular endi modullar ostida — fan modullari (Order bo'yicha), keyin har modul
+        // mavzulari (Order bo'yicha) ketma-ket bitta ro'yxatga yig'iladi.
+        var modules = await db.LmsModules.Where(m => m.SubjectId == subjectId)
+            .OrderBy(m => m.Order).ToListAsync();
+        var moduleIds = modules.Select(m => m.Id).ToList();
+        var moduleTopics = (await db.LmsTopics.Where(x => moduleIds.Contains(x.ModuleId)).ToListAsync())
+            .GroupBy(x => x.ModuleId)
+            .ToDictionary(g => g.Key, g => g.OrderBy(x => x.Order).ToList());
+        var topics = modules
+            .SelectMany(m => moduleTopics.GetValueOrDefault(m.Id, new List<LmsTopic>()))
+            .ToList();
         var topicIds = topics.Select(x => x.Id).ToList();
 
         // Asosiy ro'yxat — fan biriktirilgan sinf o'quvchilari (sinf o'chirilgan bo'lsa bo'sh).
@@ -155,22 +257,22 @@ public class LmsController(AppDbContext db, IWebHostEnvironment env) : Controlle
             }).ToList());
     }
 
-    [HttpPost("subjects/{subjectId}/topics")]
-    public async Task<ActionResult<LmsTopicDto>> CreateTopic(string subjectId, SaveLmsTopicRequest req)
+    [HttpPost("modules/{moduleId}/topics")]
+    public async Task<ActionResult<LmsTopicDto>> CreateTopic(string moduleId, SaveLmsTopicRequest req)
     {
         if (string.IsNullOrWhiteSpace(req.Title))
             return BadRequest(new { message = "Mavzu sarlavhasi kerak" });
-        if (!await db.LmsSubjects.AnyAsync(s => s.Id == subjectId))
-            return NotFound(new { message = "Fan topilmadi" });
+        if (!await db.LmsModules.AnyAsync(m => m.Id == moduleId))
+            return NotFound(new { message = "Modul topilmadi" });
 
         var maxOrder = await db.LmsTopics
-            .Where(t => t.SubjectId == subjectId)
+            .Where(t => t.ModuleId == moduleId)
             .Select(t => (int?)t.Order)
             .MaxAsync() ?? 0;
 
         var topic = new LmsTopic
         {
-            SubjectId = subjectId,
+            ModuleId = moduleId,
             Title = req.Title.Trim(),
             Description = req.Description?.Trim() ?? "",
             VideoUrl = NullIfEmpty(req.VideoUrl),
@@ -216,10 +318,10 @@ public class LmsController(AppDbContext db, IWebHostEnvironment env) : Controlle
         return NoContent();
     }
 
-    [HttpPut("subjects/{subjectId}/topics/reorder")]
-    public async Task<IActionResult> Reorder(string subjectId, ReorderLmsTopicsRequest req)
+    [HttpPut("modules/{moduleId}/topics/reorder")]
+    public async Task<IActionResult> Reorder(string moduleId, ReorderLmsTopicsRequest req)
     {
-        var topics = await db.LmsTopics.Where(t => t.SubjectId == subjectId).ToListAsync();
+        var topics = await db.LmsTopics.Where(t => t.ModuleId == moduleId).ToListAsync();
         for (var i = 0; i < req.TopicIds.Count; i++)
         {
             var t = topics.FirstOrDefault(x => x.Id == req.TopicIds[i]);
@@ -269,10 +371,10 @@ public class LmsController(AppDbContext db, IWebHostEnvironment env) : Controlle
 
     private static LmsSubjectDto ToSubjectDto(LmsSubject s, string className) => new(
         s.Id, s.ClassId, className, s.Title, s.Description,
-        s.UnlockMode, s.BatchSize, s.Topics.Count, s.CreatedAt.ToString("o"));
+        s.UnlockMode, s.BatchSize, s.Modules.Sum(m => m.Topics.Count), s.CreatedAt.ToString("o"));
 
     private static LmsTopicDto ToTopicDto(LmsTopic t, int completedCount) => new(
-        t.Id, t.SubjectId, t.Title, t.Description, t.VideoUrl, t.TextContent, t.Order,
+        t.Id, t.ModuleId, t.Title, t.Description, t.VideoUrl, t.TextContent, t.Order,
         t.Materials.Select(m => new LmsMaterialRowDto(m.Id, m.Name, m.Url, m.Size, m.ContentType)).ToList(),
         completedCount);
 }

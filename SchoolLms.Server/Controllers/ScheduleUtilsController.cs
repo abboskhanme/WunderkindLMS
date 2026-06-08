@@ -10,7 +10,8 @@ namespace SchoolLms.Server.Controllers;
 /// Jadval yordamchi endpointlari — template yaratishda o'qituvchi ziddiyatini tekshirish va h.k.
 /// </summary>
 [ApiController]
-[Authorize(Roles = "admin,superadmin,staff")]
+[Authorize]
+[AdminPerm("schedule")]
 [Route("api/admin/schedule")]
 public class ScheduleUtilsController(AppDbContext db) : ControllerBase
 {

@@ -15,7 +15,8 @@ namespace SchoolLms.Server.Controllers;
 /// to'ldirilgan .docx yuborish. Bot tokeni Sozlamalardagi yagona token (mavjud TelegramService).
 /// </summary>
 [ApiController]
-[Authorize(Roles = "admin,superadmin")]
+[Authorize]
+[AdminPerm("contracts")]
 [Route("api/admin/contracts")]
 public class ContractsController(AppDbContext db, ContractService contracts, TelegramService telegram)
     : ControllerBase

@@ -13,7 +13,8 @@ namespace SchoolLms.Server.Controllers;
 /// Faqat admin/superadmin boshqaradi.
 /// </summary>
 [ApiController]
-[Authorize(Roles = "admin,superadmin")]
+[Authorize]
+[AdminPerm("schedule")]
 [Route("api/admin/holidays")]
 public class HolidaysController(AppDbContext db) : ControllerBase
 {

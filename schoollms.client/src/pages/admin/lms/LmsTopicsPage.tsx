@@ -4,9 +4,9 @@ import {
   ArrowLeft, ChevronUp, ChevronDown, Video, FileText,
   Paperclip, Pencil, Trash2, Plus, Users,
 } from 'lucide-react'
-import type { LmsSubject, LmsTopic, LmsProgressReport } from '@/types'
+import type { LmsModule, LmsSubject, LmsTopic, LmsProgressReport } from '@/types'
 import {
-  getLmsSubjects, getLmsTopics, createLmsTopic, updateLmsTopic,
+  getLmsSubjects, getLmsModules, getLmsTopics, createLmsTopic, updateLmsTopic,
   deleteLmsTopic, reorderLmsTopics, updateLmsSubject, getLmsProgress,
 } from '@/api/services/lms'
 import { Loader } from '@/components/ui/Loader'
@@ -23,10 +23,11 @@ const unlockLabels: Record<string, string> = {
 }
 
 export function LmsTopicsPage() {
-  const { classId, subjectId } = useParams<{ classId: string; subjectId: string }>()
+  const { classId, subjectId, moduleId } = useParams<{ classId: string; subjectId: string; moduleId: string }>()
   const navigate = useNavigate()
 
   const [subject, setSubject] = useState<LmsSubject | null>(null)
+  const [module, setModule] = useState<LmsModule | null>(null)
   const [topics, setTopics] = useState<LmsTopic[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -50,17 +51,19 @@ export function LmsTopicsPage() {
   }
 
   useEffect(() => {
-    if (!classId || !subjectId) return
+    if (!classId || !subjectId || !moduleId) return
     Promise.all([
       getLmsSubjects(classId),
-      getLmsTopics(subjectId),
+      getLmsModules(subjectId),
+      getLmsTopics(moduleId),
     ])
-      .then(([subs, tops]) => {
+      .then(([subs, mods, tops]) => {
         setSubject(subs.find((s) => s.id === subjectId) ?? null)
+        setModule(mods.find((m) => m.id === moduleId) ?? null)
         setTopics(tops)
       })
       .finally(() => setLoading(false))
-  }, [classId, subjectId])
+  }, [classId, subjectId, moduleId])
 
   /* ─── Subject settings ─── */
   const handleSubjectSave = async (payload: Parameters<typeof updateLmsSubject>[1]) => {
@@ -77,7 +80,7 @@ export function LmsTopicsPage() {
 
   /* ─── Topic CRUD ─── */
   const handleTopicSave = async (payload: Parameters<typeof createLmsTopic>[1]) => {
-    if (!subjectId) return
+    if (!moduleId) return
     setSaving(true)
     try {
       if (topicModal.editing) {
@@ -90,11 +93,14 @@ export function LmsTopicsPage() {
           ),
         )
       } else {
-        const created = await createLmsTopic(subjectId, payload)
+        const created = await createLmsTopic(moduleId, payload)
         setTopics((prev) => [...prev, created])
       }
       setTopicModal({ open: false })
       setProgress(null) // mavzular o'zgardi — progress keshini qayta yuklash kerak
+    } catch (err) {
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message
+      alert(msg ?? "Mavzuni saqlab bo'lmadi")
     } finally {
       setSaving(false)
     }
@@ -109,13 +115,13 @@ export function LmsTopicsPage() {
 
   /* ─── Reorder ─── */
   const move = async (index: number, dir: -1 | 1) => {
-    if (!subjectId) return
+    if (!moduleId) return
     const next = [...topics]
     const swap = index + dir
     if (swap < 0 || swap >= next.length) return
     ;[next[index], next[swap]] = [next[swap], next[index]]
     setTopics(next)
-    await reorderLmsTopics(subjectId, next.map((t) => t.id))
+    await reorderLmsTopics(moduleId, next.map((t) => t.id))
     setProgress(null)
   }
 
@@ -145,22 +151,30 @@ export function LmsTopicsPage() {
               {subject.className}-sinf
             </button>
             <span>/</span>
-            <span className="text-slate-700">{subject.title}</span>
+            <button
+              type="button"
+              onClick={() => navigate(`/admin/lms/${classId}/${subjectId}`)}
+              className="hover:text-brand-600"
+            >
+              {subject.title}
+            </button>
+            <span>/</span>
+            <span className="text-slate-700">{module?.title ?? '...'}</span>
           </div>
 
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={() => navigate(`/admin/lms/${classId}`)}
+              onClick={() => navigate(`/admin/lms/${classId}/${subjectId}`)}
               className="flex items-center gap-1 rounded-lg px-2 py-1 text-sm text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-700"
             >
               <ArrowLeft className="h-4 w-4" />
             </button>
-            <h1 className="text-xl font-semibold text-slate-800">{subject.title}</h1>
+            <h1 className="text-xl font-semibold text-slate-800">{module?.title ?? subject.title}</h1>
           </div>
 
-          {subject.description && (
-            <p className="mt-0.5 pl-8 text-sm text-slate-400">{subject.description}</p>
+          {module?.description && (
+            <p className="mt-0.5 pl-8 text-sm text-slate-400">{module.description}</p>
           )}
         </div>
 

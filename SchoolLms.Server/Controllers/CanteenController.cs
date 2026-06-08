@@ -9,7 +9,8 @@ using SchoolLms.Application.Services;
 namespace SchoolLms.Server.Controllers;
 
 [ApiController]
-[Authorize(Roles = "admin,superadmin")]
+[Authorize]
+[AdminPerm("app")]
 [Route("api/admin/canteen")]
 public class CanteenController(AppDbContext db) : ControllerBase
 {

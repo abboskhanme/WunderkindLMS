@@ -12,7 +12,8 @@ namespace SchoolLms.Server.Controllers;
 /// sabablari + turlar bo'yicha 1-5 baho). Faqat admin.
 /// </summary>
 [ApiController]
-[Authorize(Roles = "admin,superadmin")]
+[Authorize]
+[AdminPerm("students")]
 [Route("api/admin/student-evaluation")]
 public class StudentEvaluationController(AppDbContext db) : ControllerBase
 {

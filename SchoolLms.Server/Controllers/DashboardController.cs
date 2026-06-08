@@ -9,7 +9,7 @@ using SchoolLms.Domain;
 namespace SchoolLms.Server.Controllers;
 
 [ApiController]
-[Authorize(Roles = "admin,superadmin")]
+[Authorize(Roles = "admin,superadmin,staff")]
 [Route("api/admin/dashboard")]
 public class DashboardController(AppDbContext db) : ControllerBase
 {

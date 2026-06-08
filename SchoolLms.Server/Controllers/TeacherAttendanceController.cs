@@ -1,7 +1,9 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using SchoolLms.Application.Dtos;
+using SchoolLms.Application.Hubs;
 using SchoolLms.Application.Services;
 using SchoolLms.Domain;
 using SchoolLms.Infrastructure.Data;
@@ -13,9 +15,11 @@ namespace SchoolLms.Server.Controllers;
 /// Oylik board: o'qituvchilar × kunlar.
 /// </summary>
 [ApiController]
-[Authorize(Roles = "admin,superadmin,staff")]
+[Authorize]
+[AdminPerm("teachers")]
 [Route("api/admin/teacher-attendance")]
-public class TeacherAttendanceController(AppDbContext db, TurnstileService turnstile) : ControllerBase
+public class TeacherAttendanceController(
+    AppDbContext db, TurnstileService turnstile, IHubContext<LiveHub> live) : ControllerBase
 {
     private static readonly HashSet<string> Valid = new() { "present", "absent", "late" };
 
@@ -29,7 +33,14 @@ public class TeacherAttendanceController(AppDbContext db, TurnstileService turns
 
     /// <summary>Turniket qurilmasidan so'nggi hodisalarni tortib olib davomatni yangilash.</summary>
     [HttpPost("sync")]
-    public async Task<ActionResult<TurnstileSyncResultDto>> Sync() => await turnstile.SyncAsync(db);
+    public async Task<ActionResult<TurnstileSyncResultDto>> Sync()
+    {
+        var res = await turnstile.SyncAsync(db);
+        if (res.Ok && res.EventsFetched > 0)
+            await live.Clients.Group(LiveHub.Group("turnstile"))
+                .SendAsync("turnstileChanged", new { at = AppClock.Iso() });
+        return res;
+    }
 
     /// <summary>Tanlangan oy ("yyyy-MM") uchun board: faol o'qituvchilar + o'sha oy belgilari.</summary>
     [HttpGet]

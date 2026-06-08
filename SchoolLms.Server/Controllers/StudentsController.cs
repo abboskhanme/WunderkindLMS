@@ -11,7 +11,8 @@ using SchoolLms.Application.Services;
 namespace SchoolLms.Server.Controllers;
 
 [ApiController]
-[Authorize(Roles = "admin,superadmin")]
+[Authorize]
+[AdminPerm("students")]
 [Route("api/admin/students")]
 public class StudentsController(AppDbContext db, AuditService audit) : ControllerBase
 {

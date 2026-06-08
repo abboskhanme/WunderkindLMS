@@ -188,7 +188,7 @@ export function LmsSubjectsPage() {
                   onClick={() => navigate(`/admin/lms/${classId}/${s.id}`)}
                   className="flex items-center gap-1 text-xs font-medium text-brand-600 hover:text-brand-700"
                 >
-                  Mavzular <ChevronRight className="h-3.5 w-3.5" />
+                  Modullar <ChevronRight className="h-3.5 w-3.5" />
                 </button>
               </div>
             </div>

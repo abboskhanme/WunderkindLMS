@@ -9,6 +9,7 @@ import { StudentsPage } from '@/pages/admin/students/StudentsPage'
 import { StudentEvaluationPage } from '@/pages/admin/students/StudentEvaluationPage'
 import { EvaluationTypesPage } from '@/pages/admin/students/EvaluationTypesPage'
 import { StudentDetailPage } from '@/pages/admin/students/StudentDetailPage'
+import { StudentTurnstilePage } from '@/pages/admin/students/StudentTurnstilePage'
 import { TeachersPage } from '@/pages/admin/teachers/TeachersPage'
 import { TeacherAttendancePage } from '@/pages/admin/teachers/TeacherAttendancePage'
 import { ClassesPage } from '@/pages/admin/classes/ClassesPage'
@@ -37,6 +38,7 @@ import { AssignmentsPage } from '@/pages/admin/assignments/AssignmentsPage'
 import { AssignmentScoresPage } from '@/pages/admin/assignment-scores/AssignmentScoresPage'
 import { LmsClassesPage } from '@/pages/admin/lms/LmsClassesPage'
 import { LmsSubjectsPage } from '@/pages/admin/lms/LmsSubjectsPage'
+import { LmsModulesPage } from '@/pages/admin/lms/LmsModulesPage'
 import { LmsTopicsPage } from '@/pages/admin/lms/LmsTopicsPage'
 import { AttendancePage } from '@/pages/admin/attendance/AttendancePage'
 import { LocationPage } from '@/pages/admin/locations/LocationPage'
@@ -48,16 +50,7 @@ import { CanteenPage } from '@/pages/admin/canteen/CanteenPage'
 import { FinancePage } from '@/pages/admin/finance/FinancePage'
 import { SettingsPage } from '@/pages/admin/settings/SettingsPage'
 import { AccountPage } from '@/pages/admin/account/AccountPage'
-import { TeacherDashboard } from '@/pages/teacher/TeacherDashboard'
-import { TeacherAssignmentsPage } from '@/pages/teacher/assignments/AssignmentsPage'
-import { TeacherJournalPage } from '@/pages/teacher/journal/JournalPage'
-import { TeacherEvaluationPage } from '@/pages/teacher/evaluation/EvaluationPage'
-import { TeacherSchedulePage as TeacherMySchedulePage } from '@/pages/teacher/schedule/SchedulePage'
-import { TeacherMessagesPage } from '@/pages/teacher/messages/MessagesPage'
-import { TeacherSalaryPage } from '@/pages/teacher/salary/SalaryPage'
-import { TeacherLmsPage } from '@/pages/teacher/lms/TeacherLmsPage'
-import { TeacherLmsSubjectPage } from '@/pages/teacher/lms/TeacherLmsSubjectPage'
-import { ComingSoon } from '@/pages/ComingSoon'
+import { TeacherAppRedirect } from '@/components/TeacherAppRedirect'
 
 export default function App() {
   return (
@@ -75,6 +68,7 @@ export default function App() {
           <Route path="students" element={<RequirePerm perm="students"><StudentsPage /></RequirePerm>} />
           <Route path="students/baholash" element={<RequirePerm perm="students"><StudentEvaluationPage /></RequirePerm>} />
           <Route path="students/baholash-turlari" element={<RequirePerm perm="students"><EvaluationTypesPage /></RequirePerm>} />
+          <Route path="students/turniket" element={<RequirePerm perm="students"><StudentTurnstilePage /></RequirePerm>} />
           <Route path="students/:id" element={<RequirePerm perm="students"><StudentDetailPage /></RequirePerm>} />
           <Route path="teachers" element={<RequirePerm perm="teachers"><TeachersPage /></RequirePerm>} />
           <Route path="teachers/attendance" element={<RequirePerm perm="teachers"><TeacherAttendancePage /></RequirePerm>} />
@@ -96,7 +90,8 @@ export default function App() {
           <Route path="assignment-scores" element={<RequirePerm perm="app"><AssignmentScoresPage /></RequirePerm>} />
           <Route path="lms" element={<RequirePerm perm="app"><LmsClassesPage /></RequirePerm>} />
           <Route path="lms/:classId" element={<RequirePerm perm="app"><LmsSubjectsPage /></RequirePerm>} />
-          <Route path="lms/:classId/:subjectId" element={<RequirePerm perm="app"><LmsTopicsPage /></RequirePerm>} />
+          <Route path="lms/:classId/:subjectId" element={<RequirePerm perm="app"><LmsModulesPage /></RequirePerm>} />
+          <Route path="lms/:classId/:subjectId/:moduleId" element={<RequirePerm perm="app"><LmsTopicsPage /></RequirePerm>} />
           <Route path="messages" element={<RequirePerm perm="messages"><MessagesPage /></RequirePerm>} />
           <Route path="grades-report" element={<Navigate to="/admin/grades-report/school" replace />} />
           <Route path="grades-report/:section" element={<RequirePerm perm="gradesReport"><GradesReportPage /></RequirePerm>} />
@@ -126,70 +121,9 @@ export default function App() {
         </Route>
       </Route>
 
-      {/* O'qituvchi paneli */}
-      <Route element={<ProtectedRoute role="teacher" />}>
-        <Route path="/teacher" element={<AppLayout />}>
-          <Route index element={<TeacherDashboard />} />
-          <Route
-            path="journal"
-            element={
-              <RequirePerm perm="journal">
-                <TeacherJournalPage />
-              </RequirePerm>
-            }
-          />
-          <Route
-            path="assignments"
-            element={
-              <RequirePerm perm="assignments">
-                <TeacherAssignmentsPage />
-              </RequirePerm>
-            }
-          />
-          {/* Baholash — har qaysi o'qituvchi (o'zi o'qitadigan fan+sinf; backend Teaches() tekshiradi) */}
-          <Route path="evaluation" element={<TeacherEvaluationPage />} />
-          <Route
-            path="schedule"
-            element={
-              <RequirePerm perm="schedule">
-                <TeacherMySchedulePage />
-              </RequirePerm>
-            }
-          />
-          <Route
-            path="messages"
-            element={
-              <RequirePerm perm="messages">
-                <TeacherMessagesPage />
-              </RequirePerm>
-            }
-          />
-          <Route
-            path="salary"
-            element={
-              <RequirePerm perm="salary">
-                <TeacherSalaryPage />
-              </RequirePerm>
-            }
-          />
-          <Route path="lms" element={<TeacherLmsPage />} />
-          <Route path="lms/:subjectId" element={<TeacherLmsSubjectPage />} />
-        </Route>
-      </Route>
-
-      {/* O'quvchi paneli */}
-      <Route element={<ProtectedRoute role="student" />}>
-        <Route path="/student" element={<AppLayout />}>
-          <Route index element={<ComingSoon title="O'quvchi paneli" />} />
-        </Route>
-      </Route>
-
-      {/* Ota-ona paneli */}
-      <Route element={<ProtectedRoute role="parent" />}>
-        <Route path="/parent" element={<AppLayout />}>
-          <Route index element={<ComingSoon title="Ota-ona paneli" />} />
-        </Route>
-      </Route>
+      {/* O'qituvchi — alohida o'rnatiladigan PWA (/teacher/, wwwroot/teacher statik ilova).
+          SPA shu manzilga kelsa (login redirect / RootRedirect) to'liq sahifa bilan o'sha ilovaga o'tamiz. */}
+      <Route path="/teacher/*" element={<TeacherAppRedirect />} />
 
       <Route path="*" element={<RootRedirect />} />
     </Routes>

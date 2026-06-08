@@ -14,7 +14,8 @@ namespace SchoolLms.Server.Controllers;
 /// tarmoqda; brauzer faqat shu autentifikatsiyalangan endpointlar orqali ko'radi.
 /// </summary>
 [ApiController]
-[Authorize(Roles = "admin,superadmin,staff")]
+[Authorize]
+[AdminPerm("cameras")]
 [Route("api/admin/cameras")]
 public class CamerasController(AppDbContext db, CameraGateway gateway) : ControllerBase
 {

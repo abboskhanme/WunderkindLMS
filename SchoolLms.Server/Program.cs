@@ -13,6 +13,7 @@ using SchoolLms.Application.Hubs;
 using SchoolLms.Application.Services;
 using SchoolLms.Infrastructure.Auth;
 using SchoolLms.Infrastructure.Data;
+using SchoolLms.Server.Controllers;
 using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -102,7 +103,7 @@ builder.Services
             {
                 var accessToken = context.Request.Query["access_token"];
                 var path = context.HttpContext.Request.Path;
-                if (!string.IsNullOrEmpty(accessToken) && path.StartsWithSegments("/hubs/chat"))
+                if (!string.IsNullOrEmpty(accessToken) && path.StartsWithSegments("/hubs"))
                     context.Token = accessToken;
                 return Task.CompletedTask;
             },
@@ -125,7 +126,17 @@ builder.Services
                 else if (p.IsInRole(Roles.Student))
                     blocked = !await db.Students.AnyAsync(s => s.UserId == userId && !s.IsArchived);
                 else if (p.IsInRole(Roles.Staff) || p.IsInRole(Roles.Admin) || p.IsInRole(Roles.SuperAdmin))
-                    blocked = !await db.Users.AnyAsync(u => u.Id == userId);
+                {
+                    var u = await db.Users.FirstOrDefaultAsync(x => x.Id == userId);
+                    blocked = u is null;
+                    // Xodim (staff) ruxsatlarini HAR so'rovda DB'dan claim sifatida qo'shamiz — tokenga
+                    // yozilmaydi, shuning uchun superadmin ruxsatni o'zgartirsa darrov amal qiladi
+                    // (qayta login shart emas). AdminPerm atributi shu claim'larni tekshiradi.
+                    if (!blocked && p.IsInRole(Roles.Staff) && u!.Permissions is { Count: > 0 } perms
+                        && p.Identity is ClaimsIdentity ident)
+                        foreach (var perm in perms)
+                            ident.AddClaim(new Claim(AdminPermAttribute.ClaimType, perm));
+                }
                 else
                     blocked = false; // parent / boshqa — tegmaymiz
 
@@ -157,6 +168,7 @@ builder.Services.AddScoped<ChatService>();
 
 // Oylik to'lovlarni avtomatik hisoblovchi fon xizmati
 builder.Services.AddHostedService<SchoolLms.Application.Services.TuitionAccrualService>();
+builder.Services.AddHostedService<SchoolLms.Application.Services.TurnstileLiveService>();
 
 // Telegram bot (e'lon yuborish + ota-onalarni kontakt orqali ro'yxatga olish).
 // Token appsettings "Telegram:BotToken" da; bo'sh bo'lsa bot ishga tushmaydi.
@@ -212,6 +224,43 @@ using (var scope = app.Services.CreateScope())
         "IF COL_LENGTH('EvaluationGrades','SubjectId') IS NULL " +
         "ALTER TABLE [EvaluationGrades] ADD [SubjectId] nvarchar(max) NOT NULL DEFAULT '';");
 
+    // LMS modul qatlami (Sinf → Fan → Modul → Mavzu). Migratsiyasiz, idempotent.
+    db.Database.ExecuteSqlRaw(
+        "IF OBJECT_ID('LmsModules') IS NULL " +
+        "CREATE TABLE [LmsModules] (" +
+        "  [Id] nvarchar(450) NOT NULL CONSTRAINT [PK_LmsModules] PRIMARY KEY," +
+        "  [SubjectId] nvarchar(max) NOT NULL DEFAULT ''," +
+        "  [Title] nvarchar(max) NOT NULL DEFAULT ''," +
+        "  [Description] nvarchar(max) NOT NULL DEFAULT ''," +
+        "  [Order] int NOT NULL DEFAULT 0," +
+        "  [CreatedAt] datetime2 NOT NULL DEFAULT SYSUTCDATETIME());");
+    db.Database.ExecuteSqlRaw(
+        "IF COL_LENGTH('LmsTopics','ModuleId') IS NULL " +
+        "ALTER TABLE [LmsTopics] ADD [ModuleId] nvarchar(max) NOT NULL DEFAULT '';");
+    // Vestigial LmsTopics.SubjectId — endi EF uni INSERT'da yubormaydi; NOT NULL bo'lgani uchun
+    // default qo'shamiz (aks holda yangi mavzu qo'shganda NULL → 515 xato). Idempotent.
+    db.Database.ExecuteSqlRaw(
+        "IF COL_LENGTH('LmsTopics','SubjectId') IS NOT NULL AND NOT EXISTS (" +
+        "  SELECT 1 FROM sys.default_constraints " +
+        "  WHERE parent_object_id = OBJECT_ID('LmsTopics') AND name = 'DF_LmsTopics_SubjectId') " +
+        "ALTER TABLE [LmsTopics] ADD CONSTRAINT [DF_LmsTopics_SubjectId] DEFAULT '' FOR [SubjectId];");
+    // Eski FK (LmsTopics.SubjectId → LmsSubjects) endi kerak emas — mavzu modulga bog'lanadi.
+    db.Database.ExecuteSqlRaw(
+        "DECLARE @fk sysname; " +
+        "SELECT @fk = fk.name FROM sys.foreign_keys fk " +
+        "WHERE fk.parent_object_id = OBJECT_ID('LmsTopics') AND fk.referenced_object_id = OBJECT_ID('LmsSubjects'); " +
+        "IF @fk IS NOT NULL EXEC('ALTER TABLE [LmsTopics] DROP CONSTRAINT [' + @fk + ']');");
+    // Backfill (faqat upgrade paytida): modulsiz mavzusi bor fanlarga "1-modul" + mavzularni unga bog'lash.
+    db.Database.ExecuteSqlRaw(
+        "INSERT INTO [LmsModules] (Id, SubjectId, Title, [Description], [Order], CreatedAt) " +
+        "SELECT NEWID(), s.Id, N'1-modul', N'', 1, SYSUTCDATETIME() FROM [LmsSubjects] s " +
+        "WHERE EXISTS (SELECT 1 FROM [LmsTopics] t WHERE t.SubjectId = s.Id AND (t.ModuleId IS NULL OR t.ModuleId = '')) " +
+        "  AND NOT EXISTS (SELECT 1 FROM [LmsModules] m WHERE m.SubjectId = s.Id);");
+    db.Database.ExecuteSqlRaw(
+        "UPDATE t SET t.ModuleId = m.Id FROM [LmsTopics] t " +
+        "JOIN [LmsModules] m ON m.SubjectId = t.SubjectId " +
+        "WHERE t.ModuleId IS NULL OR t.ModuleId = '';");
+
     // Sinfni arxivlash — Classes.IsArchived/ArchivedAt + Students.ArchivedWithClass (sinf bilan
     // arxivlangan o'quvchi belgisi). Migratsiyasiz, idempotent (WDAC `dotnet ef` ni bloklaydi).
     db.Database.ExecuteSqlRaw(
@@ -223,6 +272,10 @@ using (var scope = app.Services.CreateScope())
     db.Database.ExecuteSqlRaw(
         "IF COL_LENGTH('Students','ArchivedWithClass') IS NULL " +
         "ALTER TABLE [Students] ADD [ArchivedWithClass] bit NOT NULL DEFAULT 0;");
+    // O'quvchi turniket/FaceID qurilma ID'si — turniket o'tishlarini o'quvchiga bog'lash uchun.
+    db.Database.ExecuteSqlRaw(
+        "IF COL_LENGTH('Students','DeviceUserId') IS NULL " +
+        "ALTER TABLE [Students] ADD [DeviceUserId] nvarchar(max) NOT NULL DEFAULT '';");
 
     // O'qituvchi maoshi — toifa bo'yicha avtomatik hisoblash. Teachers.Category (toifa) +
     // SchoolMeta'da har toifa uchun bir soat narxi. Migratsiyasiz, idempotent.
@@ -239,6 +292,11 @@ using (var scope = app.Services.CreateScope())
         db.Database.ExecuteSqlRaw(
             $"IF COL_LENGTH('SchoolMeta','{col}') IS NULL " +
             $"ALTER TABLE [SchoolMeta] ADD [{col}] decimal(18,2) NOT NULL DEFAULT 0;");
+    // Web (PWA) push — Firebase web config + VAPID ochiq kaliti.
+    foreach (var col in new[] { "FcmWebConfigJson", "FcmVapidKey" })
+        db.Database.ExecuteSqlRaw(
+            $"IF COL_LENGTH('SchoolMeta','{col}') IS NULL " +
+            $"ALTER TABLE [SchoolMeta] ADD [{col}] nvarchar(max) NOT NULL DEFAULT '';");
 
     // O'qituvchilar davomati — yangi jadval (migratsiyasiz; shadow TenantId ustuni bilan global filterga
     // mos). Idempotent: faqat yo'q bo'lsa yaratiladi.
@@ -406,8 +464,11 @@ app.Use(async (context, next) =>
             "default-src 'self'; " +
             "img-src 'self' data: blob: https:; " +
             "style-src 'self' 'unsafe-inline'; " +
-            "script-src 'self'; " +
-            "connect-src 'self' ws: wss:; " +
+            // gstatic — FCM web SW (firebase-messaging-sw.js) importScripts qiladi.
+            "script-src 'self' https://www.gstatic.com; " +
+            "worker-src 'self'; " +
+            // googleapis/gstatic — FCM web token olish (getToken) so'rovlari.
+            "connect-src 'self' ws: wss: https://*.googleapis.com https://*.gstatic.com https://fcm.googleapis.com; " +
             "font-src 'self' data:; " +
             "frame-ancestors 'none'; object-src 'none'; base-uri 'self'";
     }
@@ -429,7 +490,7 @@ app.UseStaticFiles(new StaticFileOptions
         // Faqat Vite kontent-hashli assetlar (/assets/...) abadiy keshlanadi (nomi har build'da
         // o'zgaradi). Qolganlari — html, landing.css/landing.js, favicon (nomi o'zgarmaydi) —
         // no-cache, aks holda yangilanishlar brauzer/Cloudflare keshida ko'rinmay qoladi.
-        if (path.StartsWith("/assets/", StringComparison.OrdinalIgnoreCase))
+        if (path.Contains("/assets/", StringComparison.OrdinalIgnoreCase))
             headers.CacheControl = "public,max-age=31536000,immutable";
         else
             headers.CacheControl = "no-cache";
@@ -460,6 +521,7 @@ app.UseOutputCache();
 
 app.MapControllers();
 app.MapHub<ChatHub>("/hubs/chat");
+app.MapHub<LiveHub>("/hubs/live");
 
 // API "tirikligi": https://<domen>/api ochilganda SPA HTML emas, JSON qaytaradi.
 app.MapGet("/api", () => Results.Ok(new
@@ -485,8 +547,32 @@ bool IsLandingHost(string h) => rootDomains.Any(r =>
     h.Equals(r, StringComparison.OrdinalIgnoreCase) ||
     h.Equals("www." + r, StringComparison.OrdinalIgnoreCase));
 
+// DIQQAT: o'qituvchi PWA (`/teacher/`) statik fayllari (assets, manifest, sw.js, ikonlar)
+// yuqoridagi UseStaticFiles orqali beriladi. Ularni ALOHIDA pattern'li fallback bilan tutmaymiz —
+// pattern'li `MapFallback("/teacher/{**slug}")` `nonfile` cheklovisiz bo'lib, real fayllarni ham
+// tutib statik middleware'ni soyalaydi. Buning o'rniga `/teacher/` ni quyidagi GENERIC fallback
+// ichida (u `nonfile` cheklovli — fayllarga tegmaydi) hal qilamiz.
 app.MapFallback(async ctx =>
 {
+    var path = ctx.Request.Path.Value ?? "";
+
+    // O'qituvchi PWA: `/teacher` → trailing-slash'ga (relative manifest/icon to'g'ri yechilishi uchun);
+    // `/teacher/` va ichki nonfile yo'llar → teacher index.html.
+    if (path.Equals("/teacher", StringComparison.OrdinalIgnoreCase))
+    {
+        ctx.Response.Redirect("/teacher/", permanent: false);
+        return;
+    }
+    if (path.StartsWith("/teacher/", StringComparison.OrdinalIgnoreCase))
+    {
+        var teacherIndex = Path.Combine(webRoot, "teacher", "index.html");
+        if (!File.Exists(teacherIndex)) { ctx.Response.StatusCode = StatusCodes.Status404NotFound; return; }
+        ctx.Response.ContentType = "text/html; charset=utf-8";
+        ctx.Response.Headers.CacheControl = "no-cache";
+        await ctx.Response.SendFileAsync(teacherIndex);
+        return;
+    }
+
     var host = ctx.Request.Host.Host;
     var isApp = appHost.Length > 0
         ? host.Equals(appHost, StringComparison.OrdinalIgnoreCase)

@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using SchoolLms.Infrastructure.Data;
+using SchoolLms.Infrastructure.Auth;
 using SchoolLms.Application.Abstractions;
 using SchoolLms.Application.Dtos;
 using SchoolLms.Domain;
@@ -235,6 +236,19 @@ public class StudentPortalController(
     [HttpGet("holidays")]
     public async Task<ActionResult<IEnumerable<HolidayDto>>> Holidays() =>
         await db.Holidays.OrderBy(h => h.Date).Select(h => new HolidayDto(h.Date, h.Name)).ToListAsync();
+
+    /// <summary>Web (PWA) push uchun Firebase web config + VAPID — brauzer FCM token olishi uchun.
+    /// Bitta Firebase loyiha barcha ilovalar uchun (teacher/student) ishlaydi.</summary>
+    [HttpGet("push-config")]
+    public async Task<ActionResult<PushClientConfigDto>> PushConfig()
+    {
+        var m = await db.SchoolMeta.FirstOrDefaultAsync();
+        var sa = m?.FcmServiceAccountJson ?? "";
+        var web = (m?.FcmWebConfigJson ?? "").Trim();
+        var vapid = (m?.FcmVapidKey ?? "").Trim();
+        var enabled = FcmService.IsConfigured(sa) && web.Length > 0 && vapid.Length > 0;
+        return new PushClientConfigDto(enabled, web, vapid);
+    }
 
     // ---------- Farzandni olib ketish (pickup) ----------
 
@@ -715,6 +729,32 @@ public class StudentPortalController(
         return new UserSettingsDto(st.Language, st.Theme, st.NotificationsEnabled);
     }
 
+    /// <summary>
+    /// O'quvchi/ota-ona ilova ichida o'z parolini almashtiradi. Joriy parol bilan tasdiqlanadi,
+    /// yangi parol kamida 8 belgi. Faqat o'zinikiga (admin bu yerda impersonate qila olmaydi).
+    /// Login (email) o'zgarmagani uchun joriy token amal qilaveradi — qayta kirish shart emas.
+    /// </summary>
+    [HttpPut("password")]
+    [Authorize(Roles = "student,parent")]
+    public async Task<ActionResult> ChangePassword(ChangePasswordRequest req)
+    {
+        var uid = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (uid is null) return Unauthorized();
+        var user = await db.Users.FindAsync(uid);
+        if (user is null) return Unauthorized();
+
+        if (!PasswordHasher.Verify(req.CurrentPassword ?? "", user.PasswordHash))
+            return BadRequest(new { message = "Joriy parol noto'g'ri" });
+
+        var newPwd = (req.NewPassword ?? "").Trim();
+        if (newPwd.Length < 8)
+            return BadRequest(new { message = "Yangi parol kamida 8 belgidan iborat bo'lsin" });
+
+        user.SetOwnPassword(newPwd);
+        await db.SaveChangesAsync();
+        return Ok(new { message = "Parol almashtirildi" });
+    }
+
     // ---------- Joylashuv (GPS) ----------
 
     /// <summary>
@@ -746,6 +786,71 @@ public class StudentPortalController(
         var s = await TargetAsync(studentId);
         if (s is null) return NotFound();
         return new StudentLocationDto(s.Latitude, s.Longitude, s.LocationAddress, s.LocationUpdatedAt);
+    }
+
+    // ---------- Avtobus GPS (o'quvchi/ota-ona — FAQAT ertalabki oyna) ----------
+
+    /// <summary>XAVFSIZLIK: o'quvchi/ota-ona avtobus joylashuvini faqat ertalab shu oynada ko'radi
+    /// (06:00–09:00, Asia/Tashkent). Tashqarida hech narsa ko'rinmaydi.</summary>
+    private const int BusVisibleFromHour = 6;
+    private const int BusVisibleToHour = 9; // [06:00, 09:00) — 9:00 dan keyin ko'rinmaydi
+
+    private static bool BusWindowOpen()
+    {
+        var h = AppClock.Now.Hour;
+        return h >= BusVisibleFromHour && h < BusVisibleToHour;
+    }
+
+    /// <summary>Faol avtobuslarning jonli joylashuvi — FAQAT ertalabki oynada (06:00–09:00). Oynadan
+    /// tashqarida Available=false va bo'sh ro'yxat qaytadi (mobil ilova xaritani yashiradi).</summary>
+    [HttpGet("buses")]
+    [Authorize(Roles = "student,parent")]
+    public async Task<ActionResult<StudentBusesDto>> Buses()
+    {
+        var now = AppClock.Now;
+        var iso = now.ToString("yyyy-MM-ddTHH:mm:ss");
+        if (!BusWindowOpen())
+            return new StudentBusesDto(false, BusVisibleFromHour, BusVisibleToHour, iso, Array.Empty<StudentBusDto>());
+
+        var meta = await db.SchoolMeta.FirstOrDefaultAsync();
+        var onlineMin = meta?.GpsOnlineMinutes ?? 5;
+
+        var buses = await db.Buses.Where(b => b.IsActive).OrderBy(b => b.Name).ToListAsync();
+        var ids = buses.Select(b => b.Id).ToList();
+        var latest = (await db.BusLocations.Where(l => ids.Contains(l.BusId)).ToListAsync())
+            .GroupBy(l => l.BusId)
+            .ToDictionary(g => g.Key, g => g.OrderByDescending(x => x.RecordedAt, StringComparer.Ordinal).First());
+
+        var list = buses.Select(b =>
+        {
+            latest.TryGetValue(b.Id, out var l);
+            var online = l is not null && DateTime.TryParse(l.RecordedAt, out var t)
+                         && (now - t).TotalMinutes <= onlineMin;
+            return new StudentBusDto(b.Id, b.Name, b.PlateNumber, b.DriverName, b.DriverPhone,
+                b.Route, l?.Latitude, l?.Longitude, l?.Speed, l?.RecordedAt, online);
+        }).ToList();
+
+        return new StudentBusesDto(true, BusVisibleFromHour, BusVisibleToHour, iso, list);
+    }
+
+    /// <summary>Bitta avtobusning BUGUNGI izi (yo'nalish chizig'i + to'xtashlar) — FAQAT ertalabki oynada.
+    /// Faqat bugungi kun (tarixiy harakatni ko'rib bo'lmaydi). Oynadan tashqarida bo'sh iz qaytadi.</summary>
+    [HttpGet("buses/{id}/track")]
+    [Authorize(Roles = "student,parent")]
+    public async Task<ActionResult<BusTrackDto>> BusTrack(string id)
+    {
+        var d = AppClock.Today.ToString("yyyy-MM-dd");
+        if (!BusWindowOpen())
+            return new BusTrackDto(d, new(), new(), 0, 0, 0);
+
+        var bus = await db.Buses.FirstOrDefaultAsync(b => b.Id == id && b.IsActive);
+        if (bus is null) return NotFound();
+
+        var meta = await db.SchoolMeta.FirstOrDefaultAsync();
+        var points = await db.BusLocations
+            .Where(l => l.BusId == id && l.RecordedAt.StartsWith(d))
+            .ToListAsync();
+        return GpsService.Analyze(d, points, meta?.GpsStopRadiusM ?? 60, meta?.GpsStopMinMinutes ?? 3);
     }
 
     // ---------- Push bildirishnoma (qurilma tokeni) ----------
@@ -971,22 +1076,103 @@ public class StudentPortalController(
         if (cls is null) return Ok(Array.Empty<StudentLmsSubjectDto>());
 
         var subjects = await db.LmsSubjects
-            .Include(x => x.Topics)
+            .Include(x => x.Modules).ThenInclude(m => m.Topics)
             .Where(x => x.ClassId == cls.Id)
             .OrderBy(x => x.CreatedAt)
             .ToListAsync();
 
-        var topicIds = subjects.SelectMany(x => x.Topics.Select(t => t.Id)).ToList();
+        var topicIds = subjects
+            .SelectMany(x => x.Modules.SelectMany(m => m.Topics.Select(t => t.Id))).ToList();
         var completed = (await db.LmsProgresses
             .Where(p => p.StudentId == s.Id && topicIds.Contains(p.TopicId))
             .Select(p => p.TopicId).ToListAsync()).ToHashSet();
 
-        return subjects.Select(x => new StudentLmsSubjectDto(
-            x.Id, x.Title, x.Description, x.UnlockMode, x.BatchSize,
-            x.Topics.Count, x.Topics.Count(t => completed.Contains(t.Id)))).ToList();
+        return subjects.Select(x =>
+        {
+            var allTopics = x.Modules.SelectMany(m => m.Topics).ToList();
+            return new StudentLmsSubjectDto(
+                x.Id, x.Title, x.Description, x.UnlockMode, x.BatchSize,
+                allTopics.Count, allTopics.Count(t => completed.Contains(t.Id)));
+        }).ToList();
     }
 
-    /// <summary>Fanning mavzulari — ochilish tartibi va o'quvchi progressi bilan.</summary>
+    /// <summary>
+    /// Fanning to'liq mavzu ketma-ketligi (modul, keyin mavzu tartibida) ustidan ochilish
+    /// bayroqlarini hisoblaydi. Ochilish konfiguratsiyasi fan (subject) darajasida turadi.
+    /// </summary>
+    private (List<LmsTopic> Ordered, HashSet<string> Completed, Func<int, bool> IsUnlocked) BuildUnlock(
+        LmsSubject subject, HashSet<string> completedIds)
+    {
+        var ordered = subject.Modules
+            .OrderBy(m => m.Order)
+            .SelectMany(m => m.Topics.OrderBy(t => t.Order))
+            .ToList();
+
+        bool IsUnlocked(int i) => subject.UnlockMode switch
+        {
+            "sequential" => i == 0 || completedIds.Contains(ordered[i - 1].Id),
+            "batch" => i < subject.BatchSize ||
+                            completedIds.Contains(ordered[Math.Max(0, i - subject.BatchSize)].Id),
+            _ => true, // "all"
+        };
+
+        return (ordered, completedIds, IsUnlocked);
+    }
+
+    /// <summary>Bitta mavzuni — ochilish holatiga qarab kontentni yashirib — DTO ga aylantiradi.</summary>
+    private static StudentLmsTopicDto ToTopicDto(LmsTopic t, bool unlocked, bool completed) =>
+        new StudentLmsTopicDto(
+            t.Id, t.ModuleId, t.Title, t.Description,
+            unlocked ? t.VideoUrl : null,
+            unlocked ? t.TextContent : null,
+            t.Order,
+            // Qulflangan mavzularda kontent (video/matn/material) ko'rsatilmaydi
+            unlocked
+                ? t.Materials.Select(m => new LmsMaterialRowDto(m.Id, m.Name, m.Url, m.Size, m.ContentType)).ToList()
+                : new List<LmsMaterialRowDto>(),
+            unlocked, completed);
+
+    /// <summary>Fanning modullari — har modul ichida mavzular, ochilish tartibi va progress bilan.</summary>
+    [HttpGet("lms/subjects/{subjectId}/modules")]
+    public async Task<ActionResult<IEnumerable<StudentLmsModuleDto>>> LmsModules(
+        string subjectId, [FromQuery] string? studentId)
+    {
+        var s = await TargetAsync(studentId);
+        if (s is null) return User.IsInRole("admin") ? NeedStudentId() : NotFound();
+
+        var subject = await db.LmsSubjects
+            .Include(x => x.Modules).ThenInclude(m => m.Topics).ThenInclude(t => t.Materials)
+            .FirstOrDefaultAsync(x => x.Id == subjectId);
+        if (subject is null) return NotFound();
+
+        // Sinfga tegishli ekanini tekshiramiz
+        var cls = await db.Classes.FirstOrDefaultAsync(c => c.Name == s.ClassName);
+        if (cls is null || subject.ClassId != cls.Id) return Forbid();
+
+        var completedIds = (await db.LmsProgresses
+            .Where(p => p.StudentId == s.Id &&
+                subject.Modules.SelectMany(m => m.Topics).Select(t => t.Id).Contains(p.TopicId))
+            .Select(p => p.TopicId).ToListAsync()).ToHashSet();
+
+        var (ordered, _, isUnlocked) = BuildUnlock(subject, completedIds);
+        // Mavzu id -> global indeks (modul.Order, keyin mavzu.Order bo'yicha)
+        var idxOf = ordered.Select((t, i) => (t.Id, i)).ToDictionary(x => x.Id, x => x.i);
+
+        return subject.Modules.OrderBy(m => m.Order).Select(m =>
+        {
+            var mTopics = m.Topics.OrderBy(t => t.Order)
+                .Select(t => ToTopicDto(t, isUnlocked(idxOf[t.Id]), completedIds.Contains(t.Id)))
+                .ToList();
+            return new StudentLmsModuleDto(
+                m.Id, m.Title, m.Description, m.Order,
+                mTopics.Count, mTopics.Count(t => t.IsCompleted), mTopics);
+        }).ToList();
+    }
+
+    /// <summary>
+    /// Fanning barcha mavzulari (tekis ro'yxat, global tartibda) — eski mijozlar uchun.
+    /// Ochilish tartibi va o'quvchi progressi bilan; har mavzu o'z ModuleId'sini olib yuradi.
+    /// </summary>
     [HttpGet("lms/subjects/{subjectId}/topics")]
     public async Task<ActionResult<IEnumerable<StudentLmsTopicDto>>> LmsTopics(
         string subjectId, [FromQuery] string? studentId)
@@ -995,7 +1181,7 @@ public class StudentPortalController(
         if (s is null) return User.IsInRole("admin") ? NeedStudentId() : NotFound();
 
         var subject = await db.LmsSubjects
-            .Include(x => x.Topics).ThenInclude(t => t.Materials)
+            .Include(x => x.Modules).ThenInclude(m => m.Topics).ThenInclude(t => t.Materials)
             .FirstOrDefaultAsync(x => x.Id == subjectId);
         if (subject is null) return NotFound();
 
@@ -1003,32 +1189,18 @@ public class StudentPortalController(
         var cls = await db.Classes.FirstOrDefaultAsync(c => c.Name == s.ClassName);
         if (cls is null || subject.ClassId != cls.Id) return Forbid();
 
-        var topics = subject.Topics.OrderBy(t => t.Order).ToList();
         var completedIds = (await db.LmsProgresses
-            .Where(p => p.StudentId == s.Id && topics.Select(t => t.Id).Contains(p.TopicId))
+            .Where(p => p.StudentId == s.Id &&
+                subject.Modules.SelectMany(m => m.Topics).Select(t => t.Id).Contains(p.TopicId))
             .Select(p => p.TopicId).ToListAsync()).ToHashSet();
 
+        var (ordered, _, isUnlocked) = BuildUnlock(subject, completedIds);
+
         var result = new List<StudentLmsTopicDto>();
-        for (var i = 0; i < topics.Count; i++)
+        for (var i = 0; i < ordered.Count; i++)
         {
-            var t = topics[i];
-            var unlocked = subject.UnlockMode switch
-            {
-                "sequential" => i == 0 || completedIds.Contains(topics[i - 1].Id),
-                "batch" => i < subject.BatchSize ||
-                                completedIds.Contains(topics[Math.Max(0, i - subject.BatchSize)].Id),
-                _ => true, // "all"
-            };
-            // Qulflangan mavzularda kontent (video/matn/material) ko'rsatilmaydi
-            result.Add(new StudentLmsTopicDto(
-                t.Id, t.SubjectId, t.Title, t.Description,
-                unlocked ? t.VideoUrl : null,
-                unlocked ? t.TextContent : null,
-                t.Order,
-                unlocked
-                    ? t.Materials.Select(m => new LmsMaterialRowDto(m.Id, m.Name, m.Url, m.Size, m.ContentType)).ToList()
-                    : new List<LmsMaterialRowDto>(),
-                unlocked, completedIds.Contains(t.Id)));
+            var t = ordered[i];
+            result.Add(ToTopicDto(t, isUnlocked(i), completedIds.Contains(t.Id)));
         }
         return result;
     }
@@ -1046,36 +1218,37 @@ public class StudentPortalController(
 
         var topic = await db.LmsTopics
             .Include(t => t.Materials)
-            .Include(t => t.Subject)
+            .Include(t => t.Module).ThenInclude(m => m.Subject)
             .FirstOrDefaultAsync(t => t.Id == topicId);
         if (topic is null) return NotFound();
 
         // Sinfga tegishli ekanini tekshiramiz
         var cls = await db.Classes.FirstOrDefaultAsync(c => c.Name == s.ClassName);
-        if (cls is null || topic.Subject.ClassId != cls.Id) return Forbid();
+        if (cls is null || topic.Module.Subject.ClassId != cls.Id) return Forbid();
 
-        // Ochilish tartibini hisoblaymiz
-        var subject = topic.Subject;
-        var allTopics = await db.LmsTopics
-            .Where(t => t.SubjectId == subject.Id).OrderBy(t => t.Order).ToListAsync();
+        // Fanning to'liq mavzu ketma-ketligini (modul + mavzu tartibida) yuklaymiz
+        var subject = topic.Module.Subject;
+        subject.Modules = await db.LmsModules
+            .Include(m => m.Topics)
+            .Where(m => m.SubjectId == topic.Module.SubjectId)
+            .OrderBy(m => m.Order).ToListAsync();
+
+        var ordered = subject.Modules
+            .OrderBy(m => m.Order)
+            .SelectMany(m => m.Topics.OrderBy(t => t.Order))
+            .ToList();
         var completedIds = (await db.LmsProgresses
-            .Where(p => p.StudentId == s.Id && allTopics.Select(t => t.Id).Contains(p.TopicId))
+            .Where(p => p.StudentId == s.Id && ordered.Select(t => t.Id).Contains(p.TopicId))
             .Select(p => p.TopicId).ToListAsync()).ToHashSet();
 
-        var idx = allTopics.FindIndex(t => t.Id == topicId);
-        var unlocked = subject.UnlockMode switch
-        {
-            "sequential" => idx == 0 || completedIds.Contains(allTopics[idx - 1].Id),
-            "batch" => idx < subject.BatchSize ||
-                            completedIds.Contains(allTopics[Math.Max(0, idx - subject.BatchSize)].Id),
-            _ => true,
-        };
+        var (_, _, isUnlocked) = BuildUnlock(subject, completedIds);
+        var idx = ordered.FindIndex(t => t.Id == topicId);
 
-        if (!unlocked)
+        if (idx < 0 || !isUnlocked(idx))
             return StatusCode(403, new { message = "Bu mavzu hali ochilmagan" });
 
         return new StudentLmsTopicDto(
-            topic.Id, topic.SubjectId, topic.Title, topic.Description,
+            topic.Id, topic.ModuleId, topic.Title, topic.Description,
             topic.VideoUrl, topic.TextContent, topic.Order,
             topic.Materials.Select(m => new LmsMaterialRowDto(m.Id, m.Name, m.Url, m.Size, m.ContentType)).ToList(),
             true, completedIds.Contains(topic.Id));

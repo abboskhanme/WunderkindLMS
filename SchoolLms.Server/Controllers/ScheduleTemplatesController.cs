@@ -8,7 +8,8 @@ using SchoolLms.Domain;
 namespace SchoolLms.Server.Controllers;
 
 [ApiController]
-[Authorize(Roles = "admin,superadmin")]
+[Authorize]
+[AdminPerm("schedule")]
 [Route("api/admin/classes/{classId}/schedule-templates")]
 public class ScheduleTemplatesController(AppDbContext db) : ControllerBase
 {

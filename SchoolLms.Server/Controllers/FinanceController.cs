@@ -9,7 +9,8 @@ using SchoolLms.Application.Services;
 namespace SchoolLms.Server.Controllers;
 
 [ApiController]
-[Authorize(Roles = "admin,superadmin")]
+[Authorize]
+[AdminPerm("finance")]
 [Route("api/admin/finance")]
 public class FinanceController(AppDbContext db, AuditService audit) : ControllerBase
 {

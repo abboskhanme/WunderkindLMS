@@ -1101,9 +1101,18 @@ export interface LmsMaterial {
   contentType: string
 }
 
-export interface LmsTopic {
+export interface LmsModule {
   id: string
   subjectId: string
+  title: string
+  description: string
+  order: number
+  topicsCount: number
+}
+
+export interface LmsTopic {
+  id: string
+  moduleId: string
   title: string
   description: string
   videoUrl?: string | null

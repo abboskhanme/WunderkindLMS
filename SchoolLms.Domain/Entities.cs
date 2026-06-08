@@ -141,6 +141,9 @@ public class Student
     public string? LocationAddress { get; set; }
     /// <summary>Joylashuv oxirgi yangilangan vaqt (ISO).</summary>
     public string? LocationUpdatedAt { get; set; }
+    /// <summary>Turniket/FaceID qurilmasidagi shaxs ID'si (personId/employeeNo). Turniket o'tish
+    /// hodisalari shu ID orqali o'quvchiga bog'lanadi (kirgan/chiqqan vaqt). Bo'sh = moslanmagan.</summary>
+    public string DeviceUserId { get; set; } = string.Empty;
 }
 
 /// <summary>O'qituvchi.</summary>
@@ -631,6 +634,17 @@ public class SchoolMeta
     /// push yuborilmaydi. Admin "Sozlamalar → Push (Firebase)" bo'limidan kiritadi.
     /// </summary>
     public string FcmServiceAccountJson { get; set; } = string.Empty;
+    /// <summary>
+    /// Firebase WEB app konfiguratsiyasi (JSON: apiKey, authDomain, projectId, messagingSenderId,
+    /// appId). Web (PWA) push uchun — brauzer FCM token olishi uchun zarur. Firebase Console →
+    /// Project Settings → General → Your apps → Web app config. Ommaviy (maxfiy emas).
+    /// </summary>
+    public string FcmWebConfigJson { get; set; } = string.Empty;
+    /// <summary>
+    /// Web Push (VAPID) ochiq kaliti — Firebase Console → Cloud Messaging → Web configuration →
+    /// "Web Push certificates" (Key pair). Web (PWA) push uchun zarur.
+    /// </summary>
+    public string FcmVapidKey { get; set; } = string.Empty;
 
     /// <summary>O'qituvchi maoshi hisoblashda toifa bo'yicha BIR SOAT dars narxi (so'm).
     /// Oylik maosh = haftalik darslar soni × 4 × shu narx. Admin "Dars jadvali → Oylik hisoblash"da kiritadi.</summary>
@@ -982,15 +996,30 @@ public class LmsSubject
     /// <summary>UnlockMode="batch" bo'lganda bir vaqtda ochiq mavzular soni.</summary>
     public int BatchSize { get; set; } = 3;
     public DateTime CreatedAt { get; set; } = AppClock.Now;
-    public ICollection<LmsTopic> Topics { get; set; } = new List<LmsTopic>();
+    /// <summary>Fan ichidagi modullar (Sinf → Fan → Modul → Mavzu).</summary>
+    public ICollection<LmsModule> Modules { get; set; } = new List<LmsModule>();
 }
 
-/// <summary>LMS mavzusi (dars) — bitta bo'lim: video + materiallar + matn.</summary>
-public class LmsTopic
+/// <summary>LMS moduli — fan ichidagi mavzular guruhi (Sinf → Fan → Modul → Mavzu).</summary>
+public class LmsModule
 {
     public string Id { get; set; } = Guid.NewGuid().ToString();
     public string SubjectId { get; set; } = string.Empty;
     public LmsSubject Subject { get; set; } = null!;
+    public string Title { get; set; } = string.Empty;
+    public string Description { get; set; } = string.Empty;
+    /// <summary>Tartib raqami (1 dan). Mavzular ochilishi modul→mavzu tartibida hisoblanadi.</summary>
+    public int Order { get; set; }
+    public DateTime CreatedAt { get; set; } = AppClock.Now;
+    public ICollection<LmsTopic> Topics { get; set; } = new List<LmsTopic>();
+}
+
+/// <summary>LMS mavzusi (dars) — bitta bo'lim: video + materiallar + matn. Modulga tegishli.</summary>
+public class LmsTopic
+{
+    public string Id { get; set; } = Guid.NewGuid().ToString();
+    public string ModuleId { get; set; } = string.Empty;
+    public LmsModule Module { get; set; } = null!;
     public string Title { get; set; } = string.Empty;
     public string Description { get; set; } = string.Empty;
     /// <summary>Video havolasi — YouTube, to'g'ri mp4, Vimeo va h.k. Ixtiyoriy.</summary>

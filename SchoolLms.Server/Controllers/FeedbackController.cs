@@ -11,7 +11,8 @@ namespace SchoolLms.Server.Controllers;
 /// shu yerda ko'radi va "hal qilindi" deb belgilaydi.
 /// </summary>
 [ApiController]
-[Authorize(Roles = "admin,superadmin")]
+[Authorize]
+[AdminPerm("feedback")]
 [Route("api/admin/feedback")]
 public class FeedbackController(AppDbContext db) : ControllerBase
 {

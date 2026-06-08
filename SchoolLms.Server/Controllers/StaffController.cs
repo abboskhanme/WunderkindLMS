@@ -15,7 +15,8 @@ namespace SchoolLms.Server.Controllers;
 /// ("Xodimlar va rollar" bo'limi / <see cref="SetPermissions"/>) o'zgartiradi.
 /// </summary>
 [ApiController]
-[Authorize(Roles = "admin,superadmin")]
+[Authorize]
+[AdminPerm("staff")]
 [Route("api/admin/staff")]
 public class StaffController(AppDbContext db) : ControllerBase
 {

@@ -14,7 +14,8 @@ namespace SchoolLms.Server.Controllers;
 /// (2) sinf guruh chati (o'quvchilar + dars beruvchi o'qituvchilar + admin). Faqat "admin" roli.
 /// </summary>
 [ApiController]
-[Authorize(Roles = "admin,superadmin")]
+[Authorize]
+[AdminPerm("messages")]
 [Route("api/admin/messages")]
 public class MessagesController(AppDbContext db, ChatService chat, TelegramService telegram, FcmService fcm) : ControllerBase
 {

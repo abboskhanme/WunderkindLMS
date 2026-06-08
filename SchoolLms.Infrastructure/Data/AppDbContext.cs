@@ -61,6 +61,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
 
     // LMS (Ta'lim)
     public DbSet<LmsSubject> LmsSubjects => Set<LmsSubject>();
+    public DbSet<LmsModule> LmsModules => Set<LmsModule>();
     public DbSet<LmsTopic> LmsTopics => Set<LmsTopic>();
     public DbSet<LmsMaterial> LmsMaterials => Set<LmsMaterial>();
     public DbSet<LmsProgress> LmsProgresses => Set<LmsProgress>();
@@ -134,8 +135,11 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
         // LMS (Ta'lim)
         b.Entity<LmsSubject>().HasIndex(s => s.ClassId);
         b.Entity<LmsSubject>()
-            .HasMany(s => s.Topics).WithOne(t => t.Subject)
-            .HasForeignKey(t => t.SubjectId).OnDelete(DeleteBehavior.Cascade);
+            .HasMany(s => s.Modules).WithOne(m => m.Subject)
+            .HasForeignKey(m => m.SubjectId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<LmsModule>()
+            .HasMany(m => m.Topics).WithOne(t => t.Module)
+            .HasForeignKey(t => t.ModuleId).OnDelete(DeleteBehavior.Cascade);
         b.Entity<LmsTopic>()
             .HasMany(t => t.Materials).WithOne(m => m.Topic)
             .HasForeignKey(m => m.TopicId).OnDelete(DeleteBehavior.Cascade);
@@ -146,7 +150,9 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
             .HasIndex(p => new { p.StudentId, p.TopicId }).IsUnique();
         b.Entity<LmsProgress>()
             .HasIndex(p => p.StudentId);
+        b.Entity<LmsModule>()
+            .HasIndex(m => new { m.SubjectId, m.Order });
         b.Entity<LmsTopic>()
-            .HasIndex(t => new { t.SubjectId, t.Order });
+            .HasIndex(t => new { t.ModuleId, t.Order });
     }
 }

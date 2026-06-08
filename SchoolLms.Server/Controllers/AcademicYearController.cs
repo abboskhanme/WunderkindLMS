@@ -13,7 +13,8 @@ using System.Text.Json;
 namespace SchoolLms.Server.Controllers;
 
 [ApiController]
-[Authorize(Roles = "admin,superadmin")]
+[Authorize]
+[AdminPerm("academicYear")]
 [Route("api/admin/academic-year")]
 public class AcademicYearController(AppDbContext db, AuditService audit) : ControllerBase
 {

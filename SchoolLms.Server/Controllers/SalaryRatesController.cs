@@ -13,7 +13,8 @@ namespace SchoolLms.Server.Controllers;
 /// shu narx + dars jadvalidan har o'qituvchining oylik maoshi avtomatik hisoblanadi.
 /// </summary>
 [ApiController]
-[Authorize(Roles = "admin,superadmin")]
+[Authorize]
+[AdminPerm("teachers")]
 [Route("api/admin/salary-rates")]
 public class SalaryRatesController(AppDbContext db, AuditService audit) : ControllerBase
 {

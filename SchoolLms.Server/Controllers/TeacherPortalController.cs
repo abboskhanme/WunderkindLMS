@@ -80,6 +80,22 @@ public class TeacherPortalController(
     public async Task<ActionResult<IEnumerable<HolidayDto>>> Holidays() =>
         await db.Holidays.OrderBy(h => h.Date).Select(h => new HolidayDto(h.Date, h.Name)).ToListAsync();
 
+    /// <summary>
+    /// Web (PWA) push uchun Firebase web konfiguratsiyasi + VAPID ochiq kaliti. Brauzer shu config
+    /// bilan FCM web token oladi va uni /notifications/register orqali yuboradi. Qiymatlar ommaviy
+    /// (maxfiy emas). Sozlanmagan bo'lsa <c>enabled=false</c> — ilova push so'ramaydi.
+    /// </summary>
+    [HttpGet("push-config")]
+    public async Task<ActionResult<PushClientConfigDto>> PushConfig()
+    {
+        var m = await db.SchoolMeta.FirstOrDefaultAsync();
+        var sa = m?.FcmServiceAccountJson ?? "";
+        var web = (m?.FcmWebConfigJson ?? "").Trim();
+        var vapid = (m?.FcmVapidKey ?? "").Trim();
+        var enabled = FcmService.IsConfigured(sa) && web.Length > 0 && vapid.Length > 0;
+        return new PushClientConfigDto(enabled, web, vapid);
+    }
+
     // ---------- Farzandni olib ketish (pickup) — sinf rahbari ----------
 
     private static PickupRequestDto PickupDto(PickupRequest p) =>
@@ -430,6 +446,42 @@ public class TeacherPortalController(
         if (!await Authorized(req.ClassId, req.SubjectId)) return Forbid();
         await JournalService.SetNoteAsync(db, req);
         return NoContent();
+    }
+
+    /// <summary>Mavzular shabloni (.xlsx) — o'qituvchi o'z sinf+fani uchun jadval kunlari bilan.</summary>
+    [HttpGet("journal/topics-template")]
+    public async Task<IActionResult> TopicsTemplate(
+        [FromQuery] string classId, [FromQuery] string subjectId, [FromQuery] int quarter)
+    {
+        if (!await Authorized(classId, subjectId)) return Forbid();
+        var bytes = await JournalService.TopicTemplateXlsxAsync(db, classId, subjectId, quarter);
+        return File(bytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "mavzular_shablon.xlsx");
+    }
+
+    /// <summary>To'ldirilgan Excel'dan mavzu+uy vazifani import (darsni "o'tilgan" qilmaydi).</summary>
+    [HttpPost("journal/topics-import")]
+    [RequestSizeLimit(10 * 1024 * 1024)]
+    public async Task<ActionResult<TopicImportResultDto>> TopicsImport(
+        [FromForm] string classId, [FromForm] string subjectId, [FromForm] int quarter, IFormFile? file)
+    {
+        if (!await Authorized(classId, subjectId)) return Forbid();
+        if (file is null || file.Length == 0)
+            return BadRequest(new { message = "Fayl tanlanmagan" });
+        if (!file.FileName.EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase))
+            return BadRequest(new { message = "Faqat .xlsx (Excel) fayl qabul qilinadi" });
+
+        List<string[]> rows;
+        try
+        {
+            await using var stream = file.OpenReadStream();
+            rows = ExcelImport.ReadRows(stream, JournalService.TopicHeaders.Length);
+        }
+        catch
+        {
+            return BadRequest(new { message = "Faylni o'qib bo'lmadi — buzilmagan .xlsx ekanini tekshiring" });
+        }
+
+        return await JournalService.ImportTopicsAsync(db, classId, subjectId, quarter, rows);
     }
 
     [HttpGet("journal/quarter-grades")]
@@ -813,7 +865,7 @@ public class TeacherPortalController(
             taught = new HashSet<string>(StringComparer.Ordinal) { classId };
         }
 
-        var subjects = await db.LmsSubjects.Include(s => s.Topics)
+        var subjects = await db.LmsSubjects.Include(s => s.Modules).ThenInclude(m => m.Topics)
             .Where(s => taught.Contains(s.ClassId))
             .OrderBy(s => s.CreatedAt).ToListAsync();
         var classNames = await db.Classes.Where(c => taught.Contains(c.Id))
@@ -822,7 +874,7 @@ public class TeacherPortalController(
         return subjects.Select(s => new LmsSubjectDto(
             s.Id, s.ClassId, classNames.GetValueOrDefault(s.ClassId, ""),
             s.Title, s.Description, s.UnlockMode, s.BatchSize,
-            s.Topics.Count, s.CreatedAt.ToString("o"))).ToList();
+            s.Modules.Sum(m => m.Topics.Count), s.CreatedAt.ToString("o"))).ToList();
     }
 
     /// <summary>Fanning mavzulari (to'liq kontent — o'qituvchiga hammasi ochiq). Tugatgan o'quvchi soni bilan.</summary>
@@ -835,8 +887,10 @@ public class TeacherPortalController(
         if (subject is null) return NotFound();
         if (!(await TaughtClassIdsAsync(t)).Contains(subject.ClassId)) return Forbid();
 
-        var topics = await db.LmsTopics.Include(x => x.Materials)
-            .Where(x => x.SubjectId == subjectId).OrderBy(x => x.Order).ToListAsync();
+        // Mavzular fan modullari orqali yig'iladi (modul → mavzu tartibida).
+        var modules = await db.LmsModules.Include(m => m.Topics).ThenInclude(t => t.Materials)
+            .Where(m => m.SubjectId == subjectId).OrderBy(m => m.Order).ToListAsync();
+        var topics = modules.SelectMany(m => m.Topics.OrderBy(x => x.Order)).ToList();
         var topicIds = topics.Select(x => x.Id).ToList();
         var completedMap = (await db.LmsProgresses
                 .Where(p => topicIds.Contains(p.TopicId))
@@ -846,7 +900,7 @@ public class TeacherPortalController(
             .ToDictionary(x => x.Id, x => x.Count);
 
         return topics.Select(x => new LmsTopicDto(
-            x.Id, x.SubjectId, x.Title, x.Description, x.VideoUrl, x.TextContent, x.Order,
+            x.Id, x.ModuleId, x.Title, x.Description, x.VideoUrl, x.TextContent, x.Order,
             x.Materials.Select(m => new LmsMaterialRowDto(m.Id, m.Name, m.Url, m.Size, m.ContentType)).ToList(),
             completedMap.GetValueOrDefault(x.Id, 0))).ToList();
     }
@@ -864,8 +918,9 @@ public class TeacherPortalController(
         var cls = await db.Classes.FindAsync(subject.ClassId);
         if (cls is null) return NotFound();
 
-        var topics = await db.LmsTopics.Where(x => x.SubjectId == subjectId)
-            .OrderBy(x => x.Order).ToListAsync();
+        var modules = await db.LmsModules.Include(m => m.Topics)
+            .Where(m => m.SubjectId == subjectId).OrderBy(m => m.Order).ToListAsync();
+        var topics = modules.SelectMany(m => m.Topics.OrderBy(x => x.Order)).ToList();
         var topicIds = topics.Select(x => x.Id).ToList();
 
         var students = await db.Students

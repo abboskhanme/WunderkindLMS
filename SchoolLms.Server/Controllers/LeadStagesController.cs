@@ -8,7 +8,8 @@ using SchoolLms.Domain;
 namespace SchoolLms.Server.Controllers;
 
 [ApiController]
-[Authorize(Roles = "admin,superadmin")]
+[Authorize]
+[AdminPerm("leads")]
 [Route("api/admin/lead-stages")]
 public class LeadStagesController(AppDbContext db) : ControllerBase
 {

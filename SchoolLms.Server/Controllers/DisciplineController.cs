@@ -16,7 +16,8 @@ namespace SchoolLms.Server.Controllers;
 /// jurnalda shu sabab bilan davomat qo'yilsa qoldiga avtomatik ta'sir qiladi. Faqat admin.
 /// </summary>
 [ApiController]
-[Authorize(Roles = "admin,superadmin")]
+[Authorize]
+[AdminPerm("discipline")]
 [Route("api/admin/discipline")]
 public class DisciplineController(AppDbContext db) : ControllerBase
 {
