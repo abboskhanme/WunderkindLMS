@@ -25,3 +25,6 @@ appsettings.*.local.json
 
 # Server statik (Docker build dist'dan yaratadi)
 SchoolLms.Server/wwwroot/
+
+# Baza backuplari (haqiqiy foydalanuvchi maʼlumotlari) — commit qilinmasin
+backups/
