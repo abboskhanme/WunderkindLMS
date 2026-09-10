@@ -31,3 +31,6 @@ backups/
 
 # Demo akkaunt login/parollari — repoga tushmasin
 tools/demo-credentials.txt
+
+# Hisobot/artifakt HTML fayllari repoda saqlanmaydi
+hisobot-*.html
