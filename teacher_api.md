@@ -3,7 +3,7 @@
 O'qituvchi ilovasi maktab serveri bilan `TeacherPortalController` (`/api/teacher/*`) orqali ishlaydi.
 Barcha endpointlar **`teacher`** rolini talab qiladi. Javoblar **JSON**.
 
-**Base URL:** `https://intellectschool.uz`
+**Base URL:** `https://wunderkindschool.uz`
 Har bir so'rovda: `Authorization: Bearer <token>` sarlavhasi.
 
 ---
@@ -300,7 +300,7 @@ POST /api/teacher/notifications/register
 
 ## curl misol
 ```bash
-B=https://intellectschool.uz
+B=https://wunderkindschool.uz
 TOKEN=$(curl -s -X POST $B/api/auth/login -H "Content-Type: application/json" \
   -d '{"email":"LOGIN","password":"PAROL"}' | jq -r .token)
 

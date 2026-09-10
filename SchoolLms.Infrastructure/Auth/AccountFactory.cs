@@ -9,8 +9,8 @@ namespace SchoolLms.Infrastructure.Auth;
 /// <summary>
 /// O'quvchi/o'qituvchi yaratilganda ularga login va parol generatsiya qilib,
 /// tizim akkaunti (AppUser) yaratadi. Login — FISH (ism-familiya) dan tuzilgan,
-/// email EMAS, takrorlanmas username (masalan "voxidjonovabduxalil"). Agar bunday
-/// login band bo'lsa, oxiriga raqam qo'shiladi (voxidjonovabduxalil2, ...3).
+/// email EMAS, takrorlanmas username (masalan "karimovadilnoza"). Agar bunday
+/// login band bo'lsa, oxiriga raqam qo'shiladi (karimovadilnoza2, ...3).
 /// </summary>
 public static class AccountFactory
 {
@@ -28,8 +28,8 @@ public static class AccountFactory
 
     /// <summary>
     /// FISH dan takrorlanmas login (username) tuzadi: familiya + ism (birinchi ikkita so'z)
-    /// lotin harflariga keltirilib, belgisiz qo'shiladi (masalan "voxidjonovabduxalil").
-    /// Bunday login band bo'lsa, oxiriga raqam qo'shiladi (voxidjonovabduxalil2).
+    /// lotin harflariga keltirilib, belgisiz qo'shiladi (masalan "karimovadilnoza").
+    /// Bunday login band bo'lsa, oxiriga raqam qo'shiladi (karimovadilnoza2).
     /// Unikallik BARCHA foydalanuvchilar bo'yicha tekshiriladi — bazadagi va hali
     /// saqlanmagan (shu kontekstga qo'shilgan) akkauntlar.
     /// </summary>

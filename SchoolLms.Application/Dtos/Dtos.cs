@@ -265,6 +265,20 @@ public record SaveGroupsRequest(List<GroupAssignmentDto> Assignments);
 public record WeekAssignmentDto(int Week, string? TemplateId);
 public record SaveWeekAssignmentsRequest(int Quarter, List<WeekAssignmentDto> Assignments);
 
+/* ---------- Bildirishnomalar (topbar qo'ng'irog'i) ---------- */
+
+/// <summary>Bitta bildirishnoma. <c>Kind</c>: suggestion | complaint | pickup | chat | birthday.
+/// <c>Link</c> — bosilganda ochiladigan admin sahifasi. <c>IsNew</c> — oxirgi o'qishdan keyin paydo bo'lgan.</summary>
+public record NotificationDto(
+    string Id, string Kind, string Title, string Text, DateTime CreatedAt, string Link,
+    bool IsNew = false);
+
+/// <summary>Bildirishnomalar ro'yxati + o'qilmaganlar soni.</summary>
+public record NotificationListDto(List<NotificationDto> Items, int UnreadCount);
+
+/// <summary>Faqat o'qilmaganlar soni (qo'ng'iroq nishoni uchun).</summary>
+public record UnreadCountDto(int UnreadCount);
+
 /* ---------- Dashboard ---------- */
 public record AdminStatsDto(int StudentsCount, int TeachersCount, double AverageGrade, double? AttendanceRate);
 public record ClassPerformanceItemDto(string ClassId, string ClassName, double AverageGrade, double? AttendanceRate);

@@ -27,17 +27,19 @@ var rootDomains = (builder.Configuration["Tenancy:RootDomain"] ?? "")
 
 // ---------- Xizmatlar ----------
 builder.Services.AddDbContext<AppDbContext>(opt =>
-    opt.UseSqlServer(defaultConn,
-            sql =>
+    opt.UseNpgsql(defaultConn,
+            npg =>
             {
                 // Vaqtinchalik DB uzilishlarini avtomatik qayta urinish bilan chidaydi.
-                sql.EnableRetryOnFailure(
+                npg.EnableRetryOnFailure(
                     maxRetryCount: 5,
                     maxRetryDelay: TimeSpan.FromSeconds(10),
-                    errorNumbersToAdd: null);
+                    errorCodesToAdd: null);
                 // Ko'p kolleksiyali Include'larni alohida so'rovlarga ajratadi — kartezian portlashning oldini oladi.
-                sql.UseQuerySplittingBehavior(QuerySplittingBehavior.SplitQuery);
-            }));
+                npg.UseQuerySplittingBehavior(QuerySplittingBehavior.SplitQuery);
+            })
+       // Jadval va ustun nomlari PostgreSQL uslubida: AppUser.FullName -> users.full_name
+       .UseSnakeCaseNamingConvention());
 
 // Application qatlamidagi xizmatlar konkret AppDbContext o'rniga IAppDbContext'ga
 // bog'lanadi — uni o'sha scoped AppDbContext instansiyasiga ulaymiz.
@@ -218,209 +220,9 @@ using (var scope = app.Services.CreateScope())
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
     db.Database.Migrate();
 
-    // EvaluationGrades.SubjectId — fan bo'yicha baholash uchun. Migratsiyasiz, idempotent qo'shamiz
-    // (WDAC `dotnet ef` ni bloklaydi; ustun mavjud bo'lsa hech narsa qilmaydi).
-    db.Database.ExecuteSqlRaw(
-        "IF COL_LENGTH('EvaluationGrades','SubjectId') IS NULL " +
-        "ALTER TABLE [EvaluationGrades] ADD [SubjectId] nvarchar(max) NOT NULL DEFAULT '';");
-
-    // LMS modul qatlami (Sinf → Fan → Modul → Mavzu). Migratsiyasiz, idempotent.
-    db.Database.ExecuteSqlRaw(
-        "IF OBJECT_ID('LmsModules') IS NULL " +
-        "CREATE TABLE [LmsModules] (" +
-        "  [Id] nvarchar(450) NOT NULL CONSTRAINT [PK_LmsModules] PRIMARY KEY," +
-        "  [SubjectId] nvarchar(max) NOT NULL DEFAULT ''," +
-        "  [Title] nvarchar(max) NOT NULL DEFAULT ''," +
-        "  [Description] nvarchar(max) NOT NULL DEFAULT ''," +
-        "  [Order] int NOT NULL DEFAULT 0," +
-        "  [CreatedAt] datetime2 NOT NULL DEFAULT SYSUTCDATETIME());");
-    db.Database.ExecuteSqlRaw(
-        "IF COL_LENGTH('LmsTopics','ModuleId') IS NULL " +
-        "ALTER TABLE [LmsTopics] ADD [ModuleId] nvarchar(max) NOT NULL DEFAULT '';");
-    // Vestigial LmsTopics.SubjectId — endi EF uni INSERT'da yubormaydi; NOT NULL bo'lgani uchun
-    // default qo'shamiz (aks holda yangi mavzu qo'shganda NULL → 515 xato). Idempotent.
-    db.Database.ExecuteSqlRaw(
-        "IF COL_LENGTH('LmsTopics','SubjectId') IS NOT NULL AND NOT EXISTS (" +
-        "  SELECT 1 FROM sys.default_constraints " +
-        "  WHERE parent_object_id = OBJECT_ID('LmsTopics') AND name = 'DF_LmsTopics_SubjectId') " +
-        "ALTER TABLE [LmsTopics] ADD CONSTRAINT [DF_LmsTopics_SubjectId] DEFAULT '' FOR [SubjectId];");
-    // Eski FK (LmsTopics.SubjectId → LmsSubjects) endi kerak emas — mavzu modulga bog'lanadi.
-    db.Database.ExecuteSqlRaw(
-        "DECLARE @fk sysname; " +
-        "SELECT @fk = fk.name FROM sys.foreign_keys fk " +
-        "WHERE fk.parent_object_id = OBJECT_ID('LmsTopics') AND fk.referenced_object_id = OBJECT_ID('LmsSubjects'); " +
-        "IF @fk IS NOT NULL EXEC('ALTER TABLE [LmsTopics] DROP CONSTRAINT [' + @fk + ']');");
-    // Backfill (faqat upgrade paytida): modulsiz mavzusi bor fanlarga "1-modul" + mavzularni unga bog'lash.
-    db.Database.ExecuteSqlRaw(
-        "INSERT INTO [LmsModules] (Id, SubjectId, Title, [Description], [Order], CreatedAt) " +
-        "SELECT NEWID(), s.Id, N'1-modul', N'', 1, SYSUTCDATETIME() FROM [LmsSubjects] s " +
-        "WHERE EXISTS (SELECT 1 FROM [LmsTopics] t WHERE t.SubjectId = s.Id AND (t.ModuleId IS NULL OR t.ModuleId = '')) " +
-        "  AND NOT EXISTS (SELECT 1 FROM [LmsModules] m WHERE m.SubjectId = s.Id);");
-    db.Database.ExecuteSqlRaw(
-        "UPDATE t SET t.ModuleId = m.Id FROM [LmsTopics] t " +
-        "JOIN [LmsModules] m ON m.SubjectId = t.SubjectId " +
-        "WHERE t.ModuleId IS NULL OR t.ModuleId = '';");
-
-    // Sinfni arxivlash — Classes.IsArchived/ArchivedAt + Students.ArchivedWithClass (sinf bilan
-    // arxivlangan o'quvchi belgisi). Migratsiyasiz, idempotent (WDAC `dotnet ef` ni bloklaydi).
-    db.Database.ExecuteSqlRaw(
-        "IF COL_LENGTH('Classes','IsArchived') IS NULL " +
-        "ALTER TABLE [Classes] ADD [IsArchived] bit NOT NULL DEFAULT 0;");
-    db.Database.ExecuteSqlRaw(
-        "IF COL_LENGTH('Classes','ArchivedAt') IS NULL " +
-        "ALTER TABLE [Classes] ADD [ArchivedAt] nvarchar(max) NULL;");
-    db.Database.ExecuteSqlRaw(
-        "IF COL_LENGTH('Students','ArchivedWithClass') IS NULL " +
-        "ALTER TABLE [Students] ADD [ArchivedWithClass] bit NOT NULL DEFAULT 0;");
-    // O'quvchi turniket/FaceID qurilma ID'si — turniket o'tishlarini o'quvchiga bog'lash uchun.
-    db.Database.ExecuteSqlRaw(
-        "IF COL_LENGTH('Students','DeviceUserId') IS NULL " +
-        "ALTER TABLE [Students] ADD [DeviceUserId] nvarchar(max) NOT NULL DEFAULT '';");
-
-    // O'qituvchi maoshi — toifa bo'yicha avtomatik hisoblash. Teachers.Category (toifa) +
-    // SchoolMeta'da har toifa uchun bir soat narxi. Migratsiyasiz, idempotent.
-    db.Database.ExecuteSqlRaw(
-        "IF COL_LENGTH('Teachers','Category') IS NULL " +
-        "ALTER TABLE [Teachers] ADD [Category] nvarchar(max) NOT NULL DEFAULT '';");
-    db.Database.ExecuteSqlRaw(
-        "IF COL_LENGTH('Teachers','BonusPct') IS NULL " +
-        "ALTER TABLE [Teachers] ADD [BonusPct] decimal(18,2) NOT NULL DEFAULT 0;");
-    db.Database.ExecuteSqlRaw(
-        "IF COL_LENGTH('Teachers','SalaryStartDate') IS NULL " +
-        "ALTER TABLE [Teachers] ADD [SalaryStartDate] nvarchar(max) NOT NULL DEFAULT '';");
-    foreach (var col in new[] { "SalaryRateOliy", "SalaryRate1", "SalaryRate2", "SalaryRateMutaxasis" })
-        db.Database.ExecuteSqlRaw(
-            $"IF COL_LENGTH('SchoolMeta','{col}') IS NULL " +
-            $"ALTER TABLE [SchoolMeta] ADD [{col}] decimal(18,2) NOT NULL DEFAULT 0;");
-    // Web (PWA) push — Firebase web config + VAPID ochiq kaliti.
-    foreach (var col in new[] { "FcmWebConfigJson", "FcmVapidKey" })
-        db.Database.ExecuteSqlRaw(
-            $"IF COL_LENGTH('SchoolMeta','{col}') IS NULL " +
-            $"ALTER TABLE [SchoolMeta] ADD [{col}] nvarchar(max) NOT NULL DEFAULT '';");
-
-    // O'qituvchilar davomati — yangi jadval (migratsiyasiz; shadow TenantId ustuni bilan global filterga
-    // mos). Idempotent: faqat yo'q bo'lsa yaratiladi.
-    db.Database.ExecuteSqlRaw(
-        "IF OBJECT_ID('TeacherAttendances') IS NULL " +
-        "CREATE TABLE [TeacherAttendances] (" +
-        "  [Id] nvarchar(450) NOT NULL CONSTRAINT [PK_TeacherAttendances] PRIMARY KEY," +
-        "  [TeacherId] nvarchar(max) NOT NULL DEFAULT ''," +
-        "  [Date] nvarchar(max) NOT NULL DEFAULT ''," +
-        "  [Status] nvarchar(max) NOT NULL DEFAULT ''," +
-        "  [Note] nvarchar(max) NOT NULL DEFAULT ''," +
-        "  [TenantId] nvarchar(64) NOT NULL DEFAULT '');");
-    db.Database.ExecuteSqlRaw(
-        "IF OBJECT_ID('TeacherAttendances') IS NOT NULL AND NOT EXISTS " +
-        "(SELECT 1 FROM sys.indexes WHERE name='IX_TeacherAttendances_TenantId') " +
-        "CREATE INDEX [IX_TeacherAttendances_TenantId] ON [TeacherAttendances]([TenantId]);");
-
-    // Turniket/FaceID integratsiyasi — o'qituvchilar davomatini avtomatik yuklash. Migratsiyasiz, idempotent.
-    db.Database.ExecuteSqlRaw(
-        "IF COL_LENGTH('Teachers','DeviceUserId') IS NULL " +
-        "ALTER TABLE [Teachers] ADD [DeviceUserId] nvarchar(max) NOT NULL DEFAULT '';");
-    foreach (var c in new[] { "CheckIn", "CheckOut" })
-        db.Database.ExecuteSqlRaw(
-            $"IF COL_LENGTH('TeacherAttendances','{c}') IS NULL " +
-            $"ALTER TABLE [TeacherAttendances] ADD [{c}] nvarchar(max) NOT NULL DEFAULT '';");
-    db.Database.ExecuteSqlRaw(
-        "IF COL_LENGTH('TeacherAttendances','Source') IS NULL " +
-        "ALTER TABLE [TeacherAttendances] ADD [Source] nvarchar(max) NOT NULL DEFAULT 'manual';");
-    foreach (var c in new[] { "TurnstileVendor", "TurnstileHost", "TurnstileUsername", "TurnstilePassword", "WorkStartTime", "TurnstileLastSync" })
-        db.Database.ExecuteSqlRaw(
-            $"IF COL_LENGTH('SchoolMeta','{c}') IS NULL " +
-            $"ALTER TABLE [SchoolMeta] ADD [{c}] nvarchar(max) NOT NULL DEFAULT '';");
-    db.Database.ExecuteSqlRaw(
-        "IF COL_LENGTH('SchoolMeta','TurnstileEnabled') IS NULL " +
-        "ALTER TABLE [SchoolMeta] ADD [TurnstileEnabled] bit NOT NULL DEFAULT 0;");
-    db.Database.ExecuteSqlRaw(
-        "IF COL_LENGTH('SchoolMeta','TurnstilePort') IS NULL " +
-        "ALTER TABLE [SchoolMeta] ADD [TurnstilePort] int NOT NULL DEFAULT 80;");
-    db.Database.ExecuteSqlRaw(
-        "IF COL_LENGTH('SchoolMeta','LateGraceMinutes') IS NULL " +
-        "ALTER TABLE [SchoolMeta] ADD [LateGraceMinutes] int NOT NULL DEFAULT 10;");
-    db.Database.ExecuteSqlRaw(
-        "IF OBJECT_ID('TurnstileEvents') IS NULL " +
-        "CREATE TABLE [TurnstileEvents] (" +
-        "  [Id] nvarchar(450) NOT NULL CONSTRAINT [PK_TurnstileEvents] PRIMARY KEY," +
-        "  [TeacherId] nvarchar(max) NOT NULL DEFAULT ''," +
-        "  [DeviceUserId] nvarchar(max) NOT NULL DEFAULT ''," +
-        "  [EventAt] nvarchar(max) NOT NULL DEFAULT ''," +
-        "  [Direction] nvarchar(max) NOT NULL DEFAULT 'in'," +
-        "  [DeviceName] nvarchar(max) NOT NULL DEFAULT ''," +
-        "  [CreatedAt] nvarchar(max) NOT NULL DEFAULT ''," +
-        "  [TenantId] nvarchar(64) NOT NULL DEFAULT '');");
-    db.Database.ExecuteSqlRaw(
-        "IF OBJECT_ID('TurnstileEvents') IS NOT NULL AND NOT EXISTS " +
-        "(SELECT 1 FROM sys.indexes WHERE name='IX_TurnstileEvents_TenantId') " +
-        "CREATE INDEX [IX_TurnstileEvents_TenantId] ON [TurnstileEvents]([TenantId]);");
-
-    // GPS — maktab avtobuslarini kuzatish. Migratsiyasiz, idempotent.
-    foreach (var c in new[] { "GpsIngestToken" })
-        db.Database.ExecuteSqlRaw(
-            $"IF COL_LENGTH('SchoolMeta','{c}') IS NULL " +
-            $"ALTER TABLE [SchoolMeta] ADD [{c}] nvarchar(max) NOT NULL DEFAULT '';");
-    db.Database.ExecuteSqlRaw(
-        "IF COL_LENGTH('SchoolMeta','GpsEnabled') IS NULL " +
-        "ALTER TABLE [SchoolMeta] ADD [GpsEnabled] bit NOT NULL DEFAULT 0;");
-    foreach (var (c, def) in new[] { ("GpsOnlineMinutes", 5), ("GpsStopRadiusM", 60), ("GpsStopMinMinutes", 3) })
-        db.Database.ExecuteSqlRaw(
-            $"IF COL_LENGTH('SchoolMeta','{c}') IS NULL " +
-            $"ALTER TABLE [SchoolMeta] ADD [{c}] int NOT NULL DEFAULT {def};");
-    db.Database.ExecuteSqlRaw(
-        "IF OBJECT_ID('Buses') IS NULL " +
-        "CREATE TABLE [Buses] (" +
-        "  [Id] nvarchar(450) NOT NULL CONSTRAINT [PK_Buses] PRIMARY KEY," +
-        "  [Name] nvarchar(max) NOT NULL DEFAULT ''," +
-        "  [PlateNumber] nvarchar(max) NOT NULL DEFAULT ''," +
-        "  [DriverName] nvarchar(max) NOT NULL DEFAULT ''," +
-        "  [DriverPhone] nvarchar(max) NOT NULL DEFAULT ''," +
-        "  [DeviceId] nvarchar(max) NOT NULL DEFAULT ''," +
-        "  [Route] nvarchar(max) NOT NULL DEFAULT ''," +
-        "  [IsActive] bit NOT NULL DEFAULT 1," +
-        "  [Note] nvarchar(max) NOT NULL DEFAULT ''," +
-        "  [TenantId] nvarchar(64) NOT NULL DEFAULT '');");
-    db.Database.ExecuteSqlRaw(
-        "IF OBJECT_ID('Buses') IS NOT NULL AND NOT EXISTS " +
-        "(SELECT 1 FROM sys.indexes WHERE name='IX_Buses_TenantId') " +
-        "CREATE INDEX [IX_Buses_TenantId] ON [Buses]([TenantId]);");
-    db.Database.ExecuteSqlRaw(
-        "IF OBJECT_ID('BusLocations') IS NULL " +
-        "CREATE TABLE [BusLocations] (" +
-        "  [Id] nvarchar(450) NOT NULL CONSTRAINT [PK_BusLocations] PRIMARY KEY," +
-        "  [BusId] nvarchar(max) NOT NULL DEFAULT ''," +
-        "  [Latitude] float NOT NULL DEFAULT 0," +
-        "  [Longitude] float NOT NULL DEFAULT 0," +
-        "  [Speed] float NOT NULL DEFAULT 0," +
-        "  [RecordedAt] nvarchar(max) NOT NULL DEFAULT ''," +
-        "  [CreatedAt] nvarchar(max) NOT NULL DEFAULT ''," +
-        "  [TenantId] nvarchar(64) NOT NULL DEFAULT '');");
-    db.Database.ExecuteSqlRaw(
-        "IF OBJECT_ID('BusLocations') IS NOT NULL AND NOT EXISTS " +
-        "(SELECT 1 FROM sys.indexes WHERE name='IX_BusLocations_TenantId') " +
-        "CREATE INDEX [IX_BusLocations_TenantId] ON [BusLocations]([TenantId]);");
-
-    // Kamera (videokuzatuv) — media-shlyuz (MediaMTX) orqali. Migratsiyasiz, idempotent.
-    db.Database.ExecuteSqlRaw(
-        "IF COL_LENGTH('SchoolMeta','CameraEnabled') IS NULL " +
-        "ALTER TABLE [SchoolMeta] ADD [CameraEnabled] bit NOT NULL DEFAULT 0;");
-    db.Database.ExecuteSqlRaw(
-        "IF OBJECT_ID('Cameras') IS NULL " +
-        "CREATE TABLE [Cameras] (" +
-        "  [Id] nvarchar(450) NOT NULL CONSTRAINT [PK_Cameras] PRIMARY KEY," +
-        "  [Name] nvarchar(max) NOT NULL DEFAULT ''," +
-        "  [Location] nvarchar(max) NOT NULL DEFAULT ''," +
-        "  [RtspUrl] nvarchar(max) NOT NULL DEFAULT ''," +
-        "  [RtspSubUrl] nvarchar(max) NOT NULL DEFAULT ''," +
-        "  [IsActive] bit NOT NULL DEFAULT 1," +
-        "  [Note] nvarchar(max) NOT NULL DEFAULT ''," +
-        "  [TenantId] nvarchar(64) NOT NULL DEFAULT '');");
-    db.Database.ExecuteSqlRaw(
-        "IF OBJECT_ID('Cameras') IS NOT NULL AND NOT EXISTS " +
-        "(SELECT 1 FROM sys.indexes WHERE name='IX_Cameras_TenantId') " +
-        "CREATE INDEX [IX_Cameras_TenantId] ON [Cameras]([TenantId]);");
-    db.Database.ExecuteSqlRaw(
-        "IF COL_LENGTH('Cameras','RetentionDays') IS NULL " +
-        "ALTER TABLE [Cameras] ADD [RetentionDays] int NOT NULL DEFAULT 7;");
+    // Ilgari bu yerda 45 ta SQL Server'ga xos `ExecuteSqlRaw` bo'lgan (ustun/jadval qo'shish).
+    // PostgreSQL'ga o'tishda ularning hammasi normal EF migratsiyasiga ko'chirildi —
+    // sxema endi faqat model orqali boshqariladi.
 
     // Telegram bot tokeni — restartdan keyin bot avtomatik ishga tushadi; token yo'q bo'lsa
     // admin Sozlamadan kiritguncha kutadi.
@@ -537,8 +339,8 @@ app.MapGet("/api/health", () => Results.Ok(new { status = "healthy" }));
 app.MapFallback("/api/{**slug}", () => Results.NotFound(new { message = "API endpoint topilmadi" }));
 
 // SPA / landing fallback:
-//  • Faqat ILOVA HOSTI (App:Host, masalan `test.intellectschool.uz`) → React SPA (index.html);
-//  • boshqa hammasi (apex `intellectschool.uz`, `www`, `admin` va h.k.) → landing sahifa (landing.html).
+//  • Faqat ILOVA HOSTI (App:Host, masalan `test.wunderkindschool.uz`) → React SPA (index.html);
+//  • boshqa hammasi (apex `wunderkindschool.uz`, `www`, `admin` va h.k.) → landing sahifa (landing.html).
 //  • App:Host sozlanmagan bo'lsa (dev) — apex/www dan boshqa hammasi SPA (eski xulq).
 var webRoot = app.Environment.WebRootPath
     ?? Path.Combine(app.Environment.ContentRootPath, "wwwroot");

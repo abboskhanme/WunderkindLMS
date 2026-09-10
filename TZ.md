@@ -1,4 +1,4 @@
-# Texnik Topshiriq (TZ) — SchoolLms / Intellect School
+# Texnik Topshiriq (TZ) — SchoolLms / Wunderkind International School
 
 **Bulutli ko'p-maktabli ta'lim boshqaruv tizimi (School Management & LMS, SaaS)**
 
@@ -11,7 +11,7 @@ Hujjat versiyasi: 2026-06-04
 **SchoolLms** — xususiy maktablar, o'quv markazlari va ta'lim muassasalari uchun mo'ljallangan
 zamonaviy, veb-asosli boshqaruv tizimi. Tizim bitta platformada **bir nechta maktabni** mustaqil
 ravishda yuritish imkonini beradi (SaaS / ko'p-ijarachilik modeli): har bir maktab o'z subdomenida
-(`maktab.intellectschool.uz`), o'z ma'lumotlari, foydalanuvchilari va sozlamalari bilan ishlaydi.
+(`maktab.wunderkindschool.uz`), o'z ma'lumotlari, foydalanuvchilari va sozlamalari bilan ishlaydi.
 
 Tizim **o'quv jarayonini to'liq raqamlashtiradi**: o'quvchilar va o'qituvchilar bazasi, dars jadvali,
 elektron jurnal (baho/davomat), uy vazifalari va topshiriqlar, mustaqil ta'lim (LMS), oylik to'lovlar

@@ -1,6 +1,17 @@
 @import 'tailwindcss';
 @import 'leaflet/dist/leaflet.css';
 
+/*
+ * Leaflet ichida z-index 400 (paneller) va 1000 (zoom tugmalari) ishlatiladi.
+ * Konteynerga o'z stacking-context'ini bermasak, bu qiymatlar sahifa darajasiga
+ * chiqib, modal oynadan (z-50) ustun bo'lib qoladi — xaritalar modal ustiga chiqadi.
+ * `z-index: 0` ichki qatlamlarni konteyner ichida ushlab qoladi.
+ */
+.leaflet-container {
+  position: relative;
+  z-index: 0;
+}
+
 @theme {
   --color-brand-50: #eef4ff;
   --color-brand-100: #d9e6ff;

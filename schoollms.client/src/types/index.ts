@@ -1140,3 +1140,26 @@ export interface LmsProgressReport {
   topics: LmsTopicBrief[]
   students: LmsStudentProgress[]
 }
+
+/* ---------- Bildirishnomalar (topbar qo'ng'irog'i) ---------- */
+
+/** Bildirishnoma turi — ikonka va rangni belgilaydi. */
+export type NotificationKind = 'suggestion' | 'complaint' | 'pickup' | 'chat' | 'birthday'
+
+export interface NotificationItem {
+  id: string
+  kind: NotificationKind
+  title: string
+  text: string
+  /** ISO sana-vaqt. */
+  createdAt: string
+  /** Bosilganda ochiladigan admin sahifasi yo'li. */
+  link: string
+  /** Oxirgi "o'qildi" belgisidan keyin paydo bo'lganmi. */
+  isNew: boolean
+}
+
+export interface NotificationList {
+  items: NotificationItem[]
+  unreadCount: number
+}

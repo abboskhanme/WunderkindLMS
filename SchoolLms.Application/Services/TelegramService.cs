@@ -38,8 +38,7 @@ public class TelegramService(
     /// </summary>
     public void Load(IAppDbContext db)
     {
-        // Shared-DB: boot'da so'rov (tenant) konteksti yo'q — global filter SchoolMeta'ni yashiradi.
-        // Tokenli maktab qatorini tenant'lararo qidiramiz (xotirada bitta token — amalda bitta maktab uchun).
+        // Boot paytida so'rov konteksti yo'q — token saqlangan yagona SchoolMeta qatorini o'qiymiz.
         var meta = db.SchoolMeta.IgnoreQueryFilters()
             .FirstOrDefault(m => m.TelegramBotToken != "");
 

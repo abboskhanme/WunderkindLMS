@@ -3,7 +3,7 @@
 LMS ierarxiyasi: **Sinf → Fan → Modul → Mavzu**. O'quvchi o'z sinfiga biriktirilgan fanlarni,
 fan ichidagi modullarni, modul ichidagi mavzularni (video + matn + materiallar) ko'radi.
 
-**Base URL:** `https://intellectschool.uz`
+**Base URL:** `https://wunderkindschool.uz`
 Har bir so'rovda: `Authorization: Bearer <token>` (login `POST /api/auth/login` orqali olinadi).
 Rollar: `student`, `parent` (oilaning bitta akkaunti). Barcha javoblar **JSON**.
 
@@ -134,7 +134,7 @@ GET /api/student/lms/subjects/{subjectId}/topics   →  StudentLmsTopicDto[]  (h
 
 ## curl misol
 ```bash
-B=https://intellectschool.uz
+B=https://wunderkindschool.uz
 TOKEN=$(curl -s -X POST $B/api/auth/login -H "Content-Type: application/json" \
   -d '{"email":"LOGIN","password":"PAROL"}' | jq -r .token)
 

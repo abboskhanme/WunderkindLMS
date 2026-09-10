@@ -1,0 +1,33 @@
+# SchoolLms — LOKAL (mac / Apple Silicon) uchun qo'shimcha sozlama.
+# Prod faylga TEGMAYDI; ustiga qo'shib ishlatiladi:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build
+#   → http://localhost:8080
+#
+# Uchta farq bor:
+#   1) app porti localhost'ga ochiladi (prodda ochilmaydi — u yerga faqat tunnel kiradi).
+#   2) cloudflared / mediamtx / backup lokalda kerak emas — profil ortiga olinadi.
+
+services:
+  postgres:
+    ports:
+      - "5432:5432"          # psql / TablePlus bilan ulanish uchun
+
+  app:
+    ports:
+      - "8080:8080"
+    environment:
+      # Prodda `test.<domen>` faqat o'sha hostda SPA ochadi; lokalda host = localhost.
+      App__Host: "localhost"
+      Tenancy__RootDomain: "localhost"
+
+  # Quyidagilar lokalda avtomatik ko'tarilmaydi.
+  # Kerak bo'lsa: `--profile tunnel` / `--profile media` / `--profile backup` qo'shing.
+  cloudflared:
+    profiles: ["tunnel"]
+
+  mediamtx:
+    profiles: ["media"]
+
+  backup:
+    profiles: ["backup"]

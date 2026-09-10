@@ -28,3 +28,6 @@ SchoolLms.Server/wwwroot/
 
 # Baza backuplari (haqiqiy foydalanuvchi maʼlumotlari) — commit qilinmasin
 backups/
+
+# Demo akkaunt login/parollari — repoga tushmasin
+tools/demo-credentials.txt

@@ -3,7 +3,7 @@
 Maktab avtobusining **hozir qayerda yurganini** va bugungi yo'nalishini xaritada ko'rsatish uchun
 o'quvchi/ota-ona ilovasiga tegishli endpointlar. `StudentPortalController` (`/api/student/*`).
 
-**Base URL:** `https://intellectschool.uz`
+**Base URL:** `https://wunderkindschool.uz`
 Har bir so'rovda: `Authorization: Bearer <token>` sarlavhasi (login `POST /api/auth/login` orqali olinadi).
 Rollar: `student`, `parent`. Barcha javoblar **JSON**.
 
@@ -102,7 +102,7 @@ Authorization: Bearer <token>
 
 ## curl misol
 ```bash
-B=https://intellectschool.uz
+B=https://wunderkindschool.uz
 TOKEN=$(curl -s -X POST $B/api/auth/login -H "Content-Type: application/json" \
   -d '{"email":"LOGIN","password":"PAROL"}' | jq -r .token)
 

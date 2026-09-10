@@ -1,24 +1,26 @@
-# SchoolLms — prod: app (API + SPA) + SQL Server + Cloudflare Tunnel.
+# SchoolLms — prod: app (API + SPA) + PostgreSQL + Cloudflare Tunnel.
 # Sozlamalar .env faylidan keladi (.env.example dan nusxa oling).
 # Diqqat: app porti TASHQARIGA OCHILMAGAN — unga faqat cloudflared (ichki tarmoq) kiradi.
 
 services:
-  sqlserver:
-    image: mcr.microsoft.com/mssql/server:2022-latest
-    container_name: schoollms-sql
+  postgres:
+    image: postgres:17-alpine
+    container_name: schoollms-db
     environment:
-      ACCEPT_EULA: "Y"
-      MSSQL_SA_PASSWORD: "${SA_PASSWORD}"
-      MSSQL_PID: "Express"          # bepul nashr; xohlasangiz "Developer"
+      POSTGRES_DB: "schoollms"
+      POSTGRES_USER: "schoollms"
+      POSTGRES_PASSWORD: "${DB_PASSWORD}"
+      # Kirill/lotin tartiblash uchun
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
     volumes:
-      - mssql-data:/var/opt/mssql   # baza fayllari shu yerda
-      - mssql-backups:/backups      # kunlik .bak nusxalar (backup xizmati shu yerga yozadi)
+      - pg-data:/var/lib/postgresql/data
+      - pg-backups:/backups
     healthcheck:
-      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa -P \"$$MSSQL_SA_PASSWORD\" -Q 'SELECT 1' || exit 1"]
+      test: ["CMD-SHELL", "pg_isready -U schoollms -d schoollms"]
       interval: 10s
       timeout: 5s
       retries: 12
-      start_period: 30s
+      start_period: 20s
     restart: unless-stopped
 
   app:
@@ -31,8 +33,7 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: "Production"
       ASPNETCORE_URLS: "http://+:8080"
-      # Yagona shared baza — barcha maktablar + Control Plane shu yerda (har qator TenantId bilan).
-      ConnectionStrings__Default: "Server=sqlserver,1433;Database=SchoolLms;User Id=sa;Password=${SA_PASSWORD};TrustServerCertificate=True;Encrypt=False"
+      ConnectionStrings__Default: "Host=postgres;Port=5432;Database=schoollms;Username=schoollms;Password=${DB_PASSWORD};Include Error Detail=true"
       Tenancy__RootDomain: "${ROOT_DOMAIN}"
       App__Host: "test.${ROOT_DOMAIN}"     # FAQAT shu host ilovani (SPA) ochadi; qolganlari → landing
       Jwt__Key: "${JWT_KEY}"               # >=32 belgi; prod'da MAJBURIY
@@ -40,7 +41,7 @@ services:
       - uploads:/app/uploads               # yuklangan fayllar (rasm, hujjat) saqlanadi
       - dpkeys:/app/keys                    # DataProtection kalitlari — deploylar oralig'ida saqlanadi
     depends_on:
-      sqlserver:
+      postgres:
         condition: service_healthy
     restart: unless-stopped
     # Diqqat: bu yerda `ports:` YO'Q — internetga ochilmaydi.
@@ -76,50 +77,42 @@ services:
 
   # Kunlik avtomatik backup. Har kuni BACKUP_HOUR (UTC) da BARCHA foydalanuvchi bazalarini
   # /backups ga .bak qilib oladi va BACKUP_RETENTION_DAYS dan eski nusxalarni o'chiradi.
-  # sqlcmd uchun aynan sqlserver bilan bir xil image ishlatiladi (qo'shimcha yuklab olish yo'q).
+  # Kunlik avtomatik backup. Har kuni BACKUP_HOUR (UTC) da bazani /backups ga .dump qilib
+  # oladi va BACKUP_RETENTION_DAYS dan eski nusxalarni o'chiradi.
   backup:
-    image: mcr.microsoft.com/mssql/server:2022-latest
+    image: postgres:17-alpine
     container_name: schoollms-backup
-    user: root
     environment:
-      SA_PASSWORD: "${SA_PASSWORD}"
-      BACKUP_HOUR: "21"            # 21:00 UTC = 02:00 Toshkent (kechasi, yuk kam paytda)
-      BACKUP_RETENTION_DAYS: "7"   # 7 kundan eski .bak'lar o'chiriladi
+      PGHOST: postgres
+      PGUSER: schoollms
+      PGPASSWORD: "${DB_PASSWORD}"
+      PGDATABASE: schoollms
+      BACKUP_HOUR: "21"            # 21:00 UTC = 02:00 Toshkent
+      BACKUP_RETENTION_DAYS: "7"
     volumes:
-      - mssql-backups:/backups     # sqlserver yozadigan papka — bu yerda tozalash qilinadi
+      - pg-backups:/backups
     depends_on:
-      sqlserver:
+      postgres:
         condition: service_healthy
     restart: unless-stopped
-    entrypoint: ["/bin/bash", "-c"]
+    entrypoint: ["/bin/sh", "-c"]
     command:
       - |
-        SQLCMD=/opt/mssql-tools18/bin/sqlcmd
-        # SQL Server 'mssql' (uid 10001) foydalanuvchisi sifatida yozadi — /backups yoziladigan bo'lsin.
-        chmod 777 /backups 2>/dev/null || true
-        echo "[backup] xizmat ishga tushdi; har kuni $${BACKUP_HOUR}:00 UTC da, saqlash $${BACKUP_RETENTION_DAYS} kun"
+        echo "[backup] xizmat ishga tushdi; har kuni $${BACKUP_HOUR}:00 UTC, saqlash $${BACKUP_RETENTION_DAYS} kun"
         while true; do
           now=$$(date -u +%s)
-          next=$$(date -u -d "today $${BACKUP_HOUR}:00" +%s)
-          [ "$$next" -le "$$now" ] && next=$$(date -u -d "tomorrow $${BACKUP_HOUR}:00" +%s)
+          next=$$(date -u -d "today $${BACKUP_HOUR}:00" +%s 2>/dev/null || date -u +%s)
+          [ "$$next" -le "$$now" ] && next=$$(( next + 86400 ))
           sleep $$(( next - now ))
           ts=$$(date -u +%Y%m%d_%H%M)
           echo "[backup] $$ts — boshlandi"
-          dbs=$$("$$SQLCMD" -C -S sqlserver -U sa -P "$$SA_PASSWORD" -h -1 -W \
-            -Q "SET NOCOUNT ON; SELECT name FROM sys.databases WHERE database_id > 4 AND state = 0")
-          for db in $$dbs; do
-            echo "[backup] $$db ..."
-            "$$SQLCMD" -C -S sqlserver -U sa -P "$$SA_PASSWORD" \
-              -Q "BACKUP DATABASE [$$db] TO DISK='/backups/$${db}_$${ts}.bak' WITH INIT, FORMAT, STATS=10" \
-              || echo "[backup] XATO: $$db"
-          done
-          find /backups -name '*.bak' -type f -mtime +$${BACKUP_RETENTION_DAYS} -delete
-          echo "[backup] tugadi; eski nusxalar tozalandi"
+          pg_dump --format=custom --file="/backups/schoollms_$${ts}.dump" && echo "[backup] tayyor" || echo "[backup] XATO"
+          find /backups -name '*.dump' -type f -mtime +$${BACKUP_RETENTION_DAYS} -delete
         done
 
 volumes:
-  mssql-data:
+  pg-data:
   uploads:
   dpkeys:
-  mssql-backups:
+  pg-backups:
   cam-recordings:

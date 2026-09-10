@@ -27,7 +27,8 @@ export function LeadColumn({
   onDelete,
   onMove,
 }: Props) {
-  const c = stageColors[stage.color]
+  // Noma'lum rang (eski yoki qo'lda kiritilgan qiymat) butun sahifani buzmasin.
+  const c = stageColors[stage.color] ?? stageColors.slate
   const { setNodeRef, isOver } = useDroppable({ id: stage.id })
 
   return (

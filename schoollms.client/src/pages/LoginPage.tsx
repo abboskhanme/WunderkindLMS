@@ -2,7 +2,6 @@ import { useState } from 'react'
 import type { FormEvent } from 'react'
 import { Navigate, useLocation, useNavigate } from 'react-router-dom'
 import axios from 'axios'
-import { GraduationCap } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { useAuth } from '@/context/auth-context'
@@ -54,11 +53,11 @@ export function LoginPage() {
     <div className="flex min-h-screen items-center justify-center bg-slate-100 px-4">
       <div className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
         <div className="mb-6 flex flex-col items-center gap-3 text-center">
-          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-brand-600 text-white">
-            <GraduationCap className="h-6 w-6" />
+          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-[#FFD006]">
+            <img src="/logo.png" alt="Wunderkind International School" className="h-8 w-8 object-contain" />
           </div>
           <div>
-            <h1 className="text-lg font-semibold text-slate-800">Intellect School</h1>
+            <h1 className="text-lg font-semibold text-slate-800">Wunderkind International School</h1>
             <p className="text-sm text-slate-400">Tizimga kirish</p>
           </div>
         </div>

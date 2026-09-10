@@ -1,5 +1,5 @@
 /* ============================================================
-   INTELLECT SCHOOL — Landing page
+   WUNDERKIND SCHOOL — Landing page
    Emerald/Teal • Ishonchli korporativ uslub
    ============================================================ */
 
@@ -107,11 +107,11 @@ section { position:relative; }
 .brand { display:flex; align-items:center; gap:11px; font-weight:800; font-size:19px; letter-spacing:-.02em; }
 .brand-mark {
   width:40px; height:40px; border-radius:12px; flex-shrink:0;
-  background:linear-gradient(140deg,var(--teal-500),var(--teal-800));
-  display:flex; align-items:center; justify-content:center; color:#fff;
-  box-shadow:0 6px 16px rgba(13,148,136,.34);
+  background:#FFD006;
+  display:flex; align-items:center; justify-content:center;
+  box-shadow:0 6px 16px rgba(255,208,6,.38);
 }
-.brand-mark svg { width:23px; height:23px; }
+.brand-mark img { width:26px; height:26px; object-fit:contain; }
 .brand small { display:block; font-size:11px; font-weight:600; color:var(--text-faint); letter-spacing:.02em; margin-top:-2px; }
 .nav-links { display:flex; gap:4px; margin-left:18px; }
 .nav-links a {

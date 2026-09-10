@@ -1,4 +1,4 @@
-// Intellect School — landing interaktivligi (tashqi fayl: prod CSP script-src 'self' bilan ishlaydi).
+// Wunderkind International School — landing interaktivligi (tashqi fayl: prod CSP script-src 'self' bilan ishlaydi).
 
 // Nav soyasi (skroll qilinganda)
 const nav = document.getElementById('nav');

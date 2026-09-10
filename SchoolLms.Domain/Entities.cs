@@ -610,7 +610,7 @@ public class TurnstileEvent
 public class SchoolMeta
 {
     // Shared-DB: har maktab uchun bitta SchoolMeta qatori — Id unikal (Guid). Eski "current"
-    // qiymati tenantlar bo'ylab to'qnashar edi. Joriy maktab qatori query filter orqali topiladi.
+    // yagona maktab qatori — bitta yozuv saqlanadi.
     public string Id { get; set; } = Guid.NewGuid().ToString();
     /// <summary>Joriy o'quv yili, masalan "2025/2026".</summary>
     public string CurrentYear { get; set; } = string.Empty;
@@ -938,6 +938,9 @@ public class UserSettings
     public string Theme { get; set; } = "system";
     /// <summary>Push bildirishnoma yoqilganmi.</summary>
     public bool NotificationsEnabled { get; set; } = true;
+    /// <summary>Admin paneldagi qo'ng'iroq ro'yxati oxirgi marta o'qilgan vaqt.
+    /// Shundan keyingi voqealar "yangi" deb sanaladi (null = hech qachon o'qilmagan).</summary>
+    public DateTime? NotificationsReadAt { get; set; }
     /// <summary>Oxirgi yangilanish vaqti (UTC, ISO).</summary>
     public DateTime UpdatedAt { get; set; } = AppClock.Now;
 }

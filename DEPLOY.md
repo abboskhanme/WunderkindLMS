@@ -1,12 +1,12 @@
 # SchoolLms — Docker + Cloudflare Tunnel bilan ishga tushirish
 
-Domen: **intellectschool.uz** (asosiy = Control Plane / loyiha boshlig'i; subdomen = maktab).
+Domen: **wunderkindschool.uz** (asosiy = Control Plane / loyiha boshlig'i; subdomen = maktab).
 
 ## 0. Sizdagi xato nega chiqayotgan edi
 
 Loglardan:
 ```
-ingress: admin.intellectschool.uz → https://localhost:57472
+ingress: admin.wunderkindschool.uz → https://localhost:57472
 ERR dial tcp [::1]:57472: connect: connection refused
 ```
 Sabablari:
@@ -16,13 +16,13 @@ Sabablari:
 
 To'g'risi: cloudflared **app bilan bitta compose tarmog'ida** ishlaydi va `http://app:8080`'ga ishora qiladi.
 Asosiy domenni alohida hech qayerga "yuborish" SHART EMAS — ilova hostni o'zi tekshiradi:
-`intellectschool.uz` → owner dashboard, `school1.intellectschool.uz` → maktab.
+`wunderkindschool.uz` → owner dashboard, `school1.wunderkindschool.uz` → maktab.
 
 ## 1. Sozlamalar (.env)
 
 `.env.example` dan `.env` yarating:
 ```
-ROOT_DOMAIN=intellectschool.uz
+ROOT_DOMAIN=wunderkindschool.uz
 SA_PASSWORD=<kuchli-parol>
 JWT_KEY=<48+ tasodifiy belgi>     # PowerShell: [Convert]::ToBase64String((1..48|%{Get-Random -Max 256}))
 TUNNEL_TOKEN=<sizning tunnel tokeningiz>
@@ -36,12 +36,12 @@ Zero Trust → Networks → Tunnels → (tunnelingiz) → **Public Hostname**. M
 
 | Subdomain | Domain | Type | URL |
 |---|---|---|---|
-| *(bo'sh)* | intellectschool.uz | HTTP | `app:8080` |
-| `*` | intellectschool.uz | HTTP | `app:8080` |
+| *(bo'sh)* | wunderkindschool.uz | HTTP | `app:8080` |
+| `*` | wunderkindschool.uz | HTTP | `app:8080` |
 
 - **HTTP** (HTTPS emas!) — TLS Cloudflare'da tugaydi, konteynerga HTTP boradi.
 - `*` (wildcard) — barcha maktab subdomenlari. Cloudflare avtomatik `*` CNAME DNS yozuvini yaratadi.
-- Universal SSL `intellectschool.uz` va `*.intellectschool.uz` ni (bir daraja) qoplaydi — qo'shimcha sertifikat shart emas.
+- Universal SSL `wunderkindschool.uz` va `*.wunderkindschool.uz` ni (bir daraja) qoplaydi — qo'shimcha sertifikat shart emas.
 
 > Eslatma: `service` ni `app:8080` deb yozasiz, chunki cloudflared app bilan bitta Docker tarmog'ida.
 > Avval ishga tushirgan **alohida `docker run cloudflared ...` ni to'xtating** — endi u compose ichida.
@@ -60,9 +60,9 @@ Birinchi ishga tushganda:
 
 ## 4. Tekshirish
 
-- `https://intellectschool.uz` → **Control Plane** (owner@schoollms.uz / owner123) → parolni almashtiring.
+- `https://wunderkindschool.uz` → **Control Plane** (owner@schoollms.uz / owner123) → parolni almashtiring.
 - "Yangi maktab" → masalan `school1` → reestr + superadmin yagona bazada (TenantId bilan) yaratiladi.
-- `https://school1.intellectschool.uz` → o'sha maktab, siz bergan superadmin parol bilan.
+- `https://school1.wunderkindschool.uz` → o'sha maktab, siz bergan superadmin parol bilan.
 
 ## 5. Yangilanish (kod o'zgarsa)
 ```powershell

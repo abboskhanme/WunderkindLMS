@@ -154,5 +154,15 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
             .HasIndex(m => new { m.SubjectId, m.Order });
         b.Entity<LmsTopic>()
             .HasIndex(t => new { t.ModuleId, t.Order });
+
+        // ----- PostgreSQL: vaqt turi -----
+        // Tizim sanalarni Toshkent "devor soati" sifatida saqlaydi (AppClock.Now — Kind=Unspecified),
+        // UTC sifatida emas. Npgsql sukut bo'yicha DateTime'ni `timestamptz` ga moslaydi va
+        // Kind=Unspecified qiymatni yozishdan bosh tortadi. Shuning uchun BARCHA DateTime ustunlarini
+        // `timestamp without time zone` ga o'tkazamiz — bu mavjud semantikaga aynan mos keladi.
+        foreach (var entityType in b.Model.GetEntityTypes())
+            foreach (var property in entityType.GetProperties())
+                if (property.ClrType == typeof(DateTime) || property.ClrType == typeof(DateTime?))
+                    property.SetColumnType("timestamp without time zone");
     }
 }

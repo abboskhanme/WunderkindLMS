@@ -1,0 +1,36 @@
+# Caddy — Cloudflare oldida turadigan origin proksi.
+#
+# Cloudflare TLS ni tashqarida tugatadi va serverga o'zi murojaat qiladi. Cloudflare
+# "SSL/TLS mode" sozlamasiga qarab u 443 (Full / Full strict) yoki 80 (Flexible) ga
+# ulanadi — shuning uchun ikkalasi ham ochiq turadi.
+#
+# 443 dagi sertifikat — Caddy'ning ichki CA'sidan (self-signed). Cloudflare "Full"
+# rejimida sertifikatni tekshirmaydi, shuning uchun bu yetarli va CF ↔ server
+# oralig'idagi trafik shifrlanadi.
+#
+# Keyingi qadam (ixtiyoriy): Cloudflare Origin Certificate qo'yib, rejimni
+# "Full (strict)" ga o'tkazish. Unda `tls internal` o'rniga sertifikat yo'li yoziladi.
+
+{
+	# Cloudflare o'zi HTTP → HTTPS yo'naltiradi; Caddy ikkinchi marta yo'naltirmasin.
+	auto_https disable_redirects
+	admin off
+}
+
+(app) {
+	encode zstd gzip
+	reverse_proxy app:8080 {
+		header_up X-Forwarded-Proto {scheme}
+	}
+}
+
+# Cloudflare "Full" / "Full (strict)" — origin HTTPS
+https://lms.wunderkindedu.uz {
+	tls internal
+	import app
+}
+
+# Cloudflare "Flexible" va IP orqali to'g'ridan-to'g'ri kirish
+:80 {
+	import app
+}

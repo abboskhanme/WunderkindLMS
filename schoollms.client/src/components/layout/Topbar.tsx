@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
-import { Bell, ChevronDown, LogOut, Menu, Search, Settings } from 'lucide-react'
+import { ChevronDown, LogOut, Menu, Search, Settings } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '@/context/auth-context'
 import { roleLabels } from '@/config/navigation'
+import { NotificationsBell } from './NotificationsBell'
 
 interface TopbarProps {
   onMenuClick: () => void
@@ -88,10 +89,7 @@ export function Topbar({ onMenuClick }: TopbarProps) {
           <Search className="h-5 w-5" />
         </button>
 
-        <button className="relative rounded-lg p-2 text-slate-500 transition-colors hover:bg-slate-50">
-          <Bell className="h-5 w-5" />
-          <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-red-500" />
-        </button>
+        <NotificationsBell />
 
         {/* Profil — bosilganda akkaunt sozlamalari/chiqish menyusi ochiladi */}
         <div className="relative" ref={menuRef}>

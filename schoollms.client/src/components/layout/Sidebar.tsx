@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
-import { GraduationCap, ChevronDown } from 'lucide-react'
+import { ChevronDown } from 'lucide-react'
 import type { Role } from '@/types'
 import { useAuth } from '@/context/auth-context'
 import { useUnread } from '@/context/unread-context'
@@ -53,11 +53,11 @@ export function Sidebar({ open, onNavigate }: SidebarProps) {
     >
       {/* Logo */}
       <div className="flex h-16 items-center gap-2.5 border-b border-slate-200 px-6">
-        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand-600 text-white">
-          <GraduationCap className="h-5 w-5" />
+        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#FFD006]">
+          <img src="/logo.png" alt="Wunderkind International School" className="h-6 w-6 object-contain" />
         </div>
         <div className="leading-tight">
-          <p className="font-semibold text-slate-800">{schoolName || 'Intellect School'}</p>
+          <p className="font-semibold text-slate-800">{schoolName || 'Wunderkind School'}</p>
           <p className="text-xs text-slate-400">{roleLabels[role]}</p>
         </div>
       </div>

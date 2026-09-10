@@ -183,7 +183,7 @@ class AppUser {
 - Validatsiya: issuer/audience/lifetime/signing key. SignalR uchun token query‑string `access_token` dan ham olinadi (`/hubs/chat`).
 
 ### 4.4 Akkaunt yaratish (`AccountFactory`)
-- **Login (username)** FISHdan tuziladi: familiya+ism lotinlashtirilib (kirill→lotin map), belgisiz qo'shiladi (`voxidjonovabduxalil`), band bo'lsa raqam (`...2`). Unikallik **butun baza** (`IgnoreQueryFilters`) + hali saqlanmagan (`Local`) bo'yicha.
+- **Login (username)** FISHdan tuziladi: familiya+ism lotinlashtirilib (kirill→lotin map), belgisiz qo'shiladi (`karimovadilnoza`), band bo'lsa raqam (`...2`). Unikallik **butun baza** (`IgnoreQueryFilters`) + hali saqlanmagan (`Local`) bo'yicha.
 - **Parol**: 8 belgili tasodifiy, chalkashtirmaydigan alfavit (`0/O`,`1/l/I` yo'q) — `RandomNumberGenerator`.
 - Ochiq parol `InitialPassword` da saqlanadi (superadmin ko'rishi/eksport uchun), birinchi login'da yoki parol o'zgarsa `null`.
 

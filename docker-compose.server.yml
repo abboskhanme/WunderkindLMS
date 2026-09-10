@@ -1,0 +1,52 @@
+# SchoolLms — serverga deploy uchun qo'shimcha sozlama (Cloudflare + Caddy).
+#
+# Prod faylga tegmaydi; ustiga qo'shib ishlatiladi:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.server.yml up -d --build
+#   → https://lms.wunderkindedu.uz  (Cloudflare orqali)
+#
+# Asosiy fayldan farqi:
+#   1) Tashqariga Caddy chiqadi (80 va 443), ilova konteyneri emas.
+#   2) App__Host bo'sh: istalgan host (domen ham, IP ham) SPA'ni ochadi.
+#   3) cloudflared va mediamtx profil ortida — bu yerda kerak emas, RAM tejaydi.
+#   4) PostgreSQL xotira sozlamalari serverga moslangan (3 GB RAM).
+
+services:
+  postgres:
+    # 3 GB RAM — PostgreSQL uchun mo'tadil sozlama.
+    command: >
+      postgres -c shared_buffers=512MB -c effective_cache_size=1GB
+               -c work_mem=8MB -c maintenance_work_mem=128MB -c max_connections=60
+
+  app:
+    # `ports` YO'Q — ilovaga faqat Caddy (ichki tarmoq) kiradi.
+    environment:
+      # Bo'sh qiymat = har qanday host ilovani ochadi (landing sahifa emas).
+      App__Host: ""
+      Tenancy__RootDomain: ""
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: schoollms-caddy
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data       # sertifikatlar va ichki CA — deploylar oralig'ida saqlanadi
+      - caddy-config:/config
+    depends_on:
+      - app
+    restart: unless-stopped
+
+  # Demo uchun kerak emas — RAM va disk tejaladi.
+  # Kerak bo'lsa: `--profile media` / `--profile tunnel` qo'shing.
+  mediamtx:
+    profiles: ["media"]
+
+  cloudflared:
+    profiles: ["tunnel"]
+
+volumes:
+  caddy-data:
+  caddy-config:
