@@ -12,7 +12,7 @@ Ishlatish (server yoki lokal, docker konteyner nomlari bilan):
 
     # boshqa konteyner / parol bilan:
     python3 tools/create_user.py --login admin --password '...' --name "..." \\
-        --role superadmin --container schoollms-db --db-password '...'
+        --role superadmin --container wunderkind-database --db-password '...'
 
 Parol PBKDF2-SHA256 (100 000 iteratsiya) bilan hash qilinadi — serverdagi
 PasswordHasher formati bilan bir xil: {iterations}.{saltBase64}.{hashBase64}
@@ -54,7 +54,7 @@ def main():
     p.add_argument("--role", default="admin",
                    choices=["superadmin", "admin", "staff"])
     p.add_argument("--position", default="", help="Lavozim yorlig'i (staff uchun)")
-    p.add_argument("--container", default="schoollms-db")
+    p.add_argument("--container", default="wunderkind-database")
     p.add_argument("--db-password", required=True)
     p.add_argument("--database", default="schoollms")
     args = p.parse_args()

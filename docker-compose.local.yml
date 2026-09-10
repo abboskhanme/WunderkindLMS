@@ -9,11 +9,11 @@
 #   2) cloudflared / mediamtx / backup lokalda kerak emas — profil ortiga olinadi.
 
 services:
-  postgres:
+  database:
     ports:
       - "5432:5432"          # psql / TablePlus bilan ulanish uchun
 
-  app:
+  backend:
     ports:
       - "8080:8080"
     environment:

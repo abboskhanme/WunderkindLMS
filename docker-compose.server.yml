@@ -12,22 +12,23 @@
 #   4) PostgreSQL xotira sozlamalari serverga moslangan (3 GB RAM).
 
 services:
-  postgres:
+  database:
     # 3 GB RAM — PostgreSQL uchun mo'tadil sozlama.
     command: >
       postgres -c shared_buffers=512MB -c effective_cache_size=1GB
                -c work_mem=8MB -c maintenance_work_mem=128MB -c max_connections=60
 
-  app:
+  backend:
     # `ports` YO'Q — ilovaga faqat Caddy (ichki tarmoq) kiradi.
     environment:
       # Bo'sh qiymat = har qanday host ilovani ochadi (landing sahifa emas).
       App__Host: ""
       Tenancy__RootDomain: ""
 
-  caddy:
+  # ── PROKSI ── Caddy: 80/443 ni tinglaydi, Cloudflare'dan kelgan trafikni backend'ga uzatadi.
+  proxy:
     image: caddy:2-alpine
-    container_name: schoollms-caddy
+    container_name: wunderkind-proxy
     ports:
       - "80:80"
       - "443:443"
@@ -36,7 +37,7 @@ services:
       - caddy-data:/data       # sertifikatlar va ichki CA — deploylar oralig'ida saqlanadi
       - caddy-config:/config
     depends_on:
-      - app
+      - backend
     restart: unless-stopped
 
   # Demo uchun kerak emas — RAM va disk tejaladi.

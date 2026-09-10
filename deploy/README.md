@@ -36,15 +36,15 @@ ssh root@91.99.187.196 '/opt/schoollms/deploy/deploy.sh'
 
 | Konteyner | Vazifasi |
 |---|---|
-| `schoollms-caddy` | 80/443 — Cloudflare oldidagi proksi, origin TLS |
-| `schoollms-app` | .NET API + admin SPA + o'qituvchi PWA |
-| `schoollms-db` | PostgreSQL 17 |
-| `schoollms-backup` | Har kecha 02:00 (Toshkent) `pg_dump`, 7 kun saqlanadi |
+| `wunderkind-proxy` | 80/443 — Cloudflare oldidagi proksi, origin TLS |
+| `wunderkind-backend` | .NET API + admin SPA + o'qituvchi PWA |
+| `wunderkind-database` | PostgreSQL 17 |
+| `wunderkind-backup` | Har kecha 02:00 (Toshkent) `pg_dump`, 7 kun saqlanadi |
 
 Ilova va baza tashqariga chiqmaydi — faqat Caddy 80/443 da tinglaydi.
 
 ## Zaxira nusxani qo'lda olish
 
 ```bash
-ssh root@91.99.187.196 'docker exec schoollms-db pg_dump -U schoollms -Fc schoollms' > wunderkind_$(date +%F).dump
+ssh root@91.99.187.196 'docker exec wunderkind-database pg_dump -U schoollms -Fc schoollms' > wunderkind_$(date +%F).dump
 ```
