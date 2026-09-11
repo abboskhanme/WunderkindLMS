@@ -160,3 +160,68 @@ Put `[BillingFault]` on the P1-09…P1-12 controllers too rather than inventing 
 shape. The filter deliberately catches **only** `BillingRuleException`: catching
 `InvalidOperationException` would turn a missing DI registration into a 409 and hide a broken
 deployment behind what looks like a normal business response.
+
+## From P1-09 — invoices and per-category accrual
+
+### 9. `InvoiceService` and `BillingAccrualService` are not registered
+
+`SchoolLms.Application/Billing/InvoiceService.cs` and `BillingAccrualService.cs` exist and are
+tested, but nothing resolves them. For P1-15, next to the other `AddScoped` calls:
+
+```csharp
+builder.Services.AddScoped<SchoolLms.Application.Billing.IInvoiceService,
+                           SchoolLms.Application.Billing.InvoiceService>();
+builder.Services.AddHostedService<SchoolLms.Application.Billing.BillingAccrualService>();
+```
+
+`InvoiceService` needs `IAppDbContext` (already registered, `Program.cs:56`) **and**
+`ILedgerService` (entry 1 above) — registering the accrual job without `ILedgerService`
+makes the job throw on its first tick, in the background, where nobody looks.
+
+**Delete `builder.Services.AddHostedService<…TuitionAccrualService>()` (`Program.cs:210`) in the
+same commit.** The two jobs write to different tables (`monthly_charges` vs `invoices`) and do
+not collide technically, but a student would be billed twice — once in each model — and the
+director's dashboard would show both. This is the one line in P1-15 that costs money if it is
+forgotten. `TuitionAccrualService.cs` itself stays untouched; P1-21 deletes the file.
+
+**If skipped:** nothing is billed at all. No invoice is ever created, so the cash desk (P1-11)
+has nothing to allocate a payment to and the debtor report (P1-13) is empty. Nothing fails at
+build time, and nothing fails at startup either — it is simply silent.
+
+### 10. The accrual job runs as the director, because there is no system user
+
+`ledger_entries.created_by` is `not null` and references `users(id)`, so an unattended job still
+has to name a person (SPEC §4.4). `BillingAccrualService.ResolveActorAsync` picks the first
+`superadmin` (ordered by id), falling back to `admin`; with neither present it logs a warning and
+does nothing that tick.
+
+If a real `system` account is wanted — and it would read better in the ledger — it needs a
+migration (seeded row, empty `password_hash` so it cannot log in) plus one line in
+`ResolveActorAsync`. That is P1-15's or P1-21's call, not something P1-09 may add: the migration
+chain is a shared file.
+
+**Consequence today:** on a database with no admin yet, the first accrual tick is skipped. There
+are no subscriptions on such a database either, so nothing is lost — the next tick catches up.
+
+### 11. P1-08: `DiscountService.ChargeFor` must delegate to `DiscountMath`
+
+The discount formula (percent first, then the flat amount, floor 0, round to 2) now lives in
+`DiscountMath` at the bottom of `InvoiceService.cs` — accrual calls it directly, without DI,
+because P1-08 and P1-09 were written in parallel and injecting `IDiscountService` would have made
+the accrual unbuildable until P1-08 landed.
+
+`IDiscountService.ChargeFor` / `DiscountFor` (P1-08) should be two-line delegations to it. **Two
+copies of a money formula is the thing to avoid here**: they agree the day they are written and
+drift the day one of them is fixed, and the only person who notices is the parent holding a
+receipt. P1-23 asserts both against the legacy `TuitionService` values.
+
+### 12. `InvoiceQuery` has no paging — `ListAsync` caps at 2000 rows
+
+`InvoiceQuery` was frozen in P1-06 without `Page` / `PageSize`, and an unfiltered list of
+1000 students × 3 categories × 12 months is 36 000 rows. `InvoiceService.ListAsync` therefore
+orders newest month first and takes `InvoiceService.MaxListRows` (2000).
+
+Whoever builds the invoices endpoint (P1-13 / P1-18) should add paging fields to `InvoiceQuery`
+— an additive change to the record, which is explicitly allowed (`BillingDtos.cs` header) — and
+drop the cap. Until then, a screen that shows every invoice of a large school will silently show
+only the most recent ones.
