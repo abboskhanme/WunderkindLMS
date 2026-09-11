@@ -864,6 +864,17 @@ Answers are needed before the phase named in brackets.
 
 ---
 
+### 8.1 Client answers (2026-09-11)
+
+| # | Question | Answer | Consequence |
+|---|---|---|---|
+| 9 | Go-live date | **As soon as Phase 1 ships. Start from zero.** | No opening-balance import. Q17 is closed: existing student debt is *not* carried in. P1-21 loses its riskiest step. |
+| 17 | Opening debt at go-live | **Not needed** | — |
+| 13 | Payment methods | **Cash · card terminal · bank transfer · Payme/Click/Uzum** | `payments.method` enum gains `online`. Only `cash` counts toward `expected_cash` at shift close; the other three settle to the bank. Payme/Click/Uzum are entered by hand in Phase 1 — automatic settlement is a later phase. |
+| 6 | Payment due date and overdue rule | **Must be configurable, not fixed** | Two school settings, editable in the UI: `payment_due_day` (default 10) and `overdue_after_day` (default 15). The accrual job and the overdue scan read them; changing either is an `UPDATE`, never a migration. |
+| 5 | Discount approval threshold | **Every discount needs the director's approval — no threshold** | `discounts` is not "create and apply". A discount is created `pending` and only affects an invoice once `approved_by` is set by a `superadmin`. `approved_by <> created_by` stays a check constraint. The admin UI must show a pending queue, and the accrual job must ignore unapproved discounts. |
+| 14 | One payment, two children | **No — one receipt per student** | `payments.student_id` stays. Schema unchanged. |
+
 ## 9. Risks
 
 | Risk | Impact | Mitigation |
