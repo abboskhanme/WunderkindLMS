@@ -401,6 +401,53 @@ The task the client actually paid for.
 
 ---
 
+### P1-26 — Money-flow visualisation (client request, 2026-09-11)
+
+**Owner:** build-frontend + backend-dev · **Depends on:** P1-07 · **Parallelizable:** yes · **Estimate:** 14 h
+
+A new sub-section of the finance module showing the **whole school's money movement** —
+turnover, income, expenses — as a continuously rotating 3D ring with particles flowing
+along the links. The client supplied an Alphabet quarterly Sankey diagram as the reference
+for the *data structure*; the requested *presentation* is radial and animated, not a
+static Sankey.
+
+**Data shape** — a directed graph derived entirely from `ledger_entries`:
+
+```
+income sources            →  total turnover  →  outflows
+  revenue:tuition                                 expense:salary
+  revenue:bus                                     expense:utilities
+  revenue:dormitory            (hub node)         expense:supplies
+  revenue:meals                                   expense:rent
+  revenue:donation                                expense:repair
+  revenue:other                                   expense:other
+                                                  net:retained   (turnover − expenses)
+```
+
+**Files touched**
+- new `SchoolLms.Application/Billing/MoneyFlowQueries.cs`
+- new `SchoolLms.Server/Controllers/MoneyFlowController.cs`
+- new `schoollms.client/src/pages/admin/finance/MoneyFlowPage.tsx`
+- new `schoollms.client/src/components/charts/MoneyFlowRing.tsx`
+- `schoollms.client/src/App.tsx`, `src/config/navigation.ts` (route + menu entry)
+
+**Acceptance criteria**
+- `GET /api/admin/finance/money-flow?from&to` returns `{ nodes: [{id, label, kind, value}], links: [{source, target, value}] }`, computed **only** from `ledger_entries` — no reference to `students.balance` or `finance_transactions`.
+- Node `kind` is one of `income | hub | expense | net`; the UI colours by kind, never by hard-coded id.
+- Sum of income link values equals the hub value equals the sum of outgoing link values, to the cent. A mismatch is a bug, not a rounding note — asserted in a test.
+- `cashier` → 403; `admin` / `superadmin` → 200 (§4.3).
+- The ring renders at 60 fps on an integrated GPU with 7 income nodes, 6 expense nodes and ~2 000 particles; it degrades to a static ring (no particles) when `prefers-reduced-motion` is set.
+- Empty period (no ledger rows) shows an explicit empty state, not a blank canvas.
+- The 3D library is lazy-loaded: the finance page bundle must not grow for users who never open this sub-section.
+
+**Presentation requirements (client, non-negotiable)**
+- Nodes sit on a **ring in 3D space**, income on one arc, expenses on the opposite arc, turnover hub at the centre.
+- Links are curved tubes; **particles travel along them continuously**, density and speed proportional to the amount.
+- The whole scene **rotates slowly and continuously** without user input.
+- Amounts are labelled in so'm with thousands separators; hovering a node or link shows the exact figure.
+
+---
+
 ### P1-14 — Billing audit + nightly anomaly scan
 **Owner:** backend-dev · **Depends on:** P1-07 · **Parallelizable:** yes · **Estimate:** 8 h
 
