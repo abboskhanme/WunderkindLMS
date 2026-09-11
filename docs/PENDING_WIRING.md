@@ -94,3 +94,69 @@ grouping.
 `payments`, `payment_allocations`, invoice status **and** ledger rows; without an explicit
 transaction those are two separate commits, and a crash in between leaves a payment with no
 ledger entry.
+
+---
+
+## Added by P1-08 (fee catalog, subscriptions, discounts)
+
+### 9. For P1-15 — the two P1-08 services are not registered
+
+`BillingCatalogController` injects `ISubscriptionService` and `IDiscountService`; neither is
+in `Program.cs`. Add next to the other `AddScoped` calls (around line 210):
+
+```csharp
+builder.Services.AddScoped<SchoolLms.Application.Billing.ISubscriptionService,
+                           SchoolLms.Application.Billing.SubscriptionService>();
+builder.Services.AddScoped<SchoolLms.Application.Billing.IDiscountService,
+                           SchoolLms.Application.Billing.DiscountService>();
+```
+
+Both constructors take `(IAppDbContext, AuditService)`; both are already registered
+(`Program.cs:56` and `:223`), so nothing else is needed.
+
+`ISubscriptionService` lives in `SchoolLms.Application/Billing/SubscriptionService.cs`, not in
+the frozen `IBillingServices.cs` — P1-06 froze five interfaces and subscriptions was not one
+of them, and adding a type to that file would have collided with the four other Phase 1.C
+agents working in parallel.
+
+**If skipped:** every `/api/admin/billing/*` endpoint returns **500** at request time
+(`Unable to resolve service`). The RBAC denials (401/403) still work, because the
+authorization filter runs before the controller is constructed — which is exactly why
+`BillingCatalogTests` can test permissions today but has to register the two services in a
+derived `WebApplicationFactory` to test the happy path. Once this entry is done, that helper
+(`BillingCatalogTests.WiredApi()`) can be deleted and replaced with
+`fixture.Api.ClientAsAsync(...)`.
+
+### 10. For the next migration owner — no database guard against overlapping subscriptions
+
+`SubscriptionService` rejects a second subscription for the same `(student_id, category_id)`
+whose date range overlaps an existing one (`409 subscription_overlap`). **Only the
+application enforces this.** The database equivalent is
+
+```sql
+create extension if not exists btree_gist;
+alter table student_subscriptions add constraint ex_student_subscriptions_no_overlap
+  exclude using gist (
+    student_id with =, category_id with =,
+    daterange(starts_on, coalesce(ends_on, 'infinity'::date), '[]') with &&
+  );
+```
+
+It was **not** added here because P1-08 owns no migration (P1-05's file is closed and Phase
+1.C runs in parallel), and because `btree_gist` on a `text` column needs checking against the
+production image first. Until it lands, two concurrent requests can still create overlapping
+rows — the accrual job (P1-09) would then see two prices for one month and take both.
+Cheap to add with any later migration.
+
+### 11. For Phase 1.C owners — reuse `BillingFaultAttribute` for error responses
+
+`SchoolLms.Server/Controllers/BillingCatalogController.cs` also declares
+`BillingFaultAttribute` (an `IExceptionFilter`) and `BillingErrorDto`. Services throw
+`BillingRuleException` (`SchoolLms.Application/Billing/BillingRuleException.cs`) with a fault
+kind, the filter maps it to 400/403/404/409 and returns `{ "code": …, "message": … }` — the
+shape the whole frontend already reads (`err.response.data.message`).
+
+Put `[BillingFault]` on the P1-09…P1-12 controllers too rather than inventing a second error
+shape. The filter deliberately catches **only** `BillingRuleException`: catching
+`InvalidOperationException` would turn a missing DI registration into a 409 and hide a broken
+deployment behind what looks like a normal business response.
