@@ -1,3 +1,4 @@
+import { Suspense, lazy } from 'react'
 import { Navigate, Route, Routes } from 'react-router-dom'
 import { AppLayout } from '@/components/layout/AppLayout'
 import { ProtectedRoute, RootRedirect } from '@/components/auth/ProtectedRoute'
@@ -52,6 +53,11 @@ import { FinancePage } from '@/pages/admin/finance/FinancePage'
 import { SettingsPage } from '@/pages/admin/settings/SettingsPage'
 import { AccountPage } from '@/pages/admin/account/AccountPage'
 import { TeacherAppRedirect } from '@/components/TeacherAppRedirect'
+import { Loader } from '@/components/ui/Loader'
+
+// P1-26 — Pul aylanmasi (3D halqa). LAZY: sahifa Three.js'ga tayanadi, statik
+// import qilinsa u butun ilovaning asosiy bundle'iga tushardi.
+const MoneyFlowPage = lazy(() => import('@/pages/admin/finance/MoneyFlowPage'))
 
 export default function App() {
   return (
@@ -104,6 +110,8 @@ export default function App() {
           <Route path="app/teachers" element={<RequirePerm perm="app"><TeacherAppPage /></RequirePerm>} />
           <Route path="canteen" element={<RequirePerm perm="app"><CanteenPage /></RequirePerm>} />
           <Route path="finance" element={<RequirePerm perm="finance"><FinancePage /></RequirePerm>} />
+          {/* Rol tekshiruvi sahifaning ichida (SPEC §4.3: faqat admin/direktor) */}
+          <Route path="finance/money-flow" element={<Suspense fallback={<Loader label="Yuklanmoqda…" />}><MoneyFlowPage /></Suspense>} />
           <Route path="academic-year" element={<RequirePerm perm="academicYear"><AcademicYearPage /></RequirePerm>} />
           <Route path="settings" element={<Navigate to="/admin/settings/school" replace />} />
           <Route path="settings/:section" element={<RequirePerm perm="settings"><SettingsPage /></RequirePerm>} />
