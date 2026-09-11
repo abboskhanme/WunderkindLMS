@@ -53,17 +53,27 @@ public static class Roles
     /// </summary>
     public const string AdminOrSuper = Admin + "," + SuperAdmin;
 
+    // ----- Moliya: TASHQI darvozalar (SPEC §4.3) -----
+    //
+    // DIQQAT: bu ikkisi FAQAT "shu controller'ga umuman kira oladimi" degan qo'pol
+    // filtr. HAQIQIY qoida — qaysi rol qaysi AMALNI bajara oladi — bitta joyda,
+    // `FinanceMatrix.Rules` da (SchoolLms.Server/Controllers/FinanceRoleAttribute.cs).
+    // Bu yerga amal darajasidagi mantiq YOZILMAYDI, aks holda ruxsatning ikkita
+    // manbasi paydo bo'ladi va ular albatta bir-biridan uzoqlashadi.
+
     /// <summary>
-    /// Kassa amallari: to'lov qabul qilish, chek, o'z smenasini ochish/yopish.
+    /// Kassa oldidagi rollar: to'lov qabul qilish, chek, o'z smenasi.
     /// Admin va direktor ham kassaga tura oladi (SPEC §4.3 birinchi qator).
+    /// <c>[Authorize(Roles = Roles.CashierOrAdmin)]</c>.
     /// </summary>
     public const string CashierOrAdmin = Cashier + "," + Admin + "," + SuperAdmin;
 
     /// <summary>
-    /// Moliya yuzasiga UMUMAN kirishi mumkin bo'lgan rollar. Bu faqat tashqi darvoza —
-    /// qaysi rol qaysi amalni qila olishi <c>FinanceRoleAttribute</c> da hal qilinadi.
-    /// <see cref="Staff"/> ham shu yerda: mavjud "finance" ruxsat kalitiga ega xodim
-    /// hisobotlarni ko'rishda davom etadi (P1-21 gacha eski moliya sahifasi tirik).
+    /// Moliya "orqa ofisi": katalog, obunalar, chegirmalar, chiqimlar, hisobotlar,
+    /// sozlamalar. Kassir bu yerda YO'Q — SPEC §4.3 unga bu qatorlarning birortasini
+    /// bermaydi. <see cref="Staff"/> ham yo'q: §4.3 da "staff" ustuni umuman yo'q,
+    /// eski xodim-ruxsat yo'li esa P1-21 gacha eski <c>FinanceController</c> da
+    /// <c>AdminPermAttribute</c> orqali ishlashda davom etadi.
     /// </summary>
-    public const string FinanceStaff = Cashier + "," + Admin + "," + SuperAdmin + "," + Staff;
+    public const string FinanceStaff = Admin + "," + SuperAdmin;
 }

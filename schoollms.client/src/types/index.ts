@@ -6,7 +6,20 @@
  *   o'quv yili boshlangach guruhlashni) istalgan vaqtda o'zgartira oladi.
  * - `admin` — oddiy administrator. Qulflangan ma'lumotlarni o'zgartira olmaydi.
  */
-export type Role = 'superadmin' | 'admin' | 'teacher' | 'student' | 'parent' | 'staff'
+export type Role =
+  | 'superadmin'
+  | 'admin'
+  | 'teacher'
+  | 'student'
+  | 'parent'
+  | 'staff'
+  /**
+   * Kassir (P1-04) — SPEC §3.1 bo'yicha birinchi darajali rol, `staff` +
+   * "finance" ruxsati emas. To'lov qabul qiladi va o'z smenasini yopadi,
+   * lekin storno qila olmaydi, chegirma bera olmaydi, chiqim yoza olmaydi
+   * va boshqa kassirlarning hisobotini ko'ra olmaydi (SPEC §4.3).
+   */
+  | 'cashier'
 
 export type Gender = 'male' | 'female'
 
@@ -1162,4 +1175,341 @@ export interface NotificationItem {
 export interface NotificationList {
   items: NotificationItem[]
   unreadCount: number
+}
+
+/* =========================================================================
+   Moliya (billing) — MUZLATILGAN SHARTNOMA. Vazifa: P1-06.
+   =========================================================================
+
+   Backend manbasi: SchoolLms.Application/Dtos/BillingDtos.cs
+   (namespace `SchoolLms.Application.Dtos.Billing`). Har bir interfeys u
+   yerdagi DTO bilan BIR XIL nomda va bir xil maydonlarda.
+
+   BU BLOK P1-06 DA MUZLAYDI. Faza 1.F (P1-16…P1-19) to'rtta sahifa daraxti
+   shu tiplarga tayanib PARALLEL yoziladi. Maydon nomini o'zgartirish —
+   to'rtta agentning ishini buzish. Yangi IXTIYORIY maydon qo'shish xavfsiz.
+
+   PULNI FRONTEND HISOBLAMAYDI.
+   JavaScript'da `number` — float64. `0.1 + 0.2 !== 0.3`, va so'mning
+   tiyinlari shu yerda yo'qoladi. Shuning uchun server hisoblangan
+   qiymatlarni TAYYOR beradi: `payable`, `paid`, `remaining`, `variance`,
+   `debt`, `unallocated`. UI ularni faqat KO'RSATADI. Agar yig'indi kerak
+   bo'lsa — backend'dan so'rang, `reduce` qilmang.
+
+   Eski `FinanceTransaction` / `StudentLedger` tiplari (yuqorida) hali
+   tirik: eski moliya sahifasi P1-21 gacha ishlaydi. Ular bilan bu yerdagi
+   tiplar ARALASHTIRILMAYDI.
+   ========================================================================= */
+
+/** To'lov toifasi kodi. Beshtasi migratsiyada seed qilingan (SPEC §3.7). */
+export type FeeCategoryCode = 'tuition' | 'bus' | 'dormitory' | 'meals' | 'other'
+
+/**
+ * To'lov usuli — FAQAT YORLIQ (mijoz javobi, SPEC §8.1 Q13).
+ * Hech qanday provayder integratsiyasi yo'q: kassir to'lovchi nima bilan
+ * to'laganini belgilaydi, tizim Payme/Click/Uzum/terminalga murojaat
+ * QILMAYDI. Smena yopilishida faqat `cash` sanaladi.
+ */
+export type PaymentMethod = 'cash' | 'card' | 'transfer' | 'online'
+
+export type InvoiceStatus = 'open' | 'partial' | 'paid' | 'void'
+
+/**
+ * Chegirma holati. Mijoz javobi (SPEC §8.1 Q5): CHEGARA YO'Q — har qanday
+ * chegirma direktor tasdig'ini talab qiladi. `pending` chegirma qarzga
+ * TA'SIR QILMAYDI.
+ */
+export type DiscountStatus = 'pending' | 'approved' | 'rejected'
+
+export type CashShiftStatus = 'open' | 'closed'
+
+export type LedgerDirection = 'debit' | 'credit'
+
+export type LedgerRefType = 'payment' | 'invoice' | 'expense' | 'salary' | 'reversal'
+
+/* ---------- Ma'lumotnoma: toifalar ---------- */
+
+export interface FeeCategory {
+  id: string
+  code: FeeCategoryCode | string
+  name: string
+  isActive: boolean
+}
+
+/* ---------- Obunalar ---------- */
+
+export interface StudentSubscription {
+  id: string
+  studentId: string
+  studentName: string
+  categoryId: string
+  categoryCode: FeeCategoryCode | string
+  categoryName: string
+  /** Oylik summa (so'm) */
+  monthlyAmount: number
+  /** Avtobus yo'nalishi, yotoqxona xonasi va h.k. */
+  detail?: string
+  /** ISO sana "YYYY-MM-DD" */
+  startsOn: string
+  endsOn?: string
+  /** Bugungi kunga faolmi (server hisoblaydi) */
+  isActive: boolean
+  createdByName: string
+  /** ISO sana-vaqt (ofset bilan) */
+  createdAt: string
+}
+
+/* ---------- Chegirmalar ---------- */
+
+export interface Discount {
+  id: string
+  studentId: string
+  studentName: string
+  /** null = barcha toifalarga */
+  categoryId?: string
+  categoryCode?: string
+  categoryName?: string
+  /** Foiz (0..100) — avval shu ayriladi */
+  percent: number
+  /** Aniq summa (so'm) — foizdan keyin ayriladi */
+  amount: number
+  reason: string
+  startsOn: string
+  endsOn?: string
+  status: DiscountStatus
+  createdByName: string
+  approvedByName?: string
+  decidedAt?: string
+  createdAt: string
+}
+
+/* ---------- Hisob-fakturalar ---------- */
+
+export interface Invoice {
+  id: string
+  studentId: string
+  studentName: string
+  categoryId: string
+  categoryCode: FeeCategoryCode | string
+  categoryName: string
+  /** Oyning birinchi kuni, "YYYY-MM-01" */
+  periodMonth: string
+  /** To'liq summa, chegirmasiz */
+  amount: number
+  /** Qo'llangan (TASDIQLANGAN) chegirma */
+  discount: number
+  /** To'lash kerak = amount − discount (SERVER hisoblaydi) */
+  payable: number
+  /** Taqsimlangan (to'langan) qism */
+  paid: number
+  /** Qoldiq = payable − paid */
+  remaining: number
+  dueOn: string
+  status: InvoiceStatus
+  /** `overdue_after_day` sozlamasi bo'yicha muddati o'tganmi */
+  isOverdue: boolean
+  createdAt: string
+}
+
+/** Oylik hisoblashni ishga tushirish natijasi */
+export interface AccrualResult {
+  periodMonth: string
+  created: number
+  skipped: number
+  total: number
+}
+
+/** O'quvchining moliyaviy kartochkasi */
+export interface StudentBilling {
+  studentId: string
+  studentName: string
+  className: string
+  /** Jami qarz (musbat son). 0 = qarzsiz */
+  debt: number
+  /** Taqsimlanmagan avans */
+  credit: number
+  subscriptions: StudentSubscription[]
+  invoices: Invoice[]
+  payments: Payment[]
+}
+
+/* ---------- Kassa smenasi ---------- */
+
+export interface CashShift {
+  id: string
+  cashierId: string
+  cashierName: string
+  openedAt: string
+  closedAt?: string
+  openingFloat: number
+  /** Ledger'dan hisoblangan. Yopilmaguncha undefined */
+  expectedCash?: number
+  /** Kassir qo'lda sanagan. Yopilmaguncha undefined */
+  countedCash?: number
+  /** countedCash − expectedCash. BAZA hisoblaydi, tahrirlab bo'lmaydi */
+  variance?: number
+  status: CashShiftStatus
+  closedByName?: string
+  paymentsCount: number
+  /** Faqat `cash` — smenada sanaladigan qism */
+  cashTotal: number
+  /** card + transfer + online — bankka tushadi */
+  nonCashTotal: number
+}
+
+export interface ZReportMethodRow {
+  method: PaymentMethod
+  count: number
+  amount: number
+}
+
+export interface ZReportCategoryRow {
+  categoryId: string
+  categoryCode: string
+  categoryName: string
+  amount: number
+}
+
+/** Smena yakuni (SPEC §4.6) */
+export interface ZReport {
+  shift: CashShift
+  byMethod: ZReportMethodRow[]
+  byCategory: ZReportCategoryRow[]
+  /** Birinchi chek raqami; smena bo'sh bo'lsa undefined */
+  receiptFrom?: number
+  receiptTo?: number
+  reversalsCount: number
+}
+
+/* ---------- To'lovlar ---------- */
+
+export interface PaymentAllocation {
+  id: string
+  invoiceId: string
+  categoryId: string
+  categoryCode: string
+  categoryName: string
+  periodMonth: string
+  amount: number
+}
+
+/**
+ * Kassaga tushgan to'lov. O'ZGARMAS: tahrirlash/o'chirish API'si yo'q va
+ * bo'lmaydi (SPEC §4.1 — baza darajasida ham taqiqlangan). Tuzatish faqat
+ * storno orqali.
+ */
+export interface Payment {
+  id: string
+  /** Chek raqami — smena ichida uzluksiz */
+  receiptNo: number
+  studentId: string
+  studentName: string
+  amount: number
+  method: PaymentMethod
+  cashShiftId: string
+  cashierId: string
+  cashierName: string
+  note?: string
+  receivedAt: string
+  /** Bu qator storno bo'lsa — qaysi to'lovni bekor qilgani */
+  reversalOf?: string
+  /** Bu to'lov storno qilingan bo'lsa — storno qatori id'si */
+  reversedBy?: string
+  /** Taqsimlanmagan qoldiq (avans) = amount − Σ allocations */
+  unallocated: number
+  allocations: PaymentAllocation[]
+}
+
+/** Kassir ekranidagi taqsimot taklifi (FIFO — eng eski qarzdan) */
+export interface AllocationSuggestion {
+  invoiceId: string
+  categoryId: string
+  categoryCode: string
+  categoryName: string
+  periodMonth: string
+  remaining: number
+  suggested: number
+}
+
+/* ---------- Chiqimlar ---------- */
+
+export interface Expense {
+  id: string
+  onDate: string
+  category: string
+  amount: number
+  note?: string
+  createdByName: string
+  /** Tasdiqlovchi yaratuvchidan BOSHQA shaxs bo'lishi shart (SPEC §4.5) */
+  approvedByName?: string
+  createdAt: string
+}
+
+/* ---------- Ledger ---------- */
+
+export interface LedgerEntry {
+  id: number
+  entryDate: string
+  /** cash | bank | receivable | revenue:tuition | expense:salary ... */
+  account: string
+  direction: LedgerDirection
+  amount: number
+  refType: LedgerRefType
+  refId?: string
+  memo?: string
+  createdByName: string
+  createdAt: string
+  reversalOf?: number
+}
+
+/** Hisob bo'yicha qoldiq — P&L va Cash Flow shundan quriladi */
+export interface AccountBalance {
+  account: string
+  debit: number
+  credit: number
+  balance: number
+}
+
+/* ---------- Hisobotlar ---------- */
+
+export interface DebtorCategoryRow {
+  categoryCode: string
+  categoryName: string
+  debt: number
+}
+
+export interface DebtorRow {
+  studentId: string
+  fullName: string
+  className: string
+  parentPhone: string
+  debt: number
+  /** Eng eski to'lanmagan oy */
+  oldestUnpaidMonth?: string
+  /** Necha kun kechikkan. 0 = kechikmagan */
+  daysOverdue: number
+  byCategory: DebtorCategoryRow[]
+}
+
+export interface BillingMonthly {
+  periodMonth: string
+  /** Shu oyga hisoblangan (chegirmadan keyin) */
+  accrued: number
+  /** Shu oyda haqiqatan tushgan pul */
+  collected: number
+  /** Yig'ilish darajasi %; accrued = 0 bo'lsa null */
+  collectionRate: number | null
+}
+
+/* ---------- Moliya sozlamalari (SPEC §8.1 Q6) ---------- */
+
+/**
+ * To'lov muddati QAT'IY RAQAM EMAS — admin UI'dan o'zgartiriladi.
+ * Ikkalasi ham 1..28 oralig'ida (28 — har oyda mavjud eng katta kun).
+ */
+export interface BillingSettings {
+  paymentDueDay: number
+  overdueAfterDay: number
+  updatedAt: string
+  updatedByName?: string
 }

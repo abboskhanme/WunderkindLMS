@@ -184,6 +184,11 @@ export const navByRole: Record<Role, NavItem[]> = {
   superadmin: [],
   // Xodim ham admin nav'ini ishlatadi — Sidebar uni permissions bo'yicha filtrlaydi
   staff: [],
+  // Kassir (P1-04) — ATAYLAB admin nav'idan MUSTAQIL va qisqa. SPEC §4.3 ga ko'ra
+  // u moliyaning qolgan qismini ko'rmaydi: storno, chegirma, chiqim va kassirlar
+  // kesimidagi hisobot unga yopiq. To'liq kassir ish joyi P1-16 da, marshrutlar
+  // esa P1-20 da ulanadi — shu ikkisigacha bu ro'yxat bitta elementdan iborat.
+  cashier: [{ label: 'Kassa', to: '/cashier', icon: Wallet }],
 }
 
 // Superadmin va xodim admin nav'ini qayta ishlatadi (Sidebar rol/ruxsat bo'yicha filtrlaydi).
@@ -199,6 +204,8 @@ export const homeByRole: Record<Role, string> = {
   student: '/login',
   parent: '/login',
   staff: '/admin',
+  // Kassir uchun boshlang'ich sahifa. Marshrutning o'zi P1-20 da qo'shiladi.
+  cashier: '/cashier',
 }
 
 export const roleLabels: Record<Role, string> = {
@@ -208,4 +215,5 @@ export const roleLabels: Record<Role, string> = {
   student: "O'quvchi",
   parent: 'Ota-ona',
   staff: 'Xodim',
+  cashier: 'Kassir',
 }
