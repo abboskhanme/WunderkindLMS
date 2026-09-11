@@ -2,6 +2,16 @@
 # Sozlamalar .env faylidan keladi (.env.example dan nusxa oling).
 # Diqqat: app porti TASHQARIGA OCHILMAGAN — unga faqat cloudflared (ichki tarmoq) kiradi.
 
+# Log rotatsiyasi. Docker'ning standart `json-file` drayveri loglarni CHEKSIZ o'stiradi —
+# oylar davomida ishlagan serverda bu diskni to'ldirib, butun stack'ni to'xtatadi. Har xizmatga
+# 10 MB x 3 fayl chegarasi (jami ≈30 MB/xizmat).
+# Rollback: xizmatdan `logging: *default-logging` qatorini olib tashlash.
+x-logging: &default-logging
+  driver: "json-file"
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   # ── BAZA ── PostgreSQL. Barcha ma'lumot shu yerda. Tashqariga chiqmaydi.
   database:
@@ -23,6 +33,27 @@ services:
       retries: 12
       start_period: 20s
     restart: unless-stopped
+    logging: *default-logging
+
+  # ── KESH ── Redis. Faqat kam o'zgaradigan ma'lumotlar keshi (portal meta, fan/o'qituvchi
+  # nomlari). MANBA EMAS — butunlay yo'qolsa ham ma'lumot yo'qolmaydi, faqat DB yuki oshadi.
+  # Tashqariga port OCHILMAGAN — unga faqat backend (ichki tarmoq) kiradi.
+  cache:
+    image: redis:7-alpine
+    container_name: wunderkind-cache
+    # maxmemory + LRU: kesh RAM'ni cheksiz yeb qo'ymasin (3 GB serverda muhim).
+    # appendonly yoqilgan — restartdan keyin issiq kesh saqlanadi (majburiy emas, lekin foydali).
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+    logging: *default-logging
 
   # ── BACKEND + FRONTEND ── .NET API (/api/*) va qurilgan React sayti bitta obrazda:
   # frontend build vaqtida wwwroot ga joylanadi, shuning uchun alohida konteyner kerak emas.
@@ -37,6 +68,9 @@ services:
       ASPNETCORE_ENVIRONMENT: "Production"
       ASPNETCORE_URLS: "http://+:8080"
       ConnectionStrings__Default: "Host=database;Port=5432;Database=schoollms;Username=schoollms;Password=${DB_PASSWORD};Include Error Detail=true"
+      # Redis kesh. Bu qatorni o'chirsangiz — ilova jarayon ichidagi xotira keshiga qaytadi
+      # (qayta build SHART EMAS). Rollback shu qadar oddiy.
+      ConnectionStrings__Redis: "cache:6379"
       Tenancy__RootDomain: "${ROOT_DOMAIN}"
       App__Host: "test.${ROOT_DOMAIN}"     # FAQAT shu host ilovani (SPA) ochadi; qolganlari → landing
       Jwt__Key: "${JWT_KEY}"               # >=32 belgi; prod'da MAJBURIY
@@ -46,7 +80,17 @@ services:
     depends_on:
       database:
         condition: service_healthy
+      cache:
+        condition: service_healthy
+    healthcheck:
+      # /api/health bazaga ham so'rov yuboradi — ya'ni "jarayon tirik" emas, "ilova ishlayapti".
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8080/api/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
     restart: unless-stopped
+    logging: *default-logging
     # Diqqat: bu yerda `ports:` YO'Q — internetga ochilmaydi.
 
   # Kamera media-shlyuzi: IP kameralar RTSP oqimini brauzer ko'radigan HLS ga o'giradi,
@@ -64,6 +108,7 @@ services:
     volumes:
       - cam-recordings:/recordings   # kamera yozuvlari (playback manbai)
     restart: unless-stopped
+    logging: *default-logging
 
   cloudflared:
     image: cloudflare/cloudflared:latest
@@ -75,8 +120,10 @@ services:
       # tushib qolardi → 5xx. HTTP/2 (TCP) ga o'tkazamiz — bu tarmoqda barqarorroq.
       TUNNEL_TRANSPORT_PROTOCOL: "http2"
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy   # tunnel backend TAYYOR bo'lgandan keyin ochiladi (502 kamayadi)
     restart: unless-stopped
+    logging: *default-logging
 
   # Kunlik avtomatik backup. Har kuni BACKUP_HOUR (UTC) da BARCHA foydalanuvchi bazalarini
   # /backups ga .bak qilib oladi va BACKUP_RETENTION_DAYS dan eski nusxalarni o'chiradi.
@@ -98,6 +145,7 @@ services:
       database:
         condition: service_healthy
     restart: unless-stopped
+    logging: *default-logging
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
@@ -115,6 +163,7 @@ services:
 
 volumes:
   pg-data:
+  redis-data:
   uploads:
   dpkeys:
   pg-backups:

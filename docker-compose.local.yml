@@ -21,6 +21,12 @@ services:
       App__Host: "localhost"
       Tenancy__RootDomain: "localhost"
 
+  cache:
+    ports:
+      # FAQAT localhost — `redis-cli -p 6379 MONITOR` bilan keshni kuzatish uchun.
+      # Prodda bu port umuman ochilmaydi.
+      - "127.0.0.1:6379:6379"
+
   # Quyidagilar lokalda avtomatik ko'tarilmaydi.
   # Kerak bo'lsa: `--profile tunnel` / `--profile media` / `--profile backup` qo'shing.
   cloudflared:

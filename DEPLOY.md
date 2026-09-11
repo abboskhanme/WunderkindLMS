@@ -1,3 +1,7 @@
+> **⚠️ ESKIRGAN — ISHLATMANG.** Bu fayl SQL Server / Control Plane (multi-tenant) davridan
+> qolgan va hozirgi tizimga MOS EMAS (`SA_PASSWORD`, `mssql-data`, `app` xizmati endi yo'q).
+> Amaldagi hujjat: **`docs/DEPLOY.md`**. Bu fayl faqat tarix uchun saqlanmoqda.
+
 # SchoolLms — Docker + Cloudflare Tunnel bilan ishga tushirish
 
 Domen: **wunderkindschool.uz** (asosiy = Control Plane / loyiha boshlig'i; subdomen = maktab).
