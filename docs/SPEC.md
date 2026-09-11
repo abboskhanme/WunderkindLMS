@@ -679,6 +679,21 @@ alter default privileges in schema public
   grant select, insert, update, delete on tables to app_rw;
 ```
 
+> **Implemented in P1-02 — use `deploy/init-roles.sql`, not the sketch above.** The real
+> script differs in three ways that matter, all of them learned by running it:
+> 1. There are **three** roles, not two. The existing `schoollms` is not merely the owner,
+>    it is the initdb **superuser**, and a superuser bypasses `REVOKE` even more thoroughly
+>    than an owner does. A separate non-superuser `schoollms_owner` owns the schema;
+>    `schoollms` stays only for `pg_isready`, `pg_dump` and break-glass.
+> 2. `alter default privileges` **must** carry `for role schoollms_owner`. Without it the
+>    default attaches to whoever runs the statement, and every table a future migration
+>    creates comes out invisible to the app.
+> 3. The `revoke` has to be **re-run after every migration**, because default privileges
+>    hand each newly created table back to `app_rw` with `DELETE` included.
+>
+> Verified 2026-09-11 on a throwaway stack: `update payments set amount = 1` as `app_rw`
+> returns SQLSTATE **42501**, and the row survives.
+
 `ConnectionStrings__Default` uses `app_rw`; migrations run under a separate
 `ConnectionStrings__Migrator` using the owner. If the application is ever pointed at the
 owner role again the protection silently disappears — so the integration test in P1-22

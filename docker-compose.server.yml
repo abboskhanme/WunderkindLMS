@@ -20,6 +20,13 @@ services:
 
   backend:
     # `ports` YO'Q — ilovaga faqat Caddy (ichki tarmoq) kiradi.
+    #
+    # ULANISH SATRLARI asosiy fayldan keladi va bu yerda ATAYLAB qayta yozilmaydi:
+    #   Default  = app_rw           (ilova — hech narsaga ega emas)
+    #   Migrator = schoollms_owner  (sxema egasi — faqat migratsiya)
+    # Ikkalasi ham .env dagi DB_APP_PASSWORD / DB_MIGRATOR_PASSWORD ni talab qiladi.
+    # Agar Default ni `schoollms` ga qaytarsangiz, SPEC §4.1 moliyaviy himoyasi
+    # HECH QANDAY XATOSIZ, jimgina ishlamay qoladi. Tekshirish usuli: deploy/README.md.
     environment:
       # Bo'sh qiymat = har qanday host ilovani ochadi (landing sahifa emas).
       App__Host: ""

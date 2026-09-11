@@ -30,16 +30,24 @@ docker exec wunderkind-database ls -lh /backups | tail -3
 # 2) Obrazni qurish (hali almashtirmaydi)
 docker compose -f docker-compose.yml -f docker-compose.server.yml build backend
 
-# 3) MIGRATSIYA — alohida qadam
-#    Hozircha migratsiya konteyner startida `db.Database.Migrate()` orqali qo'llanadi.
+# 3) MIGRATSIYA
+#    Migratsiya konteyner startida qo'llanadi, lekin endi `ConnectionStrings__Migrator`
+#    (sxema egasi `schoollms_owner`) bilan — ilova roli `app_rw` da DDL huquqi yo'q.
 #    Yangi migratsiya bo'lsa: avval backup (1-qadam), keyin 4-qadam.
-#    KUTILAYOTGAN ISH: migratsiyani startdan ajratib, alohida `alembic upgrade head`
-#    ekvivalenti (`dotnet ef database update`) qilib qo'yish.
+#    Migratsiyani butunlay alohida qadamga ajratish kerak bo'lsa:
+#    `Database__AutoMigrate=false` → deploy/README.md § "Migratsiyani alohida qadamga".
 
 # 4) Almashtirish
 docker compose -f docker-compose.yml -f docker-compose.server.yml up -d
 
-# 5) Tekshirish (pastdagi 3-bo'lim)
+# 5) ROLLARNI QAYTA QO'LLASH — migratsiya YANGI JADVAL qo'shgan bo'lsa MAJBURIY.
+#    Yangi jadval `app_rw` ga to'liq CRUD bilan keladi; moliyaviy jadvallardan
+#    UPDATE/DELETE ni aynan shu skript qaytarib oladi. Idempotent — har doim xavfsiz.
+docker exec -i wunderkind-database \
+    psql -U schoollms -d schoollms -v ON_ERROR_STOP=1 -f - < deploy/init-roles.sql
+#    Chiqishda `app_rw` qatorida `owns_in_public` = 0 bo'lishi SHART.
+
+# 6) Tekshirish (pastdagi 3-bo'lim, jumladan 3.5)
 ```
 
 ### Rollback
@@ -51,6 +59,8 @@ docker compose -f docker-compose.yml -f docker-compose.server.yml up -d
 | Redis muammo qilmoqda | `docker-compose.yml` dagi `ConnectionStrings__Redis` qatorini o'chiring → `docker compose ... up -d backend`. Ilova jarayon ichidagi xotira keshiga qaytadi. **Qayta build SHART EMAS.** |
 | Log rotatsiyasi xalaqit bermoqda | xizmatdan `logging: *default-logging` qatorini oling |
 | .NET 10 muammo qilmoqda | `git revert` (4 ta csproj + Dockerfile) → `--build` bilan qayta ko'taring. Baza sxemasi O'ZGARMAGAN, shuning uchun .NET 8 ga qaytish baza bilan mos |
+| Ilova bazaga ulana olmayapti (`app_rw`) | `.env` da `DB_APP_PASSWORD` bormi? `init-roles.sql` ni qayta ishga tushiring — u parolni `ALTER ROLE` bilan yangilaydi. To'liq qaytarish: `deploy/README.md` § "Rollback" |
+| Migratsiya "permission denied" beryapti | `ConnectionStrings__Migrator` / `DB_MIGRATOR_PASSWORD` berilmagan — ilova `app_rw` bilan DDL qilmoqchi. Bu ATAYLAB baland xato: konfiguratsiyani to'g'rilang, `Default` ni egaga QAYTARMANG |
 
 ---
 
@@ -133,6 +143,36 @@ docker exec wunderkind-database dropdb -U schoollms restore_test
 
 Bu sinovni **har chorakda** takrorlang.
 
+### 3.5 Moliyaviy himoya yoqilganmi (SPEC §4.1)
+
+Bu himoya buzilganda **hech qanday xato chiqmaydi** — tizim xuddi shunday ishlayveradi.
+Shuning uchun uni ko'z bilan emas, buyruq bilan tekshirish kerak. Har deploydan keyin:
+
+```bash
+# 1) Ilova QAYSI rol bilan ulangan? Faqat `app_rw` bo'lishi kerak.
+#    `schoollms` chiqsa (psql'dan boshqa) — HIMOYA O'CHIQ.
+docker exec wunderkind-database psql -U schoollms -d schoollms -c \
+  "select usename, count(*) from pg_stat_activity where datname='schoollms' group by 1;"
+
+# 2) `app_rw` hech narsaga ega emasmi? Javob 0 bo'lishi SHART.
+#    Egalik paydo bo'lsa REVOKE ishlamay qoladi.
+docker exec wunderkind-database psql -U schoollms -d schoollms -c \
+  "select count(*) from pg_class c join pg_namespace n on n.oid=c.relnamespace
+    where n.nspname='public' and c.relowner='app_rw'::regrole;"
+
+# 3) To'lovni o'chirib ko'ring — RAD ETILISHI kerak.
+#    (`payments` jadvali P1-04 dan keyin paydo bo'ladi.)
+DB_APP=$(grep '^DB_APP_PASSWORD=' /opt/schoollms/.env | cut -d= -f2-)
+docker exec -e PGPASSWORD="$DB_APP" wunderkind-database \
+  psql -U app_rw -d schoollms -h 127.0.0.1 --set=VERBOSITY=verbose \
+  -c "update payments set amount = 1;"
+```
+
+Kutilgan javob: `ERROR: 42501: permission denied for table payments`.
+`UPDATE <son>` chiqsa — **himoya ishlamayapti**, `deploy/README.md` § "Baza rollari" ga qarang.
+
+Tafsilot va rollar jadvali: `deploy/README.md` § "Baza rollari".
+
 ---
 
 ## 4. Hali YO'Q (ochiq kamchiliklar)
@@ -144,8 +184,10 @@ Bular bor deb hisoblamang — ular hali qurilmagan:
    handler'dan admin chatga yuborish eng arzon yechim.
 2. **Disk va restart alertlari yo'q.** Hozircha faqat qo'lda tekshiriladi (3.2 / 3.3).
 3. **Backup faqat shu serverda.** Server yo'qolsa backup ham yo'qoladi. Off-site nusxa kerak.
-4. **Migratsiya konteyner startida avtomatik qo'llanadi** (`Program.cs` dagi
-   `db.Database.Migrate()`). Prodda migratsiya alohida, nazorat ostidagi qadam bo'lishi kerak.
+4. **Migratsiya hamon konteyner startida qo'llanadi**, garchi endi u to'g'ri rol
+   (`ConnectionStrings__Migrator` = `schoollms_owner`) bilan ishlasa ham. Uni alohida
+   qadamga aylantirish mumkin — `Database__AutoMigrate=false` (P1-02 da qo'shildi) —
+   lekin hozircha yoqilmagan. P1-04 (moliya jadvallari) bilan birga yoqish tavsiya etiladi.
 5. **`docker-compose.local.yml` PostgreSQL 5432 ni `0.0.0.0` ga ochadi.** Lokalda,
    lekin `127.0.0.1:5432:5432` bo'lgani to'g'riroq. (Redis `127.0.0.1` ga bog'langan.)
 
@@ -162,3 +204,21 @@ Bular bor deb hisoblamang — ular hali qurilmagan:
 - **`/api/health` endi bazani tekshiradi** (ilgari faqat `{"status":"healthy"}` qaytarardi).
 - **`backend` va `proxy` ga healthcheck**, `cloudflared`/`proxy` → `service_healthy` sharti.
 - **Log rotatsiyasi** barcha xizmatlarga.
+
+---
+
+## 6. Faza 1 — P1-02 o'zgarishlari (2026-09-11)
+
+- **Baza rollari ajratildi (SPEC §4.1).** Ilova endi `app_rw` bilan ulanadi — u hech
+  narsaga EGA EMAS, shuning uchun `REVOKE` unga haqiqatan ta'sir qiladi. Migratsiya
+  `schoollms_owner` (sxema egasi) bilan. `schoollms` superuser saqlanadi, lekin faqat
+  `pg_isready` / `pg_dump` / favqulodda kirish uchun.
+  **Sababi:** jadval egasiga `REVOKE` ta'sir qilmaydi — serverda sinovdan o'tkazilgan.
+  Ya'ni "kassir to'lovni o'chira olmaydi" himoyasi ilgari UMUMAN ishlamasdi.
+- **`deploy/init-roles.sql`** — idempotent bootstrap. Toza bazada avtomatik, mavjud
+  bazada qo'lda, va **har migratsiyadan keyin qayta**. Tafsilot: `deploy/README.md`.
+- **`.env` da ikkita yangi parol:** `DB_APP_PASSWORD`, `DB_MIGRATOR_PASSWORD`.
+- **`Microsoft.EntityFrameworkCore.SqlServer` olib tashlandi** — baza PostgreSQL,
+  bu paket hech qayerda ishlatilmagan.
+- **Yangi tekshiruv:** 3.5-bo'lim. Himoya buzilsa xato chiqmaydi, shuning uchun uni
+  har deploydan keyin buyruq bilan tekshirish kerak.

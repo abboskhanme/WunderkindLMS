@@ -23,9 +23,18 @@ services:
       POSTGRES_PASSWORD: "${DB_PASSWORD}"
       # Kirill/lotin tartiblash uchun
       POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
+      # Rol ajratish (SPEC §4.1). init-roles.sql shu ikki o'zgaruvchini `\getenv` bilan
+      # o'qiydi — parollar SQL fayl ichida SAQLANMAYDI. Skriptni qo'lda qayta ishga
+      # tushirganda ham (migratsiyadan keyin) shular ishlatiladi.
+      APP_DB_PASSWORD: "${DB_APP_PASSWORD}"
+      MIGRATOR_DB_PASSWORD: "${DB_MIGRATOR_PASSWORD}"
     volumes:
       - pg-data:/var/lib/postgresql/data
       - pg-backups:/backups
+      # FAQAT bo'sh bazada avtomatik bajariladi (postgres entrypoint qoidasi).
+      # Mavjud bazaga qo'lda qo'llash kerak — deploy/README.md ga qarang.
+      # Rollback: shu qatorni olib tashlang; mavjud rollar saqlanib qoladi.
+      - ./deploy/init-roles.sql:/docker-entrypoint-initdb.d/10-init-roles.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U schoollms -d schoollms"]
       interval: 10s
@@ -67,7 +76,15 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: "Production"
       ASPNETCORE_URLS: "http://+:8080"
-      ConnectionStrings__Default: "Host=database;Port=5432;Database=schoollms;Username=schoollms;Password=${DB_PASSWORD};Include Error Detail=true"
+      # ── ULANISH SATRLARI — IKKITA, ATAYLAB (SPEC §4.1) ──
+      # Default = `app_rw`: ilova shu rol bilan ishlaydi. U HECH NARSAGA EGA EMAS,
+      # shuning uchun `REVOKE` unga HAQIQATAN ta'sir qiladi (jadval egasiga qilmaydi —
+      # bu serverda amaliy sinovdan o'tkazilgan).
+      # Bu qatorni `schoollms` ga qaytarsangiz — moliyaviy himoya JIMGINA yo'qoladi.
+      ConnectionStrings__Default: "Host=database;Port=5432;Database=schoollms;Username=app_rw;Password=${DB_APP_PASSWORD};Include Error Detail=true"
+      # Migrator = `schoollms_owner`: sxema egasi, FAQAT migratsiya uchun.
+      # Berilmasa ilova Default ga qaytadi (dev qulayligi) — prodda IKKALASI ham shart.
+      ConnectionStrings__Migrator: "Host=database;Port=5432;Database=schoollms;Username=schoollms_owner;Password=${DB_MIGRATOR_PASSWORD};Include Error Detail=true"
       # Redis kesh. Bu qatorni o'chirsangiz — ilova jarayon ichidagi xotira keshiga qaytadi
       # (qayta build SHART EMAS). Rollback shu qadar oddiy.
       ConnectionStrings__Redis: "cache:6379"
