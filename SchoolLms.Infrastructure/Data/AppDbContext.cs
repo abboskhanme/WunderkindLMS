@@ -79,6 +79,11 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<LedgerEntry> LedgerEntries => Set<LedgerEntry>();
     public DbSet<BillingSettings> BillingSettings => Set<BillingSettings>();
 
+    /// <inheritdoc />
+    public Task<Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction> BeginTransactionAsync(
+        CancellationToken cancellationToken = default) =>
+        Database.BeginTransactionAsync(cancellationToken);
+
     protected override void OnModelCreating(ModelBuilder b)
     {
         // Login (Email) unikal — DB darajasidagi unique indeks TOCTOU poyga holatida ham dublikatni

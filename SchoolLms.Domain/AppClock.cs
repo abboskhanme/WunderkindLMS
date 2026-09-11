@@ -35,6 +35,42 @@ public static class AppClock
     /// <summary>Maktab mintaqasidagi bugungi sana.</summary>
     public static DateOnly Today => DateOnly.FromDateTime(Now);
 
+    /// <summary>
+    /// Hozirgi LAHZA (instant) — moliyadagi <c>timestamptz</c> ustunlari uchun.
+    ///
+    /// <para>
+    /// <b>Nega UTC, UTC+5 emas?</b> PostgreSQL <c>timestamptz</c> ofsetni
+    /// SAQLAMAYDI — u lahzani saqlaydi va o'qishda sessiya mintaqasiga
+    /// o'giradi. Shuning uchun Npgsql <c>DateTimeOffset</c> ni faqat ofseti
+    /// nol bo'lganda qabul qiladi; UTC+5 bilan yozishga urinish
+    /// <c>"only offset 0 (UTC) is supported"</c> xatosini beradi (P1-07 da
+    /// amalda uchradi). Ya'ni bu "mintaqani yo'qotish" emas — aksincha,
+    /// lahzani BIR MA'NOLI saqlash.
+    /// </para>
+    /// <para>
+    /// Ko'rsatishda vaqt yana Toshkentga o'giriladi: <see cref="ToLocal"/>
+    /// yoki frontend formatlash orqali.
+    /// </para>
+    /// <para>
+    /// Eski entity'lar esa <see cref="Now"/> ni (ofsetsiz "devor soati")
+    /// <c>timestamp without time zone</c> ga yozadi. Moliyada bu yaramaydi:
+    /// smena chegarasi va <c>received_at</c> lahzasi aniq bo'lmasa,
+    /// Z-hisobotni keyin qayta hisoblab bo'lmaydi (SPEC §7).
+    /// </para>
+    /// </summary>
+    public static DateTimeOffset NowInstant => DateTimeOffset.UtcNow;
+
+    /// <summary>
+    /// <c>timestamptz</c> dan o'qilgan lahzani maktab mintaqasidagi vaqtga
+    /// o'giradi (ko'rsatish va kunlik guruhlash uchun).
+    /// </summary>
+    public static DateTime ToLocal(DateTimeOffset instant) =>
+        TimeZoneInfo.ConvertTimeFromUtc(instant.UtcDateTime, Tz);
+
+    /// <summary>Lahza maktab mintaqasida qaysi kunga tushadi (Z-hisobot, kunlik kesim).</summary>
+    public static DateOnly LocalDateOf(DateTimeOffset instant) =>
+        DateOnly.FromDateTime(ToLocal(instant));
+
     /// <summary>"yyyy-MM-ddTHH:mm:ss" — saqlash/ko'rsatish uchun standart ISO satr (mintaqa: UTC+5).</summary>
     public static string Iso() => Now.ToString("yyyy-MM-ddTHH:mm:ss");
 }

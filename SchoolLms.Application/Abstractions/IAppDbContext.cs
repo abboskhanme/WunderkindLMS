@@ -87,4 +87,20 @@ public interface IAppDbContext
 
     int SaveChanges();
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Aniq tranzaksiya ochadi — bir nechta <c>SaveChanges</c> ni BITTA atomar
+    /// amalga birlashtirish uchun.
+    ///
+    /// <para>
+    /// P1-07 da qo'shildi va moliya uchun MAJBURIY. To'lov qabul qilish
+    /// (P1-11) to'rtta narsani yozadi: <c>payments</c>, <c>payment_allocations</c>,
+    /// hisob-faktura statusi va ledger yozuvlari. <c>LedgerService.PostAsync</c>
+    /// o'z <c>SaveChanges</c> ini chaqiradi, ya'ni tranzaksiyasiz bu ikki
+    /// alohida commit bo'lardi — orada jarayon o'lsa, bazada LEDGERSIZ TO'LOV
+    /// qolardi. Pulda bunday holat tuzatib bo'lmaydigan farq beradi.
+    /// </para>
+    /// </summary>
+    Task<Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction> BeginTransactionAsync(
+        CancellationToken cancellationToken = default);
 }
