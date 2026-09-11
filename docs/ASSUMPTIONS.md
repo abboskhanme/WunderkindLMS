@@ -17,3 +17,7 @@ Referenced by `docs/TASKS.md`. Superseded entries are struck through, never dele
 - [2026-09-11] Advance payment for a whole year (client Q15 unanswered) → hold as unallocated credit, allocate as each month accrues → creating twelve future invoices would make a mid-year price or discount change unfixable without editing invoices.
 - [2026-09-11] Opening student debt at go-live (client Q17 unanswered) → start from zero → only demo data exists today; if the client supplies a file it is imported as ordinary invoices through `LedgerService`.
 - [2026-09-11] PDF engine → QuestPDF Community, pending licence confirmation in P1-12 → free under 1 M USD annual revenue. If a commercial licence is required, stop and ask the user: that is money spent.
+- [2026-09-11] Q14: one payment covering two siblings? → **No — one receipt per student.**
+  Decided by the client. `payments.student_id` stays a single column (SPEC §3.7 unchanged);
+  a guardian paying for two children produces two payments. Keeps the schema simple and the
+  per-student ledger unambiguous. Revisit only if the cashier reports real friction.
