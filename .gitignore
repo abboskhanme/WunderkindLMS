@@ -42,3 +42,6 @@ hisobot-*.html
 
 # Mahalliy zaxira nusxalari — repoda saqlanmaydi
 backups/
+
+# Agent worktree papkalari — repozitoriyaga tushmasin
+.claude/worktrees/
