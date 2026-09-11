@@ -40,11 +40,21 @@ builder.Services.AddDbContext<AppDbContext>(opt =>
     opt.UseNpgsql(defaultConn,
             npg =>
             {
-                // Vaqtinchalik DB uzilishlarini avtomatik qayta urinish bilan chidaydi.
-                npg.EnableRetryOnFailure(
-                    maxRetryCount: 5,
-                    maxRetryDelay: TimeSpan.FromSeconds(10),
-                    errorCodesToAdd: null);
+                // QAYTA URINISH (EnableRetryOnFailure) ATAYLAB O'CHIRILGAN.
+                //
+                // Moliya moduli (Faza 1) aniq tranzaksiyalar ishlatadi — to'lov, hisob-faktura
+                // va kassa smenasi. EF Core qayta urinish strategiyasi bilan aniq tranzaksiya
+                // birga ishlamaydi: "The configured execution strategy does not support
+                // user-initiated transactions".
+                //
+                // Ikki yo'l bor edi: (a) har bir tranzaksiyani `CreateExecutionStrategy()`
+                // ichiga o'rash, (b) qayta urinishni o'chirish. Hozircha (b) tanlandi —
+                // baza ilova bilan bitta Docker tarmog'ida, vaqtinchalik uzilish kam uchraydi,
+                // pul amallarining to'g'riligi esa muhimroq. (a) ni to'liq qilish alohida
+                // vazifa sifatida `docs/PENDING_WIRING.md` ga yozildi.
+                //
+                // DIQQAT: testlar ham aynan shu sozlama bilan ishlashi SHART — aks holda bu
+                // sinf xatolar faqat prodda chiqadi (aynan shunday bo'lgan edi).
                 // Ko'p kolleksiyali Include'larni alohida so'rovlarga ajratadi — kartezian portlashning oldini oladi.
                 npg.UseQuerySplittingBehavior(QuerySplittingBehavior.SplitQuery);
             })

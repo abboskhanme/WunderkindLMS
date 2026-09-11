@@ -549,3 +549,26 @@ intake (P1-11) start posting. No frontend change is needed when that happens.
 (dev). Anyone rebasing onto this branch must re-run `npm ci`. Both are pinned to r185 —
 three.js ships no type declarations of its own and gives no cross-minor API guarantee, so the
 two versions must move together.
+
+---
+
+## Follow-up — reinstate connection retries correctly
+
+`EnableRetryOnFailure` was removed from `Program.cs` (2026-09-11) because EF Core's retrying
+execution strategy refuses user-initiated transactions, and the billing services use them in
+five places:
+
+- `InvoiceService.cs:262`, `:450`
+- `PaymentService.cs:202`, `:352`
+- `CashShiftService.cs:186`
+
+**To restore retries:** wrap each of those transaction bodies in
+`db.Database.CreateExecutionStrategy().ExecuteAsync(async () => { ... })`, then re-enable
+`EnableRetryOnFailure` in `Program.cs`. All five bodies are already idempotent on rollback
+(nothing is committed before the final `SaveChanges`), and `CashShiftService`'s
+`pg_advisory_xact_lock` releases automatically, so a retried block is safe.
+
+**Why it was not caught by tests:** `PostgresFixture` and `ApiFactory` build the DbContext
+without `EnableRetryOnFailure`, so the test configuration did not match production. Whoever
+does this work should make the fixtures mirror `Program.cs` exactly — otherwise the next
+configuration divergence surfaces in production again.
