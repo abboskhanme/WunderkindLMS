@@ -157,14 +157,29 @@ public class LedgerServiceTests(ApiFixture fixture)
         ], actorId));
     }
 
+    /// <summary>
+    /// Hisoblar ro'yxati YOPIQ va aynan shu — yangi hisob qo'shish bu testni
+    /// ATAYLAB qizil qiladi (hisoblar rejasi tez-tez o'zgaradigan narsa emas).
+    ///
+    /// <para>
+    /// P1-07 da o'nta hisob bor edi. To'rtta chiqim hisobi keyinroq qo'shildi
+    /// (<c>utilities</c>, <c>supplies</c>, <c>rent</c>, <c>repair</c>): chiqim
+    /// endpoint'i <c>expense:&lt;toifa&gt;</c> ga yozadi, toifalar ro'yxati esa
+    /// mijoz javobidan (docs/TASKS.md §8 Q16) va P1-26 dagi pul aylanmasi
+    /// halqasining tugunlaridan kelib chiqadi. Ularsiz har chiqim
+    /// <c>expense:other</c> ga tushib, P&amp;L "qayerga ketdi" degan savolga
+    /// javob bera olmasdi.
+    /// </para>
+    /// </summary>
     [Fact]
-    public void Hisoblar_royxati_SPEC_dagi_ontasi_bilan_bir_xil()
+    public void Hisoblar_royxati_yopiq_va_kutilgan_qiymatlarga_teng()
     {
         Assert.Equal(
             [
                 "cash", "bank", "receivable",
                 "revenue:tuition", "revenue:bus", "revenue:dormitory", "revenue:meals", "revenue:other",
-                "expense:salary", "expense:other",
+                "expense:salary", "expense:utilities", "expense:supplies",
+                "expense:rent", "expense:repair", "expense:other",
             ],
             Accounts.All);
 

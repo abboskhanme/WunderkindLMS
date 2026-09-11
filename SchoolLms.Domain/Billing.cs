@@ -393,6 +393,25 @@ public class BillingSettings
     /// </summary>
     public int OverdueAfterDay { get; set; } = 15;
 
+    /// <summary>
+    /// Ikki qavatli nazorat chegarasi (SPEC §4.5): <b>shu summadan KATTA</b>
+    /// chiqim ikkinchi, boshqa shaxsning tasdig'isiz jurnalga tushmaydi.
+    /// Sukut: 5 000 000 so'm (mijoz javobi, docs/TASKS.md §8 Q16).
+    ///
+    /// <para>
+    /// Chegara sozlama, konstanta emas: maktabning "katta pul" tushunchasi
+    /// yiliga bir marta o'zgaradi va bu <c>UPDATE</c> bo'lishi kerak,
+    /// migratsiya emas — xuddi <see cref="PaymentDueDay"/> kabi.
+    /// </para>
+    /// <para>
+    /// <c>approved_by &lt;&gt; created_by</c> qoidasi esa sozlama EMAS: u
+    /// <c>expenses</c> jadvalidagi check constraint
+    /// (<c>ck_expenses_approver_differs</c>), ya'ni chegarani nolga tushirib
+    /// ham o'z-o'zini tasdiqlab bo'lmaydi.
+    /// </para>
+    /// </summary>
+    public decimal ExpenseApprovalThreshold { get; set; } = 5_000_000m;
+
     public DateTimeOffset UpdatedAt { get; set; }
     /// <summary>Oxirgi marta kim o'zgartirgan (users.id). Seed'dan keyin null.</summary>
     public string? UpdatedBy { get; set; }

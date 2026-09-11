@@ -260,6 +260,19 @@ builder.Services.AddHostedService<SchoolLms.Application.Billing.BillingAccrualSe
 // Kamera (videokuzatuv) media-shlyuzi (MediaMTX) bilan ishlash
 builder.Services.AddHttpClient<SchoolLms.Application.Services.CameraGateway>();
 
+// ---------- Moliya (billing) ----------
+// DIQQAT: qolgan moliya xizmatlari (to'lov, smena, hisob-faktura, chek) hali
+// ro'yxatdan o'tmagan — ular P1-15 ning ishi, ro'yxati docs/PENDING_WIRING.md
+// da. Bu yerda FAQAT chiqim yo'li uchun kerak bo'lgan ikkitasi bor.
+//
+// `ILedgerService` — jurnalga yozadigan yagona kod (SPEC §2.2). U `ExpenseService`
+// ning konstruktor bog'liqligi, ya'ni usiz chiqim endpoint'i so'rov vaqtida
+// "Unable to resolve service" bilan yiqilardi (build vaqtida emas).
+builder.Services.AddScoped<SchoolLms.Application.Billing.ILedgerService,
+                           SchoolLms.Application.Billing.LedgerService>();
+builder.Services.AddScoped<SchoolLms.Application.Billing.IExpenseService,
+                           SchoolLms.Application.Billing.ExpenseService>();
+
 // Javoblarni siqish (Brotli + Gzip). Level.Fastest — TTFB ga ortiqcha CPU yuk qo'ymaydi.
 // Eslatma: Cloudflare orqasida bo'lsa, CF chetda allaqachon siqadi — bu origin uchun foydali.
 builder.Services.AddResponseCompression(options =>

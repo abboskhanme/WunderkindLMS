@@ -10,20 +10,17 @@ Delete an entry when it is done.
 
 ## For P1-15 — `Program.cs` DI
 
-### 1. `LedgerService` is not registered
+### 1. `LedgerService` is not registered — **DONE** (expense module, 2026-09-11)
 
-`SchoolLms.Application/Billing/LedgerService.cs` exists and is tested, but nothing resolves
-`ILedgerService`. Add next to the other `AddScoped` calls (around line 210):
+`ILedgerService` → `LedgerService` is now registered in `Program.cs`, in the new
+`// ---------- Moliya (billing) ----------` block, because `ExpenseService` cannot be
+constructed without it. The entry is kept (not deleted) because items 9 below refer to
+"entry 1 above"; nothing is left to do here.
 
 ```csharp
 builder.Services.AddScoped<SchoolLms.Application.Billing.ILedgerService,
                            SchoolLms.Application.Billing.LedgerService>();
 ```
-
-`IAppDbContext` is already registered (`Program.cs:56`), so the constructor resolves as-is.
-
-**If skipped:** any controller injecting `ILedgerService` fails at request time with
-`InvalidOperationException: Unable to resolve service`. Nothing fails at build time.
 
 ### 2. The other five billing services have interfaces but no implementations yet
 
@@ -572,3 +569,112 @@ five places:
 without `EnableRetryOnFailure`, so the test configuration did not match production. Whoever
 does this work should make the fixtures mirror `Program.cs` exactly — otherwise the next
 configuration divergence surfaces in production again.
+
+---
+
+## From the expense module — `ExpenseService` + `ExpensesController` (2026-09-11)
+
+New files: `SchoolLms.Application/Billing/ExpenseService.cs`,
+`SchoolLms.Server/Controllers/ExpensesController.cs`,
+`SchoolLms.Infrastructure/Migrations/20260911095512_ExpenseApprovalThreshold.cs`,
+`SchoolLms.Tests/ExpensesTests.cs`. Wired in `Program.cs` (see item 1 above).
+Routes: `GET /api/admin/expenses`, `GET /{id}`, `POST /`, `POST /{id}/approve`,
+`POST /{id}/reverse` — **no `HttpPut`, no `HttpDelete`, no `HttpPatch`**, asserted by
+reflection in `ExpensesTests.Controllerda_tahrirlash_va_ochirish_amallari_yoq`.
+
+### A. **BLOCKER — `EnableRetryOnFailure` breaks every explicit money transaction in production**
+
+This is **not** specific to expenses: it hits `PaymentService`, `InvoiceService`,
+`CashShiftService` and `ExpenseService` alike, i.e. the whole money module.
+
+`Program.cs:44` configures `npg.EnableRetryOnFailure(...)`. EF Core refuses
+`Database.BeginTransaction*` under a retrying execution strategy, and
+`IAppDbContext.BeginTransactionAsync` is exactly that call (`AppDbContext.cs:83`).
+Verified empirically on 2026-09-11 against the test Postgres, with the production
+`UseNpgsql` options copied verbatim:
+
+```
+InvalidOperationException: The configured execution strategy
+'NpgsqlRetryingExecutionStrategy' does not support user-initiated transactions.
+Use the execution strategy returned by 'DbContext.Database.CreateExecutionStrategy()'
+to execute all the operations in the transaction as a retriable unit.
+```
+
+**Why no test catches it:** `SchoolLms.Tests/Fixtures/ApiFactory.cs:133` removes the
+`AddDbContext` registration from `Program.cs` and re-adds it as
+`.UseNpgsql(connectionString).UseSnakeCaseNamingConvention()` — **without** the retry
+option. So every billing test exercises a DbContext that production does not use. Adding
+the retry option there makes the money tests go red immediately; that redness is the bug,
+not a test problem.
+
+**Consequence if shipped as is:** `POST /api/admin/expenses` (below the threshold),
+`POST /api/admin/expenses/{id}/approve` and every payment/invoice write return **500** on
+the first call in production. Reads are unaffected, so a smoke test that only opens pages
+looks healthy.
+
+Two fixes, pick one — this is a one-place decision and must not be solved per service:
+
+1. **Drop `EnableRetryOnFailure`** (one line in `Program.cs`). The money module was written
+   around explicit transactions on purpose (SPEC §4.1), and a retried *implicit* save is not
+   what protects it. Cost: a transient network blip surfaces as a 500 instead of being
+   retried — which for a cash desk is arguably the honest answer.
+2. **Keep it and run each money operation through the strategy**: expose
+   `IExecutionStrategy CreateExecutionStrategy()` on `IAppDbContext` and wrap every
+   `BeginTransactionAsync` block in `strategy.ExecuteAsync(...)`. Correct, and the EF-blessed
+   answer, but it touches a frozen abstraction plus four services, and every future money
+   path has to remember it.
+
+Not fixed here: `Program.cs`'s DB options and `IAppDbContext` are shared decisions, and the
+task that produced this module was explicitly scoped to *not* touch the retry setting.
+
+### B. Reversing and approving an expense are **director-only**
+
+`FinanceAction` is frozen (P1-06) and has no `ReverseExpense`, so both
+`POST /{id}/approve` and `POST /{id}/reverse` use `FinanceAction.ApproveExpense`
+(`superadmin` only). An `admin` can record an expense but neither approves nor reverses one;
+`cashier`, `staff` and `teacher` get 403 at the class-level `[Authorize(Roles =
+Roles.FinanceStaff)]` gate. If the school wants "any second admin may reverse", that is a new
+`FinanceAction` + a row in `FinanceMatrix.Rules` + a line in the `CashierRoleTests` theory —
+deliberately left to whoever owns that frozen file.
+
+### C. No `audit_log` row yet — P1-14 owns it
+
+`ExpenseService` writes no audit row, for the same reason `PaymentService` does not: SPEC
+§4.6 coverage is P1-14's acceptance criterion ("every write through … and the expense path").
+When it is added it must go **inside** `PostAsync`'s transaction, before `CommitAsync`,
+otherwise a rolled-back expense leaves an audit entry for money that never moved.
+
+### D. A `pending` expense can never be cancelled
+
+An expense above the threshold that was entered by mistake stays in the director's pending
+queue forever: it cannot be deleted (immutability) and it cannot be reversed (there is no
+ledger batch to mirror — the endpoint answers `409 not_posted`). A `rejected` state needs a
+column on `expenses`, and that entity is frozen (P1-04). Cheap to add with any later
+migration: `rejected_at timestamptz`, `rejected_by uuid`, `rejected_reason text`, plus a
+`POST /{id}/reject` guarded by `ApproveExpense`. Until then the queue is filtered by
+`GET /api/admin/expenses?status=pending` and a stale row is visible noise, not a money error.
+
+### E. The threshold is configurable, but not from the UI
+
+`billing_settings.expense_approval_threshold` (`numeric(14,2)`, default **5 000 000**) is
+read on every create. It is deliberately **not** added to the frozen `BillingSettingsDto` /
+`UpdateBillingSettingsRequest` (`Dtos/BillingDtos.cs`), so today it changes with an `UPDATE`.
+Whoever builds the finance-settings screen should add it there — it is an additive field,
+which that file's header explicitly allows.
+
+### F. `GET /api/admin/finance/money-flow` does not exist yet (P1-26)
+
+The expense side of the ring is ready: every posted expense writes `debit expense:<category>`
+/ `credit cash|bank`, and `Accounts.All` now carries all six expense nodes P1-26 asks for
+(`salary`, `utilities`, `supplies`, `rent`, `repair`, `other`). `revenue:donation` is still
+missing from `Accounts.All` — P1-26 lists it as an income node; adding it is one line in
+`Accounts.cs` plus the list in `LedgerServiceTests`.
+`ExpensesTests.Pul_aylanmasi_halqasi_balansda_qoladi` asserts the invariant that endpoint
+must satisfy (income = hub = outflow, to the cent) directly on `ledger_entries`.
+
+### G. No screen calls `/api/admin/expenses`
+
+There is no expense page in `schoollms.client` and no entry in `navigation.ts`. The old
+`FinanceController` screen still writes to `finance_transactions`, which does **not** reach
+the ledger — so until the new screen exists, expenses entered through the old UI stay
+invisible to P&L, cash-flow and the money-flow ring. P1-21 retires that path.
