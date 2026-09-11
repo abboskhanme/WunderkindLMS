@@ -1,0 +1,155 @@
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+using SchoolLms.Application.Billing;
+using SchoolLms.Application.Dtos.Billing;
+using SchoolLms.Domain;
+using SchoolLms.Infrastructure.Data;
+
+namespace SchoolLms.Server.Controllers;
+
+/// <summary>
+/// Moliya hisobotlari (P1-13): qarzdorlar, P&amp;L, pul oqimi, yig'ilish darajasi.
+///
+/// <para>
+/// <b>RUXSAT (SPEC §4.3).</b> Klass darajasidagi
+/// <c>[FinanceRole(FinanceAction.ViewBillingReports)]</c> — ya'ni <c>admin</c>
+/// va <c>superadmin</c>. <b>Kassir bu yerga UMUMAN kira olmaydi</b> (403):
+/// §4.3 dagi "See variance report across cashiers — ⛔" qatori. Sababi
+/// oddiy: kassir boshqa kassirlarning va butun maktabning moliyaviy holatini
+/// ko'rishi uchun hech qanday ish sababi yo'q, ko'rgan odam esa nimani
+/// yashirish kerakligini biladi.
+/// </para>
+/// <para>
+/// Eski <see cref="FinanceController"/> ga TEGILMAGAN — u o'quvchi
+/// qatoridagi saqlangan qoldiqqa va <c>finance_transactions</c> ga tayanadi,
+/// P1-21 da olib tashlanadi. Ikkisi bir vaqtda yashaydi: bu yerdagi
+/// endpoint'lar boshqa yo'llarda (<c>debtors</c>, <c>pnl</c>,
+/// <c>cashflow</c>, <c>collection-rate</c>), ya'ni to'qnashuv yo'q.
+/// </para>
+/// <para>
+/// <b>Nega <c>FinanceReportQueries</c> DI'dan olinmaydi.</b> P1-13 ning
+/// qabul mezoni <c>Program.cs</c> ga tegmaslikni talab qiladi (u P1-15 ishi,
+/// parallel vazifalar bilan konflikt maydoni). Klass holatsiz va faqat
+/// <c>IAppDbContext</c> ga bog'liq, shuning uchun so'rov doirasidagi
+/// <see cref="AppDbContext"/> ustidan shu yerda yaratiladi.
+/// Ro'yxatdan o'tkazish kerak bo'lsa — <c>docs/PENDING_WIRING.md</c>,
+/// P1-15 bandi.
+/// </para>
+/// </summary>
+[ApiController]
+[Authorize]
+[FinanceRole(FinanceAction.ViewBillingReports)]
+[Route("api/admin/finance")]
+public class FinanceReportsController(AppDbContext db) : ControllerBase
+{
+    private readonly FinanceReportQueries _reports = new(db);
+
+    /// <summary>
+    /// Qarzdorlar: har o'quvchi bitta qator, toifalar kesimidagi yoyilma bilan
+    /// (o'qish / avtobus / yotoqxona / ovqat / boshqa).
+    ///
+    /// <para>
+    /// Qarz HAR SAFAR <c>invoices</c> va <c>payment_allocations</c> dan
+    /// hisoblanadi — saqlangan ustundan EMAS (docs/TASKS.md §1.4).
+    /// </para>
+    /// </summary>
+    /// <param name="className">Sinf bo'yicha filtr (aniq moslik).</param>
+    /// <param name="minDebt">Shu summadan kam qarz ko'rsatilmaydi (sukut 0.01).</param>
+    /// <param name="onlyOverdue">true = faqat muddati o'tganlar.</param>
+    /// <param name="includeArchived">false = arxivlangan o'quvchilarni yashirish.</param>
+    [HttpGet("debtors")]
+    public async Task<ActionResult<IEnumerable<DebtorRowDto>>> Debtors(
+        [FromQuery] string? className,
+        [FromQuery] decimal? minDebt,
+        [FromQuery] bool onlyOverdue = false,
+        [FromQuery] bool includeArchived = true,
+        CancellationToken ct = default)
+    {
+        var query = new DebtorReportQuery(
+            ClassName: className,
+            MinDebt: minDebt ?? 0.01m,
+            OnlyOverdue: onlyOverdue,
+            IncludeArchived: includeArchived);
+
+        var rows = await _reports.DebtorsAsync(query, ct);
+        return Ok(rows);
+    }
+
+    /// <summary>
+    /// Foyda va zarar (P&amp;L): <c>ledger_entries</c> ni akkaunt prefiksi
+    /// bo'yicha yig'adi — <c>revenue:*</c> va <c>expense:*</c>.
+    /// </summary>
+    /// <param name="from">Davr boshi (sukut: joriy oyning 1-kuni).</param>
+    /// <param name="to">Davr oxiri (sukut: bugun).</param>
+    [HttpGet("pnl")]
+    public async Task<ActionResult<ProfitLossDto>> ProfitLoss(
+        [FromQuery] DateOnly? from,
+        [FromQuery] DateOnly? to,
+        CancellationToken ct = default)
+    {
+        var (start, end) = Period(from, to, defaultMonths: 1);
+        if (end < start) return InvalidPeriod(start, end);
+
+        return Ok(await _reports.ProfitLossAsync(start, end, ct));
+    }
+
+    /// <summary>
+    /// Pul oqimi (Cash Flow): <c>cash</c> va <c>bank</c> hisoblarining
+    /// harakati, oylar kesimida. Davr boshidagi qoldiq ham beriladi.
+    /// </summary>
+    /// <param name="from">Davr boshi (sukut: 12 oy oldingi oyning 1-kuni).</param>
+    /// <param name="to">Davr oxiri (sukut: bugun).</param>
+    [HttpGet("cashflow")]
+    public async Task<ActionResult<CashFlowDto>> CashFlow(
+        [FromQuery] DateOnly? from,
+        [FromQuery] DateOnly? to,
+        CancellationToken ct = default)
+    {
+        var (start, end) = Period(from, to, defaultMonths: 12);
+        if (end < start) return InvalidPeriod(start, end);
+
+        var months = FinanceReportQueries.MonthsBetween(start, end);
+        if (months > FinanceReportQueries.MaxCashFlowMonths)
+            return BadRequest(new
+            {
+                message = $"Davr juda uzun: {months} oy. Ruxsat etilgani — "
+                          + $"{FinanceReportQueries.MaxCashFlowMonths} oy.",
+            });
+
+        return Ok(await _reports.CashFlowAsync(start, end, ct));
+    }
+
+    /// <summary>
+    /// Yig'ilish darajasi: oylar kesimida hisoblangan va yig'ilgan summa.
+    /// Oy — hisob-faktura oyi (<c>period_month</c>); batafsil izoh
+    /// <see cref="FinanceReportQueries.CollectionRateAsync"/> da.
+    /// </summary>
+    /// <param name="from">Boshlang'ich oy. Berilmasa — eng erta oydan.</param>
+    /// <param name="to">Oxirgi oy. Berilmasa — eng oxirgi oygacha.</param>
+    [HttpGet("collection-rate")]
+    public async Task<ActionResult<IEnumerable<BillingMonthlyDto>>> CollectionRate(
+        [FromQuery] DateOnly? from,
+        [FromQuery] DateOnly? to,
+        CancellationToken ct = default)
+    {
+        if (from is { } f && to is { } t && t < f) return InvalidPeriod(f, t);
+
+        return Ok(await _reports.CollectionRateAsync(from, to, ct));
+    }
+
+    /// <summary>
+    /// Davrni to'ldiradi: <paramref name="to"/> berilmasa — bugun,
+    /// <paramref name="from"/> berilmasa — shuncha oy oldingi oyning 1-kuni.
+    /// Sukut qiymatlar ataylab kichik: hisobot ochilishi bilan butun tarixni
+    /// yig'ib o'tirmasin.
+    /// </summary>
+    private static (DateOnly From, DateOnly To) Period(DateOnly? from, DateOnly? to, int defaultMonths)
+    {
+        var end = to ?? AppClock.Today;
+        var start = from ?? new DateOnly(end.Year, end.Month, 1).AddMonths(-(defaultMonths - 1));
+        return (start, end);
+    }
+
+    private BadRequestObjectResult InvalidPeriod(DateOnly from, DateOnly to) =>
+        BadRequest(new { message = $"Davr oxiri boshidan oldin: {from:yyyy-MM-dd} … {to:yyyy-MM-dd}" });
+}

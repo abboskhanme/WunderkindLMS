@@ -31,6 +31,31 @@ builder.Services.AddScoped<SchoolLms.Application.Billing.ILedgerService,
 `IReceiptService` are frozen in `SchoolLms.Application/Billing/IBillingServices.cs` (P1-06).
 Phase 1.C writes the implementations; P1-15 registers them with the same one-line pattern.
 
+### 3a. `FinanceReportQueries` is not in DI — and nothing breaks if it stays that way (P1-13)
+
+`SchoolLms.Application/Billing/FinanceReportQueries.cs` (P1-13) is **not** registered, and
+`FinanceReportsController` therefore constructs it itself from the request-scoped
+`AppDbContext`:
+
+```csharp
+public class FinanceReportsController(AppDbContext db) : ControllerBase
+{
+    private readonly FinanceReportQueries _reports = new(db);
+```
+
+The class is stateless, read-only and has one dependency (`IAppDbContext`), so this works
+today: **all four endpoints are live without any `Program.cs` change** — this entry is
+optional tidying, not a fix.
+
+If P1-15 wants it in DI for consistency with the other billing services, it is two lines:
+
+```csharp
+builder.Services.AddScoped<SchoolLms.Application.Billing.FinanceReportQueries>();
+// then in FinanceReportsController: (FinanceReportQueries reports) instead of (AppDbContext db)
+```
+
+**If skipped:** nothing. No interface, no hosted service, no startup validation depends on it.
+
 ### 3. Accrual hosted service
 
 `TuitionAccrualService` (`Program.cs:203`) still drives the **legacy** `MonthlyCharge`
@@ -71,6 +96,29 @@ placeholders were added so the build stays green:
 
 **The `/cashier` route itself does not exist yet.** A cashier logging in today lands on a
 404. P1-16 builds the workspace, P1-20 registers the route and replaces the placeholder nav.
+
+### 4a. Four finance report endpoints are live but no screen calls them (P1-13)
+
+All under `/api/admin/finance`, all `admin` + `superadmin` only (`FinanceAction.ViewBillingReports`);
+a `cashier` gets **403**, so do not put them behind the cashier navigation.
+
+| Endpoint | Query | Response |
+|---|---|---|
+| `GET /debtors` | `className`, `minDebt` (default 0.01), `onlyOverdue`, `includeArchived` | `DebtorRowDto[]` |
+| `GET /pnl` | `from`, `to` (default: current month → today) | `ProfitLossDto` |
+| `GET /cashflow` | `from`, `to` (default: last 12 months; max 120 months → 400) | `CashFlowDto` |
+| `GET /collection-rate` | `from`, `to` (both optional) | `BillingMonthlyDto[]` |
+
+`DebtorRowDto` and `BillingMonthlyDto` are the frozen shapes in `Dtos/BillingDtos.cs`.
+`ProfitLossDto` / `CashFlowDto` live in `Billing/FinanceReportQueries.cs` — `BillingDtos.cs`
+is frozen (P1-06) and P1-13 was not allowed to touch it. If a later task wants them beside
+the other DTOs, moving them is a pure cut-and-paste.
+
+**Semantics the UI must not re-invent:** in `collection-rate`, the month is the **invoice**
+month (`invoices.period_month`), so `Collected` is the money that went to *that month's*
+invoices whenever it was paid — which is why `Accrued − Collected` equals that month's slice
+of the debtor report. "How much cash arrived in month M" is a different question and is
+answered by `/cashflow` (`cash` + `bank` inflow).
 
 ### 5. Cashier accounts cannot be created from the UI
 
