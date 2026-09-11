@@ -8,6 +8,13 @@
 #   1) app porti localhost'ga ochiladi (prodda ochilmaydi — u yerga faqat tunnel kiradi).
 #   2) cloudflared / mediamtx / backup lokalda kerak emas — profil ortiga olinadi.
 
+#   3) Baza rollari (SPEC §4.1) lokalda ham xuddi prodagidek: ilova `app_rw`, migratsiya
+#      `schoollms_owner`. Lokal xatti-harakat prodnikidan farq qilsa, "menda ishlagan edi"
+#      xatolari aynan shu yerdan chiqadi.
+#      MAVJUD lokal bazangizda rollar yo'q — `deploy/init-roles.sql` ni bir marta qo'lda
+#      qo'llang (deploy/README.md § "Mavjud bazaga rollarni qo'llash").
+#      `docker compose down -v` QILMANG — u lokal bazani butunlay o'chiradi.
+
 services:
   database:
     ports:

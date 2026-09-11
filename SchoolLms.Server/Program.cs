@@ -18,8 +18,18 @@ using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// So'rov yo'lidagi BARCHA DbContext shu satr bilan ishlaydi. Prodda bu `app_rw` —
+// hech narsaga ega bo'lmagan, shuning uchun `REVOKE` unga haqiqatan ta'sir qiladigan rol
+// (SPEC §4.1). Jadval EGASI `REVOKE` ni chetlab o'tadi, shuning uchun bu ajratish shart.
 var defaultConn = builder.Configuration.GetConnectionString("Default")
     ?? throw new InvalidOperationException("ConnectionStrings:Default sozlanmagan.");
+
+// Migratsiya ALOHIDA rol bilan bajariladi: `Migrator` = sxema egasi (schoollms_owner).
+// Berilmagan bo'lsa — `Default` ga qaytadi, faqat dev qulayligi uchun.
+// PRODDA IKKALASI HAM BERILISHI SHART: agar `Migrator` tushib qolsa, ilova o'z roli bilan
+// migratsiya qilishga urinadi va `app_rw` da DDL huquqi yo'qligi uchun BALAND xato beradi —
+// jimgina himoyasiz ishlab ketmaydi. Tafsilot: deploy/README.md.
+var migratorConn = builder.Configuration.GetConnectionString("Migrator");
 
 // Apex (asosiy domen) → landing sahifa; subdomen → ilova (SPA). Faqat shu uchun root domen kerak.
 var rootDomains = (builder.Configuration["Tenancy:RootDomain"] ?? "")
@@ -240,8 +250,50 @@ var app = builder.Build();
 // ---------- Bazani yaratish va seed ----------
 using (var scope = app.Services.CreateScope())
 {
+    // Migratsiyani `Default` (app_rw) EMAS, `Migrator` (sxema egasi) bajaradi.
+    // Buning uchun shu yerda bir martalik, alohida ulanishli DbContext quriladi —
+    // DI dagi scoped kontekst tegilmaydi.
+    //
+    // Database__AutoMigrate=false qo'ysangiz bu bosqich butunlay o'tkazib yuboriladi va
+    // migratsiya alohida qadamga aylanadi (avval backup, keyin migratsiya). Moliya moduli
+    // (P1-04) kelganda prodda shunday qilish tavsiya etiladi — deploy/README.md ga qarang.
+    // Rollback: o'zgaruvchini olib tashlash kifoya, qayta build SHART EMAS.
+    var autoMigrate = app.Configuration.GetValue("Database:AutoMigrate", true);
+    if (!autoMigrate)
+    {
+        Console.WriteLine("[db] Database__AutoMigrate=false — migratsiya O'TKAZIB YUBORILDI (qo'lda bajariladi).");
+    }
+    else if (!string.IsNullOrWhiteSpace(migratorConn))
+    {
+        // Pooling=false ATAYLAB: aks holda Npgsql pooli sxema EGASI nomidagi ulanishni
+        // jarayon tugaguncha ochiq saqlaydi — migratsiya tugagandan keyin ham serverda
+        // bo'sh turgan, to'liq huquqli ulanish qoladi (va 60 ta ulanish limitidan bittasi
+        // yeb ketiladi). Migratsiya bir martalik ish, pool undan foyda bermaydi.
+        var migratorCs = new Npgsql.NpgsqlConnectionStringBuilder(migratorConn)
+        {
+            Pooling = false,
+            ApplicationName = "SchoolLms.Migrator",
+        }.ConnectionString;
+
+        var migratorOptions = new DbContextOptionsBuilder<AppDbContext>()
+            .UseNpgsql(migratorCs, npg => npg.EnableRetryOnFailure(
+                maxRetryCount: 5, maxRetryDelay: TimeSpan.FromSeconds(10), errorCodesToAdd: null))
+            .UseSnakeCaseNamingConvention()
+            .Options;
+        using (var migratorDb = new AppDbContext(migratorOptions))
+        {
+            migratorDb.Database.Migrate();
+        }
+        Console.WriteLine("[db] migratsiya `Migrator` roli bilan bajarildi; egalik ulanishi yopildi.");
+    }
+    else
+    {
+        // Dev: bitta ulanish satri yetarli. Prodda bu yo'lga tushish — konfiguratsiya xatosi.
+        scope.ServiceProvider.GetRequiredService<AppDbContext>().Database.Migrate();
+        Console.WriteLine("[db] ConnectionStrings:Migrator berilmagan — migratsiya `Default` bilan bajarildi (dev rejimi).");
+    }
+
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-    db.Database.Migrate();
 
     // Ilgari bu yerda 45 ta SQL Server'ga xos `ExecuteSqlRaw` bo'lgan (ustun/jadval qo'shish).
     // PostgreSQL'ga o'tishda ularning hammasi normal EF migratsiyasiga ko'chirildi —

@@ -18,7 +18,10 @@
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
-    <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="10.*" />
+<!-- Microsoft.EntityFrameworkCore.SqlServer OLIB TASHLANDI (P1-02): baza PostgreSQL,
+         provayder Npgsql (SchoolLms.Infrastructure). SQL Server provayderi hech qayerda
+         ishlatilmagan — u faqat obraz hajmini oshirar va "qaysi baza?" degan chalkashlik
+         tug'dirardi. Rollback: shu qatorni qaytarish + `dotnet restore`. -->
     <!-- Taqsimlangan kesh (ReferenceCache). Redis ulanish satri bo'lmasa ishlatilmaydi. -->
     <PackageReference Include="Microsoft.Extensions.Caching.StackExchangeRedis" Version="10.*" />
   </ItemGroup>
