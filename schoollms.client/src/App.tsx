@@ -2,6 +2,7 @@ import { Navigate, Route, Routes } from 'react-router-dom'
 import { AppLayout } from '@/components/layout/AppLayout'
 import { ProtectedRoute, RootRedirect } from '@/components/auth/ProtectedRoute'
 import { RequirePerm } from '@/components/auth/RequirePerm'
+import { ComingSoon } from '@/pages/ComingSoon'
 import { LoginPage } from '@/pages/LoginPage'
 import { AdminDashboard } from '@/pages/admin/AdminDashboard'
 import { LeadsPage } from '@/pages/admin/leads/LeadsPage'
@@ -120,6 +121,10 @@ export default function App() {
           </Route>
         </Route>
       </Route>
+
+      {/* Kassa — kassir ish o'rni. To'liq sahifa P1-16 da keladi; hozircha
+          navigatsiyadagi yozuv bo'sh ekranga olib bormasin. */}
+      <Route path="/cashier" element={<ComingSoon title="Kassa" />} />
 
       {/* O'qituvchi — alohida o'rnatiladigan PWA (/teacher/, wwwroot/teacher statik ilova).
           SPA shu manzilga kelsa (login redirect / RootRedirect) to'liq sahifa bilan o'sha ilovaga o'tamiz. */}
