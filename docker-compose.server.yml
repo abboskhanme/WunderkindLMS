@@ -47,8 +47,10 @@ services:
       backend:
         condition: service_healthy   # backend TAYYOR bo'lgandan keyin trafik qabul qilinadi
     healthcheck:
-      # Caddy admin API (:2019) — konfiguratsiya yuklanganini tasdiqlaydi.
-      test: ["CMD-SHELL", "wget -q -O- http://127.0.0.1:2019/config/ >/dev/null || exit 1"]
+      # Haqiqiy yo'lni tekshiradi: proxy → backend → baza. Caddy admin API (:2019)
+      # `admin off` bilan o'chirilgan, shuning uchun uni tekshirib bo'lmaydi —
+      # va u faqat konfiguratsiya yuklanganini bildirardi, xizmat ishlayotganini emas.
+      test: ["CMD-SHELL", "wget -q -O- http://127.0.0.1:80/api/health >/dev/null || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 3
