@@ -34,3 +34,6 @@ tools/demo-credentials.txt
 
 # Hisobot/artifakt HTML fayllari repoda saqlanmaydi
 hisobot-*.html
+
+# Mahalliy zaxira nusxalari — repoda saqlanmaydi
+backups/
