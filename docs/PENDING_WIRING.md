@@ -94,3 +94,94 @@ grouping.
 `payments`, `payment_allocations`, invoice status **and** ledger rows; without an explicit
 transaction those are two separate commits, and a crash in between leaves a payment with no
 ledger entry.
+
+---
+
+## From P1-10 — cash shifts, gapless receipt numbers, Z-report
+
+### 9. `CashShiftService` is not registered (P1-15, `Program.cs`)
+
+`SchoolLms.Application/Billing/CashShiftService.cs` and
+`SchoolLms.Server/Controllers/CashShiftsController.cs` exist and are tested, but nothing
+resolves `ICashShiftService`. Add next to the other `AddScoped` calls:
+
+```csharp
+builder.Services.AddScoped<SchoolLms.Application.Billing.ICashShiftService,
+                           SchoolLms.Application.Billing.CashShiftService>();
+```
+
+`IAppDbContext` is already registered (`Program.cs:56`) and is the service's only
+dependency, so the constructor resolves as-is.
+
+**If skipped:** every `/api/cash/shifts/*` endpoint fails at request time with
+`InvalidOperationException: Unable to resolve service`. Nothing fails at build time. The
+RBAC gate still returns 401/403 correctly, which makes the failure look role-related —
+check DI first. Until P1-15 lands, `CashShiftServiceTests` boots its own host with exactly
+that one line (`fixture.Api.WithWebHostBuilder(...)`), so the endpoints are already
+covered by tests.
+
+### 10. `SchoolLms.Application.csproj` gained one `PackageReference` — **a shared file was touched**
+
+```xml
+<PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="10.*" />
+```
+
+Needed for `Database.ExecuteSqlRawAsync`: the gapless receipt number relies on
+`pg_advisory_xact_lock`, which cannot be expressed in LINQ, and the Application project
+referenced only the EF **core** package (`Relational` was present at runtime through the
+Npgsql provider but invisible at compile time). No new runtime dependency, and still no
+dependency on a database provider.
+
+**Merge note for the orchestrator:** if another Phase 1.C task also edits that `ItemGroup`,
+keep both lines — they are independent.
+
+### 11. Frontend contract differs from the frozen stubs in three places (P1-16 / P1-20)
+
+`schoollms.client/src/api/services/cashShifts.ts` was written in P1-06 against guessed
+paths. The real routes follow `docs/TASKS.md` P1-10, which names them explicitly:
+
+| Stub (P1-06) | Real route (P1-10) |
+|---|---|
+| `GET /cashier/shifts/current` | `GET /api/cash/shifts/current` |
+| `POST /cashier/shifts/open` | `POST /api/cash/shifts/open` |
+| `POST /cashier/shifts/{id}/close` | `POST /api/cash/shifts/{id}/close` |
+| `GET /cashier/shifts/{id}/z-report` | `GET /api/cash/shifts/{id}/z-report` |
+| `GET /admin/billing/shifts` | `GET /api/cash/shifts` |
+
+Two behaviour notes for whoever swaps the stub bodies:
+
+- **`current` returns `204 No Content`, not a JSON `null`.** The stub comment promises
+  `null`; with axios a 204 gives `data === ''`, which is falsy but not `null`. Write
+  `return res.status === 204 ? null : res.data`.
+- **`GET /api/cash/shifts` silently scopes to the caller** when the caller is a cashier:
+  a `cashierId` query parameter belonging to somebody else is overwritten with the
+  caller's own id (SPEC §4.3 — a cashier sees no cross-cashier data). Admin and director
+  get the unfiltered list. It is not a 403, so no error handling is needed.
+
+Error bodies from this controller are `{ "code": "...", "message": "..." }`; the codes are
+the constants in `CashShiftError` (`shift_already_open`, `not_your_shift`,
+`invalid_counted_cash`, …). Branch on `code`, never on the message text.
+
+### 12. Contract for P1-11 (`PaymentService`) — how to take a receipt number
+
+```csharp
+await using var tx = await db.BeginTransactionAsync(ct);
+var receiptNo = await shifts.NextReceiptNoAsync(shift.Id, ct);   // takes the per-shift lock
+// ... payments + payment_allocations + ledger, all on the same context ...
+await tx.CommitAsync(ct);
+```
+
+- **The call throws without an open transaction.** `pg_advisory_xact_lock` is released at
+  commit; outside a transaction it is released immediately and the number stops being
+  gapless while the code still looks correct.
+- **Ask for the number, then insert, then commit — in that order and in one transaction.**
+  A rolled-back payment then leaves no gap, because the number was never used.
+- A closed shift returns `CashShiftException(CashShiftError.NotOpen)` — map it to 409.
+
+**Where a reversal row belongs.** A shift's Z-report and its `expected_cash` are both
+derived from one set: the payments whose `cash_shift_id` is that shift, plus the `cash`
+ledger rows whose `ref_id` is one of those payments. Put the reversal's `payments` row in
+the shift that is **open at the moment of the reversal** (for an admin with no open shift,
+the original's shift is the only sane fallback). Whichever is chosen, the two sides stay
+consistent, because they read the same set — but the choice decides *which day's* report
+shows the storno, so make it deliberately and write it down.
