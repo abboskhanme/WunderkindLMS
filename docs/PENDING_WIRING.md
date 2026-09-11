@@ -94,3 +94,37 @@ grouping.
 `payments`, `payment_allocations`, invoice status **and** ledger rows; without an explicit
 transaction those are two separate commits, and a crash in between leaves a payment with no
 ledger entry.
+
+---
+
+## From P1-26 — money-flow ring
+
+### 9. Nothing is pending in `Program.cs` — deliberately
+
+`GET /api/admin/finance/money-flow` works as soon as the build ships. `MoneyFlowController`
+injects `IAppDbContext`, which is **already registered** (`Program.cs:56`), and
+`SchoolLms.Application/Billing/MoneyFlowQueries.cs` is a `static` class with no state, so
+there is no service to register.
+
+This entry exists so that P1-15 does not go looking for one. If a later task turns the query
+into an injected service, the line would be:
+
+```csharp
+builder.Services.AddScoped<SchoolLms.Application.Billing.MoneyFlowQueries>();
+```
+
+**Do not add it now** — a registration for a static class does not compile.
+
+### 10. The page shows the empty state until P1-09 / P1-11 write to the ledger
+
+`ledger_entries` is empty in the local stack (verified 2026-09-11: `select count(*)` = 0), so
+`/admin/finance/money-flow` renders its "Bu davrda pul harakati yo'q" state. That is correct
+behaviour, not a defect. The ring appears by itself once the accrual job (P1-09) and payment
+intake (P1-11) start posting. No frontend change is needed when that happens.
+
+### 11. New frontend dependency: `three`
+
+`schoollms.client/package.json` gained `three@^0.185.1` (runtime) and `@types/three@^0.185.4`
+(dev). Anyone rebasing onto this branch must re-run `npm ci`. Both are pinned to r185 —
+three.js ships no type declarations of its own and gives no cross-minor API guarantee, so the
+two versions must move together.
