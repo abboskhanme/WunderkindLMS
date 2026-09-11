@@ -23,7 +23,7 @@ RUN npm ci && npm run build
 WORKDIR /client
 
 # ---------- 2) Backend (.NET) publish ----------
-FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 # Avval faqat csproj'lar — qatlam keshini saqlash uchun. Klient (esproj) Docker'da qurilmaydi.
 COPY SchoolLms.Domain/SchoolLms.Domain.csproj SchoolLms.Domain/
@@ -39,12 +39,13 @@ RUN dotnet publish SchoolLms.Server/SchoolLms.Server.csproj -c Release -o /app/p
     -p:BuildSpa=false --no-restore
 
 # ---------- 3) Runtime ----------
-FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS final
+FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final
 WORKDIR /app
 # Maktab mintaqasi (UTC+5). tzdata — TimeZoneInfo "Asia/Tashkent"ni topishi uchun;
 # TZ — log/uchinchi-tomon kutubxonalar ham mahalliy vaqtda bo'lishi uchun.
 ENV TZ=Asia/Tashkent
-RUN apt-get update && apt-get install -y --no-install-recommends tzdata \
+# curl — compose HEALTHCHECK /api/health ni konteyner ichidan chaqiradi (aspnet obrazida yo'q).
+RUN apt-get update && apt-get install -y --no-install-recommends tzdata curl \
     && ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=build /app/publish ./

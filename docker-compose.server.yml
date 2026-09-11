@@ -37,8 +37,22 @@ services:
       - caddy-data:/data       # sertifikatlar va ichki CA — deploylar oralig'ida saqlanadi
       - caddy-config:/config
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy   # backend TAYYOR bo'lgandan keyin trafik qabul qilinadi
+    healthcheck:
+      # Caddy admin API (:2019) — konfiguratsiya yuklanganini tasdiqlaydi.
+      test: ["CMD-SHELL", "wget -q -O- http://127.0.0.1:2019/config/ >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
     restart: unless-stopped
+    # Log rotatsiyasi (asosiy fayldagi anchor fayllar orasida ko'rinmaydi — shu yerda takrorlanadi).
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   # Demo uchun kerak emas — RAM va disk tejaladi.
   # Kerak bo'lsa: `--profile media` / `--profile tunnel` qo'shing.

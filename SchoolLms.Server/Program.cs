@@ -47,6 +47,29 @@ builder.Services.AddScoped<IAppDbContext>(sp => sp.GetRequiredService<AppDbConte
 
 // Kam o'zgaradigan ma'lumotlar (meta, fan/o'qituvchi nomlari) uchun qisqa-TTL kesh.
 builder.Services.AddMemoryCache();
+
+// Taqsimlangan kesh. `ConnectionStrings:Redis` berilgan bo'lsa — Redis (konteynerlar/restartlar
+// orasida saqlanadi); berilmasa — jarayon ichidagi xotira. YA'NI REDIS BO'LMASA HAM ILOVA
+// ISHLAYDI (dev'da `cache` konteynerini ko'tarmaslik mumkin).
+// Rollback: `ConnectionStrings__Redis` muhit o'zgaruvchisini olib tashlash kifoya — kod
+// avtomatik xotira keshiga qaytadi, qayta build shart emas.
+var redisConn = builder.Configuration.GetConnectionString("Redis");
+if (!string.IsNullOrWhiteSpace(redisConn))
+{
+    builder.Services.AddStackExchangeRedisCache(o =>
+    {
+        o.Configuration = redisConn;
+        // Kalit prefiksi — bitta Redis instansiyasini boshqa ilova bilan bo'lishganda to'qnashmaydi.
+        o.InstanceName = "wklms:";
+    });
+    Console.WriteLine($"[cache] Redis: {redisConn}");
+}
+else
+{
+    builder.Services.AddDistributedMemoryCache();
+    Console.WriteLine("[cache] ConnectionStrings:Redis berilmagan — jarayon ichidagi xotira keshi.");
+}
+
 builder.Services.AddSingleton<ReferenceCache>();
 
 // DataProtection kalitlarini DOIMIY volume'ga saqlaymiz. Aks holda kalitlar konteyner ichida
@@ -242,7 +265,8 @@ if (!app.Environment.IsDevelopment())
     {
         ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto,
     };
-    fwd.KnownNetworks.Clear();
+    // .NET 10: KnownNetworks eskirdi (ASPDEPR005) — o'rniga KnownIPNetworks.
+    fwd.KnownIPNetworks.Clear();
     fwd.KnownProxies.Clear();
     app.UseForwardedHeaders(fwd);
 }
@@ -333,7 +357,24 @@ app.MapGet("/api", () => Results.Ok(new
     environment = app.Environment.EnvironmentName,
     timeUtc = DateTime.UtcNow,
 }));
-app.MapGet("/api/health", () => Results.Ok(new { status = "healthy" }));
+// Healthcheck. ATAYLAB bazaga HAQIQIY so'rov yuboradi — "jarayon tirik" emas, "ilova ishlayapti"
+// degan javob kerak (DB tushsa, konteyner tirik bo'lsa ham xizmat ishlamaydi).
+// Redis ATAYLAB tekshirilmaydi: u ixtiyoriy kesh, tushsa ilova sekinlashadi, lekin ishlaydi —
+// uni "unhealthy" deb belgilash keraksiz restart tsikliga olib kelardi.
+app.MapGet("/api/health", async (AppDbContext db, CancellationToken ct) =>
+{
+    try
+    {
+        await db.Database.ExecuteSqlRawAsync("SELECT 1", ct);
+        return Results.Ok(new { status = "healthy" });
+    }
+    catch (Exception ex)
+    {
+        // Xato MATNI qaytarilmaydi — unda ulanish satri (parol bilan) bo'lishi mumkin.
+        return Results.Json(new { status = "unhealthy", error = ex.GetType().Name },
+            statusCode: StatusCodes.Status503ServiceUnavailable);
+    }
+});
 
 // Noma'lum /api/* yo'llari — SPA HTML emas, 404 JSON qaytsin (mobil/klient uchun toza).
 app.MapFallback("/api/{**slug}", () => Results.NotFound(new { message = "API endpoint topilmadi" }));
