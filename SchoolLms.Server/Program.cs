@@ -207,7 +207,6 @@ builder.Services.AddSignalR();
 builder.Services.AddScoped<ChatService>();
 
 // Oylik to'lovlarni avtomatik hisoblovchi fon xizmati
-builder.Services.AddHostedService<SchoolLms.Application.Services.TuitionAccrualService>();
 builder.Services.AddHostedService<SchoolLms.Application.Services.TurnstileLiveService>();
 
 // Telegram bot (e'lon yuborish + ota-onalarni kontakt orqali ro'yxatga olish).
@@ -227,6 +226,26 @@ builder.Services.AddScoped<SchoolLms.Application.Services.ContractService>();
 
 // Turniket/FaceID integratsiyasi — o'qituvchilar davomatini avtomatik yuklash
 builder.Services.AddScoped<SchoolLms.Application.Services.TurnstileService>();
+
+// ---------- Moliya (Faza 1) ----------
+// DIQQAT: yuqorida `TuitionAccrualService` ro'yxatdan CHIQARILDI. Eski va yangi hisoblash
+// bir vaqtda ishlasa HAR O'QUVCHI IKKI MARTA hisob oladi. Eski fayl hali turibdi (P1-21
+// uni o'chiradi), lekin u endi ishga tushmaydi.
+builder.Services.AddScoped<SchoolLms.Application.Billing.ILedgerService,
+                           SchoolLms.Application.Billing.LedgerService>();
+builder.Services.AddScoped<SchoolLms.Application.Billing.IInvoiceService,
+                           SchoolLms.Application.Billing.InvoiceService>();
+builder.Services.AddScoped<SchoolLms.Application.Billing.ISubscriptionService,
+                           SchoolLms.Application.Billing.SubscriptionService>();
+builder.Services.AddScoped<SchoolLms.Application.Billing.IDiscountService,
+                           SchoolLms.Application.Billing.DiscountService>();
+builder.Services.AddScoped<SchoolLms.Application.Billing.ICashShiftService,
+                           SchoolLms.Application.Billing.CashShiftService>();
+builder.Services.AddScoped<SchoolLms.Application.Billing.IPaymentService,
+                           SchoolLms.Application.Billing.PaymentService>();
+builder.Services.AddScoped<SchoolLms.Application.Billing.IReceiptService,
+                           SchoolLms.Application.Billing.ReceiptService>();
+builder.Services.AddHostedService<SchoolLms.Application.Billing.BillingAccrualService>();
 
 // Kamera (videokuzatuv) media-shlyuzi (MediaMTX) bilan ishlash
 builder.Services.AddHttpClient<SchoolLms.Application.Services.CameraGateway>();
