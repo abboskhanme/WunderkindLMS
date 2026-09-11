@@ -10,6 +10,11 @@
 [Rr]elease/
 *.user
 
+# JS loyihasi (esproj) NuGet restore artefakti. Linux/mac'da papka nomi AYNAN
+# `obj\Debug` bo'lib qoladi (Windows ajratuvchisi nom ichida), shuning uchun
+# yuqoridagi `[Oo]bj/` qoidasiga tushmaydi.
+schoollms.client/obj*
+
 # Visual Studio
 .vs/
 

@@ -1,0 +1,48 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <!-- Test loyihasi hech qachon SPA (npm) qurmaydi — pastdagi ProjectReference'ga qarang. -->
+    <BuildSpa>false</BuildSpa>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Versiyalar `dotnet new xunit` (SDK 10.0.400) andozasidan olingan — o'sha to'plam
+         net10.0 uchun rasman sinovdan o'tgan.
+         FluentAssertions ATAYLAB QO'SHILMAGAN: 8.x versiyasi tijorat loyihalar uchun pullik
+         litsenziya talab qiladi (pul sarfi = to'xtab, foydalanuvchidan so'rash kerak bo'lardi).
+         Oddiy xunit `Assert` yetarli va nol litsenziya riski. Qarang docs/ASSUMPTIONS.md. -->
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
+    <PackageReference Include="coverlet.collector" Version="6.0.4" />
+
+    <!-- In-memory HTTP server (TestServer) — haqiqiy middleware pipeline bilan. -->
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.*" />
+    <!-- Bir martalik Postgres 17 konteyneri. Docker API bilan bevosita ishlaydi
+         (`docker` CLI kerak emas) — shuning uchun SDK konteyneri ichida ham ishlaydi,
+         faqat /var/run/docker.sock ulangan bo'lsin. Qarang docs/TESTING.md. -->
+    <PackageReference Include="Testcontainers.PostgreSql" Version="4.*" />
+    <PackageReference Include="Npgsql" Version="10.*" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- AdditionalProperties: SchoolLms.Server shu havola orqali qurilganda `BuildSpa=false`
+         bo'ladi, ya'ni schoollms.client.esproj (npm) havolasi butunlay o'chadi. Busiz
+         `dotnet test` SDK obrazida "npm topilmadi" bilan yiqilardi va har safar buyruq
+         satrida `-p:BuildSpa=false` yozish kerak bo'lardi. -->
+    <ProjectReference Include="..\SchoolLms.Server\SchoolLms.Server.csproj"
+                      AdditionalProperties="BuildSpa=false" />
+    <ProjectReference Include="..\SchoolLms.Infrastructure\SchoolLms.Infrastructure.csproj" />
+    <ProjectReference Include="..\SchoolLms.Application\SchoolLms.Application.csproj" />
+    <ProjectReference Include="..\SchoolLms.Domain\SchoolLms.Domain.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+</Project>
