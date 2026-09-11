@@ -160,7 +160,12 @@ builder.Services
                     blocked = !await db.Teachers.AnyAsync(t => t.UserId == userId && !t.IsArchived);
                 else if (p.IsInRole(Roles.Student))
                     blocked = !await db.Students.AnyAsync(s => s.UserId == userId && !s.IsArchived);
-                else if (p.IsInRole(Roles.Staff) || p.IsInRole(Roles.Admin) || p.IsInRole(Roles.SuperAdmin))
+                // `cashier` (P1-04) SHU YERDA bo'lishi SHART: aks holda u pastdagi
+                // `else` ga tushib, o'chirilgan kassir eski tokeni bilan to'lov qabul
+                // qilishda davom etardi. Pul oladigan rol uchun token bekor qilish
+                // ixtiyoriy emas.
+                else if (p.IsInRole(Roles.Staff) || p.IsInRole(Roles.Admin)
+                         || p.IsInRole(Roles.SuperAdmin) || p.IsInRole(Roles.Cashier))
                 {
                     var u = await db.Users.FirstOrDefaultAsync(x => x.Id == userId);
                     blocked = u is null;

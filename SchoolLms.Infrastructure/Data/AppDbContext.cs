@@ -66,6 +66,19 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<LmsMaterial> LmsMaterials => Set<LmsMaterial>();
     public DbSet<LmsProgress> LmsProgresses => Set<LmsProgress>();
 
+    // Moliya (billing) — SPEC §3.7, P1-04. Eski FinanceTransactions/MonthlyCharges bilan
+    // YONMA-YON: ular P1-21 da olib tashlanadi. Jadval konfiguratsiyasi BillingModel.cs da.
+    public DbSet<FeeCategory> FeeCategories => Set<FeeCategory>();
+    public DbSet<StudentSubscription> StudentSubscriptions => Set<StudentSubscription>();
+    public DbSet<Discount> Discounts => Set<Discount>();
+    public DbSet<Invoice> Invoices => Set<Invoice>();
+    public DbSet<Payment> Payments => Set<Payment>();
+    public DbSet<PaymentAllocation> PaymentAllocations => Set<PaymentAllocation>();
+    public DbSet<CashShift> CashShifts => Set<CashShift>();
+    public DbSet<Expense> Expenses => Set<Expense>();
+    public DbSet<LedgerEntry> LedgerEntries => Set<LedgerEntry>();
+    public DbSet<BillingSettings> BillingSettings => Set<BillingSettings>();
+
     protected override void OnModelCreating(ModelBuilder b)
     {
         // Login (Email) unikal — DB darajasidagi unique indeks TOCTOU poyga holatida ham dublikatni
@@ -155,11 +168,22 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
         b.Entity<LmsTopic>()
             .HasIndex(t => new { t.ModuleId, t.Order });
 
+        // ----- Moliya (billing) — SPEC §3.7, §4 -----
+        // Aniqlik, unikal indekslar, FK'lar va check constraint'lar alohida faylda
+        // (BillingModel.cs): Faza 1.C da beshta agent moliya kodini parallel yozadi,
+        // shu fayl ularning umumiy konflikt maydoniga aylanmasin.
+        BillingModel.Apply(b);
+
         // ----- PostgreSQL: vaqt turi -----
         // Tizim sanalarni Toshkent "devor soati" sifatida saqlaydi (AppClock.Now — Kind=Unspecified),
         // UTC sifatida emas. Npgsql sukut bo'yicha DateTime'ni `timestamptz` ga moslaydi va
         // Kind=Unspecified qiymatni yozishdan bosh tortadi. Shuning uchun BARCHA DateTime ustunlarini
         // `timestamp without time zone` ga o'tkazamiz — bu mavjud semantikaga aynan mos keladi.
+        //
+        // MOLIYA ISTISNOSI: yangi billing entity'lari `DateTimeOffset` ishlatadi (SPEC §7 —
+        // `timestamptz`). Quyidagi tsikl faqat `DateTime` ni qidiradi, shuning uchun ularga
+        // TEGMAYDI. Moliyada mintaqasiz vaqt yaramaydi: smena chegarasi va `received_at`
+        // ofsetsiz bo'lsa Z-hisobotni qayta hisoblab bo'lmaydi.
         foreach (var entityType in b.Model.GetEntityTypes())
             foreach (var property in entityType.GetProperties())
                 if (property.ClrType == typeof(DateTime) || property.ClrType == typeof(DateTime?))

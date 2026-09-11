@@ -66,6 +66,25 @@ public interface IAppDbContext
     DbSet<LmsMaterial> LmsMaterials { get; }
     DbSet<LmsProgress> LmsProgresses { get; }
 
+    // ---------- Moliya (billing) — SPEC §3.7, P1-04 ----------
+    // Eski `FinanceTransactions` / `MonthlyCharges` bilan YONMA-YON yashaydi: ular
+    // P1-21 da olib tashlanadi, shu paytgacha mavjud sahifalar ishlab turadi.
+    //
+    // DIQQAT: `Payments`, `PaymentAllocations`, `LedgerEntries` — FAQAT INSERT.
+    // `app_rw` rolida ularga UPDATE/DELETE huquqi yo'q (SPEC §4.1), shuning uchun
+    // bu DbSet'lardan olingan entity'ni o'zgartirib `SaveChanges` qilish ishlab
+    // turgan ilovada 42501 bilan YIQILADI — tuzatish `reversal_of` orqali bo'ladi.
+    DbSet<FeeCategory> FeeCategories { get; }
+    DbSet<StudentSubscription> StudentSubscriptions { get; }
+    DbSet<Discount> Discounts { get; }
+    DbSet<Invoice> Invoices { get; }
+    DbSet<Payment> Payments { get; }
+    DbSet<PaymentAllocation> PaymentAllocations { get; }
+    DbSet<CashShift> CashShifts { get; }
+    DbSet<Expense> Expenses { get; }
+    DbSet<LedgerEntry> LedgerEntries { get; }
+    DbSet<BillingSettings> BillingSettings { get; }
+
     int SaveChanges();
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 }

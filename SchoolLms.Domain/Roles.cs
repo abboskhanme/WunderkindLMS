@@ -19,9 +19,28 @@ public static class Roles
     public const string Admin = "admin";
     public const string Teacher = "teacher";
     public const string Student = "student";
-    /// <summary>O'qituvchi bo'lmagan xodim (kassir, administrator, ...). Admin paneliga
+    /// <summary>O'qituvchi bo'lmagan xodim (administrator, hisobchi, ...). Admin paneliga
     /// kiradi, lekin faqat <see cref="AppUser.Permissions"/> dagi bo'limlarni ko'radi.</summary>
     public const string Staff = "staff";
+
+    /// <summary>
+    /// Kassir — SPEC §3.1 bo'yicha birinchi darajali rol (P1-04).
+    ///
+    /// <para>
+    /// Ilgari kassa <see cref="Staff"/> + "finance" ruxsat kaliti bilan ishlardi. Bu yetarli
+    /// emas edi: <c>AdminPermAttribute</c> har qanday xodimga har qanday bo'limni O'QISHga
+    /// ruxsat beradi, ya'ni kassir butun moliyani ko'rardi; smena, chek raqami va sanalgan
+    /// naqd tushunchasi esa umuman yo'q edi (docs/TASKS.md §1.2, 4-teshik).
+    /// </para>
+    /// <para>
+    /// Kassir CHEGARALARI (SPEC §4.3): to'lov qabul qiladi va chek beradi, o'z smenasini
+    /// yopadi — lekin to'lovni storno qila olmaydi, oylik narx/obunani o'zgartira olmaydi,
+    /// chegirma bera olmaydi, chiqim yoza olmaydi va boshqa kassirlarning nomuvofiqlik
+    /// hisobotini ko'ra olmaydi. Bu chegara <c>FinanceRoleAttribute</c> da ma'lumot
+    /// sifatida yozilgan (P1-06), <c>if</c> zanjiri sifatida emas.
+    /// </para>
+    /// </summary>
+    public const string Cashier = "cashier";
 
     /// <summary>Loyiha boshlig'i — Control Plane (asosiy domen) egasi. Maktab rollaridan
     /// butunlay alohida: faqat maktablarni (tenant) ochish/boshqarish uchun. Hech bir maktab
@@ -33,4 +52,18 @@ public static class Roles
     /// <c>[Authorize(Roles = Roles.AdminOrSuper)]</c> ko'rinishida foydalaniladi.
     /// </summary>
     public const string AdminOrSuper = Admin + "," + SuperAdmin;
+
+    /// <summary>
+    /// Kassa amallari: to'lov qabul qilish, chek, o'z smenasini ochish/yopish.
+    /// Admin va direktor ham kassaga tura oladi (SPEC §4.3 birinchi qator).
+    /// </summary>
+    public const string CashierOrAdmin = Cashier + "," + Admin + "," + SuperAdmin;
+
+    /// <summary>
+    /// Moliya yuzasiga UMUMAN kirishi mumkin bo'lgan rollar. Bu faqat tashqi darvoza —
+    /// qaysi rol qaysi amalni qila olishi <c>FinanceRoleAttribute</c> da hal qilinadi.
+    /// <see cref="Staff"/> ham shu yerda: mavjud "finance" ruxsat kalitiga ega xodim
+    /// hisobotlarni ko'rishda davom etadi (P1-21 gacha eski moliya sahifasi tirik).
+    /// </summary>
+    public const string FinanceStaff = Cashier + "," + Admin + "," + SuperAdmin + "," + Staff;
 }
