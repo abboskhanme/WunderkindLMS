@@ -655,17 +655,34 @@ misconfigured role defeats them. The defence is layered.
 
 ### 4.1 Immutability at the database level
 
-The application connects as a role that **physically cannot** modify financial history:
+> **Correction (verified 2026-09-11).** The application currently connects as `schoollms`,
+> which **owns every table**. In PostgreSQL a table owner bypasses `REVOKE` — tested on the
+> live server: after `REVOKE DELETE`, the owner still deleted the row. The design below only
+> works once the application stops connecting as the owner. This is task P1-02 and must land
+> before any ledger code.
+
+Two database roles, strictly separated:
 
 ```sql
-create role app_rw login password '...';
+-- Owner: runs migrations only. Never used by the running application.
+-- (this is the existing `schoollms` role)
 
+-- Application: owns nothing, and physically cannot rewrite financial history.
+create role app_rw login password '...';
+grant usage on schema public to app_rw;
 grant select, insert, update, delete on all tables in schema public to app_rw;
 
--- Financial history: insert and read only.
 revoke update, delete on payments, payment_allocations, ledger_entries,
                           access_events, point_transactions from app_rw;
+
+alter default privileges in schema public
+  grant select, insert, update, delete on tables to app_rw;
 ```
+
+`ConnectionStrings__Default` uses `app_rw`; migrations run under a separate
+`ConnectionStrings__Migrator` using the owner. If the application is ever pointed at the
+owner role again the protection silently disappears — so the integration test in P1-22
+asserts **both** that `app_rw` gets SQLSTATE 42501 on delete **and** that the owner succeeds.
 
 An erroneous payment is corrected by inserting a **reversal** (`reversal_of`), never by
 editing. The original stays visible. This alone removes the class of fraud described.
