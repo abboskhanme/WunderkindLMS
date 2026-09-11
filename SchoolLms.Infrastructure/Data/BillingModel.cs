@@ -305,6 +305,16 @@ internal static class BillingModel
             e.HasOne<AppUser>().WithMany().HasForeignKey(x => x.UpdatedBy)
                 .OnDelete(DeleteBehavior.Restrict);
 
+            // Pul — `numeric(14,2)`, qolgan hamma moliya ustuni kabi.
+            // `HasDefaultValue` bazaga ham sukut qiymat yozadi: qo'lda INSERT
+            // qilingan sozlama qatori ham himoyalangan chegara bilan keladi.
+            // TUZOQ: sukut qiymat ustunni `ValueGeneratedOnAdd` qiladi, ya'ni
+            // INSERT paytida 0 (CLR sukuti) yuborilsa EF uni TASHLAB ketadi va
+            // bazadagi 5 000 000 qo'llanadi. UPDATE'ga bu tegishli emas, ilova
+            // esa bu qatorni faqat migratsiya SQL'ida yaratadi.
+            e.Property(x => x.ExpenseApprovalThreshold).HasPrecision(14, 2)
+                .HasDefaultValue(5_000_000m);
+
             e.ToTable(t =>
             {
                 // 28 — har oyda mavjud bo'lgan eng katta kun. 30/31 qo'yilsa fevralda
@@ -312,6 +322,11 @@ internal static class BillingModel
                 t.HasCheckConstraint("ck_billing_settings_due_day", "payment_due_day between 1 and 28");
                 t.HasCheckConstraint("ck_billing_settings_overdue_day", "overdue_after_day between 1 and 28");
                 t.HasCheckConstraint("ck_billing_settings_order", "overdue_after_day >= payment_due_day");
+                // Manfiy chegara "hamma chiqim tasdiq talab qiladi" degani emas,
+                // ma'nosiz qiymat. Nol esa TO'G'RI va foydali: har qanday chiqim
+                // ikkinchi imzo talab qiladi (eng qattiq rejim).
+                t.HasCheckConstraint("ck_billing_settings_expense_threshold",
+                    "expense_approval_threshold >= 0");
             });
         });
     }

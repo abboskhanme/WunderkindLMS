@@ -40,9 +40,24 @@ public static class Accounts
     /// <summary>Boshqa daromad. Admin qo'shgan nostandart toifalar ham shu yerga tushadi.</summary>
     public const string RevenueOther = "revenue:other";
 
-    // ----- Chiqimlar -----
+    // ----- Chiqimlar (toifalar bo'yicha) -----
+    //
+    //  Bittasi = `expenses.category` ning bitta qiymati. Ro'yxat mijoz javobidan
+    //  olingan (docs/TASKS.md §8 Q16: "salary, utilities, supplies, rent, other";
+    //  `repair` P1-26 ning pul aylanmasi halqasida ham ko'rsatilgan) va
+    //  `ExpenseByCategory` orqali AYNAN shu toifalarga bog'langan.
+    //
+    //  Nega har toifaga alohida hisob, hammasi `expense:other` ga emas: P&L va
+    //  pul aylanmasi hisoboti jurnalni AKKAUNT bo'yicha yig'adi (`expense:*`
+    //  prefiksi). Toifa faqat `expenses` jadvalida qolsa, direktor "qayerga
+    //  ketdi" degan savolga hisobotdan javob ololmasdi — hamma chiqim bitta
+    //  "boshqa" ustunida turardi.
 
     public const string ExpenseSalary = "expense:salary";
+    public const string ExpenseUtilities = "expense:utilities";
+    public const string ExpenseSupplies = "expense:supplies";
+    public const string ExpenseRent = "expense:rent";
+    public const string ExpenseRepair = "expense:repair";
     public const string ExpenseOther = "expense:other";
 
     /// <summary>Ruxsat etilgan barcha hisob kodlari. P1-22 va hisobotlar shu ro'yxatdan aylanadi.</summary>
@@ -50,7 +65,7 @@ public static class Accounts
     [
         Cash, Bank, Receivable,
         RevenueTuition, RevenueBus, RevenueDormitory, RevenueMeals, RevenueOther,
-        ExpenseSalary, ExpenseOther,
+        ExpenseSalary, ExpenseUtilities, ExpenseSupplies, ExpenseRent, ExpenseRepair, ExpenseOther,
     ];
 
     private static readonly HashSet<string> Known = new(All, StringComparer.Ordinal);
@@ -65,8 +80,37 @@ public static class Accounts
         ["other"] = RevenueOther,
     };
 
+    /// <summary>Chiqim toifasi (<c>expenses.category</c>) → chiqim hisobi.</summary>
+    private static readonly Dictionary<string, string> ExpenseByCategory = new(StringComparer.Ordinal)
+    {
+        ["salary"] = ExpenseSalary,
+        ["utilities"] = ExpenseUtilities,
+        ["supplies"] = ExpenseSupplies,
+        ["rent"] = ExpenseRent,
+        ["repair"] = ExpenseRepair,
+        ["other"] = ExpenseOther,
+    };
+
+    /// <summary>
+    /// Ruxsat etilgan chiqim toifalari — <b>YOPIQ RO'YXAT</b> (mijoz javobi,
+    /// docs/TASKS.md §8 Q16). Chiqim endpoint'i shu ro'yxatdan tashqari
+    /// qiymatni qabul qilmaydi.
+    ///
+    /// <para>
+    /// Nega yopiq, <c>fee_categories</c> kabi jadval emas: chiqim toifasi
+    /// jurnalda AKKAUNT bo'lib qoladi, akkauntlar esa yopiq ro'yxat. Erkin
+    /// matn qabul qilinsa, "utilites" deb xato yozilgan qator jimgina
+    /// <c>expense:other</c> ga tushib, hisobotda topib bo'lmas farq qoldirardi.
+    /// </para>
+    /// </summary>
+    public static readonly IReadOnlyList<string> ExpenseCategories = [.. ExpenseByCategory.Keys];
+
     public static bool IsKnown(string? account) =>
         account is not null && Known.Contains(account);
+
+    /// <summary>Shu satr ruxsat etilgan chiqim toifasimi?</summary>
+    public static bool IsExpenseCategory(string? category) =>
+        category is not null && ExpenseByCategory.ContainsKey(category);
 
     /// <summary>
     /// Kodni tekshiradi va o'zini qaytaradi. Noma'lum bo'lsa —
@@ -88,6 +132,21 @@ public static class Accounts
         categoryCode is not null && RevenueByCategory.TryGetValue(categoryCode, out var account)
             ? account
             : RevenueOther;
+
+    /// <summary>
+    /// Chiqim toifasiga mos chiqim hisobi. <see cref="RevenueFor"/> dan farqli
+    /// o'laroq noma'lum toifa "boshqa" ga TUSHMAYDI, balki
+    /// <see cref="ArgumentOutOfRangeException"/> beradi — chiqim toifasi
+    /// foydalanuvchi yaratadigan qator emas, yopiq ro'yxatdagi qiymat
+    /// (<see cref="ExpenseCategories"/>). Chaqiruvchi buni oldindan
+    /// <see cref="IsExpenseCategory"/> bilan tekshirib, tushunarli 400 beradi.
+    /// </summary>
+    public static string ExpenseFor(string? category) =>
+        category is not null && ExpenseByCategory.TryGetValue(category, out var account)
+            ? account
+            : throw new ArgumentOutOfRangeException(
+                nameof(category), category,
+                $"Noma'lum chiqim toifasi. Ruxsat etilganlar: {string.Join(", ", ExpenseCategories)}.");
 
     /// <summary>
     /// To'lov usuli pul qayerga tushishini belgilaydi: naqd — kassaga,
