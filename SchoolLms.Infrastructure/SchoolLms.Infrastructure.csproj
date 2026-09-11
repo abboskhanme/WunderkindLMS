@@ -17,6 +17,13 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Migratsiyalardagi xom SQL (trigger, GRANT/REVOKE, seed) assembly ichiga kiradi —
+         prod konteynerida manba papkasi yo'q, faqat `publish` natijasi bor.
+         O'qilishi: Migrations/MigrationSql.cs -->
+    <EmbeddedResource Include="Migrations\Sql\*.sql" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\SchoolLms.Application\SchoolLms.Application.csproj" />
     <ProjectReference Include="..\SchoolLms.Domain\SchoolLms.Domain.csproj" />
   </ItemGroup>

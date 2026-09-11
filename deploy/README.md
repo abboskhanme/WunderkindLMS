@@ -118,6 +118,30 @@ Bu deploy'ning ixtiyoriy emas, majburiy qadami. Skriptdagi ro'yxat (`payments`,
 hali mavjud bo'lmagan jadvallarni jimgina o'tkazib yuboradi — shuning uchun uni
 istalgan vaqtda ishlatish xavfsiz.
 
+> **P1-05 dan keyin yangilik: moliya jadvallari uchun bu qadam endi ZAXIRA.**
+> `BillingCore` migratsiyasi GRANT/REVOKE ni O'ZI bilan olib keladi
+> (`SchoolLms.Infrastructure/Migrations/Sql/billing_guards.sql`), ya'ni
+> `payments` / `payment_allocations` / `ledger_entries` himoyasi jadvallar
+> yaratilgan lahzada, bir tranzaksiya ichida yoqiladi. Qo'lda hech narsa
+> qilmasangiz ham `app_rw` ularda UPDATE/DELETE qila olmaydi.
+>
+> `init-roles.sql` ni qayta ishga tushirish **baribir tavsiya etiladi**: u
+> `access_events` va `point_transactions` (Faza 2 va 4) ni qamrab oladi,
+> parollarni yangilaydi va oxirida `owns_in_public = 0` jadvalini chiqaradi —
+> deploy dalili shu. Ya'ni ikki qulf: migratsiya unutilmaydigan qulf,
+> `init-roles.sql` — keng qamrovli qulf.
+
+Himoya haqiqatan o'rnatilganini bir buyruq bilan, ishlab turgan stack'ga
+tegmasdan tekshirish mumkin (toza konteyner ko'taradi, o'zi tozalaydi):
+
+```bash
+./tools/verify-billing-guards.sh
+```
+
+U `deploy/init-roles.sql` → migratsiya yo'lini aynan takrorlaydi va
+`payments` da UPDATE/DELETE 42501 berishini, taqsimot trigger'ini,
+`approved_by <> created_by` tekshiruvini va seed'ni sinaydi.
+
 ### Migratsiyani alohida qadamga aylantirish
 
 Hozir migratsiya konteyner startida avtomatik bajariladi (`Migrator` roli bilan).

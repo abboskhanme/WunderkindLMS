@@ -169,6 +169,46 @@ grants are effectively untested. Note that option 1 additionally requires
 `schoollms_owner` to hold `CREATEROLE`; the fixture creates it without that attribute today,
 mirroring a least-privilege production setup.
 
+### Update after P1-05 (2026-09-11) — read this before starting P1-22
+
+Option 1 was taken **only for the `GRANT`/`REVOKE`, never for `CREATE ROLE`.** The
+`BillingCore` migration runs `Migrations/Sql/billing_guards.sql`, which grants
+`select, insert` and revokes `update, delete` on `payments`, `payment_allocations` and
+`ledger_entries` — but it is wrapped in `if exists (select 1 from pg_roles where rolname =
+'app_rw')` and **skips silently with a `RAISE NOTICE` when the role is absent.** A migration
+cannot create the role: `schoollms_owner` is `NOCREATEROLE` in production (`init-roles.sql`)
+and in this fixture, and making it otherwise would hand the migration role the ability to mint
+logins.
+
+Consequence for the harness: **nothing changed.** `app_rw` still does not exist during
+`MigrateAsync()`, so the guards are skipped and `AppRwIsOwnerFallback` stays `true`.
+
+What P1-22 needs in order to go green — and the trap to avoid:
+
+1. Create a **bare** `app_rw` (`LOGIN`, nothing else) in `PostgresFixture.InitializeAsync`
+   *before* `MigrateAsync()`, so the guard block finds it.
+2. Give it the **baseline** grants that `init-roles.sql` step 4 gives — `GRANT SELECT, INSERT,
+   UPDATE, DELETE ON ALL TABLES` plus `ALTER DEFAULT PRIVILEGES FOR ROLE schoollms_owner`.
+   Without this the app cannot read `users` and every test fails.
+3. Do **not** let the fixture write the financial `REVOKE`. That is the whole point: the
+   fixture hands `app_rw` the worst case (full CRUD everywhere, including `payments`), and the
+   migration has to take `UPDATE`/`DELETE` back. If the `REVOKE` ever disappears from the
+   migration, the test goes red — which is exactly the signal `RequireRealAppRw()` was
+   protecting.
+
+Meanwhile the production path **is** verified, outside the xUnit harness, by:
+
+```bash
+./tools/verify-billing-guards.sh
+```
+
+It starts a throwaway Postgres 17, runs the real `deploy/init-roles.sql` at initdb time, applies
+the migration as `schoollms_owner`, and asserts SQLSTATE `42501` on `UPDATE`/`DELETE` for all
+three immutable tables (plus the allocation trigger, the `approved_by <> created_by` constraint,
+the single-open-shift index, seed idempotency and "zero `DROP` in the migration script").
+It is not a substitute for P1-22 — it does not go through the HTTP layer or the RBAC matrix —
+but it means the `REVOKE` is not shipping untested.
+
 ---
 
 ## 5. Known issue found by the harness (not fixed here — for P1-02)
