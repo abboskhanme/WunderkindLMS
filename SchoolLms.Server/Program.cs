@@ -238,9 +238,9 @@ builder.Services.AddScoped<SchoolLms.Application.Services.ContractService>();
 builder.Services.AddScoped<SchoolLms.Application.Services.TurnstileService>();
 
 // ---------- Moliya (Faza 1) ----------
-// DIQQAT: yuqorida `TuitionAccrualService` ro'yxatdan CHIQARILDI. Eski va yangi hisoblash
-// bir vaqtda ishlasa HAR O'QUVCHI IKKI MARTA hisob oladi. Eski fayl hali turibdi (P1-21
-// uni o'chiradi), lekin u endi ishga tushmaydi.
+// Oylik hisoblashning YAGONA egasi — `BillingAccrualService` (pastda). Eski
+// `TuitionAccrualService` fayli bilan birga P1-21 da o'chirildi: ikkalasi bir
+// vaqtda ishlaganda har o'quvchi IKKI MARTA hisob olardi.
 builder.Services.AddScoped<SchoolLms.Application.Billing.ILedgerService,
                            SchoolLms.Application.Billing.LedgerService>();
 builder.Services.AddScoped<SchoolLms.Application.Billing.IInvoiceService,

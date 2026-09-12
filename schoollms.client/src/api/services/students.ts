@@ -3,7 +3,6 @@ import { delay, uid } from '@/lib/utils'
 import { api, USE_MOCK } from '../client'
 import { studentsMock } from '../mock/students'
 import { classesMock } from '../mock/classes'
-import { financeMock } from '../mock/finance'
 
 /** Serverga yuklangan fayl haqida (admin uploads javobi). */
 export interface UploadedFile {
@@ -94,7 +93,8 @@ export async function uploadAdminFile(file: File): Promise<UploadedFile> {
   return data
 }
 
-/** Forma maydonlari (balans bu yerda emas — u to'lov orqali o'zgaradi).
+/** Forma maydonlari. Balans bu yerda YO'Q — u hisoblanadi (P1-21), chegirma ham
+ *  yo'q: u "Moliya → Chegirmalar" da, direktor tasdig'i bilan beriladi (SPEC §8.1 Q5).
  *  newPassword — ixtiyoriy: tahrirda kiritilsa o'quvchi akkaunti paroli almashtiriladi. */
 export type StudentPayload = Omit<Student, 'id' | 'balance'> & { newPassword?: string }
 
@@ -138,38 +138,21 @@ export async function restoreStudent(id: string, newPassword?: string): Promise<
 export async function createStudent(payload: StudentPayload): Promise<Student> {
   if (USE_MOCK) {
     await delay(300)
-    // Kelgan oyidan joriy oygacha har oy uchun qarz: balans = -fee * oylar soni
-    const fee = classesMock.find((c) => c.name === payload.className)?.monthlyFee ?? 0
-    const cur = new Date().toISOString().slice(0, 7)
-    const enr = (payload.enrollmentDate || cur).slice(0, 7)
-    let months = 0
-    if (enr <= cur) {
-      const [ey, em] = enr.split('-').map(Number)
-      const [cy, cm] = cur.split('-').map(Number)
-      months = (cy - ey) * 12 + (cm - em) + 1
-    }
-    return { ...payload, id: uid(), balance: -fee * months }
+    // Yangi o'quvchining qarzi 0: hisob obuna ochilgandan keyin yoziladi (P1-21).
+    return { ...payload, id: uid(), balance: 0 }
   }
   const { data } = await api.post<Student>('/admin/students', payload)
   return data
 }
 
-/** Update o'quvchini tahrirlash.
- *  `applyDiscount=true` — chegirma o'zgargan bo'lsa, joriy oy hisobi yangi summaga
- *  to'g'rilanadi (balans deltaga moslab tuziladi). false (default) — joriy oy eski summada
- *  qoladi, yangi chegirma keyingi accrual'dan amal qiladi. */
-export async function updateStudent(
-  id: string,
-  payload: StudentPayload,
-  applyDiscount?: boolean,
-): Promise<void> {
+/** O'quvchini tahrirlash. Pulga TEGMAYDI (P1-21): sinf o'zgarsa ham oylik
+ *  summa obunada qoladi, chegirma esa "Moliya → Chegirmalar" da beriladi. */
+export async function updateStudent(id: string, payload: StudentPayload): Promise<void> {
   if (USE_MOCK) {
     await delay(300)
     return
   }
-  await api.put(`/admin/students/${id}`, payload, {
-    params: applyDiscount ? { applyDiscount: true } : undefined,
-  })
+  await api.put(`/admin/students/${id}`, payload)
 }
 
 export async function deleteStudent(id: string): Promise<void> {
@@ -200,15 +183,9 @@ export async function resetStudentPassword(id: string): Promise<Credentials> {
   return data
 }
 
-/** O'quvchiga to'lov kiritish — balansga qo'shiladi.
- *  `month` ("YYYY-MM") berilsa, to'lov shu oy uchun hisoblanadi. */
-export async function addPayment(id: string, amount: number, month?: string): Promise<void> {
-  if (USE_MOCK) {
-    await delay(250)
-    return
-  }
-  await api.post(`/admin/students/${id}/payments`, { amount, month })
-}
+// P1-21: `addPayment` olib tashlandi. To'lov faqat kassa orqali qabul qilinadi
+// (`/api/cash/payments`, ochiq smena + kassir + chek raqami bilan); eski
+// endpoint 410 Gone qaytaradi. Kassir ish o'rni: `src/pages/cashier`.
 
 const LEDGER_MONTHS = ['2026-01', '2026-02', '2026-03', '2026-04', '2026-05']
 
@@ -219,14 +196,11 @@ export async function getStudentLedger(id: string): Promise<StudentLedger> {
     const student = studentsMock.find((s) => s.id === id)
     if (!student) throw new Error('O\'quvchi topilmadi')
     const rawFee = classesMock.find((c) => c.name === student.className)?.monthlyFee ?? 0
-    const monthDiscount = Math.max(
-      0,
-      Math.min(rawFee, (rawFee * student.discountPct) / 100 + student.discountAmount),
-    )
-    const fee = Math.max(0, rawFee - monthDiscount)
+    const monthDiscount = 0
+    const fee = rawFee
     const totalCharged = rawFee * LEDGER_MONTHS.length
-    const totalDiscount = monthDiscount * LEDGER_MONTHS.length
-    let pool = Math.max(0, fee * LEDGER_MONTHS.length + student.balance)
+    const totalDiscount = 0
+    let pool = Math.max(0, fee * LEDGER_MONTHS.length + (student.balance ?? 0))
     const totalPaid = pool
     const months = LEDGER_MONTHS.map((month) => {
       const paid = Math.min(pool, fee)
@@ -235,13 +209,10 @@ export async function getStudentLedger(id: string): Promise<StudentLedger> {
       const status: MonthStatus = remaining === 0 ? 'paid' : paid > 0 ? 'partial' : 'unpaid'
       return { month, charged: rawFee, discount: monthDiscount, paid, remaining, status }
     })
-    const payments = financeMock
-      .filter((t) => t.studentId === id && t.category === 'tuition')
-      .map((t) => ({ date: t.date, amount: t.amount, note: t.note }))
-      .sort((a, b) => (a.date < b.date ? 1 : -1))
+    const payments: StudentLedger['payments'] = []
     return {
       student,
-      balance: student.balance,
+      balance: student.balance ?? 0,
       monthlyFee: fee,
       totalCharged,
       totalDiscount,

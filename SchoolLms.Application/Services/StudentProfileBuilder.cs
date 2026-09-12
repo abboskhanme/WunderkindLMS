@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using SchoolLms.Application.Abstractions;
+using SchoolLms.Application.Billing;
 using SchoolLms.Application.Dtos;
 using SchoolLms.Domain;
 
@@ -17,6 +18,9 @@ public static class StudentProfileBuilder
     {
         var cls = await db.Classes.FirstOrDefaultAsync(c => c.Name == st.ClassName);
         var classId = cls?.Id;
+
+        // Qoldiq HISOBLANADI (P1-21): o'quvchi qatorida saqlanmaydi.
+        var balance = await new StudentBalanceQuery(db).ForAsync(st.Id);
 
         var report = await StudentReportBuilder.BuildAsync(db, st);
         var entries = await db.JournalEntries.Where(e => e.StudentId == st.Id).ToListAsync();
@@ -139,8 +143,8 @@ public static class StudentProfileBuilder
         return new StudentNotebookDto(
             st.Id, st.FullName, st.ClassName, report.HomeroomTeacher,
             st.ParentFullName, st.ParentPhone, st.Gender, st.BirthDate,
-            st.EnrollmentDate, st.Balance, st.BirthCertificateUrl,
-            st.Address, st.DiscountPct, st.DiscountAmount, st.DiscountNote,
+            st.EnrollmentDate, balance, st.BirthCertificateUrl,
+            st.Address,
             st.SubGroup, st.ParentPassportUrl,
             report.Subjects, report.Grades, avgGrade,
             report.Attendance, conducted, attended, pct, reasonCounts,

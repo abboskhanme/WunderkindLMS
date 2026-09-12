@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using SchoolLms.Infrastructure.Auth;
 using SchoolLms.Infrastructure.Data;
+using SchoolLms.Application.Billing;
 using SchoolLms.Application.Dtos;
 using SchoolLms.Domain;
 using SchoolLms.Application.Services;
@@ -13,7 +14,8 @@ namespace SchoolLms.Server.Controllers;
 [Authorize]
 [AdminPerm("teachers")]
 [Route("api/admin/teachers")]
-public class TeachersController(AppDbContext db, AuditService audit) : ControllerBase
+public class TeachersController(AppDbContext db, AuditService audit, IExpenseService expenses)
+    : ControllerBase
 {
     private const int MinPasswordLength = 8;
     private const string WeakPasswordMessage = "Parol kamida 8 belgidan iborat bo'lsin";
@@ -278,47 +280,71 @@ public class TeachersController(AppDbContext db, AuditService audit) : Controlle
             $"oqituvchilar_{AppClock.Now:yyyy-MM-dd}.xlsx");
     }
 
-    /// <summary>O'qituvchiga maosh berish — moliyaga chiqim (salary) sifatida yoziladi.</summary>
+    /// <summary>
+    /// O'qituvchiga maosh berish — <c>expenses</c> qatori va
+    /// <c>debit expense:salary / credit cash|bank</c> jurnal juftligi (P1-21).
+    ///
+    /// <para>
+    /// Ilgari bu yassi <c>finance_transactions</c> ga yozardi va JURNALGA
+    /// UMUMAN TUSHMASDI — ya'ni berilgan maosh P&amp;L da ko'rinmasdi va sof
+    /// foyda butun aylanmaga teng bo'lib chiqardi. Endi u boshqa har qanday
+    /// chiqim bilan bir xil yo'ldan o'tadi: <see cref="IExpenseService"/>.
+    /// </para>
+    /// <para>
+    /// Ikki oqibat bor va ikkalasi ham ataylab:
+    /// (1) chegaradan (<c>billing_settings.expense_approval_threshold</c>) katta
+    ///     maosh DIREKTOR TASDIG'INI kutadi va shu paytgacha "berilgan" deb
+    ///     hisoblanmaydi (SPEC §4.5);
+    /// (2) xato yozuv endi o'chirilmaydi, storno qilinadi
+    ///     (<c>POST /api/admin/expenses/{{id}}/reverse</c>).
+    /// </para>
+    /// </summary>
     [HttpPost("{id}/salary-payments")]
-    public async Task<IActionResult> PaySalary(string id, SalaryPaymentRequest req)
+    [BillingFault]
+    public async Task<ActionResult<ExpenseDto>> PaySalary(
+        string id, SalaryPaymentRequest req, CancellationToken ct)
     {
-        var teacher = await db.Teachers.FindAsync(id);
+        var teacher = await db.Teachers.FindAsync([id], ct);
         if (teacher is null) return NotFound();
 
         if (req.Amount <= 0)
             return BadRequest(new { message = "Maosh summasi musbat bo'lishi kerak" });
 
-        var tx = new FinanceTransaction
-        {
-            Date = AppClock.Today.ToString("yyyy-MM-dd"),
-            Direction = "expense",
-            Category = "salary",
-            Amount = req.Amount,
-            TeacherId = teacher.Id,
-            Note = string.IsNullOrWhiteSpace(req.Note) ? $"Oylik maosh — {teacher.FullName}" : req.Note,
-        };
-        db.FinanceTransactions.Add(tx);
+        var note = string.IsNullOrWhiteSpace(req.Note)
+            ? $"Oylik maosh — {teacher.FullName}"
+            : req.Note.Trim();
 
-        audit.Record(AuditService.EntityFinanceTransaction, tx.Id, "create",
-            $"Maosh berildi: {AuditService.Money(req.Amount)} so'm",
-            after: AuditService.Snapshot(tx), teacherId: teacher.Id);
+        // Kim berayotgani JWT'dan olinadi (SPEC §4.4), so'rov tanasidan emas.
+        var expense = await expenses.CreateAsync(
+            new CreateExpenseRequest(
+                OnDate: AppClock.Today,
+                Category: SalaryPaymentQuery.SalaryCategory,
+                Amount: req.Amount,
+                Method: string.IsNullOrWhiteSpace(req.Method) ? PaymentMethod.Transfer : req.Method,
+                Note: note,
+                TeacherId: teacher.Id),
+            FinanceActor.RequireUserId(User), ct);
 
-        await db.SaveChangesAsync();
-        return NoContent();
+        audit.Record(AuditService.EntityTeacherSalary, expense.Id.ToString(), "create",
+            $"Maosh berildi: {AuditService.Money(req.Amount)} so'm"
+                + (expense.Status == ExpenseStatus.Pending ? " — direktor tasdig'ini kutmoqda" : ""),
+            after: new { expense.OnDate, expense.Category, expense.Amount, expense.Note, expense.Status },
+            teacherId: teacher.Id);
+        await db.SaveChangesAsync(ct);
+
+        return Ok(expense);
     }
 
-    /// <summary>O'qituvchiga berilgan maoshlar tarixi.</summary>
+    /// <summary>O'qituvchiga berilgan maoshlar tarixi (jurnalga tushgan, storno qilinmagan).</summary>
     [HttpGet("{id}/salary-history")]
-    public async Task<ActionResult<SalaryHistoryDto>> SalaryHistory(string id)
+    public async Task<ActionResult<SalaryHistoryDto>> SalaryHistory(string id, CancellationToken ct)
     {
-        var teacher = await db.Teachers.FindAsync(id);
+        var teacher = await db.Teachers.FindAsync([id], ct);
         if (teacher is null) return NotFound();
 
-        var payments = await db.FinanceTransactions
-            .Where(t => t.TeacherId == id && t.Direction == "expense" && t.Category == "salary")
-            .OrderByDescending(t => t.Date)
-            .Select(t => new PaymentDto(t.Date, t.Amount, t.Note, t.Month))
-            .ToListAsync();
+        var payments = (await new SalaryPaymentQuery(db).ForTeacherAsync(id, ct: ct))
+            .Select(t => new PaymentDto(t.OnDate.ToString("yyyy-MM-dd"), t.Amount, t.Note, t.Month))
+            .ToList();
 
         var monthly = await TeacherSalaryCalc.MonthlyAsync(db, teacher);
         return new SalaryHistoryDto(teacher.Id, teacher.FullName, monthly,

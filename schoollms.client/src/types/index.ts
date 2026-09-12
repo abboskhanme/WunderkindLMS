@@ -160,14 +160,17 @@ export interface Student {
   className: string
   /** Maktabga kelgan (qabul) sanasi (ISO) — oylik to'lov shu oydan boshlanadi */
   enrollmentDate: string
-  /** Balans (so'm): manfiy = qarzdor, 0 = qarzsiz, musbat = avans */
-  balance: number
-  /** Chegirma — foiz (0..100). Avval olib tashlanadi, keyin discountAmount ayriladi. */
-  discountPct: number
-  /** Chegirma — aniq summa (so'm). Foizdan keyin ayriladi. */
-  discountAmount: number
-  /** Chegirma izohi/sababi (masalan "Aka-uka chegirmasi"). */
-  discountNote: string
+  /**
+   * Balans (so'm): manfiy = qarzdor, 0 = qarzsiz, musbat = avans.
+   *
+   * HISOBLANADI (`invoices` − `payment_allocations`), o'quvchi qatorida
+   * saqlanmaydi — P1-21. `undefined` = "bu ro'yxatda pul ko'rsatilmaydi"
+   * (jurnal, davomat, reyting), 0 emas.
+   *
+   * Chegirma bu tipda YO'Q: u endi `discounts` jadvalida, direktor tasdig'i
+   * bilan — "Moliya → Chegirmalar" ekrani (SPEC §8.1 Q5).
+   */
+  balance?: number
   /**
    * Sinf ichidagi guruh: 0 = guruhsiz (yoki butun sinfga), 1 = 1-guruh, 2 = 2-guruh.
    * Bo'lingan darslarda (ScheduleLesson.subGroup != 0) faqat shu guruhdagi o'quvchi qatnashadi.

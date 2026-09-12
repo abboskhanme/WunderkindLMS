@@ -385,10 +385,12 @@ public class TeacherPortalController(
         if (cls is null) return NotFound();
         return await db.Students.Where(s => s.ClassName == cls.Name)
             .OrderBy(s => s.FullName)
+            // O'qituvchi jurnalida pul KO'RSATILMAYDI: `Balance` null qoladi
+            // (P1-21, SPEC §4.3 — o'quvchining qarzi o'qituvchining ishi emas).
             .Select(s => new StudentDto(
                 s.Id, s.FullName, s.BirthDate, s.Address, s.Gender,
-                s.ParentFullName, s.ParentPhone, s.ClassName, s.EnrollmentDate, s.Balance,
-                s.DiscountPct, s.DiscountAmount, s.DiscountNote, s.SubGroup,
+                s.ParentFullName, s.ParentPhone, s.ClassName, s.EnrollmentDate, null,
+                s.SubGroup,
                 s.LastName, s.FirstName, s.MiddleName, s.BirthCertificateUrl,
                 s.ParentLastName, s.ParentFirstName, s.ParentMiddleName, s.ParentPassportUrl,
                 s.IsArchived, s.ArchivedAt, s.ArchiveReason))

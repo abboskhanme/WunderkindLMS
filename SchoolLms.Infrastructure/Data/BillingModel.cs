@@ -255,14 +255,26 @@ internal static class BillingModel
             e.HasOne<AppUser>().WithMany().HasForeignKey(x => x.ApprovedBy)
                 .OnDelete(DeleteBehavior.Restrict);
 
+            // P1-21: maosh chiqimi qaysi o'qituvchiga tegishli. RESTRICT —
+            // to'langan maosh moliyaviy tarix, o'qituvchi qatori bilan birga
+            // o'chib ketmasin (arxivlash bor, o'chirish bu yerda to'xtaydi).
+            e.HasOne<Teacher>().WithMany().HasForeignKey(x => x.TeacherId)
+                .OnDelete(DeleteBehavior.Restrict);
+
             e.HasIndex(x => x.OnDate);
             e.HasIndex(x => new { x.Category, x.OnDate });
+            // Maosh hisoboti: "shu o'qituvchi shu davrda qancha oldi".
+            e.HasIndex(x => new { x.TeacherId, x.OnDate });
 
             e.ToTable(t =>
             {
                 t.HasCheckConstraint("ck_expenses_amount", "amount > 0");
                 // SPEC §4.5 — chiqimda ham ikki qavatli nazorat.
                 t.HasCheckConstraint("ck_expenses_approver_differs", "approved_by is null or approved_by <> created_by");
+                // O'qituvchi faqat maosh chiqimida ko'rsatiladi: boshqa toifada
+                // to'ldirilgan `teacher_id` maosh hisobotini jimgina buzardi.
+                t.HasCheckConstraint("ck_expenses_teacher_only_salary",
+                    "teacher_id is null or category = 'salary'");
             });
         });
     }

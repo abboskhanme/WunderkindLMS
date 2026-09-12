@@ -1,38 +1,14 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Plus, Pencil, Trash2, Download, TrendingUp, TrendingDown, Wallet, AlertCircle, Calculator, History } from 'lucide-react'
-import type {
-  FinanceDirection,
-  FinanceMonthly,
-  FinanceSummary,
-  FinanceTransaction,
-  Role,
-  SalaryReportRow,
-  StudentFinanceRow,
-} from '@/types'
-import {
-  getFinanceSummary,
-  getFinanceMonthly,
-  getTransactions,
-  createTransaction,
-  updateTransaction,
-  deleteTransaction,
-  accrueTuition,
-  getSalaryReport,
-  getStudentReport,
-  type FinanceTransactionPayload,
-} from '@/api/services/finance'
-import { addPayment } from '@/api/services/students'
-import { financeCategoryLabel, financeDirectionLabels } from '@/config/constants'
-import { formatDate, formatMoney, exportToCsv, cn } from '@/lib/utils'
+import { Download, History } from 'lucide-react'
+import type { Role, SalaryReportRow } from '@/types'
+import { getSalaryReport } from '@/api/services/finance'
+import { formatMoney, exportToCsv, cn } from '@/lib/utils'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Loader } from '@/components/ui/Loader'
-import { StatCard } from '@/components/ui/StatCard'
-import { FinanceMonthlyChart } from '@/components/charts/FinanceMonthlyChart'
 import { AuditHistoryModal } from '@/components/audit/AuditHistoryModal'
 import type { AuditFilters } from '@/api/services/audit'
 import { useAuth } from '@/context/auth-context'
-import { TransactionFormModal } from './TransactionFormModal'
 import { TeacherSalaryDetailModal } from './TeacherSalaryDetailModal'
 import { PnlTab } from './PnlTab'
 import { CashFlowTab } from './CashFlowTab'
@@ -48,32 +24,26 @@ const yearOf = (d: string) => Number(d.slice(0, 4))
 const control =
   'rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-brand-400'
 
-type DirFilter = 'all' | FinanceDirection
-
 /**
- * P1-18 — DIREKTOR MOLIYA PANELI, ADDITIV.
+ * DIREKTOR MOLIYA PANELI.
  *
- * Eski uchta tab (`overview` / `teachers` / `students`) o'z joyida qoladi:
- * ular eski moliya yo'liga (`finance_transactions`, o'quvchi qatoridagi
- * qoldiq) tayanadi va P1-21 da olib tashlanadi. Ulardagi "Tahrirlash" va
- * "O'chirish" tugmalariga BU VAZIFADA TEGILMAGAN — ular o'sha yerda,
- * o'sha holida.
+ * P1-21 da eski uchta tab olib tashlandi va ular bilan birga "Yangi amal",
+ * "Tahrirlash", "O'chirish" va "Oylik to'lovni hisoblash" tugmalari ham:
  *
- * Yangi beshta tab yonidan qo'shildi. Ular BOSHQA manbadan o'qiydi:
- * `ledger_entries`, `invoices`, `payment_allocations`, `cash_shifts` —
- * ya'ni ikkala to'plam bir-biriga umuman tegmaydi.
+ *   Umumiy      -> "Foyda va zarar" + "Pul oqimi" (jurnaldan hisoblanadi)
+ *   O'quvchilar -> "Qarzdorlar" (invoices + payment_allocations dan)
+ *
+ * Sabab bitta: eski tablar `finance_transactions` va o'quvchi qatoridagi
+ * saqlangan qoldiqdan o'qirdi — ikkalasi ham endi yo'q. Pulni tahrirlash va
+ * o'chirish esa aynan mijoz aytgan firibgarlik edi (docs/TASKS.md §1.2);
+ * yangi modelda pul yozuvi o'zgarmas va faqat storno bilan tuzatiladi.
+ *
+ * "O'qituvchilar" (maosh) tabi QOLDI: uning o'rnini bosadigan yangi hisobot
+ * yo'q. Manbasi almashdi — server uni endi `expenses` dan hisoblaydi.
  */
-type LegacyTab = 'overview' | 'teachers' | 'students'
-type ReportTab = 'pnl' | 'cashflow' | 'debtors' | 'zreport' | 'variance'
-type Tab = LegacyTab | ReportTab
+type Tab = 'teachers' | 'pnl' | 'cashflow' | 'debtors' | 'zreport' | 'variance'
 
-const legacyTabs: { value: LegacyTab; label: string }[] = [
-  { value: 'overview', label: 'Umumiy' },
-  { value: 'teachers', label: "O'qituvchilar" },
-  { value: 'students', label: "O'quvchilar" },
-]
-
-const reportTabs: { value: ReportTab; label: string }[] = [
+const reportTabs: { value: Tab; label: string }[] = [
   { value: 'pnl', label: 'Foyda va zarar' },
   { value: 'cashflow', label: 'Pul oqimi' },
   { value: 'debtors', label: 'Qarzdorlar' },
@@ -81,11 +51,8 @@ const reportTabs: { value: ReportTab; label: string }[] = [
   { value: 'variance', label: 'Nomuvofiqlik' },
 ]
 
-const legacyTabValues: string[] = legacyTabs.map((t) => t.value)
-const isLegacyTab = (tab: Tab): boolean => legacyTabValues.includes(tab)
-
 /** Yuqoridagi sana oralig'i faqat shu tablarda ma'noga ega. */
-const periodTabs: string[] = ['overview', 'teachers', 'pnl', 'cashflow']
+const periodTabs: string[] = ['teachers', 'pnl', 'cashflow']
 
 /**
  * Yangi hisobotlar FAQAT admin va direktorga ko'rinadi (SPEC §4.3):
@@ -100,33 +67,18 @@ function balanceClass(v: number): string {
   return v > 0 ? 'text-red-600' : v < 0 ? 'text-emerald-600' : 'text-slate-400'
 }
 
-/** Chegirma — foiz + summa qisqacha ko'rinishi (masalan "20% + 50 000" yoki "—"). */
-function formatDiscount(pct: number, amount: number): string {
-  if (pct <= 0 && amount <= 0) return '—'
-  const parts: string[] = []
-  if (pct > 0) parts.push(`${pct}%`)
-  if (amount > 0) parts.push(formatMoney(amount))
-  return parts.join(' + ')
-}
-
 export function FinancePage() {
   const { user } = useAuth()
   const canSeeReports = !!user && reportRoles.includes(user.role)
 
-  const [tab, setTab] = useState<Tab>('overview')
+  // Ruxsati yo'q xodim uchun yagona ochiq tab — maosh hisoboti.
+  const [tab, setTab] = useState<Tab>(canSeeReports ? 'pnl' : 'teachers')
   const [from, setFrom] = useState(`${yearOf(todayStr)}-01-01`)
   const [to, setTo] = useState(todayStr)
-  const [dirFilter, setDirFilter] = useState<DirFilter>('all')
 
-  const [summary, setSummary] = useState<FinanceSummary | null>(null)
-  const [monthly, setMonthly] = useState<FinanceMonthly[]>([])
-  const [transactions, setTransactions] = useState<FinanceTransaction[]>([])
   const [salaryReport, setSalaryReport] = useState<SalaryReportRow[]>([])
-  const [studentReport, setStudentReport] = useState<StudentFinanceRow[]>([])
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(false)
 
-  const [formOpen, setFormOpen] = useState(false)
-  const [editing, setEditing] = useState<FinanceTransaction | null>(null)
   const [audit, setAudit] = useState<{ filters: AuditFilters; title: string } | null>(null)
   const [detailTeacher, setDetailTeacher] = useState<SalaryReportRow | null>(null)
 
@@ -136,75 +88,16 @@ export function FinancePage() {
   const variance = useVarianceWatch(canSeeReports)
 
   const load = useCallback(() => {
-    // Yangi hisobot tablari o'z ma'lumotini o'zi oladi — eski moliya
-    // so'rovlarini ular ochilganda yubormaymiz.
-    if (!isLegacyTab(tab)) return
+    // Boshqa tablar o'z ma'lumotini o'zi oladi.
+    if (tab !== 'teachers') return
     setLoading(true)
-    Promise.all([
-      getFinanceSummary(from, to),
-      getFinanceMonthly(yearOf(to)),
-      getTransactions({ from, to, direction: dirFilter === 'all' ? undefined : dirFilter }),
-      getSalaryReport(from, to),
-      getStudentReport(),
-    ])
-      .then(([s, m, t, sr, st]) => {
-        setSummary(s)
-        setMonthly(m)
-        setTransactions(t)
-        setSalaryReport(sr)
-        setStudentReport(st)
-      })
+    getSalaryReport(from, to)
+      .then(setSalaryReport)
       .finally(() => setLoading(false))
-  }, [from, to, dirFilter, tab])
+  }, [from, to, tab])
 
   // eslint-disable-next-line react-hooks/set-state-in-effect -- filtr o'zgarganda ma'lumotni qayta yuklash (maqsadli, useAsync bilan bir xil naqsh)
   useEffect(() => load(), [load])
-
-  const handleSubmit = async (values: FinanceTransactionPayload) => {
-    // Yangi o'quvchi to'lovi (kirim → o'quvchi to'lovi) — o'quvchi balansini yangilaydigan to'lov
-    // mexanizmi orqali (o'quvchilar bo'limidagi to'lov kabi), oddiy xom yozuv emas.
-    if (!editing && values.direction === 'income' && values.category === 'tuition' && values.studentId) {
-      await addPayment(values.studentId, values.amount, values.month)
-    } else if (editing) {
-      await updateTransaction(editing.id, values)
-    } else {
-      await createTransaction(values)
-    }
-    setFormOpen(false)
-    setEditing(null)
-    load()
-  }
-
-  const handleDelete = async (t: FinanceTransaction) => {
-    if (!confirm("Ushbu moliyaviy amalni o'chirishni tasdiqlaysizmi?")) return
-    await deleteTransaction(t.id)
-    load()
-  }
-
-  const handleAccrue = async () => {
-    if (!confirm("Hisoblanmagan oylik to'lovlar barcha o'quvchilarga hisoblanadimi?")) return
-    const res = await accrueTuition()
-    alert(
-      res.count > 0
-        ? `${res.months.join(', ')} uchun ${res.count} ta o'quvchiga jami ${formatMoney(res.total)} hisoblandi.`
-        : "Yangi hisoblanadigan oy yo'q — hammasi hisoblangan.",
-    )
-    load()
-  }
-
-  const handleExport = () => {
-    exportToCsv(
-      'moliya.csv',
-      ['Sana', "Yo'nalish", 'Toifa', 'Izoh', 'Summa'],
-      transactions.map((t) => [
-        formatDate(t.date),
-        financeDirectionLabels[t.direction],
-        financeCategoryLabel(t.category),
-        t.note ?? '',
-        String(t.amount),
-      ]),
-    )
-  }
 
   const handleExportTeachers = () => {
     exportToCsv(
@@ -216,22 +109,6 @@ export function FinancePage() {
         String(r.expected),
         String(r.totalPaid),
         String(r.remaining),
-      ]),
-    )
-  }
-
-  const handleExportStudents = () => {
-    exportToCsv(
-      'oquvchilar-tolov.csv',
-      ["O'quvchi", 'Sinf', 'Hisoblangan', 'Chegirma', "To'langan", 'Qarz', 'Avans'],
-      studentReport.map((r) => [
-        r.fullName,
-        r.className,
-        String(r.charged),
-        String(r.discount),
-        String(r.paid),
-        String(r.debt),
-        String(r.advance),
       ]),
     )
   }
@@ -249,44 +126,20 @@ export function FinancePage() {
     paid: salaryReport.reduce((a, r) => a + r.totalPaid, 0),
     remaining: salaryReport.reduce((a, r) => a + Math.max(0, r.remaining), 0),
   }
-  const studentTotals = {
-    charged: studentReport.reduce((a, r) => a + r.charged, 0),
-    paid: studentReport.reduce((a, r) => a + r.paid, 0),
-    debt: studentReport.reduce((a, r) => a + r.debt, 0),
-    advance: studentReport.reduce((a, r) => a + r.advance, 0),
-  }
 
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold text-slate-800">Moliya</h1>
-          <p className="text-sm text-slate-400">Maktab kirim-chiqimlari va hisobotlar</p>
+          <p className="text-sm text-slate-400">Hisobotlar va o'qituvchilar maoshi</p>
         </div>
-        <div className="flex items-center gap-2">
-          <Button
-            variant="secondary"
-            onClick={() => setAudit({ filters: {}, title: "Moliya o'zgarishlar tarixi" })}
-          >
-            <History className="h-4 w-4" /> Tarix
-          </Button>
-          {/* Eski yo'lning amallari — faqat eski tablarda (P1-21 da olib tashlanadi). */}
-          {isLegacyTab(tab) && (
-            <>
-              <Button variant="secondary" onClick={handleAccrue}>
-                <Calculator className="h-4 w-4" /> Oylik to'lovni hisoblash
-              </Button>
-              <Button
-                onClick={() => {
-                  setEditing(null)
-                  setFormOpen(true)
-                }}
-              >
-                <Plus className="h-4 w-4" /> Yangi amal
-              </Button>
-            </>
-          )}
-        </div>
+        <Button
+          variant="secondary"
+          onClick={() => setAudit({ filters: {}, title: "Moliya o'zgarishlar tarixi" })}
+        >
+          <History className="h-4 w-4" /> Tarix
+        </Button>
       </div>
 
       {/*
@@ -305,22 +158,19 @@ export function FinancePage() {
 
       {/* Bo'limlar (tablar) */}
       <div className="flex flex-wrap items-center gap-2">
-        {legacyTabs.map((t) => (
-          <button
-            key={t.value}
-            onClick={() => setTab(t.value)}
-            className={cn(
-              'rounded-lg px-4 py-2 text-sm font-medium transition-colors',
-              tab === t.value
-                ? 'bg-brand-600 text-white'
-                : 'bg-white text-slate-600 hover:bg-slate-100',
-            )}
-          >
-            {t.label}
-          </button>
-        ))}
+        <button
+          onClick={() => setTab('teachers')}
+          className={cn(
+            'rounded-lg px-4 py-2 text-sm font-medium transition-colors',
+            tab === 'teachers'
+              ? 'bg-brand-600 text-white'
+              : 'bg-white text-slate-600 hover:bg-slate-100',
+          )}
+        >
+          O'qituvchilar
+        </button>
 
-        {/* Yangi hisobotlar — faqat admin va direktor (SPEC §4.3). */}
+        {/* Hisobotlar — faqat admin va direktor (SPEC §4.3). */}
         {canSeeReports && (
           <>
             <span className="mx-1 hidden h-6 w-px bg-slate-200 sm:block" />
@@ -352,7 +202,7 @@ export function FinancePage() {
         )}
       </div>
 
-      {/* Davr tanlash (kirim-chiqim, maosh, P&L va pul oqimi uchun) */}
+      {/* Davr tanlash (maosh, P&L va pul oqimi uchun) */}
       {periodTabs.includes(tab) && (
         <Card className="flex flex-wrap items-center gap-3 p-4">
           <span className="text-sm font-medium text-slate-600">Davr:</span>
@@ -362,228 +212,53 @@ export function FinancePage() {
         </Card>
       )}
 
-      {/*
-        Eski uchta tab. Ular BIRGALIKDA yuklanadi (eski `load`), shuning
-        uchun yuklanish darvozasi ham faqat shu blokda: yangi hisobotlar
-        eski endpoint yiqilsa ham ochilaveradi.
-      */}
-      {isLegacyTab(tab) &&
-        (loading || !summary ? (
+      {/* ============ O'QITUVCHILAR (maosh) ============ */}
+      {tab === 'teachers' &&
+        (loading ? (
           <Loader label="Yuklanmoqda..." />
         ) : (
           <>
-          {/* ============ UMUMIY ============ */}
-          {tab === 'overview' && (
-            <>
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-                <StatCard
-                  label="Umumiy kirim"
-                  value={formatMoney(summary.totalIncome)}
-                  icon={TrendingUp}
-                  iconBg="bg-emerald-50"
-                  iconColor="text-emerald-600"
-                  hint={`O'quvchi to'lovi: ${formatMoney(summary.tuitionIncome)}`}
+            {salaryReport.length > 0 && (
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                <SummaryCard label="Jami hisoblangan" value={formatMoney(teacherTotals.expected)} />
+                <SummaryCard
+                  label="Jami berilgan"
+                  value={formatMoney(teacherTotals.paid)}
+                  valueClass="text-emerald-600"
                 />
-                <StatCard
-                  label="Umumiy chiqim"
-                  value={formatMoney(summary.totalExpense)}
-                  icon={TrendingDown}
-                  iconBg="bg-red-50"
-                  iconColor="text-red-600"
-                />
-                <StatCard
-                  label="Sof balans"
-                  value={formatMoney(summary.net)}
-                  icon={Wallet}
-                  iconBg={summary.net >= 0 ? 'bg-emerald-50' : 'bg-red-50'}
-                  iconColor={summary.net >= 0 ? 'text-emerald-600' : 'text-red-600'}
-                  hint="Kirim − Chiqim"
-                />
-                <StatCard
-                  label="O'quvchilar qarzi"
-                  value={formatMoney(summary.studentDebt)}
-                  icon={AlertCircle}
-                  iconBg="bg-amber-50"
-                  iconColor="text-amber-600"
-                  hint={`Avans: ${formatMoney(summary.studentAdvance)}`}
+                <SummaryCard
+                  label="Jami qoldiq"
+                  value={formatMoney(teacherTotals.remaining)}
+                  valueClass="text-red-600"
                 />
               </div>
-
-              <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
-                <Card className="xl:col-span-2">
-                  <h2 className="mb-4 font-semibold text-slate-800">
-                    Oylik kirim/chiqim ({yearOf(to)})
-                  </h2>
-                  <FinanceMonthlyChart data={monthly} />
-                </Card>
-
-                <Card>
-                  <h2 className="mb-3 font-semibold text-slate-800">Toifalar bo'yicha</h2>
-                  <CategoryList title="Kirim" items={summary.incomeByCategory} positive />
-                  <div className="my-3 border-t border-slate-100" />
-                  <CategoryList title="Chiqim" items={summary.expenseByCategory} positive={false} />
-                </Card>
+            )}
+            <Card className="p-0">
+              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 p-4">
+                <div>
+                  <h2 className="font-semibold text-slate-800">O'qituvchilar maoshi</h2>
+                  <p className="text-sm text-slate-400">
+                    Davr bo'yicha — {periodMonths} oy · batafsil uchun o'qituvchini bosing
+                  </p>
+                </div>
+                <Button variant="secondary" onClick={handleExportTeachers} disabled={salaryReport.length === 0}>
+                  <Download className="h-4 w-4" /> CSV
+                </Button>
               </div>
-
-              {/* Amallar jadvali */}
-              <Card className="p-0">
-                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 p-4">
-                  <div className="flex items-center gap-2">
-                    {(['all', 'income', 'expense'] as DirFilter[]).map((d) => (
-                      <button
-                        key={d}
-                        onClick={() => setDirFilter(d)}
-                        className={cn(
-                          'rounded-lg px-3 py-1.5 text-sm font-medium transition-colors',
-                          dirFilter === d
-                            ? 'bg-brand-50 text-brand-700'
-                            : 'text-slate-500 hover:bg-slate-100',
-                        )}
-                      >
-                        {d === 'all' ? 'Barchasi' : financeDirectionLabels[d]}
-                      </button>
-                    ))}
-                  </div>
-                  <Button variant="secondary" onClick={handleExport} disabled={transactions.length === 0}>
-                    <Download className="h-4 w-4" /> CSV
-                  </Button>
-                </div>
-
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-sm">
-                    <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
-                      <tr>
-                        <th className="px-4 py-3">Sana</th>
-                        <th className="px-4 py-3">Yo'nalish</th>
-                        <th className="px-4 py-3">Toifa</th>
-                        <th className="px-4 py-3">Izoh</th>
-                        <th className="px-4 py-3 text-right">Summa</th>
-                        <th className="px-4 py-3 text-right">Amallar</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {transactions.map((t) => (
-                        <tr key={t.id} className="hover:bg-slate-50/60">
-                          <td className="px-4 py-3 text-slate-600">{formatDate(t.date)}</td>
-                          <td className="px-4 py-3">
-                            <span
-                              className={cn(
-                                'rounded-md px-2 py-0.5 text-xs font-medium',
-                                t.direction === 'income'
-                                  ? 'bg-emerald-50 text-emerald-700'
-                                  : 'bg-red-50 text-red-700',
-                              )}
-                            >
-                              {financeDirectionLabels[t.direction]}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3 text-slate-600">{financeCategoryLabel(t.category)}</td>
-                          <td className="px-4 py-3 text-slate-500">{t.note ?? '—'}</td>
-                          <td
-                            className={cn(
-                              'px-4 py-3 text-right font-medium',
-                              t.direction === 'income' ? 'text-emerald-600' : 'text-red-600',
-                            )}
-                          >
-                            {t.direction === 'income' ? '+' : '−'}
-                            {formatMoney(t.amount)}
-                          </td>
-                          <td className="px-4 py-3">
-                            <div className="flex items-center justify-end gap-0.5">
-                              <button
-                                type="button"
-                                title="O'zgarishlar tarixi"
-                                onClick={() =>
-                                  setAudit({
-                                    filters: { entityType: 'FinanceTransaction', entityId: t.id },
-                                    title: 'Amal tarixi',
-                                  })
-                                }
-                                className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700"
-                              >
-                                <History className="h-4 w-4" />
-                              </button>
-                              <button
-                                type="button"
-                                title="Tahrirlash"
-                                onClick={() => {
-                                  setEditing(t)
-                                  setFormOpen(true)
-                                }}
-                                className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700"
-                              >
-                                <Pencil className="h-4 w-4" />
-                              </button>
-                              <button
-                                type="button"
-                                title="O'chirish"
-                                onClick={() => handleDelete(t)}
-                                className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-red-50 hover:text-red-600"
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                      {transactions.length === 0 && (
-                        <tr>
-                          <td colSpan={6} className="px-4 py-12 text-center text-slate-400">
-                            Bu davrda amallar yo'q
-                          </td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </Card>
-            </>
-          )}
-
-          {/* ============ O'QITUVCHILAR ============ */}
-          {tab === 'teachers' && (
-            <>
-              {salaryReport.length > 0 && (
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-                  <SummaryCard label="Jami hisoblangan" value={formatMoney(teacherTotals.expected)} />
-                  <SummaryCard
-                    label="Jami berilgan"
-                    value={formatMoney(teacherTotals.paid)}
-                    valueClass="text-emerald-600"
-                  />
-                  <SummaryCard
-                    label="Jami qoldiq"
-                    value={formatMoney(teacherTotals.remaining)}
-                    valueClass="text-red-600"
-                  />
-                </div>
-              )}
-              <Card className="p-0">
-                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 p-4">
-                  <div>
-                    <h2 className="font-semibold text-slate-800">O'qituvchilar maoshi</h2>
-                    <p className="text-sm text-slate-400">
-                      Davr bo'yicha — {periodMonths} oy · batafsil uchun o'qituvchini bosing
-                    </p>
-                  </div>
-                  <Button variant="secondary" onClick={handleExportTeachers} disabled={salaryReport.length === 0}>
-                    <Download className="h-4 w-4" /> CSV
-                  </Button>
-                </div>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-sm">
-                    <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
-                      <tr>
-                        <th className="px-4 py-3">O'qituvchi</th>
-                        <th className="px-4 py-3 text-right">Oylik</th>
-                        <th className="px-4 py-3 text-right">Hisoblangan</th>
-                        <th className="px-4 py-3 text-right">Berilgan</th>
-                        <th className="px-4 py-3 text-right">Qoldiq</th>
-                        <th className="px-4 py-3 text-right">Tarix</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {salaryReport.map((r) => (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-sm">
+                  <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
+                    <tr>
+                      <th className="px-4 py-3">O'qituvchi</th>
+                      <th className="px-4 py-3 text-right">Oylik</th>
+                      <th className="px-4 py-3 text-right">Hisoblangan</th>
+                      <th className="px-4 py-3 text-right">Berilgan</th>
+                      <th className="px-4 py-3 text-right">Qoldiq</th>
+                      <th className="px-4 py-3 text-right">Tarix</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {salaryReport.map((r) => (
                       <tr
                         key={r.teacherId}
                         onClick={() => setDetailTeacher(r)}
@@ -613,131 +288,21 @@ export function FinancePage() {
                         </td>
                       </tr>
                     ))}
-                      {salaryReport.length === 0 && (
-                        <tr>
-                          <td colSpan={6} className="px-4 py-10 text-center text-slate-400">
-                            Ma'lumot yo'q
-                          </td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </Card>
-            </>
-          )}
-
-          {/* ============ O'QUVCHILAR ============ */}
-          {tab === 'students' && (
-            <>
-              {studentReport.length > 0 && (
-                <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-                  <SummaryCard label="Jami hisoblangan" value={formatMoney(studentTotals.charged)} />
-                  <SummaryCard
-                    label="Jami to'langan"
-                    value={formatMoney(studentTotals.paid)}
-                    valueClass="text-emerald-600"
-                  />
-                  <SummaryCard
-                    label="Jami qarz"
-                    value={formatMoney(studentTotals.debt)}
-                    valueClass="text-red-600"
-                  />
-                  <SummaryCard
-                    label="Jami avans"
-                    value={formatMoney(studentTotals.advance)}
-                    valueClass="text-emerald-600"
-                  />
-                </div>
-              )}
-              <Card className="p-0">
-                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 p-4">
-                  <div>
-                    <h2 className="font-semibold text-slate-800">O'quvchilar to'lovi</h2>
-                    <p className="text-sm text-slate-400">Joriy holat — eng katta qarzdorlar yuqorida</p>
-                  </div>
-                  <Button variant="secondary" onClick={handleExportStudents} disabled={studentReport.length === 0}>
-                    <Download className="h-4 w-4" /> CSV
-                  </Button>
-                </div>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-sm">
-                    <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
+                    {salaryReport.length === 0 && (
                       <tr>
-                        <th className="px-4 py-3">O'quvchi</th>
-                        <th className="px-4 py-3">Sinf</th>
-                        <th className="px-4 py-3 text-right">Hisoblangan</th>
-                        <th className="px-4 py-3 text-right">Chegirma</th>
-                        <th className="px-4 py-3 text-right">To'langan</th>
-                        <th className="px-4 py-3 text-right">Qarz</th>
-                        <th className="px-4 py-3 text-right">Avans</th>
-                        <th className="px-4 py-3 text-right">Tarix</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {studentReport.map((r) => (
-                        <tr key={r.studentId} className="hover:bg-slate-50/60">
-                        <td className="px-4 py-3 font-medium text-slate-800">{r.fullName}</td>
-                        <td className="px-4 py-3">
-                          <span className="rounded-md bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
-                            {r.className}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 text-right text-slate-600">{formatMoney(r.charged)}</td>
-                        <td className="px-4 py-3 text-right">
-                          {r.discount > 0 ? (
-                            <div>
-                              <div className="font-medium text-amber-700">−{formatMoney(r.discount)}</div>
-                              {(r.discountPct > 0 || r.discountAmount > 0) && (
-                                <div className="text-xs text-amber-600/70">
-                                  {formatDiscount(r.discountPct, r.discountAmount)}
-                                </div>
-                              )}
-                            </div>
-                          ) : (
-                            <span className="text-slate-300">—</span>
-                          )}
-                        </td>
-                        <td className="px-4 py-3 text-right font-medium text-emerald-600">
-                          {formatMoney(r.paid)}
-                        </td>
-                        <td className={cn('px-4 py-3 text-right font-medium', r.debt > 0 ? 'text-red-600' : 'text-slate-400')}>
-                          {formatMoney(r.debt)}
-                        </td>
-                        <td className={cn('px-4 py-3 text-right', r.advance > 0 ? 'text-emerald-600' : 'text-slate-400')}>
-                          {r.advance > 0 ? `+${formatMoney(r.advance)}` : formatMoney(0)}
-                        </td>
-                        <td className="px-4 py-3 text-right">
-                          <button
-                            type="button"
-                            title="O'zgarishlar tarixi"
-                            onClick={() =>
-                              setAudit({ filters: { studentId: r.studentId }, title: `Tarix — ${r.fullName}` })
-                            }
-                            className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700"
-                          >
-                            <History className="h-4 w-4" />
-                          </button>
+                        <td colSpan={6} className="px-4 py-10 text-center text-slate-400">
+                          Ma'lumot yo'q
                         </td>
                       </tr>
-                    ))}
-                      {studentReport.length === 0 && (
-                        <tr>
-                          <td colSpan={8} className="px-4 py-10 text-center text-slate-400">
-                            Ma'lumot yo'q
-                          </td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </Card>
-            </>
-          )}
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </Card>
           </>
         ))}
 
-      {/* ================= P1-18 — YANGI HISOBOTLAR ================= */}
+      {/* ================= P1-18 — HISOBOTLAR ================= */}
       {canSeeReports && tab === 'pnl' && <PnlTab from={from} to={to} />}
       {canSeeReports && tab === 'cashflow' && <CashFlowTab from={from} to={to} />}
       {canSeeReports && tab === 'debtors' && <DebtorsTab />}
@@ -745,16 +310,6 @@ export function FinancePage() {
       {canSeeReports && tab === 'variance' && (
         <VarianceTab watch={variance} canResolve={canSeeReports} />
       )}
-
-      <TransactionFormModal
-        open={formOpen}
-        onClose={() => {
-          setFormOpen(false)
-          setEditing(null)
-        }}
-        onSubmit={handleSubmit}
-        initial={editing}
-      />
 
       <AuditHistoryModal
         open={!!audit}
@@ -787,40 +342,5 @@ function SummaryCard({
       <p className="text-xs font-medium uppercase tracking-wide text-slate-400">{label}</p>
       <p className={cn('mt-1 text-lg font-semibold', valueClass)}>{value}</p>
     </Card>
-  )
-}
-
-function CategoryList({
-  title,
-  items,
-  positive,
-}: {
-  title: string
-  items: { category: string; amount: number }[]
-  positive: boolean
-}) {
-  const total = items.reduce((a, c) => a + c.amount, 0)
-  return (
-    <div>
-      <p className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-400">{title}</p>
-      {items.length === 0 ? (
-        <p className="text-sm text-slate-400">Ma'lumot yo'q</p>
-      ) : (
-        <ul className="space-y-2">
-          {items.map((c) => (
-            <li key={c.category} className="flex items-center justify-between gap-2 text-sm">
-              <span className="text-slate-600">{financeCategoryLabel(c.category)}</span>
-              <span className={cn('font-medium', positive ? 'text-emerald-600' : 'text-red-600')}>
-                {formatMoney(c.amount)}
-              </span>
-            </li>
-          ))}
-          <li className="flex items-center justify-between gap-2 border-t border-slate-100 pt-2 text-sm font-semibold">
-            <span className="text-slate-700">Jami</span>
-            <span className={positive ? 'text-emerald-700' : 'text-red-700'}>{formatMoney(total)}</span>
-          </li>
-        </ul>
-      )}
-    </div>
   )
 }

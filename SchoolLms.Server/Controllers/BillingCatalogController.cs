@@ -1,3 +1,4 @@
+using System.Globalization;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Filters;
@@ -50,7 +51,8 @@ public class BillingCatalogController(
     AppDbContext db,
     AuditService audit,
     ISubscriptionService subscriptions,
-    IDiscountService discounts) : ControllerBase
+    IDiscountService discounts,
+    IInvoiceService invoices) : ControllerBase
 {
     // ==================================================================
     //  To'lov toifalari (ma'lumotnoma)
@@ -239,6 +241,50 @@ public class BillingCatalogController(
     /// SPEC §4.4 — <c>created_by</c> / <c>approved_by</c> HAR DOIM JWT'dan.
     /// So'rov tanasida bunday maydon yo'q va bo'lmaydi.
     /// </summary>
+    // ==================================================================
+    //  Oylik hisoblash — QO'LDA ishga tushirish (P1-21)
+    // ==================================================================
+
+    /// <summary>
+    /// Hisoblanmagan oylarni to'ldiradi: har faol obuna uchun bitta
+    /// hisob-faktura. <b>IDEMPOTENT</b> — ikki marta bosilsa ikkinchi
+    /// yurishda hech narsa yozilmaydi (<c>invoices</c> dagi unikal indeks
+    /// kafolatlaydi), shuning uchun tugmani takror bosish xavfsiz.
+    ///
+    /// <para>
+    /// Odatda buni <c>BillingAccrualService</c> fon xizmati bajaradi
+    /// (startupda va har 12 soatda). Bu endpoint kutishni chetlab o'tish
+    /// uchun: yangi obuna ochilgach hisob-faktura DARHOL kerak bo'ladi —
+    /// demo ma'lumotni tiklashda ham, o'quv yili boshida ham.
+    /// </para>
+    /// <para>
+    /// <b>Actor fon xizmatinikidan farq qiladi va bu ataylab:</b> tugmani
+    /// bosgan odam jurnalga o'z nomi bilan tushadi (SPEC §4.4), fon xizmati
+    /// esa direktor nomidan yozadi. Jurnalga qarab "bu hisobni kim
+    /// boshlagan" degan savolga javob topish mumkin bo'lsin.
+    /// </para>
+    /// </summary>
+    /// <param name="month">
+    /// <c>"yyyy-MM"</c> — faqat shu oy. Berilmasa: hisoblanmagan BARCHA oylar.
+    /// </param>
+    [HttpPost("accrual/run")]
+    [FinanceRole(FinanceAction.ManageSubscriptions)]
+    public async Task<ActionResult<IEnumerable<AccrualResultDto>>> RunAccrual(
+        [FromQuery] string? month, CancellationToken ct)
+    {
+        var actor = Actor();
+
+        if (string.IsNullOrWhiteSpace(month))
+            return Ok(await invoices.AccrueDueAsync(actor, ct));
+
+        if (!DateOnly.TryParseExact(month.Trim() + "-01", "yyyy-MM-dd",
+                CultureInfo.InvariantCulture, DateTimeStyles.None, out var periodMonth))
+            return BadRequest(new BillingErrorDto(
+                "invalid_month", $"Oy formati noto'g'ri: '{month}'. Kutilgani: yyyy-MM."));
+
+        return Ok(new[] { await invoices.AccrueMonthAsync(periodMonth, actor, ct) });
+    }
+
     private string Actor() => FinanceActor.RequireUserId(User);
 }
 

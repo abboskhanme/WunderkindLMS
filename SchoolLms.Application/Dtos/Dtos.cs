@@ -28,7 +28,6 @@ public record StudentPayload(
     string FullName, string BirthDate, string Address, string Gender,
     string ParentFullName, string ParentPhone, string ClassName, string? EnrollmentDate,
     string? NewPassword = null,
-    int? DiscountPct = null, decimal? DiscountAmount = null, string? DiscountNote = null,
     int? SubGroup = null,
     string? LastName = null, string? FirstName = null, string? MiddleName = null,
     string? BirthCertificateUrl = null,
@@ -46,7 +45,14 @@ public record TeacherPayload(
     string HomeroomClass, List<string> SubjectIds, decimal Salary, string? SalaryStartMonth,
     string? NewPassword = null, List<string>? Permissions = null, string? Phone = null,
     string? PhotoUrl = null, string? Category = null, string? SalaryStartDate = null);
-public record SalaryPaymentRequest(decimal Amount, string? Note);
+/// <summary>Maosh berish so'rovi.</summary>
+/// <param name="Method">
+/// Pul qaysi hisobdan chiqdi: <c>cash</c> kassadan, qolgani bankdan
+/// (<see cref="SchoolLms.Domain.PaymentMethod"/>). Berilmasa — <c>transfer</c>:
+/// maktab maoshni bank orqali to'laydi, va uni sukut bo'yicha naqd deb yozish
+/// kassa hisobini minusga tortib, pul oqimi hisobotini buzardi.
+/// </param>
+public record SalaryPaymentRequest(decimal Amount, string? Note, string? Method = null);
 public record SalaryHistoryDto(
     string TeacherId, string FullName, decimal Salary, decimal TotalPaid, List<PaymentDto> Payments);
 public record MonthSalaryDto(string Month, decimal Expected, decimal Paid, decimal Remaining, string Status);
@@ -163,13 +169,6 @@ public record SaveCameraRequest(
 /// <summary>Kamera integratsiya sozlamasi.</summary>
 public record CameraSettingsDto(bool Enabled, int CameraCount);
 public record SaveCameraSettingsRequest(bool Enabled);
-/// <summary>Moliyada o'quvchi qatori. Charged = jami to'liq oylik (chegirmasiz);
-/// Discount = jami berilgan chegirma; Paid = haqiqiy naqd to'lovlar yig'indisi (turli oylar uchun);
-/// Debt / Advance — joriy holatdan (balans). DiscountPct/Amount — qoidani ko'rsatish uchun.</summary>
-public record StudentFinanceRowDto(
-    string StudentId, string FullName, string ClassName,
-    decimal Charged, decimal Discount, decimal Paid, decimal Debt, decimal Advance,
-    int DiscountPct = 0, decimal DiscountAmount = 0);
 
 /* ---------- Subjects ---------- */
 public record SubjectPayload(string Name);
@@ -288,10 +287,24 @@ public record AdminDashboardDto(
 
 /* ---------- Class performance / rating ---------- */
 public record SubjectDto(string Id, string Name);
+/// <summary>
+/// O'quvchi — ro'yxat va tanlov ekranlari uchun.
+/// </summary>
+/// <param name="Balance">
+/// Pul qoldig'i (manfiy = qarz, musbat = avans) — <c>StudentBalanceQuery</c> dan
+/// HISOBLANADI, o'quvchi qatorida saqlanmaydi (P1-21).
+///
+/// <para>
+/// <b><c>null</c> = "bu ro'yxatda pul ko'rsatilmaydi"</b>, nol emas. Jurnal,
+/// davomat va reyting ro'yxatlari aynan shunday qaytadi: u yerda qoldiq
+/// ko'rsatilmaydi va o'qituvchiga ko'rsatilmasligi ham kerak (SPEC §4.3).
+/// Nol bilan to'ldirish "qarzi yo'q" degan yolg'on ma'no berardi.
+/// </para>
+/// </param>
 public record StudentDto(
     string Id, string FullName, string BirthDate, string Address, string Gender,
-    string ParentFullName, string ParentPhone, string ClassName, string EnrollmentDate, decimal Balance,
-    int DiscountPct = 0, decimal DiscountAmount = 0, string DiscountNote = "", int SubGroup = 0,
+    string ParentFullName, string ParentPhone, string ClassName, string EnrollmentDate,
+    decimal? Balance = null, int SubGroup = 0,
     string LastName = "", string FirstName = "", string MiddleName = "",
     string? BirthCertificateUrl = null,
     string ParentLastName = "", string ParentFirstName = "", string ParentMiddleName = "",
@@ -488,8 +501,9 @@ public record StudentNotebookDto(
     string Id, string FullName, string ClassName, string HomeroomTeacher,
     string ParentFullName, string ParentPhone, string Gender, string BirthDate,
     string EnrollmentDate, decimal Balance, string? PhotoUrl,
-    // Shaxsiy ma'lumotlar
-    string Address, int DiscountPct, decimal DiscountAmount, string DiscountNote,
+    // Shaxsiy ma'lumotlar. Chegirma bu yerda YO'Q (P1-21): u endi `discounts`
+    // jadvalida, direktor tasdig'i bilan — "Moliya → Chegirmalar" ekranida.
+    string Address,
     int SubGroup, string? ParentPassportUrl,
     // O'zlashtirish
     List<SubjectDto> Subjects, Dictionary<string, Dictionary<int, double>> Grades, double AvgGrade,
@@ -524,7 +538,7 @@ public record PortalRatingDto(
 /* ---------- Yangi o'quv yiliga o'tish ---------- */
 public record AcademicYearInfoDto(
     string CurrentYear, int Students, int Classes, int JournalEntries,
-    int WeekAssignments, int FinanceTransactions);
+    int WeekAssignments, int Payments);
 public record ArchiveListItemDto(
     string Id, string Year, string CreatedAt,
     int StudentsCount, int ClassesCount, int JournalCount, int FinanceCount);
@@ -565,27 +579,23 @@ public record SaveTurnstileSettingsRequest(
     bool Enabled, string? Vendor, string? Host, int? Port, string? Username, string? Password,
     string? WorkStartTime, int? LateGraceMinutes, List<TeacherDeviceMapDto>? Teachers);
 
-/* ---------- Finance (Moliya) ---------- */
-public record FinanceTransactionDto(
-    string Id, string Date, string Direction, string Category, decimal Amount,
-    string? Note, string? StudentId, string? StudentName, string? TeacherId, string? TeacherName,
-    string? Month);
-public record FinanceTransactionPayload(
-    string Date, string Direction, string Category, decimal Amount, string? Note,
-    string? StudentId, string? TeacherId);
-public record CategoryAmountDto(string Category, decimal Amount);
-public record FinanceSummaryDto(
-    decimal TotalIncome, decimal TotalExpense, decimal Net,
-    decimal TuitionIncome, decimal OtherIncome,
-    List<CategoryAmountDto> IncomeByCategory, List<CategoryAmountDto> ExpenseByCategory,
-    decimal StudentDebt, decimal StudentAdvance, int TransactionsCount);
-public record FinanceMonthlyDto(string Month, decimal Income, decimal Expense);
-public record AccrueResultDto(List<string> Months, int Count, decimal Total);
+/* ---------- Finance (Moliya) ----------
+   P1-21: `FinanceTransactionDto`, `FinanceTransactionPayload`, `FinanceSummaryDto`,
+   `FinanceMonthlyDto`, `CategoryAmountDto`, `AccrueResultDto` va
+   `StudentFinanceRowDto` o'chirildi — ular `finance_transactions` va o'quvchi
+   qatoridagi qoldiqqa tayanardi. O'rniga jurnaldan hisoblanadigan hisobotlar:
+     · Foyda va zarar  -> GET /api/admin/finance/pnl
+     · Pul oqimi       -> GET /api/admin/finance/cashflow
+     · Qarzdorlar      -> GET /api/admin/finance/debtors
+     · Yig'ilish foizi -> GET /api/admin/finance/collection-rate
+     · Pul aylanmasi   -> GET /api/admin/finance/money-flow
+   Maosh hisoboti (`SalaryReportRowDto`) qoldi — u endi `expenses` dan o'qiydi. */
 
 /* ---------- O'quvchi to'lov tarixi (ledger) ---------- */
-/// <summary>Bitta oyning hisobi.
-/// Charged = to'liq oylik (sinf narxi); Discount = shu oy uchun berilgan chegirma;
-/// Paid = haqiqiy naqd to'lov (tx); Remaining = Charged − Discount − Paid (manfiy bo'lsa 0).</summary>
+/// <summary>Bitta oyning hisobi — o'sha oyning BARCHA toifadagi hisob-fakturalari yig'indisi.
+/// Charged = to'liq summa (chegirmasiz); Discount = qo'llangan chegirma;
+/// Paid = shu oy hisob-fakturalariga taqsimlangan pul; Remaining = Charged − Discount − Paid
+/// (manfiy bo'lsa 0). Manba: `invoices` + `payment_allocations` (P1-21).</summary>
 public record MonthLedgerDto(
     string Month, decimal Charged, decimal Discount, decimal Paid, decimal Remaining, string Status);
 public record PaymentDto(string Date, decimal Amount, string? Note, string? Month);

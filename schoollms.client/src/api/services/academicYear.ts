@@ -7,7 +7,8 @@ export interface AcademicYearInfo {
   classes: number
   journalEntries: number
   weekAssignments: number
-  financeTransactions: number
+  /** Qabul qilingan to'lovlar (chek) soni — P1-21 dan keyin moliya hajmi shu bilan o'lchanadi. */
+  payments: number
 }
 
 export interface YearArchive {
@@ -26,6 +27,11 @@ export interface RolloverPayload {
   clearGrades: boolean
   clearSchedule: boolean
   clearQuarters: boolean
+  /**
+   * P1-21 da MA'NOSI O'ZGARDI: pul yozuvlari o'chirilmaydi (ular o'zgarmas,
+   * SPEC §4.1) — barcha ochiq obunalar yopiladi, ya'ni yangi yil eski narx
+   * bilan hisoblanmaydi. Qarz va to'lov tarixi joyida qoladi.
+   */
   clearFinance: boolean
 }
 
@@ -45,7 +51,7 @@ export async function getAcademicYearInfo(): Promise<AcademicYearInfo> {
       classes: 0,
       journalEntries: 0,
       weekAssignments: 0,
-      financeTransactions: 0,
+      payments: 0,
     }
   }
   const { data } = await api.get<AcademicYearInfo>('/admin/academic-year')

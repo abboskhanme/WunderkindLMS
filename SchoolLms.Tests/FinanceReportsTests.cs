@@ -214,10 +214,11 @@ public class FinanceReportsTests(ApiFixture fixture, ITestOutputHelper output)
         var debtor = Guid.NewGuid().ToString();
         var solvent = Guid.NewGuid().ToString();
 
-        // `balance` ustuni ATAYLAB bema'ni qiymatga qo'yilgan: hisobot unga
-        // qaramasligi kerak (docs/TASKS.md §1.4 — ustun P1-21 da o'ladi).
+        // `students.balance` ustuni P1-21 da BUTUNLAY o'chirildi: qarzni
+        // "bema'ni saqlangan qiymat" bilan buzib bo'lmaydi, chunki saqlanadigan
+        // qiymatning o'zi yo'q. Hisobot faqat `invoices` va
+        // `payment_allocations` dan hisoblaydi (docs/TASKS.md §1.4).
         var debtorStudent = NewStudent(debtor, "Qarzdor Alisher", "5-A");
-        debtorStudent.Balance = 99_999_999m;
         db.Students.Add(debtorStudent);
         db.Students.Add(NewStudent(solvent, "Qarzsiz Nodira", "5-A"));
 
@@ -749,16 +750,17 @@ public class FinanceReportsTests(ApiFixture fixture, ITestOutputHelper output)
 
         var sql = $"""
             -- 500 o'quvchi
+            -- `balance` va `discount_*` ustunlari P1-21 da o'chirildi: hisobot
+            -- ularga qaray olmaydi, chunki ular endi mavjud emas.
             insert into students (
                 id, full_name, last_name, first_name, middle_name, birth_date, address, gender,
                 parent_full_name, parent_last_name, parent_first_name, parent_middle_name,
-                parent_phone, class_name, enrollment_date, balance, discount_pct, discount_amount,
-                discount_note, sub_group, is_archived, archived_with_class, device_user_id)
+                parent_phone, class_name, enrollment_date,
+                sub_group, is_archived, archived_with_class, device_user_id)
             select 'perf-' || i, 'O''quvchi ' || i, 'Familiya', 'Ism', 'Otasi', '2015-01-01',
                    'Toshkent', 'male', 'Ota-ona ' || i, 'Familiya', 'Ism', 'Otasi',
                    '+99890' || lpad(i::text, 7, '0'), 'Sinf-' || (1 + i % 10), '2025-09-01',
-                   -- `balance` ATAYLAB bema'ni: hisobot unga qaramasligi kerak.
-                   -12345678, 0, 0, '', 0, false, false, ''
+                   0, false, false, ''
             from generate_series(1, 500) i;
 
             -- 10 oy × 3 toifa = 15 000 hisob-faktura

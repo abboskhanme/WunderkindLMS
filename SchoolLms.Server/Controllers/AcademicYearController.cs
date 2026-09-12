@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using SchoolLms.Infrastructure.Data;
+using SchoolLms.Application.Billing;
 using SchoolLms.Application.Dtos;
 using SchoolLms.Domain;
 using SchoolLms.Application.Services;
@@ -42,7 +43,7 @@ public class AcademicYearController(AppDbContext db, AuditService audit) : Contr
             await db.Classes.CountAsync(),
             await db.JournalEntries.CountAsync(),
             await db.WeekAssignments.CountAsync(),
-            await db.FinanceTransactions.CountAsync());
+            await db.Payments.CountAsync());
     }
 
     /// <summary>Arxivlangan o'quv yillari ro'yxati (katta JSON'siz).</summary>
@@ -82,7 +83,10 @@ public class AcademicYearController(AppDbContext db, AuditService audit) : Contr
                 snap.Students.Select(s => new[]
                 {
                     s.FullName, s.ClassName, s.BirthDate, s.Gender, s.ParentFullName, s.ParentPhone,
-                    s.EnrollmentDate, Money(s.Balance),
+                    s.EnrollmentDate,
+                    // Qoldiq snapshot olingan LAHZADA hisoblangan va arxivga
+                    // yozilgan (P1-21) — o'quvchi qatorida bunday ustun yo'q.
+                    Money(snap.DerivedBalances.GetValueOrDefault(s.Id)),
                 }));
             AddCsv(zip, $"{folder}/Royxatlar/sinflar.csv",
                 new[] { "Nomi", "Sinf (daraja)", "Til", "Xona", "Oylik to'lov" },
@@ -127,20 +131,30 @@ public class AcademicYearController(AppDbContext db, AuditService audit) : Contr
                 new[] { "Chorak", "Boshlanishi", "Tugashi" },
                 snap.Quarters.OrderBy(q => q.Quarter).Select(q => new[] { q.Quarter.ToString(), q.StartDate, q.EndDate }));
 
-            AddCsv(zip, $"{folder}/Moliya/moliya.csv",
-                new[] { "Sana", "Yo'nalish", "Toifa", "Summa", "Oy", "Izoh", "O'quvchi", "O'qituvchi" },
-                snap.Finance.OrderBy(f => f.Date).Select(f => new[]
+            // Moliya — P1-21 dan keyingi uchta manba: hisob-faktura, to'lov, chiqim.
+            var categoryById = Dict(snap.FeeCategories, c => c.Id.ToString(), c => c.Name);
+            AddCsv(zip, $"{folder}/Moliya/hisob-fakturalar.csv",
+                new[] { "O'quvchi", "Toifa", "Oy", "Summa", "Chegirma", "To'lash muddati", "Holat" },
+                snap.Invoices.OrderBy(i => i.PeriodMonth).Select(i => new[]
                 {
-                    f.Date, f.Direction == "income" ? "Kirim" : "Chiqim", f.Category, Money(f.Amount),
-                    f.Month ?? "", f.Note ?? "",
-                    f.StudentId is null ? "" : Get(studentById, f.StudentId),
-                    f.TeacherId is null ? "" : Get(teacherById, f.TeacherId),
+                    Get(studentById, i.StudentId), Get(categoryById, i.CategoryId.ToString()),
+                    i.PeriodMonth.ToString("yyyy-MM"), Money(i.Amount), Money(i.Discount),
+                    i.DueOn.ToString("yyyy-MM-dd"), i.Status,
                 }));
-            AddCsv(zip, $"{folder}/Moliya/oylik-hisoblar.csv",
-                new[] { "O'quvchi", "Oy", "Summa", "Sana" },
-                snap.MonthlyCharges.Select(m => new[]
+            AddCsv(zip, $"{folder}/Moliya/tolovlar.csv",
+                new[] { "Chek", "Sana", "O'quvchi", "Summa", "Usul", "Izoh", "Storno" },
+                snap.Payments.OrderBy(t => t.ReceivedAt).Select(t => new[]
                 {
-                    Get(studentById, m.StudentId), m.Month, Money(m.Amount), m.Date,
+                    t.ReceiptNo.ToString(), AppClock.LocalDateOf(t.ReceivedAt).ToString("yyyy-MM-dd"),
+                    Get(studentById, t.StudentId), Money(t.Amount), t.Method, t.Note ?? "",
+                    t.ReversalOf is null ? "" : "ha",
+                }));
+            AddCsv(zip, $"{folder}/Moliya/chiqimlar.csv",
+                new[] { "Sana", "Toifa", "Summa", "Izoh", "O'qituvchi" },
+                snap.Expenses.OrderBy(e => e.OnDate).Select(e => new[]
+                {
+                    e.OnDate.ToString("yyyy-MM-dd"), e.Category, Money(e.Amount), e.Note ?? "",
+                    e.TeacherId is null ? "" : Get(teacherById, e.TeacherId),
                 }));
 
             // To'liq xom ma'lumot (JSON)
@@ -184,8 +198,18 @@ public class AcademicYearController(AppDbContext db, AuditService audit) : Contr
         public List<QuarterPeriod> Quarters { get; set; } = new();
         public List<AbsenceReason> AbsenceReasons { get; set; } = new();
         public List<LessonTime> LessonTimes { get; set; } = new();
-        public List<FinanceTransaction> Finance { get; set; } = new();
-        public List<MonthlyCharge> MonthlyCharges { get; set; } = new();
+        // Moliya — P1-21 dan keyingi model (SPEC §3.7).
+        public List<FeeCategory> FeeCategories { get; set; } = new();
+        public List<StudentSubscription> Subscriptions { get; set; } = new();
+        public List<Invoice> Invoices { get; set; } = new();
+        public List<Payment> Payments { get; set; } = new();
+        public List<Expense> Expenses { get; set; } = new();
+        /// <summary>
+        /// O'quvchi → snapshot olingan lahzadagi HISOBLANGAN qoldiq. Ustun sifatida
+        /// hech qayerda saqlanmaydi (P1-21), lekin arxiv "o'sha kuni qanday edi"
+        /// degan savolga javob berishi kerak — shuning uchun snapshot ichida.
+        /// </summary>
+        public Dictionary<string, decimal> DerivedBalances { get; set; } = new();
     }
 
     /// <summary>
@@ -221,8 +245,16 @@ public class AcademicYearController(AppDbContext db, AuditService audit) : Contr
             Quarters = await db.Quarters.AsNoTracking().ToListAsync(),
             AbsenceReasons = await db.AbsenceReasons.AsNoTracking().ToListAsync(),
             LessonTimes = await db.LessonTimes.AsNoTracking().ToListAsync(),
-            Finance = await db.FinanceTransactions.AsNoTracking().ToListAsync(),
-            MonthlyCharges = await db.MonthlyCharges.AsNoTracking().ToListAsync(),
+            // Moliya — P1-21 dan keyingi model. Jurnal (`ledger_entries`) arxivga
+            // KIRMAYDI: u bir yil bilan chegaralanmaydigan, o'zgarmas buxgalteriya
+            // tarixi va bazada abadiy qoladi (SPEC §4.1) — uni JSON'ga nusxalash
+            // "arxivdagi nusxa haqiqiymi?" degan ikkinchi haqiqat manbaini yaratardi.
+            FeeCategories = await db.FeeCategories.AsNoTracking().ToListAsync(),
+            Subscriptions = await db.StudentSubscriptions.AsNoTracking().ToListAsync(),
+            Invoices = await db.Invoices.AsNoTracking().ToListAsync(),
+            Payments = await db.Payments.AsNoTracking().ToListAsync(),
+            Expenses = await db.Expenses.AsNoTracking().ToListAsync(),
+            DerivedBalances = await new StudentBalanceQuery(db).ForManyAsync(),
         };
         db.SchoolYearArchives.Add(new SchoolYearArchive
         {
@@ -231,7 +263,7 @@ public class AcademicYearController(AppDbContext db, AuditService audit) : Contr
             StudentsCount = snapshot.Students.Count,
             ClassesCount = snapshot.Classes.Count,
             JournalCount = snapshot.Journal.Count,
-            FinanceCount = snapshot.Finance.Count,
+            FinanceCount = snapshot.Payments.Count,
             Data = JsonSerializer.Serialize(snapshot, ArchiveJson),
         });
 
@@ -245,6 +277,17 @@ public class AcademicYearController(AppDbContext db, AuditService audit) : Contr
             var students = await db.Students.ToListAsync();
             var teachers = await db.Teachers.ToListAsync();
 
+            // Bitiruvchilarni tekshirish uchun kerak bo'ladigan ikki to'plam
+            // OLDINDAN, bittadan so'rov bilan olinadi: sikl ichida so'rov
+            // yuborilsa 11-sinfdagi har o'quvchi uchun uchtadan so'rov
+            // ketardi (N+1).
+            var studentsWithMoney = (await db.Invoices.Select(i => i.StudentId).Distinct().ToListAsync())
+                .Concat(await db.Payments.Select(x => x.StudentId).Distinct().ToListAsync())
+                .ToHashSet(StringComparer.Ordinal);
+            var openSubscriptions = (await db.StudentSubscriptions.Where(x => x.EndsOn == null).ToListAsync())
+                .GroupBy(x => x.StudentId)
+                .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.Ordinal);
+
             foreach (var cls in classes.OrderByDescending(c => c.Grade))
             {
                 var newGrade = cls.Grade + 1;
@@ -252,17 +295,42 @@ public class AcademicYearController(AppDbContext db, AuditService audit) : Contr
 
                 if (newGrade > MaxGrade)
                 {
-                    // Bitiruvchilar — o'quvchi + akkaunt + oylik hisoblari o'chiriladi (arxivda saqlangan).
+                    // Bitiruvchilar.
+                    //
+                    // P1-21: MOLIYAVIY YOZUVI BOR O'QUVCHI O'CHIRILMAYDI, ARXIVLANADI.
+                    // `invoices` va `payments` unga RESTRICT bilan bog'langan
+                    // (SPEC §4.1 — pul tarixi o'chmaydi), ya'ni `Remove` chaqirig'i
+                    // FK xatosi bilan butun rollover'ni qaytarib yuborardi. Tarixi
+                    // yo'q o'quvchi avvalgidek butunlay o'chadi.
                     foreach (var s in clsStudents)
                     {
-                        if (s.UserId is not null)
+                        if (studentsWithMoney.Contains(s.Id))
                         {
-                            var u = await db.Users.FindAsync(s.UserId);
-                            if (u is not null) db.Users.Remove(u);
+                            s.IsArchived = true;
+                            s.ArchivedAt = AppClock.Today.ToString("yyyy-MM-dd");
+                            s.ArchiveReason = "Bitirdi";
+                            // Login bloklanadi, akkaunt o'chmaydi: to'lov qatorining
+                            // `cashier_id` / audit havolalari tirik qolishi kerak.
+                            if (s.UserId is not null)
+                            {
+                                var u = await db.Users.FindAsync(s.UserId);
+                                if (u is not null) u.PasswordHash = "";
+                            }
                         }
-                        db.MonthlyCharges.RemoveRange(
-                            await db.MonthlyCharges.Where(c => c.StudentId == s.Id).ToListAsync());
-                        db.Students.Remove(s);
+                        else
+                        {
+                            if (s.UserId is not null)
+                            {
+                                var u = await db.Users.FindAsync(s.UserId);
+                                if (u is not null) db.Users.Remove(u);
+                            }
+                            db.Students.Remove(s);
+                        }
+
+                        // Kelasi yilga hisob yozilmasin — obuna har holda yopiladi.
+                        foreach (var sub in openSubscriptions.GetValueOrDefault(s.Id) ?? [])
+                            sub.EndsOn = AppClock.Today;
+
                         graduated++;
                     }
                     db.ScheduleTemplates.RemoveRange(
@@ -320,19 +388,34 @@ public class AcademicYearController(AppDbContext db, AuditService audit) : Contr
             // Bayram kunlari ham sanaga bog'liq (kalendar) — eski yil sanalari qolib ketmasin.
             db.Holidays.RemoveRange(await db.Holidays.ToListAsync());
         }
+        // "Moliyani tozalash" — P1-21 da MA'NOSI O'ZGARDI.
+        //
+        // Ilgari bu butun kassa kitobini va o'quvchi qoldiqlarini o'chirardi.
+        // Yangi modelda pul yozuvi o'zgarmas: `payments`, `payment_allocations`
+        // va `ledger_entries` da `app_rw` rolida DELETE huquqi UMUMAN yo'q
+        // (SPEC §4.1), ya'ni eski xulqni saqlash SQLSTATE 42501 bilan
+        // yiqilardi — va agar yiqilmaganda ham, o'tgan yilning chekini
+        // o'chirish aynan mijoz qo'rqqan firibgarlik bo'lardi.
+        //
+        // Shuning uchun bayroq endi TO'XTATADI, o'chirmaydi: barcha ochiq
+        // obunalar yopiladi, ya'ni yangi yil hisob-fakturasi eski narx bilan
+        // yozilmaydi. Tarix joyida qoladi va qarz ham o'z-o'zidan yo'qolmaydi.
+        var subscriptionsClosed = 0;
         if (req.ClearFinance)
         {
-            db.FinanceTransactions.RemoveRange(await db.FinanceTransactions.ToListAsync());
-            db.MonthlyCharges.RemoveRange(await db.MonthlyCharges.ToListAsync());
-            foreach (var s in await db.Students.ToListAsync()) s.Balance = 0;
+            foreach (var sub in await db.StudentSubscriptions.Where(x => x.EndsOn == null).ToListAsync())
+            {
+                sub.EndsOn = AppClock.Today;
+                subscriptionsClosed++;
+            }
         }
 
         // 4) Joriy o'quv yilini yangilaymiz + audit.
         meta.CurrentYear = req.NewYear;
         audit.Record("AcademicYear", "current", "rollover",
             $"Yangi o'quv yiliga o'tildi: {(string.IsNullOrEmpty(oldYear) ? "—" : oldYear)} → {req.NewYear}" +
-            $" (ko'tarildi: {promoted}, bitirdi: {graduated})",
-            after: new { req.NewYear, promoted, graduated });
+            $" (ko'tarildi: {promoted}, bitirdi: {graduated}, yopilgan obuna: {subscriptionsClosed})",
+            after: new { req.NewYear, promoted, graduated, subscriptionsClosed });
 
         await db.SaveChangesAsync();
         return new RolloverResultDto(oldYear, req.NewYear, promoted, graduated);

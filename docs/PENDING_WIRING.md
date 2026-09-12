@@ -1038,3 +1038,61 @@ server does not leak them either — that is what makes the two-phase close dial
 than decorative. **Do not "improve" the shift bar by adding the total.**
 - [2026-09-12] `DiscountService.ChargeFor` keeps its own copy of the discount arithmetic instead of delegating to `DiscountMath`, which `DiscountMath`'s own doc comment warns against. The three copies (`TuitionService`, `DiscountMath`, `DiscountService`) agree today — P1-23 pins all three against the same 40 pairs plus 5 000 random inputs — but nothing except those tests enforces it. Collapse to one implementation when `TuitionService` is retired.
 - [2026-09-12] `InvoiceQuery` / `PaymentQuery` `MaxRows` / `MaxListRows` caps are untested. Not P1-23 scope; worth a boundary test before the pagination is exposed to the UI.
+
+
+## From P1-21 — legacy finance retired (2026-09-12)
+
+Nothing here is *unwired*: P1-21 is the sequential task and it wired its own changes.
+These are the four notes another agent needs so nothing is re-discovered the hard way.
+
+### 21.1 `AuditService.cs` lost one method — the file is owned by P1-14
+
+`AuditService.Snapshot(FinanceTransaction)` was deleted, because the `FinanceTransaction`
+entity no longer exists and the file would not compile. Nothing else in the file was
+touched, and `EntityFinanceTransaction` was **kept** (older `audit_logs` rows carry that
+string and the audit screen filters on it).
+
+If P1-14 needs a `before`/`after` snapshot for money, take it from the DTO the service
+already returns (`ExpenseDto`, `PaymentDto`) — there is no mutable money entity left to
+snapshot, which is the point of SPEC §4.1.
+
+### 21.2 New endpoint: `POST /api/admin/billing/accrual/run`
+
+`BillingCatalogController`, `[FinanceRole(FinanceAction.ManageSubscriptions)]` (admin +
+director). Optional `?month=yyyy-MM`; without it, every unbilled month. Idempotent.
+
+It exists because `BillingAccrualService` only ticks at startup and every 12 h, so a
+freshly seeded database had subscriptions and no invoices — the demo reset in
+`tools/seed_demo.py` and `tools/seed_billing.py` both depend on it. **The actor is the JWT
+subject**, unlike the background job, which falls back to the first director.
+
+### 21.3 New column: `expenses.teacher_id`
+
+Nullable, FK → `teachers.id` (RESTRICT), with `ck_expenses_teacher_only_salary`
+(`teacher_id is null or category = 'salary'`) and an index on `(teacher_id, on_date)`.
+`CreateExpenseRequest`, `ExpenseQuery` and `ExpenseDto` carry it; `ExpensesController`
+accepts `teacherId` in the body and as a query filter, and rejects `teacherName`
+(server-derived).
+
+Read it through `SalaryPaymentQuery` (`SchoolLms.Application/Billing/`), never directly:
+it also applies the "posted and not reversed" rule, without which a pending or reversed
+expense would count as salary paid.
+
+### 21.4 Two derived read-models replace the dropped columns
+
+| Dropped | Read it with |
+|---|---|
+| `students.balance` | `StudentBalanceQuery.ForAsync` / `.ForManyAsync` (bulk — use it for lists) |
+| `finance_transactions` (salary) | `SalaryPaymentQuery.ForTeacherAsync` / `.ForAllAsync` |
+
+Both are plain classes over `IAppDbContext`, constructed at the call site like
+`FinanceReportQueries` — **no `Program.cs` registration needed**. Both are N+1-free by
+construction; if you find yourself calling `ForAsync` inside a loop, the bulk method is
+what you want.
+
+### 21.5 Frontend surfaces that disappeared with the endpoints
+
+`TransactionFormModal.tsx`, `PaymentModal.tsx`, `api/mock/finance.ts` and the
+`overview`/`students` tabs of `FinancePage` were deleted; `api/services/finance.ts` keeps
+only `getSalaryReport`. Payment intake lives at `/cashier`, expenses at
+Moliya → Chiqimlar, debts at the Qarzdorlar tab.

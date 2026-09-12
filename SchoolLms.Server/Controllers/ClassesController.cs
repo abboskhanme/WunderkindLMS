@@ -52,19 +52,29 @@ public class ClassesController(AppDbContext db, AuditService audit) : Controller
     }
 
     /// <summary>
-    /// Sinfni tahrirlash. Oylik to'lov o'zgarsa va <paramref name="applyFee"/> = true bo'lsa
-    /// ("Ha"), yangi narx shu sinf o'quvchilarining JORIY oy to'loviga ham qo'llanadi (balans
-    /// farqqa moslab to'g'rilanadi). false bo'lsa ("Yo'q") — joriy oy eski narxda qoladi, yangi
-    /// narx keyingi oy hisoblashidan amal qiladi.
+    /// Sinfni tahrirlash.
+    ///
+    /// <para>
+    /// <b>P1-21: oylik to'lovni o'zgartirish endi PULGA TEGMAYDI</b> va shu bilan
+    /// <c>?applyFee=</c> parametri ham olib tashlandi. Narxni <c>SchoolClass.MonthlyFee</c>
+    /// emas, <c>student_subscriptions.monthly_amount</c> belgilaydi (SPEC §3.7);
+    /// sinf narxi endi faqat yangi obuna ochilayotganda TAKLIF qilinadigan
+    /// standart qiymat. Ilgari bu tugma bir bosishda butun sinfning joriy oyini
+    /// va qoldiqlarini qayta yozardi — yangi modelda bu obunadagi kelishilgan
+    /// summani jimgina bekor qilardi.
+    /// </para>
+    /// <para>
+    /// Mavjud obunalarning narxini o'zgartirish — "Moliya → Obunalar" ekranida,
+    /// har o'quvchi uchun alohida va audit bilan.
+    /// </para>
     /// </summary>
     [HttpPut("{id}")]
-    public async Task<ActionResult<SchoolClass>> Update(string id, ClassPayload p, [FromQuery] bool applyFee = false)
+    public async Task<ActionResult<SchoolClass>> Update(string id, ClassPayload p)
     {
         var cls = await db.Classes.FindAsync(id);
         if (cls is null) return NotFound();
 
         var oldFee = cls.MonthlyFee;
-        var oldName = cls.Name;   // o'quvchilar hozir shu nom bilan biriktirilgan
         cls.Name = p.Name;
         cls.Grade = p.Grade;
         cls.Language = p.Language;
@@ -73,37 +83,10 @@ public class ClassesController(AppDbContext db, AuditService audit) : Controller
 
         if (oldFee != cls.MonthlyFee)
         {
-            var applied = 0;
-            if (applyFee)
-            {
-                var month = TuitionService.CurrentMonth();
-                var students = await db.Students.Where(s => s.ClassName == oldName).ToListAsync();
-                var ids = students.Select(s => s.Id).ToList();
-                var charges = await db.MonthlyCharges
-                    .Where(c => c.Month == month && ids.Contains(c.StudentId))
-                    .ToListAsync();
-                var byStudent = charges.ToDictionary(c => c.StudentId);
-
-                foreach (var s in students)
-                {
-                    if (!byStudent.TryGetValue(s.Id, out var charge)) continue;
-                    // Yangi narx + o'quvchining chegirmasi.
-                    var newDiscount = TuitionService.DiscountFor(cls.MonthlyFee, s.DiscountPct, s.DiscountAmount);
-                    var newEffective = cls.MonthlyFee - newDiscount;
-                    var oldEffective = charge.Amount - charge.Discount;
-                    var delta = newEffective - oldEffective;
-                    if (delta == 0 && charge.Amount == cls.MonthlyFee && charge.Discount == newDiscount) continue;
-                    charge.Amount = cls.MonthlyFee;
-                    charge.Discount = newDiscount;
-                    s.Balance -= delta;
-                    applied++;
-                }
-            }
-
-            var summary = $"Oylik to'lov o'zgartirildi: {AuditService.Money(oldFee)} → {AuditService.Money(cls.MonthlyFee)} so'm ({cls.Name})";
-            summary += applyFee
-                ? $" — joriy oydan {applied} o'quvchiga qo'llandi"
-                : " — keyingi oydan amal qiladi";
+            var summary =
+                $"Oylik to'lov o'zgartirildi: {AuditService.Money(oldFee)} → "
+                + $"{AuditService.Money(cls.MonthlyFee)} so'm ({cls.Name})"
+                + " — mavjud obunalarga TA'SIR QILMAYDI, faqat yangi obuna uchun standart qiymat";
             audit.Record(AuditService.EntityClassFee, cls.Id, "update", summary,
                 before: new { MonthlyFee = oldFee, cls.Name }, after: new { cls.MonthlyFee, cls.Name });
         }

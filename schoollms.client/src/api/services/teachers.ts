@@ -8,7 +8,6 @@ import type {
 import { delay, uid } from '@/lib/utils'
 import { api, USE_MOCK } from '../client'
 import { teachersMock } from '../mock/teachers'
-import { financeMock } from '../mock/finance'
 
 /** newPassword — ixtiyoriy: tahrirda kiritilsa o'qituvchi akkaunti paroli almashtiriladi. */
 export type TeacherPayload = Omit<Teacher, 'id'> & { newPassword?: string }
@@ -131,13 +130,8 @@ export async function getSalaryLedger(id: string, from?: string, to?: string): P
       teacher.salaryStartMonth && teacher.salaryStartMonth > periodFrom
         ? teacher.salaryStartMonth
         : periodFrom
-    const pays = financeMock.filter(
-      (t) =>
-        t.teacherId === id &&
-        t.category === 'salary' &&
-        t.date.slice(0, 7) >= fromM &&
-        t.date.slice(0, 7) <= toM,
-    )
+    // Mock rejimida berilgan maosh yo'q: haqiqiy manba `expenses` (P1-21).
+    const pays: { date: string; amount: number; note?: string; month?: string }[] = []
     const months: MonthSalary[] = []
     let m = fromM
     while (m <= toM) {

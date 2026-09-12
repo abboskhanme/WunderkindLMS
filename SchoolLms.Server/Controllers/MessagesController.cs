@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using SchoolLms.Infrastructure.Data;
+using SchoolLms.Application.Billing;
 using SchoolLms.Application.Dtos;
 using SchoolLms.Domain;
 using SchoolLms.Application.Services;
@@ -20,6 +21,18 @@ namespace SchoolLms.Server.Controllers;
 public class MessagesController(AppDbContext db, ChatService chat, TelegramService telegram, FcmService fcm) : ControllerBase
 {
     private string Uid => User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "";
+
+    /// <summary>
+    /// <c>{balans}</c> / <c>{qarzdorlik}</c> o'rinbosarlari uchun qoldiq manbai.
+    ///
+    /// <para>
+    /// <b>P1-21:</b> ilgari o'quvchi qatoridagi <c>balance</c> ustuni o'qilardi;
+    /// endi qoldiq <c>invoices</c> va <c>payment_allocations</c> dan hisoblanadi.
+    /// Har e'lon uchun BITTA partiya so'rov yuboriladi (o'quvchi boshiga emas) —
+    /// 500 ta ota-onaga e'lon 500 ta so'rov bo'lib ketmasin.
+    /// </para>
+    /// </summary>
+    private StudentBalanceQuery Balances => new(db);
 
     // ---------- Sinflar ro'yxati (chat/e'lon tanlash uchun) ----------
 
@@ -127,9 +140,13 @@ public class MessagesController(AppDbContext db, ChatService chat, TelegramServi
         }
 
         var students = await studentsQ.ToListAsync();
+
+        // Qoldiq HISOBLANADI (P1-21) — bitta partiya so'rov, siklda emas.
+        var balances = await Balances.ForManyAsync([.. students.Select(s => s.Id)]);
+
         if (req.OnlyDebtors)
         {
-            students = students.Where(s => s.Balance < 0).ToList();
+            students = students.Where(s => balances.GetValueOrDefault(s.Id) < 0m).ToList();
             audience += " — qarzdorlar";
         }
         var byId = students.ToDictionary(s => s.Id);
@@ -144,7 +161,7 @@ public class MessagesController(AppDbContext db, ChatService chat, TelegramServi
         foreach (var r in regs)
         {
             if (!byId.TryGetValue(r.StudentId, out var s)) continue;
-            var message = $"📢 Maktab e'loni\n\n{Personalize(text, s, r)}";
+            var message = $"📢 Maktab e'loni\n\n{Personalize(text, s, r, balances.GetValueOrDefault(s.Id))}";
             if (await telegram.SendMessageAsync(r.ChatId, message)) sent++;
         }
 
@@ -166,16 +183,19 @@ public class MessagesController(AppDbContext db, ChatService chat, TelegramServi
             bc.CreatedAt.ToString("o"), bc.RecipientCount, bc.SentCount);
     }
 
-    /// <summary>E'lon matnidagi o'rinbosarlarni shu o'quvchi ma'lumotiga moslab almashtiradi.</summary>
-    private static string Personalize(string template, Student s, TelegramRegistration reg)
+    /// <summary>
+    /// E'lon matnidagi o'rinbosarlarni shu o'quvchi ma'lumotiga moslab almashtiradi.
+    /// <paramref name="balance"/> — HISOBLANGAN qoldiq (manfiy = qarz), P1-21.
+    /// </summary>
+    private static string Personalize(string template, Student s, TelegramRegistration reg, decimal balance)
     {
-        var debt = s.Balance < 0 ? -s.Balance : 0m;
+        var debt = balance < 0 ? -balance : 0m;
         var parent = string.IsNullOrWhiteSpace(reg.ParentName) ? "Ota-ona" : reg.ParentName;
         var result = template;
         result = ReplaceToken(result, "{fish}", s.FullName);
         result = ReplaceToken(result, "{sinf}", s.ClassName);
         result = ReplaceToken(result, "{qarzdorlik}", Money(debt));
-        result = ReplaceToken(result, "{balans}", Money(s.Balance));
+        result = ReplaceToken(result, "{balans}", Money(balance));
         result = ReplaceToken(result, "{ota-ona}", parent);
         result = ReplaceToken(result, "{ota_ona}", parent);
         result = ReplaceToken(result, "{telefon}", reg.Phone);
@@ -196,16 +216,17 @@ public class MessagesController(AppDbContext db, ChatService chat, TelegramServi
         return v.ToString("#,0", nfi) + " so'm";
     }
 
-    /// <summary>Push matnini o'quvchi (ota-ona akkaunti) ma'lumotiga moslaydi.</summary>
-    private static string PersonalizePush(string text, Student s)
+    /// <summary>Push matnini o'quvchi (ota-ona akkaunti) ma'lumotiga moslaydi.
+    /// <paramref name="balance"/> — HISOBLANGAN qoldiq (P1-21).</summary>
+    private static string PersonalizePush(string text, Student s, decimal balance)
     {
-        var debt = s.Balance < 0 ? -s.Balance : 0m;
+        var debt = balance < 0 ? -balance : 0m;
         var parent = string.IsNullOrWhiteSpace(s.ParentFullName) ? "Ota-ona" : s.ParentFullName;
         var r = text;
         r = ReplaceToken(r, "{fish}", s.FullName);
         r = ReplaceToken(r, "{sinf}", s.ClassName);
         r = ReplaceToken(r, "{qarzdorlik}", Money(debt));
-        r = ReplaceToken(r, "{balans}", Money(s.Balance));
+        r = ReplaceToken(r, "{balans}", Money(balance));
         r = ReplaceToken(r, "{ota-ona}", parent);
         r = ReplaceToken(r, "{ota_ona}", parent);
         r = ReplaceToken(r, "{telefon}", s.ParentPhone);
@@ -236,11 +257,15 @@ public class MessagesController(AppDbContext db, ChatService chat, TelegramServi
             .Where(r => ids.Contains(r.StudentId))
             .OrderByDescending(r => r.CreatedAt).ToListAsync();
 
+        // Qoldiq HISOBLANADI (P1-21) — bitta partiya so'rov butun ro'yxat uchun.
+        var balances = await Balances.ForManyAsync(ids);
+
         return regs.Select(r =>
         {
             byId.TryGetValue(r.StudentId, out var s);
             return new TelegramParentDto(
-                r.StudentId, s?.FullName ?? "", s?.ClassName ?? "", s?.Balance ?? 0m,
+                r.StudentId, s?.FullName ?? "", s?.ClassName ?? "",
+                balances.GetValueOrDefault(r.StudentId),
                 r.ParentName, r.Phone, r.ChatId.ToString(), r.CreatedAt.ToString("o"));
         }).ToList();
     }
@@ -336,6 +361,8 @@ public class MessagesController(AppDbContext db, ChatService chat, TelegramServi
 
         var meta = await db.SchoolMeta.FirstOrDefaultAsync();
         var json = meta?.FcmServiceAccountJson ?? "";
+        // Qoldiq HISOBLANADI (P1-21) — matn moslashdan OLDIN, bitta partiyada.
+        var balances = await Balances.ForManyAsync([.. students.Select(x => x.Id)]);
         var recipientCount = tokensByUser.Sum(kv => kv.Value.Count);
         var sent = 0;
         // Har bir foydalanuvchiga matn o'rinbosarlari moslab yuboriladi (o'quvchi/ota-ona ma'lumoti bilan).
@@ -345,8 +372,9 @@ public class MessagesController(AppDbContext db, ChatService chat, TelegramServi
             var b = body;
             if (studentByUser.TryGetValue(userId, out var st))
             {
-                t = PersonalizePush(title, st);
-                b = PersonalizePush(body, st);
+                var balance = balances.GetValueOrDefault(st.Id);
+                t = PersonalizePush(title, st, balance);
+                b = PersonalizePush(body, st, balance);
             }
             else if (teacherByUser.TryGetValue(userId, out var tch))
             {

@@ -116,7 +116,7 @@ export function AcademicYearPage() {
                 <Stat label="O'quvchilar" value={info.students} />
                 <Stat label="Sinflar" value={info.classes} />
                 <Stat label="Baholar" value={info.journalEntries} />
-                <Stat label="Moliya amallari" value={info.financeTransactions} />
+                <Stat label="Qabul qilingan to'lovlar" value={info.payments} />
               </div>
             </div>
           </Card>
@@ -161,8 +161,8 @@ export function AcademicYearPage() {
               <Toggle
                 checked={clearFinance}
                 onChange={setClearFinance}
-                label="Moliyani tozalash (to'lov / qarz / balans)"
-                hint="Moliyaviy amallar, oylik hisoblar va balanslar nolga tushadi (arxivda saqlanadi). Belgilanmasa — qarzlar yangi yilga o'tadi."
+                label="Obunalarni yopish (yangi yil narxlari uchun)"
+                hint="Barcha ochiq obunalar shu kunda yopiladi — yangi yil eski narx bilan hisoblanmaydi. To'lovlar, hisob-fakturalar va qarzlar O'CHIRILMAYDI: ular o'zgarmas moliyaviy tarix."
                 danger
               />
             </div>
@@ -258,7 +258,7 @@ export function AcademicYearPage() {
             {clearGrades && <li>Baho, jurnal, topshiriq, intizom, feedback, chat, e'lon tozalanadi</li>}
             {clearSchedule && <li>Dars jadvali (shablonlar) tozalanadi</li>}
             {clearQuarters && <li>Choraklar va bayram kunlari sanasi tozalanadi</li>}
-            {clearFinance && <li className="text-red-600">Moliya/balanslar tozalanadi</li>}
+            {clearFinance && <li>Ochiq obunalar yopiladi (to'lov tarixi tegilmaydi)</li>}
           </ul>
           {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-red-600">{error}</p>}
         </div>

@@ -99,7 +99,9 @@ public record ExpenseDto(
     DateOnly? ReversedOn,
     string? ReversedBy,
     string? ReversedByName,
-    string? ReversalReason);
+    string? ReversalReason,
+    string? TeacherId = null,
+    string? TeacherName = null);
 
 /// <summary>
 /// Yangi chiqim. <c>created_by</c> bu yerda YO'Q va bo'lmaydi — uni server
@@ -121,8 +123,15 @@ public record ExpenseDto(
 /// ruxsat bergan odamda qoladi.
 /// </para>
 /// </param>
+/// <param name="TeacherId">
+/// Maosh kimga berilyapti (<c>teachers.id</c>). FAQAT <c>salary</c> toifasida
+/// to'ldiriladi — boshqa toifada berilsa <b>400</b> (P1-21). Usiz maosh
+/// hisoboti "falonchi qancha oldi" degan savolga javob bera olmaydi;
+/// batafsil: <see cref="SalaryPaymentQuery"/>.
+/// </param>
 public record CreateExpenseRequest(
-    DateOnly OnDate, string Category, decimal Amount, string Method, string? Note);
+    DateOnly OnDate, string Category, decimal Amount, string Method, string? Note,
+    string? TeacherId = null);
 
 /// <summary>
 /// Chegaradan yuqori chiqimni tasdiqlash (SPEC §4.5). <c>approved_by</c> tanada
@@ -140,7 +149,8 @@ public record ReverseExpenseRequest(string Reason);
 /// <param name="Category">Bitta toifa; <c>null</c> — hammasi.</param>
 /// <param name="Status"><see cref="ExpenseStatus"/> qiymatlaridan biri; <c>null</c> — hammasi.</param>
 public record ExpenseQuery(
-    DateOnly? From = null, DateOnly? To = null, string? Category = null, string? Status = null);
+    DateOnly? From = null, DateOnly? To = null, string? Category = null, string? Status = null,
+    string? TeacherId = null);
 
 /// <summary>
 /// Chiqim kiritish, ro'yxat, tasdiqlash va storno. Batafsil: fayl boshidagi izoh.
@@ -227,6 +237,7 @@ public sealed class ExpenseService(IAppDbContext db, ILedgerService ledger) : IE
 
         var category = RequireCategory(request.Category);
         var method = RequireMethod(request.Method);
+        var teacherId = Trim(request.TeacherId);
 
         // Kelajak sanasi bilan chiqim — hali bo'lmagan pul harakati. U hali
         // yopilmagan davrga tushib, keyingi oyning P&L'ini jimgina o'zgartirardi.
@@ -246,12 +257,27 @@ public sealed class ExpenseService(IAppDbContext db, ILedgerService ledger) : IE
         var threshold = await ThresholdAsync(ct);
         var needsApproval = amount > threshold;
 
+        // Maosh chiqimi kimgaligi bilan yoziladi (P1-21). Boshqa toifada
+        // o'qituvchi ko'rsatilsa — bu so'rovdagi xato, uni JIM qabul qilish
+        // maosh hisobotiga hech qachon ko'rinmaydigan pul qo'shardi. Bazada
+        // ham shu qoida bor (`ck_expenses_teacher_only_salary`).
+        if (teacherId is not null)
+        {
+            if (category != SalaryPaymentQuery.SalaryCategory)
+                throw BillingRuleException.Invalid("teacher_not_allowed",
+                    $"O'qituvchi faqat '{SalaryPaymentQuery.SalaryCategory}' toifasida ko'rsatiladi.");
+
+            if (!await db.Teachers.AsNoTracking().AnyAsync(t => t.Id == teacherId, ct))
+                throw BillingRuleException.NotFound("teacher_not_found", "O'qituvchi topilmadi.");
+        }
+
         var expense = new Expense
         {
             OnDate = request.OnDate,
             Category = category,
             Amount = amount,
             Note = Trim(request.Note),
+            TeacherId = teacherId,
             CreatedBy = actorId,
             ApprovedBy = null,
             CreatedAt = AppClock.NowInstant,
@@ -411,6 +437,11 @@ public sealed class ExpenseService(IAppDbContext db, ILedgerService ledger) : IE
 
         if (query.From is { } from) q = q.Where(e => e.OnDate >= from);
         if (query.To is { } to) q = q.Where(e => e.OnDate <= to);
+        if (!string.IsNullOrWhiteSpace(query.TeacherId))
+        {
+            var teacherId = query.TeacherId.Trim();
+            q = q.Where(e => e.TeacherId == teacherId);
+        }
 
         if (!string.IsNullOrWhiteSpace(query.Category))
         {
@@ -530,6 +561,17 @@ public sealed class ExpenseService(IAppDbContext db, ILedgerService ledger) : IE
             .Select(u => new { u.Id, u.FullName })
             .ToDictionaryAsync(u => u.Id, u => u.FullName, ct);
 
+        // Maosh qatorlaridagi o'qituvchi ismlari — bitta so'rov, sikl ichida emas.
+        var teacherIds = expenses
+            .Select(e => e.TeacherId).Where(x => x is not null).Select(x => x!)
+            .Distinct().ToList();
+        var teacherNames = teacherIds.Count == 0
+            ? []
+            : await db.Teachers.AsNoTracking()
+                .Where(t => teacherIds.Contains(t.Id))
+                .Select(t => new { t.Id, t.FullName })
+                .ToDictionaryAsync(t => t.Id, t => t.FullName, ct);
+
         return [.. expenses.Select(e =>
         {
             var mine = entries.Where(l => l.RefId == e.Id).ToList();
@@ -566,7 +608,9 @@ public sealed class ExpenseService(IAppDbContext db, ILedgerService ledger) : IE
                 reversal?.EntryDate,
                 reversal?.CreatedBy,
                 reversal is null ? null : Name(reversal.CreatedBy),
-                reversal?.Memo);
+                reversal?.Memo,
+                e.TeacherId,
+                e.TeacherId is null ? null : teacherNames.GetValueOrDefault(e.TeacherId, "—"));
         })];
 
         string Name(string userId) => names.GetValueOrDefault(userId, "—");

@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using SchoolLms.Infrastructure.Data;
 using SchoolLms.Infrastructure.Auth;
 using SchoolLms.Application.Abstractions;
+using SchoolLms.Application.Billing;
 using SchoolLms.Application.Dtos;
 using SchoolLms.Domain;
 using SchoolLms.Application.Services;
@@ -677,8 +678,11 @@ public class StudentPortalController(
 
         var monthlyFee = cls?.MonthlyFee ?? 0m;
 
+        // Qoldiq HISOBLANADI (P1-21): o'quvchi qatorida saqlanmaydi.
+        var balance = await new StudentBalanceQuery(db).ForAsync(s.Id);
+
         return new StudentDashboardDto(
-            profile, meta, todayLessons, todayGrades, pending, s.Balance, monthlyFee);
+            profile, meta, todayLessons, todayGrades, pending, balance, monthlyFee);
     }
 
     // ---------- Foydalanuvchi sozlamalari (til, tema, bildirishnoma) ----------

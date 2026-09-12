@@ -72,6 +72,9 @@ public class ExpensesController(IExpenseService expenses) : ControllerBase
         "approvedBy", "approvedByName", "approverId",
         "reversedBy", "reversedByName", "reversedOn",
         "status", "postedOn", "settlementAccount",
+        // `teacherId` so'rovda KELADI (maosh kimga berilgani), `teacherName`
+        // esa serverda `teachers` jadvalidan olinadi — tanadan qabul qilinmaydi.
+        "teacherName",
     ];
 
     /// <summary>MVC ning o'z sozlamalari bilan bir xil: camelCase, registrga befarq.</summary>
@@ -96,14 +99,16 @@ public class ExpensesController(IExpenseService expenses) : ControllerBase
     /// </summary>
     /// <param name="status"><c>pending</c> | <c>posted</c> | <c>reversed</c>.
     /// Direktorning "tasdiq kutmoqda" ro'yxati — <c>?status=pending</c>.</param>
+    /// <param name="teacherId">Maosh chiqimlarini bitta o'qituvchi bo'yicha filtrlash (P1-21).</param>
     [HttpGet]
     [FinanceRole(FinanceAction.ViewBillingReports)]
     public async Task<ActionResult<IEnumerable<ExpenseDto>>> List(
         [FromQuery] DateOnly? from, [FromQuery] DateOnly? to,
         [FromQuery] string? category, [FromQuery] string? status,
+        [FromQuery] string? teacherId,
         CancellationToken ct)
     {
-        var list = await expenses.ListAsync(new ExpenseQuery(from, to, category, status), ct);
+        var list = await expenses.ListAsync(new ExpenseQuery(from, to, category, status, teacherId), ct);
         return Ok(list);
     }
 

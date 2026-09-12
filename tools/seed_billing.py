@@ -109,8 +109,9 @@ def main():
     print(f"Obunalar: {made} ta yangi")
 
     # --------------------------------------------------------- hisob-fakturalar
-    # Accrual hosted job startupda ishlaydi; qo'lda ham chaqirish mumkin bo'lsa chaqiramiz.
-    api("POST", "/api/admin/billing/accrual/run", {"month": "2026-09"}, quiet=True)
+    # Accrual fon xizmati startupda va har 12 soatda ishlaydi; obuna hozir
+    # ochilgani uchun uni kutmasdan qo'lda chaqiramiz (idempotent).
+    api("POST", "/api/admin/billing/accrual/run?month=2026-09", None, quiet=True)
     inv = api("GET", "/api/admin/finance/debtors", quiet=True) or []
     print(f"Qarzdorlar ro'yxati: {len(inv)} o'quvchi")
 
@@ -133,15 +134,26 @@ def main():
         if not cur:
             api("POST", "/api/cash/shifts/open", {"openingFloat": 0}, quiet=True)
         methods = ["cash", "cash", "cash", "card", "transfer", "online"]
+        # HAMMA qarz to'liq to'lanmaydi — ATAYLAB. Aks holda "Qarzdorlar" tabi,
+        # yig'ilish foizi va nomuvofiqlik ekranlari demo bazada BO'SH chiqardi
+        # va ularni ko'z bilan tekshirib bo'lmasdi. Ulush jadvali barqaror
+        # (tasodifiy emas), ya'ni qayta yurgizishda o'sha manzara qaytadi.
+        shares = [1.0, 1.0, 0.5, 1.0, 0.9, 0.8, 1.0, 0.0, 1.0, 0.25]
         for i, st in enumerate(students):
-            sug = api("GET", f"/api/cash/payments/suggest-allocation?studentId={st['id']}&amount=2250000",
+            share = shares[i % len(shares)]
+            if share == 0.0:
+                continue
+            # Katta "zond" summasi bilan so'raymiz: javobda har bir ochiq
+            # hisob-fakturaning to'liq qoldig'i keladi, keyin ulushini olamiz.
+            sug = api("GET", f"/api/cash/payments/suggest-allocation?studentId={st['id']}&amount=100000000",
                       quiet=True)
             allocs = sug if isinstance(sug, list) else ((sug or {}).get("allocations") or [])
             if not allocs:
                 continue
             # suggest-allocation qatorlari: invoiceId + suggested
-            allocs = [{"invoiceId": a["invoiceId"], "amount": a["suggested"]}
+            allocs = [{"invoiceId": a["invoiceId"], "amount": round(a["suggested"] * share, 2)}
                       for a in allocs if a.get("suggested", 0) > 0]
+            allocs = [a for a in allocs if a["amount"] > 0]
             if not allocs:
                 continue
             total = sum(a["amount"] for a in allocs)
@@ -159,22 +171,41 @@ def main():
     print(f"To'lovlar: {paid}")
 
     # ------------------------------------------------------------------ xarajat
-    # Eski moliya endpointi hali ishlaydi — xarajatlar shu orqali kiritiladi.
-    exp = [("salary", 58_000_000, "Sentabr maoshi"),
-           ("utilities", 7_400_000, "Elektr, suv, gaz"),
-           ("supplies", 9_800_000, "Darslik va kanselyariya"),
-           ("rent", 12_000_000, "Bino ijarasi"),
+    #
+    #  P1-21: eski `/api/admin/finance/transactions` o'chirildi. Chiqim endi
+    #  `POST /api/admin/expenses` orqali kiritiladi va DARHOL jurnalga tushadi
+    #  (`debit expense:<toifa> / credit cash|bank`) — ya'ni P&L va pul aylanmasi
+    #  uni ko'radi. Eski yo'lda chiqim jurnalga umuman tushmasdi.
+    #
+    #  SUMMALAR CHEGARADAN PAST. `billing_settings.expense_approval_threshold`
+    #  sukut bo'yicha 5 000 000 so'm; undan katta chiqim direktor tasdig'igacha
+    #  jurnalga TUSHMAYDI (SPEC §4.5) va hisobotda ko'rinmaydi. Shuning uchun
+    #  yirik xarajatlar haqiqiy hayotdagi kabi bo'laklarga bo'lingan.
+    #
+    #  Maosh bu ro'yxatda YO'Q: u o'qituvchiga bog'lanishi kerak
+    #  (`expenses.teacher_id`), buni `/api/admin/teachers/{id}/salary-payments`
+    #  qiladi — `tools/seed_demo.py` da.
+    exp = [("utilities", 2_400_000, "Elektr — sentabr"),
+           ("utilities", 1_900_000, "Suv va kanalizatsiya — sentabr"),
+           ("utilities", 3_100_000, "Tabiiy gaz — sentabr"),
+           ("supplies", 4_800_000, "Darsliklar"),
+           ("supplies", 3_200_000, "Kanselyariya"),
+           ("rent", 4_000_000, "Bino ijarasi — 1-to'lov"),
+           ("rent", 4_000_000, "Bino ijarasi — 2-to'lov"),
            ("repair", 4_600_000, "Sinf ta'miri")]
+    have_exp = api("GET", "/api/admin/expenses", quiet=True) or []
+    seen = {(e.get("category"), e.get("amount"), e.get("note")) for e in have_exp}
     n_exp = 0
     for i, (cat, amount, note) in enumerate(exp):
-        api("POST", "/api/admin/finance/transactions", {
-            "date": date(2026, 9, 2 + i).isoformat(), "direction": "expense",
-            "category": cat, "amount": amount, "note": note,
-            "studentId": None, "teacherId": None,
+        if (cat, float(amount), note) in seen:
+            continue
+        api("POST", "/api/admin/expenses", {
+            "onDate": date(2026, 9, 2 + i).isoformat(),
+            "category": cat, "amount": amount, "method": "transfer", "note": note,
         }, quiet=True)
         if LAST_OK:
             n_exp += 1
-    print(f"Xarajatlar: {n_exp}")
+    print(f"Xarajatlar: {n_exp} ta yangi")
 
     flow = api("GET", "/api/admin/finance/money-flow?from=2026-09-01&to=2026-09-30", quiet=True)
     if flow:

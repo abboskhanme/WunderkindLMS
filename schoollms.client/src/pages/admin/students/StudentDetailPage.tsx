@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import {
   ArrowLeft, GraduationCap, CalendarCheck, ShieldAlert, ClipboardCheck,
-  User, Phone, Wallet, BookOpen, MapPin, Cake, CalendarPlus, Users, Percent, IdCard,
+  User, Phone, Wallet, BookOpen, MapPin, Cake, CalendarPlus, Users, IdCard,
 } from 'lucide-react'
 import { genderLabels } from '@/config/constants'
 import {
@@ -11,7 +11,7 @@ import {
   ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts'
 import { getStudentNotebook, type StudentNotebook } from '@/api/services/studentNotebook'
-import { cn, formatDate, formatMoney } from '@/lib/utils'
+import { cn, formatDate } from '@/lib/utils'
 import { Card } from '@/components/ui/Card'
 import { StatCard } from '@/components/ui/StatCard'
 import { Loader } from '@/components/ui/Loader'
@@ -206,20 +206,13 @@ export function StudentDetailPage() {
           <InfoRow icon={GraduationCap} label="Sinf rahbari" value={data.homeroomTeacher || '—'} />
           <InfoRow icon={User} label="Ota-ona" value={data.parentFullName || '—'} />
           <InfoRow icon={Phone} label="Ota-ona telefoni" value={data.parentPhone || '—'} />
-          <InfoRow
-            icon={Percent}
-            label="Chegirma"
-            value={
-              data.discountPct > 0 || data.discountAmount > 0
-                ? [
-                    data.discountPct > 0 ? `${data.discountPct}%` : null,
-                    data.discountAmount > 0 ? formatMoney(data.discountAmount) : null,
-                  ]
-                    .filter(Boolean)
-                    .join(' + ') + (data.discountNote ? ` — ${data.discountNote}` : '')
-                : 'Yo\'q'
-            }
-          />
+          {/*
+            Chegirma qatori BU YERDAN OLIB TASHLANDI (P1-21). Sabab: chegirma
+            endi TOIFAGA bog'liq (o'qish alohida, avtobus alohida) va direktor
+            tasdig'idan o'tadi. Bitta "20%" yozuvi qaysi toifa ekanini
+            aytmasdi. Toifa kesimidagi haqiqiy holat pastdagi "Moliya"
+            bo'limida — hisob-fakturadagi `discount` ustuni bilan.
+          */}
         </div>
         {(data.photoUrl || data.parentPassportUrl) && (
           <div className="mt-4 flex flex-wrap gap-4 border-t border-slate-100 pt-4">

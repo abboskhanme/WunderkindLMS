@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { StudentViewModal } from './StudentViewModal'
-import { Plus, Search, Pencil, Trash2, Send, Download, X, Wallet, History, Archive, RotateCcw, FileDown, Upload } from 'lucide-react'
+import { Plus, Search, Pencil, Trash2, Send, Download, X, History, Archive, RotateCcw, FileDown, Upload } from 'lucide-react'
 import type { Gender, Student } from '@/types'
 import type { StudentPayload, StudentImportResult } from '@/api/services/students'
 import {
@@ -12,7 +12,6 @@ import {
   createStudent,
   updateStudent,
   deleteStudent,
-  addPayment,
   downloadStudentCredentials,
   downloadStudentImportTemplate,
   importStudents,
@@ -27,7 +26,6 @@ import { Loader } from '@/components/ui/Loader'
 import { Modal } from '@/components/ui/Modal'
 import { StudentFormModal } from './StudentFormModal'
 import { SmsModal } from './SmsModal'
-import { PaymentModal } from './PaymentModal'
 import { PaymentHistoryModal } from './PaymentHistoryModal'
 
 type BalanceFilter = 'all' | 'debt' | 'paid'
@@ -64,7 +62,6 @@ export function StudentsPage() {
   const [viewing, setViewing] = useState<Student | null>(null)
   const openNotebook = (s: Student) => navigate(`/admin/students/${s.id}`)
   const [smsOpen, setSmsOpen] = useState(false)
-  const [paying, setPaying] = useState<Student | null>(null)
   const [historyOf, setHistoryOf] = useState<Student | null>(null)
 
   // Excel'dan ommaviy import
@@ -88,16 +85,6 @@ export function StudentsPage() {
       setImporting(false)
     }
   }
-
-  // Chegirma o'zgarganda — yangi chegirmani joriy oyga qo'llashni so'rash
-  const [discountPrompt, setDiscountPrompt] = useState<{
-    id: string
-    values: StudentPayload
-    oldPct: number
-    oldAmount: number
-    newPct: number
-    newAmount: number
-  } | null>(null)
 
   useEffect(() => {
     setLoading(true)
@@ -123,7 +110,7 @@ export function StudentsPage() {
     const matchGender = genderFilter === 'all' || s.gender === genderFilter
     const matchBalance =
       balanceFilter === 'all' ||
-      (balanceFilter === 'debt' ? s.balance < 0 : s.balance >= 0)
+      (balanceFilter === 'debt' ? (s.balance ?? 0) < 0 : (s.balance ?? 0) >= 0)
     return matchSearch && matchClass && matchGender && matchBalance
   })
 
@@ -158,7 +145,7 @@ export function StudentsPage() {
   const handleExport = () => {
     exportToCsv(
       'oquvchilar.csv',
-      ['F.I.SH', 'Sinf', 'Jinsi', "Tug'ilgan kun", 'Manzil', 'Ota-ona', 'Telefon', 'Balans', 'Chegirma'],
+      ['F.I.SH', 'Sinf', 'Jinsi', "Tug'ilgan kun", 'Manzil', 'Ota-ona', 'Telefon', 'Balans'],
       selectedStudents.map((s) => [
         s.fullName,
         s.className,
@@ -167,45 +154,17 @@ export function StudentsPage() {
         s.address,
         s.parentFullName,
         s.parentPhone,
-        formatMoney(s.balance),
-        s.discountPct > 0 || s.discountAmount > 0
-          ? [
-              s.discountPct > 0 ? `${s.discountPct}%` : null,
-              s.discountAmount > 0 ? formatMoney(s.discountAmount) : null,
-            ]
-              .filter(Boolean)
-              .join(' + ') + (s.discountNote ? ` — ${s.discountNote}` : '')
-          : '',
+        formatMoney(s.balance ?? 0),
       ]),
     )
-  }
-
-  const applyUpdate = (id: string, values: StudentPayload, applyDiscount: boolean) => {
-    updateStudent(id, values, applyDiscount)
-    // balansni saqlab qolib, qolgan maydonlarni yangilaymiz
-    setStudents((prev) => prev.map((s) => (s.id === id ? { ...s, ...values } : s)))
-  }
-
-  const resolveDiscountPrompt = (applyDiscount: boolean) => {
-    if (!discountPrompt) return
-    applyUpdate(discountPrompt.id, discountPrompt.values, applyDiscount)
-    setDiscountPrompt(null)
   }
 
   const handleFormSubmit = (values: StudentPayload) => {
     if (editing) {
       const id = editing.id
-      const newPct = values.discountPct ?? 0
-      const newAmount = values.discountAmount ?? 0
-      const oldPct = editing.discountPct
-      const oldAmount = editing.discountAmount
-      const discountChanged = newPct !== oldPct || newAmount !== oldAmount
-      if (discountChanged) {
-        // "Ha/Yo'q" tasdiq dialog'i — joriy oyga qo'llash yoki keyingi oydan?
-        setDiscountPrompt({ id, values, oldPct, oldAmount, newPct, newAmount })
-      } else {
-        applyUpdate(id, values, false)
-      }
+      updateStudent(id, values)
+      // balansni saqlab qolib, qolgan maydonlarni yangilaymiz
+      setStudents((prev) => prev.map((s) => (s.id === id ? { ...s, ...values } : s)))
     } else {
       createStudent(values).then((created) => {
         setStudents((prev) => [created, ...prev])
@@ -217,15 +176,9 @@ export function StudentsPage() {
     setEditing(null)
   }
 
-  const handlePayment = (amount: number, month: string) => {
-    if (!paying) return
-    const id = paying.id
-    addPayment(id, amount, month)
-    setStudents((prev) =>
-      prev.map((s) => (s.id === id ? { ...s, balance: s.balance + amount } : s)),
-    )
-    setPaying(null)
-  }
+  // P1-21: "To'lov kiritish" tugmasi bu yerdan olib tashlandi. Pul faqat
+  // kassada qabul qilinadi (ochiq smena + kassir + chek raqami, SPEC §4.2) —
+  // kassir ish o'rni `/cashier`. Bu yerda to'lov TARIXI o'qish uchun qoladi.
 
   const handleDelete = (s: Student) => {
     if (!confirm(`"${s.fullName}" o'quvchini BUTUNLAY o'chirishni tasdiqlaysizmi? Bu amal qaytarib bo'lmaydi.`)) return
@@ -489,14 +442,16 @@ export function StudentsPage() {
                       <span
                         className={cn(
                           'font-medium',
-                          s.balance < 0
+                          (s.balance ?? 0) < 0
                             ? 'text-red-600'
-                            : s.balance > 0
+                            : (s.balance ?? 0) > 0
                               ? 'text-emerald-600'
                               : 'text-slate-500',
                         )}
                       >
-                        {s.balance > 0 ? `+${formatMoney(s.balance)}` : formatMoney(s.balance)}
+                        {(s.balance ?? 0) > 0
+                          ? `+${formatMoney(s.balance ?? 0)}`
+                          : formatMoney(s.balance ?? 0)}
                       </span>
                     </td>
                     {tab === 'archived' && (
@@ -511,7 +466,6 @@ export function StudentsPage() {
                       <div className="flex items-center justify-end gap-0.5">
                         {tab === 'active' ? (
                           <>
-                            <IconBtn icon={Wallet} title="To'lov kiritish" onClick={() => setPaying(s)} />
                             <IconBtn icon={History} title="To'lov tarixi" onClick={() => setHistoryOf(s)} />
                             <IconBtn
                               icon={Pencil}
@@ -563,7 +517,6 @@ export function StudentsPage() {
       />
       <StudentViewModal student={viewing} onClose={() => setViewing(null)} />
       <SmsModal open={smsOpen} onClose={() => setSmsOpen(false)} recipients={selectedStudents} />
-      <PaymentModal student={paying} onClose={() => setPaying(null)} onSubmit={handlePayment} />
       <PaymentHistoryModal student={historyOf} onClose={() => setHistoryOf(null)} />
 
       {/* Excel'dan import natijasi */}
@@ -662,50 +615,6 @@ export function StudentsPage() {
                 className={cn(control, 'w-full')}
                 autoFocus
               />
-            </div>
-          </div>
-        )}
-      </Modal>
-
-      <Modal
-        open={!!discountPrompt}
-        onClose={() => setDiscountPrompt(null)}
-        title="Chegirmani joriy oyga qo'llash"
-        size="sm"
-        footer={
-          <>
-            <Button variant="secondary" onClick={() => resolveDiscountPrompt(false)}>
-              Yo'q — keyingi oydan
-            </Button>
-            <Button onClick={() => resolveDiscountPrompt(true)}>Ha — joriy oydan</Button>
-          </>
-        }
-      >
-        {discountPrompt && (
-          <div className="space-y-3 text-sm text-slate-600">
-            <p>
-              <span className="font-medium text-slate-800">
-                {discountPrompt.values.fullName}
-              </span>{' '}
-              o'quvchisining chegirmasi{' '}
-              <span className="font-medium">
-                {discountPrompt.oldPct}% / {formatMoney(discountPrompt.oldAmount)}
-              </span>{' '}
-              →{' '}
-              <span className="font-medium">
-                {discountPrompt.newPct}% / {formatMoney(discountPrompt.newAmount)}
-              </span>{' '}
-              ga o'zgardi. Yangi chegirma qachondan qo'llansin?
-            </p>
-            <div className="rounded-lg bg-slate-50 px-3 py-2 text-slate-500">
-              <p>
-                <b className="text-slate-700">Ha</b> — joriy oy hisobi yangi chegirma bilan qayta
-                hisoblanadi (balans farqqa moslab to'g'rilanadi).
-              </p>
-              <p className="mt-1">
-                <b className="text-slate-700">Yo'q</b> — joriy oy eski hisobda qoladi, yangi
-                chegirma keyingi oydan amal qiladi.
-              </p>
             </div>
           </div>
         )}

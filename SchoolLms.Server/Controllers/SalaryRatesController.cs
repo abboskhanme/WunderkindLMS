@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using SchoolLms.Application.Billing;
 using SchoolLms.Application.Dtos;
 using SchoolLms.Application.Services;
 using SchoolLms.Domain;
@@ -98,10 +99,13 @@ public class SalaryRatesController(AppDbContext db, AuditService audit) : Contro
         var missed = absentDays.Sum(x => x.Lessons);
         var net = Math.Max(0, monthlyLessons - missed);
 
-        var paid = await db.FinanceTransactions
-            .Where(x => x.TeacherId == t.Id && x.Direction == "expense" && x.Category == "salary"
-                        && x.Date.StartsWith(m))
-            .SumAsync(x => (decimal?)x.Amount) ?? 0m;
+        // Berilgan maosh — `expenses` dan (P1-21). Faqat jurnalga tushgan va
+        // storno qilinmagan chiqim sanaladi: tasdiq kutayotgani hali berilmagan
+        // pul (SPEC §4.5), uni "berilgan" deb ko'rsatish qoldiqni kam ko'rsatardi.
+        var monthStart = new DateOnly(int.Parse(m[..4]), int.Parse(m[5..7]), 1);
+        var paid = (await new SalaryPaymentQuery(db).ForTeacherAsync(
+                t.Id, monthStart, monthStart.AddMonths(1).AddDays(-1)))
+            .Sum(x => x.Amount);
 
         var baseSalary = net * rate;                              // davomatga moslangan, ustamasiz
         var bonusAmount = baseSalary * t.BonusPct / 100m;         // ustama summasi

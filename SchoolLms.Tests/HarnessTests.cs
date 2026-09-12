@@ -26,13 +26,24 @@ public class HarnessTests(ApiFixture fixture)
         var tables = await ReadTableNamesAsync(fixture.Database.OwnerConnectionString);
 
         // Nomlar snake_case bo'lishi kerak — UseSnakeCaseNamingConvention ishlayotganini
-        // ham shu tekshiradi (aks holda "FinanceTransactions" bo'lardi).
+        // ham shu tekshiradi (aks holda "WeekAssignments" bo'lardi).
         foreach (var expected in new[]
                  {
                      "users", "students", "teachers", "classes", "subjects",
-                     "finance_transactions", "monthly_charges", "audit_logs", "school_meta",
+                     "week_assignments", "audit_logs", "school_meta",
                  })
             Assert.Contains(expected, tables);
+
+        // P1-21 — eski moliya yo'li o'chirilgan. Migratsiya zanjiri toza bazada
+        // ham shu holatga kelishi SHART: aks holda ilova mavjud bo'lmagan
+        // jadvalga so'rov yuborib, faqat ish vaqtida yiqilardi.
+        foreach (var dropped in new[] { "finance_transactions", "monthly_charges" })
+            Assert.DoesNotContain(dropped, tables);
+
+        var studentColumns = await ReadColumnNamesAsync(
+            fixture.Database.OwnerConnectionString, "students");
+        foreach (var dropped in new[] { "balance", "discount_pct", "discount_amount", "discount_note" })
+            Assert.DoesNotContain(dropped, studentColumns);
 
         // Sxema egasi haqiqatan owner roli — grant'lar shunga tayanadi (P1-02/P1-22).
         var owner = await ScalarAsync<string>(
@@ -167,6 +178,23 @@ public class HarnessTests(ApiFixture fixture)
         await conn.OpenAsync();
         await using var cmd = new NpgsqlCommand(
             "SELECT tablename FROM pg_tables WHERE schemaname = 'public'", conn);
+        await using var reader = await cmd.ExecuteReaderAsync();
+
+        var names = new HashSet<string>(StringComparer.Ordinal);
+        while (await reader.ReadAsync()) names.Add(reader.GetString(0));
+        return names;
+    }
+
+    /// <summary>Bitta jadvalning ustun nomlari (P1-21 da o'chirilganini tekshirish uchun).</summary>
+    private static async Task<HashSet<string>> ReadColumnNamesAsync(
+        string connectionString, string table)
+    {
+        await using var conn = new NpgsqlConnection(connectionString);
+        await conn.OpenAsync();
+        await using var cmd = new NpgsqlCommand(
+            "SELECT column_name FROM information_schema.columns "
+            + "WHERE table_schema = 'public' AND table_name = @t", conn);
+        cmd.Parameters.AddWithValue("t", table);
         await using var reader = await cmd.ExecuteReaderAsync();
 
         var names = new HashSet<string>(StringComparer.Ordinal);

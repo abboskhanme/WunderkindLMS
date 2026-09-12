@@ -16,9 +16,10 @@ namespace SchoolLms.Server.Controllers;
 [Route("api/admin/attendance")]
 public class AttendanceController(AppDbContext db) : ControllerBase
 {
+    // Davomat ro'yxatida pul KO'RSATILMAYDI — `Balance` null qoladi (P1-21).
     private static StudentDto Map(Student s) => new(
         s.Id, s.FullName, s.BirthDate, s.Address, s.Gender,
-        s.ParentFullName, s.ParentPhone, s.ClassName, s.EnrollmentDate, s.Balance);
+        s.ParentFullName, s.ParentPhone, s.ClassName, s.EnrollmentDate);
 
     [HttpGet]
     public async Task<ActionResult<DailyAttendanceDto>> GetDaily(

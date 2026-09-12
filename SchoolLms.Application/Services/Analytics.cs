@@ -13,9 +13,12 @@ public static class Analytics
 
     private static double Round1(double v) => Math.Round(v, 1);
 
+    // Reyting/o'zlashtirish ro'yxatida pul KO'RSATILMAYDI — `Balance` null
+    // qoladi (P1-21). Qoldiq kerak bo'lgan ekranlar uni `StudentBalanceQuery`
+    // dan alohida oladi.
     private static StudentDto Map(Student s) => new(
         s.Id, s.FullName, s.BirthDate, s.Address, s.Gender,
-        s.ParentFullName, s.ParentPhone, s.ClassName, s.EnrollmentDate, s.Balance);
+        s.ParentFullName, s.ParentPhone, s.ClassName, s.EnrollmentDate);
 
     public static ClassResult BuildClass(
         SchoolClass cls,

@@ -205,7 +205,12 @@ Meanwhile the production path **is** verified, outside the xUnit harness, by:
 It starts a throwaway Postgres 17, runs the real `deploy/init-roles.sql` at initdb time, applies
 the migration as `schoollms_owner`, and asserts SQLSTATE `42501` on `UPDATE`/`DELETE` for all
 three immutable tables (plus the allocation trigger, the `approved_by <> created_by` constraint,
-the single-open-shift index, seed idempotency and "zero `DROP` in the migration script").
+the single-open-shift index, seed idempotency and the migration-script `DROP` allow-list).
+
+Note on that last check: it used to assert "zero `DROP`". Since P1-21
+(`RetireLegacyFinance`) deliberately drops `finance_transactions` and `monthly_charges`,
+it now asserts that the set of `DROP` statements is **exactly** those two. A new drop —
+the kind `--autogenerate` emits by accident — still turns the script red.
 It is not a substitute for P1-22 — it does not go through the HTTP layer or the RBAC matrix —
 but it means the `REVOKE` is not shipping untested.
 

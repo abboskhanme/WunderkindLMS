@@ -356,10 +356,9 @@ public class PaymentsTests(ApiFixture fixture)
 
         await using var db = NewDb();
 
-        // Eski `students.balance` ustuni TEGILMAGAN: qarz ham, kredit ham
-        // hisob-faktura va taqsimotlardan hisoblanadi (SPEC §3.7).
-        Assert.Equal(0m, await db.Students.AsNoTracking()
-            .Where(s => s.Id == world.StudentId).Select(s => s.Balance).SingleAsync());
+        // Qoldiq HISOBLANADI, saqlanmaydi (P1-21): hisob-faktura 400 000 to'liq
+        // yopildi, ortgan 600 000 esa taqsimlanmagan kredit — ya'ni avans.
+        Assert.Equal(600_000m, await new StudentBalanceQuery(db).ForAsync(world.StudentId));
 
         // Jurnal to'liq summani oladi: qarz shuncha kamayadi, ortig'i avans.
         Assert.Equal(1_000_000m, await db.LedgerEntries.AsNoTracking()

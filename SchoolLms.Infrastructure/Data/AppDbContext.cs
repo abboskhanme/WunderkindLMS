@@ -37,8 +37,6 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<DisciplinePoint> DisciplinePoints => Set<DisciplinePoint>();
     public DbSet<EvaluationType> EvaluationTypes => Set<EvaluationType>();
     public DbSet<EvaluationGrade> EvaluationGrades => Set<EvaluationGrade>();
-    public DbSet<FinanceTransaction> FinanceTransactions => Set<FinanceTransaction>();
-    public DbSet<MonthlyCharge> MonthlyCharges => Set<MonthlyCharge>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
     public DbSet<SchoolMeta> SchoolMeta => Set<SchoolMeta>();
     public DbSet<SchoolYearArchive> SchoolYearArchives => Set<SchoolYearArchive>();
@@ -66,8 +64,8 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<LmsMaterial> LmsMaterials => Set<LmsMaterial>();
     public DbSet<LmsProgress> LmsProgresses => Set<LmsProgress>();
 
-    // Moliya (billing) — SPEC §3.7, P1-04. Eski FinanceTransactions/MonthlyCharges bilan
-    // YONMA-YON: ular P1-21 da olib tashlanadi. Jadval konfiguratsiyasi BillingModel.cs da.
+    // Moliya (billing) — SPEC §3.7, P1-04. Eski yassi moliya jadvallari P1-21 da
+    // olib tashlandi; bu to'plam YAGONA pul manbai. Konfiguratsiya BillingModel.cs da.
     public DbSet<FeeCategory> FeeCategories => Set<FeeCategory>();
     public DbSet<StudentSubscription> StudentSubscriptions => Set<StudentSubscription>();
     public DbSet<Discount> Discounts => Set<Discount>();
@@ -90,13 +88,9 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
         // bloklaydi (parallel ro'yxatdan o'tish login'ni buzmasin).
         b.Entity<AppUser>().HasIndex(u => u.Email).IsUnique();
 
-        // Pul maydonlari uchun aniqlik (SQL Server decimal(18,2))
-        b.Entity<Student>().Property(s => s.Balance).HasPrecision(18, 2);
-        b.Entity<Student>().Property(s => s.DiscountAmount).HasPrecision(18, 2);
+        // Eski (Faza 0) pul maydonlari uchun aniqlik. Yangi moliya jadvallari
+        // numeric(14,2) da — BillingModel.cs ga qarang.
         b.Entity<SchoolClass>().Property(c => c.MonthlyFee).HasPrecision(18, 2);
-        b.Entity<FinanceTransaction>().Property(t => t.Amount).HasPrecision(18, 2);
-        b.Entity<MonthlyCharge>().Property(c => c.Amount).HasPrecision(18, 2);
-        b.Entity<MonthlyCharge>().Property(c => c.Discount).HasPrecision(18, 2);
         b.Entity<Teacher>().Property(t => t.Salary).HasPrecision(18, 2);
 
         // ScheduleTemplate -> Lessons (egasiz/owned emas, oddiy bog'liqlik)
@@ -113,8 +107,6 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
         b.Entity<WeekAssignment>().HasIndex(e => new { e.ClassId, e.Quarter });
         b.Entity<Dish>().HasIndex(d => d.Date);
         b.Entity<ScheduleTemplate>().HasIndex(t => t.ClassId);
-        b.Entity<FinanceTransaction>().HasIndex(t => t.Date);
-        b.Entity<MonthlyCharge>().HasIndex(c => new { c.StudentId, c.Month }).IsUnique();
         b.Entity<AuditLog>().HasIndex(a => new { a.EntityType, a.EntityId });
         b.Entity<AuditLog>().HasIndex(a => a.Timestamp);
         b.Entity<AuditLog>().HasIndex(a => a.StudentId);

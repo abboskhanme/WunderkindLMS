@@ -59,20 +59,9 @@ export function StudentViewModal({ student, onClose }: Props) {
           <Row label="Sinf" value={student.className} />
           <Row label="Ota-onasi" value={student.parentFullName} />
           <Row label="Ota-onasi raqami" value={student.parentPhone} />
-          <Row label="Balans" value={formatMoney(student.balance)} />
-          {(student.discountPct > 0 || student.discountAmount > 0) && (
-            <Row
-              label="Chegirma"
-              value={
-                [
-                  student.discountPct > 0 ? `${student.discountPct}%` : null,
-                  student.discountAmount > 0 ? `${formatMoney(student.discountAmount)}` : null,
-                ]
-                  .filter(Boolean)
-                  .join(' + ') + (student.discountNote ? ` — ${student.discountNote}` : '')
-              }
-            />
-          )}
+          {/* Qoldiq HISOBLANADI (P1-21). Chegirma bu yerda ko'rsatilmaydi —
+              u toifaga bog'liq va "Moliya → Chegirmalar" da turadi. */}
+          <Row label="Balans" value={formatMoney(student.balance ?? 0)} />
           <CredentialsBox
             credentials={credentials}
             onReset={async () => {

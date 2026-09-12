@@ -35,9 +35,6 @@ const empty: StudentPayload = {
   parentPassportUrl: null,
   className: '',
   enrollmentDate: new Date().toISOString().slice(0, 10),
-  discountPct: 0,
-  discountAmount: 0,
-  discountNote: '',
   subGroup: 0,
 }
 
@@ -110,9 +107,6 @@ export function StudentFormModal({ open, onClose, onSubmit, initial }: Props) {
         parentPassportUrl: initial.parentPassportUrl ?? null,
         className: initial.className,
         enrollmentDate: initial.enrollmentDate,
-        discountPct: initial.discountPct,
-        discountAmount: initial.discountAmount,
-        discountNote: initial.discountNote,
         subGroup: initial.subGroup,
       })
     } else {
@@ -297,42 +291,15 @@ export function StudentFormModal({ open, onClose, onSubmit, initial }: Props) {
           </div>
         </Section>
 
-        {/* ---------- Chegirma ---------- */}
-        <Section title="Chegirma">
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-            <Input
-              label="Foiz (%)"
-              type="number"
-              min={0}
-              max={100}
-              value={form.discountPct ?? 0}
-              onChange={(e) =>
-                update('discountPct', Math.max(0, Math.min(100, Number(e.target.value) || 0)))
-              }
-            />
-            <Input
-              label="Aniq summa (so'm)"
-              type="number"
-              min={0}
-              step={1000}
-              value={form.discountAmount ?? 0}
-              onChange={(e) =>
-                update('discountAmount', Math.max(0, Number(e.target.value) || 0))
-              }
-            />
-          </div>
-          <div className="mt-3">
-            <Input
-              label="Izoh (sabab)"
-              placeholder="masalan: Aka-uka chegirmasi"
-              value={form.discountNote ?? ''}
-              onChange={(e) => update('discountNote', e.target.value)}
-            />
-          </div>
-          <p className="mt-1 text-xs text-slate-400">
-            Avval foiz ayriladi, keyin aniq summa. Oylik 0 dan past bo'lmaydi.
-          </p>
-        </Section>
+        {/*
+          Chegirma maydonlari BU YERDAN OLIB TASHLANDI (P1-21).
+          Mijoz javobi (SPEC §8.1 Q5): har qanday chegirma direktor tasdig'ini
+          talab qiladi. O'quvchi kartochkasidagi maydon esa tasdiqsiz chegirma
+          berishning ochiq yo'li edi. Yangi joyi — "Moliya → Chegirmalar":
+          chegirma `pending` bo'lib tug'iladi va tasdiqlangunicha hisob-kitobga
+          ta'sir qilmaydi. Oylik summa ham bu yerda emas — u obunada
+          ("Moliya → Obunalar", toifa bo'yicha).
+        */}
 
         {/* ---------- Login va parol (faqat tahrirda) ---------- */}
         {initial && (

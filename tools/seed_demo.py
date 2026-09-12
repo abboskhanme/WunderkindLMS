@@ -245,17 +245,27 @@ CAMERAS = [
     ("Hovli — orqa tomon", "Tashqi hudud"),      ("Avtoturargoh", "Tashqi hudud"),
 ]
 
-FINANCE = [
-    ("income",  "donation", 15_000_000, "Homiy tashkilotdan kutubxona uchun"),
-    ("income",  "rent_in",   3_500_000, "Sport zalini ijaraga berish (sentabr)"),
-    ("income",  "other",     1_200_000, "Maktab yarmarkasidan tushum"),
-    ("expense", "salary",   58_000_000, "Avgust oyi maoshi"),
-    ("expense", "utilities", 7_400_000, "Elektr, suv, gaz — avgust"),
-    ("expense", "supplies",  9_800_000, "Darslik va kanselyariya"),
-    ("expense", "rent",     12_000_000, "Bino ijarasi — sentabr"),
-    ("expense", "repair",    4_600_000, "Sinf xonalarini ta'mirlash"),
-    ("expense", "supplies",  3_200_000, "Oshxona jihozlari"),
-    ("expense", "other",     1_900_000, "Transport xarajatlari"),
+# Chiqimlar — `POST /api/admin/expenses` uchun (P1-21).
+#
+# DIQQAT — TASDIQ CHEGARASI. `billing_settings.expense_approval_threshold`
+# sukut bo'yicha 5 000 000 so'm; undan KATTA chiqim jurnalga darhol tushmaydi,
+# direktor tasdig'ini kutadi (SPEC §4.5) va hisobotda ko'rinmaydi. Demo
+# ma'lumot "bo'sh hisobot" bo'lib qolmasligi uchun katta summalar bo'laklarga
+# bo'lingan: bu sun'iy emas — maktab ham elektr pulini bir chekda to'lamaydi.
+#
+# Maosh bu ro'yxatda YO'Q: u o'qituvchiga bog'lanishi kerak, shuning uchun
+# `/api/admin/teachers/{id}/salary-payments` orqali kiritiladi (pastda).
+EXPENSES = [
+    ("utilities", 2_400_000, "Elektr — sentabr"),
+    ("utilities", 1_900_000, "Suv va kanalizatsiya — sentabr"),
+    ("utilities", 3_100_000, "Tabiiy gaz — sentabr"),
+    ("supplies",  4_800_000, "Darsliklar (1-yarim yillik)"),
+    ("supplies",  3_200_000, "Oshxona jihozlari"),
+    ("supplies",  1_800_000, "Kanselyariya"),
+    ("rent",      4_000_000, "Bino ijarasi — 1-to'lov"),
+    ("rent",      4_000_000, "Bino ijarasi — 2-to'lov"),
+    ("repair",    4_600_000, "Sinf xonalarini ta'mirlash"),
+    ("other",     1_900_000, "Transport xarajatlari"),
 ]
 
 TOPIC_TITLES = [
@@ -278,6 +288,12 @@ CHAT_MESSAGES = [
 
 TODAY = date(2026, 9, 9)
 DEMO_PASSWORD = "Demo123!"
+
+# Kassa smenasi va to'lovlar kassir nomidan yoziladi (SPEC §4.4: `cashier_id`
+# JWT'dan olinadi, so'rov tanasidan EMAS). Akkaunt bo'lmasa to'lov bosqichi
+# o'tkazib yuboriladi — qolgan hamma narsa baribir seed qilinadi.
+CASHIER_LOGIN = "kassir"
+CASHIER_PASSWORD = "Kassir@Wk2026!"
 
 
 def school_days(start, end):
@@ -471,9 +487,8 @@ def main():
             "parentFullName": parent, "parentPhone": phone,
             "className": "1-A", "enrollmentDate": "2026-09-01",
             "newPassword": DEMO_PASSWORD,
-            "discountPct": 10 if i in (2, 7) else 0,
-            "discountAmount": 200_000 if i == 5 else 0,
-            "discountNote": "Ko'p bolali oila" if i in (2, 5, 7) else "",
+            # Chegirma bu yerda EMAS (P1-21): u `discounts` jadvalida va
+            # direktor tasdig'ini talab qiladi — pastdagi "moliya" bo'limiga qarang.
             "subGroup": 1 if i % 2 == 0 else 2,
         }, full, "fullName")
         if rec:
@@ -484,9 +499,6 @@ def main():
                 "parentFullName": parent, "parentPhone": phone,
                 "className": "1-A", "enrollmentDate": "2026-09-01",
                 "newPassword": DEMO_PASSWORD,
-                "discountPct": 10 if i in (2, 7) else 0,
-                "discountAmount": 200_000 if i == 5 else 0,
-                "discountNote": "Ko'p bolali oila" if i in (2, 5, 7) else "",
                 "subGroup": 1 if i % 2 == 0 else 2,
             }, quiet=True)
     print(f"O'quvchilar: {len(students)}  (barchasi 1-A sinfda, parol: {DEMO_PASSWORD})")
@@ -689,25 +701,16 @@ def main():
     print(f"LMS: 10 fan · 10 modul · {n_topics} mavzu")
 
     # 15 ------------------------------------------------------------------ moliya
-    seeded_fin = find(api("GET", "/api/admin/finance/transactions") or [],
-                      FINANCE[0][3], "note")
-    for i, (direction, cat, amount, note) in enumerate([] if seeded_fin else FINANCE):
-        api("POST", "/api/admin/finance/transactions", {
-            "date": (TODAY - timedelta(days=i * 2)).isoformat(),
-            "direction": direction, "category": cat, "amount": amount,
-            "note": note, "studentId": None, "teacherId": None,
-        }, quiet=True)
-    api("POST", "/api/admin/finance/accrue?month=2026-09")
-    for i, st in enumerate([] if seeded_fin else students):
-        api("POST", f"/api/admin/students/{st['id']}/payments",
-            {"amount": [1_800_000, 1_800_000, 900_000, 1_800_000, 1_620_000,
-                        1_600_000, 1_800_000, 0, 1_800_000, 450_000][i],
-             "month": "2026-09"}, quiet=True)
-    for name, tid in ([] if seeded_fin else list(teachers.items())[:10]):
-        api("POST", f"/api/admin/teachers/{tid}/salary-payments",
-            {"amount": 3_000_000, "note": "Sentabr — avans"}, quiet=True)
-    print("Moliya: " + ("allaqachon kiritilgan (o'tkazib yuborildi)" if seeded_fin
-          else f"{len(FINANCE)} tranzaksiya · oylik hisob · {len(students)} to'lov · 10 maosh avansi"))
+    #
+    #  P1-21 dan keyingi model (SPEC §3.7). Eski yassi kassa kitobi o'chdi;
+    #  pul endi to'rt bosqichdan o'tadi va HAR BIRI alohida jadval:
+    #
+    #      obuna  -> hisob-faktura -> (kassa smenasi) -> to'lov + taqsimot
+    #
+    #  Tartib MUHIM: obunasiz hisob-faktura yozilmaydi, hisob-fakturasiz
+    #  to'lovni taqsimlab bo'lmaydi, ochiq smenasiz esa to'lov qabul
+    #  qilinmaydi (SPEC §4.2). Shuning uchun quyidagi bloklar ketma-ket.
+    seed_billing(students, teachers)
 
     # 16 ----------------------------------------------------------------- oshxona
     meals = ["breakfast", "lunch", "dinner"]
@@ -757,6 +760,158 @@ def main():
 
     print(f"\nTayyor. {BASE} — {args.user} / {args.password}")
     print(f"Qolgan barcha demo akkauntlar paroli: {DEMO_PASSWORD}")
+
+
+# ---------------------------------------------------------------------------
+#  Moliya (P1-21): obuna -> hisob-faktura -> smena -> to'lov -> chiqim -> maosh
+# ---------------------------------------------------------------------------
+
+def seed_billing(students, teachers):
+    """Namunaviy moliya ma'lumoti — SPEC §3.7 modelida.
+
+    Qayta yurgizilsa hech narsa takrorlanmaydi: obuna (o'quvchi, toifa) bo'yicha
+    tekshiriladi, hisob-faktura bazadagi unikal indeks bilan himoyalangan,
+    to'lov esa faqat QARZI BOR o'quvchiga yoziladi — ikkinchi yurishda qarz
+    qolmagani uchun yangi chek chiqmaydi.
+    """
+    cats = {c["code"]: c for c in (api("GET", "/api/admin/billing/categories") or [])}
+    if not cats:
+        print("Moliya: to'lov toifalari topilmadi (migratsiya seed qilinmaganmi?) — o'tkazib yuborildi")
+        return
+
+    # --- obunalar: hammasi o'qiydi, yarmi avtobusdan, chorak qismi yotoqxonada ---
+    have = api("GET", "/api/admin/billing/subscriptions") or []
+    existing = {(x.get("studentId"), x.get("categoryId")) for x in have}
+    n_sub = 0
+    for i, st in enumerate(students):
+        plan = [("tuition", 1_800_000)]
+        if i % 2 == 0:
+            plan.append(("bus", 450_000))
+        if i % 4 == 1:
+            plan.append(("dormitory", 1_200_000))
+        for code, amount in plan:
+            cat = cats.get(code)
+            if not cat or (st["id"], cat["id"]) in existing:
+                continue
+            api("POST", "/api/admin/billing/subscriptions", {
+                "studentId": st["id"], "categoryId": cat["id"],
+                "monthlyAmount": amount,
+                "detail": {"bus": "Yunusobod yo'nalishi", "dormitory": "2-blok"}.get(code),
+                "startsOn": "2026-09-01", "endsOn": None,
+            }, quiet=True)
+            if LAST_OK:
+                n_sub += 1
+
+    # --- chegirma: TASDIQ KUTIB turadigan holatda yaratiladi (SPEC §8.1 Q5) ---
+    #
+    #  Seed ularni TASDIQLAMAYDI va tasdiqlay olmaydi: `approved_by <> created_by`
+    #  baza tekshiruvi ikkinchi, BOSHQA odamni talab qiladi, seed esa bitta
+    #  akkaunt bilan ishlaydi. Bu kamchilik emas — demo ma'lumot direktorga
+    #  "tasdiq kutmoqda" navbatini ko'rsatadi ("Moliya → Chegirmalar"), va
+    #  tasdiqlanmagan chegirma hisob-fakturaga ta'sir qilmasligini ham
+    #  ekranda ko'rish mumkin bo'ladi.
+    n_disc = 0
+    have_disc = api("GET", "/api/admin/billing/discounts") or []
+    with_disc = {d.get("studentId") for d in have_disc}
+    for i in (2, 5, 7):
+        if i >= len(students):
+            continue
+        st = students[i]
+        if st["id"] in with_disc:
+            continue
+        rec = api("POST", "/api/admin/billing/discounts", {
+            "studentId": st["id"], "categoryId": cats["tuition"]["id"],
+            "percent": 10 if i != 5 else 0,
+            "amount": 200_000 if i == 5 else 0,
+            "reason": "Ko'p bolali oila", "startsOn": "2026-09-01", "endsOn": None,
+        }, quiet=True)
+        if rec:
+            n_disc += 1
+
+    # --- hisob-fakturalar: fon xizmatini kutmasdan darhol hisoblaymiz ---
+    accrued = api("POST", "/api/admin/billing/accrual/run", None, quiet=True) or []
+    n_inv = sum(r.get("created", 0) for r in accrued)
+
+    # --- kassa: smena + to'lovlar ---
+    #  To'lov kassir nomidan yuboriladi (SPEC §4.4: `cashier_id` JWT'dan).
+    #  Kassir akkaunti bo'lmasa — hisob-fakturalar qoladi, to'lov bo'lmaydi:
+    #  qarzdorlar hisoboti baribir to'ldi, demo "bo'sh" ko'rinmaydi.
+    paid = 0
+    admin_token = TOKEN
+    cashier = api("POST", "/api/auth/login",
+                  {"email": CASHIER_LOGIN, "password": CASHIER_PASSWORD}, quiet=True)
+    if cashier and "token" in cashier:
+        globals()["TOKEN"] = cashier["token"]
+        if not api("GET", "/api/cash/shifts/current", quiet=True):
+            api("POST", "/api/cash/shifts/open", {"openingFloat": 0}, quiet=True)
+
+        methods = ["cash", "cash", "cash", "card", "transfer", "online"]
+        for i, st in enumerate(students):
+            # Har o'quvchi qarzining bir qismini to'laydi — qasddan: hisobot
+            # "hammasi to'langan" bo'lib qolsa qarzdorlar ekrani bo'sh chiqardi.
+            share = [1.0, 1.0, 0.5, 1.0, 0.9, 0.8, 1.0, 0.0, 1.0, 0.25][i % 10]
+            if share == 0.0:
+                continue
+            sug = api("GET", f"/api/cash/payments/suggest-allocation"
+                             f"?studentId={st['id']}&amount=100000000", quiet=True)
+            rows = sug if isinstance(sug, list) else ((sug or {}).get("allocations") or [])
+            allocs = [{"invoiceId": a["invoiceId"], "amount": round(a["suggested"] * share, 2)}
+                      for a in rows if a.get("suggested", 0) > 0]
+            allocs = [a for a in allocs if a["amount"] > 0]
+            if not allocs:
+                continue
+            api("POST", "/api/cash/payments", {
+                "studentId": st["id"],
+                "amount": sum(a["amount"] for a in allocs),
+                "method": methods[i % len(methods)],
+                "note": "Sentabr to'lovi",
+                "allocations": allocs,
+            }, quiet=True)
+            if LAST_OK:
+                paid += 1
+        globals()["TOKEN"] = admin_token
+    else:
+        print(f"  kassir akkaunti yo'q ({CASHIER_LOGIN}) — to'lovlar o'tkazib yuborildi;"
+              f" yaratish: tools/create_user.py --login {CASHIER_LOGIN} --role cashier")
+
+    # --- chiqimlar ---
+    n_exp = 0
+    have_exp = api("GET", "/api/admin/expenses") or []
+    # Izoh ham kalitga kiradi: ikkita ijara to'lovi bir xil summada, faqat
+    # izohi bilan farq qiladi — usiz ulardan biri hech qachon yozilmasdi.
+    seen_exp = {(e.get("category"), e.get("amount"), e.get("note")) for e in have_exp}
+    for cat, amount, note in EXPENSES:
+        if (cat, float(amount), note) in seen_exp:
+            continue
+        api("POST", "/api/admin/expenses", {
+            "onDate": (TODAY - timedelta(days=i)).isoformat(),
+            "category": cat, "amount": amount, "method": "transfer", "note": note,
+        }, quiet=True)
+        if LAST_OK:
+            n_exp += 1
+
+    # --- maosh: chiqim + `expense:salary` jurnal yozuvi, o'qituvchiga bog'langan ---
+    #  Summa tasdiq chegarasidan (5 000 000) PAST — aks holda har maosh
+    #  direktor tasdig'ini kutib turardi va hisobotda ko'rinmasdi (SPEC §4.5).
+    #  Takrorlanmaydi: shu o'qituvchiga shu izoh bilan maosh allaqachon
+    #  yozilgan bo'lsa o'tkazib yuboriladi. Chiqim o'chirilmaydi (SPEC §4.1),
+    #  shuning uchun skriptni ikki marta yurgizish maoshni ikki baravar
+    #  ko'rsatishi mumkin edi — va uni tozalash yo'li faqat storno bo'lardi.
+    salary_note = "Sentabr — avans"
+    paid_teachers = {e.get("teacherId") for e in (
+        api("GET", "/api/admin/expenses?category=salary", quiet=True) or [])
+        if e.get("note") == salary_note}
+    n_sal = 0
+    for name, tid in list(teachers.items())[:10]:
+        if tid in paid_teachers:
+            continue
+        api("POST", f"/api/admin/teachers/{tid}/salary-payments",
+            {"amount": 3_000_000, "note": salary_note}, quiet=True)
+        if LAST_OK:
+            n_sal += 1
+
+    print(f"Moliya: {n_sub} obuna · {n_disc} chegirma · {n_inv} hisob-faktura · "
+          f"{paid} to'lov · {n_exp} chiqim · {n_sal} maosh")
 
 
 if __name__ == "__main__":

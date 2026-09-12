@@ -77,9 +77,6 @@ export interface StudentNotebook {
   photoUrl?: string | null
   // Shaxsiy ma'lumotlar
   address: string
-  discountPct: number
-  discountAmount: number
-  discountNote: string
   subGroup: number
   parentPassportUrl?: string | null
   // O'zlashtirish

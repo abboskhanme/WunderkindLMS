@@ -99,21 +99,17 @@ public class Student
     /// <summary>Ota-onaning rasmi (profil surati) manzili (`/uploads/...`).</summary>
     public string? ParentPassportUrl { get; set; }
     public string ClassName { get; set; } = string.Empty;
-    /// <summary>Maktabga kelgan (qabul) sanasi (ISO "YYYY-MM-DD"). Oylik to'lov shu oydan boshlanadi.</summary>
+    /// <summary>Maktabga kelgan (qabul) sanasi (ISO "YYYY-MM-DD"). Obuna odatda shu oydan boshlanadi.</summary>
     public string EnrollmentDate { get; set; } = string.Empty;
-    /// <summary>Balans (so'm): manfiy = qarzdor, 0 = qarzsiz, musbat = avans.</summary>
-    public decimal Balance { get; set; }
     /// <summary>Shu o'quvchiga biriktirilgan tizim akkaunti (AppUser) id'si.</summary>
     public string? UserId { get; set; }
-    /// <summary>
-    /// Oylik to'lov chegirmasi — foiz (0..100). Avval shu foiz olib tashlanadi, keyin
-    /// <see cref="DiscountAmount"/> ayriladi. Hisoblangan oylik 0 dan past bo'lmaydi.
-    /// </summary>
-    public int DiscountPct { get; set; }
-    /// <summary>Oylik to'lov chegirmasi — aniq summa (so'm). Foizdan keyin ayriladi.</summary>
-    public decimal DiscountAmount { get; set; }
-    /// <summary>Chegirma sababi/izohi (admin uchun, ko'rsatish uchun saqlanadi).</summary>
-    public string DiscountNote { get; set; } = string.Empty;
+
+    // P1-21: `balance`, `discount_pct`, `discount_amount`, `discount_note`
+    // ustunlari o'chirildi (`RetireLegacyFinance`).
+    //   · qoldiq  -> `StudentBalanceQuery` (invoices + payment_allocations dan
+    //                HAR SAFAR hisoblanadi — saqlanmaydi, ya'ni buzila olmaydi);
+    //   · chegirma -> `discounts` jadvali, direktor tasdig'i bilan (SPEC §8.1 Q5).
+    // O'quvchi qatorida pul saqlanmaydi: SPEC §3.7 va docs/TASKS.md §1.4.
     /// <summary>
     /// Sinf ichidagi kichik guruh: 0 = guruhsiz (yoki butun sinf), 1 = birinchi guruh, 2 = ikkinchi guruh.
     /// Faqat o'quv yili boshida (jurnal yozuvlari hali yo'q paytda) o'zgartirilishi mumkin.
@@ -481,41 +477,10 @@ public class LessonTime
     public string EndTime { get; set; } = string.Empty;
 }
 
-/// <summary>O'quvchiga oy uchun hisoblangan oylik to'lov (qarz yozuvi/tarix).</summary>
-public class MonthlyCharge
-{
-    public string Id { get; set; } = Guid.NewGuid().ToString();
-    public string StudentId { get; set; } = string.Empty;
-    /// <summary>Oy ("YYYY-MM").</summary>
-    public string Month { get; set; } = string.Empty;
-    /// <summary>Hisoblangan TO'LIQ summa (o'sha paytdagi sinf oylik to'lovi). Chegirma ALOHIDA.</summary>
-    public decimal Amount { get; set; }
-    /// <summary>Shu oy uchun berilgan chegirma summasi (so'm). Haqiqiy to'lash kerak bo'lgan summa = Amount - Discount.</summary>
-    public decimal Discount { get; set; }
-    /// <summary>Hisoblangan sana (ISO "YYYY-MM-DD").</summary>
-    public string Date { get; set; } = string.Empty;
-}
-
-/// <summary>Moliyaviy amal — kirim yoki chiqim.</summary>
-public class FinanceTransaction
-{
-    public string Id { get; set; } = Guid.NewGuid().ToString();
-    /// <summary>Sana (ISO "YYYY-MM-DD").</summary>
-    public string Date { get; set; } = string.Empty;
-    /// <summary>income (kirim) | expense (chiqim)</summary>
-    public string Direction { get; set; } = "income";
-    /// <summary>Toifa: tuition, salary, utilities, supplies, rent, donation, other ...</summary>
-    public string Category { get; set; } = "other";
-    /// <summary>Summa (har doim musbat; yo'nalish belgini aniqlaydi).</summary>
-    public decimal Amount { get; set; }
-    public string? Note { get; set; }
-    /// <summary>O'quvchi to'lovi bo'lsa — tegishli o'quvchi id'si.</summary>
-    public string? StudentId { get; set; }
-    /// <summary>O'qituvchi maoshi bo'lsa — tegishli o'qituvchi id'si.</summary>
-    public string? TeacherId { get; set; }
-    /// <summary>Oylik to'lov bo'lsa — qaysi oy uchun ("YYYY-MM"). Boshqa amallar uchun null.</summary>
-    public string? Month { get; set; }
-}
+// Eski moliya entity'lari (`MonthlyCharge`, `FinanceTransaction`) P1-21 da
+// olib tashlandi. O'rniga SPEC §3.7 modeli — `SchoolLms.Domain/Billing.cs`:
+// oylik hisob `invoices`, pul harakati `payments` + `ledger_entries`,
+// chiqim `expenses`. Jadvallar `RetireLegacyFinance` migratsiyasida o'chdi.
 
 /// <summary>Maktab umumiy holati va ma'lumotlari (bitta qator) — joriy o'quv yili + maktab profili.</summary>
 /// <summary>O'qituvchining bir kunlik ish davomati.</summary>

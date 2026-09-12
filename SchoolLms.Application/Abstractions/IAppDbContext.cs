@@ -38,8 +38,6 @@ public interface IAppDbContext
     DbSet<DisciplinePoint> DisciplinePoints { get; }
     DbSet<EvaluationType> EvaluationTypes { get; }
     DbSet<EvaluationGrade> EvaluationGrades { get; }
-    DbSet<FinanceTransaction> FinanceTransactions { get; }
-    DbSet<MonthlyCharge> MonthlyCharges { get; }
     DbSet<AuditLog> AuditLogs { get; }
     DbSet<SchoolMeta> SchoolMeta { get; }
     DbSet<SchoolYearArchive> SchoolYearArchives { get; }
@@ -67,8 +65,9 @@ public interface IAppDbContext
     DbSet<LmsProgress> LmsProgresses { get; }
 
     // ---------- Moliya (billing) — SPEC §3.7, P1-04 ----------
-    // Eski `FinanceTransactions` / `MonthlyCharges` bilan YONMA-YON yashaydi: ular
-    // P1-21 da olib tashlanadi, shu paytgacha mavjud sahifalar ishlab turadi.
+    // Eski yassi moliya jadvallari (`finance_transactions`, `monthly_charges`) va
+    // o'quvchi qatoridagi saqlangan qoldiq P1-21 da olib tashlandi — pul haqidagi
+    // YAGONA manba shu to'plam.
     //
     // DIQQAT: `Payments`, `PaymentAllocations`, `LedgerEntries` — FAQAT INSERT.
     // `app_rw` rolida ularga UPDATE/DELETE huquqi yo'q (SPEC §4.1), shuning uchun

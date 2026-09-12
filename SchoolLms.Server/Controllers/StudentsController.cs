@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using SchoolLms.Infrastructure.Auth;
 using SchoolLms.Infrastructure.Data;
+using SchoolLms.Application.Billing;
 using SchoolLms.Application.Dtos;
 using SchoolLms.Domain;
 using SchoolLms.Application.Services;
@@ -22,13 +23,22 @@ public class StudentsController(AppDbContext db, AuditService audit) : Controlle
     /// <summary>
     /// Faol (arxivlanmagan) o'quvchilar ro'yxati. <paramref name="includeArchived"/>=true bo'lsa
     /// arxivlangan o'quvchilar ham qaytadi.
+    ///
+    /// <para>
+    /// <b>P1-21:</b> javob endi entity emas, <see cref="StudentDto"/> — chunki
+    /// <c>balance</c> ustuni o'chdi va qoldiq HISOBLANADI. Butun ro'yxat uchun
+    /// bitta <see cref="StudentBalanceQuery.ForManyAsync"/> chaqiriladi (ikkita
+    /// so'rov), o'quvchi boshiga so'rov YO'Q.
+    /// </para>
     /// </summary>
     [HttpGet]
-    public async Task<ActionResult<IEnumerable<Student>>> GetAll([FromQuery] bool includeArchived = false)
+    public async Task<ActionResult<IEnumerable<StudentDto>>> GetAll(
+        [FromQuery] bool includeArchived = false, CancellationToken ct = default)
     {
-        var q = db.Students.AsQueryable();
+        var q = db.Students.AsNoTracking();
         if (!includeArchived) q = q.Where(s => !s.IsArchived);
-        return await q.OrderBy(s => s.FullName).ToListAsync();
+        var students = await q.OrderBy(s => s.FullName).ToListAsync(ct);
+        return await WithBalancesAsync(students, ct);
     }
 
     /// <summary>O'quvchi shaxsiy daftari — bitta o'quvchi haqida barcha ma'lumot (profil, o'zlashtirish, davomat, intizom, topshiriqlar, oylik baholash, uy vazifa/xulq).</summary>
@@ -40,11 +50,38 @@ public class StudentsController(AppDbContext db, AuditService audit) : Controlle
         return await StudentProfileBuilder.BuildAsync(db, st);
     }
 
-    /// <summary>Faqat arxivlangan o'quvchilar ro'yxati.</summary>
+    /// <summary>Faqat arxivlangan o'quvchilar ro'yxati (qoldig'i bilan — qarz arxivda ham qarz).</summary>
     [HttpGet("archived")]
-    public async Task<ActionResult<IEnumerable<Student>>> GetArchived() =>
-        await db.Students.Where(s => s.IsArchived)
-            .OrderByDescending(s => s.ArchivedAt).ThenBy(s => s.FullName).ToListAsync();
+    public async Task<ActionResult<IEnumerable<StudentDto>>> GetArchived(CancellationToken ct = default)
+    {
+        var students = await db.Students.AsNoTracking().Where(s => s.IsArchived)
+            .OrderByDescending(s => s.ArchivedAt).ThenBy(s => s.FullName).ToListAsync(ct);
+        return await WithBalancesAsync(students, ct);
+    }
+
+    /// <summary>
+    /// O'quvchilarni DTO'ga o'girib, har biriga HISOBLANGAN qoldiqni qo'yadi.
+    /// Qoldiq bitta partiyada olinadi — sikl ichida so'rov yo'q (N+1 yo'q).
+    /// </summary>
+    private async Task<List<StudentDto>> WithBalancesAsync(
+        IReadOnlyList<Student> students, CancellationToken ct)
+    {
+        if (students.Count == 0) return [];
+
+        var balances = await new StudentBalanceQuery(db)
+            .ForManyAsync([.. students.Select(s => s.Id)], ct);
+
+        return [.. students.Select(s => ToDto(s, balances.GetValueOrDefault(s.Id)))];
+    }
+
+    /// <summary>Entity → DTO. Qoldiq har doim tashqaridan beriladi (u ustun emas).</summary>
+    private static StudentDto ToDto(Student s, decimal balance) => new(
+        s.Id, s.FullName, s.BirthDate, s.Address, s.Gender,
+        s.ParentFullName, s.ParentPhone, s.ClassName, s.EnrollmentDate, balance,
+        s.SubGroup,
+        s.LastName, s.FirstName, s.MiddleName, s.BirthCertificateUrl,
+        s.ParentLastName, s.ParentFirstName, s.ParentMiddleName, s.ParentPassportUrl,
+        s.IsArchived, s.ArchivedAt, s.ArchiveReason);
 
     /// <summary>"Familiya Ism Sharifi" — parts'ni birlashtirish (bo'sh qismlar tashlanadi).</summary>
     private static string JoinName(string? last, string? first, string? middle) =>
@@ -53,21 +90,29 @@ public class StudentsController(AppDbContext db, AuditService audit) : Controlle
             .Where(x => !string.IsNullOrEmpty(x)));
 
     [HttpPost]
-    public async Task<ActionResult<Student>> Create(StudentPayload p)
+    public async Task<ActionResult<StudentDto>> Create(StudentPayload p)
     {
-        var cls = await db.Classes.FirstOrDefaultAsync(c => c.Name == p.ClassName);
-        var student = AddStudent(p, cls);
+        var student = AddStudent(p);
         await db.SaveChangesAsync();
-        return student;
+        // Yangi o'quvchining qoldig'i 0: obuna hali ochilmagan, hisob-faktura yo'q.
+        return ToDto(student, 0m);
     }
 
     /// <summary>
-    /// <see cref="StudentPayload"/>'dan Student yaratib (tizim akkaunti + oylik hisoblar + audit bilan)
-    /// db kontekstiga qo'shadi. SaveChanges QILMAYDI — chaqiruvchi (bitta yaratish yoki ommaviy import)
-    /// hammasini qo'shib bo'lgach bir marta saqlaydi. <paramref name="cls"/> — oldindan topilgan sinf
-    /// (narx/hisob uchun; null bo'lsa oylik hisob yozilmaydi).
+    /// <see cref="StudentPayload"/>'dan Student yaratib (tizim akkaunti bilan) db kontekstiga
+    /// qo'shadi. SaveChanges QILMAYDI — chaqiruvchi (bitta yaratish yoki ommaviy import)
+    /// hammasini qo'shib bo'lgach bir marta saqlaydi.
+    ///
+    /// <para>
+    /// <b>P1-21: bu yerda endi PUL YOZILMAYDI.</b> Ilgari o'quvchi yaratilishi bilanoq
+    /// kelgan oyidan joriy oygacha <c>monthly_charges</c> qatorlari yozilib, qoldiq
+    /// kamayardi. Yangi modelda narxni obuna belgilaydi (SPEC §3.7): admin
+    /// "Moliya → Obunalar" da toifa va summani tanlaydi, oylik hisob-fakturani esa
+    /// <c>BillingAccrualService</c> yozadi. Ya'ni yangi o'quvchining qarzi 0 bo'lib
+    /// tug'iladi va obuna ochilgandan keyin hisoblana boshlaydi.
+    /// </para>
     /// </summary>
-    private Student AddStudent(StudentPayload p, SchoolClass? cls)
+    private Student AddStudent(StudentPayload p)
     {
         var enrollment = string.IsNullOrWhiteSpace(p.EnrollmentDate)
             ? AppClock.Today.ToString("yyyy-MM-dd")
@@ -106,10 +151,6 @@ public class StudentsController(AppDbContext db, AuditService audit) : Controlle
             ParentPassportUrl = string.IsNullOrWhiteSpace(p.ParentPassportUrl) ? null : p.ParentPassportUrl,
             ClassName = p.ClassName,
             EnrollmentDate = enrollment,
-            Balance = 0,
-            DiscountPct = Math.Clamp(p.DiscountPct ?? 0, 0, 100),
-            DiscountAmount = Math.Max(0m, p.DiscountAmount ?? 0m),
-            DiscountNote = (p.DiscountNote ?? "").Trim(),
         };
         db.Students.Add(student);
 
@@ -117,75 +158,27 @@ public class StudentsController(AppDbContext db, AuditService audit) : Controlle
         var account = AccountFactory.CreateAccountFor(db, "student", student.FullName);
         student.UserId = account.Id;
 
-        // Kelgan oyidan joriy oygacha har oy uchun hisob (qarz) yoziladi.
-        // Amount = TO'LIQ sinf narxi, Discount = chegirma; balans faqat (Amount - Discount) ga kamayadi.
-        if (cls is not null && cls.MonthlyFee > 0)
-        {
-            var discount = TuitionService.DiscountFor(cls.MonthlyFee, student.DiscountPct, student.DiscountAmount);
-            var effective = cls.MonthlyFee - discount;
-            var month = enrollment[..7];
-            var current = TuitionService.CurrentMonth();
-            while (string.CompareOrdinal(month, current) <= 0)
-            {
-                db.MonthlyCharges.Add(new MonthlyCharge
-                {
-                    StudentId = student.Id,
-                    Month = month,
-                    Amount = cls.MonthlyFee,
-                    Discount = discount,
-                    Date = $"{month}-01",
-                });
-                student.Balance -= effective;
-                month = TuitionService.NextMonth(month);
-            }
-        }
-
-        // Chegirma berilgan bo'lsa — audit yozuvi.
-        if (student.DiscountPct > 0 || student.DiscountAmount > 0)
-            audit.Record(AuditService.EntityStudentDiscount, student.Id, "create",
-                DiscountSummary("O'quvchi yaratildi", student.FullName, 0, 0, student.DiscountPct, student.DiscountAmount, student.DiscountNote),
-                after: DiscountSnapshot(student), studentId: student.Id);
-
         return student;
     }
 
-    /// <summary>Chegirma o'zgarishi audit izohini tuzadi.</summary>
-    private static string DiscountSummary(
-        string action, string studentName,
-        int oldPct, decimal oldAmount, int newPct, decimal newAmount, string note)
-    {
-        var changed = (oldPct != newPct ? $"{oldPct}% → {newPct}%" : $"{newPct}%")
-                    + ", "
-                    + (oldAmount != newAmount
-                        ? $"{AuditService.Money(oldAmount)} → {AuditService.Money(newAmount)} so'm"
-                        : $"{AuditService.Money(newAmount)} so'm");
-        var n = string.IsNullOrWhiteSpace(note) ? "" : $" — \"{note}\"";
-        return $"{action}: chegirma {changed}{n} ({studentName})";
-    }
-
-    /// <summary>Chegirma snapshot'i (audit Before/After uchun).</summary>
-    private static object DiscountSnapshot(Student s) => new
-    {
-        s.DiscountPct,
-        s.DiscountAmount,
-        s.DiscountNote,
-    };
-
     /// <summary>
-    /// O'quvchini tahrirlash. Chegirma (foiz/summa) o'zgarsa va
-    /// <paramref name="applyDiscount"/> = true bo'lsa, yangi chegirma joriy oy MonthlyCharge'iga
-    /// ham qo'llanadi (oylik summa qayta hisoblanadi, balans deltaga moslab to'g'rilanadi).
-    /// false bo'lsa — joriy oy eski summada qoladi, yangi chegirma keyingi accrual'dan amal qiladi.
+    /// O'quvchini tahrirlash.
+    ///
+    /// <para>
+    /// <b>P1-21: chegirma bu yerdan olib tashlandi</b> va u bilan birga
+    /// <c>?applyDiscount=</c> parametri ham. Sabab mijoz javobida (SPEC §8.1 Q5):
+    /// har qanday chegirma DIREKTOR TASDIG'INI talab qiladi. O'quvchi kartochkasidagi
+    /// maydon esa tasdiqsiz chegirma berishning ochiq yo'li edi. Yangi joyi —
+    /// <c>POST /api/admin/billing/discounts</c> (tasdiq navbati bilan).
+    /// Sinf o'zgarishi ham endi pulga tegmaydi: narxni obuna belgilaydi.
+    /// </para>
     /// </summary>
     [HttpPut("{id}")]
-    public async Task<IActionResult> Update(string id, StudentPayload p, [FromQuery] bool applyDiscount = false)
+    public async Task<IActionResult> Update(string id, StudentPayload p)
     {
         var student = await db.Students.FindAsync(id);
         if (student is null) return NotFound();
 
-        var oldPct = student.DiscountPct;
-        var oldAmount = student.DiscountAmount;
-        var oldNote = student.DiscountNote;
         var oldClassName = student.ClassName;
 
         // O'quvchi FISH — parts berilsa ulardan FullName yig'iladi.
@@ -223,11 +216,6 @@ public class StudentsController(AppDbContext db, AuditService audit) : Controlle
         student.ClassName = p.ClassName;
         if (!string.IsNullOrWhiteSpace(p.EnrollmentDate)) student.EnrollmentDate = p.EnrollmentDate;
 
-        // Chegirma — berilgan maydonlar yangilanadi (null = avvalgi saqlanadi).
-        if (p.DiscountPct.HasValue) student.DiscountPct = Math.Clamp(p.DiscountPct.Value, 0, 100);
-        if (p.DiscountAmount.HasValue) student.DiscountAmount = Math.Max(0m, p.DiscountAmount.Value);
-        if (p.DiscountNote is not null) student.DiscountNote = p.DiscountNote.Trim();
-
         // Akkaunt nomini sinxronlaymiz va (ixtiyoriy) yangi parol o'rnatamiz.
         var user = student.UserId is null ? null : await db.Users.FindAsync(student.UserId);
         if (!string.IsNullOrWhiteSpace(p.NewPassword))
@@ -241,77 +229,20 @@ public class StudentsController(AppDbContext db, AuditService audit) : Controlle
         }
         if (user is not null) user.FullName = student.FullName;
 
-        // Sinf yoki chegirma o'zgardimi?
+        // Sinf o'zgarishi PULGA TEGMAYDI (P1-21): narx `student_subscriptions`
+        // da, uni "Moliya → Obunalar" ekrani boshqaradi. Sinfni o'zgartirish
+        // narxni jimgina qayta yozib yuborsa, obunadagi kelishilgan summa
+        // yo'qolardi.
         var classChanged = !string.Equals(oldClassName, student.ClassName, StringComparison.Ordinal);
-        var discountChanged = oldPct != student.DiscountPct
-                              || oldAmount != student.DiscountAmount
-                              || oldNote != student.DiscountNote;
 
-        // Joriy sinf narxiga ko'ra hisoblarni TO'G'RILAYMIZ/TO'LDIRAMIZ (ClassName MATNI o'zgarmagan
-        // bo'lsa ham — masalan o'quvchi sinf hali yaratilmagan paytda qo'shilib, keyin sinf yaratilgan):
-        //  • yetishmagan oylar (kelgan oyidan joriy oygacha) — yangi narxda yaratiladi, balans kamayadi;
-        //  • mavjud JORIY oy — sinf yoki (so'ralganda) chegirma o'zgarsa, yangi narxga moslanadi;
-        //  • o'tgan oylardagi mavjud hisoblar — tarixiy, tegilmaydi.
-        var applied = false;
-        var cls = await db.Classes.FirstOrDefaultAsync(c => c.Name == student.ClassName);
-        if (cls is not null && cls.MonthlyFee > 0)
+        // Audit — sinf o'zgarishi. Obuna summasi shu bilan avtomatik
+        // o'zgarmaydi; kerak bo'lsa admin obunani alohida tahrirlaydi.
+        if (classChanged)
         {
-            var newDiscount = TuitionService.DiscountFor(cls.MonthlyFee, student.DiscountPct, student.DiscountAmount);
-            var newEffective = cls.MonthlyFee - newDiscount;
-            var current = TuitionService.CurrentMonth();
-            var startMonth = string.IsNullOrEmpty(student.EnrollmentDate) || student.EnrollmentDate.Length < 7
-                ? current
-                : student.EnrollmentDate[..7];
-
-            var existing = await db.MonthlyCharges
-                .Where(c => c.StudentId == student.Id)
-                .ToDictionaryAsync(c => c.Month, c => c);
-
-            foreach (var month in TuitionService.MonthRange(startMonth, current))
-            {
-                if (existing.TryGetValue(month, out var charge))
-                {
-                    // Faqat JORIY oyni va faqat sinf/chegirma o'zgarsa qayta hisoblaymiz (o'tgan oylar tarixiy).
-                    var recompute = month == current && (classChanged || (discountChanged && applyDiscount));
-                    if (recompute && (charge.Amount != cls.MonthlyFee || charge.Discount != newDiscount))
-                    {
-                        var delta = newEffective - (charge.Amount - charge.Discount);
-                        charge.Amount = cls.MonthlyFee;
-                        charge.Discount = newDiscount;
-                        student.Balance -= delta;   // delta > 0 → ko'proq to'lash → balans kamayadi
-                        applied = true;
-                    }
-                }
-                else
-                {
-                    // Hisob yo'q edi — yangi sinf narxida yaratamiz (sinfsiz qo'shilgan o'quvchi holati).
-                    db.MonthlyCharges.Add(new MonthlyCharge
-                    {
-                        StudentId = student.Id,
-                        Month = month,
-                        Amount = cls.MonthlyFee,
-                        Discount = newDiscount,
-                        Date = $"{month}-01",
-                    });
-                    student.Balance -= newEffective;
-                    applied = true;
-                }
-            }
-        }
-
-        // Audit — sinf va/yoki chegirma o'zgarishi.
-        if (classChanged || discountChanged)
-        {
-            var parts = new List<string>();
-            if (classChanged) parts.Add($"sinf: {oldClassName} → {student.ClassName}");
-            if (discountChanged)
-                parts.Add($"chegirma: {oldPct}%/{AuditService.Money(oldAmount)} → "
-                          + $"{student.DiscountPct}%/{AuditService.Money(student.DiscountAmount)} so'm");
-            var summary = "O'quvchi yangilandi (" + string.Join("; ", parts) + ")"
-                + (applied ? " — joriy oy hisobi yangi summaga to'g'rilandi" : " — keyingi oydan amal qiladi");
-            audit.Record(AuditService.EntityStudentDiscount, student.Id, "update", $"{summary} ({student.FullName})",
-                before: new { Class = oldClassName, DiscountPct = oldPct, DiscountAmount = oldAmount, DiscountNote = oldNote },
-                after: new { Class = student.ClassName, student.DiscountPct, student.DiscountAmount, student.DiscountNote },
+            audit.Record(AuditService.EntityStudentClass, student.Id, "update",
+                $"O'quvchi yangilandi (sinf: {oldClassName} → {student.ClassName}) ({student.FullName})",
+                before: new { Class = oldClassName },
+                after: new { Class = student.ClassName },
                 studentId: student.Id);
         }
 
@@ -319,13 +250,31 @@ public class StudentsController(AppDbContext db, AuditService audit) : Controlle
         return NoContent();
     }
 
+    /// <summary>
+    /// O'quvchini butunlay o'chirish.
+    ///
+    /// <para>
+    /// <b>Moliyaviy tarixi bor o'quvchi O'CHIRILMAYDI</b> (P1-21, SPEC §4.1):
+    /// <c>invoices</c> va <c>payments</c> unga RESTRICT bilan bog'langan, ya'ni
+    /// o'chirish urinishida baza FK xatosi bilan yiqilardi. Tushunarli javob
+    /// beramiz va arxivlashni taklif qilamiz — pul yozuvi hech qachon
+    /// o'chmaydi, o'quvchi esa arxivda tarixi bilan qoladi.
+    /// </para>
+    /// </summary>
     [HttpDelete("{id}")]
     public async Task<IActionResult> Delete(string id)
     {
         var student = await db.Students.FindAsync(id);
         if (student is null) return NotFound();
-        // Bog'liq oylik hisob yozuvlarini ham olib tashlaymiz (orfan qolmasligi uchun).
-        db.MonthlyCharges.RemoveRange(db.MonthlyCharges.Where(c => c.StudentId == id));
+
+        if (await db.Invoices.AnyAsync(i => i.StudentId == id)
+            || await db.Payments.AnyAsync(pay => pay.StudentId == id))
+            return Conflict(new
+            {
+                message = "Moliyaviy yozuvi (hisob-faktura yoki to'lov) bor o'quvchini o'chirib "
+                          + "bo'lmaydi — uni arxivga ko'chiring.",
+            });
+
         // Biriktirilgan tizim akkauntini ham o'chiramiz.
         if (student.UserId is not null)
         {
@@ -492,7 +441,9 @@ public class StudentsController(AppDbContext db, AuditService audit) : Controlle
     {
         "F.I.SH (o'quvchi)*", "Sinf*", "Tug'ilgan sana (YYYY-MM-DD)", "Jinsi (o'g'il/qiz)",
         "Manzil", "Ota-ona F.I.SH", "Ota-ona telefoni", "Qabul sanasi (YYYY-MM-DD)",
-        "Chegirma %", "Chegirma summa (so'm)",
+        // P1-21: "Chegirma %" va "Chegirma summa" ustunlari olib tashlandi —
+        // chegirma endi direktor tasdig'i bilan beriladi (SPEC §8.1 Q5),
+        // ya'ni uni Excel orqali jimgina kiritib bo'lmaydi.
     };
 
     /// <summary>
@@ -515,8 +466,9 @@ public class StudentsController(AppDbContext db, AuditService audit) : Controlle
             new[] { "Ota-ona F.I.SH", "ixtiyoriy" },
             new[] { "Ota-ona telefoni", "masalan +998901234567" },
             new[] { "Qabul sanasi", "YYYY-MM-DD (bo'sh bo'lsa — bugun)" },
-            new[] { "Chegirma %", "0–100 (ixtiyoriy)" },
-            new[] { "Chegirma summa", "so'mda (ixtiyoriy)" },
+            new[] { "", "" },
+            new[] { "Chegirma", "Bu yerda EMAS: Moliya → Chegirmalar (direktor tasdiqlaydi)" },
+            new[] { "Oylik to'lov", "Bu yerda EMAS: Moliya → Obunalar (toifa va summa)" },
             new[] { "", "" },
             new[] { "Mavjud sinflar:", classes.Count == 0 ? "(sinf yaratilmagan)" : "" },
         };
@@ -533,7 +485,8 @@ public class StudentsController(AppDbContext db, AuditService audit) : Controlle
     /// <summary>
     /// To'ldirilgan Excel (.xlsx) shablonidan o'quvchilarni ommaviy yaratadi. Har qator alohida
     /// tekshiriladi: F.I.SH va Sinf majburiy, Sinf mavjud bo'lishi shart. To'g'ri qatorlar yaratiladi
-    /// (akkaunt + oylik hisob bilan), xato qatorlar raqami/sababi bilan qaytariladi (qisman import).
+    /// (tizim akkaunti bilan), xato qatorlar raqami/sababi bilan qaytariladi (qisman import).
+    /// Import PUL YOZMAYDI (P1-21) — obuna keyin "Moliya → Obunalar" da ochiladi.
     /// </summary>
     [HttpPost("import")]
     [RequestSizeLimit(10 * 1024 * 1024)]
@@ -588,11 +541,9 @@ public class StudentsController(AppDbContext db, AuditService audit) : Controlle
                 ParentFullName: r[5].Trim(),
                 ParentPhone: r[6].Trim(),
                 ClassName: cls.Name,
-                EnrollmentDate: NormalizeDate(r[7]) is { Length: > 0 } e ? e : null,
-                DiscountPct: ParseIntOrNull(r[8]),
-                DiscountAmount: ParseDecimalOrNull(r[9]));
+                EnrollmentDate: NormalizeDate(r[7]) is { Length: > 0 } e ? e : null);
 
-            AddStudent(payload, cls);
+            AddStudent(payload);
             created++;
         }
 
@@ -638,44 +589,32 @@ public class StudentsController(AppDbContext db, AuditService audit) : Controlle
         return decimal.TryParse(v, NumberStyles.Any, CultureInfo.InvariantCulture, out var d) ? d : null;
     }
 
-    /// <summary>O'quvchiga to'lov kiritish — balansga qo'shiladi va moliyaga kirim sifatida yoziladi.
-    /// <paramref name="req"/> ichida Month ("YYYY-MM") berilsa, to'lov shu oy uchun hisoblanadi.</summary>
+    /// <summary>
+    /// <b>410 Gone.</b> Pul bu yerdan qabul qilinmaydi (P1-21) — kassaga o'ting:
+    /// <c>POST /api/cash/payments</c>.
+    ///
+    /// <para>
+    /// Nega endpoint butunlay o'chirilmadi, 410 qaytaradi: eski mobil ilova va
+    /// yorliqlar hali shu manzilga uradi. 404 "manzil noto'g'ri" degan ma'no
+    /// berardi va foydalanuvchi qayta urinishga harakat qilardi; 410 esa
+    /// "bu yo'l YOPILDI" deydi va javob tanasida yangi manzilni ko'rsatadi.
+    /// </para>
+    /// <para>
+    /// Eski yo'l bilan to'lovda na kassir, na smena, na chek raqami bor edi va
+    /// yozuvni keyin tahrirlash mumkin edi — SPEC §4.1/§4.2 ni buzadigan
+    /// aynan shu. Yangi yo'lda to'lov ochiq smenaga, JWT'dagi kassirga va
+    /// uzluksiz chek raqamiga bog'lanadi hamda o'zgarmas bo'ladi.
+    /// </para>
+    /// </summary>
     [HttpPost("{id}/payments")]
-    public async Task<IActionResult> AddPayment(string id, PaymentRequest req)
-    {
-        var student = await db.Students.FindAsync(id);
-        if (student is null) return NotFound();
-
-        if (req.Amount <= 0)
-            return BadRequest(new { message = "To'lov summasi musbat bo'lishi kerak" });
-
-        student.Balance += req.Amount;
-
-        var month = string.IsNullOrWhiteSpace(req.Month) ? null : req.Month.Trim();
-
-        // To'lovni moliyaviy kirim (o'quvchi to'lovi) sifatida qayd etamiz.
-        var tx = new FinanceTransaction
+    public IActionResult AddPayment(string id) =>
+        StatusCode(StatusCodes.Status410Gone, new
         {
-            Date = AppClock.Today.ToString("yyyy-MM-dd"),
-            Direction = "income",
-            Category = "tuition",
-            Amount = req.Amount,
-            StudentId = student.Id,
-            Month = month,
-            Note = month is null
-                ? $"O'quvchi to'lovi — {student.FullName}"
-                : $"O'quvchi to'lovi ({month}) — {student.FullName}",
-        };
-        db.FinanceTransactions.Add(tx);
-
-        audit.Record(AuditService.EntityFinanceTransaction, tx.Id, "create",
-            $"To'lov qabul qilindi: +{AuditService.Money(req.Amount)} so'm"
-                + (month is null ? "" : $" ({month} uchun)"),
-            after: AuditService.Snapshot(tx), studentId: student.Id);
-
-        await db.SaveChangesAsync();
-        return NoContent();
-    }
+            code = "endpoint_retired",
+            message = "To'lov endi kassa orqali qabul qilinadi: POST /api/cash/payments "
+                      + "(ochiq smena, kassir va chek raqami bilan).",
+            replacement = "/api/cash/payments",
+        });
 
     /// <summary>O'quvchi to'lov tarixi: oylar bo'yicha hisoblangan/to'langan holat.</summary>
     [HttpGet("{id}/ledger")]

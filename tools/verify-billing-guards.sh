@@ -18,7 +18,7 @@
 #      7. discounts: approved_by = created_by -> check constraint rad etadi
 #      8. seed: 5 toifa + billing_settings qatori
 #      9. migratsiyani IKKINCHI marta qo'llash -> no-op
-#     10. `migrations script` ichida DROP YO'Q
+#     10. `migrations script` ichida FAQAT ruxsat berilgan DROP'lar bor
 #
 #  Nega alohida skript, `./tools/test.sh` emas: test harness'i (PostgresFixture)
 #  ATAYLAB `app_rw` rolini o'zi yaratmaydi — aks holda u o'z grantlarini
@@ -148,13 +148,14 @@ psql_as schoollms_owner "
 insert into users (id, full_name, role, email, avatar_url, password_hash, position, permissions)
 values ('u-cashier', 'Verify kassir', 'cashier', 'verify.cashier', null, 'x', '', '{}'),
        ('u-director', 'Verify direktor', 'superadmin', 'verify.director', null, 'x', '', '{}');
+-- P1-21: balance va discount_pct/amount/note ustunlari o'chirilgan; qoldiq hisoblanadi.
 insert into students (id, full_name, last_name, first_name, middle_name, birth_date, address, gender,
                       parent_full_name, parent_last_name, parent_first_name, parent_middle_name,
-                      parent_phone, class_name, enrollment_date, balance, discount_pct, discount_amount,
-                      discount_note, sub_group, is_archived, archived_with_class, device_user_id)
+                      parent_phone, class_name, enrollment_date,
+                      sub_group, is_archived, archived_with_class, device_user_id)
 values ('s-1', 'Verify o''quvchi', 'Verify', 'O''quvchi', '', '2015-01-01', '', 'male',
-        'Ota Ona', 'Ota', 'Ona', '', '+998900000000', '1-A', '2026-09-01', 0, 0, 0, '', 0,
-        false, false, '');
+        'Ota Ona', 'Ota', 'Ona', '', '+998900000000', '1-A', '2026-09-01',
+        0, false, false, '');
 insert into cash_shifts (id, cashier_id, opened_at, opening_float, status)
 values ('11111111-1111-1111-1111-111111111111', 'u-cashier', now(), 0, 'open');
 insert into invoices (id, student_id, category_id, period_month, amount, discount, due_on, status, created_at)
@@ -241,13 +242,39 @@ AFTER=$(psql_as schoollms "select count(*) from fee_categories;" || echo ERR)
 [ "$AFTER" = "5" ] && pass "qayta 'upgrade head' — no-op (toifalar hali ham 5 ta)" \
                    || fail "qayta migratsiya seed'ni takrorladi: $AFTER ta toifa"
 
-# `migrations script` ichida DROP bo'lmasin.
-DROPS=$(run_ef "dotnet ef migrations script --idempotent \
+# `migrations script` ichida FAQAT KUTILGAN DROP'lar bo'lsin.
+#
+#  Ilgari bu tekshiruv "birorta ham DROP bo'lmasin" edi. P1-21
+#  (`RetireLegacyFinance`) eski moliya yo'lini ATAYLAB o'chiradi, ya'ni endi
+#  DROP bor. Tekshiruvni butunlay olib tashlash tuzoqni yo'q qilardi —
+#  autogenerate chiqargan "ortiqcha" DROP jimgina o'tib ketardi. Shuning uchun
+#  qoida qat'iyroq qilindi: chiqishdagi DROP'lar to'plami quyidagiga AYNAN
+#  teng bo'lishi kerak. Yangi DROP paydo bo'lsa — skript yiqiladi va uni
+#  qo'lda ko'rib chiqish kerak (docs/TASKS.md §4.1).
+#  DIQQAT: ustun o'chirish `ALTER TABLE ... DROP COLUMN` ko'rinishida keladi,
+#  ya'ni `^DROP ` filtri uni TUTMAYDI. Shuning uchun ikkala shakl ham
+#  qidiriladi — aks holda oltita o'chirishning to'rttasi ko'rinmay qolardi.
+EXPECTED_DROPS="alter table students drop column balance;
+alter table students drop column discount_amount;
+alter table students drop column discount_note;
+alter table students drop column discount_pct;
+drop table finance_transactions;
+drop table monthly_charges;"
+
+SCRIPT_SQL=$(run_ef "dotnet ef migrations script --idempotent \
         --project SchoolLms.Infrastructure/SchoolLms.Infrastructure.csproj \
         --startup-project SchoolLms.Server/SchoolLms.Server.csproj \
-        --no-build" | grep -ciE '^\s*DROP ' || true)
-[ "$DROPS" = "0" ] && pass "'migrations script' ichida DROP yo'q" \
-                   || fail "'migrations script' ichida $DROPS ta DROP bor — QO'LDA TEKSHIRING"
+        --no-build")
+
+ACTUAL_DROPS=$(printf '%s\n' "$SCRIPT_SQL" \
+    | grep -iE '^[[:space:]]*(DROP |ALTER TABLE .* DROP )' \
+    | tr 'A-Z' 'a-z' | sed 's/^[[:space:]]*//; s/[[:space:]]\{1,\}/ /g' \
+    | sort -u)
+
+[ "$ACTUAL_DROPS" = "$(printf '%s' "$EXPECTED_DROPS" | sort -u)" ] \
+    && pass "'migrations script' ichida faqat kutilgan DROP'lar (P1-21)" \
+    || fail "'migrations script' ichidagi DROP'lar ro'yxati o'zgardi — QO'LDA TEKSHIRING:
+$ACTUAL_DROPS"
 
 # -----------------------------------------------------------------------------
 echo

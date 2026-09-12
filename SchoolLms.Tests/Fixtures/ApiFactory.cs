@@ -23,8 +23,8 @@ namespace SchoolLms.Tests.Fixtures;
 ///   <item><b>Hech qachon dev bazasiga tegmaydi.</b> appsettings.json dagi
 ///   <c>localhost:5432</c> satri DI'da almashtiriladi (<see cref="ConfigureWebHost"/>), va
 ///   <c>ApiFactoryTests.Ilova_throwaway_bazaga_ulanadi</c> buni har yurishda tekshiradi.</item>
-///   <item><b>Fon xizmatlari o'chirilgan.</b> <c>TuitionAccrualService</c> ishga tushishi
-///   bilanoq oylik to'lovlarni hisoblab bazaga YOZADI — test ma'lumotini buzardi.</item>
+///   <item><b>Fon xizmatlari o'chirilgan.</b> <c>BillingAccrualService</c> ishga tushishi
+///   bilanoq oylik hisob-fakturalarni yozib qo'yardi — test ma'lumotini buzardi.</item>
 ///   <item><b>Token ilovaning O'Z kaliti bilan imzolanadi.</b> Kalit DI'dan
 ///   (<see cref="JwtOptions"/>) olinadi, testda qayta yozilmaydi — ya'ni test tokeni
 ///   prod validatsiyasidan o'tadi, aks holda o'tmaydi.</item>

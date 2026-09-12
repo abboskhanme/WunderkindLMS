@@ -132,7 +132,7 @@ public static class DiscountStatus
 
 /// <summary>
 /// Oylik hisob-faktura: bitta o'quvchi × bitta toifa × bitta oy. Qarz AYNAN shu
-/// jadvaldan hisoblanadi (<c>Student.Balance</c> emas — u P1-21 da o'ladi):
+/// jadvaldan hisoblanadi (o'quvchi qatoridagi saqlangan qoldiq P1-21 da o'chdi):
 /// qarz = Σ(amount − discount) − Σ(payment_allocations.amount).
 /// </summary>
 public class Invoice
@@ -296,6 +296,19 @@ public class Expense
     public string Category { get; set; } = string.Empty;
     public decimal Amount { get; set; }
     public string? Note { get; set; }
+    /// <summary>
+    /// Maosh kimga berilgani (<c>teachers.id</c>). <c>salary</c> dan boshqa
+    /// toifalarda <c>null</c> (P1-21).
+    ///
+    /// <para>
+    /// Nega ustun kerak: maosh hisoboti, o'qituvchi kartochkasi va maosh
+    /// jadvali bitta savolga javob beradi — "falonchi falon oyda qancha oldi".
+    /// Eski <c>finance_transactions.teacher_id</c> shu bog'lanishni berardi;
+    /// usiz javob faqat izoh matnini o'qish bilan topilardi, bu esa
+    /// bog'lanish emas, taxmin. Batafsil: <c>SalaryPaymentQuery</c>.
+    /// </para>
+    /// </summary>
+    public string? TeacherId { get; set; }
     public string CreatedBy { get; set; } = string.Empty;
     public string? ApprovedBy { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
