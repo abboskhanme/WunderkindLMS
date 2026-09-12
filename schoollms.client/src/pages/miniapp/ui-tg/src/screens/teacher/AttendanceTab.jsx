@@ -191,8 +191,10 @@ function LessonAttendance({ lesson, quarter, date, reasons, onBack, onSaved }) {
 
   const { roster, todayEntries, note } = q.data
   const current = marks || {}
-  const absentIds = Object.keys(current).filter((id) => current[id])
-  const presentCount = roster.length - absentIds.length
+  // Faqat SHU ro'yxatdagilarni sanaymiz: bo'lingan darsda jurnalda boshqa
+  // guruhning yozuvi ham bo'lishi mumkin, u bu darsga tegishli emas.
+  const absentCount = roster.filter((s) => current[s.id]).length
+  const presentCount = roster.length - absentCount
   const conducted = Boolean(note?.conducted)
 
   const toggle = (studentId) => {
@@ -329,8 +331,8 @@ function LessonAttendance({ lesson, quarter, date, reasons, onBack, onSaved }) {
               <p className="text-[13px] text-slate-500">
                 <span className="font-bold text-emerald-600">{presentCount} keldi</span>
                 {' · '}
-                <span className={absentIds.length ? 'font-bold text-red-600' : ''}>
-                  {absentIds.length} kelmadi
+                <span className={absentCount ? 'font-bold text-red-600' : ''}>
+                  {absentCount} kelmadi
                 </span>
                 {' · '}
                 {roster.length} ta jami
