@@ -22,6 +22,12 @@ WORKDIR "/client/src/pages/teacher/ui-web"
 RUN npm ci && npm run build
 WORKDIR /client
 
+# Telegram Mini App (o'qituvchi + ota-ona panellari) — /tg/ ostida. Yuqoridagi
+# o'qituvchi PWA'si bilan bir xil naqsh: vite outDir = /client/dist/tg.
+WORKDIR "/client/src/pages/miniapp/ui-tg"
+RUN npm ci && npm run build
+WORKDIR /client
+
 # ---------- 2) Backend (.NET) publish ----------
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
