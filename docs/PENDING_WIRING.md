@@ -1101,3 +1101,35 @@ with two, both would scan at 03:00. Nothing breaks — the unique `(kind, ref_id
 the second run a no-op and the service retries once on 23505 — but the second replica does the
 work for nothing. If the deployment ever scales out, take a `pg_advisory_lock` at the top of
 `ScanAsync` (the pattern is already in `CashShiftService.LockShiftAsync`).
+
+### 13. Fan progresi bayram kunlarini rejadan chiqarmaydi (backend, seeder emas)
+
+Topilgan joy: `SchoolLms.Application/Services/SubjectProgressService.cs` —
+`ClassSlotsAsync` (o'quvchi/admin ko'rinishi) va `ForTeacherAsync` (o'qituvchi ilovasi).
+
+Ikkalasi ham chorak haftalaridagi HAR bir jadval katagini `Planned` va `ExpectedByToday`
+ga qo'shadi, bayram kunlarini esa tashlab yubormaydi. Jurnal buni boshqacha qiladi:
+`JournalService.ComputeColumnsAsync` `db.Holidays` ni chetlab o'tadi, ya'ni bayram kuniga
+ustun umuman chiqmaydi va o'qituvchi u darsni "o'tildi" deb belgilay olmaydi.
+
+Natija: bayram tushgan hafta kunida dars beradigan o'qituvchida `conducted` doimo
+`expectedByToday` dan kam bo'ladi va `ProgressScreen` qizil "Rejadan orqada" bannerini
+ko'rsatadi; progress 100% ga hech qachon yetmaydi. Mahalliy demoda o'lchandi
+(1-chorakda ikki bayram — 2026-09-01 va 2026-10-01):
+
+```
+karimovadilnoza  50/260 = 19%
+  1-A Matematika  planned=26 conducted=5 expectedByToday=5  ok
+  1-B Matematika  planned=26 conducted=5 expectedByToday=6  ORQADA   <- 2026-09-01 (Mustaqillik kuni)
+  2-A Matematika  planned=26 conducted=5 expectedByToday=6  ORQADA
+  ...
+```
+
+Tuzatish o'lchami: har ikkala metodda `var holidays = (await db.Holidays.Select(h => h.Date)
+.ToListAsync()).ToHashSet();` va sana tekshiruviga `|| holidays.Contains(date)` qo'shish —
+`ComputeColumnsAsync` dagi bilan bir xil mantiq.
+
+Bu yerda QILINMADI: `SubjectProgressService` ni o'zgartirish o'quvchi portali va admin
+hisobotlaridagi raqamlarni ham o'zgartiradi, bu esa demo ma'lumot vazifasidan tashqarida.
+Seeder tomonidan "yopib qo'yish" (bayram kuniga ham `conducted=true` yozish) ataylab
+qilinmadi — u jurnalda ko'rinmaydigan, yolg'on dars yozuvi bo'lardi.
