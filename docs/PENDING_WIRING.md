@@ -1191,3 +1191,153 @@ what you want.
 `overview`/`students` tabs of `FinancePage` were deleted; `api/services/finance.ts` keeps
 only `getSalaryReport`. Payment intake lives at `/cashier`, expenses at
 Moliya → Chiqimlar, debts at the Qarzdorlar tab.
+
+---
+
+## From Phase 3 — Telegram Mini App backend (2026-09-12)
+
+Everything below is **wired**: the controllers are registered by `MapControllers`, the DbSets are
+on `AppDbContext`, the migration is in the folder and the rate-limit policy is in `Program.cs`.
+This section exists for the two frontend agents working in `schoollms.client/src/pages/miniapp/`
+and for whoever finishes retiring `students.parent_phone`.
+
+### T3.1 The endpoint contract
+
+Base URL `/api`. Every response is a Pydantic-equivalent C# record from
+`SchoolLms.Application/Dtos/` — no bare dictionaries. Errors are the usual `{ code, message }`
+or `{ message }`.
+
+#### Session — `/api/tg` (`TelegramAuthController`)
+
+| Verb | Path | Auth | Request | Response |
+|---|---|---|---|---|
+| POST | `/api/tg/auth` | anonymous, 20/min per IP | `TgAuthRequest { initData }` | `TgAuthResponse` |
+| POST | `/api/tg/link` | anonymous, 20/min per IP | `TgLinkRequest { initData, code }` | `TgAuthResponse` |
+| GET | `/api/tg/me` | JWT `parent` \| `teacher` | — | `TgProfileDto` |
+| DELETE | `/api/tg/link` | JWT (any role) | — | `204` |
+
+`TgAuthResponse.status` is the only thing the shell should branch on:
+
+* `"ok"` → `token` + `user` are set. `token` is **the same JWT `/api/auth/login` issues**, so every
+  existing endpoint works with it unchanged. Store it and send `Authorization: Bearer <token>`.
+* `"unlinked"` → signature was valid, this Telegram id is not linked to anyone. `telegram`
+  carries `{ id, displayName, username }` for the "ask the school for a code" screen; send the
+  code to `POST /api/tg/link` together with the **same** `initData`.
+
+Failure modes: `401 invalid_init_data` (forged/expired — do **not** retry automatically),
+`401 account_blocked` (archived teacher/student), `503 telegram_not_configured` (no bot token in
+`SchoolMeta`), `400 invalid_code`, `409 telegram_already_linked`, `409 user_already_linked`,
+`429` (rate limit).
+
+#### Parent — `/api/tg/parent` (`TelegramParentController`), role `parent`
+
+| Verb | Path | Query | Response |
+|---|---|---|---|
+| GET | `/children` | — | `TgChildDto[]` |
+| GET | `/children/{studentId}/overview` | — | `TgChildOverviewDto` |
+| GET | `/children/{studentId}/attendance` | `quarter?` | `StudentAttendanceFullDto` |
+| GET | `/children/{studentId}/grades` | — | `StudentReportDto` |
+| GET | `/children/{studentId}/schedule` | `quarter?`, `week?` | `StudentLessonDto[]` |
+| GET | `/children/{studentId}/finance` | — | `PortalFinanceDto` |
+| GET | `/children/{studentId}/receipts/{paymentId}.pdf` | — | `application/pdf` |
+| GET | `/children/{studentId}/announcements` | — | `BroadcastDto[]` |
+| GET | `/children/{studentId}/pickup` | — | `PickupRequestDto \| null` |
+| POST | `/children/{studentId}/pickup` | — | `PickupRequestDto` |
+
+A `studentId` the caller is not a guardian of returns **404**, never 403 — the existence of
+another family's child is itself information. `PortalFinanceDto` is the same shape
+`GET /api/student/billing` returns (`PortalFinanceController.ToPortal`, now `internal`).
+`StudentLessonDto.day` is `0 = Monday … 5 = Saturday`; "today" is a client-side filter on that
+field. Debt on `TgChildDto` is a **positive** number (`0` = no debt); a credit balance shows as `0`
+there and in full on the finance screen.
+
+#### Teacher — `/api/tg/teacher` (`TelegramTeacherController`), role `teacher`
+
+| Verb | Path | Query | Response |
+|---|---|---|---|
+| GET | `/today` | — | `TgTeacherTodayDto` |
+| GET | `/roster` | `classId`, `subjectId`, `quarter`, `date?`, `period` | `TgRosterDto` |
+| GET | `/journal/recent` | `limit?` (1..100, default 30) | `TgJournalRecentDto[]` |
+| GET | `/chat/unread` | — | `TgChatUnreadDto[]` |
+| POST | `/chat/{channel}/read` | — | `204` |
+
+`/roster` is the **read** side of one-tap attendance; writing is the existing
+`PUT /api/teacher/journal` (`SetJournalEntryRequest`), which already refuses a future date and
+checks that the teacher actually teaches that class+subject. Do not add a second write path.
+Missing `TeacherPermissions` give **403** on `/roster`, `/journal/recent`, `/chat/*`; on `/today`
+the schedule and unread count degrade to empty instead of failing the whole screen.
+
+#### Admin — `/api/admin/telegram` and `/api/admin/guardians`, `[AdminPerm("app")]`
+
+| Verb | Path | Request | Response |
+|---|---|---|---|
+| POST | `/api/admin/telegram/link-codes` | `IssueLinkCodeRequest { userId }` | `LinkCodeDto` |
+| GET | `/api/admin/telegram/links` | `search?` | `TelegramLinkDto[]` |
+| DELETE | `/api/admin/telegram/links/{telegramUserId}` | — | `204` |
+| GET | `/api/admin/guardians` | `search?` | `GuardianDto[]` |
+| GET | `/api/admin/guardians/by-student/{studentId}` | — | `GuardianDto[]` |
+| POST | `/api/admin/guardians` | `SaveGuardianRequest` | `GuardianDto` |
+| PUT | `/api/admin/guardians/{id}` | `SaveGuardianRequest` | `GuardianDto` |
+| POST | `/api/admin/guardians/{id}/children` | `AttachChildRequest` | `GuardianDto` |
+| DELETE | `/api/admin/guardians/{id}/children/{studentId}` | — | `204` |
+| POST | `/api/admin/guardians/{id}/account` | `CreateGuardianAccountRequest` | `CredentialsDto` |
+
+`LinkCodeDto.code` is shown **once** — only its SHA-256 is stored. Issuing a new code kills the
+previous unused one for that user.
+
+### T3.2 Endpoints deliberately NOT duplicated under `/api/tg`
+
+The Mini App token is an ordinary JWT, so these already work as-is and adding a `/api/tg/...`
+alias would mean two surfaces to keep in step. **Call them directly.**
+
+| Need | Existing endpoint | Role |
+|---|---|---|
+| Canteen menu (day / range) | `GET /api/student/canteen/{date}`, `GET /api/student/canteen?start=&end=` | `parent` |
+| Quarters, lesson times, absence reasons | `GET /api/student/meta` · `GET /api/teacher/meta` | `parent` / `teacher` |
+| School name, holidays | `GET /api/student/school`, `/holidays` (and `/api/teacher/...`) | both |
+| Teacher salary summary | `GET /api/teacher/salary?from=&to=` → `SalaryLedgerDto` | `teacher` |
+| Teacher classes / full week schedule | `GET /api/teacher/classes`, `GET /api/teacher/schedule` | `teacher` |
+| Write attendance / grade | `PUT /api/teacher/journal` | `teacher` |
+| Accept a pickup | `POST /api/teacher/pickups/{id}/accept` | `teacher` |
+
+### T3.3 `students.parent_phone` is still the source of truth — follow-up
+
+`guardians` / `student_guardians` (SPEC §3.2) are populated two ways and **both read from
+`parent_phone`**:
+
+* the migration backfills every existing row (`Migrations/Sql/guardians_backfill.sql`);
+* `GuardianSync.EnsureAsync` / `.EnsureManyAsync` mirror it on student create, update and Excel
+  import (`StudentsController`).
+
+The mirror is **one-way**. Editing a guardian in `/api/admin/guardians` does not write back to
+`students.parent_phone`, so after such an edit the two disagree for that family until the student
+row is saved again. That is deliberate — P1-21 has just finished one large retirement and a second
+one was explicitly out of scope — but it is the thing to finish next:
+
+1. Move `StudentPortalController.TargetAsync` and `PortalFinanceController.ResolveAsync` onto
+   `GuardianAccess` (this also closes §15 above: today they are two copies of one rule, and both
+   still show a two-child parent only the first child).
+2. Move the student create/edit form's parent fields onto the guardian editor.
+3. Drop `students.parent_phone`, `parent_full_name`, `parent_last_name`, `parent_first_name`,
+   `parent_middle_name`, `parent_passport_url` — **12+ readers**: `TelegramBotService`,
+   `MessagesController.Personalize`, `ExcelImport`/`ExcelExport`, `ContractService`,
+   `ParentsController`, `StudentsController`, `StudentProfileBuilder`, `StudentReportBuilder`,
+   `CashierStudentDto`, the student list screen, the student card screen, the import template.
+
+Until then, treat `parent_phone` as the input and `guardians` as the index built over it.
+
+### T3.4 No Mini App navigation entry in the admin SPA
+
+Two new admin screens have endpoints and no UI: **Vasiylar** (`/api/admin/guardians`) and
+**Telegram bog'lanishlari** (`/api/admin/telegram/links` + the code issuer). Both sit naturally
+under the existing "Ilova" section, which is why they are gated by `[AdminPerm("app")]`. Nothing
+breaks without them — but until the code issuer exists in the UI, **the only way to link a live
+Telegram account is `curl`**, and the council demo depends on the seeded links instead
+(`tools/seed_demo.py`, section 18).
+
+### T3.5 `chat_reads` is teacher-only so far
+
+`POST /api/tg/teacher/chat/{channel}/read` is the only writer. The admin chat screen and the
+student/parent chat still have no read state, so their unread counts are still "compare against
+the last message you sent". The table is not teacher-specific — `(user_id, channel)` — so those
+screens can start using it without a migration.
