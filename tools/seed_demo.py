@@ -177,6 +177,7 @@ STUDENTS = [
     ("O'rozova Xadicha Bekzod qizi",     "female", "2019-03-17", "O'rozov Bekzod",       "+998 93 012 34 56"),
 ]
 
+SIBLING_FAMILIES = 5          # nechta ota-ona bir nechta farzandli bo'sin (Mini App almashtirgichi uchun)
 STUDENTS_PER_CLASS = 10
 
 # Ikki farzandli oila — Telegram Mini App'dagi "farzandni almashtirish" tugmasining
@@ -523,7 +524,53 @@ def build_roster():
                 f"+998 9{n % 5} {100 + n:03d} {10 + (n * 3) % 80:02d} {10 + (n * 7) % 70:02d}",
             ))
         roster[cname] = rows
+
+    # AKA-UKA, OPA-SINGIL. Yuqoridagi tsikl har o'quvchiga o'z telefonini beradi,
+    # ya'ni har bir ota-ona bitta farzandli bo'lib chiqardi — Mini App'dagi
+    # FARZAND ALMASHTIRGICHNI ko'rsatib bo'lmasdi.
+    #
+    # `GuardianSync.EnsureManyAsync` vasiylarni TELEFON kaliti bo'yicha
+    # birlashtiradi, shuning uchun bir nechta o'quvchiga bitta ota-ona nomi va
+    # bitta raqamni bersak — bazada bitta vasiy va bir nechta bog'lanish hosil
+    # bo'ladi. Aynan shu ish qilinadi: har oilaning farzandlari HAR XIL sinfda,
+    # chunki demo'da almashtirgich sinfni ham o'zgartirib ko'rsatishi kerak.
+    _make_siblings(roster)
     return roster
+
+
+def _make_siblings(roster):
+    """
+    Turli sinflardagi, AYNI OTA-ONA nomiga ega o'quvchilarni bitta oilaga
+    biriktiradi (joyida o'zgartiradi).
+
+    Nega ota-ona nomi bo'yicha: yuqoridagi generator familiyani ham, ota
+    ismini ham bitta `FAMILIES` yozuvidan oladi, ya'ni ota-ona nomi bir xil
+    chiqqan o'quvchilar allaqachon HAQIQIY aka-uka/opa-singil. Ularni shunchaki
+    tasodifiy tanlash "Salimov Baxrom -> Abdullayev Amir" degan oilalarni
+    yasardi — demo'da bu darrov ko'zga tashlanadi.
+    """
+    by_parent = {}
+    for cname, rows in roster.items():
+        for idx, (_full, _gender, _birth, parent, _phone) in enumerate(rows):
+            by_parent.setdefault(parent, []).append((cname, idx))
+
+    # Faqat HAR XIL sinfdagilar: almashtirgich sinfni ham o'zgartirib ko'rsatsin.
+    candidates = []
+    for parent, slots in sorted(by_parent.items()):
+        seen, picked = set(), []
+        for cname, idx in slots:
+            if cname in seen:
+                continue
+            seen.add(cname)
+            picked.append((cname, idx))
+        if len(picked) > 1:
+            candidates.append((parent, picked[:3]))
+
+    for n, (parent, slots) in enumerate(candidates[:SIBLING_FAMILIES], start=1):
+        phone = f"+998 90 777 {10 + n:02d} {n:02d}"
+        for cname, idx in slots:
+            full, gender, birth, _p, _ph = roster[cname][idx]
+            roster[cname][idx] = (full, gender, birth, parent, phone)
 
 
 # --------------------------------------------------------------------------- seed

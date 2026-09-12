@@ -1348,3 +1348,32 @@ Telegram account is `curl`**, and the council demo depends on the seeded links i
 student/parent chat still have no read state, so their unread counts are still "compare against
 the last message you sent". The table is not teacher-specific — `(user_id, channel)` — so those
 screens can start using it without a migration.
+
+### 22. A guardian keeps access after the student's parent phone changes
+
+`GuardianSync.EnsureManyAsync` (`SchoolLms.Application/Services/GuardianService.cs`)
+only ever **adds** a `student_guardians` row. When a student's `parent_phone` is
+corrected — a typo fixed, a number reassigned to a different person — the link to
+the guardian derived from the *old* number stays. That guardian then still sees the
+child's attendance, grades and finances in the Mini App.
+
+Observed while seeding sibling families: reassigning phones left every student
+linked to both the old and the new guardian (21 stale links across 100 students).
+The demo database was cleaned by hand; the code is unchanged.
+
+**Why it was not fixed here.** The obvious rule — "drop the primary link whose
+guardian phone no longer matches" — is wrong: `AdminGuardiansController.AttachChild`
+lets an admin deliberately mark a different guardian primary, and this rule would
+silently undo that. There is no provenance on `student_guardians` to tell a
+sync-created link from a hand-made one.
+
+**Two fixes that would be correct:**
+
+1. Detach by the *previous* phone key. At save time EF still holds
+   `Entry(student).Property(s => s.ParentPhone).OriginalValue`, which identifies
+   exactly the link this sync would have created for the old number and nothing
+   else. Needs `IAppDbContext` to expose `Entry`/`ChangeTracker`, which it
+   deliberately does not today.
+2. Add a `source` column (`sync` | `manual`) to `student_guardians` and let the
+   sync own only its own rows. Heavier, but it also answers the same question for
+   the Excel import path.
