@@ -106,7 +106,7 @@ function DebtCard({ lines }) {
           title={`${l.categoryName} · ${monthLabel(l.periodMonth)}`}
           subtitle={`To'lash muddati: ${dayMonth(parseISO(l.dueOn))}`}
           right={
-            <div className="text-right">
+            <div className="shrink-0 text-right">
               <p className="text-[15px] font-bold text-red-600">{sum(l.remaining)}</p>
               {l.isOverdue && <p className="text-[12px] text-red-500">muddati o'tgan</p>}
             </div>
@@ -151,7 +151,7 @@ function MonthsCard({ months }) {
         const expanded = open.has(m.periodMonth)
         const paidOff = m.remaining <= 0
         return (
-          <div key={m.periodMonth}>
+          <div key={m.periodMonth} className="border-t border-slate-100">
             <Row
               onClick={() => toggle(m.periodMonth)}
               lead={
@@ -165,7 +165,7 @@ function MonthsCard({ months }) {
                 paidOff ? (
                   <Badge tone="success">To'langan</Badge>
                 ) : (
-                  <div className="text-right">
+                  <div className="shrink-0 text-right">
                     <p className="text-[15px] font-bold text-red-600">{sum(m.remaining)}</p>
                     {m.hasOverdue && <p className="text-[12px] text-red-500">muddati o'tgan</p>}
                   </div>
@@ -247,7 +247,7 @@ function PaymentsCard({ childId, payments }) {
         const expanded = open.has(p.paymentId)
         const reversed = Boolean(p.reversal)
         return (
-          <div key={p.paymentId}>
+          <div key={p.paymentId} className="border-t border-slate-100">
             <Row
               onClick={() => toggle(p.paymentId)}
               lead={

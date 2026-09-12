@@ -8,7 +8,7 @@
  * ya'ni kelasi hafta ko'pincha bo'sh bo'ladi. Shuning uchun bo'sh holat
  * "xato" kabi emas, SABABI bilan ko'rsatiladi: "menyu hali kiritilmagan".
  */
-import { useState } from 'react'
+import { Fragment, useState } from 'react'
 import { UtensilsCrossed } from 'lucide-react'
 import { Badge, Card, EmptyState, Row, Stepper } from '../../components/ui'
 import { useAsync } from '../../lib/useAsync'
@@ -112,31 +112,36 @@ function DayMenu({ day, isToday }) {
         const dishes = day.meals?.[meal.key] ?? []
         if (dishes.length === 0) return null
         return (
-          <div key={meal.key}>
+          // Ovqat nomi o'rovchi <div> dan TASHQARIDA: shunda ichkaridagi
+          // birinchi taom `Row` ning `first:border-t-0` iga tushadi va
+          // sarlavha bilan birinchi taom orasida ortiqcha chiziq chiqmaydi.
+          <Fragment key={meal.key}>
             <p className="border-t border-slate-100 px-4 pb-1 pt-3 text-[13px] font-semibold uppercase tracking-wide text-slate-400">
               {meal.label}
             </p>
-            {dishes.map((dish) => (
-              <Row
-                key={dish.id}
-                lead={
-                  dish.imageUrl ? (
-                    <img
-                      src={dish.imageUrl}
-                      alt=""
-                      className="h-11 w-11 shrink-0 rounded-xl object-cover"
-                    />
-                  ) : (
-                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-brand/25 text-brand-ink">
-                      <UtensilsCrossed className="h-5 w-5" />
-                    </div>
-                  )
-                }
-                title={dish.name}
-                subtitle={dish.ingredients}
-              />
-            ))}
-          </div>
+            <div>
+              {dishes.map((dish) => (
+                <Row
+                  key={dish.id}
+                  lead={
+                    dish.imageUrl ? (
+                      <img
+                        src={dish.imageUrl}
+                        alt=""
+                        className="h-11 w-11 shrink-0 rounded-xl object-cover"
+                      />
+                    ) : (
+                      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-brand/25 text-brand-ink">
+                        <UtensilsCrossed className="h-5 w-5" />
+                      </div>
+                    )
+                  }
+                  title={dish.name}
+                  subtitle={dish.ingredients}
+                />
+              ))}
+            </div>
+          </Fragment>
         )
       })}
     </Card>
