@@ -1036,3 +1036,5 @@ what SPEC §4.2 is written to prevent. `ShiftBar` therefore shows only the open 
 receipt count. `expectedCash` / `variance` are `null` until the close call returns, so the
 server does not leak them either — that is what makes the two-phase close dialog honest rather
 than decorative. **Do not "improve" the shift bar by adding the total.**
+- [2026-09-12] `DiscountService.ChargeFor` keeps its own copy of the discount arithmetic instead of delegating to `DiscountMath`, which `DiscountMath`'s own doc comment warns against. The three copies (`TuitionService`, `DiscountMath`, `DiscountService`) agree today — P1-23 pins all three against the same 40 pairs plus 5 000 random inputs — but nothing except those tests enforces it. Collapse to one implementation when `TuitionService` is retired.
+- [2026-09-12] `InvoiceQuery` / `PaymentQuery` `MaxRows` / `MaxListRows` caps are untested. Not P1-23 scope; worth a boundary test before the pagination is exposed to the UI.

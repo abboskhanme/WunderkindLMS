@@ -645,7 +645,13 @@ public sealed class InvoiceService(IAppDbContext db, ILedgerService ledger) : II
             return new PaymentDto(
                 p.Id, p.ReceiptNo, p.StudentId, studentName, p.Amount, p.Method,
                 p.CashShiftId, p.CashierId, cashiers.GetValueOrDefault(p.CashierId) ?? string.Empty,
-                p.Note, p.ReceivedAt, p.ReversalOf, reversedBy.GetValueOrDefault(p.Id),
+                // DIQQAT: `GetValueOrDefault` bu yerda YARAMAYDI — `Dictionary<Guid,Guid>`
+                // topilmaganda `Guid.Empty` qaytaradi, `null` emas. Natijada har bir
+                // to'lov "storno qilingan" bo'lib ko'rinardi va `ForStudentAsync` dagi
+                // `ReversedBy is null` filtri hech qachon o'tmay, o'quvchi avansi (Credit)
+                // doim 0 bo'lib qolardi. `PaymentService.ToDtosAsync` dagi bilan bir xil.
+                p.Note, p.ReceivedAt, p.ReversalOf,
+                reversedBy.TryGetValue(p.Id, out var storno) ? storno : null,
                 decimal.Round(unallocated, MoneyScale), lines);
         })];
     }
