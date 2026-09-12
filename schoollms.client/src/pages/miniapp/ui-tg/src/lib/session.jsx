@@ -42,12 +42,33 @@ export function SessionProvider({ children }) {
 
   useEffect(() => {
     bootstrap()
-    setUnauthorizedHandler(() => setState({ status: 'loading', user: null, error: null }))
+    // 401 — token eskirgan. FAQAT holatni "loading" ga qo'yish yetmaydi: hech
+    // kim uni "ready" ga o'tkazmagani uchun ilova "Kirilmoqda…" da muzlab
+    // qolardi. Telegram imzosi har doim qo'lda, ya'ni jimgina qayta kiramiz.
+    setUnauthorizedHandler(() => {
+      void authenticate()
+    })
     void authenticate()
   }, [authenticate])
 
+  /**
+   * Brauzerdagi login muvaffaqiyatli bo'lganda chaqiriladi. Token allaqachon
+   * saqlangan; bu yerda faqat kim ekanini aniqlab, ilovani ochamiz.
+   */
+  const adoptSession = useCallback(async (user) => {
+    if (user) {
+      setState({ status: 'ready', user, error: null })
+      return
+    }
+    try {
+      setState({ status: 'ready', user: await api.get('/auth/me'), error: null })
+    } catch (e) {
+      setState({ status: 'error', user: null, error: e.message })
+    }
+  }, [])
+
   return (
-    <SessionContext.Provider value={{ ...state, retry: authenticate }}>
+    <SessionContext.Provider value={{ ...state, retry: authenticate, adoptSession }}>
       {children}
     </SessionContext.Provider>
   )

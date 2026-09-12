@@ -4,7 +4,7 @@
  * HAFTA — YAGONA O'Q. Backend jadvalni `?quarter=&week=` bo'yicha beradi,
  * ya'ni "keyingi hafta" degan tugma chorak chegarasidan o'tishi kerak.
  * Shuning uchun butun o'quv yilining haftalari bitta tekis ro'yxatga
- * yig'iladi (`schoolYearWeeks`) va `Stepper` shu ro'yxat bo'ylab yuradi:
+ * yig'iladi (`weekAxis`, `src/lib/weeks.js`) va `Stepper` shu ro'yxat bo'ylab yuradi:
  * 1-chorakning oxirgi haftasidan keyin 2-chorakning birinchisi keladi,
  * hech qanday alohida holat yo'q.
  *
@@ -23,12 +23,13 @@ import { dayMonth, weekdayName } from '../../lib/format'
 import { haptic } from '../../lib/telegram'
 import { getMeta, getWeek } from '../../lib/parentApi'
 import { AsyncBlock, gradeTone } from './shared'
-import { addDaysISO, lessonDow, parseISO, schoolYearWeeks, todayISO, weekIndexFor } from './weeks'
+import { addDays, todayISO, weekAxis } from '../../lib/weeks'
+import { lessonDow, parseISO, weekIndexFor } from './weeks'
 
 export function ScheduleTab({ child }) {
   const state = useAsync(async () => {
     const meta = await getMeta()
-    return { meta, weeks: schoolYearWeeks(meta.quarters) }
+    return { meta, weeks: weekAxis(meta.quarters) }
   }, [child.id])
 
   return (
@@ -105,7 +106,7 @@ function WeekDays({ week, rows }) {
 
   // Haftaning kunlari: dushanbadan shanbagacha, chorak chetiga qisilgan.
   const days = []
-  for (let iso = week.startISO; iso <= week.endISO; iso = addDaysISO(iso, 1)) {
+  for (let iso = week.startISO; iso <= week.endISO; iso = addDays(iso, 1)) {
     const lessons = (byDate.get(iso) ?? []).sort((a, b) => a.period - b.period)
     // Darssiz kun ro'yxatni cho'zadi — faqat bugun bo'lsa ko'rsatamiz,
     // chunki "bugun nima bor" degan savolga javob berilishi kerak.

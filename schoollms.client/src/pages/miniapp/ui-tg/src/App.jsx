@@ -10,22 +10,19 @@ import { ErrorState, Loader } from './components/ui'
 import { TeacherPanel } from './screens/TeacherPanel'
 import { ParentPanel } from './screens/ParentPanel'
 import { LinkScreen } from './screens/LinkScreen'
+import { BrowserLogin } from './screens/BrowserLogin'
 
 const TEACHER_ROLES = ['teacher']
 const PARENT_ROLES = ['parent', 'student']
 
 function Shell() {
-  const { status, user, error, retry } = useSession()
+  const { status, user, error, retry, adoptSession } = useSession()
 
   if (status === 'loading') return <Loader label="Kirilmoqda…" />
 
-  if (status === 'outside') {
-    return (
-      <ErrorState
-        message="Bu sahifa Telegram ilovasi ichida ochilishi kerak. Botga kiring va menyudan oching."
-      />
-    )
-  }
+  // Telegramdan tashqarida — login va parol bilan. Bu demoga tayyorlanish va
+  // brauzerdan tekshirish uchun; hech qanday chetlab o'tish yo'q.
+  if (status === 'outside') return <BrowserLogin onSuccess={adoptSession} />
 
   if (status === 'unlinked') return <LinkScreen />
 

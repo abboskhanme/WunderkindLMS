@@ -16,7 +16,8 @@ import { dayMonth, weekdayName } from '../../lib/format'
 import { haptic } from '../../lib/telegram'
 import { getMenu } from '../../lib/parentApi'
 import { AsyncBlock } from './shared'
-import { addDaysISO, calendarWeek, lessonDow, parseISO, todayISO } from './weeks'
+import { addDays, todayISO } from '../../lib/weeks'
+import { calendarWeek, lessonDow, parseISO } from './weeks'
 
 /** Server kalitlari → ota-ona tili. Tartib ham shu — ertalabdan kechgacha. */
 const MEALS = [
@@ -36,7 +37,7 @@ function weekLabel(offset) {
 export function MenuTab({ child }) {
   // Haftalar bugungi haftadan sanaladi: 0 — shu hafta, −1 — o'tgan hafta.
   const [offset, setOffset] = useState(0)
-  const base = addDaysISO(todayISO(), offset * 7)
+  const base = addDays(todayISO(), offset * 7)
   const { startISO, endISO } = calendarWeek(base)
 
   const state = useAsync(() => getMenu(child.id, startISO, endISO), [child.id, startISO, endISO])

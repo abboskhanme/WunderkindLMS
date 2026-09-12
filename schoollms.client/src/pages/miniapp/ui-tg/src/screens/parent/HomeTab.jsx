@@ -27,7 +27,7 @@ import {
   getAnnouncements, getAttendance, getBilling, getDashboard, getPickup, requestPickup,
 } from '../../lib/parentApi'
 import { AsyncBlock, balanceShort, gradeTone, monthLabel } from './shared'
-import { todayISO } from './weeks'
+import { todayISO } from '../../lib/weeks'
 
 export function HomeTab({ child, onOpenTab }) {
   const state = useAsync(
