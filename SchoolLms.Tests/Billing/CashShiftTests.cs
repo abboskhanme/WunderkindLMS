@@ -924,6 +924,71 @@ public class CashShiftTests(ApiFixture fixture)
     }
 
     /// <summary>Bitta smena uchun o'quvchilar, hisob-fakturalar va ularning summalari.</summary>
+    /// <summary>
+    /// STORNO PULI TASDIQLOVCHINING SMENASIDAN CHIQADI, KASSIRNIKIDAN EMAS.
+    ///
+    /// <para>
+    /// <c>PaymentService.ReverseAsync</c> storno <c>payments</c> qatorini
+    /// tasdiqlovchining ochiq smenasiga yozadi — "pul bugun, uning kassasidan
+    /// chiqadi". Jurnal tomoni ham SHU smenaga tushishi shart, chunki
+    /// <c>ExpectedCashAsync</c> smena satrlarini <c>ref_id ∈ (shu smenaning
+    /// to'lovlari)</c> bo'yicha topadi.
+    /// </para>
+    ///
+    /// <para>
+    /// Ilgari ko'zgu satr ORIGINALNING <c>ref_id</c> sini saqlab qolardi, ya'ni
+    /// pul qaytarilishi kassirning smenasidan yechilardi. O'lchangan natija:
+    /// kassir +500 000 ortiqcha pul bilan (aslida pul javonida turibdi),
+    /// tasdiqlovchining kassasi esa nol farq bilan yopilardi. Bu test aynan
+    /// shuni ushlab turadi.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task Storno_puli_kassirning_emas_tasdiqlovchining_smenasidan_yechiladi()
+    {
+        const decimal amount = 500_000m;
+        const decimal approverFloat = 500_000m;
+
+        var scene = await SceneAsync([amount]);
+        var (_, cashier) = await ClientAsync(Roles.Cashier);
+        var (_, approver) = await ClientAsync(Roles.Admin);
+
+        var cashierShift = await OpenShiftAsync(cashier);
+        var payment = await AcceptAsync(cashier, scene, 0, PaymentMethod.Cash);
+
+        // Tasdiqlovchi O'Z smenasini ochadi — pul aynan shu javondan qaytadi.
+        var approverShift = await OpenShiftAsync(approver, approverFloat);
+
+        var reversal = await approver.PostAsJsonAsync(
+            $"/api/admin/payments/{payment.Id}/reverse",
+            new { reason = "Kassir xato summa kiritdi" });
+        Assert.Equal(HttpStatusCode.OK, reversal.StatusCode);
+
+        // Kassirning javonida pul QOLDI: u hech narsa qaytargani yo'q.
+        var cashierClose = await cashier.PostAsJsonAsync(
+            $"/api/cash/shifts/{cashierShift.Id}/close",
+            new { countedCash = amount, note = (string?)null });
+        Assert.Equal(HttpStatusCode.OK, cashierClose.StatusCode);
+        var closedCashier = (await cashierClose.Content.ReadFromJsonAsync<CashShiftDto>())!;
+
+        // Tasdiqlovchining javonidan pul CHIQDI: 500 000 float − 500 000 qaytim.
+        var approverClose = await approver.PostAsJsonAsync(
+            $"/api/cash/shifts/{approverShift.Id}/close",
+            new { countedCash = 0m, note = (string?)null });
+        Assert.Equal(HttpStatusCode.OK, approverClose.StatusCode);
+        var closedApprover = (await approverClose.Content.ReadFromJsonAsync<CashShiftDto>())!;
+
+        Assert.Equal(cashierShift.Id, closedCashier.Id);
+        Assert.Equal(approverShift.Id, closedApprover.Id);
+
+        // ASOSIY TASDIQ: ikkala smena ham NOL farq bilan yopiladi.
+        Assert.Equal(amount, closedCashier.ExpectedCash);
+        Assert.Equal(0m, closedCashier.Variance);
+
+        Assert.Equal(0m, closedApprover.ExpectedCash);
+        Assert.Equal(0m, closedApprover.Variance);
+    }
+
     private sealed record Scene(List<string> StudentIds, List<Guid> InvoiceIds, decimal[] Amounts);
 
     /// <summary>

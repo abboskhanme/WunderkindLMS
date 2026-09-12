@@ -45,8 +45,12 @@ namespace SchoolLms.Application.Billing;
 /// <c>payments.cash_shift_id</c> bo'yicha (ustunning ma'nosi aynan shu, va uni
 /// FK kafolatlaydi), vaqt oralig'i bo'yicha EMAS. Ledger tomonida ham xuddi
 /// shu to'plam ishlatiladi: <c>account = 'cash'</c> bo'lgan va <c>ref_id</c> i
-/// shu smenaning to'lovlaridan biri bo'lgan yozuvlar. Ikkala tomon BIR XIL
-/// to'plamdan kelib chiqqani uchun
+/// shu smenaning to'lovlaridan biri bo'lgan yozuvlar. STORNO bundan mustasno
+/// emas, faqat u bir qadam orqali topiladi: ko'zgu satr originalning
+/// <c>ref_id</c> sini saqlaydi, storno <c>payments</c> qatori esa
+/// tasdiqlovchining smenasida turadi — shuning uchun
+/// <see cref="ExpectedCashAsync"/> qaytarilgan to'lovlarni originalning id'si
+/// orqali oladi. Ikkala tomon BIR XIL to'plamdan kelib chiqqani uchun
 /// <c>opening_float + (Z-hisobotdagi cash qatori) == expected_cash</c>
 /// invarianti har doim bajariladi — aks holda ikkita "haqiqat" paydo bo'lardi
 /// va qaysi biri to'g'riligini hech kim ayta olmasdi.
@@ -523,12 +527,33 @@ public sealed class CashShiftService(IAppDbContext db) : ICashShiftService
     /// </summary>
     private async Task<decimal> ExpectedCashAsync(CashShift shift, CancellationToken ct)
     {
+        // Shu smenaning ODDIY to'lovlari. Jurnalda ular `ref_id = payments.id`
+        // bilan yotadi.
         var shiftPaymentIds = db.Payments.AsNoTracking()
-            .Where(p => p.CashShiftId == shift.Id)
+            .Where(p => p.CashShiftId == shift.Id && p.ReversalOf == null)
             .Select(p => (Guid?)p.Id);
 
+        // Shu smenada QAYTARILGAN to'lovlar — ular ORIGINALNING id'si orqali
+        // qidiriladi, chunki `LedgerService.ReverseAsync` ko'zgu satrga
+        // originalning `ref_id` sini beradi (`reversal_of` esa qaysi satrni
+        // teskari qilayotganini ko'rsatadi).
+        //
+        // NEGA SHUNDAY. Storno `payments` qatori TASDIQLOVCHINING smenasiga
+        // yoziladi — pul aynan uning javonidan chiqadi. `ref_id` bo'yicha
+        // to'g'ridan-to'g'ri qidirilsa esa ko'zgu satr ORIGINAL to'lov egasining
+        // to'plamiga tushib qolardi: aybsiz kassir o'zi qaytarmagan pul uchun
+        // ortiqcha qoldiq bilan, tasdiqlovchining kassasi esa nol farq bilan
+        // yopilardi. `MethodTotalsAsync` allaqachon `payments.cash_shift_id`
+        // bo'yicha guruhlaydi, ya'ni bu yerdagi to'plam bilan MOS bo'lishi shart —
+        // aks holda Z-hisobot va `expected_cash` ikki xil javob berardi.
+        var reversedOriginalIds = db.Payments.AsNoTracking()
+            .Where(p => p.CashShiftId == shift.Id && p.ReversalOf != null)
+            .Select(p => p.ReversalOf);
+
         var rows = await db.LedgerEntries.AsNoTracking()
-            .Where(e => e.Account == Accounts.Cash && shiftPaymentIds.Contains(e.RefId))
+            .Where(e => e.Account == Accounts.Cash
+                        && ((e.ReversalOf == null && shiftPaymentIds.Contains(e.RefId))
+                            || (e.ReversalOf != null && reversedOriginalIds.Contains(e.RefId))))
             .GroupBy(e => e.Direction)
             .Select(g => new { Direction = g.Key, Total = g.Sum(x => x.Amount) })
             .ToListAsync(ct);
