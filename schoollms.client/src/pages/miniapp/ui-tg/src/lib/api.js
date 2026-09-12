@@ -82,4 +82,6 @@ export const api = {
   get: (p) => request('GET', p),
   post: (p, b) => request('POST', p, b ?? {}),
   put: (p, b) => request('PUT', p, b ?? {}),
+  // DELETE tanasiz ketadi — parametrlar so'rov satrida (backend shunday kutadi).
+  del: (p) => request('DELETE', p),
 }
