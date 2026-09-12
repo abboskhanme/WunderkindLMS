@@ -46,8 +46,24 @@ export function SessionProvider({ children }) {
     void authenticate()
   }, [authenticate])
 
+  /**
+   * Brauzerdagi login muvaffaqiyatli bo'lganda chaqiriladi. Token allaqachon
+   * saqlangan; bu yerda faqat kim ekanini aniqlab, ilovani ochamiz.
+   */
+  const adoptSession = useCallback(async (user) => {
+    if (user) {
+      setState({ status: 'ready', user, error: null })
+      return
+    }
+    try {
+      setState({ status: 'ready', user: await api.get('/auth/me'), error: null })
+    } catch (e) {
+      setState({ status: 'error', user: null, error: e.message })
+    }
+  }, [])
+
   return (
-    <SessionContext.Provider value={{ ...state, retry: authenticate }}>
+    <SessionContext.Provider value={{ ...state, retry: authenticate, adoptSession }}>
       {children}
     </SessionContext.Provider>
   )

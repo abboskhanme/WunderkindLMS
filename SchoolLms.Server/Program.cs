@@ -522,6 +522,24 @@ app.MapFallback(async ctx =>
         return;
     }
 
+    // Telegram Mini App: o'qituvchi PWA'si bilan bir xil naqsh. Telegram
+    // ilovani `/tg/` bilan ochadi, ichkarida esa marshrut yo'q — shuning uchun
+    // `/tg/` ostidagi har qanday fayl bo'lmagan yo'l o'sha index.html ni oladi.
+    if (path.Equals("/tg", StringComparison.OrdinalIgnoreCase))
+    {
+        ctx.Response.Redirect("/tg/", permanent: false);
+        return;
+    }
+    if (path.StartsWith("/tg/", StringComparison.OrdinalIgnoreCase))
+    {
+        var miniIndex = Path.Combine(webRoot, "tg", "index.html");
+        if (!File.Exists(miniIndex)) { ctx.Response.StatusCode = StatusCodes.Status404NotFound; return; }
+        ctx.Response.ContentType = "text/html; charset=utf-8";
+        ctx.Response.Headers.CacheControl = "no-cache";
+        await ctx.Response.SendFileAsync(miniIndex);
+        return;
+    }
+
     var host = ctx.Request.Host.Host;
     var isApp = appHost.Length > 0
         ? host.Equals(appHost, StringComparison.OrdinalIgnoreCase)
