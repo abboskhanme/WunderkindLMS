@@ -27,18 +27,10 @@ public class StudentPortalController(
     TelegramService telegram, FcmService fcm) : ControllerBase
 {
     /// <summary>Berilgan foydalanuvchining qurilmalariga push yuboradi (fire-and-forget).</summary>
-    private async Task PushToUserAsync(string userId, string title, string body)
-    {
-        var meta = await db.SchoolMeta.FirstOrDefaultAsync();
-        var json = meta?.FcmServiceAccountJson ?? "";
-        if (!FcmService.IsConfigured(json)) return;
-        var tokens = await db.DeviceTokens.Where(d => d.UserId == userId)
-            .Select(d => d.Token).Distinct().ToListAsync();
-        if (tokens.Count > 0) _ = fcm.SendAsync(json, tokens, title, body);
-    }
+    private Task PushToUserAsync(string userId, string title, string body) =>
+        AppPush.ToUserAsync(db, fcm, userId, title, body);
 
-    private static PickupRequestDto PickupDto(PickupRequest p) =>
-        new(p.Id, p.StudentId, p.StudentName, p.ClassName, p.Status, p.CreatedAt, p.AcceptedAt, p.AcceptedByName);
+    private static PickupRequestDto PickupDto(PickupRequest p) => PickupService.ToDto(p);
 
     /// <summary>
     /// Maqsadli o'quvchini topadi.
@@ -265,31 +257,10 @@ public class StudentPortalController(
         var s = await ResolveOwnStudentAsync(req.StudentId, uid);
         if (s is null) return NotFound(new { message = "O'quvchi topilmadi" });
 
-        // Pickup KUNLIK — faqat bugungi (o'qish kuni) so'rovi hisobga olinadi; kechagisi qolib ketmaydi.
-        var today = AppClock.Now.ToString("yyyy-MM-dd");
-        var pr = await db.PickupRequests
-            .FirstOrDefaultAsync(p => p.StudentId == s.Id && p.Status == "pending" && p.CreatedAt.StartsWith(today));
-        if (pr is null)
-        {
-            pr = new PickupRequest
-            {
-                StudentId = s.Id,
-                StudentName = s.FullName,
-                ClassName = s.ClassName,
-                RequestedByUserId = uid ?? s.UserId ?? "",
-                Status = "pending",
-                CreatedAt = AppClock.Now.ToString("o"),
-            };
-            db.PickupRequests.Add(pr);
-            await db.SaveChangesAsync();
-        }
-
-        // Sinf rahbariga push.
-        var teacher = await db.Teachers.FirstOrDefaultAsync(t => !t.IsArchived && t.HomeroomClass == s.ClassName);
-        if (teacher?.UserId is not null)
-            await PushToUserAsync(teacher.UserId, "Farzandni olib ketish",
-                $"{s.FullName} ({s.ClassName}) — ota-ona olib ketishga keldi. Qabul qiling.");
-
+        // Pickup KUNLIK va takror bosishga chidamli — mantiq `PickupService` da,
+        // chunki Telegram Mini App (`/api/tg/parent/...`) ham aynan shu yerdan yuradi.
+        var pr = await PickupService.EnsureTodayAsync(db, s, uid ?? s.UserId ?? "");
+        await PickupService.NotifyHomeroomAsync(db, fcm, s);
         return PickupDto(pr);
     }
 
@@ -300,9 +271,7 @@ public class StudentPortalController(
         var s = await TargetAsync(studentId);
         if (s is null) return Ok((PickupRequestDto?)null);
         // Faqat bugungi so'rov — har kuni holatni qaytadan boshlaymiz.
-        var today = AppClock.Now.ToString("yyyy-MM-dd");
-        var pr = await db.PickupRequests.Where(p => p.StudentId == s.Id && p.CreatedAt.StartsWith(today))
-            .OrderByDescending(p => p.CreatedAt).FirstOrDefaultAsync();
+        var pr = await PickupService.TodayAsync(db, s.Id);
         return Ok(pr is null ? null : PickupDto(pr));
     }
 

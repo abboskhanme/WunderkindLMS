@@ -213,8 +213,19 @@ public sealed class PortalFinanceController(
     /// Admin javobini (<see cref="StudentBillingDto"/>) ota-ona ko'radigan
     /// shaklga o'giradi: oylar bo'yicha guruhlaydi, jamlarni SERVERDA qo'shadi
     /// va ichki id'larni tashlab yuboradi.
+    ///
+    /// <para>
+    /// <c>internal</c> — Telegram Mini App'ning ota-ona moliya ekrani
+    /// (<c>GET /api/tg/parent/children/{id}/finance</c>) AYNAN shu javob shaklini
+    /// qaytaradi. Ikkinchi nusxa yozilsa ikkita "ota-ona moliyasi" paydo bo'lardi
+    /// va ular jamlarni bir xil qo'shishiga hech qanday kafolat qolmasdi.
+    /// Mini App'ga alohida endpoint kerak bo'lgani BOSHQA sabab: bu yerdagi
+    /// <see cref="ResolveAsync"/> ota-ona uchun <c>?studentId=</c> ni ATAYLAB
+    /// e'tiborsiz qoldiradi va telefon bo'yicha BIRINCHI farzandni topadi —
+    /// ikki farzandli ota-onaga ikkinchisi ko'rinmaydi.
+    /// </para>
     /// </summary>
-    private static PortalFinanceDto ToPortal(StudentBillingDto card)
+    internal static PortalFinanceDto ToPortal(StudentBillingDto card)
     {
         // ---- Oylar × toifalar ----
         // Bekor qilingan (void) hisob-faktura jamga kirmaydi, lekin qatori

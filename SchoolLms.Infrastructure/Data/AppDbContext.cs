@@ -57,6 +57,14 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<Branch> Branches => Set<Branch>();
     public DbSet<Feedback> Feedbacks => Set<Feedback>();
 
+    // Vasiylar (SPEC §3.2) va Telegram Mini App bog'lanishi (SPEC §6 Faza 3).
+    // Konfiguratsiya: GuardianModel.cs.
+    public DbSet<Guardian> Guardians => Set<Guardian>();
+    public DbSet<StudentGuardian> StudentGuardians => Set<StudentGuardian>();
+    public DbSet<TelegramAccount> TelegramAccounts => Set<TelegramAccount>();
+    public DbSet<TelegramLinkCode> TelegramLinkCodes => Set<TelegramLinkCode>();
+    public DbSet<ChatRead> ChatReads => Set<ChatRead>();
+
     // LMS (Ta'lim)
     public DbSet<LmsSubject> LmsSubjects => Set<LmsSubject>();
     public DbSet<LmsModule> LmsModules => Set<LmsModule>();
@@ -178,6 +186,10 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
         // Yana bitta alohida fayl, yuqoridagi bilan bir xil sabab: P1-14 moliya
         // kodini boshqa agentlar bilan parallel yozadi.
         AnomalyModel.Apply(b);
+
+        // ----- Vasiylar (SPEC §3.2) va Telegram Mini App (SPEC §6 Faza 3) -----
+        // Uchinchi alohida fayl, yuqoridagilar bilan bir xil sabab.
+        GuardianModel.Apply(b);
 
         // ----- PostgreSQL: vaqt turi -----
         // Tizim sanalarni Toshkent "devor soati" sifatida saqlaydi (AppClock.Now — Kind=Unspecified),

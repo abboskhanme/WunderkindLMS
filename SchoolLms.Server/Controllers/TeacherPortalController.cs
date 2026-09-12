@@ -331,33 +331,9 @@ public class TeacherPortalController(
         if (!t.Permissions.Contains(TeacherPermissions.Schedule)) return Forbid();
 
         var (curQ, curW) = await PortalSchedule.CurrentQuarterWeekAsync(db);
-        var q = quarter ?? curQ;
-        var w = week ?? curW;
-
-        var assignments = await db.WeekAssignments
-            .Where(x => x.Quarter == q && x.Week == w && x.TemplateId != null).ToListAsync();
-        var templateIds = assignments.Select(a => a.TemplateId!).Distinct().ToList();
-        var templates = await db.ScheduleTemplates.Include(x => x.Lessons)
-            .Where(x => templateIds.Contains(x.Id)).ToListAsync();
-        var classes = await db.Classes.ToDictionaryAsync(c => c.Id, c => c.Name);
-        var subjects = await db.Subjects.ToDictionaryAsync(s => s.Id, s => s.Name);
-        var times = await db.LessonTimes.ToDictionaryAsync(x => x.Period);
-
-        var result = new List<TeacherLessonDto>();
-        foreach (var a in assignments)
-        {
-            var tpl = templates.FirstOrDefault(x => x.Id == a.TemplateId);
-            if (tpl is null) continue;
-            foreach (var l in tpl.Lessons.Where(l => l.TeacherId == t.Id))
-            {
-                times.TryGetValue(l.Period, out var lt);
-                result.Add(new TeacherLessonDto(
-                    l.Day, l.Period, lt?.StartTime, lt?.EndTime,
-                    a.ClassId, classes.GetValueOrDefault(a.ClassId, ""),
-                    l.SubjectId, subjects.GetValueOrDefault(l.SubjectId, ""), l.SubGroup));
-            }
-        }
-        return result.OrderBy(r => r.Day).ThenBy(r => r.Period).ToList();
+        // Yig'ish mantig'i `PortalSchedule.TeacherWeekAsync` da — Telegram Mini App
+        // ning "bugungi darslar" ekrani ham aynan shu yerdan oladi.
+        return await PortalSchedule.TeacherWeekAsync(db, t.Id, quarter ?? curQ, week ?? curW);
     }
 
     // ---------- Maosh (faqat o'ziniki) ----------
