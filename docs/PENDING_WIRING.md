@@ -517,3 +517,124 @@ QuestPDF ships native Skia for eight runtime identifiers and `dotnet publish` co
 them; the container uses `linux-x64` only. Adding `-r linux-x64 --self-contained false` to the
 publish step in the `Dockerfile` removes the other seven. Not done here (the Dockerfile is not
 this task's file), and not urgent — it is image size, not memory.
+
+---
+
+## For P1-20 — P1-17 (admin billing catalog) routes and navigation
+
+P1-17 built four pages and deliberately touched **neither** `App.tsx` **nor**
+`config/navigation.ts` (three other frontend tasks were in flight on the same files).
+Every page is a plain named export and guards its own role, so it is safe to mount as-is.
+
+### 13. Four routes to register in `App.tsx`
+
+```tsx
+import { CategoriesPage }    from '@/pages/admin/billing/CategoriesPage'
+import { SubscriptionsPage } from '@/pages/admin/billing/SubscriptionsPage'
+import { DiscountsPage }     from '@/pages/admin/billing/DiscountsPage'
+import { ExpensesPage }      from '@/pages/admin/billing/ExpensesPage'
+```
+
+| Path | Element | Notes |
+|---|---|---|
+| `/admin/billing/categories` | `<CategoriesPage />` | fee categories reference data |
+| `/admin/billing/subscriptions` | `<SubscriptionsPage />` | per-student, per-category |
+| `/admin/billing/discounts` | `<DiscountsPage />` | + permanent approval queue |
+| `/admin/billing/expenses` | `<ExpensesPage />` | + approval queue, storno only |
+
+All four go **inside the existing `admin` `ProtectedRoute` branch**, next to
+`/admin/finance`. Do not put them behind the cashier branch.
+
+### 14. Navigation — one registration covers desktop and mobile
+
+There is no separate mobile nav component: `Sidebar.tsx` is the mobile drawer as well, and
+`CommandPalette.tsx` reads the same `navByRole`. So `config/navigation.ts` is the only file
+to edit.
+
+The current `Moliya` entry is a leaf; turn it into a group (same shape as `O'quvchilar`):
+
+```ts
+{
+  label: 'Moliya',
+  to: '/admin/finance',
+  icon: Wallet,
+  perm: 'finance',
+  children: [
+    { label: 'Umumiy',            to: '/admin/finance', end: true },
+    { label: "To'lov toifalari",  to: '/admin/billing/categories',    roles: ['admin', 'superadmin'] },
+    { label: 'Obunalar',          to: '/admin/billing/subscriptions', roles: ['admin', 'superadmin'] },
+    { label: 'Chegirmalar',       to: '/admin/billing/discounts',     roles: ['admin', 'superadmin'] },
+    { label: 'Chiqimlar',         to: '/admin/billing/expenses',      roles: ['admin', 'superadmin'] },
+  ],
+},
+```
+
+`roles: ['admin', 'superadmin']` is not decoration. `perm: 'finance'` alone would show these
+four to a `staff` user who was granted the finance permission, and the server answers
+`403` for `staff` (`Roles.FinanceStaff = admin, superadmin`). `cashier` uses its own
+`navByRole.cashier` list and never sees the admin menu at all.
+
+**If skipped:** the four pages exist, compile and are reachable by typed URL, but nothing
+links to them.
+
+---
+
+## For P1-13 — expense endpoints P1-17 already calls
+
+`expenses` is fully populated in the database (5 rows, 4 approved) but
+`/api/admin/billing/expenses` returns `404 {"message":"API endpoint topilmadi"}` — there is
+no `ExpensesController`. `ExpensesPage.tsx` calls the real URLs anyway and renders a
+distinct "hali serverga ulanmagan" state for a bare 404, so the screen starts working the
+moment the controller lands. No frontend change will be needed.
+
+### 15. Four endpoints, frozen in `src/api/services/expenses.ts`
+
+| Method | Path | Body | Response |
+|---|---|---|---|
+| `GET`  | `/admin/billing/expenses` | query: `from`, `to`, `category` | `ExpenseDto[]` |
+| `POST` | `/admin/billing/expenses` | `{ onDate, category, amount, note? }` | `ExpenseDto` |
+| `POST` | `/admin/billing/expenses/{id}/approve` | — | `ExpenseDto` |
+| `POST` | `/admin/billing/expenses/{id}/reverse` | `{ reason }` | `ExpenseDto` |
+
+`ExpenseDto` is already frozen in `Dtos/BillingDtos.cs`. Guards: class-level
+`[Authorize(Roles = Roles.FinanceStaff)]`, then `[FinanceRole(FinanceAction.RecordExpense)]`
+on create, `[FinanceRole(FinanceAction.ApproveExpense)]` on approve.
+
+**There is no `DELETE` and no `PUT`, and there must not be** (SPEC §4.1). A wrong expense is
+corrected by `reverse`, with a mandatory reason. The page has no delete control at all.
+**There is also no `reject`**: an expense is a fact that already happened, so the two
+outcomes are *approve* and *storno*, not *approve* and *deny*.
+
+### 16. Two decisions the UI made because the DTO could not answer
+
+1. **The approval threshold is a frontend constant.** `EXPENSE_APPROVAL_THRESHOLD =
+   5_000_000` lives in `src/api/services/expenses.ts`. SPEC §4.5 says "above N so'm" but N is
+   not exposed anywhere; the seed data implies 5 000 000 (the 4 600 000 row is unapproved,
+   every row above 7 400 000 is approved). If P1-13 makes it a school setting, return it in
+   the settings payload and delete the constant.
+2. **`ExpenseDto` has no `status`.** `expenseState()` derives it from three facts:
+   `reversedBy` → `reversed`, `approvedByName` → `approved`, `amount > threshold` →
+   `pending`, otherwise `recorded`. If the backend later returns a real status, that one
+   function is the only place to change.
+
+The optional fields `createdById`, `approvedById`, `reversalOf`, `reversedBy` and
+`reversalReason` are already declared on `ExpenseRecord`; the UI uses them when present and
+degrades cleanly when absent.
+
+---
+
+## For whoever adds `CreatedById` to the billing DTOs
+
+`DiscountDto` and `ExpenseDto` carry `CreatedByName` but no id, so P1-17 cannot compare the
+creator to the logged-in user by id. Dual control (SPEC §4.5) is enforced in the UI by
+comparing **normalised full names** — see `isOwnRecord()` in
+`src/pages/admin/billing/access.ts`.
+
+That comparison fails **closed**: two staff members with the same full name hide the approve
+button from each other rather than showing it to the wrong person, and the server's
+`self_approval` check (verified live: `403 self_approval`) is untouched either way.
+
+Adding an optional `CreatedById` to both DTOs is a non-breaking change by the rules at the
+top of `BillingDtos.cs`. The frontend needs **no** change when it appears: `DiscountRecord`
+and `ExpenseRecord` already declare `createdById?: string`, and `isOwnRecord()` prefers the
+id whenever it is present.
