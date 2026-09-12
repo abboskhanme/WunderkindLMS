@@ -678,3 +678,62 @@ There is no expense page in `schoollms.client` and no entry in `navigation.ts`. 
 `FinanceController` screen still writes to `finance_transactions`, which does **not** reach
 the ledger — so until the new screen exists, expenses entered through the old UI stay
 invisible to P&L, cash-flow and the money-flow ring. P1-21 retires that path.
+
+---
+
+## For P1-20 / P1-14 — P1-18 (director finance dashboard)
+
+### 13. Nothing has to be wired for the dashboard to work
+
+P1-18 added five tabs **inside** the existing `FinancePage`, which is already routed
+(`App.tsx:105`, `RequirePerm perm="finance"`) and already in the sidebar
+(`navigation.ts:142`). `App.tsx` and `src/config/navigation.ts` were **not touched**.
+
+New files, all additive:
+
+```
+src/api/services/financeReports.ts          typed client, real endpoints (no stubs)
+src/pages/admin/finance/PnlTab.tsx
+src/pages/admin/finance/CashFlowTab.tsx
+src/pages/admin/finance/DebtorsTab.tsx
+src/pages/admin/finance/ZReportTab.tsx
+src/pages/admin/finance/VarianceTab.tsx
+src/pages/admin/finance/VarianceBanner.tsx        non-dismissible counter (SPEC §4.6)
+src/pages/admin/finance/CollectionRateCard.tsx
+src/pages/admin/finance/ReportState.tsx           loading / error / empty, shared
+src/pages/admin/finance/reportLabels.ts
+src/pages/admin/finance/useVarianceWatch.ts
+src/components/charts/CashFlowChart.tsx
+```
+
+**Optional for P1-20** — if the director should land on a report directly, add deep links
+that preselect a tab. Today the tab lives in component state only; a `?tab=` query parameter
+would be a three-line change in `FinancePage.tsx` (read `useSearchParams`, seed `useState`).
+Not done here because it is not in the acceptance criteria and it invites a route discussion.
+
+**Do not** add a second nav entry for these tabs — they are one page.
+
+### 14. P1-14 owes the dashboard two endpoints; the client is already written against them
+
+`VarianceTab` renders the "Sabab yozib hal qilish" button **only** when the flags endpoint
+answers. Until then it shows the shift-derived list plus a visible note. The contract the
+client assumes (`src/api/services/financeReports.ts`, `FinanceFlag`):
+
+```
+GET  /api/admin/finance/flags?unresolved=true   → FinanceFlag[]
+POST /api/admin/finance/flags/{id}/resolve      → FinanceFlag      body: { reason }
+
+FinanceFlag = {
+  id, kind, detectedAt, message,
+  refId?, amount?, resolvedAt?, resolvedReason?, resolvedByName?
+}
+kind ∈ shift_variance | quick_reversal | off_hours_payment | paid_without_allocation
+```
+
+`message` is rendered as-is, so it must arrive **in Uzbek** from the server. If P1-14 picks
+different field names, the only file to change is `financeReports.ts` — nothing else reads
+the shape.
+
+**If skipped:** the counter keeps working off `cash_shifts.variance` (closed shifts with a
+non-zero variance) and stays non-dismissible; only "resolve with a reason" is unavailable,
+and the UI says so instead of pretending.
