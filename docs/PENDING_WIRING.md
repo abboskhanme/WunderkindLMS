@@ -772,6 +772,32 @@ import { FinanceView } from '@/pages/portal/FinanceView'
 <Route element={<ProtectedRoute role="student" />}>
   <Route path="/student" element={<AppLayout />}>
     <Route index element={<FinanceView />} />
+
+---
+
+## From P1-16 — cashier workspace (frontend)
+
+P1-16 added six new frontend files and **one new backend controller**. It touched **no**
+shared file: `App.tsx`, `navigation.ts`, `constants.ts`, `ProtectedRoute.tsx`, `types/index.ts`,
+`Program.cs`, `FinancePage.tsx` and the existing `api/services/*.ts` are all untouched.
+
+### 13. For P1-20 — register the `/cashier` route
+
+The component is exported as a named export:
+
+```tsx
+import { CashierPage } from '@/pages/cashier/CashierPage'
+```
+
+Add it to `App.tsx` **outside** the `/admin` tree — `ProtectedRoute role="admin"` allows
+`admin | superadmin | staff` and would let a `staff` user in while keeping the `cashier`
+out, which is the wrong way round on both counts:
+
+```tsx
+{/* Kassa — kassir, admin va direktor (SPEC §4.3) */}
+<Route element={<ProtectedRoute roles={['cashier', 'admin', 'superadmin']} />}>
+  <Route path="/cashier" element={<AppLayout />}>
+    <Route index element={<CashierPage />} />
   </Route>
 </Route>
 ```
@@ -946,3 +972,67 @@ Adding an optional `CreatedById` to both DTOs is a non-breaking change by the ru
 top of `BillingDtos.cs`. The frontend needs **no** change when it appears: `DiscountRecord`
 and `ExpenseRecord` already declare `createdById?: string`, and `isOwnRecord()` prefers the
 id whenever it is present.
+
+`ProtectedRoute` currently takes a single `role` and hard-codes the one multi-role case
+(`role="admin"` → `admin | superadmin | staff`). P1-20 owns that file; the smallest change
+that serves both callers is an optional `roles?: Role[]` prop checked before `role`.
+Whatever shape is chosen, the acceptance criterion is the same three roles.
+
+`RootRedirect` already sends a cashier to `/cashier` (`homeByRole.cashier`), and
+`navByRole.cashier` already holds exactly one item — **no navigation change is needed**,
+only the route.
+
+**The page does not depend on the route being nested in `AppLayout`.** It renders its own
+`<h1>Kassa</h1>` header and works standalone, so a full-screen cash-desk layout is also an
+option if the sidebar is judged to be noise for this role.
+
+### 14. The page's own role check is a second line, not the first
+
+`CashierPage` refuses to draw any control for a user outside
+`cashier | admin | superadmin` (it shows "Kassa bo'limi sizga ochiq emas"). That is a
+fallback for a mis-registered route — **it is not the guard**. The route guard in P1-20 and
+the `[FinanceRole]` gate on the server are the real ones.
+
+### 15. `GET /api/cash/students?q=` is new — and it needed no DI
+
+`SchoolLms.Server/Controllers/CashierStudentsController.cs` (new file) exists because a
+`cashier` gets **403** from `GET /api/admin/students`: that controller sits behind
+`[AdminPerm("students")]`, which admits only `admin | superadmin | staff`. Letting the
+cashier through that gate would hand them the whole student CRUD, including the
+login/password export.
+
+- Route: `GET /api/cash/students?q=<kamida 2 belgi>`, max 25 rows, archived students excluded.
+- Guard: `[FinanceRole(FinanceAction.AcceptPayment)]` — the existing SPEC §4.3 row, no new rule.
+- Returns `CashierStudentDto(Id, FullName, ClassName, ParentFullName, ParentPhone)`. **No balance** —
+  the only source of a debt figure stays `suggest-allocation`.
+- Constructor takes `AppDbContext`, already registered (`Program.cs:56`), so **P1-15 has
+  nothing to add for it**. Verified on a build with zero billing DI: the endpoint answers 200
+  while every `/api/cash/shifts/*` route on the same build 500s.
+
+Measured RBAC on a throwaway stack: `cashier` 200 · `admin` 200 · `staff` **403** ·
+anonymous **401**.
+
+### 16. `api/services/cashier.ts` duplicates two frozen stubs on purpose
+
+`payments.ts` and `cashShifts.ts` (P1-06) still throw `notImplemented(...)` and point at
+guessed paths (§11 above). Both belong to other Phase 1.F agents, so P1-16 wrote its own
+client at `src/api/services/cashier.ts` against the **real** routes. Signatures were kept
+identical to the stubs, so once those are wired the new file can become a set of
+one-line re-exports. Whoever consolidates should keep three things that live only in the
+new file and are not obvious:
+
+- `getCurrentShift()` must branch on `res.status === 204`; axios gives `data === ''`, not `null`.
+- `PROBE_AMOUNT = 0.01` — `suggest-allocation` returns `[]` for `amount <= 0`, so listing a
+  student's open invoices before any amount is typed needs a positive probe. Only `remaining`
+  is read in that call; `suggested` is ignored.
+- `financeErrorCode()` / `financeErrorMessage()` read the `{ code, message }` shape that all
+  four money controllers return. Branch on `code`, never on the text.
+
+### 17. `cashTotal` is deliberately not rendered while a shift is open
+
+`CashShiftDto` carries `cashTotal` on an **open** shift (measured: `1200000.00` before close).
+Showing it in the shift bar tells the cashier what the drawer should contain, which is exactly
+what SPEC §4.2 is written to prevent. `ShiftBar` therefore shows only the open time and the
+receipt count. `expectedCash` / `variance` are `null` until the close call returns, so the
+server does not leak them either — that is what makes the two-phase close dialog honest rather
+than decorative. **Do not "improve" the shift bar by adding the total.**
