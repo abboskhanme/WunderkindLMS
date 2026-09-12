@@ -59,8 +59,3 @@ export function hasUnread(channel, lastMessageAt, seen) {
   const at = seen?.[channel]?.at
   return !at || at < lastMessageAt
 }
-
-/** Yangi xabari bor kanallar soni. */
-export function unreadChannelCount(lastMessages, seen) {
-  return Object.entries(lastMessages || {}).filter(([name, iso]) => hasUnread(name, iso, seen)).length
-}

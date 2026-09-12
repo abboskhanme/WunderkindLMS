@@ -14,10 +14,12 @@ import {
 } from '../../components/ui'
 import { useAsync } from '../../lib/useAsync'
 import { teacherApi } from '../../lib/teacherApi'
-import { hasUnread, markSeen, readSeen } from '../../lib/chatSeen'
+import { markSeen, readSeen } from '../../lib/chatSeen'
 import { dayMonth } from '../../lib/format'
 import { haptic, showBackButton } from '../../lib/telegram'
-import { AsyncBlock, STAFF_CHANNEL, channelBadge, channelTitle } from './shared'
+import {
+  AsyncBlock, STAFF_CHANNEL, channelBadge, channelSummaries, channelTitle,
+} from './shared'
 
 const ROLE_LABEL = {
   teacher: "O'qituvchi",
@@ -41,7 +43,7 @@ function shortWhen(iso) {
   return d.toDateString() === new Date().toDateString() ? timeOf(iso) : dayMonth(iso)
 }
 
-export function MessagesTab({ profile }) {
+export function MessagesTab({ profile, user }) {
   const [openChannel, setOpenChannel] = useState(null)
 
   useEffect(() => {
@@ -54,6 +56,7 @@ export function MessagesTab({ profile }) {
       <Conversation
         channel={openChannel}
         profile={profile}
+        userId={user?.id ?? user?.userId ?? null}
         onBack={() => setOpenChannel(null)}
       />
     )
@@ -69,30 +72,7 @@ function ChannelList({ onOpen }) {
       teacherApi.chatChannels(),
       teacherApi.chatLastMessages(),
     ])
-    const seen = readSeen()
-
-    // Har kanal uchun faqat KO'RILMAGANLARINI so'raymiz: shu bitta so'rov ham
-    // o'qilmaganlar sonini, ham oxirgi xabar matnini beradi.
-    const rows = await Promise.all(
-      names.map(async (name) => {
-        const lastAt = lastMap[name] || null
-        const mark = seen[name] || null
-        if (!lastAt) return { name, lastAt: null, unread: 0, preview: null, author: null }
-        if (!hasUnread(name, lastAt, seen)) {
-          return { name, lastAt, unread: 0, preview: mark?.preview ?? null, author: mark?.author ?? null }
-        }
-        const fresh = await teacherApi.chatMessages(name, mark?.at)
-        const last = fresh.length ? fresh[fresh.length - 1] : null
-        return {
-          name,
-          lastAt,
-          unread: fresh.length,
-          preview: last?.text ?? null,
-          author: last?.senderName ?? null,
-        }
-      }),
-    )
-
+    const rows = await channelSummaries(names, lastMap, readSeen())
     rows.sort((a, b) => (b.lastAt || '').localeCompare(a.lastAt || ''))
     return rows
   }, [])
@@ -173,15 +153,15 @@ function ChannelRow({ row, onOpen }) {
 
 /* -------------------------------------------------------------- suhbat */
 
-function Conversation({ channel, profile, onBack }) {
+function Conversation({ channel, profile, userId, onBack }) {
   const q = useAsync(() => teacherApi.chatMessages(channel), [channel])
   const [extra, setExtra] = useState([])
   const [text, setText] = useState('')
   const [sending, setSending] = useState(false)
   const [sendError, setSendError] = useState(null)
-  // O'z xabarlarimizni ajratish uchun: birinchi yuborilgan xabardan o'z
-  // userId'mizni bilib olamiz (sessiya obyektida u bo'lmasligi mumkin).
-  const [myUserId, setMyUserId] = useState(null)
+  // O'z xabarlarimizni ajratish uchun: sessiyada userId bo'lmasa, birinchi
+  // yuborilgan xabarning javobidan bilib olamiz.
+  const [myUserId, setMyUserId] = useState(userId)
   const bottomRef = useRef(null)
 
   const messages = useMemo(() => {
@@ -198,9 +178,11 @@ function Conversation({ channel, profile, onBack }) {
     if (last) markSeen(channel, last.createdAt, last.text, last.senderName)
   }, [channel, last])
 
-  // Yangi xabar kelganda pastga tushamiz.
+  // Yangi xabar kelganda pastga tushamiz. `scrollIntoView` eski WebView'larda
+  // bo'lmasligi mumkin — bo'lmasa shunchaki aylantirmaymiz.
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ block: 'end' })
+    const el = bottomRef.current
+    if (typeof el?.scrollIntoView === 'function') el.scrollIntoView({ block: 'end' })
   }, [messages.length])
 
   // Yengil polling — SignalR o'rniga (Mini App qisqa ochiladi, 8 soniya yetarli).

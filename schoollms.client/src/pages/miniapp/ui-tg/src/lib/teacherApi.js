@@ -41,6 +41,9 @@ export const teacherApi = {
   /** Bir haftalik darslar. quarter/week berilmasa — server joriysini oladi. */
   schedule: (quarter, week) => api.get(`${BASE}/schedule${qs({ quarter, week })}`),
 
+  /** Chorak bo'yicha o'tilgan darslar progresi (reja / o'tilgan / kesimlar). */
+  progress: (quarter) => api.get(`${BASE}/progress${qs({ quarter })}`),
+
   /* ---------- jurnal / davomat ---------- */
 
   /** Sinf o'quvchilari (jurnal ro'yxati — bu yerda pul ko'rsatilmaydi). */

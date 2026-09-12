@@ -53,7 +53,7 @@ export function ScheduleTab({ meta }) {
     <Screen>
       <Hero
         title="Dars jadvali"
-        subtitle={spot ? `${quarter}-chorak · ${week}-hafta` : "O'quv yili sozlanmagan"}
+        subtitle={spot ? "Haftalik ko'rinish" : "O'quv yili sozlanmagan"}
       >
         {axis.length > 0 && (
           <>

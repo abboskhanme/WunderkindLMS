@@ -70,7 +70,7 @@ export function SalaryTab({ meta }) {
                   value={month.paid}
                   max={month.expected}
                   lead={shortSum(month.paid)}
-                  note={`so'm · ${shortSum(month.expected)} dan`}
+                  note={`${shortSum(month.expected)} so'mdan to'landi`}
                 />
               </div>
             )}
@@ -132,7 +132,7 @@ export function SalaryTab({ meta }) {
                     <Row
                       key={m.month}
                       title={labelOf(m.month)}
-                      subtitle={`${money(m.paid)} / ${money(m.expected)}`}
+                      subtitle={`${shortSum(m.paid)} / ${shortSum(m.expected)} so'm`}
                       right={<Badge tone={st.tone}>{st.text}</Badge>}
                       onClick={
                         axis.indexOf(m.month) >= 0

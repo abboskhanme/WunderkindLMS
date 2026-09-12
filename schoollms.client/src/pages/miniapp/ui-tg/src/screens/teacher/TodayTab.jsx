@@ -14,11 +14,11 @@ import {
 } from '../../components/ui'
 import { useAsync } from '../../lib/useAsync'
 import { teacherApi } from '../../lib/teacherApi'
-import { readSeen, unreadChannelCount } from '../../lib/chatSeen'
+import { readSeen } from '../../lib/chatSeen'
 import { todayISO } from '../../lib/weeks'
 import { fullDate, todayIndex, weekdayName } from '../../lib/format'
 import {
-  AsyncBlock, lessonPairs, lessonProgress, lessonTimeState, nowHHmm,
+  AsyncBlock, channelSummaries, lessonPairs, lessonProgress, lessonTimeState, nowHHmm,
 } from './shared'
 
 export function TodayTab({ profile, meta, onOpenAttendance }) {
@@ -61,7 +61,14 @@ export function TodayTab({ profile, meta, onOpenAttendance }) {
       canMessages ? teacherApi.chatLastMessages() : Promise.resolve({}),
     ])
 
-    return { date, lessons, conducted, progress, lastMessages }
+    // O'qilmagan xabarlar — "Xabarlar" tabidagi bilan BIR XIL manbadan, ya'ni
+    // ikki ekran hech qachon boshqa-boshqa raqam ko'rsatmaydi.
+    const channels = Object.keys(lastMessages)
+    const summaries = canMessages ? await channelSummaries(channels, lastMessages, readSeen()) : []
+    const unread = summaries.reduce((n, s) => n + s.unread, 0)
+    const unreadChannels = summaries.filter((s) => s.unread > 0).length
+
+    return { date, lessons, conducted, progress, channels, unread, unreadChannels }
   }, [quarter, week])
 
   const d = q.data
@@ -116,8 +123,11 @@ export function TodayTab({ profile, meta, onOpenAttendance }) {
                 canMessages
                   ? {
                       label: 'Yangi xabar',
-                      value: String(unreadChannelCount(data.lastMessages, readSeen())),
-                      note: `${Object.keys(data.lastMessages).length} ta guruhda`,
+                      value: String(data.unread),
+                      note:
+                        data.unread > 0
+                          ? `${data.unreadChannels} ta guruhda`
+                          : `${data.channels.length} ta guruh o'qilgan`,
                     }
                   : {
                       label: 'Sinf rahbarligi',
@@ -268,7 +278,7 @@ function QuarterProgress({ progress }) {
       ? "reja bo'yicha ketyapsiz"
       : diff > 0
         ? `rejadan ${diff} ta oldindasiz`
-        : `rejadan ${Math.abs(diff)} ta ortdasiz`
+        : `rejadan ${Math.abs(diff)} ta orqadasiz`
 
   return (
     <Card

@@ -82,6 +82,7 @@ export function TeacherPanel({ user }) {
       )}
       {active === 'schedule' && <ScheduleTab meta={meta} />}
       {active === 'salary' && <SalaryTab meta={meta} />}
+      {/* `user` — sessiya identifikatori: chatda o'z xabarlarini ajratish uchun. */}
       {active === 'chat' && <MessagesTab profile={profile} user={user} />}
 
       <TabBar tabs={tabs} value={active} onChange={change} />
