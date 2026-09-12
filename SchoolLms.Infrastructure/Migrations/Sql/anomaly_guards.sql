@@ -1,6 +1,6 @@
 -- ===========================================================================
 --  finance_anomaly_flags — baza darajasidagi qulflar (SPEC §4.1 grantlari, §4.6)
---  Migratsiya: 20260912043415_FinanceAnomalyFlags · Vazifa: P1-14
+--  Migratsiya: 20260912052432_FinanceAnomalyFlags · Vazifa: P1-14
 -- ===========================================================================
 --
 --  BU FAYLNI TAHRIRLAMANG.

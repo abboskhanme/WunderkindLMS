@@ -1,6 +1,6 @@
 -- ===========================================================================
 --  audit_log.before / audit_log.after: text -> jsonb (SPEC §4.6)
---  Migratsiya: 20260912043415_FinanceAnomalyFlags · Vazifa: P1-14
+--  Migratsiya: 20260912052432_FinanceAnomalyFlags · Vazifa: P1-14
 -- ===========================================================================
 --
 --  BU FAYLNI TAHRIRLAMANG.

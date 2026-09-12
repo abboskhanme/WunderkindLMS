@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using SchoolLms.Application.Abstractions;
+using SchoolLms.Application.Services;
 using SchoolLms.Domain;
 
 namespace SchoolLms.Application.Billing;
@@ -209,6 +210,13 @@ public sealed class ExpenseService(IAppDbContext db, ILedgerService ledger) : IE
     /// </summary>
     private static readonly DateOnly EarliestDate = new(2000, 1, 1);
 
+    /// <summary>
+    /// Audit qatoridagi <c>actor_name</c> uchun — keshlangan (P1-14).
+    /// Aktyor JWT'dan emas, PARAMETR sifatida keladi (SPEC §4.4), shuning uchun
+    /// <c>AuditService.Record</c> emas, <c>AuditService.Entry</c> ishlatiladi.
+    /// </summary>
+    private readonly ActorNames actors = new(db);
+
     // -----------------------------------------------------------------
     //  Yaratish
     // -----------------------------------------------------------------
@@ -260,14 +268,21 @@ public sealed class ExpenseService(IAppDbContext db, ILedgerService ledger) : IE
         if (needsApproval)
         {
             // Jurnalga TUSHMAYDI: chegaradan yuqori pul ikkinchi imzosiz
-            // hisobotga kirmasligi kerak. Bitta INSERT — aniq tranzaksiya
-            // shart emas (`SaveChanges` ning o'zi atomar).
+            // hisobotga kirmasligi kerak. Bitta INSERT + audit qatori — ikkalasi
+            // bitta `SaveChanges` da, ya'ni aniq tranzaksiya shart emas.
             db.Expenses.Add(expense);
+            db.AuditLogs.Add(AuditService.Entry(
+                AuditService.EntityExpense, expense.Id.ToString("D"), "create",
+                $"Chiqim kiritildi, TASDIQ KUTMOQDA: {category} — {AuditService.Money(amount)} so'm "
+                + $"({expense.OnDate:yyyy-MM-dd}). Chegara: {AuditService.Money(threshold)} so'm (SPEC §4.5).",
+                actorId: actorId,
+                actorName: await actors.OfAsync(actorId, ct),
+                after: Snapshot(expense)));
             await db.SaveChangesAsync(ct);
             return (await ToDtosAsync([expense], ct))[0];
         }
 
-        await PostAsync(expense, method, actorId, isNew: true, ct);
+        await PostAsync(expense, method, actorId, isNew: true, before: null, ct);
         return (await ToDtosAsync([expense], ct))[0];
     }
 
@@ -311,13 +326,15 @@ public sealed class ExpenseService(IAppDbContext db, ILedgerService ledger) : IE
                 "O'zingiz kiritgan chiqimni o'zingiz tasdiqlay olmaysiz (SPEC §4.5) — "
                 + "ikkinchi shaxs tasdig'i kerak.");
 
+        // Audit uchun "oldingi holat" — `ApprovedBy` hali null bo'lgan payt.
+        var before = Snapshot(expense);
         expense.ApprovedBy = approverId;
 
         // Jurnal satrining muallifi — TASDIQLOVCHI: pulni haqiqatan chiqarishga
         // ruxsat bergan odam o'sha. Buning ikkinchi ta'siri ham foydali:
         // `LedgerService.ReverseAsync` partiya muallifiga storno'ni taqiqlaydi,
         // ya'ni bu chiqimni keyin UCHINCHI shaxs (yoki yaratuvchi) storno qiladi.
-        await PostAsync(expense, settlement, approverId, isNew: false, ct);
+        await PostAsync(expense, settlement, approverId, isNew: false, before, ct);
 
         return (await ToDtosAsync([expense], ct))[0];
     }
@@ -363,10 +380,15 @@ public sealed class ExpenseService(IAppDbContext db, ILedgerService ledger) : IE
                 "Jurnalga o'zingiz qo'ygan chiqimni o'zingiz storno qila olmaysiz (SPEC §4.5) — "
                 + "ikkinchi shaxs tasdig'i kerak.");
 
-        // Aniq tranzaksiya SHART EMAS va ataylab qo'yilmagan: bu yo'lda
-        // `ReverseAsync` ning bitta `SaveChanges` idan boshqa yozuv yo'q
-        // (`expenses` ga qator qo'shilmaydi — sabab fayl boshida), ya'ni u
-        // allaqachon atomar.
+        // ANIQ TRANZAKSIYA (P1-14 da qo'shildi). Ilgari bu yerda faqat
+        // `ledger.ReverseAsync` ning bitta `SaveChanges` i bo'lgani uchun
+        // tranzaksiya kerak emas edi. Endi ustiga audit qatori ham yoziladi
+        // (SPEC §4.6), ya'ni ikkita yozuv bor — ular BIRGA tushishi yoki
+        // birga tushmasligi kerak. Audit qatori ATAYLAB muvaffaqiyatli
+        // storno'dan KEYIN qo'shiladi: aks holda `ReverseAsync` rad etganda
+        // kuzatuvda saqlanmagan qator osilib qolardi.
+        await using var tx = await db.BeginTransactionAsync(ct);
+
         try
         {
             await ledger.ReverseAsync(anchor.Id, cleanReason, approverId, ct);
@@ -386,6 +408,20 @@ public sealed class ExpenseService(IAppDbContext db, ILedgerService ledger) : IE
             // sababni ko'rsatgan 409 foydaliroq.
             throw BillingRuleException.Conflict("ledger_reversal_refused", ex.Message);
         }
+
+        db.AuditLogs.Add(AuditService.Entry(
+            AuditService.EntityExpense, expense.Id.ToString("D"), "reverse",
+            $"Chiqim STORNO qilindi: {expense.Category} — "
+            + $"{AuditService.Money(expense.Amount)} so'm. Sabab: {cleanReason}",
+            actorId: approverId,
+            actorName: await actors.OfAsync(approverId, ct),
+            // `expenses` qatori TEGILMAYDI (sabab fayl boshida), shuning uchun
+            // `before` va `after` bir xil — storno dalili jurnalda.
+            before: Snapshot(expense),
+            after: Snapshot(expense)));
+        await db.SaveChangesAsync(ct);
+
+        await tx.CommitAsync(ct);
 
         return (await ToDtosAsync([expense], ct))[0];
     }
@@ -459,8 +495,11 @@ public sealed class ExpenseService(IAppDbContext db, ILedgerService ledger) : IE
     /// tasdiqlangan, lekin jurnalga tushmagan chiqim) qolardi.
     /// </para>
     /// </summary>
+    /// <param name="before">Audit uchun oldingi holat. <c>null</c> = yangi qator
+    /// (<paramref name="isNew"/>), ya'ni "oldingi holat" degan narsa yo'q.</param>
     private async Task PostAsync(
-        Expense expense, string method, string actorId, bool isNew, CancellationToken ct)
+        Expense expense, string method, string actorId, bool isNew, object? before,
+        CancellationToken ct)
     {
         var memo = expense.Note is null
             ? $"Chiqim: {expense.Category}"
@@ -469,6 +508,19 @@ public sealed class ExpenseService(IAppDbContext db, ILedgerService ledger) : IE
         await using var tx = await db.BeginTransactionAsync(ct);
 
         if (isNew) db.Expenses.Add(expense);
+
+        // Audit (SPEC §4.6) — AYNAN shu tranzaksiya ichida. Orqaga qaytgan
+        // chiqim olinmagan pul haqida audit izi qoldirmasin.
+        db.AuditLogs.Add(AuditService.Entry(
+            AuditService.EntityExpense, expense.Id.ToString("D"), isNew ? "create" : "approve",
+            (isNew ? "Chiqim kiritildi va jurnalga tushdi: " : "Chiqim TASDIQLANDI va jurnalga tushdi: ")
+            + $"{expense.Category} — {AuditService.Money(expense.Amount)} so'm "
+            + $"({Accounts.SettlementFor(method)}, {expense.OnDate:yyyy-MM-dd})",
+            actorId: actorId,
+            actorName: await actors.OfAsync(actorId, ct),
+            before: before,
+            after: Snapshot(expense)));
+
         await db.SaveChangesAsync(ct);
 
         await ledger.PostAsync(
@@ -571,6 +623,18 @@ public sealed class ExpenseService(IAppDbContext db, ILedgerService ledger) : IE
 
         string Name(string userId) => names.GetValueOrDefault(userId, "—");
     }
+
+    /// <summary>Audit uchun snapshot (<c>before</c>/<c>after</c>) — SPEC §4.6.</summary>
+    private static object Snapshot(Expense e) => new
+    {
+        e.Id,
+        e.OnDate,
+        e.Category,
+        e.Amount,
+        e.Note,
+        e.CreatedBy,
+        e.ApprovedBy,
+    };
 
     /// <summary>Shu chiqimning jurnal partiyasi bormi (ya'ni pul hisobotga tushganmi)?</summary>
     private Task<bool> IsPostedAsync(Guid id, CancellationToken ct) =>

@@ -205,6 +205,63 @@ public class AnomalyScanTests(ApiFixture fixture)
         Assert.Equal("10", (string?)await cmd.ExecuteScalarAsync());
     }
 
+    /// <summary>
+    /// Chiqim yo'li (P1-14b dagi <see cref="ExpenseService"/>) ham
+    /// <c>audit_log</c> ga tushadi — SPEC §4.6 dagi to'rtinchi yo'l.
+    ///
+    /// <para>
+    /// Uchta holat tekshiriladi, chunki ular UCHTA turli commit yo'li:
+    /// chegaradan past chiqim (darhol jurnalga), tasdiq kutayotgan chiqim
+    /// (jurnalsiz), va tasdiqlash (jurnalga tushish). Har biri o'z audit
+    /// qatorini qoldirishi kerak.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task Chiqim_yoli_audit_qatorini_qoldiradi()
+    {
+        var adminId = await NewUserAsync(Roles.Admin);
+        var directorId = await NewUserAsync(Roles.SuperAdmin);
+
+        await using var db = NewDb();
+        var expenses = new ExpenseService(db, new LedgerService(db));
+
+        // (a) Chegaradan past — darhol jurnalga tushadi.
+        var small = await expenses.CreateAsync(
+            new SchoolLms.Application.Billing.CreateExpenseRequest(AppClock.Today, "utilities", 250_000m, PaymentMethod.Transfer,
+                "Sentyabr elektri"),
+            adminId);
+
+        var created = await db.AuditLogs.AsNoTracking().SingleAsync(
+            a => a.EntityType == "Expense" && a.EntityId == small.Id.ToString("D"));
+        Assert.Equal("create", created.Action);
+        Assert.Equal(adminId, created.ActorId);
+        Assert.Equal(250_000m, JsonDocument.Parse(created.After!).RootElement
+            .GetProperty("Amount").GetDecimal());
+
+        // (b) Chegaradan yuqori — jurnalsiz, tasdiq kutadi.
+        var big = await expenses.CreateAsync(
+            new SchoolLms.Application.Billing.CreateExpenseRequest(AppClock.Today, "repair", 9_000_000m, PaymentMethod.Transfer, null),
+            adminId);
+
+        var pending = await db.AuditLogs.AsNoTracking().SingleAsync(
+            a => a.EntityType == "Expense" && a.EntityId == big.Id.ToString("D"));
+        Assert.Contains("TASDIQ KUTMOQDA", pending.Summary, StringComparison.Ordinal);
+
+        // (c) Tasdiqlash — ikkinchi shaxs, ikkinchi audit qatori.
+        await expenses.ApproveAsync(big.Id, PaymentMethod.Transfer, directorId);
+
+        var approved = await db.AuditLogs.AsNoTracking().SingleAsync(
+            a => a.EntityType == "Expense"
+                 && a.EntityId == big.Id.ToString("D")
+                 && a.Action == "approve");
+        Assert.Equal(directorId, approved.ActorId);
+        // `before` — tasdiqlanmagan holat, `after` — tasdiqlangan.
+        Assert.Null(JsonDocument.Parse(approved.Before!).RootElement
+            .GetProperty("ApprovedBy").GetString());
+        Assert.Equal(directorId, JsonDocument.Parse(approved.After!).RootElement
+            .GetProperty("ApprovedBy").GetString());
+    }
+
     // =====================================================================
     //  5-mezon — 50 000 nomuvofiqlik AYNAN bitta bayroq beradi
     // =====================================================================
