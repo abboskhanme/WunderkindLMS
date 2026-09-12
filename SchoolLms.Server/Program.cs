@@ -210,6 +210,21 @@ builder.Services.AddRateLimiter(options =>
                 Window = TimeSpan.FromMinutes(1),
                 QueueLimit = 0,
             }));
+
+    // Telegram Mini App kirishi va bog'lash (`/api/tg/auth`, `/api/tg/link`).
+    // `initData` imzosini soxtalashtirib bo'lmaydi, lekin bir martalik BOG'LASH
+    // KODINI taxmin qilishga urinish mumkin — 20/daqiqa uni ma'nosiz qiladi
+    // (kod 8 belgi, 32 harfli alifbo, umri 15 daqiqa). Chegara login'nikidan
+    // yumshoqroq: Mini App qayta ochilganda `auth` har safar chaqiriladi.
+    options.AddPolicy("telegram", httpContext =>
+        System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            factory: _ => new System.Threading.RateLimiting.FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 20,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0,
+            }));
 });
 
 // Real-time guruh chati (SignalR)

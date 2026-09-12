@@ -29,40 +29,17 @@ public class AuthController(AppDbContext db, JwtTokenService jwt, ILogger<AuthCo
         }
 
         // Arxivlangan o'qituvchi/o'quvchi qayta kira olmasin (token revocation bilan bir xil mantiq).
-        if (await IsBlockedAsync(user))
+        if (await SessionFactory.IsBlockedAsync(db, user))
             return Unauthorized(new { message = "Akkaunt arxivlangan yoki to'xtatilgan" });
 
-        // Login kuzatuvi: birinchi marta kirayotgan bo'lsa FirstLoginAt ham, har safar LastLoginAt yoziladi.
-        var now = AppClock.Now.ToString("yyyy-MM-ddTHH:mm:ss");
-        if (string.IsNullOrEmpty(user.FirstLoginAt)) user.FirstLoginAt = now;
-        user.LastLoginAt = now;
-        // Foydalanuvchi parolni ishlatdi — dastlabki ochiq parol endi superadmin'ga ko'rsatilmaydi.
-        user.InitialPassword = null;
-        await db.SaveChangesAsync();
-
-        var token = jwt.CreateToken(user);
-        return new LoginResponse(token, new UserDto(
-            user.Id, user.FullName, user.Role, user.Email, user.AvatarUrl, await PermsFor(user)));
+        // Kirish qaydi va token — YAGONA joyda (SessionFactory). Telegram Mini App
+        // (`/api/tg/auth`) ham aynan shu yo'ldan yuradi, ya'ni ikkita "login"
+        // xatti-harakati bir-biridan uzoqlashib keta olmaydi.
+        return await SessionFactory.IssueAsync(db, jwt, user);
     }
 
-    /// <summary>Akkaunt arxivlangan (o'qituvchi/o'quvchi) bo'lsa true — login va token rad etiladi.</summary>
-    private async Task<bool> IsBlockedAsync(AppUser user) => user.Role switch
-    {
-        Roles.Teacher => !await db.Teachers.AnyAsync(t => t.UserId == user.Id && !t.IsArchived),
-        Roles.Student => !await db.Students.AnyAsync(s => s.UserId == user.Id && !s.IsArchived),
-        _ => false,
-    };
-
-    /// <summary>
-    /// Ruxsat etilgan bo'limlar: o'qituvchi → Teacher.Permissions; xodim → AppUser.Permissions
-    /// (admin bo'limlari); admin/superadmin/o'quvchi → null (cheklov yo'q / kerak emas).
-    /// </summary>
-    private async Task<List<string>?> PermsFor(AppUser user) => user.Role switch
-    {
-        Roles.Teacher => (await db.Teachers.FirstOrDefaultAsync(t => t.UserId == user.Id))?.Permissions,
-        Roles.Staff => user.Permissions,
-        _ => null,
-    };
+    /// <summary>Ruxsat etilgan bo'limlar — <see cref="SessionFactory.PermissionsAsync"/> ning qisqartmasi.</summary>
+    private Task<List<string>?> PermsFor(AppUser user) => SessionFactory.PermissionsAsync(db, user);
 
     [HttpGet("me")]
     [Authorize]

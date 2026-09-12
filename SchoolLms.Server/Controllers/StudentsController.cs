@@ -94,6 +94,10 @@ public class StudentsController(AppDbContext db, AuditService audit) : Controlle
     {
         var student = AddStudent(p);
         await db.SaveChangesAsync();
+        // SPEC §3.2: ota-ona raqamidan vasiy qatorini va bog'lanishni chiqaramiz.
+        // Busiz bugun qo'shilgan o'quvchining ota-onasi Telegram Mini App'da
+        // hech narsa ko'rmasdi (migratsiyadagi backfill faqat eskilarini ko'chiradi).
+        await GuardianSync.EnsureAsync(db, student);
         // Yangi o'quvchining qoldig'i 0: obuna hali ochilmagan, hisob-faktura yo'q.
         return ToDto(student, 0m);
     }
@@ -247,6 +251,9 @@ public class StudentsController(AppDbContext db, AuditService audit) : Controlle
         }
 
         await db.SaveChangesAsync();
+        // Ota-ona raqami/ismi o'zgargan bo'lishi mumkin — vasiy bog'lanishini tekislaymiz.
+        // Bir tomonlama: o'quvchi qatoridan vasiyga (GuardianSync izohiga qarang).
+        await GuardianSync.EnsureAsync(db, student);
         return NoContent();
     }
 
@@ -514,6 +521,7 @@ public class StudentsController(AppDbContext db, AuditService audit) : Controlle
             .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
 
         var errors = new List<StudentImportRowErrorDto>();
+        var imported = new List<Student>();
         int created = 0, skipped = 0;
 
         // 0-qator — sarlavha; ma'lumot 1-indeksdan boshlanadi (Excel'dagi 2-qator).
@@ -543,11 +551,17 @@ public class StudentsController(AppDbContext db, AuditService audit) : Controlle
                 ClassName: cls.Name,
                 EnrollmentDate: NormalizeDate(r[7]) is { Length: > 0 } e ? e : null);
 
-            AddStudent(payload);
+            imported.Add(AddStudent(payload));
             created++;
         }
 
-        if (created > 0) await db.SaveChangesAsync();
+        if (created > 0)
+        {
+            await db.SaveChangesAsync();
+            // Butun partiya uchun BITTA marta (SPEC §3.2). `EnsureManyAsync` ikkita
+            // so'rov yuboradi — importdagi har qator uchun alohida emas.
+            await GuardianSync.EnsureManyAsync(db, imported);
+        }
         return new StudentImportResultDto(created, errors.Count, skipped, errors);
     }
 

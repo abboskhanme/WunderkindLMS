@@ -179,6 +179,28 @@ STUDENTS = [
 
 STUDENTS_PER_CLASS = 10
 
+# Ikki farzandli oila — Telegram Mini App'dagi "farzandni almashtirish" tugmasining
+# yagona demo tayanchi (SPEC §6 Faza 3 qabul mezoni). Ikkala farzand ATAYLAB har xil
+# sinfda: bitta sinfdagi aka-uka jadval, jurnal va oshxonani bir xil ko'rsatib,
+# almashtirgich ishlayotganini isbotlamasdi.
+#
+# Bu bolalar sinfga QO'SHILMAYDI — har sinfning OXIRGI generatsiya qilingan qatorini
+# almashtiradi, ya'ni sinf hajmi baribir 10 ta bo'lib qoladi va boshqa hech qanday
+# hisob (progress, reyting, moliya) siljimaydi. 1-A tegilmaydi: uning ro'yxati qo'lda
+# yozilgan va eski skript/skrinshotlar shu nomlarga tayanadi.
+SHARED_PARENT = ("Sultonov Jahongir Baxtiyorovich", "+998 90 777 66 55")
+SHARED_CHILDREN = {
+    "2-A": ("Sultonov Amirbek Jahongirovich", "male", "2018-08-08"),
+    "6-A": ("Sultonova Nilufar Jahongir qizi", "female", "2014-03-21"),
+}
+
+# Demo Telegram id'lari. Telegram haqiqiy foydalanuvchilarga ~10^10 gacha id beradi,
+# shuning uchun 10^12 dan yuqorisi HECH QACHON haqiqiy akkaunt bilan to'qnashmaydi —
+# bu qiymatlar ochiq-oydin sun'iy. Ko'rgazma tirik telefonga bog'liq bo'lmasligi uchun
+# ular oldindan bog'lanadi (`POST /api/admin/telegram/links`).
+DEMO_TG_PARENT = 999_000_000_001
+DEMO_TG_TEACHER = 999_000_000_002
+
 # (familiya o'zagi, otasining ismi) — familiya ayol uchun "-a" bilan, otasining ismi
 # sharifga aylanadi: o'g'il "…ovich", qiz "… qizi".
 FAMILIES = [

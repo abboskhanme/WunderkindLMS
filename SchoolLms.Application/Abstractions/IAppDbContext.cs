@@ -58,6 +58,16 @@ public interface IAppDbContext
     DbSet<Branch> Branches { get; }
     DbSet<Feedback> Feedbacks { get; }
 
+    // ---------- Vasiylar (SPEC §3.2) va Telegram Mini App (SPEC §6 Faza 3) ----------
+    // `students.parent_phone` HALI HAM bor va uni o'qiydigan kod o'zgarmadi;
+    // bu to'plam uning ustiga ko'p-ko'pga bog'lanishni qo'shadi, o'rniga emas
+    // (docs/PENDING_WIRING.md — `parent_phone` ni yopish alohida vazifa).
+    DbSet<Guardian> Guardians { get; }
+    DbSet<StudentGuardian> StudentGuardians { get; }
+    DbSet<TelegramAccount> TelegramAccounts { get; }
+    DbSet<TelegramLinkCode> TelegramLinkCodes { get; }
+    DbSet<ChatRead> ChatReads { get; }
+
     // LMS (Ta'lim)
     DbSet<LmsSubject> LmsSubjects { get; }
     DbSet<LmsTopic> LmsTopics { get; }
