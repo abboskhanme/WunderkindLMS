@@ -737,3 +737,91 @@ the shape.
 **If skipped:** the counter keeps working off `cash_shifts.variance` (closed shifts with a
 non-zero variance) and stays non-dismissible; only "resolve with a reason" is unavailable,
 and the UI says so instead of pretending.
+
+## From P1-19 — student / parent finance view
+
+P1-19 added three new files and edited one page. It touched **no** shared file: `App.tsx`,
+`src/config/navigation.ts`, `src/config/constants.ts`, `src/types/index.ts`,
+`src/api/services/billing.ts`, `src/api/services/payments.ts`, `Program.cs`,
+`Dtos/BillingDtos.cs` and `StudentPortalController.cs` are all untouched.
+
+| New file | What it is |
+|---|---|
+| `SchoolLms.Server/Controllers/PortalFinanceController.cs` | `GET /api/student/billing`, `GET /api/student/receipts/{paymentId}.pdf` |
+| `schoollms.client/src/api/services/portalFinance.ts` | typed client for the two endpoints above |
+| `schoollms.client/src/pages/portal/FinanceView.tsx` | the screen; works standalone **and** embedded |
+
+Edited: `schoollms.client/src/pages/admin/students/StudentDetailPage.tsx` — finance part only
+(legacy `students.balance` badge removed from the profile header, new `Moliya` section added
+after "Shaxsiy ma'lumotlar").
+
+### 13. For P1-20 — the two routes
+
+`FinanceView` is the page component for both portal routes. It takes no props there: the
+server resolves the student from the JWT, so `/parent` and `/student` register identically.
+
+```tsx
+import { FinanceView } from '@/pages/portal/FinanceView'
+
+<Route element={<ProtectedRoute role="parent" />}>
+  <Route path="/parent" element={<AppLayout />}>
+    <Route index element={<FinanceView />} />
+  </Route>
+</Route>
+
+<Route element={<ProtectedRoute role="student" />}>
+  <Route path="/student" element={<AppLayout />}>
+    <Route index element={<FinanceView />} />
+  </Route>
+</Route>
+```
+
+Three things that must change with it, or the routes stay unreachable:
+
+1. **`AuthProvider.tsx:12` blocks both roles from the web SPA**
+   (`const WEB_BLOCKED_ROLES = ['student', 'parent']`). A `parent` login is rejected in
+   `login()` *and* wiped in `readStoredUser()` / the `fetchMe` effect. Until that list is
+   emptied, `/parent` and `/student` cannot be reached by the people they are for. The
+   comment above it says the portal is mobile-only — SPEC §6 Phase 3 says "same screens as
+   `/parent` and `/student` routes in the web SPA", so this is P1-20's call, not P1-19's.
+2. **`homeByRole` (`navigation.ts:204-205`) points both roles at `/login`** — a logged-in
+   parent hitting `/` would bounce back to the login page. Change to `/parent` and `/student`.
+3. `navByRole.student` / `navByRole.parent` already carry one item each ("Bosh sahifa"),
+   which is the right label once the route exists.
+
+Nothing else is needed: `FinanceView` renders its own loading, empty, error and
+no-debt states, and needs no permission key.
+
+### 14. `PortalFinanceController` builds its services by hand (for P1-15)
+
+Same pattern, and same reason, as `FinanceReportsController` (§3a above): the controller
+takes `AppDbContext` and constructs `InvoiceService` / `ReceiptService` itself, so both
+endpoints are live **without any `Program.cs` change**. Once P1-15 registers the billing
+services, the two properties at the bottom of the file become constructor parameters:
+
+```csharp
+public sealed class PortalFinanceController(
+    AppDbContext db, IInvoiceService invoices, IReceiptService receipts) : ControllerBase
+```
+
+`AppDbContext` is still needed for the ownership checks. **If skipped:** nothing.
+
+### 15. The parent → child lookup exists twice
+
+`PortalFinanceController.ResolveAsync` repeats the rule in
+`StudentPortalController.TargetAsync`: a `parent` is matched to a student by comparing the
+digits of their login (`users.email`, which holds a phone number) against
+`students.parent_phone`. Two copies of an authorisation rule is one copy too many — but
+extracting it means editing a 1 300-line controller that other tasks are using, and the
+rule changes anyway when SPEC §3.2's guardian many-to-many arrives.
+
+Whoever lands that schema change should collapse both into one helper. Today the rule also
+means **a parent with two children sees only the first match** — acceptable while the
+schema has a single `parent_phone` column, and exactly the thing SPEC §6 Phase 3 ("a
+guardian with two children can switch between them") will fix.
+
+### 16. No screen sends the parent's receipt anywhere new
+
+`GET /api/student/receipts/{paymentId}.pdf` is a read: it renders the same PDF as
+`/api/receipts/{id}.pdf` and never touches Telegram. Automatic delivery is still entry §10
+of the P1-12 section above (`PaymentService.AcceptAsync`).
