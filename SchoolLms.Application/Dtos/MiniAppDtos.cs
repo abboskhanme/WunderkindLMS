@@ -21,25 +21,29 @@ namespace SchoolLms.Application.Dtos;
 /// <summary>`POST /api/tg/auth` — Telegram sahifaga bergan XOM `initData` satri.</summary>
 public record TgAuthRequest(string InitData);
 
-/// <summary>`POST /api/tg/link` — o'sha `initData` + maktab bergan bir martalik kod.</summary>
-public record TgLinkRequest(string InitData, string Code);
+/// <summary>
+/// `POST /api/tg/link` — maktab bergan bir martalik kod.
+///
+/// <para>
+/// <c>InitData</c> IXTIYORIY. Mini App uni yubormasa, server kimligini
+/// <c>/api/tg/auth</c> qoldirgan qisqa muddatli "bog'lash chiptasi"dan
+/// (HttpOnly cookie) oladi — <c>TelegramAuthController</c> izohiga qarang.
+/// Ikkalasi ham bo'lmasa 401: kodning o'zi kimligini isbotlamaydi.
+/// </para>
+/// </summary>
+public record TgLinkRequest(string Code, string? InitData = null);
 
 /// <summary>Imzosi tekshirilgan Telegram foydalanuvchisi (bog'lash ekranida ko'rsatiladi).</summary>
 public record TgTelegramUserDto(string Id, string DisplayName, string? Username);
 
 /// <summary>
-/// Mini App kirish javobi.
+/// Mini App kirishining MUVAFFAQIYATLI javobi (HTTP 200).
 ///
 /// <para>
-/// <c>Status</c> — frontend shu maydon bo'yicha tarmoqlanadi:
-/// <list type="bullet">
-///   <item><b>ok</b> — <c>Token</c> va <c>User</c> to'ldirilgan; ilova ochiladi.</item>
-///   <item><b>unlinked</b> — imzo TO'G'RI, lekin bu Telegram akkaunti hech kimga
-///     bog'lanmagan. 401 EMAS: 401 "kim ekanligingni bilmadim" degani, bu yerda esa
-///     kim ekani aniq — faqat maktab uni hali tanimaydi. Ekran kod so'rash oynasini
-///     ochadi va <c>POST /api/tg/link</c> ga yuboradi.</item>
-/// </list>
-/// Imzo NOTO'G'RI bo'lsa bu shakl umuman qaytmaydi — 401 va <c>{ code, message }</c>.
+/// <c>Token</c> va <c>User</c> — <c>POST /api/auth/login</c> beradigan shaklning
+/// AYNAN o'zi, shuning uchun Mini App tokeni bilan mavjud barcha endpointlar
+/// hech qanday o'zgarishsiz ishlaydi. <c>Status</c> doim <c>"ok"</c>: boshqa
+/// holatlar HTTP kodi bilan ajratiladi (401 — imzo yaroqsiz, 409 — bog'lanmagan).
 /// </para>
 /// </summary>
 public record TgAuthResponse(
@@ -48,6 +52,19 @@ public record TgAuthResponse(
     UserDto? User,
     TgTelegramUserDto Telegram,
     string? Message);
+
+/// <summary>
+/// `POST /api/tg/auth` — imzo TO'G'RI, lekin bu Telegram akkaunti hech kimga
+/// bog'lanmagan (HTTP <b>409</b>).
+///
+/// <para>
+/// 401 EMAS: 401 "kimligingni bilmadim" degani, bu yerda esa kim ekani aniq —
+/// Telegram uni imzolab tasdiqladi, faqat maktab uni hali tanimaydi. Ikki holat
+/// mijozda butunlay boshqa ekran: "qaytadan urinib ko'ring" va "maktabdan kod
+/// oling". <c>Code</c> doim <c>"not_linked"</c>.
+/// </para>
+/// </summary>
+public record TgNotLinkedDto(string Code, string Message, TgTelegramUserDto Telegram);
 
 /// <summary>Admin panel: bir martalik kod chiqarish so'rovi.</summary>
 public record IssueLinkCodeRequest(string UserId);

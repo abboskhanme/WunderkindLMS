@@ -66,26 +66,35 @@ public class TelegramMiniAppTests(ApiFixture fixture)
         Assert.DoesNotContain("123456789", raw, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// Bog'lanmagan hisob — 409 va <c>code: "not_linked"</c>. Ishlab turgan
+    /// Mini App (`ui-tg/src/lib/session.jsx`) AYNAN shu ikki belgidan birini
+    /// qidiradi; boshqa har qanday javob uni "xato" ekraniga tushiradi.
+    /// </summary>
     [Fact]
-    public async Task Boglanmagan_telegram_401_emas_unlinked_qaytaradi()
+    public async Task Boglanmagan_telegram_409_not_linked_qaytaradi()
     {
         using var client = AnonymousClient();
         var initData = TelegramInitData.Sign(InitFields(NewTelegramId()), BotToken);
 
         var response = await client.PostAsJsonAsync("/api/tg/auth", new { initData });
 
-        // 401 EMAS: kimligi aniq, faqat maktab uni tanimaydi. Frontend shu
-        // holatda kod so'rash oynasini ochadi.
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        // 401 EMAS: kimligi aniq, faqat maktab uni tanimaydi.
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
 
         using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         var root = body.RootElement;
-        Assert.Equal("unlinked", root.GetProperty("status").GetString());
-        Assert.Equal(JsonValueKind.Null, root.GetProperty("token").ValueKind);
-        Assert.Equal(JsonValueKind.Null, root.GetProperty("user").ValueKind);
-        // Bog'lash ekraniga kerak bo'lgan ma'lumot javobda bor.
-        Assert.False(string.IsNullOrWhiteSpace(root.GetProperty("telegram").GetProperty("id").GetString()));
+        Assert.Equal("not_linked", root.GetProperty("code").GetString());
         Assert.False(string.IsNullOrWhiteSpace(root.GetProperty("message").GetString()));
+        // Bog'lash ekraniga kerak bo'lgan Telegram profili javobda bor.
+        Assert.False(string.IsNullOrWhiteSpace(root.GetProperty("telegram").GetProperty("id").GetString()));
+
+        // Yonida bog'lash chiptasi ham keladi — keyingi `link` faqat kod bilan
+        // kelishi mumkin (Mini App `initData` ni ikkinchi marta yubormaydi).
+        var ticket = LinkTicket(response);
+        Assert.False(string.IsNullOrEmpty(ticket));
+        Assert.Contains("httponly", ticket, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("path=/api/tg", ticket, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -100,6 +109,22 @@ public class TelegramMiniAppTests(ApiFixture fixture)
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         Assert.Equal("invalid_code", body.RootElement.GetProperty("code").GetString());
+    }
+
+    /// <summary>
+    /// Kimliksiz bog'lash: faqat kod yuborilgan, `initData` ham, chipta ham yo'q.
+    /// Kodni eshitib qolgan begona odam shu yo'l bilan hisobni ololmasligi kerak.
+    /// </summary>
+    [Fact]
+    public async Task Kimliksiz_boglash_401()
+    {
+        using var client = AnonymousClient();
+
+        var response = await client.PostAsJsonAsync("/api/tg/link", new { code = "AAAA-BBBB" });
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal("invalid_init_data", body.RootElement.GetProperty("code").GetString());
     }
 
     // =====================================================================
