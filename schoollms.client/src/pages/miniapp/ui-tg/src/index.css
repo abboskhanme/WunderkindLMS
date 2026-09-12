@@ -1,0 +1,28 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Telegram ilova ichida sahifa o'zi scroll bo'ladi; pastdagi tab paneli
+   telefonning "home indicator" i ostiga tushib qolmasligi uchun xavfsiz
+   zonani hisobga olamiz. */
+:root {
+  --tg-safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: #f0f0f0;
+  color: #0e1520;
+  -webkit-font-smoothing: antialiased;
+  overscroll-behavior-y: none;
+}
+
+/* Telegram o'zining temasini o'zgaruvchilar orqali beradi, lekin biz ATAYLAB
+   brend ranglarida qolamiz: maktab sarig'i tanilishi kerak, foydalanuvchining
+   Telegram temasi bunga aralashmaydi. */
