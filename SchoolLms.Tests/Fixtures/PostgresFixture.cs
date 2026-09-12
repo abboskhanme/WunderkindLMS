@@ -20,13 +20,28 @@ namespace SchoolLms.Tests.Fixtures;
 /// </list>
 ///
 /// <para>
-/// MUHIM (P1-02 bilan bog'liqlik): <c>app_rw</c> rolini SHU FIXTURE YARATMAYDI. Uni P1-02
-/// migratsiyasi yaratishi kerak. Agar migratsiyadan keyin rol topilmasa, fixture owner
-/// satriga QAYTADI va <see cref="TestDatabase.AppRwIsOwnerFallback"/> = true qo'yadi.
-/// Buni ataylab shunday qildik: agar fixture rolni o'zi yaratib, grantlarni o'zi qo'ysa,
-/// P1-22 "ledger o'zgartirib bo'lmaydi" testi SOXTA YASHIL bo'lardi — u fixture'ning
-/// grantini tekshirardi, prod migratsiyasinikini emas. Fallback holatida P1-22 testi
-/// shu bayroqni ko'rib O'ZI YIQILISHI kerak, o'tib ketmasligi.
+/// MUHIM — <c>app_rw</c> ROLI VA GRANTLAR ORASIDAGI CHEGARA (P1-22, docs/TESTING.md §4).
+/// Fixture rolning FAQAT MAVJUDLIGINI ta'minlaydi va unga ENG YOMON holatni beradi:
+/// <c>init-roles.sql</c> ning 4-qadamidagi bazaviy huquqlar — sxemadagi HAR jadvalga
+/// to'liq CRUD (<c>payments</c> ga DELETE ham kiradi). Moliyaviy <c>REVOKE</c> ni fixture
+/// HECH QACHON yozmaydi — uni migratsiya (<c>Migrations/Sql/billing_guards.sql</c>) o'zi
+/// qaytarib olishi shart. Shuning uchun P1-22 testlari fixture'ning emas, MIGRATSIYANING
+/// grantini tekshiradi: <c>REVOKE</c> migratsiyadan yo'qolsa, test darhol qizil bo'ladi.
+/// </para>
+/// <para>
+/// Nega rolni prod migratsiyasi emas, fixture yaratadi: <c>billing_guards.sql</c> dagi
+/// GRANT bloki <c>if exists (select 1 from pg_roles where rolname = 'app_rw')</c> bilan
+/// o'ralgan va rol yo'q bo'lsa JIM o'tib ketadi; migratsiya rolni o'zi yarata olmaydi,
+/// chunki <c>schoollms_owner</c> prodda ham, bu yerda ham <c>NOCREATEROLE</c>
+/// (<c>deploy/init-roles.sql</c>). Ya'ni prodda rolni <c>init-roles.sql</c> yaratadi,
+/// bu yerda esa fixture — ikkalasi ham AYNAN bir xil bazaviy huquqlarni beradi va
+/// ikkalasida ham qulfni migratsiya qo'yadi.
+/// </para>
+/// <para>
+/// Rol baribir topilmasa (masalan tashqi Postgres'da yaratib bo'lmasa) fixture owner
+/// satriga QAYTADI va <see cref="TestDatabase.AppRwIsOwnerFallback"/> = true qo'yadi —
+/// bunday holatda grantga tayanadigan test <see cref="TestDatabase.RequireRealAppRw"/>
+/// orqali O'ZI YIQILISHI kerak, o'tib ketmasligi.
 /// </para>
 ///
 /// <para>
@@ -42,7 +57,11 @@ public sealed class PostgresFixture : IAsyncLifetime
     public const string OwnerRole = "schoollms_owner";
     public const string OwnerPassword = "owner_test_pwd";
 
-    /// <summary>Ilova (request-path) roli. P1-02 migratsiyasi yaratadi.</summary>
+    /// <summary>
+    /// Ilova (request-path) roli. Prodda uni <c>deploy/init-roles.sql</c> yaratadi, bu yerda —
+    /// fixture (migratsiya <c>NOCREATEROLE</c> egasi bilan yuradi va rol yarata olmaydi).
+    /// Fixture faqat BAZAVIY huquqlarni beradi; moliyaviy <c>REVOKE</c> migratsiyaniki.
+    /// </summary>
     public const string AppRwRole = "app_rw";
     public const string AppRwPassword = "app_rw_test_pwd";
 
@@ -93,22 +112,27 @@ public sealed class PostgresFixture : IAsyncLifetime
         // o'raydi, DROP/CREATE DATABASE esa tranzaksiya blokida ishlamaydi
         // (tashqi Postgres qayta ishlatilganda shu yerda yiqilardi).
         await ExecuteAdminAsync($"""DROP DATABASE IF EXISTS "{TemplateDatabase}" WITH (FORCE);""");
+        await ExecuteAdminAsync($"""DROP ROLE IF EXISTS "{AppRwRole}";""");
         await ExecuteAdminAsync($"""DROP ROLE IF EXISTS "{OwnerRole}";""");
         await ExecuteAdminAsync($"""CREATE ROLE "{OwnerRole}" LOGIN PASSWORD '{OwnerPassword}';""");
         await ExecuteAdminAsync($"""CREATE DATABASE "{TemplateDatabase}" OWNER "{OwnerRole}";""");
+
+        // ---- `app_rw`: migratsiyadan OLDIN va FAQAT bazaviy huquqlar bilan ----
+        await CreateAppRwWithBaselineGrantsAsync();
 
         // ---- Migratsiya: AYNAN owner roli bilan ----
         var ownerTemplateConn = BuildConnectionString(TemplateDatabase, OwnerRole, OwnerPassword);
         await using (var db = NewContext(ownerTemplateConn))
             await db.Database.MigrateAsync();
 
-        // P1-02 migratsiyasi `app_rw` ni yaratdimi?
+        // Rol haqiqatan bormi? (Yuqoridagi qadam jim yiqilgan bo'lsa — owner'ga qaytamiz va
+        // `RequireRealAppRw()` grantga tayanadigan testni aniq xabar bilan yiqitadi.)
         AppRwIsOwnerFallback = !await RoleExistsAsync(AppRwRole);
         if (!AppRwIsOwnerFallback)
         {
-            // Rol bor, lekin paroli bizga noma'lum (migratsiya o'zi qo'ygan) — testda
-            // ulanish uchun ma'lum parol o'rnatamiz. GRANT'larga TEGMAYMIZ: aynan ular
-            // sinovdan o'tishi kerak.
+            // Parolni qayta tasdiqlaymiz (tashqi Postgres qayta ishlatilganda eskisi
+            // qolgan bo'lishi mumkin). GRANT'larga TEGMAYMIZ: migratsiya qo'ygan
+            // REVOKE aynan shu yerdan keyin sinovdan o'tadi.
             await ExecuteAdminAsync($"""ALTER ROLE "{AppRwRole}" WITH LOGIN PASSWORD '{AppRwPassword}';""");
         }
 
@@ -116,6 +140,63 @@ public sealed class PostgresFixture : IAsyncLifetime
 
         // Shablondan nusxa olish uchun unga ochiq ulanish qolmasligi kerak.
         NpgsqlConnection.ClearAllPools();
+    }
+
+    /// <summary>
+    /// <c>app_rw</c> rolini yaratadi va unga <c>deploy/init-roles.sql</c> ning
+    /// <b>4-qadamidagi</b> bazaviy huquqlarni beradi — <b>boshqa hech narsani emas</b>.
+    ///
+    /// <para>
+    /// Migratsiyadan OLDIN chaqiriladi, ikki sabab bilan:
+    /// (1) <c>billing_guards.sql</c> dagi GRANT/REVOKE bloki rol mavjud bo'lmasa jim o'tib
+    /// ketadi — ya'ni rol migratsiya paytida BOR bo'lishi shart;
+    /// (2) <c>ALTER DEFAULT PRIVILEGES</c> faqat KEYIN yaratilgan jadvallarga ta'sir qiladi,
+    /// ya'ni u <c>CREATE TABLE</c> lardan oldin turishi kerak.
+    /// </para>
+    /// <para>
+    /// <b>Bu yerda `payments` ga DELETE ham beriladi — ATAYLAB.</b> Fixture rolga eng yomon
+    /// holatni (hamma joyda to'liq CRUD) beradi; SPEC §4.1 qulfini migratsiya qo'yadi.
+    /// Agar shu faylga birorta moliyaviy <c>REVOKE</c> yozilsa, P1-22 o'z-o'zini tekshirgan
+    /// bo'lardi va migratsiyadan <c>REVOKE</c> yo'qolganini payqamasdi.
+    /// </para>
+    /// <para>
+    /// <c>NOCREATEROLE</c>, <c>NOINHERIT</c>, <c>NOSUPERUSER</c> — <c>init-roles.sql</c>
+    /// dagi atributlarning aynan o'zi. <c>NOINHERIT</c> muhim: rol biror guruhga a'zo
+    /// bo'lib qolsa ham uning huquqlarini avtomatik olmaydi.
+    /// </para>
+    /// </summary>
+    private async Task CreateAppRwWithBaselineGrantsAsync()
+    {
+        await ExecuteAdminAsync(
+            $"""
+             CREATE ROLE "{AppRwRole}" LOGIN PASSWORD '{AppRwPassword}'
+                 NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOINHERIT NOBYPASSRLS;
+             """);
+
+        // Quyidagilar BAZAGA bog'liq (sxema huquqi va default privileges — per-database
+        // kataloglar), shuning uchun shablon bazasiga ulanib bajariladi. `CREATE DATABASE
+        // ... TEMPLATE` ularni nusxaga ham ko'chiradi.
+        await ExecuteOnDatabaseAsync(TemplateDatabase,
+            $"""GRANT CONNECT ON DATABASE "{TemplateDatabase}" TO "{AppRwRole}";""");
+        await ExecuteOnDatabaseAsync(TemplateDatabase,
+            $"""GRANT USAGE ON SCHEMA public TO "{AppRwRole}";""");
+        // Ilova sxemada obyekt yaratmaydi — bu ham `init-roles.sql` dagi qator.
+        await ExecuteOnDatabaseAsync(TemplateDatabase,
+            $"""REVOKE CREATE ON SCHEMA public FROM "{AppRwRole}";""");
+
+        // `FOR ROLE schoollms_owner` — hayotiy muhim: usiz sukut huquqi buyruqni
+        // BAJARGAN rolga (superuser) bog'lanadi va migratsiya yaratgan jadvallar ilovaga
+        // umuman ko'rinmay qolardi (init-roles.sql dagi 2-izoh).
+        await ExecuteOnDatabaseAsync(TemplateDatabase,
+            $"""
+             ALTER DEFAULT PRIVILEGES FOR ROLE "{OwnerRole}" IN SCHEMA public
+                 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO "{AppRwRole}";
+             """);
+        await ExecuteOnDatabaseAsync(TemplateDatabase,
+            $"""
+             ALTER DEFAULT PRIVILEGES FOR ROLE "{OwnerRole}" IN SCHEMA public
+                 GRANT USAGE, SELECT ON SEQUENCES TO "{AppRwRole}";
+             """);
     }
 
     /// <summary>
@@ -151,6 +232,7 @@ public sealed class PostgresFixture : IAsyncLifetime
         foreach (var name in _createdDatabases)
             await ExecuteAdminAsync($"""DROP DATABASE IF EXISTS "{name}" WITH (FORCE);""");
         await ExecuteAdminAsync($"""DROP DATABASE IF EXISTS "{TemplateDatabase}" WITH (FORCE);""");
+        await ExecuteAdminAsync($"""DROP ROLE IF EXISTS "{AppRwRole}";""");
         await ExecuteAdminAsync($"""DROP ROLE IF EXISTS "{OwnerRole}";""");
     }
 
@@ -192,6 +274,24 @@ public sealed class PostgresFixture : IAsyncLifetime
     private async Task ExecuteAdminAsync(string sql)
     {
         await using var conn = new NpgsqlConnection(_adminConnectionString);
+        await conn.OpenAsync();
+        await using var cmd = new NpgsqlCommand(sql, conn);
+        await cmd.ExecuteNonQueryAsync();
+    }
+
+    /// <summary>
+    /// Superuser sifatida, lekin AYNAN berilgan bazaga ulanib bajaradi. Sxema huquqi va
+    /// <c>ALTER DEFAULT PRIVILEGES</c> — baza ichidagi kataloglar, `postgres` bazasidan
+    /// turib ularni qo'yib bo'lmaydi.
+    /// </summary>
+    private async Task ExecuteOnDatabaseAsync(string database, string sql)
+    {
+        var connectionString = new NpgsqlConnectionStringBuilder(_adminConnectionString)
+        {
+            Database = database,
+        }.ConnectionString;
+
+        await using var conn = new NpgsqlConnection(connectionString);
         await conn.OpenAsync();
         await using var cmd = new NpgsqlCommand(sql, conn);
         await cmd.ExecuteNonQueryAsync();
