@@ -83,12 +83,21 @@ def main():
         sys.exit("O'quvchi yo'q — avval tools/seed_demo.py ni ishga tushiring")
 
     # ------------------------------------------------------------- obunalar
-    # Hamma o'quvchi o'qiydi; yarmi avtobusdan, uchtasi yotoqxonada.
+    # Hamma o'quvchi o'qiydi; yarmi avtobusdan, choragi yotoqxonada.
+    #
+    #  DIQQAT — O'TKAZIB YUBORISH QOIDASI O'QUVCHI BO'YICHA, TOIFA BO'YICHA EMAS.
+    #  `seed_demo.py` ham (P1-21 dan keyin) obuna yozadi, lekin uning
+    #  "kim avtobusda" naqshi SINF ichidagi tartibga tayanadi, bu skriptniki
+    #  esa umumiy ro'yxatga. Toifa bo'yicha tekshirsak, ikkovi bir-birining
+    #  bo'shlig'ini to'ldirib, har yurishda yangi obuna qo'shaverardi va
+    #  o'quvchi bir vaqtda ham avtobusda, ham yotoqxonada bo'lib qolardi.
     have = api("GET", "/api/admin/billing/subscriptions") or []
-    existing = {(s.get("studentId"), s.get("categoryCode") or s.get("categoryId")) for s in have}
+    with_any = {x.get("studentId") for x in have}
     start = date(2026, 9, 1).isoformat()
     made = 0
     for i, st in enumerate(students):
+        if st["id"] in with_any:
+            continue
         plan = [("tuition", 1_800_000)]
         if i % 2 == 0:
             plan.append(("bus", 450_000))
@@ -96,7 +105,7 @@ def main():
             plan.append(("dormitory", 1_200_000))
         for code, amount in plan:
             cat = cats.get(code)
-            if not cat or (st["id"], cat["id"]) in existing:
+            if not cat:
                 continue
             api("POST", "/api/admin/billing/subscriptions", {
                 "studentId": st["id"], "categoryId": cat["id"],
@@ -133,6 +142,12 @@ def main():
         cur = api("GET", "/api/cash/shifts/current", quiet=True)
         if not cur:
             api("POST", "/api/cash/shifts/open", {"openingFloat": 0}, quiet=True)
+        # To'lovi BOR o'quvchi ikkinchi marta to'lamaydi: `payments` o'chmaydi
+        # (SPEC §4.1), ya'ni skriptni qayta yurgizish qarzni jimgina nolga
+        # olib borardi va "Qarzdorlar" ekrani bo'shab qolardi.
+        already_paid = {x.get("studentId") for x in (
+            api("GET", "/api/billing/payments", quiet=True) or [])}
+
         methods = ["cash", "cash", "cash", "card", "transfer", "online"]
         # HAMMA qarz to'liq to'lanmaydi — ATAYLAB. Aks holda "Qarzdorlar" tabi,
         # yig'ilish foizi va nomuvofiqlik ekranlari demo bazada BO'SH chiqardi
@@ -141,7 +156,7 @@ def main():
         shares = [1.0, 1.0, 0.5, 1.0, 0.9, 0.8, 1.0, 0.0, 1.0, 0.25]
         for i, st in enumerate(students):
             share = shares[i % len(shares)]
-            if share == 0.0:
+            if share == 0.0 or st["id"] in already_paid:
                 continue
             # Katta "zond" summasi bilan so'raymiz: javobda har bir ochiq
             # hisob-fakturaning to'liq qoldig'i keladi, keyin ulushini olamiz.

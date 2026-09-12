@@ -1223,13 +1223,20 @@ def seed_billing(by_class, teachers):
         if not api("GET", "/api/cash/shifts/current", quiet=True):
             api("POST", "/api/cash/shifts/open", {"openingFloat": 0}, quiet=True)
 
+        # To'lovi BOR o'quvchi ikkinchi marta to'lamaydi. Bu shunchaki
+        # qulaylik emas: to'lov qatorini O'CHIRIB BO'LMAYDI (SPEC §4.1),
+        # ya'ni skriptni ikki marta yurgizish qarzni asta-sekin nolga olib
+        # borardi va "Qarzdorlar" ekrani demo bazada bo'shab qolardi.
+        already_paid = {x.get("studentId") for x in (
+            api("GET", "/api/billing/payments", quiet=True) or [])}
+
         methods = ["cash", "cash", "cash", "card", "transfer", "online"]
         # Hamma qarz to'liq to'lanmaydi — ATAYLAB: aks holda "Qarzdorlar" tabi
         # va yig'ilish foizi ekranlari demo bazada bo'sh chiqardi.
         shares = [1.0, 1.0, 0.5, 1.0, 0.9, 0.85, 1.0, 0.0, 1.0, 0.25]
         for i, st in enumerate(students):
             share = shares[i % len(shares)]
-            if share == 0.0:
+            if share == 0.0 or st["id"] in already_paid:
                 continue
             # Katta "zond" summa: javobda har ochiq hisob-fakturaning TO'LIQ
             # qoldig'i keladi, keyin undan ulush olinadi.
