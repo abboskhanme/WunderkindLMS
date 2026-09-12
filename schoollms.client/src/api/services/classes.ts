@@ -24,21 +24,19 @@ export async function createClass(payload: ClassPayload): Promise<SchoolClass> {
 }
 
 /**
- * Sinfni yangilash. Oylik to'lov o'zgargan bo'lsa, `applyFee` orqali yangi narx joriy oy
- * o'quvchilariga qo'llanishini boshqaramiz: true = joriy oydan, false = keyingi oydan.
+ * Sinfni yangilash.
+ *
+ * P1-21: `applyFee` parametri olib tashlandi. Oylik to'lovni o'zgartirish endi
+ * PULGA TEGMAYDI — narx `student_subscriptions.monthly_amount` da, sinf narxi
+ * esa faqat yangi obuna ochilganda taklif qilinadigan standart qiymat
+ * (SPEC §3.7). Mavjud obunalarni "Moliya → Obunalar" ekrani boshqaradi.
  */
-export async function updateClass(
-  id: string,
-  payload: ClassPayload,
-  applyFee?: boolean,
-): Promise<SchoolClass> {
+export async function updateClass(id: string, payload: ClassPayload): Promise<SchoolClass> {
   if (USE_MOCK) {
     await delay(200)
     return { ...payload, id }
   }
-  const { data } = await api.put<SchoolClass>(`/admin/classes/${id}`, payload, {
-    params: applyFee === undefined ? undefined : { applyFee },
-  })
+  const { data } = await api.put<SchoolClass>(`/admin/classes/${id}`, payload)
   return data
 }
 

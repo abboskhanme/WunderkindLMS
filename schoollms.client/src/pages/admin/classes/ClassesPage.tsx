@@ -18,7 +18,6 @@ import { formatMoney, cn } from '@/lib/utils'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Loader } from '@/components/ui/Loader'
-import { Modal } from '@/components/ui/Modal'
 import { ClassFormModal } from './ClassFormModal'
 import { ClassGroupsModal } from './ClassGroupsModal'
 
@@ -29,12 +28,6 @@ export function ClassesPage() {
   const [loading, setLoading] = useState(true)
   const [formOpen, setFormOpen] = useState(false)
   const [editing, setEditing] = useState<SchoolClass | null>(null)
-  // Oylik to'lov o'zgarganda — yangi narxni o'quvchilarga qachondan qo'llashni so'rash uchun
-  const [feePrompt, setFeePrompt] = useState<{
-    id: string
-    values: ClassPayload
-    oldFee: number
-  } | null>(null)
   /** Sinf guruhlarini boshqarish oynasi (Guruhlar tugmasi bilan ochiladi) */
   const [groupsFor, setGroupsFor] = useState<SchoolClass | null>(null)
   /** Arxivlangan sinflar ro'yxati + arxiv ko'rinishi yoqilganmi */
@@ -51,32 +44,23 @@ export function ClassesPage() {
       .finally(() => setLoading(false))
   }, [])
 
-  const applyUpdate = (id: string, values: ClassPayload, applyFee?: boolean) =>
-    updateClass(id, values, applyFee).then((u) =>
+  const applyUpdate = (id: string, values: ClassPayload) =>
+    updateClass(id, values).then((u) =>
       setClasses((prev) => prev.map((c) => (c.id === u.id ? u : c))),
     )
 
+  // P1-21: "Yangi narxni joriy oyga qo'llaymizmi?" savoli OLIB TASHLANDI.
+  // Sinf narxi endi mavjud obunalarga ta'sir qilmaydi — u faqat yangi obuna
+  // uchun standart qiymat. Savolni qoldirish "Ha" tugmasi hech nima
+  // qilmaydigan tugmaga aylanardi.
   const handleSubmit = (values: ClassPayload) => {
     if (editing) {
-      // Oylik to'lov o'zgargan bo'lsa — o'quvchilarga qo'llashni so'raymiz (Ha/Yo'q)
-      if (values.monthlyFee !== editing.monthlyFee) {
-        setFeePrompt({ id: editing.id, values, oldFee: editing.monthlyFee })
-        setFormOpen(false)
-        setEditing(null)
-        return
-      }
       applyUpdate(editing.id, values)
     } else {
       createClass(values).then((c) => setClasses((prev) => [...prev, c]))
     }
     setFormOpen(false)
     setEditing(null)
-  }
-
-  const resolveFeePrompt = (applyFee: boolean) => {
-    if (!feePrompt) return
-    applyUpdate(feePrompt.id, feePrompt.values, applyFee)
-    setFeePrompt(null)
   }
 
   const handleDelete = (c: SchoolClass) => {
@@ -272,43 +256,6 @@ export function ClassesPage() {
         className={groupsFor?.name ?? ''}
         onClose={() => setGroupsFor(null)}
       />
-
-      <Modal
-        open={!!feePrompt}
-        onClose={() => setFeePrompt(null)}
-        title="Oylik to'lovni o'quvchilarga qo'llash"
-        size="sm"
-        footer={
-          <>
-            <Button variant="secondary" onClick={() => resolveFeePrompt(false)}>
-              Yo'q — keyingi oydan
-            </Button>
-            <Button onClick={() => resolveFeePrompt(true)}>Ha — joriy oydan</Button>
-          </>
-        }
-      >
-        {feePrompt && (
-          <div className="space-y-3 text-sm text-slate-600">
-            <p>
-              <span className="font-medium text-slate-800">{feePrompt.values.name}</span> sinfining
-              oylik to'lovi{' '}
-              <span className="font-medium">{formatMoney(feePrompt.oldFee)}</span> →{' '}
-              <span className="font-medium">{formatMoney(feePrompt.values.monthlyFee)}</span> so'mga
-              o'zgardi. Yangi narx shu sinfdagi o'quvchilarga qachondan qo'llansin?
-            </p>
-            <div className="rounded-lg bg-slate-50 px-3 py-2 text-slate-500">
-              <p>
-                <b className="text-slate-700">Ha</b> — joriy oy to'lovi yangi narxga o'zgaradi
-                (balans farqqa moslab to'g'rilanadi).
-              </p>
-              <p className="mt-1">
-                <b className="text-slate-700">Yo'q</b> — joriy oy eski narxda qoladi, yangi narx
-                keyingi oydan hisoblanadi.
-              </p>
-            </div>
-          </div>
-        )}
-      </Modal>
     </div>
   )
 }
