@@ -12,9 +12,10 @@
  *    va nomuvofiqligi nolga teng bo'lmagan har bir smena. `variance` bazada
  *    generated column, ya'ni bu raqamni hech kim "tuzatib" qo'ya olmaydi.
  * 2. `GET /api/admin/finance/flags?unresolved=true` — P1-14 (tungi anomaliya
- *    skaneri) yozadi va u HALI YO'Q. Tayyor bo'lgach hisoblagich avtomatik
- *    o'sha manbaga o'tadi: u faqat nomuvofiqlikni emas, SPEC §4.6 dagi
- *    to'rtta belgini ham qamraydi va SABAB bilan yopilishini eslab qoladi.
+ *    skaneri). ULANGAN. Hisoblagich shu manbadan olinadi: u faqat
+ *    nomuvofiqlikni emas, SPEC §4.6 dagi to'rtta belgini ham qamraydi va
+ *    SABAB bilan yopilishini eslab qoladi. Endpoint 404 qaytarsa (eski
+ *    server) birinchi manbaga qaytiladi.
  *
  * Jurnal ulanmaganda hisoblagich JIMGINA nolga tushmaydi — `flagsNote`
  * ekranda buni ochiq aytadi. "Anomaliya yo'q" bilan "skaner ishlamayapti"
@@ -85,7 +86,9 @@ export function useVarianceWatch(enabled = true): VarianceWatch {
       flags,
       flagsAvailable,
       flagsNote: flagsResult && !flagsResult.available ? flagsResult.reason : null,
-      count: flagsAvailable ? flags.length : shifts.length,
+      // `flags.length` EMAS: server o'zi sanagan to'liq sonni beradi va
+      // ro'yxat kelajakda sahifalansa ham banner to'g'ri qoladi.
+      count: flagsResult?.available ? flagsResult.unresolved : shifts.length,
       refetch,
     }
   }, [data, loading, error, refetch])
