@@ -52,7 +52,7 @@ def main():
     p.add_argument("--password", required=True)
     p.add_argument("--name", required=True, help="To'liq F.I.SH")
     p.add_argument("--role", default="admin",
-                   choices=["superadmin", "admin", "staff"])
+                   choices=["superadmin", "admin", "cashier", "staff"])
     p.add_argument("--position", default="", help="Lavozim yorlig'i (staff uchun)")
     p.add_argument("--container", default="wunderkind-database")
     p.add_argument("--db-password", required=True)

@@ -10,20 +10,17 @@ Delete an entry when it is done.
 
 ## For P1-15 — `Program.cs` DI
 
-### 1. `LedgerService` is not registered
+### 1. `LedgerService` is not registered — **DONE** (expense module, 2026-09-11)
 
-`SchoolLms.Application/Billing/LedgerService.cs` exists and is tested, but nothing resolves
-`ILedgerService`. Add next to the other `AddScoped` calls (around line 210):
+`ILedgerService` → `LedgerService` is now registered in `Program.cs`, in the new
+`// ---------- Moliya (billing) ----------` block, because `ExpenseService` cannot be
+constructed without it. The entry is kept (not deleted) because items 9 below refer to
+"entry 1 above"; nothing is left to do here.
 
 ```csharp
 builder.Services.AddScoped<SchoolLms.Application.Billing.ILedgerService,
                            SchoolLms.Application.Billing.LedgerService>();
 ```
-
-`IAppDbContext` is already registered (`Program.cs:56`), so the constructor resolves as-is.
-
-**If skipped:** any controller injecting `ILedgerService` fails at request time with
-`InvalidOperationException: Unable to resolve service`. Nothing fails at build time.
 
 ### 2. The other five billing services have interfaces but no implementations yet
 
@@ -517,3 +514,527 @@ QuestPDF ships native Skia for eight runtime identifiers and `dotnet publish` co
 them; the container uses `linux-x64` only. Adding `-r linux-x64 --self-contained false` to the
 publish step in the `Dockerfile` removes the other seven. Not done here (the Dockerfile is not
 this task's file), and not urgent — it is image size, not memory.
+
+## From P1-26 — money-flow ring
+
+### 9. Nothing is pending in `Program.cs` — deliberately
+
+`GET /api/admin/finance/money-flow` works as soon as the build ships. `MoneyFlowController`
+injects `IAppDbContext`, which is **already registered** (`Program.cs:56`), and
+`SchoolLms.Application/Billing/MoneyFlowQueries.cs` is a `static` class with no state, so
+there is no service to register.
+
+This entry exists so that P1-15 does not go looking for one. If a later task turns the query
+into an injected service, the line would be:
+
+```csharp
+builder.Services.AddScoped<SchoolLms.Application.Billing.MoneyFlowQueries>();
+```
+
+**Do not add it now** — a registration for a static class does not compile.
+
+### 10. The page shows the empty state until P1-09 / P1-11 write to the ledger
+
+`ledger_entries` is empty in the local stack (verified 2026-09-11: `select count(*)` = 0), so
+`/admin/finance/money-flow` renders its "Bu davrda pul harakati yo'q" state. That is correct
+behaviour, not a defect. The ring appears by itself once the accrual job (P1-09) and payment
+intake (P1-11) start posting. No frontend change is needed when that happens.
+
+### 11. New frontend dependency: `three`
+
+`schoollms.client/package.json` gained `three@^0.185.1` (runtime) and `@types/three@^0.185.4`
+(dev). Anyone rebasing onto this branch must re-run `npm ci`. Both are pinned to r185 —
+three.js ships no type declarations of its own and gives no cross-minor API guarantee, so the
+two versions must move together.
+
+---
+
+## Follow-up — reinstate connection retries correctly
+
+`EnableRetryOnFailure` was removed from `Program.cs` (2026-09-11) because EF Core's retrying
+execution strategy refuses user-initiated transactions, and the billing services use them in
+five places:
+
+- `InvoiceService.cs:262`, `:450`
+- `PaymentService.cs:202`, `:352`
+- `CashShiftService.cs:186`
+
+**To restore retries:** wrap each of those transaction bodies in
+`db.Database.CreateExecutionStrategy().ExecuteAsync(async () => { ... })`, then re-enable
+`EnableRetryOnFailure` in `Program.cs`. All five bodies are already idempotent on rollback
+(nothing is committed before the final `SaveChanges`), and `CashShiftService`'s
+`pg_advisory_xact_lock` releases automatically, so a retried block is safe.
+
+**Why it was not caught by tests:** `PostgresFixture` and `ApiFactory` build the DbContext
+without `EnableRetryOnFailure`, so the test configuration did not match production. Whoever
+does this work should make the fixtures mirror `Program.cs` exactly — otherwise the next
+configuration divergence surfaces in production again.
+
+---
+
+## From the expense module — `ExpenseService` + `ExpensesController` (2026-09-11)
+
+New files: `SchoolLms.Application/Billing/ExpenseService.cs`,
+`SchoolLms.Server/Controllers/ExpensesController.cs`,
+`SchoolLms.Infrastructure/Migrations/20260911095512_ExpenseApprovalThreshold.cs`,
+`SchoolLms.Tests/ExpensesTests.cs`. Wired in `Program.cs` (see item 1 above).
+Routes: `GET /api/admin/expenses`, `GET /{id}`, `POST /`, `POST /{id}/approve`,
+`POST /{id}/reverse` — **no `HttpPut`, no `HttpDelete`, no `HttpPatch`**, asserted by
+reflection in `ExpensesTests.Controllerda_tahrirlash_va_ochirish_amallari_yoq`.
+
+### A. **BLOCKER — `EnableRetryOnFailure` breaks every explicit money transaction in production**
+
+This is **not** specific to expenses: it hits `PaymentService`, `InvoiceService`,
+`CashShiftService` and `ExpenseService` alike, i.e. the whole money module.
+
+`Program.cs:44` configures `npg.EnableRetryOnFailure(...)`. EF Core refuses
+`Database.BeginTransaction*` under a retrying execution strategy, and
+`IAppDbContext.BeginTransactionAsync` is exactly that call (`AppDbContext.cs:83`).
+Verified empirically on 2026-09-11 against the test Postgres, with the production
+`UseNpgsql` options copied verbatim:
+
+```
+InvalidOperationException: The configured execution strategy
+'NpgsqlRetryingExecutionStrategy' does not support user-initiated transactions.
+Use the execution strategy returned by 'DbContext.Database.CreateExecutionStrategy()'
+to execute all the operations in the transaction as a retriable unit.
+```
+
+**Why no test catches it:** `SchoolLms.Tests/Fixtures/ApiFactory.cs:133` removes the
+`AddDbContext` registration from `Program.cs` and re-adds it as
+`.UseNpgsql(connectionString).UseSnakeCaseNamingConvention()` — **without** the retry
+option. So every billing test exercises a DbContext that production does not use. Adding
+the retry option there makes the money tests go red immediately; that redness is the bug,
+not a test problem.
+
+**Consequence if shipped as is:** `POST /api/admin/expenses` (below the threshold),
+`POST /api/admin/expenses/{id}/approve` and every payment/invoice write return **500** on
+the first call in production. Reads are unaffected, so a smoke test that only opens pages
+looks healthy.
+
+Two fixes, pick one — this is a one-place decision and must not be solved per service:
+
+1. **Drop `EnableRetryOnFailure`** (one line in `Program.cs`). The money module was written
+   around explicit transactions on purpose (SPEC §4.1), and a retried *implicit* save is not
+   what protects it. Cost: a transient network blip surfaces as a 500 instead of being
+   retried — which for a cash desk is arguably the honest answer.
+2. **Keep it and run each money operation through the strategy**: expose
+   `IExecutionStrategy CreateExecutionStrategy()` on `IAppDbContext` and wrap every
+   `BeginTransactionAsync` block in `strategy.ExecuteAsync(...)`. Correct, and the EF-blessed
+   answer, but it touches a frozen abstraction plus four services, and every future money
+   path has to remember it.
+
+Not fixed here: `Program.cs`'s DB options and `IAppDbContext` are shared decisions, and the
+task that produced this module was explicitly scoped to *not* touch the retry setting.
+
+### B. Reversing and approving an expense are **director-only**
+
+`FinanceAction` is frozen (P1-06) and has no `ReverseExpense`, so both
+`POST /{id}/approve` and `POST /{id}/reverse` use `FinanceAction.ApproveExpense`
+(`superadmin` only). An `admin` can record an expense but neither approves nor reverses one;
+`cashier`, `staff` and `teacher` get 403 at the class-level `[Authorize(Roles =
+Roles.FinanceStaff)]` gate. If the school wants "any second admin may reverse", that is a new
+`FinanceAction` + a row in `FinanceMatrix.Rules` + a line in the `CashierRoleTests` theory —
+deliberately left to whoever owns that frozen file.
+
+### C. No `audit_log` row yet — P1-14 owns it
+
+`ExpenseService` writes no audit row, for the same reason `PaymentService` does not: SPEC
+§4.6 coverage is P1-14's acceptance criterion ("every write through … and the expense path").
+When it is added it must go **inside** `PostAsync`'s transaction, before `CommitAsync`,
+otherwise a rolled-back expense leaves an audit entry for money that never moved.
+
+### D. A `pending` expense can never be cancelled
+
+An expense above the threshold that was entered by mistake stays in the director's pending
+queue forever: it cannot be deleted (immutability) and it cannot be reversed (there is no
+ledger batch to mirror — the endpoint answers `409 not_posted`). A `rejected` state needs a
+column on `expenses`, and that entity is frozen (P1-04). Cheap to add with any later
+migration: `rejected_at timestamptz`, `rejected_by uuid`, `rejected_reason text`, plus a
+`POST /{id}/reject` guarded by `ApproveExpense`. Until then the queue is filtered by
+`GET /api/admin/expenses?status=pending` and a stale row is visible noise, not a money error.
+
+### E. The threshold is configurable, but not from the UI
+
+`billing_settings.expense_approval_threshold` (`numeric(14,2)`, default **5 000 000**) is
+read on every create. It is deliberately **not** added to the frozen `BillingSettingsDto` /
+`UpdateBillingSettingsRequest` (`Dtos/BillingDtos.cs`), so today it changes with an `UPDATE`.
+Whoever builds the finance-settings screen should add it there — it is an additive field,
+which that file's header explicitly allows.
+
+### F. `GET /api/admin/finance/money-flow` does not exist yet (P1-26)
+
+The expense side of the ring is ready: every posted expense writes `debit expense:<category>`
+/ `credit cash|bank`, and `Accounts.All` now carries all six expense nodes P1-26 asks for
+(`salary`, `utilities`, `supplies`, `rent`, `repair`, `other`). `revenue:donation` is still
+missing from `Accounts.All` — P1-26 lists it as an income node; adding it is one line in
+`Accounts.cs` plus the list in `LedgerServiceTests`.
+`ExpensesTests.Pul_aylanmasi_halqasi_balansda_qoladi` asserts the invariant that endpoint
+must satisfy (income = hub = outflow, to the cent) directly on `ledger_entries`.
+
+### G. No screen calls `/api/admin/expenses`
+
+There is no expense page in `schoollms.client` and no entry in `navigation.ts`. The old
+`FinanceController` screen still writes to `finance_transactions`, which does **not** reach
+the ledger — so until the new screen exists, expenses entered through the old UI stay
+invisible to P&L, cash-flow and the money-flow ring. P1-21 retires that path.
+
+---
+
+## For P1-20 / P1-14 — P1-18 (director finance dashboard)
+
+### 13. Nothing has to be wired for the dashboard to work
+
+P1-18 added five tabs **inside** the existing `FinancePage`, which is already routed
+(`App.tsx:105`, `RequirePerm perm="finance"`) and already in the sidebar
+(`navigation.ts:142`). `App.tsx` and `src/config/navigation.ts` were **not touched**.
+
+New files, all additive:
+
+```
+src/api/services/financeReports.ts          typed client, real endpoints (no stubs)
+src/pages/admin/finance/PnlTab.tsx
+src/pages/admin/finance/CashFlowTab.tsx
+src/pages/admin/finance/DebtorsTab.tsx
+src/pages/admin/finance/ZReportTab.tsx
+src/pages/admin/finance/VarianceTab.tsx
+src/pages/admin/finance/VarianceBanner.tsx        non-dismissible counter (SPEC §4.6)
+src/pages/admin/finance/CollectionRateCard.tsx
+src/pages/admin/finance/ReportState.tsx           loading / error / empty, shared
+src/pages/admin/finance/reportLabels.ts
+src/pages/admin/finance/useVarianceWatch.ts
+src/components/charts/CashFlowChart.tsx
+```
+
+**Optional for P1-20** — if the director should land on a report directly, add deep links
+that preselect a tab. Today the tab lives in component state only; a `?tab=` query parameter
+would be a three-line change in `FinancePage.tsx` (read `useSearchParams`, seed `useState`).
+Not done here because it is not in the acceptance criteria and it invites a route discussion.
+
+**Do not** add a second nav entry for these tabs — they are one page.
+
+### 14. P1-14 owes the dashboard two endpoints; the client is already written against them
+
+`VarianceTab` renders the "Sabab yozib hal qilish" button **only** when the flags endpoint
+answers. Until then it shows the shift-derived list plus a visible note. The contract the
+client assumes (`src/api/services/financeReports.ts`, `FinanceFlag`):
+
+```
+GET  /api/admin/finance/flags?unresolved=true   → FinanceFlag[]
+POST /api/admin/finance/flags/{id}/resolve      → FinanceFlag      body: { reason }
+
+FinanceFlag = {
+  id, kind, detectedAt, message,
+  refId?, amount?, resolvedAt?, resolvedReason?, resolvedByName?
+}
+kind ∈ shift_variance | quick_reversal | off_hours_payment | paid_without_allocation
+```
+
+`message` is rendered as-is, so it must arrive **in Uzbek** from the server. If P1-14 picks
+different field names, the only file to change is `financeReports.ts` — nothing else reads
+the shape.
+
+**If skipped:** the counter keeps working off `cash_shifts.variance` (closed shifts with a
+non-zero variance) and stays non-dismissible; only "resolve with a reason" is unavailable,
+and the UI says so instead of pretending.
+
+## From P1-19 — student / parent finance view
+
+P1-19 added three new files and edited one page. It touched **no** shared file: `App.tsx`,
+`src/config/navigation.ts`, `src/config/constants.ts`, `src/types/index.ts`,
+`src/api/services/billing.ts`, `src/api/services/payments.ts`, `Program.cs`,
+`Dtos/BillingDtos.cs` and `StudentPortalController.cs` are all untouched.
+
+| New file | What it is |
+|---|---|
+| `SchoolLms.Server/Controllers/PortalFinanceController.cs` | `GET /api/student/billing`, `GET /api/student/receipts/{paymentId}.pdf` |
+| `schoollms.client/src/api/services/portalFinance.ts` | typed client for the two endpoints above |
+| `schoollms.client/src/pages/portal/FinanceView.tsx` | the screen; works standalone **and** embedded |
+
+Edited: `schoollms.client/src/pages/admin/students/StudentDetailPage.tsx` — finance part only
+(legacy `students.balance` badge removed from the profile header, new `Moliya` section added
+after "Shaxsiy ma'lumotlar").
+
+### 13. For P1-20 — the two routes
+
+`FinanceView` is the page component for both portal routes. It takes no props there: the
+server resolves the student from the JWT, so `/parent` and `/student` register identically.
+
+```tsx
+import { FinanceView } from '@/pages/portal/FinanceView'
+
+<Route element={<ProtectedRoute role="parent" />}>
+  <Route path="/parent" element={<AppLayout />}>
+    <Route index element={<FinanceView />} />
+  </Route>
+</Route>
+
+<Route element={<ProtectedRoute role="student" />}>
+  <Route path="/student" element={<AppLayout />}>
+    <Route index element={<FinanceView />} />
+
+---
+
+## From P1-16 — cashier workspace (frontend)
+
+P1-16 added six new frontend files and **one new backend controller**. It touched **no**
+shared file: `App.tsx`, `navigation.ts`, `constants.ts`, `ProtectedRoute.tsx`, `types/index.ts`,
+`Program.cs`, `FinancePage.tsx` and the existing `api/services/*.ts` are all untouched.
+
+### 13. For P1-20 — register the `/cashier` route
+
+The component is exported as a named export:
+
+```tsx
+import { CashierPage } from '@/pages/cashier/CashierPage'
+```
+
+Add it to `App.tsx` **outside** the `/admin` tree — `ProtectedRoute role="admin"` allows
+`admin | superadmin | staff` and would let a `staff` user in while keeping the `cashier`
+out, which is the wrong way round on both counts:
+
+```tsx
+{/* Kassa — kassir, admin va direktor (SPEC §4.3) */}
+<Route element={<ProtectedRoute roles={['cashier', 'admin', 'superadmin']} />}>
+  <Route path="/cashier" element={<AppLayout />}>
+    <Route index element={<CashierPage />} />
+  </Route>
+</Route>
+```
+
+Three things that must change with it, or the routes stay unreachable:
+
+1. **`AuthProvider.tsx:12` blocks both roles from the web SPA**
+   (`const WEB_BLOCKED_ROLES = ['student', 'parent']`). A `parent` login is rejected in
+   `login()` *and* wiped in `readStoredUser()` / the `fetchMe` effect. Until that list is
+   emptied, `/parent` and `/student` cannot be reached by the people they are for. The
+   comment above it says the portal is mobile-only — SPEC §6 Phase 3 says "same screens as
+   `/parent` and `/student` routes in the web SPA", so this is P1-20's call, not P1-19's.
+2. **`homeByRole` (`navigation.ts:204-205`) points both roles at `/login`** — a logged-in
+   parent hitting `/` would bounce back to the login page. Change to `/parent` and `/student`.
+3. `navByRole.student` / `navByRole.parent` already carry one item each ("Bosh sahifa"),
+   which is the right label once the route exists.
+
+Nothing else is needed: `FinanceView` renders its own loading, empty, error and
+no-debt states, and needs no permission key.
+
+### 14. `PortalFinanceController` builds its services by hand (for P1-15)
+
+Same pattern, and same reason, as `FinanceReportsController` (§3a above): the controller
+takes `AppDbContext` and constructs `InvoiceService` / `ReceiptService` itself, so both
+endpoints are live **without any `Program.cs` change**. Once P1-15 registers the billing
+services, the two properties at the bottom of the file become constructor parameters:
+
+```csharp
+public sealed class PortalFinanceController(
+    AppDbContext db, IInvoiceService invoices, IReceiptService receipts) : ControllerBase
+```
+
+`AppDbContext` is still needed for the ownership checks. **If skipped:** nothing.
+
+### 15. The parent → child lookup exists twice
+
+`PortalFinanceController.ResolveAsync` repeats the rule in
+`StudentPortalController.TargetAsync`: a `parent` is matched to a student by comparing the
+digits of their login (`users.email`, which holds a phone number) against
+`students.parent_phone`. Two copies of an authorisation rule is one copy too many — but
+extracting it means editing a 1 300-line controller that other tasks are using, and the
+rule changes anyway when SPEC §3.2's guardian many-to-many arrives.
+
+Whoever lands that schema change should collapse both into one helper. Today the rule also
+means **a parent with two children sees only the first match** — acceptable while the
+schema has a single `parent_phone` column, and exactly the thing SPEC §6 Phase 3 ("a
+guardian with two children can switch between them") will fix.
+
+### 16. No screen sends the parent's receipt anywhere new
+
+`GET /api/student/receipts/{paymentId}.pdf` is a read: it renders the same PDF as
+`/api/receipts/{id}.pdf` and never touches Telegram. Automatic delivery is still entry §10
+of the P1-12 section above (`PaymentService.AcceptAsync`).
+
+---
+
+## For P1-20 — P1-17 (admin billing catalog) routes and navigation
+
+P1-17 built four pages and deliberately touched **neither** `App.tsx` **nor**
+`config/navigation.ts` (three other frontend tasks were in flight on the same files).
+Every page is a plain named export and guards its own role, so it is safe to mount as-is.
+
+### 13. Four routes to register in `App.tsx`
+
+```tsx
+import { CategoriesPage }    from '@/pages/admin/billing/CategoriesPage'
+import { SubscriptionsPage } from '@/pages/admin/billing/SubscriptionsPage'
+import { DiscountsPage }     from '@/pages/admin/billing/DiscountsPage'
+import { ExpensesPage }      from '@/pages/admin/billing/ExpensesPage'
+```
+
+| Path | Element | Notes |
+|---|---|---|
+| `/admin/billing/categories` | `<CategoriesPage />` | fee categories reference data |
+| `/admin/billing/subscriptions` | `<SubscriptionsPage />` | per-student, per-category |
+| `/admin/billing/discounts` | `<DiscountsPage />` | + permanent approval queue |
+| `/admin/billing/expenses` | `<ExpensesPage />` | + approval queue, storno only |
+
+All four go **inside the existing `admin` `ProtectedRoute` branch**, next to
+`/admin/finance`. Do not put them behind the cashier branch.
+
+### 14. Navigation — one registration covers desktop and mobile
+
+There is no separate mobile nav component: `Sidebar.tsx` is the mobile drawer as well, and
+`CommandPalette.tsx` reads the same `navByRole`. So `config/navigation.ts` is the only file
+to edit.
+
+The current `Moliya` entry is a leaf; turn it into a group (same shape as `O'quvchilar`):
+
+```ts
+{
+  label: 'Moliya',
+  to: '/admin/finance',
+  icon: Wallet,
+  perm: 'finance',
+  children: [
+    { label: 'Umumiy',            to: '/admin/finance', end: true },
+    { label: "To'lov toifalari",  to: '/admin/billing/categories',    roles: ['admin', 'superadmin'] },
+    { label: 'Obunalar',          to: '/admin/billing/subscriptions', roles: ['admin', 'superadmin'] },
+    { label: 'Chegirmalar',       to: '/admin/billing/discounts',     roles: ['admin', 'superadmin'] },
+    { label: 'Chiqimlar',         to: '/admin/billing/expenses',      roles: ['admin', 'superadmin'] },
+  ],
+},
+```
+
+`roles: ['admin', 'superadmin']` is not decoration. `perm: 'finance'` alone would show these
+four to a `staff` user who was granted the finance permission, and the server answers
+`403` for `staff` (`Roles.FinanceStaff = admin, superadmin`). `cashier` uses its own
+`navByRole.cashier` list and never sees the admin menu at all.
+
+**If skipped:** the four pages exist, compile and are reachable by typed URL, but nothing
+links to them.
+
+---
+
+## For P1-13 — expense endpoints P1-17 already calls
+
+`expenses` is fully populated in the database (5 rows, 4 approved) but
+`/api/admin/billing/expenses` returns `404 {"message":"API endpoint topilmadi"}` — there is
+no `ExpensesController`. `ExpensesPage.tsx` calls the real URLs anyway and renders a
+distinct "hali serverga ulanmagan" state for a bare 404, so the screen starts working the
+moment the controller lands. No frontend change will be needed.
+
+### 15. Four endpoints, frozen in `src/api/services/expenses.ts`
+
+| Method | Path | Body | Response |
+|---|---|---|---|
+| `GET`  | `/admin/billing/expenses` | query: `from`, `to`, `category` | `ExpenseDto[]` |
+| `POST` | `/admin/billing/expenses` | `{ onDate, category, amount, note? }` | `ExpenseDto` |
+| `POST` | `/admin/billing/expenses/{id}/approve` | — | `ExpenseDto` |
+| `POST` | `/admin/billing/expenses/{id}/reverse` | `{ reason }` | `ExpenseDto` |
+
+`ExpenseDto` is already frozen in `Dtos/BillingDtos.cs`. Guards: class-level
+`[Authorize(Roles = Roles.FinanceStaff)]`, then `[FinanceRole(FinanceAction.RecordExpense)]`
+on create, `[FinanceRole(FinanceAction.ApproveExpense)]` on approve.
+
+**There is no `DELETE` and no `PUT`, and there must not be** (SPEC §4.1). A wrong expense is
+corrected by `reverse`, with a mandatory reason. The page has no delete control at all.
+**There is also no `reject`**: an expense is a fact that already happened, so the two
+outcomes are *approve* and *storno*, not *approve* and *deny*.
+
+### 16. Two decisions the UI made because the DTO could not answer
+
+1. **The approval threshold is a frontend constant.** `EXPENSE_APPROVAL_THRESHOLD =
+   5_000_000` lives in `src/api/services/expenses.ts`. SPEC §4.5 says "above N so'm" but N is
+   not exposed anywhere; the seed data implies 5 000 000 (the 4 600 000 row is unapproved,
+   every row above 7 400 000 is approved). If P1-13 makes it a school setting, return it in
+   the settings payload and delete the constant.
+2. **`ExpenseDto` has no `status`.** `expenseState()` derives it from three facts:
+   `reversedBy` → `reversed`, `approvedByName` → `approved`, `amount > threshold` →
+   `pending`, otherwise `recorded`. If the backend later returns a real status, that one
+   function is the only place to change.
+
+The optional fields `createdById`, `approvedById`, `reversalOf`, `reversedBy` and
+`reversalReason` are already declared on `ExpenseRecord`; the UI uses them when present and
+degrades cleanly when absent.
+
+---
+
+## For whoever adds `CreatedById` to the billing DTOs
+
+`DiscountDto` and `ExpenseDto` carry `CreatedByName` but no id, so P1-17 cannot compare the
+creator to the logged-in user by id. Dual control (SPEC §4.5) is enforced in the UI by
+comparing **normalised full names** — see `isOwnRecord()` in
+`src/pages/admin/billing/access.ts`.
+
+That comparison fails **closed**: two staff members with the same full name hide the approve
+button from each other rather than showing it to the wrong person, and the server's
+`self_approval` check (verified live: `403 self_approval`) is untouched either way.
+
+Adding an optional `CreatedById` to both DTOs is a non-breaking change by the rules at the
+top of `BillingDtos.cs`. The frontend needs **no** change when it appears: `DiscountRecord`
+and `ExpenseRecord` already declare `createdById?: string`, and `isOwnRecord()` prefers the
+id whenever it is present.
+
+`ProtectedRoute` currently takes a single `role` and hard-codes the one multi-role case
+(`role="admin"` → `admin | superadmin | staff`). P1-20 owns that file; the smallest change
+that serves both callers is an optional `roles?: Role[]` prop checked before `role`.
+Whatever shape is chosen, the acceptance criterion is the same three roles.
+
+`RootRedirect` already sends a cashier to `/cashier` (`homeByRole.cashier`), and
+`navByRole.cashier` already holds exactly one item — **no navigation change is needed**,
+only the route.
+
+**The page does not depend on the route being nested in `AppLayout`.** It renders its own
+`<h1>Kassa</h1>` header and works standalone, so a full-screen cash-desk layout is also an
+option if the sidebar is judged to be noise for this role.
+
+### 14. The page's own role check is a second line, not the first
+
+`CashierPage` refuses to draw any control for a user outside
+`cashier | admin | superadmin` (it shows "Kassa bo'limi sizga ochiq emas"). That is a
+fallback for a mis-registered route — **it is not the guard**. The route guard in P1-20 and
+the `[FinanceRole]` gate on the server are the real ones.
+
+### 15. `GET /api/cash/students?q=` is new — and it needed no DI
+
+`SchoolLms.Server/Controllers/CashierStudentsController.cs` (new file) exists because a
+`cashier` gets **403** from `GET /api/admin/students`: that controller sits behind
+`[AdminPerm("students")]`, which admits only `admin | superadmin | staff`. Letting the
+cashier through that gate would hand them the whole student CRUD, including the
+login/password export.
+
+- Route: `GET /api/cash/students?q=<kamida 2 belgi>`, max 25 rows, archived students excluded.
+- Guard: `[FinanceRole(FinanceAction.AcceptPayment)]` — the existing SPEC §4.3 row, no new rule.
+- Returns `CashierStudentDto(Id, FullName, ClassName, ParentFullName, ParentPhone)`. **No balance** —
+  the only source of a debt figure stays `suggest-allocation`.
+- Constructor takes `AppDbContext`, already registered (`Program.cs:56`), so **P1-15 has
+  nothing to add for it**. Verified on a build with zero billing DI: the endpoint answers 200
+  while every `/api/cash/shifts/*` route on the same build 500s.
+
+Measured RBAC on a throwaway stack: `cashier` 200 · `admin` 200 · `staff` **403** ·
+anonymous **401**.
+
+### 16. `api/services/cashier.ts` duplicates two frozen stubs on purpose
+
+`payments.ts` and `cashShifts.ts` (P1-06) still throw `notImplemented(...)` and point at
+guessed paths (§11 above). Both belong to other Phase 1.F agents, so P1-16 wrote its own
+client at `src/api/services/cashier.ts` against the **real** routes. Signatures were kept
+identical to the stubs, so once those are wired the new file can become a set of
+one-line re-exports. Whoever consolidates should keep three things that live only in the
+new file and are not obvious:
+
+- `getCurrentShift()` must branch on `res.status === 204`; axios gives `data === ''`, not `null`.
+- `PROBE_AMOUNT = 0.01` — `suggest-allocation` returns `[]` for `amount <= 0`, so listing a
+  student's open invoices before any amount is typed needs a positive probe. Only `remaining`
+  is read in that call; `suggested` is ignored.
+- `financeErrorCode()` / `financeErrorMessage()` read the `{ code, message }` shape that all
+  four money controllers return. Branch on `code`, never on the text.
+
+### 17. `cashTotal` is deliberately not rendered while a shift is open
+
+`CashShiftDto` carries `cashTotal` on an **open** shift (measured: `1200000.00` before close).
+Showing it in the shift bar tells the cashier what the drawer should contain, which is exactly
+what SPEC §4.2 is written to prevent. `ShiftBar` therefore shows only the open time and the
+receipt count. `expectedCash` / `variance` are `null` until the close call returns, so the
+server does not leak them either — that is what makes the two-phase close dialog honest rather
+than decorative. **Do not "improve" the shift bar by adding the total.**
+- [2026-09-12] `DiscountService.ChargeFor` keeps its own copy of the discount arithmetic instead of delegating to `DiscountMath`, which `DiscountMath`'s own doc comment warns against. The three copies (`TuitionService`, `DiscountMath`, `DiscountService`) agree today — P1-23 pins all three against the same 40 pairs plus 5 000 random inputs — but nothing except those tests enforces it. Collapse to one implementation when `TuitionService` is retired.
+- [2026-09-12] `InvoiceQuery` / `PaymentQuery` `MaxRows` / `MaxListRows` caps are untested. Not P1-23 scope; worth a boundary test before the pagination is exposed to the UI.

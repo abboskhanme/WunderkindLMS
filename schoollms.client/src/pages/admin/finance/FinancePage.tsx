@@ -5,6 +5,7 @@ import type {
   FinanceMonthly,
   FinanceSummary,
   FinanceTransaction,
+  Role,
   SalaryReportRow,
   StudentFinanceRow,
 } from '@/types'
@@ -30,8 +31,16 @@ import { StatCard } from '@/components/ui/StatCard'
 import { FinanceMonthlyChart } from '@/components/charts/FinanceMonthlyChart'
 import { AuditHistoryModal } from '@/components/audit/AuditHistoryModal'
 import type { AuditFilters } from '@/api/services/audit'
+import { useAuth } from '@/context/auth-context'
 import { TransactionFormModal } from './TransactionFormModal'
 import { TeacherSalaryDetailModal } from './TeacherSalaryDetailModal'
+import { PnlTab } from './PnlTab'
+import { CashFlowTab } from './CashFlowTab'
+import { DebtorsTab } from './DebtorsTab'
+import { ZReportTab } from './ZReportTab'
+import { VarianceTab } from './VarianceTab'
+import { VarianceBanner } from './VarianceBanner'
+import { useVarianceWatch } from './useVarianceWatch'
 
 const todayStr = new Date().toISOString().slice(0, 10)
 const yearOf = (d: string) => Number(d.slice(0, 4))
@@ -40,13 +49,51 @@ const control =
   'rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-brand-400'
 
 type DirFilter = 'all' | FinanceDirection
-type Tab = 'overview' | 'teachers' | 'students'
 
-const tabs: { value: Tab; label: string }[] = [
+/**
+ * P1-18 — DIREKTOR MOLIYA PANELI, ADDITIV.
+ *
+ * Eski uchta tab (`overview` / `teachers` / `students`) o'z joyida qoladi:
+ * ular eski moliya yo'liga (`finance_transactions`, o'quvchi qatoridagi
+ * qoldiq) tayanadi va P1-21 da olib tashlanadi. Ulardagi "Tahrirlash" va
+ * "O'chirish" tugmalariga BU VAZIFADA TEGILMAGAN — ular o'sha yerda,
+ * o'sha holida.
+ *
+ * Yangi beshta tab yonidan qo'shildi. Ular BOSHQA manbadan o'qiydi:
+ * `ledger_entries`, `invoices`, `payment_allocations`, `cash_shifts` —
+ * ya'ni ikkala to'plam bir-biriga umuman tegmaydi.
+ */
+type LegacyTab = 'overview' | 'teachers' | 'students'
+type ReportTab = 'pnl' | 'cashflow' | 'debtors' | 'zreport' | 'variance'
+type Tab = LegacyTab | ReportTab
+
+const legacyTabs: { value: LegacyTab; label: string }[] = [
   { value: 'overview', label: 'Umumiy' },
   { value: 'teachers', label: "O'qituvchilar" },
   { value: 'students', label: "O'quvchilar" },
 ]
+
+const reportTabs: { value: ReportTab; label: string }[] = [
+  { value: 'pnl', label: 'Foyda va zarar' },
+  { value: 'cashflow', label: 'Pul oqimi' },
+  { value: 'debtors', label: 'Qarzdorlar' },
+  { value: 'zreport', label: 'Z-hisobot' },
+  { value: 'variance', label: 'Nomuvofiqlik' },
+]
+
+const legacyTabValues: string[] = legacyTabs.map((t) => t.value)
+const isLegacyTab = (tab: Tab): boolean => legacyTabValues.includes(tab)
+
+/** Yuqoridagi sana oralig'i faqat shu tablarda ma'noga ega. */
+const periodTabs: string[] = ['overview', 'teachers', 'pnl', 'cashflow']
+
+/**
+ * Yangi hisobotlar FAQAT admin va direktorga ko'rinadi (SPEC §4.3):
+ * `/api/admin/finance/*` kassirga ham, `finance` ruxsatli oddiy xodimga ham
+ * 403 beradi. Ruxsati yo'q odamga tugma CHIZILMAYDI — 403 ni ekranda
+ * ko'rsatish emas.
+ */
+const reportRoles: Role[] = ['admin', 'superadmin']
 
 /** Qoldiq/qarz summasini belgisiga qarab ranglash */
 function balanceClass(v: number): string {
@@ -63,6 +110,9 @@ function formatDiscount(pct: number, amount: number): string {
 }
 
 export function FinancePage() {
+  const { user } = useAuth()
+  const canSeeReports = !!user && reportRoles.includes(user.role)
+
   const [tab, setTab] = useState<Tab>('overview')
   const [from, setFrom] = useState(`${yearOf(todayStr)}-01-01`)
   const [to, setTo] = useState(todayStr)
@@ -80,7 +130,15 @@ export function FinancePage() {
   const [audit, setAudit] = useState<{ filters: AuditFilters; title: string } | null>(null)
   const [detailTeacher, setDetailTeacher] = useState<SalaryReportRow | null>(null)
 
+  // Hal qilinmagan nomuvofiqlik hisoblagichi (SPEC §4.6). Banner ham,
+  // "Nomuvofiqlik" tabi ham SHU bitta manbadan o'qiydi — ekranda ikkita
+  // har xil raqam paydo bo'lmasligi uchun.
+  const variance = useVarianceWatch(canSeeReports)
+
   const load = useCallback(() => {
+    // Yangi hisobot tablari o'z ma'lumotini o'zi oladi — eski moliya
+    // so'rovlarini ular ochilganda yubormaymiz.
+    if (!isLegacyTab(tab)) return
     setLoading(true)
     Promise.all([
       getFinanceSummary(from, to),
@@ -97,7 +155,7 @@ export function FinancePage() {
         setStudentReport(st)
       })
       .finally(() => setLoading(false))
-  }, [from, to, dirFilter])
+  }, [from, to, dirFilter, tab])
 
   // eslint-disable-next-line react-hooks/set-state-in-effect -- filtr o'zgarganda ma'lumotni qayta yuklash (maqsadli, useAsync bilan bir xil naqsh)
   useEffect(() => load(), [load])
@@ -212,23 +270,42 @@ export function FinancePage() {
           >
             <History className="h-4 w-4" /> Tarix
           </Button>
-          <Button variant="secondary" onClick={handleAccrue}>
-            <Calculator className="h-4 w-4" /> Oylik to'lovni hisoblash
-          </Button>
-          <Button
-            onClick={() => {
-              setEditing(null)
-              setFormOpen(true)
-            }}
-          >
-            <Plus className="h-4 w-4" /> Yangi amal
-          </Button>
+          {/* Eski yo'lning amallari — faqat eski tablarda (P1-21 da olib tashlanadi). */}
+          {isLegacyTab(tab) && (
+            <>
+              <Button variant="secondary" onClick={handleAccrue}>
+                <Calculator className="h-4 w-4" /> Oylik to'lovni hisoblash
+              </Button>
+              <Button
+                onClick={() => {
+                  setEditing(null)
+                  setFormOpen(true)
+                }}
+              >
+                <Plus className="h-4 w-4" /> Yangi amal
+              </Button>
+            </>
+          )}
         </div>
       </div>
 
+      {/*
+        HAL QILINMAGAN NOMUVOFIQLIK HISOBLAGICHI (SPEC §4.6).
+        Sahifa ochilishi bilan ko'rinadi va YOPIB BO'LMAYDI — bannerda "x"
+        tugmasi yo'q, uni yashiradigan holat ham yo'q. Batafsil izoh:
+        `VarianceBanner.tsx`.
+      */}
+      {canSeeReports && (
+        <VarianceBanner
+          watch={variance}
+          onOpen={() => setTab('variance')}
+          hideOpenAction={tab === 'variance'}
+        />
+      )}
+
       {/* Bo'limlar (tablar) */}
       <div className="flex flex-wrap items-center gap-2">
-        {tabs.map((t) => (
+        {legacyTabs.map((t) => (
           <button
             key={t.value}
             onClick={() => setTab(t.value)}
@@ -242,10 +319,41 @@ export function FinancePage() {
             {t.label}
           </button>
         ))}
+
+        {/* Yangi hisobotlar — faqat admin va direktor (SPEC §4.3). */}
+        {canSeeReports && (
+          <>
+            <span className="mx-1 hidden h-6 w-px bg-slate-200 sm:block" />
+            {reportTabs.map((t) => (
+              <button
+                key={t.value}
+                onClick={() => setTab(t.value)}
+                className={cn(
+                  'rounded-lg px-4 py-2 text-sm font-medium transition-colors',
+                  tab === t.value
+                    ? 'bg-brand-600 text-white'
+                    : 'bg-white text-slate-600 hover:bg-slate-100',
+                )}
+              >
+                {t.label}
+                {t.value === 'variance' && variance.count > 0 && (
+                  <span
+                    className={cn(
+                      'ml-2 rounded-full px-1.5 py-0.5 text-xs font-semibold',
+                      tab === t.value ? 'bg-white text-red-700' : 'bg-red-100 text-red-700',
+                    )}
+                  >
+                    {variance.count}
+                  </span>
+                )}
+              </button>
+            ))}
+          </>
+        )}
       </div>
 
-      {/* Davr tanlash (umumiy va o'qituvchilar bo'limi uchun) */}
-      {tab !== 'students' && (
+      {/* Davr tanlash (kirim-chiqim, maosh, P&L va pul oqimi uchun) */}
+      {periodTabs.includes(tab) && (
         <Card className="flex flex-wrap items-center gap-3 p-4">
           <span className="text-sm font-medium text-slate-600">Davr:</span>
           <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className={control} />
@@ -254,10 +362,16 @@ export function FinancePage() {
         </Card>
       )}
 
-      {loading || !summary ? (
-        <Loader label="Yuklanmoqda..." />
-      ) : (
-        <>
+      {/*
+        Eski uchta tab. Ular BIRGALIKDA yuklanadi (eski `load`), shuning
+        uchun yuklanish darvozasi ham faqat shu blokda: yangi hisobotlar
+        eski endpoint yiqilsa ham ochilaveradi.
+      */}
+      {isLegacyTab(tab) &&
+        (loading || !summary ? (
+          <Loader label="Yuklanmoqda..." />
+        ) : (
+          <>
           {/* ============ UMUMIY ============ */}
           {tab === 'overview' && (
             <>
@@ -620,7 +734,16 @@ export function FinancePage() {
               </Card>
             </>
           )}
-        </>
+          </>
+        ))}
+
+      {/* ================= P1-18 — YANGI HISOBOTLAR ================= */}
+      {canSeeReports && tab === 'pnl' && <PnlTab from={from} to={to} />}
+      {canSeeReports && tab === 'cashflow' && <CashFlowTab from={from} to={to} />}
+      {canSeeReports && tab === 'debtors' && <DebtorsTab />}
+      {canSeeReports && tab === 'zreport' && <ZReportTab />}
+      {canSeeReports && tab === 'variance' && (
+        <VarianceTab watch={variance} canResolve={canSeeReports} />
       )}
 
       <TransactionFormModal

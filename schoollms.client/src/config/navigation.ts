@@ -139,7 +139,23 @@ export const navByRole: Record<Role, NavItem[]> = {
       ],
     },
     { label: 'Shartnomalar', to: '/admin/contracts', icon: FileSignature, perm: 'contracts' },
-    { label: 'Moliya', to: '/admin/finance', icon: Wallet, perm: 'finance' },
+    {
+      label: 'Moliya',
+      to: '/admin/finance',
+      icon: Wallet,
+      perm: 'finance',
+      children: [
+        { label: 'Umumiy', to: '/admin/finance', end: true },
+        // SPEC §4.3: moliya hisobotlari faqat admin va direktorga ochiq —
+        // 'finance' ruxsatli xodim (staff) ham bu yerni ko'rmaydi, chunki
+        // endpoint unga 403 qaytaradi. Menyuni ham, marshrutni ham yopamiz.
+        {
+          label: 'Pul aylanmasi',
+          to: '/admin/finance/money-flow',
+          roles: ['admin', 'superadmin'],
+        },
+      ],
+    },
     {
       label: 'Boshqaruv',
       to: '/admin/boshqaruv/staff',

@@ -40,11 +40,21 @@ builder.Services.AddDbContext<AppDbContext>(opt =>
     opt.UseNpgsql(defaultConn,
             npg =>
             {
-                // Vaqtinchalik DB uzilishlarini avtomatik qayta urinish bilan chidaydi.
-                npg.EnableRetryOnFailure(
-                    maxRetryCount: 5,
-                    maxRetryDelay: TimeSpan.FromSeconds(10),
-                    errorCodesToAdd: null);
+                // QAYTA URINISH (EnableRetryOnFailure) ATAYLAB O'CHIRILGAN.
+                //
+                // Moliya moduli (Faza 1) aniq tranzaksiyalar ishlatadi — to'lov, hisob-faktura
+                // va kassa smenasi. EF Core qayta urinish strategiyasi bilan aniq tranzaksiya
+                // birga ishlamaydi: "The configured execution strategy does not support
+                // user-initiated transactions".
+                //
+                // Ikki yo'l bor edi: (a) har bir tranzaksiyani `CreateExecutionStrategy()`
+                // ichiga o'rash, (b) qayta urinishni o'chirish. Hozircha (b) tanlandi —
+                // baza ilova bilan bitta Docker tarmog'ida, vaqtinchalik uzilish kam uchraydi,
+                // pul amallarining to'g'riligi esa muhimroq. (a) ni to'liq qilish alohida
+                // vazifa sifatida `docs/PENDING_WIRING.md` ga yozildi.
+                //
+                // DIQQAT: testlar ham aynan shu sozlama bilan ishlashi SHART — aks holda bu
+                // sinf xatolar faqat prodda chiqadi (aynan shunday bo'lgan edi).
                 // Ko'p kolleksiyali Include'larni alohida so'rovlarga ajratadi — kartezian portlashning oldini oladi.
                 npg.UseQuerySplittingBehavior(QuerySplittingBehavior.SplitQuery);
             })
@@ -207,7 +217,6 @@ builder.Services.AddSignalR();
 builder.Services.AddScoped<ChatService>();
 
 // Oylik to'lovlarni avtomatik hisoblovchi fon xizmati
-builder.Services.AddHostedService<SchoolLms.Application.Services.TuitionAccrualService>();
 builder.Services.AddHostedService<SchoolLms.Application.Services.TurnstileLiveService>();
 
 // Telegram bot (e'lon yuborish + ota-onalarni kontakt orqali ro'yxatga olish).
@@ -235,8 +244,41 @@ builder.Services.AddScoped<SchoolLms.Application.Services.ContractService>();
 // Turniket/FaceID integratsiyasi — o'qituvchilar davomatini avtomatik yuklash
 builder.Services.AddScoped<SchoolLms.Application.Services.TurnstileService>();
 
+// ---------- Moliya (Faza 1) ----------
+// DIQQAT: yuqorida `TuitionAccrualService` ro'yxatdan CHIQARILDI. Eski va yangi hisoblash
+// bir vaqtda ishlasa HAR O'QUVCHI IKKI MARTA hisob oladi. Eski fayl hali turibdi (P1-21
+// uni o'chiradi), lekin u endi ishga tushmaydi.
+builder.Services.AddScoped<SchoolLms.Application.Billing.ILedgerService,
+                           SchoolLms.Application.Billing.LedgerService>();
+builder.Services.AddScoped<SchoolLms.Application.Billing.IInvoiceService,
+                           SchoolLms.Application.Billing.InvoiceService>();
+builder.Services.AddScoped<SchoolLms.Application.Billing.ISubscriptionService,
+                           SchoolLms.Application.Billing.SubscriptionService>();
+builder.Services.AddScoped<SchoolLms.Application.Billing.IDiscountService,
+                           SchoolLms.Application.Billing.DiscountService>();
+builder.Services.AddScoped<SchoolLms.Application.Billing.ICashShiftService,
+                           SchoolLms.Application.Billing.CashShiftService>();
+builder.Services.AddScoped<SchoolLms.Application.Billing.IPaymentService,
+                           SchoolLms.Application.Billing.PaymentService>();
+builder.Services.AddScoped<SchoolLms.Application.Billing.IReceiptService,
+                           SchoolLms.Application.Billing.ReceiptService>();
+builder.Services.AddHostedService<SchoolLms.Application.Billing.BillingAccrualService>();
+
 // Kamera (videokuzatuv) media-shlyuzi (MediaMTX) bilan ishlash
 builder.Services.AddHttpClient<SchoolLms.Application.Services.CameraGateway>();
+
+// ---------- Moliya (billing) ----------
+// DIQQAT: qolgan moliya xizmatlari (to'lov, smena, hisob-faktura, chek) hali
+// ro'yxatdan o'tmagan — ular P1-15 ning ishi, ro'yxati docs/PENDING_WIRING.md
+// da. Bu yerda FAQAT chiqim yo'li uchun kerak bo'lgan ikkitasi bor.
+//
+// `ILedgerService` — jurnalga yozadigan yagona kod (SPEC §2.2). U `ExpenseService`
+// ning konstruktor bog'liqligi, ya'ni usiz chiqim endpoint'i so'rov vaqtida
+// "Unable to resolve service" bilan yiqilardi (build vaqtida emas).
+builder.Services.AddScoped<SchoolLms.Application.Billing.ILedgerService,
+                           SchoolLms.Application.Billing.LedgerService>();
+builder.Services.AddScoped<SchoolLms.Application.Billing.IExpenseService,
+                           SchoolLms.Application.Billing.ExpenseService>();
 
 // Javoblarni siqish (Brotli + Gzip). Level.Fastest — TTFB ga ortiqcha CPU yuk qo'ymaydi.
 // Eslatma: Cloudflare orqasida bo'lsa, CF chetda allaqachon siqadi — bu origin uchun foydali.
