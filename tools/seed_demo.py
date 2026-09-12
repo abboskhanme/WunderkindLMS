@@ -10,6 +10,12 @@ reused (matched by name), never duplicated.
 
 Counts: 10 per kind where 10 makes sense; natural counts elsewhere
 (4 quarters, 6 absence reasons, 3 branches, 5 buses).
+
+O'quvchilar HAR SINFGA 10 tadan yoziladi (10 sinf = 100 o'quvchi): har o'qituvchi
+o'z sinf rahbarligi, jurnali, progressi va topshiriqlarini to'la ko'rishi kerak.
+Topshiriq va o'qituvchi chat xabarlari o'qituvchi akkaunti orqali, taklif/pickup/LMS
+tugatish esa o'quvchi akkaunti orqali yoziladi — chunki bu ro'yxatlar egasi bo'yicha
+filtrlanadi (admin yozganini o'qituvchi ilovasi ko'rmaydi).
 """
 
 import argparse
@@ -29,11 +35,13 @@ random.seed(20260909)
 TOKEN = None
 BASE = "http://localhost:8080"
 LAST_OK = False
+LAST_STATUS = 0
 
 
 def api(method, path, body=None, quiet=False, form=False):
-    global LAST_OK
+    global LAST_OK, LAST_STATUS
     LAST_OK = False
+    LAST_STATUS = 0
     url = BASE + path
     if form:
         # Feedback endpointi IFormFile qabul qilgani uchun faqat multipart bilan ishlaydi.
@@ -54,13 +62,35 @@ def api(method, path, body=None, quiet=False, form=False):
     try:
         with urllib.request.urlopen(req, timeout=60) as r:
             raw = r.read()
+            LAST_STATUS = r.status
             LAST_OK = 200 <= r.status < 300
             return json.loads(raw) if raw else None
     except urllib.error.HTTPError as e:
+        LAST_STATUS = e.code
         detail = e.read().decode(errors="replace")[:300]
         if not quiet:
             print(f"  !! {method} {path} -> {e.code} {detail}")
         return None
+
+
+def demo_login(login, password=None):
+    """
+    Demo akkaunt tokeni (topilmasa None). Login endpointi IP bo'yicha daqiqasiga 10 ta
+    so'rovga cheklangan — seeder o'nlab akkauntga kirgani uchun 429 bo'lsa oyna
+    yangilanishini kutib qayta uriniladi. Boshqa xatoda (noto'g'ri parol) kutilmaydi.
+    """
+    if not login:
+        return None
+    for attempt in range(6):
+        res = api("POST", "/api/auth/login",
+                  {"email": login, "password": password or DEMO_PASSWORD}, quiet=True)
+        if res and "token" in res:
+            return res["token"]
+        if LAST_STATUS != 429:
+            return None
+        if attempt < 5:
+            time.sleep(12)
+    return None
 
 
 def login(user, password):
@@ -88,6 +118,16 @@ def get_or_create(list_path, create_path, payload, match_value, *match_keys):
         return existing
     api("POST", create_path, payload)
     return find(api("GET", list_path) or [], match_value, *match_keys)
+
+
+def index_by(list_path, key="fullName"):
+    """Ro'yxatni BIR marta o'qib nom -> yozuv lug'atiga aylantiradi (yuzlab yozuv uchun)."""
+    return {str(r.get(key, "")).strip().lower(): r for r in (api("GET", list_path) or [])}
+
+
+def path_seg(part):
+    """Yo'l bo'lagini xavfsiz kodlash (sinf nomlari va xizmat kanallari uchun)."""
+    return urllib.parse.quote(str(part), safe="")
 
 
 # --------------------------------------------------------------------------- data
@@ -118,6 +158,12 @@ TEACHERS = [
     ("Mirzayev Shohruh Davronovich",  "male",   "1989-08-25", "1",         6_100_000),
 ]
 
+# Toifa bo'yicha bir soat dars narxi (so'm). Busiz o'qituvchi ilovasidagi "Maosh"
+# bo'limi 0 ko'rsatadi — oylik dars jadvali × shu narxdan hisoblanadi.
+SALARY_RATES = {"oliy": 62_000, "t1": 54_000, "t2": 47_000, "mutaxasis": 40_000}
+
+# 1-A sinfi ro'yxati qo'lda yozilgan (eski demo shu nomlarga tayangan).
+# Qolgan sinflar FAMILIES/…_GIVEN dan barqaror tasodif bilan to'ldiriladi.
 STUDENTS = [
     ("Abdullayev Amir Sardorovich",      "male",   "2019-04-12", "Abdullayev Sardor",    "+998 90 123 45 67"),
     ("Baxtiyorova Zilola Baxtiyorovna",  "female", "2019-06-30", "Baxtiyorov Anvar",     "+998 91 234 56 78"),
@@ -129,6 +175,41 @@ STUDENTS = [
     ("Mahmudova Robiya Alisher qizi",    "female", "2019-05-06", "Mahmudov Alisher",     "+998 90 890 12 34"),
     ("Nurmatov Islom Shuhratovich",      "male",   "2019-10-21", "Nurmatov Shuhrat",     "+998 91 901 23 45"),
     ("O'rozova Xadicha Bekzod qizi",     "female", "2019-03-17", "O'rozov Bekzod",       "+998 93 012 34 56"),
+]
+
+STUDENTS_PER_CLASS = 10
+
+# (familiya o'zagi, otasining ismi) — familiya ayol uchun "-a" bilan, otasining ismi
+# sharifga aylanadi: o'g'il "…ovich", qiz "… qizi".
+FAMILIES = [
+    ("Abdurahmonov", "Jamshid"), ("Axmedov", "Ravshan"),   ("Ashurov", "Qahramon"),
+    ("Bekmurodov", "Ulug'bek"),  ("Boltayev", "Nodir"),    ("Burhonov", "Mansur"),
+    ("Davlatov", "Shavkat"),     ("Ergashev", "Botir"),    ("Eshmatov", "Zafar"),
+    ("Fozilov", "Muzaffar"),     ("G'afurov", "Sanjar"),   ("Halilov", "Ilhom"),
+    ("Hasanov", "Nodirbek"),     ("Ibragimov", "Tohir"),   ("Inoyatov", "Bahodir"),
+    ("Jalilov", "Xurshid"),      ("Kamolov", "Sardorbek"), ("Xolmatov", "Akmal"),
+    ("Latipov", "Shuhrat"),      ("Mamatqulov", "Erkin"),  ("Mirzayev", "Davron"),
+    ("Nabiyev", "Farrux"),       ("Normatov", "Bekzod"),   ("Olimov", "Sherzod"),
+    ("Ostonov", "Gulom"),        ("Po'latov", "Islom"),    ("Qobilov", "Tolib"),
+    ("Rashidov", "Alisher"),     ("Ruziyev", "Sobir"),     ("Saidov", "Jasur"),
+    ("Salimov", "Baxrom"),       ("Tolipov", "Doniyor"),   ("Turg'unov", "Rustam"),
+    ("Umarov", "Anvar"),         ("Usmonov", "Otabek"),    ("Vohidov", "Shermat"),
+    ("Yoqubov", "Zohid"),        ("Zaripov", "Murod"),     ("Ziyodullayev", "Qodir"),
+    ("Shomurodov", "Feruz"),
+]
+
+MALE_GIVEN = [
+    "Amirbek", "Asilbek", "Azizbek", "Behruz", "Bilol", "Diyorbek", "Doston",
+    "Eldor", "Elyor", "Firdavs", "Humoyun", "Ibrohim", "Jahongir", "Javohir",
+    "Komronbek", "Mirjalol", "Muhammadali", "Nurbek", "Ozodbek", "Sanjarbek",
+    "Shohjahon", "Temurbek", "Ulug'bek", "Yusufbek", "Zayniddin",
+]
+
+FEMALE_GIVEN = [
+    "Aziza", "Barchinoy", "Dildora", "Dilnura", "Farangiz", "Gulbahor",
+    "Iroda", "Kamola", "Laylo", "Madina", "Mohira", "Muslima", "Nafisa",
+    "Nilufar", "Odina", "Ozoda", "Ra'no", "Sarvinoz", "Shahnoza", "Shohsanam",
+    "Sitora", "Umida", "Yulduz", "Zarina", "Zebo",
 ]
 
 STAFF = [
@@ -184,6 +265,10 @@ EVALUATION_TYPES = [
     ("Kitobxonlik", "Darsdan tashqari o'qishi"),
     ("Sport faolligi", "Jismoniy tarbiya va musobaqalar"),
     ("Odob-axloq", "Muomala madaniyati"),
+]
+
+ASSIGNMENT_TYPES = [
+    "Uy vazifasi", "Nazorat ishi", "Mustaqil ish", "Loyiha", "Test",
 ]
 
 ABSENCE_REASONS = [
@@ -276,22 +361,36 @@ CHAT_MESSAGES = [
     "Savollaringiz bo'lsa shu yerda yozing.",
 ]
 
-TODAY = date(2026, 9, 9)
-DEMO_PASSWORD = "Demo123!"
+# Xodimlar kanali (o'qituvchi + admin) — ChatService.StaffChannel bilan bir xil kalit.
+STAFF_CHANNEL = "__xodimlar__"
 
+STAFF_MESSAGES = [
+    "Hurmatli hamkasblar, dushanba kuni pedkengash bo'ladi.",
+    "Jurnal mavzularini har hafta yakunida to'ldirib boring.",
+    "Chorak baholari 25-oktabrgacha kiritilishi kerak.",
+    "Oshxona jadvali yangilandi — e'lonlar taxtasida.",
+]
 
-def school_days(start, end):
-    """Mon-Sat, excluding holiday dates."""
-    holiday = {h[0] for h in HOLIDAYS}
-    d, out = start, []
-    while d <= end:
-        if d.weekday() < 6 and d.isoformat() not in holiday:
-            out.append(d)
-        d += timedelta(days=1)
-    return out
+# Sinf rahbari o'z sinf chatiga yozadigan xabar (har o'qituvchiga bittadan).
+TEACHER_CHAT_MESSAGES = [
+    "Bugungi dars mavzusini daftarga yozib oling, ota-onalar nazorat qilsin.",
+    "Ertangi darsga chizg'ich va transportir kerak bo'ladi.",
+    "Uy vazifasini bajarmaganlar ro'yxatini kechqurun yuboraman.",
+    "Sinf xonasini tozalash navbati 2-guruhda.",
+    "Kelasi hafta og'zaki so'rov bo'ladi, tayyorgarlik ko'ring.",
+    "Farzandingiz darsga kechikmasligini iltimos qilaman.",
+    "Nazorat ishi natijalari jurnalga kiritildi.",
+    "Sinf tadbiriga ota-onalarni ham kutamiz.",
+    "Kitoblarni muqovalab olib kelishni unutmang.",
+    "Savollaringizni shu yerda yozsangiz, kechqurun javob beraman.",
+]
 
-
-# --------------------------------------------------------------------------- seed
+# O'qituvchi o'zi yaratadigan topshiriqlar (nom qo'shimchasi, format).
+TEACHER_ASSIGNMENTS = [
+    ("mavzu bo'yicha yozma ish", "written"),
+    ("nazorat testi", "test"),
+    ("amaliy uy vazifasi", "file"),
+]
 
 FEEDBACKS = [
     ("suggestion", "Oshxona menyusiga ko'proq meva qo'shilsa yaxshi bo'lardi."),
@@ -306,57 +405,230 @@ FEEDBACKS = [
     ("complaint",  "Sinf xonasi ertalab sovuq bo'lyapti."),
 ]
 
+# Demo kalendar 2026/2027 o'quv yiliga bog'langan. "Bugun" — haqiqiy sana, lekin
+# 1-chorak ichida ushlab turiladi: jurnal, progress va oshxona shu chorakka tayanadi.
+Q1_START, Q1_END = date(2026, 9, 1), date(2026, 10, 30)
+TODAY = min(max(date.today(), date(2026, 9, 9)), Q1_END)
+DEMO_PASSWORD = "Demo123!"
 
-def seed_student_side(students):
-    """Taklif/shikoyat va pickup — o'quvchi akkaunti orqali (real oqim)."""
+# Dars kuni 08:30 da boshlanadi; har dars 40 daqiqa, tanaffus bilan qadam 45 daqiqa.
+FIRST_LESSON_MIN = 8 * 60 + 30
+LESSON_MIN = 40
+LESSON_STEP_MIN = 45
+PERIODS_PER_DAY = 10        # sozlamalardagi dars vaqtlari soni
+LESSONS_PER_DAY = 5         # jadvalga haqiqatda qo'yiladigan darslar
+SCHOOL_DAYS_PER_WEEK = 6    # dushanba–shanba
+
+
+def lesson_time(period):
+    """(boshlanish, tugash) "HH:MM" — yarim tundan boshlab DAQIQAda hisoblanadi.
+    Soatni alohida hisoblash 08:30 siljishini yo'qotib, tugash vaqtini boshlanishdan
+    oldinga tashlab yuborardi (08:30–08:10), shuning uchun bitta manbadan olinadi."""
+    start = FIRST_LESSON_MIN + (period - 1) * LESSON_STEP_MIN
+    end = start + LESSON_MIN
+    return f"{start // 60:02d}:{start % 60:02d}", f"{end // 60:02d}:{end % 60:02d}"
+
+
+def school_days(start, end):
+    """Mon-Sat, excluding holiday dates."""
+    holiday = {h[0] for h in HOLIDAYS}
+    d, out = start, []
+    while d <= end:
+        if d.weekday() < SCHOOL_DAYS_PER_WEEK and d.isoformat() not in holiday:
+            out.append(d)
+        d += timedelta(days=1)
+    return out
+
+
+def week_table(shift):
+    """
+    (kun, dars) -> (fan, o'qituvchi). Kun 0 = dushanba … 5 = shanba — ScheduleLesson.Day
+    bilan BIR XIL sanoq (backend kunni dushanbadan nolga hisoblaydi). Har sinf uchun
+    jadval suriladi, shuning uchun bitta o'qituvchi bir vaqtda ikki sinfda turmaydi.
+    """
+    t = {}
+    for day in range(SCHOOL_DAYS_PER_WEEK):
+        for period in range(1, LESSONS_PER_DAY + 1):
+            idx = (day * LESSONS_PER_DAY + period - 1 + shift) % len(SUBJECTS)
+            t[(day, period)] = (SUBJECTS[idx], TEACHERS[idx][0])
+    return t
+
+
+def build_roster():
+    """
+    Sinf nomi -> o'quvchilar ro'yxati [(fish, jins, tug'ilgan sana, ota-ona, telefon)].
+    Nomlar QAT'IY seed bilan yig'iladi: seeder qayta yurganda aynan o'sha ro'yxat chiqadi,
+    shuning uchun nom bo'yicha solishtirish ishlaydi va dublikat yaratilmaydi.
+    """
+    rnd = random.Random(20260910)
+    roster = {CLASSES[0][0]: list(STUDENTS)}
+    used = {s[0] for s in STUDENTS}
+    for cname, grade, _lang, _fee in CLASSES[1:]:
+        rows = []
+        while len(rows) < STUDENTS_PER_CLASS:
+            stem, father = FAMILIES[rnd.randrange(len(FAMILIES))]
+            female = len(rows) % 2 == 1
+            given = rnd.choice(FEMALE_GIVEN if female else MALE_GIVEN)
+            surname = (stem + "a") if female else stem
+            patronymic = f"{father} qizi" if female else f"{father}ovich"
+            full = f"{surname} {given} {patronymic}"
+            month, day = rnd.randint(1, 12), rnd.randint(1, 28)
+            if full in used:
+                continue
+            used.add(full)
+            # 1-sinfga 7 yosh: 2026/2027 o'quv yilidan sinf darajasini ayiramiz.
+            year = Q1_START.year - 6 - grade
+            n = len(used)
+            rows.append((
+                full, "female" if female else "male", f"{year}-{month:02d}-{day:02d}",
+                f"{stem} {father}",
+                f"+998 9{n % 5} {100 + n:03d} {10 + (n * 3) % 80:02d} {10 + (n * 7) % 70:02d}",
+            ))
+        roster[cname] = rows
+    return roster
+
+
+# --------------------------------------------------------------------------- seed
+
+
+def seed_teacher_side(teachers, classes, subjects, by_class):
+    """
+    Topshiriqlar va sinf chatidagi o'qituvchi xabari — O'QITUVCHI akkaunti orqali.
+    /api/teacher/assignments ro'yxati CreatedByUserId bo'yicha filtrlanadi: admin
+    yaratgan topshiriq o'qituvchi ilovasida KO'RINMAYDI, shuning uchun har o'qituvchi
+    o'z topshirig'ini o'zi yozadi va natijalarini o'zi belgilaydi.
+    """
     global TOKEN
-    if not students:
-        return
     admin_token = TOKEN
-    if len(api("GET", "/api/admin/feedback", quiet=True) or []) > 0:
-        print("Taklif va shikoyatlar: allaqachon kiritilgan (o'tkazib yuborildi)")
+    n_asg = n_sub = n_msg = 0
+    for i, (full, _g, _b, _cat, _sal) in enumerate(TEACHERS):
+        tid = teachers.get(full)
+        if not tid:
+            continue
+        TOKEN = admin_token
+        cred = api("GET", f"/api/admin/teachers/{tid}/credentials", quiet=True) or {}
+        token = demo_login(cred.get("login"))
+        if not token:
+            print(f"  !! {full}: o'qituvchi akkauntiga kirib bo'lmadi (o'tkazib yuborildi)")
+            continue
+        TOKEN = token
+
+        home = CLASSES[i][0]
+        second = CLASSES[(i + 3) % len(CLASSES)][0]
+        target = [classes[c] for c in dict.fromkeys([home, second]) if classes.get(c)]
+        mine = api("GET", "/api/teacher/assignments", quiet=True) or []
+        for j, (suffix, fmt) in enumerate(TEACHER_ASSIGNMENTS):
+            title = f"{SUBJECTS[i]} — {suffix}"
+            if find(mine, title, "title") or not target:
+                continue
+            api("POST", "/api/teacher/assignments", {
+                "subjectId": subjects[SUBJECTS[i]],
+                "title": title,
+                "description": "Namunaviy topshiriq: mavzu bo'yicha vazifalarni bajaring.",
+                "format": fmt,
+                "classIds": target,
+                "startDate": (TODAY - timedelta(days=5 - j)).isoformat(),
+                "dueDate": (TODAY + timedelta(days=2 + j * 3)).isoformat(),
+                "lateAccept": True, "latePenaltyPct": 10, "maxScore": 100,
+                "autoGrade": fmt == "test",
+                "materials": [],
+                "questions": [] if fmt != "test" else [
+                    {"text": "2 + 2 nechchi?", "options": ["3", "4", "5"], "correctIndex": 1},
+                    {"text": "Haftada nechta dars kuni bor?", "options": ["5", "6", "7"], "correctIndex": 1},
+                ],
+            }, quiet=True)
+            if LAST_OK:
+                n_asg += 1
+
+        # Natijalar bo'sh qolmasin: birinchi ikki topshiriqda o'quvchilarning uchdan
+        # ikkisi bajargan (ball bilan), qolgani bajarmagan bo'lib turadi.
+        mine = api("GET", "/api/teacher/assignments", quiet=True) or []
+        for a in mine[:2]:
+            res = api("GET", f"/api/teacher/assignments/{a['id']}/results", quiet=True) or {}
+            for k, row in enumerate(res.get("rows") or []):
+                if row.get("completed") or k % 3 == 2:
+                    continue
+                api("PUT", f"/api/teacher/assignments/{a['id']}/submissions/{row['studentId']}",
+                    {"completed": True, "score": 60 + (k * 7) % 41}, quiet=True)
+                if LAST_OK:
+                    n_sub += 1
+
+        # Sinf chatida oxirgi xabar sinf rahbaridan bo'lsin (ota-onalar shuni ko'radi).
+        if by_class.get(home):
+            text = TEACHER_CHAT_MESSAGES[i % len(TEACHER_CHAT_MESSAGES)]
+            msgs = api("GET", f"/api/teacher/chat/{path_seg(home)}", quiet=True) or []
+            if not any((m.get("text") or "") == text for m in msgs):
+                api("POST", f"/api/teacher/chat/{path_seg(home)}", {"text": text}, quiet=True)
+                if LAST_OK:
+                    n_msg += 1
+
+    TOKEN = admin_token
+    print(f"O'qituvchi akkaunti orqali: {n_asg} topshiriq · {n_sub} bajarish belgisi · "
+          f"{n_msg} chat xabari")
+
+
+def seed_student_side(by_class, lms_topics):
+    """
+    Taklif/shikoyat, pickup va LMS mavzu tugatish — O'QUVCHI akkaunti orqali (real oqim).
+    Har sinfdan bittadan o'quvchi olinadi: shunda har bir sinf rahbari o'z "Sinf rahbarligi"
+    ekranida ota-ona kelganini, admin esa taklif/shikoyatlarni ko'radi.
+    """
+    global TOKEN
+    admin_token = TOKEN
+    picked = [(cname, rows[0]) for cname, rows in by_class.items() if rows]
+    if not picked:
         return
-    sent = 0
-    for i, st in enumerate(students[:len(FEEDBACKS)]):
+    have_feedback = len(api("GET", "/api/admin/feedback", quiet=True) or []) > 0
+    n_fb = n_pickup = n_lms = 0
+    for i, (cname, st) in enumerate(picked):
         TOKEN = admin_token          # keyingi o'quvchi uchun admin huquqi kerak
         cred = api("GET", f"/api/admin/students/{st['id']}/credentials", quiet=True)
-        if not cred or not cred.get("login"):
+        token = demo_login((cred or {}).get("login"))
+        if not token:
             continue
-        # Login endpointi daqiqasiga 10 ta so'rovga cheklangan — 429 bo'lsa kutib qayta urinamiz.
-        res = None
-        for attempt in range(3):
-            res = api("POST", "/api/auth/login",
-                      {"email": cred["login"], "password": DEMO_PASSWORD}, quiet=True)
-            if res and "token" in res:
-                break
-            time.sleep(20)
-        if not res or "token" not in res:
-            continue
-        TOKEN = res["token"]
-        ftype, text = FEEDBACKS[i]
-        api("POST", "/api/student/feedback", {"type": ftype, "text": text},
-            quiet=True, form=True)
+        TOKEN = token
+
+        if not have_feedback and i < len(FEEDBACKS):
+            ftype, text = FEEDBACKS[i]
+            api("POST", "/api/student/feedback", {"type": ftype, "text": text},
+                quiet=True, form=True)
+            if LAST_OK:
+                n_fb += 1
+
+        # Har sinfda bittadan — har sinf rahbari "ota-onasi kelgan" holatini ko'rsin.
+        # Pickup KUNLIK: ertaga ekran yana toza bo'ladi, demo uchun seeder qayta yuriladi.
+        api("POST", "/api/student/pickup", {"studentId": None}, quiet=True)
         if LAST_OK:
-            sent += 1
-        if i < 3:
-            api("POST", "/api/student/pickup", {"studentId": None}, quiet=True)
+            n_pickup += 1
+
+        # LMS progress matritsasi bo'sh qolmasin — dastlabki mavzular tugatilgan bo'lsin.
+        for topic_id in (lms_topics.get(cname) or [])[:3]:
+            api("POST", f"/api/student/lms/topics/{topic_id}/complete", quiet=True)
+            if LAST_OK:
+                n_lms += 1
+
     TOKEN = admin_token
-    print(f"Taklif va shikoyatlar: {sent} · Pickup so'rovlari: 3")
+    # Pickup endpointi bugungi mavjud so'rovni qaytaradi (yangisini yaratmaydi), shuning
+    # uchun bu yerda "nechta sinfda so'rov bor" sanaladi — yangi yozuvlar soni emas.
+    print(f"O'quvchi akkaunti orqali: {n_fb} taklif/shikoyat · {n_pickup} sinfda pickup so'rovi · "
+          f"{n_lms} tugatilgan LMS mavzu")
 
 
-def write_credentials(students, teachers):
+def write_credentials(by_class, teachers):
     """Demo akkauntlarni bitta faylga yozadi (parollar hali almashtirilmagan bo'lsa)."""
     lines = ["Wunderkind International School — demo akkauntlar",
              "=" * 52, "",
-             f"Admin:      admin / Admin123!", ""]
+             "Admin:      admin / Admin123!", ""]
     lines.append("O'qituvchilar (parol: %s)" % DEMO_PASSWORD)
     for name, tid in teachers.items():
         c = api("GET", f"/api/admin/teachers/{tid}/credentials", quiet=True) or {}
         lines.append(f"  {c.get('login', '?'):<24} {name}")
     lines += ["", "O'quvchilar / ota-onalar (parol: %s)" % DEMO_PASSWORD]
-    for st in students:
-        c = api("GET", f"/api/admin/students/{st['id']}/credentials", quiet=True) or {}
-        lines.append(f"  {c.get('login', '?'):<24} {st['fullName']}")
+    for cname, rows in by_class.items():
+        lines.append(f"  --- {cname} ---")
+        for st in rows:
+            c = api("GET", f"/api/admin/students/{st['id']}/credentials", quiet=True) or {}
+            lines.append(f"  {c.get('login', '?'):<24} {st['fullName']}")
     lines += ["", "Xodimlar (parol: %s) — admin panelda 'Xodimlar va rollar'" % DEMO_PASSWORD, ""]
     path = "tools/demo-credentials.txt"
     with open(path, "w", encoding="utf-8") as f:
@@ -395,15 +667,29 @@ def main():
         for q, s, e in QUARTERS
     ]})
     api("PUT", "/api/admin/settings/lesson-times", {"lessonTimes": [
-        {"period": p,
-         "startTime": f"{8 + (p - 1) * 45 // 60:02d}:{(30 + (p - 1) * 45) % 60:02d}",
-         "endTime":   f"{8 + ((p - 1) * 45 + 40) // 60:02d}:{(30 + (p - 1) * 45 + 40) % 60:02d}"}
-        for p in range(1, 11)
+        {"period": p, "startTime": lesson_time(p)[0], "endTime": lesson_time(p)[1]}
+        for p in range(1, PERIODS_PER_DAY + 1)
     ]})
+    # Sabab id'lari SAQLANADI: jurnal yozuvlari reasonId orqali bog'langan, yangi id
+    # berilsa eski davomat yozuvlaridagi sabab ko'rinmay qoladi.
+    old_reasons = (api("GET", "/api/admin/settings") or {}).get("absenceReasons") or []
     api("PUT", "/api/admin/settings/absence-reasons", {"absenceReasons": [
-        {"id": "", "name": n, "short": s, "isLate": late} for n, s, late in ABSENCE_REASONS
+        {"id": (find(old_reasons, n, "name") or {}).get("id", ""),
+         "name": n, "short": s, "isLate": late}
+        for n, s, late in ABSENCE_REASONS
     ]})
-    print(f"Choraklar: 4 · Dars vaqtlari: 10 · Davomat sabablari: {len(ABSENCE_REASONS)}")
+    absence_reasons = (api("GET", "/api/admin/settings") or {}).get("absenceReasons") or []
+    # Topshiriq turlari — bu yerda ham id saqlanadi (topshiriqlar TypeId orqali bog'langan).
+    old_types = api("GET", "/api/admin/settings/assignment-types") or []
+    api("PUT", "/api/admin/settings/assignment-types", {"types": [
+        {"id": (find(old_types, n, "name") or {}).get("id", ""), "name": n}
+        for n in ASSIGNMENT_TYPES
+    ]})
+    api("PUT", "/api/admin/salary-rates", SALARY_RATES)
+    print(f"Choraklar: 4 · Dars vaqtlari: {PERIODS_PER_DAY} "
+          f"(1-dars {lesson_time(1)[0]}–{lesson_time(1)[1]}) · "
+          f"Davomat sabablari: {len(absence_reasons)} · "
+          f"Topshiriq turlari: {len(ASSIGNMENT_TYPES)} · Toifa soat narxlari saqlandi")
 
     for d, name in HOLIDAYS:
         api("PUT", "/api/admin/holidays", {"date": d, "name": name})
@@ -462,34 +748,44 @@ def main():
     print(f"O'qituvchilar: {len(teachers)}  (parol: {DEMO_PASSWORD})")
 
     # 6 ------------------------------------------------------------ o'quvchilar
-    students = []
-    for i, (full, gender, birth, parent, phone) in enumerate(STUDENTS):
-        rec = get_or_create("/api/admin/students", "/api/admin/students", {
-            "fullName": full, "birthDate": birth,
-            "address": "Toshkent sh., Yunusobod tumani",
-            "gender": gender,
-            "parentFullName": parent, "parentPhone": phone,
-            "className": "1-A", "enrollmentDate": "2026-09-01",
-            "newPassword": DEMO_PASSWORD,
-            "discountPct": 10 if i in (2, 7) else 0,
-            "discountAmount": 200_000 if i == 5 else 0,
-            "discountNote": "Ko'p bolali oila" if i in (2, 5, 7) else "",
-            "subGroup": 1 if i % 2 == 0 else 2,
-        }, full, "fullName")
-        if rec:
-            students.append(rec)
-            api("PUT", f"/api/admin/students/{rec['id']}", {
+    # Har sinfga 10 tadan — o'qituvchining sinf rahbarligi, jurnali va topshiriq
+    # natijalari bo'sh qolmasligi uchun.
+    roster = build_roster()
+    wanted = []                          # (sinf, FISH, payload)
+    for cname, _grade, _lang, _fee in CLASSES:
+        for i, (full, gender, birth, parent, phone) in enumerate(roster[cname]):
+            wanted.append((cname, full, {
                 "fullName": full, "birthDate": birth,
-                "address": "Toshkent sh., Yunusobod tumani", "gender": gender,
+                "address": "Toshkent sh., Yunusobod tumani",
+                "gender": gender,
                 "parentFullName": parent, "parentPhone": phone,
-                "className": "1-A", "enrollmentDate": "2026-09-01",
+                "className": cname, "enrollmentDate": "2026-09-01",
                 "newPassword": DEMO_PASSWORD,
                 "discountPct": 10 if i in (2, 7) else 0,
                 "discountAmount": 200_000 if i == 5 else 0,
                 "discountNote": "Ko'p bolali oila" if i in (2, 5, 7) else "",
                 "subGroup": 1 if i % 2 == 0 else 2,
-            }, quiet=True)
-    print(f"O'quvchilar: {len(students)}  (barchasi 1-A sinfda, parol: {DEMO_PASSWORD})")
+            }))
+    known = index_by("/api/admin/students")
+    n_new = 0
+    for _cname, full, payload in wanted:
+        if full.strip().lower() in known:
+            continue
+        api("POST", "/api/admin/students", payload, quiet=True)
+        n_new += 1
+    if n_new:
+        known = index_by("/api/admin/students")
+    students, by_class = [], {}
+    for cname, full, payload in wanted:
+        rec = known.get(full.strip().lower())
+        if not rec:
+            continue
+        # POST parol/guruh/chegirmani o'rnatmaydi — holatni PUT bilan tekislaymiz.
+        api("PUT", f"/api/admin/students/{rec['id']}", payload, quiet=True)
+        students.append(rec)
+        by_class.setdefault(cname, []).append(rec)
+    print(f"O'quvchilar: {len(students)} — {len(by_class)} sinfda "
+          f"(yangi: {n_new}, parol: {DEMO_PASSWORD})")
 
     # 7 ---------------------------------------------------------------- xodimlar
     for full, position in STAFF:
@@ -521,17 +817,21 @@ def main():
                             {"name": name, "points": pts}, name, "name")
         if rec:
             reasons[name] = rec["id"]
-    have_points = len(api("GET", f"/api/admin/discipline/points?studentId={students[0]['id']}",
-                          quiet=True) or []) if students else 0
-    if students and reasons and have_points == 0:
+    n_points = 0
+    if reasons:
         rids = list(reasons.values())
-        for i in range(10):
+        # Har sinfdan bittadan o'quvchi — ball nazorati bo'limi barcha sinfni ko'rsatsin.
+        for i, rows in enumerate(by_class.values()):
+            st = rows[i % len(rows)]
+            if api("GET", f"/api/admin/discipline/points?studentId={st['id']}", quiet=True):
+                continue
             api("POST", "/api/admin/discipline/points", {
-                "studentId": students[i % len(students)]["id"],
-                "reasonId": rids[i % len(rids)],
+                "studentId": st["id"], "reasonId": rids[i % len(rids)],
                 "note": "Namunaviy yozuv",
             }, quiet=True)
-    print(f"Intizom sabablari: {len(reasons)} · Ball yozuvlari: 10")
+            if LAST_OK:
+                n_points += 1
+    print(f"Intizom sabablari: {len(reasons)} · Yangi ball yozuvlari: {n_points}")
 
     # 10 --------------------------------------------------------- feedback turlari
     etypes = []
@@ -541,31 +841,26 @@ def main():
                             {"name": name, "description": desc}, name, "name")
         if rec:
             etypes.append(rec["id"])
+    # Baholash FAN kesimida saqlanadi: o'qituvchi ilovasidagi baholash jadvali
+    # (evaluation/board) subjectId bo'yicha filtrlaydi — subjectsiz baho ko'rinmaydi.
+    eval_rnd = random.Random(11)
+    eval_month = TODAY.strftime("%Y-%m")
     n_eval = 0
-    for st in students:
-        for tid in etypes[:5]:
-            api("POST", "/api/admin/student-evaluation/grade", {
-                "studentId": st["id"], "typeId": tid, "month": "2026-09",
-                "week": 1, "score": random.randint(3, 5),
-            }, quiet=True)
-            if LAST_OK:
-                n_eval += 1
-    print(f"Feedback turlari: {len(etypes)} · Qo'yilgan baholar: {n_eval}")
+    for ci, (cname, _g, _l, _f) in enumerate(CLASSES):
+        subj_id = subjects[SUBJECTS[ci]]          # sinf rahbari o'qitadigan fan
+        for st in by_class.get(cname, []):
+            for tid in etypes[:5]:
+                api("POST", "/api/admin/student-evaluation/grade", {
+                    "studentId": st["id"], "typeId": tid,
+                    "subjectId": subj_id, "classId": classes.get(cname),
+                    "month": eval_month, "week": 1, "score": eval_rnd.randint(3, 5),
+                }, quiet=True)
+                if LAST_OK:
+                    n_eval += 1
+    print(f"Feedback turlari: {len(etypes)} · Qo'yilgan baholar: {n_eval} ({eval_month})")
 
     # 11 ------------------------------------------------------------ dars jadvali
-    cls_1a = classes.get("1-A")
-
-    def week_table(shift):
-        """(kun, dars) -> (fan, o'qituvchi). Har sinf uchun surilgan — o'qituvchi mojarosi bo'lmaydi."""
-        t = {}
-        for day in range(1, 7):
-            for period in range(1, 6):
-                idx = ((day - 1) * 5 + period - 1 + shift) % 10
-                t[(day, period)] = (SUBJECTS[idx], TEACHERS[idx][0])
-        return t
-
-    timetable = week_table(0)                       # 1-A — jurnal shu jadval bo'yicha
-    n_slots = 0
+    n_slots = n_stale = 0
     for c, (cname, _g, _l, _f) in enumerate(CLASSES):
         cid = classes.get(cname)
         if not cid:
@@ -578,52 +873,83 @@ def main():
             tpl = find(tpls, "Asosiy jadval", "name")
         if not tpl:
             continue
-        for (day, period), (subj, teach) in week_table(c).items():
+        table = week_table(c)
+        for (day, period), (subj, teach) in table.items():
             api("PUT", f"/api/admin/classes/{cid}/schedule-templates/{tpl['id']}/{day}/{period}", {
                 "day": day, "period": period,
                 "subjectId": subjects[subj], "teacherId": teachers[teach], "subGroup": 0,
             }, quiet=True)
             if LAST_OK:
                 n_slots += 1
+        # Jadvaldan tashqarida qolgan kataklarni tozalaymiz — ilgari kun 1..6 deb
+        # yozilgani uchun yakshanba (6) darslari osilib qolgan edi.
+        fresh = find(api("GET", f"/api/admin/classes/{cid}/schedule-templates") or [],
+                     "Asosiy jadval", "name") or {}
+        for stale in {(l["day"], l["period"]) for l in (fresh.get("lessons") or [])} - set(table):
+            api("DELETE",
+                f"/api/admin/classes/{cid}/schedule-templates/{tpl['id']}/{stale[0]}/{stale[1]}",
+                quiet=True)
+            n_stale += 1
         # Jadvalni chorak haftalariga biriktirish — busiz "Bugungi dars jadvali" bo'sh turadi.
         api("PUT", f"/api/admin/classes/{cid}/week-assignments", {
             "quarter": 1,
             "assignments": [{"week": w, "templateId": tpl["id"]} for w in range(1, 13)],
         }, quiet=True)
-    print(f"Dars jadvali: {len(CLASSES)} sinf × 30 dars = {n_slots} ta katak, 1-chorak haftalariga biriktirildi")
+    print(f"Dars jadvali: {len(CLASSES)} sinf × {SCHOOL_DAYS_PER_WEEK * LESSONS_PER_DAY} dars "
+          f"= {n_slots} ta katak, 1-chorak haftalariga biriktirildi"
+          + (f" (eskirgan {n_stale} katak tozalandi)" if n_stale else ""))
 
     # 12 ------------------------------------------------------------------ jurnal
-    days = school_days(date(2026, 9, 1), TODAY)
+    # HAR SINF uchun — o'qituvchining "Dars o'tilishi" progressi 0 dan chiqishi uchun
+    # dars o'tilgani (LessonNote.Conducted) sinf jadvalidagi AYNI sana/darsga yozilishi shart.
+    days = school_days(Q1_START, TODAY)
     rnd = random.Random(7)           # jurnal uchun alohida, barqaror tasodif
-    n_notes = n_marks = 0
-    if cls_1a and students:
+    # Kech qolish emas, haqiqiy yo'qlik sabablari (ekranda sabab qisqartmasi ko'rinadi).
+    absent_reason_ids = [r["id"] for r in absence_reasons if not r.get("isLate")]
+    n_notes = n_marks = n_absent = 0
+    for c, (cname, _g, _l, _f) in enumerate(CLASSES):
+        cid = classes.get(cname)
+        rows = by_class.get(cname) or []
+        if not cid or not rows:
+            continue
+        table = week_table(c)
         for d in days:
-            wd = d.weekday() + 1                     # 1 = Monday
-            for period in range(1, 6):
-                subj, teach = timetable[(wd, period)]
+            wd = d.weekday()                         # 0 = dushanba — jadval bilan bir xil
+            for period in range(1, LESSONS_PER_DAY + 1):
+                subj, _teach = table[(wd, period)]
                 sid = subjects[subj]
                 api("PUT", "/api/admin/journal/notes", {
-                    "classId": cls_1a, "subjectId": sid, "quarter": 1,
+                    "classId": cid, "subjectId": sid, "quarter": 1,
                     "date": d.isoformat(), "period": period,
                     "topic": f"{subj}: {TOPIC_TITLES[(period - 1) % len(TOPIC_TITLES)]}",
                     "homework": "Darslikdan mashqlarni bajarish",
                     "conducted": True, "subGroup": 0,
                 }, quiet=True)
-                n_notes += 1
-                for st in rnd.sample(students, 6):
-                    absent = rnd.random() < 0.06
+                if LAST_OK:
+                    n_notes += 1
+                if period > 3:
+                    continue                          # baho har darsda emas — kuniga 3 fandan
+                for st in rnd.sample(rows, min(6, len(rows))):
+                    # Tashlanma har doim olinadi — tasodif ketma-ketligi qayta yurishda bir xil qolsin.
+                    absent = rnd.random() < 0.07 and bool(absent_reason_ids)
                     api("PUT", "/api/admin/journal", {
-                        "classId": cls_1a, "subjectId": sid, "quarter": 1,
+                        "classId": cid, "subjectId": sid, "quarter": 1,
                         "studentId": st["id"], "date": d.isoformat(), "period": period,
                         "grade": None if absent else rnd.choice([3, 4, 4, 5, 5, 5]),
-                        "reasonId": None,
+                        "reasonId": rnd.choice(absent_reason_ids) if absent else None,
                         "homework": rnd.choice([0, 1, 1]),
                         "behavior": rnd.choice([0, 0, 1]),
                     }, quiet=True)
-                    n_marks += 1
-    print(f"Jurnal: {len(days)} o'quv kuni · {n_notes} dars mavzusi · {n_marks} baho/belgi")
+                    if LAST_OK:
+                        n_marks += 1
+                        n_absent += 1 if absent else 0
+    print(f"Jurnal: {len(days)} o'quv kuni × {len(by_class)} sinf · {n_notes} o'tilgan dars · "
+          f"{n_marks} baho/belgi (shundan {n_absent} sababli yo'qlik)")
 
     # 13 ------------------------------------------------------------ topshiriqlar
+    # Admin nomidan — admin panelidagi "Topshiriqlar" bo'limi uchun. O'qituvchi
+    # ilovasidagi ro'yxat esa 19-bosqichda o'qituvchining o'zi tomonidan to'ldiriladi.
+    cls_1a = classes.get("1-A")
     formats = ["written", "file", "test", "video"]
     have_asg = api("GET", "/api/admin/assignments") or []
     n_asg = 0
@@ -649,65 +975,103 @@ def main():
         api("POST", "/api/admin/assignments", body, quiet=True)
         if LAST_OK:
             n_asg += 1
-    print(f"Topshiriqlar: {len(have_asg) + n_asg} (yangi: {n_asg})")
+    print(f"Topshiriqlar (admin nomidan): {len(SUBJECTS)} (yangi: {n_asg}) · "
+          f"jami bazada: {len(have_asg) + n_asg}")
 
     # 14 ------------------------------------------------------------------- LMS
-    n_topics = 0
+    # 1-A da barcha 10 fan (eski demo shu sinfga qurilgan), qolgan sinflarda 3 tadan —
+    # o'qituvchi ilovasidagi "Ta'lim" ekranining sinf filtri bo'sh qolmasligi uchun.
+    lms_topics = {}
+    n_lms_subjects = n_topics = 0
     existing_lms = api("GET", "/api/admin/lms/subjects") or []
-    for subj in SUBJECTS:
-        title = f"{subj} — mustaqil ta'lim"
-        rec = find(existing_lms, title, "title")
-        if not rec:
-            api("POST", "/api/admin/lms/subjects", {
-                "classId": cls_1a, "title": title,
-                "description": f"{subj} fanidan video va matnli darslar",
-                "unlockMode": "sequential", "batchSize": 3,
-            }, quiet=True)
-            rec = find(api("GET", "/api/admin/lms/subjects") or [], title, "title")
-        if not rec:
+
+    def lms_find(title, class_id):
+        return next((s for s in existing_lms
+                     if s.get("title") == title and s.get("classId") == class_id), None)
+
+    for ci, (cname, _g, _l, _f) in enumerate(CLASSES):
+        cid = classes.get(cname)
+        if not cid:
             continue
-        mods = api("GET", f"/api/admin/lms/subjects/{rec['id']}/modules") or []
-        mod = find(mods, "1-modul", "title")
-        if not mod:
-            api("POST", f"/api/admin/lms/subjects/{rec['id']}/modules",
-                {"title": "1-modul", "description": "Boshlang'ich mavzular"}, quiet=True)
+        picks = SUBJECTS if ci == 0 else [SUBJECTS[(ci + k) % len(SUBJECTS)] for k in range(3)]
+        for subj in picks:
+            title = f"{subj} — mustaqil ta'lim"
+            rec = lms_find(title, cid)
+            if not rec:
+                api("POST", "/api/admin/lms/subjects", {
+                    "classId": cid, "title": title,
+                    "description": f"{subj} fanidan video va matnli darslar",
+                    "unlockMode": "sequential", "batchSize": 3,
+                }, quiet=True)
+                existing_lms = api("GET", "/api/admin/lms/subjects") or []
+                rec = lms_find(title, cid)
+                if rec:
+                    n_lms_subjects += 1
+            if not rec:
+                continue
             mods = api("GET", f"/api/admin/lms/subjects/{rec['id']}/modules") or []
             mod = find(mods, "1-modul", "title")
-        if not mod:
-            continue
-        tops = api("GET", f"/api/admin/lms/modules/{mod['id']}/topics") or []
-        for k in range(3):
-            t = f"{k + 1}-mavzu: {TOPIC_TITLES[k]}"
-            if find(tops, t, "title"):
+            if not mod:
+                api("POST", f"/api/admin/lms/subjects/{rec['id']}/modules",
+                    {"title": "1-modul", "description": "Boshlang'ich mavzular"}, quiet=True)
+                mods = api("GET", f"/api/admin/lms/subjects/{rec['id']}/modules") or []
+                mod = find(mods, "1-modul", "title")
+            if not mod:
                 continue
-            if api("POST", f"/api/admin/lms/modules/{mod['id']}/topics", {
-                "title": t, "description": "Namunaviy mavzu tavsifi",
-                "videoUrl": "", "textContent": "Mavzu matni shu yerda bo'ladi.",
-                "materials": [],
-            }, quiet=True) is not None:
-                n_topics += 1
-    print(f"LMS: 10 fan · 10 modul · {n_topics} mavzu")
+            tops = api("GET", f"/api/admin/lms/modules/{mod['id']}/topics") or []
+            for k in range(3):
+                t = f"{k + 1}-mavzu: {TOPIC_TITLES[k]}"
+                if find(tops, t, "title"):
+                    continue
+                api("POST", f"/api/admin/lms/modules/{mod['id']}/topics", {
+                    "title": t, "description": "Namunaviy mavzu tavsifi",
+                    "videoUrl": "", "textContent": "Mavzu matni shu yerda bo'ladi.",
+                    "materials": [],
+                }, quiet=True)
+                if LAST_OK:
+                    n_topics += 1
+            tops = api("GET", f"/api/admin/lms/modules/{mod['id']}/topics") or []
+            lms_topics.setdefault(cname, []).extend(t["id"] for t in tops)
+    print(f"LMS: {len(lms_topics)} sinfda material · yangi {n_lms_subjects} fan · "
+          f"{n_topics} mavzu")
 
     # 15 ------------------------------------------------------------------ moliya
-    seeded_fin = find(api("GET", "/api/admin/finance/transactions") or [],
-                      FINANCE[0][3], "note")
-    for i, (direction, cat, amount, note) in enumerate([] if seeded_fin else FINANCE):
+    txs = api("GET", "/api/admin/finance/transactions") or []
+    for i, (direction, cat, amount, note) in enumerate(FINANCE):
+        if find(txs, note, "note"):
+            continue
         api("POST", "/api/admin/finance/transactions", {
             "date": (TODAY - timedelta(days=i * 2)).isoformat(),
             "direction": direction, "category": cat, "amount": amount,
             "note": note, "studentId": None, "teacherId": None,
         }, quiet=True)
-    api("POST", "/api/admin/finance/accrue?month=2026-09")
-    for i, st in enumerate([] if seeded_fin else students):
-        api("POST", f"/api/admin/students/{st['id']}/payments",
-            {"amount": [1_800_000, 1_800_000, 900_000, 1_800_000, 1_620_000,
-                        1_600_000, 1_800_000, 0, 1_800_000, 450_000][i],
-             "month": "2026-09"}, quiet=True)
-    for name, tid in ([] if seeded_fin else list(teachers.items())[:10]):
+    api("POST", f"/api/admin/finance/accrue?month={TODAY:%Y-%m}")
+    # To'lov qilingan o'quvchi/o'qituvchini moliya yozuvlaridan aniqlaymiz —
+    # qayta yurishda ikkinchi marta to'lov yozilmaydi.
+    paid_students = {t.get("studentId") for t in txs if t.get("studentId")}
+    paid_teachers = {t.get("teacherId") for t in txs if t.get("teacherId")}
+    fee_share = [1.0, 1.0, 0.5, 1.0, 0.9, 0.85, 1.0, 0.0, 1.0, 0.25]
+    n_pay = 0
+    for cname, rows in by_class.items():
+        fee = next(f for n, _g, _l, f in CLASSES if n == cname)
+        for i, st in enumerate(rows):
+            amount = int(fee * fee_share[i % len(fee_share)])
+            if amount <= 0 or st["id"] in paid_students:
+                continue
+            api("POST", f"/api/admin/students/{st['id']}/payments",
+                {"amount": amount, "month": f"{TODAY:%Y-%m}"}, quiet=True)
+            if LAST_OK:
+                n_pay += 1
+    n_sal = 0
+    for tid in teachers.values():
+        if tid in paid_teachers:
+            continue
         api("POST", f"/api/admin/teachers/{tid}/salary-payments",
-            {"amount": 3_000_000, "note": "Sentabr — avans"}, quiet=True)
-    print("Moliya: " + ("allaqachon kiritilgan (o'tkazib yuborildi)" if seeded_fin
-          else f"{len(FINANCE)} tranzaksiya · oylik hisob · {len(students)} to'lov · 10 maosh avansi"))
+            {"amount": 3_000_000, "note": f"{TODAY:%Y-%m} — avans"}, quiet=True)
+        if LAST_OK:
+            n_sal += 1
+    print(f"Moliya: {len(FINANCE)} tranzaksiya · oylik hisob · {n_pay} yangi to'lov · "
+          f"{n_sal} maosh avansi")
 
     # 16 ----------------------------------------------------------------- oshxona
     meals = ["breakfast", "lunch", "dinner"]
@@ -743,17 +1107,26 @@ def main():
     print(f"Filiallar: {len(BRANCHES)} · Avtobuslar: {len(BUSES)} · Kameralar: {len(CAMERAS)}")
 
     # 18 ------------------------------------------------------------------ xabarlar
-    have_chat = api("GET", "/api/admin/messages/chat/1-A") or []
-    if len(have_chat) < len(CHAT_MESSAGES):
-        for msg in CHAT_MESSAGES:
-            api("POST", "/api/admin/messages/chat/1-A", {"text": msg}, quiet=True)
-    print(f"Sinf chati: {len(CHAT_MESSAGES)} xabar (1-A)")
+    # Har kanalga yetishmagan xabarlarnigina qo'shamiz (qayta yurishda takrorlanmaydi).
+    n_chat = 0
+    for cname in list(by_class) + [STAFF_CHANNEL]:
+        wanted_msgs = STAFF_MESSAGES if cname == STAFF_CHANNEL else (
+            CHAT_MESSAGES if cname == CLASSES[0][0] else CHAT_MESSAGES[:5])
+        have = api("GET", f"/api/admin/messages/chat/{path_seg(cname)}", quiet=True) or []
+        for msg in wanted_msgs[len(have):]:
+            api("POST", f"/api/admin/messages/chat/{path_seg(cname)}", {"text": msg}, quiet=True)
+            if LAST_OK:
+                n_chat += 1
+    print(f"Chat: {len(by_class)} sinf + xodimlar kanali · yangi {n_chat} xabar")
 
-    # 19 ------------------------------------- taklif/shikoyat va pickup (o'quvchi tomonidan)
-    seed_student_side(students)
+    # 19 --------------------------- topshiriq va chat (o'qituvchi akkaunti orqali)
+    seed_teacher_side(teachers, classes, subjects, by_class)
 
-    # 20 ------------------------------------------------- login/parollarni faylga yozish
-    write_credentials(students, teachers)
+    # 20 ------------------------------------- taklif/pickup/LMS (o'quvchi tomonidan)
+    seed_student_side(by_class, lms_topics)
+
+    # 21 ------------------------------------------------- login/parollarni faylga yozish
+    write_credentials(by_class, teachers)
 
     print(f"\nTayyor. {BASE} — {args.user} / {args.password}")
     print(f"Qolgan barcha demo akkauntlar paroli: {DEMO_PASSWORD}")
