@@ -879,6 +879,29 @@ def main():
                       full, "fullName")
     print(f"Xodimlar: {len(STAFF)}")
 
+    # 7b ------------------------------------------------------- vasiy akkauntlari
+    # O'quvchi yaratilganda `GuardianSync` vasiyni ota-ona telefoni bo'yicha
+    # yasaydi, lekin AKKAUNT bermaydi — ya'ni ota-ona hech qayerga kira olmasdi
+    # va Mini App'ning ota-ona panelini sinab ko'rib bo'lmasdi.
+    #
+    # Login — telefon raqamining raqamlari (endpoint shunday belgilaydi, va eski
+    # web portal ham ota-onani aynan shu raqam bo'yicha topadi).
+    guardians = api("GET", "/api/admin/guardians") or []
+    n_acc = 0
+    for g in guardians:
+        if g.get("userId"):
+            continue
+        api("POST", f"/api/admin/guardians/{g['id']}/account",
+            {"newPassword": DEMO_PASSWORD}, quiet=True)
+        if LAST_OK:
+            n_acc += 1
+    families = [g for g in guardians if len(g.get("children") or []) > 1]
+    print(f"Vasiylar: {len(guardians)} · yangi akkaunt: {n_acc} · "
+          f"bir nechta farzandli oila: {len(families)}")
+    for g in families[:3]:
+        kids = ", ".join(f"{c['fullName']} ({c['className']})" for c in g["children"])
+        print(f"  {g['fullName']} — {''.join(ch for ch in g['phone'] if ch.isdigit())} — {kids}")
+
     # 8 ------------------------------------------------------------------ lidlar
     stages = {}
     for i, (title, color) in enumerate(LEAD_STAGES):

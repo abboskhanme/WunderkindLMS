@@ -222,6 +222,18 @@ def main():
             n_exp += 1
     print(f"Xarajatlar: {n_exp} ta yangi")
 
+    # ------------------------------------------------- keyingi oy (to'lanmagan)
+    # Sentabr fakturalari yuqorida to'landi, ya'ni HAMMA o'quvchi qarzsiz bo'lib
+    # qolardi va ota-ona ekranida ko'rsatadigan narsa qolmasdi. To'lov esa
+    # o'zgarmas (SPEC §4) — uni "orqaga qaytarib" bo'lmaydi.
+    #
+    # Shuning uchun keyingi oy hisoblanadi va TO'LANMAY qoldiriladi: bu ham
+    # haqiqiy maktabdagi holat (yangi oy ochildi, to'lov hali kelmagan), ham
+    # qarz, muddat va "to'lov kerak" ekranlarini jonlantiradi.
+    api("POST", "/api/admin/billing/accrual/run?month=2026-10", None, quiet=True)
+    owing = api("GET", "/api/admin/finance/debtors", quiet=True) or []
+    print(f"Keyingi oy hisoblandi — qarzdorlar: {len(owing)} o'quvchi")
+
     flow = api("GET", "/api/admin/finance/money-flow?from=2026-09-01&to=2026-09-30", quiet=True)
     if flow:
         hub = next((n for n in flow["nodes"] if n["kind"] == "hub"), None)
