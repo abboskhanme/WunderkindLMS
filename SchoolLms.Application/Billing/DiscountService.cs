@@ -54,7 +54,8 @@ public sealed class DiscountService(IAppDbContext db, AuditService audit) : IDis
     ///
     /// <para>
     /// Yagona farq — <paramref name="percent"/> tipi: eski kodda <c>int</c>
-    /// (<c>Student.DiscountPct</c>), yangi ustun esa <c>numeric(5,2)</c>, ya'ni
+    /// (o'quvchi qatoridagi chegirma ustuni, P1-21 da o'chdi), yangi ustun esa
+    /// <c>numeric(5,2)</c>, ya'ni
     /// 12.5% ham yozilishi mumkin. Butun foizlarda natija bir xil bo'lib qoladi —
     /// buni <c>DiscountServiceTests</c> ikkala funksiyani bir xil kirishlarda
     /// solishtirib tekshiradi (P1-23 shu solishtirishni davom ettiradi).

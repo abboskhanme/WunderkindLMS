@@ -9,7 +9,10 @@ const TOKEN_KEY = 'token'
 const USER_KEY = 'user'
 
 // O'quvchi va ota-ona web orqali kira olmaydi — ular faqat mobil ilovadan foydalanadi.
-const WEB_BLOCKED_ROLES = ['student', 'parent']
+// Ilgari o'quvchi va ota-ona web'ga kira olmasdi — ular uchun mobil ilova bor edi.
+// Mijoz qarori (SPEC §8.1): mobil ilova bekor qilindi, web va Telegram Mini App
+// asosiy kanal bo'ldi. Shuning uchun ro'yxat bo'sh — hech kim bloklanmaydi.
+const WEB_BLOCKED_ROLES: string[] = []
 
 function readStoredUser(): User | null {
   try {

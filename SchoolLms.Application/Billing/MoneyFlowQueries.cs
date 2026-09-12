@@ -175,6 +175,10 @@ public static class MoneyFlowQueries
         Accounts.RevenueMeals => "Ovqatlanish",
         Accounts.RevenueOther => "Boshqa daromad",
         Accounts.ExpenseSalary => "Oylik maosh",
+        Accounts.ExpenseUtilities => "Kommunal xarajat",
+        Accounts.ExpenseSupplies => "Jihoz va materiallar",
+        Accounts.ExpenseRent => "Ijara",
+        Accounts.ExpenseRepair => "Ta'mirlash",
         Accounts.ExpenseOther => "Boshqa chiqim",
         _ => account,
     };

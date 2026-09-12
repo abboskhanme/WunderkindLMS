@@ -1,6 +1,8 @@
+using System.Globalization;
 using Microsoft.EntityFrameworkCore;
 using SchoolLms.Application.Abstractions;
 using SchoolLms.Application.Dtos.Billing;
+using SchoolLms.Application.Services;
 using SchoolLms.Domain;
 
 namespace SchoolLms.Application.Billing;
@@ -33,11 +35,21 @@ namespace SchoolLms.Application.Billing;
 /// oladi va uni BUTUNLIGICHA teskari qiladi — aks holda faqat bitta satrni
 /// teskari qilish jurnalni nomutanosib qoldirardi.
 /// </para>
+///
+/// <para>
+/// <b>AUDIT (SPEC §4.6, P1-14).</b> Har partiya — <see cref="PostAsync"/> ham,
+/// <see cref="ReverseAsync"/> ham — <c>audit_log</c> ga bitta qator qo'shadi va
+/// u AYNAN SHU <c>SaveChanges</c> bilan yoziladi. Alohida commit qilinsa,
+/// orqaga qaytgan tranzaksiya "pul harakat qildi" degan audit izini qoldirardi.
+/// </para>
 /// </summary>
 public sealed class LedgerService(IAppDbContext db) : ILedgerService
 {
     /// <summary>Baza ustuni <c>numeric(14,2)</c> — hisob-kitob ham shu aniqlikda.</summary>
     private const int MoneyScale = 2;
+
+    /// <summary>Audit qatoridagi <c>actor_name</c> uchun — keshlangan (N+1 ga qarshi).</summary>
+    private readonly ActorNames actors = new(db);
 
     /// <inheritdoc />
     public async Task<IReadOnlyList<LedgerEntry>> PostAsync(
@@ -135,6 +147,21 @@ public sealed class LedgerService(IAppDbContext db) : ILedgerService
             created.Add(entry);
         }
 
+        // ---- 5. Audit (SPEC §4.6) ----
+        // Snapshot'da `Id` YO'Q va bo'la olmaydi: `ledger_entries.id` — bigint
+        // identity, u faqat `SaveChanges` dan keyin ma'lum bo'ladi. Qatorlarni
+        // keyin qo'shib, ikkinchi `SaveChanges` qilish esa audit'ni pul
+        // yozuvidan ALOHIDA commit'ga chiqarardi — orada jarayon o'lsa bazada
+        // AUDITSIZ pul qolardi. Partiyani `ref_type` + `ref_id` bir ma'noli
+        // topadi, ya'ni bog'lanish yo'qolmaydi.
+        db.AuditLogs.Add(AuditService.Entry(
+            AuditService.EntityLedgerEntry, refId.ToString("D"), "create",
+            $"Jurnal partiyasi ({refType}): {AuditService.Money(debit)} so'm, "
+            + $"{created.Count} satr — {string.Join(", ", created.Select(e => e.Account).Distinct())}",
+            actorId: actorId,
+            actorName: await actors.OfAsync(actorId, ct),
+            after: created.Select(Snapshot).ToList()));
+
         await db.SaveChangesAsync(ct);
         return created;
     }
@@ -211,6 +238,22 @@ public sealed class LedgerService(IAppDbContext db) : ILedgerService
             created.Add(mirror);
         }
 
+        // Audit (SPEC §4.6). `before` — originallar (ular allaqachon yozilgan,
+        // ya'ni id'lari bor), `after` — ko'zgu satrlar. Bu yerda `before`
+        // "oldingi holat" degani EMAS: storno originalni o'zgartirmaydi, u
+        // "nima teskari qilindi" degan savolga javob beradi.
+        db.AuditLogs.Add(AuditService.Entry(
+            AuditService.EntityLedgerEntry,
+            anchor.RefId?.ToString("D") ?? entryId.ToString(CultureInfo.InvariantCulture),
+            "reverse",
+            $"Jurnal partiyasi STORNO qilindi ({anchor.RefType}): "
+            + $"{AuditService.Money(batch.Sum(e => e.Amount) / 2m)} so'm, {batch.Count} satr — "
+            + $"sabab: {reason}",
+            actorId: approverId,
+            actorName: await actors.OfAsync(approverId, ct),
+            before: batch.Select(Snapshot).ToList(),
+            after: created.Select(Snapshot).ToList()));
+
         // DIQQAT: original yozuvlar `AsNoTracking` bilan o'qilgan va ularga
         // TEGILMAYDI. Bu yerda `Update` ham, `Remove` ham yo'q — ataylab.
         await db.SaveChangesAsync(ct);
@@ -253,6 +296,21 @@ public sealed class LedgerService(IAppDbContext db) : ILedgerService
                 return new AccountBalanceDto(account, debit, credit, debit - credit);
             })];
     }
+
+    /// <summary>Audit uchun snapshot (<c>before</c>/<c>after</c>).</summary>
+    private static object Snapshot(LedgerEntry e) => new
+    {
+        e.Id,
+        e.EntryDate,
+        e.Account,
+        e.Direction,
+        e.Amount,
+        e.RefType,
+        e.RefId,
+        e.Memo,
+        e.CreatedBy,
+        e.ReversalOf,
+    };
 
     private IQueryable<LedgerEntry> FilteredAsync(DateOnly? from, DateOnly? to)
     {

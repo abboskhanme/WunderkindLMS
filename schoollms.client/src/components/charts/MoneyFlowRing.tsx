@@ -32,7 +32,7 @@ import {
   BufferGeometry,
   CanvasTexture,
   Color,
-  CubicBezierCurve3,
+  CatmullRomCurve3,
   Group,
   Mesh,
   MeshBasicMaterial,
@@ -44,7 +44,6 @@ import {
   SphereGeometry,
   Sprite,
   SpriteMaterial,
-  TorusGeometry,
   TubeGeometry,
   Vector2,
   Vector3,
@@ -61,24 +60,36 @@ import {
 /*  Ranglar — loyihadagi mavjud qiymatlar                              */
 /*  (brand-500 `index.css` dan; yashil/qizil `FinanceMonthlyChart` dan) */
 /* ------------------------------------------------------------------ */
-const COLOR_INCOME = 0x16a34a
-const COLOR_EXPENSE = 0xdc2626
-const COLOR_HUB = 0x3366ff
-const COLOR_PROFIT = 0xf59e0b
-const COLOR_RING = 0x334155
+const COLOR_INCOME = 0x4da3ff
+const COLOR_EXPENSE = 0xffa726
+const COLOR_HUB = 0xffd166
+const COLOR_PROFIT = 0xffe08a
+const COLOR_RING = 0x1e3a8a
 
-/** Halqa radiusi (sahna birligida). */
-const RING_RADIUS = 5
+/** Disk (galaktika) tashqi radiusi. */
+const DISC_R = 6.2
+/** Yadro radiusi — markazdagi yorqin oltin to'plam. */
+const CORE_R = 0.5
+/** Tugunlar joylashadigan radius oralig'i. */
+const NODE_R_INNER = 2.6
+const NODE_R_OUTER = 5.4
+/** Spiral qo'llar soni va burilish kuchi. */
+const SPIRAL_ARMS = 4
+const SPIRAL_TWIST = 2.3
+/** Oqim yo'li yadroga borguncha necha radian buriladi. */
+const SPIRAL_SWEEP = 1.9
+/** Har bir qo'ldagi nuqta soni. */
+const ARM_DOTS = 9000
+/** Radius bo'yicha bandlar — differensial aylanish uchun. */
+const BANDS = 5
 
-/** Kirim yoyi — chap yarim doira; chiqim yoyi — o'ng. Ular QARAMA-QARSHI. */
-const INCOME_ARC: [number, number] = [Math.PI * 0.6, Math.PI * 1.4]
-const EXPENSE_ARC: [number, number] = [-Math.PI * 0.4, Math.PI * 0.4]
 
-/** Naychaning markazdan yuqoriga (kirim) / pastga (chiqim) egilishi. */
-const ARC_LIFT = 1.7
-
-/** Zarralarning umumiy chegarasi — sahna qancha katta bo'lmasin, shundan oshmaydi. */
-const PARTICLE_BUDGET = 420
+/**
+ * Zarralarning umumiy chegarasi — sahna qancha katta bo'lmasin, shundan oshmaydi.
+ * Mijoz talabi: yirik nuqtalar emas, MAYDA va KO'P — pul oqimi tuyulsin.
+ * 2400 ta zarra bitta `Points` obyektida chiziladi, ya'ni draw-call soni o'zgarmaydi.
+ */
+const PARTICLE_BUDGET = 3600
 
 /** Bir aylanish uchun ~52 soniya: sezilarli, lekin chalg'itmaydi. */
 const SPIN_RAD_PER_SEC = 0.12
@@ -100,27 +111,8 @@ interface Props {
 /* ------------------------------------------------------------------ */
 
 /** Yoy bo'ylab n ta burchak; bitta bo'lsa — yoyning o'rtasi. */
-function arcAngles(n: number, [start, end]: [number, number]): number[] {
-  if (n <= 0) return []
-  if (n === 1) return [(start + end) / 2]
-  const step = (end - start) / (n - 1)
-  return Array.from({ length: n }, (_, i) => start + i * step)
-}
-
 /** Halqadagi nuqta (XZ tekisligi, y = 0). */
-function ringPoint(angle: number): Vector3 {
-  return new Vector3(Math.cos(angle) * RING_RADIUS, 0, Math.sin(angle) * RING_RADIUS)
-}
-
 /** Ikki nuqta orasidagi egri naycha o'qi. `lift` — egilish balandligi. */
-function flowCurve(from: Vector3, to: Vector3, lift: number): CubicBezierCurve3 {
-  const c1 = from.clone().lerp(to, 0.3)
-  const c2 = from.clone().lerp(to, 0.7)
-  c1.y += lift
-  c2.y += lift * 0.62
-  return new CubicBezierCurve3(from, c1, c2, to)
-}
-
 /** Yorliqlardagi qisqa summa: "12,4 mln". Aniq raqam kursor tekkanda chiqadi. */
 function shortSom(value: number): string {
   const abs = Math.abs(value)
@@ -257,30 +249,20 @@ export function MoneyFlowRing({ flow }: Props) {
 
       const scene = new Scene()
       const camera = new PerspectiveCamera(42, 1, 0.1, 100)
-      camera.position.set(0, 4.0, 10.0)
-      // Nigoh markazdan bir oz PASTDA: naychalar yuqoriga ham, pastga ham
-      // egiladi, lekin yorliqlar faqat yuqorida — shu siljish sahnani
-      // kartochka ichida ko'z bilan markazlashtiradi.
-      camera.lookAt(0, -0.25, 0)
+      // Diskka qiyalik bilan qaraymiz — u ellips bo'lib ko'rinadi, ya'ni
+      // "yuqoridan biroz burchak ostida" (havoladagi rasmdagi kabi).
+      camera.position.set(0, 7.6, 8.6)
+      camera.lookAt(0, 0, 0)
 
       /** Aylanadigan guruh — kamera qimirlamaydi, sahna aylanadi. */
       const spinner = new Group()
       scene.add(spinner)
 
-      // ---- Tugun joylashuvi (halqa bo'ylab) ----
+      // ---- GALAKTIKA: markazda yadro, atrofida spiral qo'llar, tugunlar orbitada ----
       const nodeById = new Map<string, MoneyFlowNode>(flow.nodes.map((n) => [n.id, n]))
       const incomingLinks = flow.links.filter((l) => l.target === 'hub')
       const outgoingLinks = flow.links.filter((l) => l.source === 'hub')
-
-      const positions = new Map<string, Vector3>()
-      positions.set('hub', new Vector3(0, 0, 0))
-
-      arcAngles(incomingLinks.length, INCOME_ARC).forEach((angle, i) => {
-        positions.set(incomingLinks[i].source, ringPoint(angle))
-      })
-      arcAngles(outgoingLinks.length, EXPENSE_ARC).forEach((angle, i) => {
-        positions.set(outgoingLinks[i].target, ringPoint(angle))
-      })
+      const leafLinks = [...incomingLinks, ...outgoingLinks]
 
       const maxLink = Math.max(...flow.links.map((l) => Math.abs(l.value)), 1)
       const totalAbs = flow.links.reduce((sum, l) => sum + Math.abs(l.value), 0) || 1
@@ -295,74 +277,175 @@ export function MoneyFlowRing({ flow }: Props) {
         if (node.kind === 'income') return COLOR_INCOME
         if (node.kind === 'expense') return COLOR_EXPENSE
         if (node.kind === 'hub') return COLOR_HUB
-        // Sof natija: foyda — sariq (chiquvchi), kamomad — qizil (kiruvchi).
         return incomingLinks.some((l) => l.source === node.id) ? COLOR_EXPENSE : COLOR_PROFIT
       }
 
-      // ---- Yo'naltiruvchi halqa (ingichka torus) ----
-      const ringMesh = new Mesh(
-        track(new TorusGeometry(RING_RADIUS, 0.014, 6, 180)),
-        track(new MeshBasicMaterial({ color: COLOR_RING, transparent: true, opacity: 0.75 })),
-      )
-      ringMesh.rotation.x = Math.PI / 2
-      spinner.add(ringMesh)
+      // Tugunlar disk tekisligida, yadro atrofida teng taqsimlanadi.
+      // Radius — summaga teskari: katta oqim yadroga yaqinroq, ya'ni "og'irroq".
+      const positions = new Map<string, Vector3>()
+      positions.set('hub', new Vector3(0, 0, 0))
+      leafLinks.forEach((link, i) => {
+        const id = link.target === 'hub' ? link.source : link.target
+        const angle = (i / Math.max(leafLinks.length, 1)) * Math.PI * 2 + 0.35
+        const r = NODE_R_INNER + (NODE_R_OUTER - NODE_R_INNER)
+          * (1 - scaleShare(Math.abs(link.value), maxLink))
+        positions.set(id, new Vector3(Math.cos(angle) * r, 0, Math.sin(angle) * r))
+      })
 
-      // ---- Tugunlar: shar + halo + yorliq ----
+      // Statik nuqtalar radius bo'yicha BANDlarga bo'linadi — har band o'z
+      // tezligi bilan aylanadi (differensial aylanish: ichkarisi tezroq,
+      // haqiqiy galaktikadagi kabi). Har band — bitta draw-call.
+      const bandPos: number[][] = Array.from({ length: BANDS }, () => [])
+      const bandCol: number[][] = Array.from({ length: BANDS }, () => [])
+
+      const pushDot = (x: number, y: number, z: number, c: Color, tint = 1) => {
+        const r = Math.hypot(x, z)
+        const b = Math.min(BANDS - 1, Math.floor((r / DISC_R) * BANDS))
+        bandPos[b].push(x, y, z)
+        bandCol[b].push(c.r * tint, c.g * tint, c.b * tint)
+      }
+
+      /** Logarifmik spiral: radiusdan burchak. Galaktika qo'lining shakli. */
+      const spiralAngle = (r: number, arm: number) =>
+        (arm / SPIRAL_ARMS) * Math.PI * 2 + SPIRAL_TWIST * Math.log(r / CORE_R)
+
+      // 1) YADRO — zich, yorqin, oltin. Markazdagi "Umumiy aylanma".
+      const coreColor = new Color(COLOR_HUB)
+      const coreWhite = new Color(0xfff6e0)
+      for (let i = 0; i < 9000; i += 1) {
+        const u = Math.pow(Math.random(), 2.2)
+        const r = CORE_R * 2.6 * u
+        const a = Math.random() * Math.PI * 2
+        const y = (Math.random() - 0.5) * CORE_R * 1.1 * (1 - u)
+        pushDot(
+          Math.cos(a) * r, y, Math.sin(a) * r,
+          u < 0.25 ? coreWhite : coreColor,
+          0.5 + (1 - u) * 0.9,
+        )
+      }
+
+      // 2) SPIRAL QO'LLAR — galaktika tanasi. Ko'k va oltin nuqtalar aralash.
+      const armBlue = new Color(0x3b82f6)
+      const armCyan = new Color(0x7dd3fc)
+      const armGold = new Color(0xfbbf24)
+      for (let arm = 0; arm < SPIRAL_ARMS; arm += 1) {
+        for (let i = 0; i < ARM_DOTS; i += 1) {
+          const t = Math.pow(Math.random(), 0.62)
+          const r = CORE_R * 1.6 + t * (DISC_R - CORE_R * 1.6)
+          const a = spiralAngle(r, arm)
+          // Qo'l qalinligi radius bilan o'sadi — chekkasi tarqoq.
+          const spread = 0.22 + 0.55 * t
+          const g = () => (Math.random() + Math.random() + Math.random() - 1.5) * spread
+          const roll = Math.random()
+          const c = roll < 0.62 ? armBlue : roll < 0.86 ? armCyan : armGold
+          pushDot(
+            Math.cos(a) * r + g(),
+            (Math.random() - 0.5) * (0.12 + 0.22 * t),
+            Math.sin(a) * r + g(),
+            c,
+            0.25 + Math.random() * 0.75,
+          )
+        }
+      }
+
+      // 3) UZOQ YULDUZLAR — disk tekisligidan tashqarida, fon.
+      const starColor = new Color(0xbcd4ff)
+      for (let i = 0; i < 2200; i += 1) {
+        const r = DISC_R * (1.05 + Math.random() * 1.5)
+        const a = Math.random() * Math.PI * 2
+        pushDot(
+          Math.cos(a) * r,
+          (Math.random() - 0.5) * DISC_R * 0.7,
+          Math.sin(a) * r,
+          starColor,
+          0.12 + Math.random() * 0.35,
+        )
+      }
+
+      // ---- Tugunlar: yorqin to'plam + orbita + ko'rinmas tutqich + yorliq ----
       const pickable: Mesh[] = []
 
       for (const node of flow.nodes) {
         const pos = positions.get(node.id)
-        if (!pos) continue
+        if (!pos || node.kind === 'hub') continue
 
         const color = colorOf(node)
-        const radius =
-          node.kind === 'hub' ? 0.8 : 0.18 + 0.34 * scaleShare(node.value, maxLink)
+        const c = new Color(color)
+        const radius = 0.16 + 0.3 * scaleShare(node.value, maxLink)
+        const orbitR = Math.hypot(pos.x, pos.z)
 
-        const mesh = new Mesh(
-          track(new SphereGeometry(radius, 28, 20)),
-          track(new MeshBasicMaterial({ color })),
+        // Orbita — ingichka nuqtali ellips (disk tekisligida).
+        const orbitColor = new Color(COLOR_RING)
+        const orbitDots = Math.round(260 + orbitR * 60)
+        for (let i = 0; i < orbitDots; i += 1) {
+          const a = (i / orbitDots) * Math.PI * 2
+          pushDot(
+            Math.cos(a) * orbitR, (Math.random() - 0.5) * 0.02, Math.sin(a) * orbitR,
+            orbitColor, 0.3 + Math.random() * 0.35,
+          )
+        }
+
+        // Tugun to'plami — yorqin yadro + xira gало.
+        const dots = Math.round(600 + 1500 * scaleShare(node.value, maxLink))
+        for (let i = 0; i < dots; i += 1) {
+          const u = Math.pow(Math.random(), 1.8)
+          const r = radius * 2.1 * u
+          const theta = Math.random() * Math.PI * 2
+          const phi = Math.acos(2 * Math.random() - 1)
+          pushDot(
+            pos.x + r * Math.sin(phi) * Math.cos(theta),
+            pos.y + r * Math.cos(phi),
+            pos.z + r * Math.sin(phi) * Math.sin(theta),
+            c,
+            0.4 + (1 - u) * 1.0,
+          )
+        }
+
+        const picker = new Mesh(
+          track(new SphereGeometry(radius * 2.2, 16, 12)),
+          track(new MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false })),
         )
-        mesh.position.copy(pos)
-        mesh.userData = {
-          hover: {
-            label: node.label,
-            value: node.value,
-            kind: node.kind,
-          } satisfies HoverInfo,
+        picker.position.copy(pos)
+        picker.userData = {
+          hover: { label: node.label, value: node.value, kind: node.kind } satisfies HoverInfo,
           baseColor: color,
         }
-        spinner.add(mesh)
-        pickable.push(mesh)
-
-        const halo = new Mesh(
-          track(new SphereGeometry(radius * 1.55, 20, 14)),
-          track(
-            new MeshBasicMaterial({
-              color,
-              transparent: true,
-              opacity: 0.12,
-              depthWrite: false,
-              blending: AdditiveBlending,
-            }),
-          ),
-        )
-        halo.position.copy(pos)
-        spinner.add(halo)
+        spinner.add(picker)
+        pickable.push(picker)
 
         const label = makeLabelSprite(node.label, `${shortSom(node.value)} so'm`)
-        if (node.kind === 'hub') {
-          label.position.set(0, radius + 0.95, 0)
-          label.scale.set(LABEL_SCALE * 1.3, (LABEL_SCALE * 1.3) / LABEL_ASPECT, 1)
-        } else {
-          label.position.copy(pos.clone().multiplyScalar(1.22).setY(radius + 0.85))
-        }
+        label.position.copy(pos.clone().setY(radius * 2.2 + 0.55))
         spinner.add(label)
         if (label.material.map) disposables.push(label.material.map)
         disposables.push(label.material)
       }
 
-      // ---- Bog'lanishlar: egri naychalar ----
-      const curves: CubicBezierCurve3[] = []
+      // Markaziy yorliq va tutqich.
+      {
+        const hub = nodeById.get('hub')
+        if (hub) {
+          const picker = new Mesh(
+            track(new SphereGeometry(CORE_R * 2.2, 16, 12)),
+            track(new MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false })),
+          )
+          picker.userData = {
+            hover: { label: hub.label, value: hub.value, kind: 'hub' } satisfies HoverInfo,
+            baseColor: COLOR_HUB,
+          }
+          spinner.add(picker)
+          pickable.push(picker)
+
+          const label = makeLabelSprite(hub.label, `${shortSom(hub.value)} so'm`)
+          label.position.set(0, CORE_R * 2.4 + 0.5, 0)
+          label.scale.set(LABEL_SCALE * 1.35, (LABEL_SCALE * 1.35) / LABEL_ASPECT, 1)
+          spinner.add(label)
+          if (label.material.map) disposables.push(label.material.map)
+          disposables.push(label.material)
+        }
+      }
+
+      // ---- Oqim yo'llari: tugundan yadroga (yoki teskari) spiral bo'ylab ----
+      const curves: CatmullRomCurve3[] = []
       const linkShares: number[] = []
       const linkColors: Color[] = []
 
@@ -375,21 +458,46 @@ export function MoneyFlowRing({ flow }: Props) {
         const leafId = incoming ? link.source : link.target
         const leaf = nodeById.get(leafId)
         const color = leaf ? colorOf(leaf) : COLOR_HUB
-        const curve = flowCurve(from, to, incoming ? ARC_LIFT : -ARC_LIFT)
+        const c = new Color(color)
+        const outer = incoming ? from : to
 
-        const tubeRadius = 0.045 + 0.2 * scaleShare(link.value, maxLink)
-        const tube = new Mesh(
-          track(new TubeGeometry(curve, 72, tubeRadius, 10, false)),
-          track(
-            new MeshBasicMaterial({
-              color,
-              transparent: true,
-              opacity: 0.38,
-              depthWrite: false,
-            }),
-          ),
+        // Tugundan yadroga spiral: radius kamayadi, burchak buriladi.
+        const r0 = Math.hypot(outer.x, outer.z)
+        const a0 = Math.atan2(outer.z, outer.x)
+        const samples: Vector3[] = []
+        const STEPS = 26
+        for (let i = 0; i <= STEPS; i += 1) {
+          const t = i / STEPS
+          const r = r0 * (1 - t) + CORE_R * 0.55 * t
+          const a = a0 + t * SPIRAL_SWEEP * (incoming ? 1 : -1)
+          samples.push(new Vector3(Math.cos(a) * r, Math.sin(t * Math.PI) * 0.10, Math.sin(a) * r))
+        }
+        const curve = new CatmullRomCurve3(incoming ? samples : samples.reverse())
+        curve.curveType = 'centripetal'
+
+        // Yo'l bo'ylab chang — oqim ko'rinadigan bo'lsin.
+        const spread = 0.05 + 0.14 * scaleShare(link.value, maxLink)
+        const dust = Math.round(900 + 2600 * scaleShare(link.value, maxLink))
+        const tmp = new Vector3()
+        for (let i = 0; i < dust; i += 1) {
+          const t = Math.random()
+          curve.getPoint(t, tmp)
+          const rad = spread * Math.sqrt(Math.random())
+          const a = Math.random() * Math.PI * 2
+          pushDot(
+            tmp.x + Math.cos(a) * rad,
+            tmp.y + (Math.random() - 0.5) * rad,
+            tmp.z + Math.sin(a) * rad,
+            c,
+            0.25 + Math.random() * 0.5,
+          )
+        }
+
+        const picker = new Mesh(
+          track(new TubeGeometry(curve, 40, spread + 0.06, 8, false)),
+          track(new MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false })),
         )
-        tube.userData = {
+        picker.userData = {
           hover: {
             label: leaf?.label ?? link.source,
             value: link.value,
@@ -400,65 +508,92 @@ export function MoneyFlowRing({ flow }: Props) {
           } satisfies HoverInfo,
           baseColor: color,
         }
-        spinner.add(tube)
-        pickable.push(tube)
+        spinner.add(picker)
+        pickable.push(picker)
 
         curves.push(curve)
         linkShares.push(Math.abs(link.value) / totalAbs)
-        linkColors.push(new Color(color))
+        linkColors.push(c)
       }
 
-      // ---- Zarralar (naychalar bo'ylab oqim) ----
+      // ---- Statik bandlar sahnaga (differensial aylanish uchun alohida) ----
+      const bands: Points[] = []
+      for (let b = 0; b < BANDS; b += 1) {
+        if (bandPos[b].length === 0) continue
+        const g = track(new BufferGeometry())
+        g.setAttribute('position', new BufferAttribute(new Float32Array(bandPos[b]), 3))
+        g.setAttribute('color', new BufferAttribute(new Float32Array(bandCol[b]), 3))
+        const pts = new Points(
+          g,
+          track(
+            new PointsMaterial({
+              size: 0.028,
+              map: track(makeDotTexture()),
+              vertexColors: true,
+              transparent: true,
+              depthWrite: false,
+              blending: AdditiveBlending,
+              sizeAttenuation: true,
+            }),
+          ),
+        )
+        pts.userData.bandSpeed = SPIN_RAD_PER_SEC * (1.9 - (b / BANDS) * 1.35)
+        spinner.add(pts)
+        bands.push(pts)
+      }
+
+      // ---- Harakatlanuvchi zarralar (yo'llar bo'ylab oqim) ----
       // Zichlik VA tezlik summaga proporsional: katta oqim — ko'p va tez
-      // nuqtalar, kichik oqim — siyrak va sekin. Ikkalasi ham bitta
-      // `share` dan kelib chiqadi, ya'ni ekranda ko'rilgan "og'irlik"
-      // raqamning o'ziga bog'liq.
+      // nuqtalar. Bular statik changdan sal yorqinroq, shunda harakat ko'zga
+      // tashlanadi. Hammasi bitta `Points` — qo'shimcha draw-call yo'q.
       let particles: Points | null = null
       let particleCurve: Int32Array = new Int32Array(0)
       let particleT = new Float32Array(0)
       let particleSpeed = new Float32Array(0)
 
-      if (!reducedMotion && curves.length > 0) {
+      if (curves.length > 0) {
         const counts = linkShares.map((share) =>
-          Math.max(3, Math.round(PARTICLE_BUDGET * share)),
+          Math.max(60, Math.round(PARTICLE_BUDGET * share)),
         )
         const total = counts.reduce((a, b) => a + b, 0)
 
-        const positionsArray = new Float32Array(total * 3)
-        const colorsArray = new Float32Array(total * 3)
+        const pos = new Float32Array(total * 3)
+        const col = new Float32Array(total * 3)
         particleCurve = new Int32Array(total)
         particleT = new Float32Array(total)
         particleSpeed = new Float32Array(total)
 
-        const maxShare = Math.max(...linkShares, 1e-9)
         let cursor = 0
+        const point = new Vector3()
         counts.forEach((count, linkIndex) => {
-          const speed = 0.05 + 0.13 * (linkShares[linkIndex] / maxShare)
-          const color = linkColors[linkIndex]
+          const share = linkShares[linkIndex]
+          const speed = 0.05 + 0.16 * Math.sqrt(share)
+          const c = linkColors[linkIndex]
           for (let i = 0; i < count; i += 1) {
             particleCurve[cursor] = linkIndex
-            // Teng oraliqda + kichik siljish: nuqtalar "poyezd" bo'lib
-            // qolmasin, oqim tabiiy ko'rinsin.
-            particleT[cursor] = (i / count + Math.random() * 0.02) % 1
-            particleSpeed[cursor] = speed
-            colorsArray[cursor * 3] = color.r
-            colorsArray[cursor * 3 + 1] = color.g
-            colorsArray[cursor * 3 + 2] = color.b
+            particleT[cursor] = (i / count + Math.random() * 0.004) % 1
+            particleSpeed[cursor] = speed * (0.85 + Math.random() * 0.3)
+            curves[linkIndex].getPoint(particleT[cursor], point)
+            pos[cursor * 3] = point.x
+            pos[cursor * 3 + 1] = point.y
+            pos[cursor * 3 + 2] = point.z
+            const tint = 0.9 + Math.random() * 0.5
+            col[cursor * 3] = c.r * tint
+            col[cursor * 3 + 1] = c.g * tint
+            col[cursor * 3 + 2] = c.b * tint
             cursor += 1
           }
         })
 
         const geometry = track(new BufferGeometry())
-        geometry.setAttribute('position', new BufferAttribute(positionsArray, 3))
-        geometry.setAttribute('color', new BufferAttribute(colorsArray, 3))
-
-        const dot = track(makeDotTexture())
+        geometry.setAttribute('position', new BufferAttribute(pos, 3))
+        geometry.setAttribute('color', new BufferAttribute(col, 3))
         particles = new Points(
           geometry,
           track(
             new PointsMaterial({
-              size: 0.17,
-              map: dot,
+              size: 0.042,
+              map: track(makeDotTexture()),
               vertexColors: true,
               transparent: true,
               depthWrite: false,
@@ -561,7 +696,11 @@ export function MoneyFlowRing({ flow }: Props) {
           previous = now
           frameCount += 1
 
-          spinner.rotation.y += SPIN_RAD_PER_SEC * delta
+          // Differensial aylanish: ichki bandlar tezroq — haqiqiy galaktikadagi kabi.
+          for (const band of bands) {
+            band.rotation.y += (band.userData.bandSpeed as number) * delta
+          }
+          spinner.rotation.y += SPIN_RAD_PER_SEC * 0.35 * delta
 
           if (particles) {
             const attribute = particles.geometry.getAttribute('position') as BufferAttribute

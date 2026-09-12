@@ -154,6 +154,13 @@ export const navByRole: Record<Role, NavItem[]> = {
           to: '/admin/finance/money-flow',
           roles: ['admin', 'superadmin'],
         },
+        // Billing katalogi — `perm: 'finance'` yolg'iz o'zi buni finance ruxsatli
+        // xodimga ham ko'rsatardi, server esa unga 403 beradi. Shuning uchun rol
+        // ham ko'rsatiladi: menyu va endpoint bir xil qoidaga bo'ysunsin.
+        { label: "To'lov toifalari", to: '/admin/billing/categories', roles: ['admin', 'superadmin'] },
+        { label: 'Obunalar', to: '/admin/billing/subscriptions', roles: ['admin', 'superadmin'] },
+        { label: 'Chegirmalar', to: '/admin/billing/discounts', roles: ['admin', 'superadmin'] },
+        { label: 'Chiqimlar', to: '/admin/billing/expenses', roles: ['admin', 'superadmin'] },
       ],
     },
     {
@@ -216,9 +223,9 @@ export const homeByRole: Record<Role, string> = {
   superadmin: '/admin',
   admin: '/admin',
   teacher: '/teacher',
-  // O'quvchi/ota-ona web orqali kira olmaydi (mobil ilova) — login sahifasiga.
-  student: '/login',
-  parent: '/login',
+  // Mobil ilova bekor qilindi (SPEC §8.1) — web portal asosiy kanal.
+  student: '/student',
+  parent: '/parent',
   staff: '/admin',
   // Kassir uchun boshlang'ich sahifa. Marshrutning o'zi P1-20 da qo'shiladi.
   cashier: '/cashier',

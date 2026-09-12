@@ -340,11 +340,11 @@ namespace SchoolLms.Infrastructure.Migrations
                         .HasColumnName("actor_name");
 
                     b.Property<string>("After")
-                        .HasColumnType("text")
+                        .HasColumnType("jsonb")
                         .HasColumnName("after");
 
                     b.Property<string>("Before")
-                        .HasColumnType("text")
+                        .HasColumnType("jsonb")
                         .HasColumnName("before");
 
                     b.Property<string>("EntityId")
@@ -1358,6 +1358,85 @@ namespace SchoolLms.Infrastructure.Migrations
                         .HasDatabaseName("ix_feedbacks_status_created_at");
 
                     b.ToTable("feedbacks", (string)null);
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.FinanceAnomalyFlag", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<decimal?>("Amount")
+                        .HasPrecision(14, 2)
+                        .HasColumnType("numeric(14,2)")
+                        .HasColumnName("amount");
+
+                    b.Property<string>("Details")
+                        .HasColumnType("jsonb")
+                        .HasColumnName("details");
+
+                    b.Property<DateTimeOffset>("DetectedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("detected_at");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("kind");
+
+                    b.Property<DateTimeOffset>("OccurredAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("occurred_at");
+
+                    b.Property<Guid>("RefId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("ref_id");
+
+                    b.Property<string>("RefType")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("ref_type");
+
+                    b.Property<DateTimeOffset?>("ResolvedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("resolved_at");
+
+                    b.Property<string>("ResolvedBy")
+                        .HasColumnType("text")
+                        .HasColumnName("resolved_by");
+
+                    b.Property<string>("ResolvedReason")
+                        .HasColumnType("text")
+                        .HasColumnName("resolved_reason");
+
+                    b.Property<string>("Summary")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("summary");
+
+                    b.HasKey("Id")
+                        .HasName("pk_finance_anomaly_flags");
+
+                    b.HasIndex("OccurredAt")
+                        .HasDatabaseName("ix_finance_anomaly_flags_unresolved")
+                        .HasFilter("resolved_at is null");
+
+                    b.HasIndex("ResolvedBy")
+                        .HasDatabaseName("ix_finance_anomaly_flags_resolved_by");
+
+                    b.HasIndex("Kind", "RefId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_finance_anomaly_flags_kind_ref");
+
+                    b.ToTable("finance_anomaly_flags", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_finance_anomaly_flags_kind", "kind in ('shift_variance','fast_reversal','off_hours_payment','paid_without_allocation')");
+
+                            t.HasCheckConstraint("ck_finance_anomaly_flags_ref_type", "ref_type in ('cash_shift','payment','invoice')");
+
+                            t.HasCheckConstraint("ck_finance_anomaly_flags_resolution", "(resolved_at is null) = (resolved_by is null) and (resolved_at is null) = (resolved_reason is null) and (resolved_reason is null or btrim(resolved_reason) <> '')");
+                        });
                 });
 
             modelBuilder.Entity("SchoolLms.Domain.Holiday", b =>
@@ -3194,6 +3273,15 @@ namespace SchoolLms.Infrastructure.Migrations
                         .HasForeignKey("TeacherId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .HasConstraintName("fk_expenses_teachers_teacher_id");
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.FinanceAnomalyFlag", b =>
+                {
+                    b.HasOne("SchoolLms.Domain.AppUser", null)
+                        .WithMany()
+                        .HasForeignKey("ResolvedBy")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_finance_anomaly_flags_users_resolved_by");
                 });
 
             modelBuilder.Entity("SchoolLms.Domain.Invoice", b =>

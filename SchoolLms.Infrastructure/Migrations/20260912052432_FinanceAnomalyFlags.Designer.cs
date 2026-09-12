@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using SchoolLms.Infrastructure.Data;
@@ -12,9 +13,11 @@ using SchoolLms.Infrastructure.Data;
 namespace SchoolLms.Infrastructure.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260912052432_FinanceAnomalyFlags")]
+    partial class FinanceAnomalyFlags
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -1232,10 +1235,6 @@ namespace SchoolLms.Infrastructure.Migrations
                         .HasColumnType("date")
                         .HasColumnName("on_date");
 
-                    b.Property<string>("TeacherId")
-                        .HasColumnType("text")
-                        .HasColumnName("teacher_id");
-
                     b.HasKey("Id")
                         .HasName("pk_expenses");
 
@@ -1251,16 +1250,11 @@ namespace SchoolLms.Infrastructure.Migrations
                     b.HasIndex("Category", "OnDate")
                         .HasDatabaseName("ix_expenses_category_on_date");
 
-                    b.HasIndex("TeacherId", "OnDate")
-                        .HasDatabaseName("ix_expenses_teacher_id_on_date");
-
                     b.ToTable("expenses", null, t =>
                         {
                             t.HasCheckConstraint("ck_expenses_amount", "amount > 0");
 
                             t.HasCheckConstraint("ck_expenses_approver_differs", "approved_by is null or approved_by <> created_by");
-
-                            t.HasCheckConstraint("ck_expenses_teacher_only_salary", "teacher_id is null or category = 'salary'");
                         });
                 });
 
@@ -1434,6 +1428,57 @@ namespace SchoolLms.Infrastructure.Migrations
 
                             t.HasCheckConstraint("ck_finance_anomaly_flags_resolution", "(resolved_at is null) = (resolved_by is null) and (resolved_at is null) = (resolved_reason is null) and (resolved_reason is null or btrim(resolved_reason) <> '')");
                         });
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.FinanceTransaction", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasColumnType("text")
+                        .HasColumnName("id");
+
+                    b.Property<decimal>("Amount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("amount");
+
+                    b.Property<string>("Category")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("category");
+
+                    b.Property<string>("Date")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("date");
+
+                    b.Property<string>("Direction")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("direction");
+
+                    b.Property<string>("Month")
+                        .HasColumnType("text")
+                        .HasColumnName("month");
+
+                    b.Property<string>("Note")
+                        .HasColumnType("text")
+                        .HasColumnName("note");
+
+                    b.Property<string>("StudentId")
+                        .HasColumnType("text")
+                        .HasColumnName("student_id");
+
+                    b.Property<string>("TeacherId")
+                        .HasColumnType("text")
+                        .HasColumnName("teacher_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_finance_transactions");
+
+                    b.HasIndex("Date")
+                        .HasDatabaseName("ix_finance_transactions_date");
+
+                    b.ToTable("finance_transactions", (string)null);
                 });
 
             modelBuilder.Entity("SchoolLms.Domain.Holiday", b =>
@@ -2028,6 +2073,47 @@ namespace SchoolLms.Infrastructure.Migrations
                         .HasDatabaseName("ix_lms_topics_module_id_order");
 
                     b.ToTable("lms_topics", (string)null);
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.MonthlyCharge", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasColumnType("text")
+                        .HasColumnName("id");
+
+                    b.Property<decimal>("Amount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("amount");
+
+                    b.Property<string>("Date")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("date");
+
+                    b.Property<decimal>("Discount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("discount");
+
+                    b.Property<string>("Month")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("month");
+
+                    b.Property<string>("StudentId")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("student_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_monthly_charges");
+
+                    b.HasIndex("StudentId", "Month")
+                        .IsUnique()
+                        .HasDatabaseName("ix_monthly_charges_student_id_month");
+
+                    b.ToTable("monthly_charges", (string)null);
                 });
 
             modelBuilder.Entity("SchoolLms.Domain.Payment", b =>
@@ -2655,6 +2741,11 @@ namespace SchoolLms.Infrastructure.Migrations
                         .HasColumnType("boolean")
                         .HasColumnName("archived_with_class");
 
+                    b.Property<decimal>("Balance")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("balance");
+
                     b.Property<string>("BirthCertificateUrl")
                         .HasColumnType("text")
                         .HasColumnName("birth_certificate_url");
@@ -2673,6 +2764,20 @@ namespace SchoolLms.Infrastructure.Migrations
                         .IsRequired()
                         .HasColumnType("text")
                         .HasColumnName("device_user_id");
+
+                    b.Property<decimal>("DiscountAmount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("discount_amount");
+
+                    b.Property<string>("DiscountNote")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("discount_note");
+
+                    b.Property<int>("DiscountPct")
+                        .HasColumnType("integer")
+                        .HasColumnName("discount_pct");
 
                     b.Property<string>("EnrollmentDate")
                         .IsRequired()
@@ -3264,12 +3369,6 @@ namespace SchoolLms.Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_expenses_users_created_by");
-
-                    b.HasOne("SchoolLms.Domain.Teacher", null)
-                        .WithMany()
-                        .HasForeignKey("TeacherId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .HasConstraintName("fk_expenses_teachers_teacher_id");
                 });
 
             modelBuilder.Entity("SchoolLms.Domain.FinanceAnomalyFlag", b =>

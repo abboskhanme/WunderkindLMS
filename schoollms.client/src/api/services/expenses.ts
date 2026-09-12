@@ -29,7 +29,7 @@
 import type { Expense } from '@/types'
 import { api } from '../client'
 
-const BASE = '/admin/billing/expenses'
+const BASE = '/admin/expenses'
 
 /**
  * Ikkinchi tasdiq chegarasi (SPEC §4.5 — "Expense above N so'm").

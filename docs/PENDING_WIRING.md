@@ -1039,6 +1039,101 @@ than decorative. **Do not "improve" the shift bar by adding the total.**
 - [2026-09-12] `DiscountService.ChargeFor` keeps its own copy of the discount arithmetic instead of delegating to `DiscountMath`, which `DiscountMath`'s own doc comment warns against. The three copies (`TuitionService`, `DiscountMath`, `DiscountService`) agree today — P1-23 pins all three against the same 40 pairs plus 5 000 random inputs — but nothing except those tests enforces it. Collapse to one implementation when `TuitionService` is retired.
 - [2026-09-12] `InvoiceQuery` / `PaymentQuery` `MaxRows` / `MaxListRows` caps are untested. Not P1-23 scope; worth a boundary test before the pagination is exposed to the UI.
 
+## From P1-14 — billing audit + nightly anomaly scan
+
+P1-14 wired itself: `IAnomalyService` and the hosted `AnomalyScanService` are registered in
+`Program.cs`. Nothing is left unresolvable at request time. What follows is deliberately
+**not** done.
+
+### 18. No screen renders the flags counter yet (P1-18)
+
+`GET /api/admin/finance/flags?unresolved=true` returns `AnomalyFlagsDto`
+(`Unresolved`, `Total`, `UnresolvedAmount`, `ByKind[]`, `Items[]`). SPEC §4.6 wants that
+counter on the director's dashboard, un-dismissable, resolvable only with a typed reason.
+
+| Endpoint | Method | Body | Notes |
+|---|---|---|---|
+| `/api/admin/finance/flags` | GET | — | `unresolved`, `kind`, `limit` (1..500, default 200) |
+| `/api/admin/finance/flags/{id}/resolve` | POST | `{ "reason": "..." }` | empty/whitespace → **400 `reason_required`**; already closed → **409 `flag_already_resolved`** |
+| `/api/admin/finance/flags/scan` | POST | — | idempotent, safe to double-click |
+
+All three are `admin` + `superadmin` (`FinanceAction.ViewVarianceReport`); a cashier gets 403.
+Error bodies are the usual `{ code, message }`.
+
+`VarianceBanner.tsx` / `useVarianceWatch.ts` (P1-18) currently derive their own variance view
+from the shift list. They should read this endpoint instead — it is the only source that
+carries a *resolution* and therefore the only one that can stop showing a variance the
+director has already explained. **Counters must come from `Unresolved`, never from
+`Items.length`**: the list is filtered and capped, the counter is not.
+
+`UnresolvedAmount` is the sum of **absolute** values, so a 50 000 shortfall and a 50 000
+overage add up to 100 000 rather than cancelling out.
+
+### 19. `audit_logs` is still fully writable by `app_rw`
+
+The P1-14 migration revokes `UPDATE, DELETE, TRUNCATE` on `finance_anomaly_flags` but leaves
+`audit_logs` alone. Nothing in the codebase updates or deletes an audit row
+(`grep -rn "AuditLogs.Remove\|AuditLogs.Update"` is empty), so the same treatment would cost
+nothing:
+
+```sql
+GRANT SELECT, INSERT ON public.audit_logs TO app_rw;
+REVOKE UPDATE, DELETE, TRUNCATE ON public.audit_logs FROM app_rw;
+```
+
+Not done here because `audit_logs` is shared with the legacy `finance_transactions` path that
+P1-21 is retiring in parallel, and an unrequested revoke on a shared table during a
+parallel-agent phase is how a Sunday gets ruined. **This belongs to P1-22's security suite** —
+an append-only audit log is worth more than an append-only flag table.
+
+### 20. Cashier working hours are a constant, not a setting
+
+`AnomalySettings.WorkDayStart` / `WorkDayEnd` (08:00–20:00 Tashkent) drive the third §4.6
+condition. Making them configurable is two columns on `billing_settings`, one migration and
+one read in `AnomalyService.OffHoursPaymentAsync`. Deliberately deferred: `users` has no
+schedule column, and a per-cashier schedule is a feature nobody has asked for. Same file also
+holds `FastReversalWindow` (24 h), `ScanLookback` (90 days) and `NightlyRunAt` (03:00).
+
+### 21. The scan is single-instance by assumption
+
+`AnomalyScanService` runs in-process on every replica. With one container that is correct;
+with two, both would scan at 03:00. Nothing breaks — the unique `(kind, ref_id)` index makes
+the second run a no-op and the service retries once on 23505 — but the second replica does the
+work for nothing. If the deployment ever scales out, take a `pg_advisory_lock` at the top of
+`ScanAsync` (the pattern is already in `CashShiftService.LockShiftAsync`).
+
+### 13. Fan progresi bayram kunlarini rejadan chiqarmaydi (backend, seeder emas)
+
+Topilgan joy: `SchoolLms.Application/Services/SubjectProgressService.cs` —
+`ClassSlotsAsync` (o'quvchi/admin ko'rinishi) va `ForTeacherAsync` (o'qituvchi ilovasi).
+
+Ikkalasi ham chorak haftalaridagi HAR bir jadval katagini `Planned` va `ExpectedByToday`
+ga qo'shadi, bayram kunlarini esa tashlab yubormaydi. Jurnal buni boshqacha qiladi:
+`JournalService.ComputeColumnsAsync` `db.Holidays` ni chetlab o'tadi, ya'ni bayram kuniga
+ustun umuman chiqmaydi va o'qituvchi u darsni "o'tildi" deb belgilay olmaydi.
+
+Natija: bayram tushgan hafta kunida dars beradigan o'qituvchida `conducted` doimo
+`expectedByToday` dan kam bo'ladi va `ProgressScreen` qizil "Rejadan orqada" bannerini
+ko'rsatadi; progress 100% ga hech qachon yetmaydi. Mahalliy demoda o'lchandi
+(1-chorakda ikki bayram — 2026-09-01 va 2026-10-01):
+
+```
+karimovadilnoza  50/260 = 19%
+  1-A Matematika  planned=26 conducted=5 expectedByToday=5  ok
+  1-B Matematika  planned=26 conducted=5 expectedByToday=6  ORQADA   <- 2026-09-01 (Mustaqillik kuni)
+  2-A Matematika  planned=26 conducted=5 expectedByToday=6  ORQADA
+  ...
+```
+
+Tuzatish o'lchami: har ikkala metodda `var holidays = (await db.Holidays.Select(h => h.Date)
+.ToListAsync()).ToHashSet();` va sana tekshiruviga `|| holidays.Contains(date)` qo'shish —
+`ComputeColumnsAsync` dagi bilan bir xil mantiq.
+
+Bu yerda QILINMADI: `SubjectProgressService` ni o'zgartirish o'quvchi portali va admin
+hisobotlaridagi raqamlarni ham o'zgartiradi, bu esa demo ma'lumot vazifasidan tashqarida.
+Seeder tomonidan "yopib qo'yish" (bayram kuniga ham `conducted=true` yozish) ataylab
+qilinmadi — u jurnalda ko'rinmaydigan, yolg'on dars yozuvi bo'lardi.
+
 
 ## From P1-21 — legacy finance retired (2026-09-12)
 
