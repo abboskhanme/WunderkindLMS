@@ -299,6 +299,10 @@ function MoneyCard({ billing, onOpenTab }) {
     )
   }
 
+  // Qarz ham, avans ham nolga teng bo'lishining IKKI sababi bor va ular bir
+  // xil emas: hammasi to'langan yoki hali hisob-faktura chiqarilmagan.
+  const billed = (billing.months ?? []).length > 0
+
   return (
     <Card>
       <Row
@@ -307,9 +311,13 @@ function MoneyCard({ billing, onOpenTab }) {
             <CheckCircle2 className="h-5 w-5" />
           </div>
         }
-        title="Qarz yo'q"
-        subtitle="Barcha hisob-fakturalar to'langan."
-        right={<Badge tone="success">Toza</Badge>}
+        title={billed ? "Qarz yo'q" : "Hisob-faktura yo'q"}
+        subtitle={
+          billed
+            ? "Barcha hisob-fakturalar to'langan."
+            : "Bu farzand uchun hali oylik hisob-faktura chiqarilmagan."
+        }
+        right={billed ? <Badge tone="success">Toza</Badge> : null}
       />
     </Card>
   )
