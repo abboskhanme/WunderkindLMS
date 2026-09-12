@@ -222,6 +222,13 @@ builder.Services.AddSingleton<FcmService>();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<SchoolLms.Application.Services.AuditService>();
 
+// ---------- Moliya: tungi tekshiruv (P1-14, SPEC §4.6) ----------
+builder.Services.AddScoped<SchoolLms.Application.Billing.IAnomalyService,
+                           SchoolLms.Application.Billing.AnomalyService>();
+
+// Tungi tekshiruv: ishga tushishda bir marta, keyin har kuni 03:00 da.
+builder.Services.AddHostedService<SchoolLms.Application.Billing.AnomalyScanService>();
+
 // Shartnoma andozasini (Word) to'ldirish xizmati
 builder.Services.AddScoped<SchoolLms.Application.Services.ContractService>();
 

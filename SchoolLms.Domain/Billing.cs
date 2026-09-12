@@ -397,3 +397,109 @@ public class BillingSettings
     /// <summary>Oxirgi marta kim o'zgartirgan (users.id). Seed'dan keyin null.</summary>
     public string? UpdatedBy { get; set; }
 }
+
+// ===========================================================================
+//  Tungi tekshiruv bayroqlari — SPEC §4.6. Vazifa: P1-14.
+// ===========================================================================
+//
+//  NEGA ENTITY SHU YERDA, `Application/Billing/Anomaly.cs` DA EMAS
+//  ---------------------------------------------------------------
+//  Repozitoriyada BARCHA EF entity'lari Domain qatlamida yashaydi va holat
+//  konstantalari (`InvoiceStatus`, `PaymentMethod`, `CashShiftStatus`) o'z
+//  entity'sining YONIDA turadi. Bayroq ham xuddi shunday: jadval, uning
+//  holatlari va turlari bitta joyda. `Anomaly.cs` esa DTO'lar, sozlamalar va
+//  xizmat shartnomasini saqlaydi — u yerda EF'ga bog'liq narsa yo'q.
+//
+//  O'CHIRIB BO'LMAYDI
+//  ------------------
+//  Bayroqni faqat SABAB YOZIB yopish mumkin (SPEC §4.6: "cannot be dismissed,
+//  only resolved with a written reason"). Shuning uchun:
+//    * DELETE endpoint YO'Q va bo'lmaydi;
+//    * `app_rw` rolida DELETE/TRUNCATE yo'q, UPDATE esa FAQAT uchta ustunga
+//      (`resolved_at`, `resolved_by`, `resolved_reason`) — ustun darajasidagi
+//      GRANT, `Migrations/Sql/anomaly_guards.sql`;
+//    * bo'sh sabab bazadagi check constraint bilan ham bloklanadi.
+
+/// <summary>
+/// Tungi tekshiruv topgan shubhali hodisa (SPEC §4.6). Bir hodisa = bir qator;
+/// takroriy tekshiruv dublikat YARATMAYDI — buni <c>(kind, ref_id)</c> unikal
+/// indeksi kafolatlaydi.
+/// </summary>
+public class FinanceAnomalyFlag
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+
+    /// <summary>To'rt shartdan qaysi biri — <see cref="AnomalyKind"/>.</summary>
+    public string Kind { get; set; } = string.Empty;
+
+    /// <summary>Manba jadval turi — <see cref="AnomalyRefType"/> (o'qishda qulaylik uchun).</summary>
+    public string RefType { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Manba yozuv id'si: smena, to'lov yoki hisob-faktura. FK QO'YILMAGAN —
+    /// bitta ustun uchta jadvalga ishora qiladi; buning o'rniga
+    /// <see cref="RefType"/> + <c>(kind, ref_id)</c> unikal indeksi ishlaydi.
+    /// </summary>
+    public Guid RefId { get; set; }
+
+    /// <summary>Hodisaning O'ZI qachon bo'lgan (smena yopilgan / to'lov qabul qilingan lahza).</summary>
+    public DateTimeOffset OccurredAt { get; set; }
+
+    /// <summary>Tekshiruv uni qachon topgan.</summary>
+    public DateTimeOffset DetectedAt { get; set; }
+
+    /// <summary>
+    /// Hodisaning pul o'lchami: nomuvofiqlik summasi, storno summasi va h.k.
+    /// Direktor panelidagi "yopilmagan nomuvofiqlik" hisoblagichi shundan yig'iladi.
+    /// null = pul o'lchami yo'q (masalan taqsimotsiz "to'langan" hisob-faktura).
+    /// </summary>
+    public decimal? Amount { get; set; }
+
+    /// <summary>O'zbekcha, o'qiladigan izoh — panelda shu ko'rinadi.</summary>
+    public string Summary { get; set; } = string.Empty;
+
+    /// <summary>Raqamlar va id'lar (jsonb). Tekshiruvni qayta hisoblash uchun.</summary>
+    public string? Details { get; set; }
+
+    /// <summary>Yopilgan lahza. null = hali ochiq (panel hisoblagichida turadi).</summary>
+    public DateTimeOffset? ResolvedAt { get; set; }
+
+    /// <summary>Kim yopgan (users.id) — JWT'dan, so'rov tanasidan EMAS (SPEC §4.4).</summary>
+    public string? ResolvedBy { get; set; }
+
+    /// <summary>
+    /// YOZMA SABAB — majburiy (SPEC §4.6). Bo'sh yoki faqat probel bo'lishi
+    /// mumkin emas: ilova 400 qaytaradi, baza esa check constraint bilan
+    /// bloklaydi.
+    /// </summary>
+    public string? ResolvedReason { get; set; }
+}
+
+/// <summary>SPEC §4.6 dagi to'rtta shart (<see cref="FinanceAnomalyFlag.Kind"/>).</summary>
+public static class AnomalyKind
+{
+    /// <summary>Smena nolga teng bo'lmagan nomuvofiqlik bilan yopilgan.</summary>
+    public const string ShiftVariance = "shift_variance";
+
+    /// <summary>Storno original to'lovdan keyin 24 soat ichida qilingan.</summary>
+    public const string FastReversal = "fast_reversal";
+
+    /// <summary>To'lov kassirning odatdagi ish soatlaridan tashqarida qabul qilingan.</summary>
+    public const string OffHoursPayment = "off_hours_payment";
+
+    /// <summary>Hisob-faktura "to'langan", lekin unga birorta taqsimot yo'q.</summary>
+    public const string PaidWithoutAllocation = "paid_without_allocation";
+
+    public static readonly IReadOnlyList<string> All =
+        [ShiftVariance, FastReversal, OffHoursPayment, PaidWithoutAllocation];
+}
+
+/// <summary>Bayroq qaysi jadvalga ishora qilyapti (<see cref="FinanceAnomalyFlag.RefType"/>).</summary>
+public static class AnomalyRefType
+{
+    public const string CashShift = "cash_shift";
+    public const string Payment = "payment";
+    public const string Invoice = "invoice";
+
+    public static readonly IReadOnlyList<string> All = [CashShift, Payment, Invoice];
+}

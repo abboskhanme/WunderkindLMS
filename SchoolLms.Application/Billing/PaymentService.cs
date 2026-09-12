@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using SchoolLms.Application.Abstractions;
 using SchoolLms.Application.Dtos.Billing;
+using SchoolLms.Application.Services;
 using SchoolLms.Domain;
 
 namespace SchoolLms.Application.Billing;
@@ -113,6 +114,9 @@ public sealed class PaymentService(
 {
     /// <summary>Baza ustuni <c>numeric(14,2)</c> — arifmetika ham shu aniqlikda.</summary>
     private const int MoneyScale = 2;
+
+    /// <summary>Audit qatoridagi <c>actor_name</c> uchun — keshlangan (P1-14).</summary>
+    private readonly ActorNames actors = new(db);
 
     /// <summary>
     /// Ro'yxat so'rovining yuqori chegarasi. Kassa oynasi va o'quvchi
@@ -284,6 +288,20 @@ public sealed class PaymentService(
                 $"Chek #{receiptNo} — {student.FullName}"),
         ], cashierId, ct);
 
+        // ---- 7. Audit (SPEC §4.6) ----
+        // TRANZAKSIYA ICHIDA, commit'dan OLDIN: orqaga qaytgan to'lov
+        // olinmagan pul haqida audit izi qoldirmasin
+        // (docs/PENDING_WIRING.md §11 — P1-11 shu shartni yozib qoldirgan).
+        db.AuditLogs.Add(AuditService.Entry(
+            AuditService.EntityPayment, payment.Id.ToString("D"), "create",
+            $"To'lov qabul qilindi: chek #{receiptNo}, {AuditService.Money(amount)} so'm "
+            + $"({payment.Method}) — {student.FullName}",
+            actorId: cashierId,
+            actorName: await actors.OfAsync(cashierId, ct),
+            after: Snapshot(payment, lines),
+            studentId: student.Id));
+        await SaveAsync(ct);
+
         await tx.CommitAsync(ct);
 
         return (await ToDtosAsync([payment], ct))[0];
@@ -392,6 +410,20 @@ public sealed class PaymentService(
             .ToListAsync(ct);
         var invoices = await db.Invoices.Where(i => touched.Contains(i.Id)).ToListAsync(ct);
         await RefreshStatusesAsync(invoices, ct);
+
+        // Audit (SPEC §4.6) — commit'dan oldin. `before` = original to'lov,
+        // `after` = storno qatori. Ikkalasi ham bazada QOLADI: bu yerda hech
+        // narsa o'chirilmaydi va tahrirlanmaydi.
+        db.AuditLogs.Add(AuditService.Entry(
+            AuditService.EntityPayment, storno.Id.ToString("D"), "reverse",
+            $"To'lov STORNO qilindi: original chek #{original.ReceiptNo}, "
+            + $"{AuditService.Money(original.Amount)} so'm — sabab: {cleanReason}",
+            actorId: approverId,
+            actorName: await actors.OfAsync(approverId, ct),
+            before: Snapshot(original, null),
+            after: Snapshot(storno, null),
+            studentId: original.StudentId));
+        await SaveAsync(ct);
 
         await tx.CommitAsync(ct);
 
@@ -672,6 +704,27 @@ public sealed class PaymentService(
             if (e.Message.Contains(token, StringComparison.Ordinal)) return true;
         return false;
     }
+
+    /// <summary>
+    /// Audit uchun snapshot (<c>before</c>/<c>after</c>). Taqsimotlar SHU YERDA
+    /// bo'lishi shart: ular <c>payment_allocations</c> da yashaydi va
+    /// "pul qaysi oyga ketdi" degan savolga javob beradi — to'lov qatorining
+    /// o'zi buni ko'rsatmaydi.
+    /// </summary>
+    private static object Snapshot(Payment p, IReadOnlyList<AllocationRequest>? allocations) => new
+    {
+        p.Id,
+        p.ReceiptNo,
+        p.StudentId,
+        p.Amount,
+        p.Method,
+        p.CashShiftId,
+        p.CashierId,
+        p.Note,
+        p.ReceivedAt,
+        p.ReversalOf,
+        Allocations = allocations?.Select(a => new { a.InvoiceId, a.Amount }).ToList(),
+    };
 
     /// <summary>
     /// Pul qiymati baza aniqligiga (2 kasr) MOS bo'lishi shart. Yaxlitlab

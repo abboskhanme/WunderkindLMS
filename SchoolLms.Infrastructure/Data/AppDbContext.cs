@@ -79,6 +79,9 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<LedgerEntry> LedgerEntries => Set<LedgerEntry>();
     public DbSet<BillingSettings> BillingSettings => Set<BillingSettings>();
 
+    // Tungi tekshiruv bayroqlari — SPEC §4.6, P1-14. Konfiguratsiya: AnomalyModel.cs.
+    public DbSet<FinanceAnomalyFlag> FinanceAnomalyFlags => Set<FinanceAnomalyFlag>();
+
     /// <inheritdoc />
     public Task<Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction> BeginTransactionAsync(
         CancellationToken cancellationToken = default) =>
@@ -178,6 +181,11 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
         // (BillingModel.cs): Faza 1.C da beshta agent moliya kodini parallel yozadi,
         // shu fayl ularning umumiy konflikt maydoniga aylanmasin.
         BillingModel.Apply(b);
+
+        // ----- Tungi tekshiruv (SPEC §4.6) va audit_log ning jsonb ustunlari -----
+        // Yana bitta alohida fayl, yuqoridagi bilan bir xil sabab: P1-14 moliya
+        // kodini boshqa agentlar bilan parallel yozadi.
+        AnomalyModel.Apply(b);
 
         // ----- PostgreSQL: vaqt turi -----
         // Tizim sanalarni Toshkent "devor soati" sifatida saqlaydi (AppClock.Now — Kind=Unspecified),
