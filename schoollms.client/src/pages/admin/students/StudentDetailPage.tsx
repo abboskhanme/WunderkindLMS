@@ -15,6 +15,7 @@ import { cn, formatDate, formatMoney } from '@/lib/utils'
 import { Card } from '@/components/ui/Card'
 import { StatCard } from '@/components/ui/StatCard'
 import { Loader } from '@/components/ui/Loader'
+import { FinanceView } from '@/pages/portal/FinanceView'
 
 const quarters = ['1', '2', '3', '4']
 const uzMonths = [
@@ -192,19 +193,6 @@ export function StudentDetailPage() {
             )}
           </div>
         </div>
-        <div
-          className={cn(
-            'rounded-xl px-4 py-2 text-right',
-            data.balance < 0 ? 'bg-red-50' : 'bg-emerald-50',
-          )}
-        >
-          <p className="flex items-center justify-end gap-1 text-xs text-slate-500">
-            <Wallet className="h-3.5 w-3.5" /> Balans
-          </p>
-          <p className={cn('text-lg font-semibold', data.balance < 0 ? 'text-red-600' : 'text-emerald-700')}>
-            {formatMoney(data.balance)}
-          </p>
-        </div>
       </Card>
 
       {/* Shaxsiy ma'lumotlar */}
@@ -248,6 +236,30 @@ export function StudentDetailPage() {
           </div>
         )}
       </Section>
+
+      {/*
+        Moliya — P1-19. Sarlavhadagi eski "Balans" nishoni shu bo'limga ko'chdi.
+        Sabab: u `students.balance` ni ko'rsatardi, ya'ni BITTA umumiy raqamni.
+        Yangi modelda pul toifalarga bo'lingan (o'qish + avtobus + ovqat), va
+        "balans −1 800 000" degan yozuv qaysi oy, qaysi toifa ekanini aytmaydi.
+        `students.balance` ning o'zi ham P1-21 da o'chadi.
+
+        Bu — ota-ona ko'radigan AYNAN O'SHA ko'rinish (`FinanceView`), ataylab:
+        admin ota-ona bilan telefonda gaplashganda ikkalasi bir xil ekranga
+        qaraydi. Ma'lumot va ruxsat serverda hal qilinadi (`/api/student/billing`
+        egani JWT'dan aniqlaydi; `studentId` faqat admin/xodim uchun ishlaydi).
+      */}
+      <div className="space-y-4">
+        <div className="flex items-center gap-2">
+          <Wallet className="h-5 w-5 text-brand-600" />
+          <h2 className="font-semibold text-slate-800">Moliya</h2>
+        </div>
+        {id ? (
+          <FinanceView studentId={id} embedded />
+        ) : (
+          <Empty>O'quvchi tanlanmagan</Empty>
+        )}
+      </div>
 
       {/* Stat kartalar */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
