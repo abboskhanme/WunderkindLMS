@@ -66,11 +66,22 @@ export function Segmented({ value, options, onChange }) {
   )
 }
 
-/** Chap/o'ng strelkali davr o'tkagichi. */
-export function Stepper({ label, onPrev, onNext, disabledNext }) {
+/**
+ * Chap/o'ng strelkali davr o'tkagichi.
+ *
+ * `disabledPrev` — `disabledNext` ning juftligi: chorak yoki hafta ro'yxati
+ * boshiga yetganda tugma o'chib turadi. Berilmasa xatti-harakat o'zgarmaydi.
+ */
+export function Stepper({ label, onPrev, onNext, disabledPrev, disabledNext }) {
   return (
     <div className="flex items-center justify-between">
-      <button type="button" onClick={onPrev} aria-label="Oldingi" className="p-2">
+      <button
+        type="button"
+        onClick={onPrev}
+        disabled={disabledPrev}
+        aria-label="Oldingi"
+        className="p-2 disabled:opacity-30"
+      >
         <ChevronLeft className="h-6 w-6" />
       </button>
       <p className="text-[17px] font-bold">{label}</p>
