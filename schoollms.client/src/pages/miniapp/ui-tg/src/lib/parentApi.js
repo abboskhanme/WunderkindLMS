@@ -43,9 +43,13 @@ function forChild(childId, extra = '') {
  */
 export async function listChildren() {
   try {
-    const rows = await api.get('/tg/children')
-    return (rows ?? []).map((c) => ({
-      id: c.id,
+    const body = await api.get('/tg/children')
+    // Shartnoma hali e'lon qilinmagan: ro'yxat to'g'ridan-to'g'ri ham,
+    // `{ children: [...] }` ichida ham kelishi mumkin. Ikkalasini ham
+    // qabul qilamiz — mos kelmagan javob ekranni yiqitmasin.
+    const rows = Array.isArray(body) ? body : (body?.children ?? [])
+    return rows.map((c) => ({
+      id: c.id ?? c.studentId,
       fullName: c.fullName,
       className: c.className ?? '',
     }))
