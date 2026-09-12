@@ -42,7 +42,12 @@ export function SessionProvider({ children }) {
 
   useEffect(() => {
     bootstrap()
-    setUnauthorizedHandler(() => setState({ status: 'loading', user: null, error: null }))
+    // 401 — token eskirgan. FAQAT holatni "loading" ga qo'yish yetmaydi: hech
+    // kim uni "ready" ga o'tkazmagani uchun ilova "Kirilmoqda…" da muzlab
+    // qolardi. Telegram imzosi har doim qo'lda, ya'ni jimgina qayta kiramiz.
+    setUnauthorizedHandler(() => {
+      void authenticate()
+    })
     void authenticate()
   }, [authenticate])
 
