@@ -1,16 +1,12 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
-using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
 using SchoolLms.Application.Billing;
 using SchoolLms.Application.Dtos.Billing;
 using SchoolLms.Domain;
 using SchoolLms.Infrastructure.Data;
-using SchoolLms.Server.Controllers;
 using SchoolLms.Tests.Fixtures;
 
 namespace SchoolLms.Tests.Billing;
@@ -590,40 +586,22 @@ public class ReceiptNumberingTests : IDisposable
     }
 
     // ---------------------------------------------------------------------
-    //  Moliya xizmatlari ulangan host (P1-15 gacha)
+    //  HTTP klienti — ILOVANING O'Z DI grafi bilan
     // ---------------------------------------------------------------------
     //
-    //  `Program.cs` hali `ICashShiftService` / `IPaymentService` / `ILedgerService`
-    //  ni ro'yxatdan o'tkazmaydi (docs/PENDING_WIRING.md) — u P1-15 ning fayli.
-    //  `CashShiftServiceTests` va `PaymentsTests` xuddi shu yo'lni tanlagan;
-    //  farq shundaki, bu yerda `ICashShiftService` ning HAQIQIY
-    //  implementatsiyasi ulanadi (PaymentsTests o'rniga dublyor qo'yadi),
-    //  ya'ni chek raqami butun zanjir bo'ylab tekshiriladi.
-
-    private static WebApplicationFactory<AuthController>? wired;
-    private static readonly Lock WiredGate = new();
-
-    private WebApplicationFactory<AuthController> Wired
-    {
-        get
-        {
-            lock (WiredGate)
-                return wired ??= fixture.Api.WithWebHostBuilder(builder =>
-                    builder.ConfigureServices(services =>
-                    {
-                        services.AddScoped<ILedgerService, LedgerService>();
-                        services.AddScoped<ICashShiftService, CashShiftService>();
-                        services.AddScoped<IPaymentService, PaymentService>();
-                    }));
-        }
-    }
+    //  Bu yerda `WithWebHostBuilder` bilan xizmat ULANMAYDI. P1-15 dan keyin
+    //  `ICashShiftService`, `IPaymentService` va `ILedgerService` `Program.cs`
+    //  da ro'yxatdan o'tgan (docs/PENDING_WIRING.md dagi bandlar yopildi),
+    //  ya'ni testda ularni qayta ro'yxatdan o'tkazish HAQIQIY simni yashirib
+    //  qo'yardi: kimdir `Program.cs` dan `AddScoped<IPaymentService, ...>`
+    //  qatorini olib tashlasa, test baribir yashil qolaverardi. Endi bunday
+    //  regressiya shu yerda 500 bo'lib chiqadi.
 
     private async Task<(AppUser User, HttpClient Client)> ClientAsync(string role)
     {
         var (user, _) = await fixture.Api.SeedUserAsync(role);
-        var client = Wired.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
-            "Bearer", fixture.Api.TokenFor(role, user.Id, user.FullName, user.Email));
+        var client = fixture.Api.ClientWithToken(
+            fixture.Api.TokenFor(role, user.Id, user.FullName, user.Email));
         return (user, client);
     }
 }

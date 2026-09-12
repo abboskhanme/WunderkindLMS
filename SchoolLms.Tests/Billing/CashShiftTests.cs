@@ -1,16 +1,12 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
-using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
 using SchoolLms.Application.Billing;
 using SchoolLms.Application.Dtos.Billing;
 using SchoolLms.Domain;
 using SchoolLms.Infrastructure.Data;
-using SchoolLms.Server.Controllers;
 using SchoolLms.Tests.Fixtures;
 
 namespace SchoolLms.Tests.Billing;
@@ -629,7 +625,7 @@ public class CashShiftTests(ApiFixture fixture)
             $"/api/cash/shifts/{shift.Id}/z-report",
         ];
 
-        using var anonymous = Wired.CreateClient();
+        using var anonymous = fixture.Api.AnonymousClient();
         foreach (var path in paths)
         {
             var response = await anonymous.GetAsync(path);
@@ -650,8 +646,7 @@ public class CashShiftTests(ApiFixture fixture)
             Roles.Cashier, cashier.Id, cashier.FullName, cashier.Email,
             lifetime: TimeSpan.FromMinutes(-10));
 
-        using var stale = Wired.CreateClient();
-        stale.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", expired);
+        using var stale = fixture.Api.ClientWithToken(expired);
 
         var staleResponse = await stale.GetAsync("/api/cash/shifts/current");
         Assert.Equal(HttpStatusCode.Unauthorized, staleResponse.StatusCode);
@@ -1010,38 +1005,21 @@ public class CashShiftTests(ApiFixture fixture)
     }
 
     // ---------------------------------------------------------------------
-    //  Moliya xizmatlari ulangan host (P1-15 gacha)
+    //  HTTP klienti — ILOVANING O'Z DI grafi bilan
     // ---------------------------------------------------------------------
     //
-    //  `Program.cs` moliya xizmatlarini hali DI'ga qo'shmaydi
-    //  (docs/PENDING_WIRING.md) — u P1-15 ning fayli va bu vazifa unga
-    //  tegmaydi. `CashShiftServiceTests` va `PaymentsTests` bilan bir xil
-    //  yo'l: host bir marta, aynan shu uchta qator bilan ko'tariladi.
-
-    private static WebApplicationFactory<AuthController>? wired;
-    private static readonly Lock WiredGate = new();
-
-    private WebApplicationFactory<AuthController> Wired
-    {
-        get
-        {
-            lock (WiredGate)
-                return wired ??= fixture.Api.WithWebHostBuilder(builder =>
-                    builder.ConfigureServices(services =>
-                    {
-                        services.AddScoped<ILedgerService, LedgerService>();
-                        services.AddScoped<ICashShiftService, CashShiftService>();
-                        services.AddScoped<IPaymentService, PaymentService>();
-                    }));
-        }
-    }
+    //  Bu yerda `WithWebHostBuilder` bilan xizmat ULANMAYDI. P1-15 dan keyin
+    //  `ICashShiftService`, `IPaymentService` va `ILedgerService` `Program.cs`
+    //  da ro'yxatdan o'tgan, ya'ni testda ularni qayta ro'yxatdan o'tkazish
+    //  HAQIQIY simni yashirib qo'yardi: kimdir `Program.cs` dan o'sha qatorni
+    //  olib tashlasa, test baribir yashil qolaverardi. Endi bunday regressiya
+    //  shu yerda 500 bo'lib chiqadi.
 
     private async Task<(AppUser User, HttpClient Client)> ClientAsync(string role)
     {
         var (user, _) = await fixture.Api.SeedUserAsync(role);
-        var client = Wired.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
-            "Bearer", fixture.Api.TokenFor(role, user.Id, user.FullName, user.Email));
+        var client = fixture.Api.ClientWithToken(
+            fixture.Api.TokenFor(role, user.Id, user.FullName, user.Email));
         return (user, client);
     }
 }
