@@ -476,6 +476,20 @@ public class TelegramMiniAppTests(ApiFixture fixture)
         }
     }
 
+    /// <summary>
+    /// Javobdagi bog'lash chiptasi — `tg_link` cookie'sining XOM `Set-Cookie`
+    /// satri. Xom qaytariladi, chunki test faqat qiymatni emas, bayroqlarni
+    /// ham tekshiradi: `HttpOnly` bo'lmasa chiptani sahifadagi skript o'qiy
+    /// olardi, `Path` keng bo'lsa esa u butun saytga yuborilardi.
+    /// </summary>
+    private static string? LinkTicket(HttpResponseMessage response) =>
+        response.Headers.TryGetValues("Set-Cookie", out var cookies)
+            ? cookies.FirstOrDefault(c => c.StartsWith(LinkTicketCookieName + "=", StringComparison.Ordinal))
+            : null;
+
+    /// <summary>Kontrollerdagi <c>LinkTicketCookie</c> bilan bir xil bo'lishi shart.</summary>
+    private const string LinkTicketCookieName = "tg_link";
+
     private HttpClient AnonymousClient() => Host.CreateClient(new WebApplicationFactoryClientOptions
     {
         BaseAddress = new Uri("https://localhost"),
