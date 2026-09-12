@@ -1272,6 +1272,7 @@ the schedule and unread count degrade to empty instead of failing the whole scre
 | Verb | Path | Request | Response |
 |---|---|---|---|
 | POST | `/api/admin/telegram/link-codes` | `IssueLinkCodeRequest { userId }` | `LinkCodeDto` |
+| POST | `/api/admin/telegram/links` | `LinkTelegramRequest { userId, telegramUserId, displayName?, username? }` | `TelegramLinkDto` |
 | GET | `/api/admin/telegram/links` | `search?` | `TelegramLinkDto[]` |
 | DELETE | `/api/admin/telegram/links/{telegramUserId}` | — | `204` |
 | GET | `/api/admin/guardians` | `search?` | `GuardianDto[]` |
@@ -1284,6 +1285,12 @@ the schedule and unread count degrade to empty instead of failing the whole scre
 
 `LinkCodeDto.code` is shown **once** — only its SHA-256 is stored. Issuing a new code kills the
 previous unused one for that user.
+
+`POST /api/admin/telegram/links` links a **known** Telegram id in one step (the bot already
+collects chat ids through `request_contact`, and `tools/seed_demo.py` uses it to pre-link the demo
+accounts). It is not a way around the code: the same staff member issues the code anyway — the
+code protects the *parent*, not the admin. Idempotent for an identical pair, `409` if either side
+already points somewhere else.
 
 ### T3.2 Endpoints deliberately NOT duplicated under `/api/tg`
 

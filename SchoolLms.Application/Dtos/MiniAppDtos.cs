@@ -55,6 +55,12 @@ public record IssueLinkCodeRequest(string UserId);
 /// <summary>Chiqarilgan kod — ochiq matni FAQAT shu javobda, bir marta.</summary>
 public record LinkCodeDto(string Code, string UserId, string UserFullName, string Role, string ExpiresAt);
 
+/// <summary>
+/// Admin panel: Telegram id ALLAQACHON ma'lum bo'lganda to'g'ridan-to'g'ri bog'lash
+/// (bot `request_contact` orqali chat id'ni bilib olgan holat va demo urug'i).
+/// </summary>
+public record LinkTelegramRequest(string UserId, long TelegramUserId, string? DisplayName, string? Username);
+
 /// <summary>Admin panel: mavjud Telegram bog'lanishi.</summary>
 public record TelegramLinkDto(
     string TelegramUserId, string DisplayName, string? Username,

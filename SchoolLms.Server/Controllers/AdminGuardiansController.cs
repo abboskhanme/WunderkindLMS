@@ -50,9 +50,12 @@ public sealed class AdminGuardiansController(AppDbContext db) : ControllerBase
         var term = (search ?? "").Trim();
         if (term.Length > 0)
         {
-            var digits = PhoneUtil.DigitsOnly(term);
-            query = digits.Length >= 3
-                ? query.Where(g => g.PhoneKey.Contains(digits) || g.FullName.Contains(term))
+            // Qidiruv kaliti ham OXIRGI 9 RAQAM (`PhoneUtil.Key`) — `phone_key`
+            // ustunidagi bilan bir xil. To'liq "+998 90 123 45 67" yozilganda
+            // 12 raqamli satrni 9 raqamli ustundan qidirish hech qachon topmasdi.
+            var key = PhoneUtil.Key(term);
+            query = key.Length >= 3
+                ? query.Where(g => g.PhoneKey.Contains(key) || g.FullName.Contains(term))
                 : query.Where(g => g.FullName.Contains(term));
         }
 
