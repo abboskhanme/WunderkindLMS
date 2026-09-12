@@ -3,7 +3,12 @@ import { Navigate, Route, Routes } from 'react-router-dom'
 import { AppLayout } from '@/components/layout/AppLayout'
 import { ProtectedRoute, RootRedirect } from '@/components/auth/ProtectedRoute'
 import { RequirePerm } from '@/components/auth/RequirePerm'
-import { ComingSoon } from '@/pages/ComingSoon'
+import { CategoriesPage } from '@/pages/admin/billing/CategoriesPage'
+import { SubscriptionsPage } from '@/pages/admin/billing/SubscriptionsPage'
+import { DiscountsPage } from '@/pages/admin/billing/DiscountsPage'
+import { ExpensesPage } from '@/pages/admin/billing/ExpensesPage'
+import { CashierPage } from '@/pages/cashier/CashierPage'
+import { FinanceView } from '@/pages/portal/FinanceView'
 import { LoginPage } from '@/pages/LoginPage'
 import { AdminDashboard } from '@/pages/admin/AdminDashboard'
 import { LeadsPage } from '@/pages/admin/leads/LeadsPage'
@@ -112,6 +117,10 @@ export default function App() {
           <Route path="finance" element={<RequirePerm perm="finance"><FinancePage /></RequirePerm>} />
           {/* Rol tekshiruvi sahifaning ichida (SPEC §4.3: faqat admin/direktor) */}
           <Route path="finance/money-flow" element={<Suspense fallback={<Loader label="Yuklanmoqda…" />}><MoneyFlowPage /></Suspense>} />
+          <Route path="billing/categories" element={<RequirePerm perm="finance"><CategoriesPage /></RequirePerm>} />
+          <Route path="billing/subscriptions" element={<RequirePerm perm="finance"><SubscriptionsPage /></RequirePerm>} />
+          <Route path="billing/discounts" element={<RequirePerm perm="finance"><DiscountsPage /></RequirePerm>} />
+          <Route path="billing/expenses" element={<RequirePerm perm="finance"><ExpensesPage /></RequirePerm>} />
           <Route path="academic-year" element={<RequirePerm perm="academicYear"><AcademicYearPage /></RequirePerm>} />
           <Route path="settings" element={<Navigate to="/admin/settings/school" replace />} />
           <Route path="settings/:section" element={<RequirePerm perm="settings"><SettingsPage /></RequirePerm>} />
@@ -130,9 +139,26 @@ export default function App() {
         </Route>
       </Route>
 
-      {/* Kassa — kassir ish o'rni. To'liq sahifa P1-16 da keladi; hozircha
-          navigatsiyadagi yozuv bo'sh ekranga olib bormasin. */}
-      <Route path="/cashier" element={<ComingSoon title="Kassa" />} />
+      {/* Kassa — kassir ish o'rni (P1-16). ATAYLAB /admin daraxtidan tashqarida:
+          u yerdagi role="admin" darvozasi `staff` ni kiritib, `cashier` ni
+          chiqarib yuboradi — bu yerda aynan teskarisi kerak. */}
+      <Route element={<ProtectedRoute roles={['cashier', 'admin', 'superadmin']} />}>
+        <Route path="/cashier" element={<AppLayout />}>
+          <Route index element={<CashierPage />} />
+        </Route>
+      </Route>
+
+      {/* Ota-ona va o'quvchi portali — hozircha moliya ko'rinishi. */}
+      <Route element={<ProtectedRoute role="parent" />}>
+        <Route path="/parent" element={<AppLayout />}>
+          <Route index element={<FinanceView />} />
+        </Route>
+      </Route>
+      <Route element={<ProtectedRoute role="student" />}>
+        <Route path="/student" element={<AppLayout />}>
+          <Route index element={<FinanceView />} />
+        </Route>
+      </Route>
 
       {/* O'qituvchi — alohida o'rnatiladigan PWA (/teacher/, wwwroot/teacher statik ilova).
           SPA shu manzilga kelsa (login redirect / RootRedirect) to'liq sahifa bilan o'sha ilovaga o'tamiz. */}

@@ -10,13 +10,21 @@ import { homeByRole } from '@/config/navigation'
  *
  * <c>role="admin"</c> berilganda <c>superadmin</c> ham qabul qilinadi (tizim egasi
  * admin panelidan foydalanadi). Aks holda aniq belgilangan rol talab etiladi.
+ *
+ * <c>roles</c> — rollarning aniq ro'yxati, hech qanday kengaytmasiz. Kassa uchun
+ * kerak: u yerga <c>cashier</c> kirishi, <c>staff</c> esa kirmasligi lozim, ya'ni
+ * "admin" darvozasi aynan teskari ishlaydi (SPEC §4.3).
  */
-export function ProtectedRoute({ role }: { role?: Role }) {
+export function ProtectedRoute({ role, roles }: { role?: Role; roles?: Role[] }) {
   const { isAuthenticated, user } = useAuth()
   const location = useLocation()
 
   if (!isAuthenticated || !user) {
     return <Navigate to="/login" replace state={{ from: location.pathname }} />
+  }
+
+  if (roles && !roles.includes(user.role)) {
+    return <Navigate to={homeByRole[user.role]} replace />
   }
 
   if (role) {
