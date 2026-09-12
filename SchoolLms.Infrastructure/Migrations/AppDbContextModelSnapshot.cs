@@ -397,6 +397,13 @@ namespace SchoolLms.Infrastructure.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
+                    b.Property<decimal>("ExpenseApprovalThreshold")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(14, 2)
+                        .HasColumnType("numeric(14,2)")
+                        .HasDefaultValue(5000000m)
+                        .HasColumnName("expense_approval_threshold");
+
                     b.Property<int>("OverdueAfterDay")
                         .HasColumnType("integer")
                         .HasColumnName("overdue_after_day");
@@ -422,6 +429,8 @@ namespace SchoolLms.Infrastructure.Migrations
                     b.ToTable("billing_settings", null, t =>
                         {
                             t.HasCheckConstraint("ck_billing_settings_due_day", "payment_due_day between 1 and 28");
+
+                            t.HasCheckConstraint("ck_billing_settings_expense_threshold", "expense_approval_threshold >= 0");
 
                             t.HasCheckConstraint("ck_billing_settings_order", "overdue_after_day >= payment_due_day");
 
