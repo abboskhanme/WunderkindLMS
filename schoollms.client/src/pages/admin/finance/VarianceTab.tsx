@@ -33,15 +33,14 @@ import type { VarianceWatch } from './useVarianceWatch'
 /** Sabab shundan qisqa bo'lsa — bu izoh emas, imzo. */
 const MIN_REASON = 10
 
-const flagKindLabels: Record<string, string> = {
-  shift_variance: 'Smena nomuvofiqligi',
-  quick_reversal: '24 soat ichidagi storno',
-  off_hours_payment: "Ish vaqtidan tashqari to'lov",
-  paid_without_allocation: "Taqsimotsiz to'langan hisob-faktura",
-}
-
-function flagKindLabel(kind: string): string {
-  return flagKindLabels[kind] ?? kind
+/**
+ * Nom SERVERDAN keladi (`AnomalyFlagDto.KindLabel`). Bu yerda ikkinchi
+ * lug'at saqlanmaydi: avvalgi nusxa allaqachon ayrilib ketgan edi —
+ * unda `quick_reversal` yozilgan, server esa `fast_reversal` yuboradi,
+ * ya'ni o'sha qator ekranda xom kalit bo'lib chiqardi.
+ */
+function flagKindLabel(flag: FinanceFlag): string {
+  return flag.kindLabel || flag.kind
 }
 
 interface Props {
@@ -190,8 +189,8 @@ export function VarianceTab({ watch, canResolve }: Props) {
                 <div key={f.id} className="flex flex-wrap items-center gap-3 p-4">
                   <AlertTriangle className="h-5 w-5 shrink-0 text-red-500" />
                   <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium text-slate-800">{flagKindLabel(f.kind)}</p>
-                    <p className="text-sm text-slate-500">{f.message}</p>
+                    <p className="text-sm font-medium text-slate-800">{flagKindLabel(f)}</p>
+                    <p className="text-sm text-slate-500">{f.summary}</p>
                     <p className="mt-0.5 text-xs text-slate-400">
                       {formatDateTime(f.detectedAt)}
                       {typeof f.amount === 'number' && ` · ${formatSignedMoney(f.amount)}`}
@@ -274,8 +273,8 @@ function ResolveModal({
     >
       <div className="space-y-4">
         <div className="rounded-xl bg-slate-50 p-3 text-sm">
-          <p className="font-medium text-slate-700">{flagKindLabel(flag.kind)}</p>
-          <p className="text-slate-500">{flag.message}</p>
+          <p className="font-medium text-slate-700">{flagKindLabel(flag)}</p>
+          <p className="text-slate-500">{flag.summary}</p>
         </div>
 
         <Textarea

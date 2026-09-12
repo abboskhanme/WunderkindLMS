@@ -237,7 +237,7 @@ export async function getZReport(shiftId: string): Promise<ZReport> {
 }
 
 /* =========================================================================
-   6) Anomaliya bayroqlari — P1-14 SHARTNOMASI (hali serverda YO'Q)
+   6) Anomaliya bayroqlari — P1-14 (server: FinanceFlagsController)
    ========================================================================= */
 
 /**
@@ -248,18 +248,34 @@ export async function getZReport(shiftId: string): Promise<ZReport> {
  */
 export interface FinanceFlag {
   id: string
-  /** shift_variance | quick_reversal | off_hours_payment | paid_without_allocation */
+  /** shift_variance | fast_reversal | off_hours_payment | paid_without_allocation */
   kind: string
-  /** Aniqlangan vaqt (ISO, ofset bilan). */
-  detectedAt: string
-  /** Serverdan tayyor keladigan o'zbekcha izoh. */
-  message: string
+  /** O'zbekcha nom — SERVERDAN keladi, UI o'z lug'atini saqlamaydi. */
+  kindLabel: string
+  /** cash_shift | payment | invoice */
+  refType: string
   /** Tegishli yozuv (smena / to'lov / hisob-faktura) id'si. */
-  refId?: string
-  amount?: number
-  resolvedAt?: string
-  resolvedReason?: string
-  resolvedByName?: string
+  refId: string
+  /** Hodisaning o'zi sodir bo'lgan vaqt. */
+  occurredAt: string
+  /** Skaner uni topgan vaqt. */
+  detectedAt: string
+  amount?: number | null
+  /** Bir qatorlik izoh — ro'yxatda shu ko'rinadi. */
+  summary: string
+  details?: string | null
+  resolvedAt?: string | null
+  resolvedBy?: string | null
+  resolvedByName?: string | null
+  resolvedReason?: string | null
+}
+
+/** Turlar kesimidagi hisoblagich — panelning yuqori qatori. */
+export interface FinanceFlagKindCount {
+  kind: string
+  kindLabel: string
+  unresolved: number
+  total: number
 }
 
 /**
@@ -272,8 +288,27 @@ export interface FinanceFlag {
  * BOR, yoki jurnal hali ULANMAGAN.
  */
 export type FinanceFlagsResult =
-  | { available: true; flags: FinanceFlag[] }
+  | {
+      available: true
+      /** HISOBLAGICH SHU YERDAN olinadi, `flags.length` dan EMAS: ro'yxat
+       *  sahifalanishi yoki filtrlanishi mumkin, bu raqam esa serverning
+       *  o'zi sanagan to'liq soni. */
+      unresolved: number
+      total: number
+      unresolvedAmount: number
+      byKind: FinanceFlagKindCount[]
+      flags: FinanceFlag[]
+    }
   | { available: false; reason: string }
+
+/** `GET /admin/finance/flags` javobi (server: `AnomalyFlagsDto`). */
+interface FinanceFlagsResponse {
+  unresolved: number
+  total: number
+  unresolvedAmount: number
+  byKind: FinanceFlagKindCount[]
+  items: FinanceFlag[]
+}
 
 /**
  * Hal qilinmagan anomaliyalar. P1-14 endpoint'i hali yo'q bo'lsa (404) —
@@ -281,10 +316,17 @@ export type FinanceFlagsResult =
  */
 export async function getFinanceFlags(unresolved = true): Promise<FinanceFlagsResult> {
   try {
-    const { data } = await api.get<FinanceFlag[]>('/admin/finance/flags', {
+    const { data } = await api.get<FinanceFlagsResponse>('/admin/finance/flags', {
       params: { unresolved },
     })
-    return { available: true, flags: data }
+    return {
+      available: true,
+      unresolved: data.unresolved,
+      total: data.total,
+      unresolvedAmount: data.unresolvedAmount,
+      byKind: data.byKind ?? [],
+      flags: data.items ?? [],
+    }
   } catch (e) {
     if (axios.isAxiosError(e) && (e.response?.status === 404 || e.response?.status === 501)) {
       return {
