@@ -31,7 +31,7 @@ function forChild(childId, extra = '') {
 /**
  * Ota-onaga biriktirilgan farzandlar: `[{ id, fullName, className }]`.
  *
- * IKKI MANBALI. Avval `/api/tg/children` so'raladi — ko'p-ko'pga bog'lanish
+ * IKKI MANBALI. Avval `/api/tg/parent/children` so'raladi — ko'p-ko'pga bog'lanish
  * (`guardians` + `student_guardians`) shu endpointda keladi. Backend uni hali
  * chiqarmagan bo'lsa (404/405) eski yo'lga tushamiz: `/api/student/me` bitta
  * farzand qaytaradi. Natija ikkalasida bir xil shaklda, ya'ni qobiq ham,
@@ -43,7 +43,7 @@ function forChild(childId, extra = '') {
  */
 export async function listChildren() {
   try {
-    const body = await api.get('/tg/children')
+    const body = await api.get('/tg/parent/children')
     // Shartnoma hali e'lon qilinmagan: ro'yxat to'g'ridan-to'g'ri ham,
     // `{ children: [...] }` ichida ham kelishi mumkin. Ikkalasini ham
     // qabul qilamiz — mos kelmagan javob ekranni yiqitmasin.
