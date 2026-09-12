@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
+using SchoolLms.Application.Billing;
 using SchoolLms.Domain;
 using SchoolLms.Infrastructure.Data;
 using SchoolLms.Tests.Fixtures;
@@ -329,6 +330,8 @@ public class LedgerImmutabilityTests(ApiFixture fixture)
                  INSERT INTO ledger_entries (entry_date, account, direction, amount,
                                              ref_type, ref_id, memo, created_by, created_at)
                  VALUES (current_date, 'cash', 'debit', 1000, 'payment', '{newPaymentId}',
+                         'app_rw insert', '{world.CashierId}', now()),
+                        (current_date, 'receivable', 'credit', 1000, 'payment', '{newPaymentId}',
                          'app_rw insert', '{world.CashierId}', now())
                  """);
         }
@@ -339,8 +342,11 @@ public class LedgerImmutabilityTests(ApiFixture fixture)
         Assert.Equal(world.CashierId, inserted.CashierId);
         Assert.Single(await db.PaymentAllocations.AsNoTracking()
             .Where(a => a.PaymentId == newPaymentId).ToListAsync());
-        Assert.Single(await db.LedgerEntries.AsNoTracking()
-            .Where(e => e.RefId == newPaymentId).ToListAsync());
+        // Juftlik: debet `cash` + kredit `receivable`. INSERT ochiqligini isbotlash
+        // uchun bitta qator ham yetardi, ammo yolg'iz qator umumiy jurnalni
+        // nomutanosib qoldirardi (yuqoridagi `SeedAsync` izohiga qarang).
+        Assert.Equal(2, (await db.LedgerEntries.AsNoTracking()
+            .Where(e => e.RefId == newPaymentId).ToListAsync()).Count);
     }
 
     /// <summary>
@@ -563,8 +569,25 @@ public class LedgerImmutabilityTests(ApiFixture fixture)
         var entry = new LedgerEntry
         {
             EntryDate = AppClock.Today,
-            Account = "cash",
+            Account = Accounts.Cash,
             Direction = LedgerDirection.Debit,
+            Amount = amount,
+            RefType = LedgerRefType.Payment,
+            RefId = payment.Id,
+            CreatedBy = cashier.Id,
+            CreatedAt = AppClock.NowInstant,
+        };
+        // QARSHI YOZUV — shartsiz kerak. Testlar bitta bazani bo'lishadi, va
+        // `ExpensesTests.Pul_aylanmasi_halqasi_balansda_qoladi` BUTUN jurnal
+        // balansda ekanini tekshiradi. Yolg'iz debet yozuv o'sha o'zgarmasni
+        // buzardi — va bu bu yerdagi sinovga hech narsa qo'shmasdi: quyidagi
+        // testlar `World.LedgerEntryId` (aynan shu debet qator) ustida ishlaydi.
+        // To'lovning tabiiy qarshi yozuvi — qarzning kamayishi.
+        var counterEntry = new LedgerEntry
+        {
+            EntryDate = AppClock.Today,
+            Account = Accounts.Receivable,
+            Direction = LedgerDirection.Credit,
             Amount = amount,
             RefType = LedgerRefType.Payment,
             RefId = payment.Id,
@@ -573,6 +596,7 @@ public class LedgerImmutabilityTests(ApiFixture fixture)
         };
         db.PaymentAllocations.Add(allocation);
         db.LedgerEntries.Add(entry);
+        db.LedgerEntries.Add(counterEntry);
         await db.SaveChangesAsync();
 
         return new World(
