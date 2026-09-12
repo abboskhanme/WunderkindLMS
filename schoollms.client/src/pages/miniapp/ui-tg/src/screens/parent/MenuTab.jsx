@@ -25,6 +25,14 @@ const MEALS = [
   { key: 'dinner', label: 'Kechki ovqat' },
 ]
 
+/** Stepper sarlavhasi — sanalar pastdagi qatorda, bu yerda faqat yo'nalish. */
+function weekLabel(offset) {
+  if (offset === 0) return 'Shu hafta'
+  if (offset === -1) return "O'tgan hafta"
+  if (offset === 1) return 'Kelasi hafta'
+  return offset < 0 ? `${-offset} hafta oldin` : `${offset} hafta keyin`
+}
+
 export function MenuTab({ child }) {
   // Haftalar bugungi haftadan sanaladi: 0 — shu hafta, −1 — o'tgan hafta.
   const [offset, setOffset] = useState(0)
@@ -43,7 +51,7 @@ export function MenuTab({ child }) {
       <Card>
         <div className="px-2 pb-3 pt-2">
           <Stepper
-            label={offset === 0 ? 'Shu hafta' : `${dayMonth(parseISO(startISO))} dan`}
+            label={weekLabel(offset)}
             onPrev={() => move(-1)}
             onNext={() => move(1)}
           />

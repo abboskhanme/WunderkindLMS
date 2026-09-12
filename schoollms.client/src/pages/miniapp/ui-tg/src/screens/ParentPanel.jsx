@@ -69,7 +69,9 @@ export function ParentPanel({ user }) {
           ) : null}
         </Hero>
 
-        {state.loading && <Loader label="Farzandlar yuklanmoqda…" />}
+        {/* Ro'yxat qayta yuklanayotganda ekranni bo'shatmaymiz — eski farzand
+            ko'rinib turadi, aks holda har yangilanishda ekran "sakraydi". */}
+        {state.loading && !child && <Loader label="Farzandlar yuklanmoqda…" />}
 
         {!state.loading && state.error && (
           <ErrorState message={state.error} onRetry={state.reload} />
