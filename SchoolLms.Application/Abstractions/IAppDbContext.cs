@@ -85,6 +85,13 @@ public interface IAppDbContext
     DbSet<LedgerEntry> LedgerEntries { get; }
     DbSet<BillingSettings> BillingSettings { get; }
 
+    /// <summary>
+    /// Tungi tekshiruv bayroqlari (SPEC §4.6, P1-14). O'CHIRIB BO'LMAYDI:
+    /// <c>app_rw</c> da DELETE yo'q, UPDATE esa faqat uchta "yopish" ustuniga
+    /// (<c>Migrations/Sql/anomaly_guards.sql</c>).
+    /// </summary>
+    DbSet<FinanceAnomalyFlag> FinanceAnomalyFlags { get; }
+
     int SaveChanges();
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 

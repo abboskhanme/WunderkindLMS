@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore;
 using SchoolLms.Application.Abstractions;
 using SchoolLms.Domain;
 using System.Globalization;
@@ -21,6 +22,20 @@ public class AuditService(IAppDbContext db, IHttpContextAccessor http)
     public const string EntityClassFee = "ClassFee";
     public const string EntityStudentDiscount = "StudentDiscount";
 
+    // ----- Moliya yadrosi (SPEC §4.6, P1-14) -----
+    // Bu to'rttasi FAQAT `Entry(...)` orqali yoziladi: aktyor JWT'dan emas,
+    // chaqiruvchidan keladi (SPEC §4.4 — kassir/tasdiqlovchi id'si allaqachon
+    // xizmatning parametri, va fon xizmatida HttpContext umuman yo'q).
+
+    /// <summary>Ikki yoqlama jurnal yozuvi (<c>LedgerService</c>).</summary>
+    public const string EntityLedgerEntry = "LedgerEntry";
+    /// <summary>Kassaga tushgan to'lov va storno (<c>PaymentService</c>).</summary>
+    public const string EntityPayment = "Payment";
+    /// <summary>Chiqim (<c>ExpenseService</c>).</summary>
+    public const string EntityExpense = "Expense";
+    /// <summary>Tungi tekshiruv bayrog'ini yopish (<c>AnomalyService</c>).</summary>
+    public const string EntityAnomalyFlag = "AnomalyFlag";
+
     /// <summary>Audit yozuvini joriy DbContext'ga qo'shadi (hali SaveChanges qilinmaydi).</summary>
     public void Record(
         string entityType, string entityId, string action, string summary,
@@ -28,22 +43,57 @@ public class AuditService(IAppDbContext db, IHttpContextAccessor http)
         string? studentId = null, string? teacherId = null)
     {
         var user = http.HttpContext?.User;
-        db.AuditLogs.Add(new AuditLog
+        db.AuditLogs.Add(Entry(
+            entityType, entityId, action, summary,
+            actorId: user?.FindFirst(ClaimTypes.NameIdentifier)?.Value
+                     ?? user?.FindFirst("sub")?.Value,
+            actorName: user?.FindFirst(ClaimTypes.Name)?.Value ?? "Tizim",
+            before: before, after: after,
+            studentId: studentId, teacherId: teacherId));
+    }
+
+    /// <summary>
+    /// Audit qatorini QURADI (bazaga qo'shmaydi) — aktyor PARAMETR sifatida.
+    ///
+    /// <para>
+    /// <b>Nega <see cref="Record"/> yetmaydi.</b> U aktyorni <c>HttpContext</c> dan
+    /// oladi, moliya xizmatlari esa uni chaqiruvchidan alohida parametr sifatida
+    /// oladi (SPEC §4.4) va fon xizmatidan ham chaqiriladi — u yerda so'rov
+    /// konteksti UMUMAN yo'q. Bunday holatda <c>Record</c> "Tizim" deb yozib
+    /// qo'yardi, ya'ni jurnal kimning nomidan pul harakat qilganini KO'RSATMASDI.
+    /// </para>
+    /// <para>
+    /// Qatorni chaqiruvchi o'zi <c>db.AuditLogs.Add(...)</c> qiladi — ataylab:
+    /// shunda yozuv chaqiruvchining O'Z tranzaksiyasiga tushadi va orqaga
+    /// qaytarilgan to'lov audit izini qoldirmaydi (docs/PENDING_WIRING.md §11).
+    /// Bir xil naqsh <c>CashShiftService.WriteAuditTrail</c> da ham ishlatilgan.
+    /// </para>
+    /// </summary>
+    public static AuditLog Entry(
+        string entityType, string entityId, string action, string summary,
+        string? actorId, string? actorName = null,
+        object? before = null, object? after = null,
+        string? studentId = null, string? teacherId = null) => new()
         {
             EntityType = entityType,
             EntityId = entityId,
             Action = action,
-            Timestamp = AppClock.Now.ToString("yyyy-MM-ddTHH:mm:ss"),
-            ActorId = user?.FindFirst(ClaimTypes.NameIdentifier)?.Value
-                      ?? user?.FindFirst("sub")?.Value,
-            ActorName = user?.FindFirst(ClaimTypes.Name)?.Value ?? "Tizim",
+            Timestamp = AppClock.Iso(),
+            ActorId = actorId,
+            ActorName = actorName ?? "Tizim",
             Summary = summary,
-            Before = before is null ? null : JsonSerializer.Serialize(before),
-            After = after is null ? null : JsonSerializer.Serialize(after),
+            // SPEC §4.6 — `before`/`after` JSON. Ustun turi `jsonb` (P1-14
+            // migratsiyasi), shuning uchun bu yerdan HAR DOIM haqiqiy JSON
+            // chiqishi shart: yaroqsiz matn INSERT paytida 22P02 bilan yiqiladi.
+            Before = Json(before),
+            After = Json(after),
             StudentId = studentId,
             TeacherId = teacherId,
-        });
-    }
+        };
+
+    /// <summary>Snapshot'ni <c>jsonb</c> ustuni uchun matnga o'giradi. null — null bo'lib qoladi.</summary>
+    public static string? Json(object? value) =>
+        value is null ? null : JsonSerializer.Serialize(value);
 
     /// <summary>Moliyaviy amal snapshot'i (Before/After uchun).</summary>
     public static object Snapshot(FinanceTransaction t) => new
@@ -57,4 +107,44 @@ public class AuditService(IAppDbContext db, IHttpContextAccessor http)
         t.StudentId,
         t.TeacherId,
     };
+}
+
+/// <summary>
+/// <c>users.id</c> → to'liq ism, KESHLANGAN. Audit qatoridagi
+/// <c>actor_name</c> uchun (P1-14).
+///
+/// <para>
+/// <b>Nega kesh kerak.</b> Oylik hisoblash (P1-09) bitta scope ichida har
+/// hisob-faktura uchun <c>LedgerService.PostAsync</c> ni chaqiradi — 500
+/// o'quvchida 500 marta. Keshsiz bu 500 ta bir xil <c>SELECT full_name</c>
+/// bo'lardi: klassik N+1, faqat audit yozuvining ismi uchun.
+/// </para>
+/// <para>
+/// Kesh EGASINING umriga bog'liq (xizmat scoped, ya'ni bitta so'rov yoki
+/// bitta fon tsikli). Ism o'sha oraliqda o'zgarishi amalda mumkin emas, va
+/// o'zgarsa ham audit qatoriga o'sha lahzadagi ism yozilgani TO'G'RI —
+/// keyinchalik nomi o'zgargan foydalanuvchi tarixni qayta yozmaydi.
+/// </para>
+/// </summary>
+public sealed class ActorNames(IAppDbContext db)
+{
+    private const string Unknown = "Noma'lum";
+
+    private readonly Dictionary<string, string> _cache = new(StringComparer.Ordinal);
+
+    /// <summary>Foydalanuvchi ismi; topilmasa — "Noma'lum" (xato TASHLAMAYDI).</summary>
+    public async Task<string> OfAsync(string? userId, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(userId)) return Unknown;
+        if (_cache.TryGetValue(userId, out var cached)) return cached;
+
+        var name = await db.Users.AsNoTracking()
+            .Where(u => u.Id == userId)
+            .Select(u => u.FullName)
+            .FirstOrDefaultAsync(ct)
+            ?? Unknown;
+
+        _cache[userId] = name;
+        return name;
+    }
 }
