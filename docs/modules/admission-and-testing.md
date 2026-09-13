@@ -197,7 +197,7 @@ the one thing it does well.
 
 **Evidence [bundle].** `seasonal-mark` carries a **0–100 score** (`min:0`,
 `max:100`, `step:"0.1"`) plus a free-text comment plus an edit history, keyed by
-`(student, class, subject, type, year, month|quarterId)` where
+`(student, class, subject, type, year, month|quarter)` where
 `type ∈ {monthly, quarterly, yearly}`.
 
 **Evidence [ours].** Nothing we have holds that.
@@ -700,7 +700,7 @@ this is the shape of every other catalogue table we have, e.g. `AssignmentType`,
 | `period_kind` | text | no | | `monthly` \| `quarterly` \| `yearly` **[bundle: `yU`]** |
 | `year` | int | no | | e.g. 2026 |
 | `month` | int | yes | null | 1–12, only when `monthly` |
-| `quarter_id` | text | yes | null | FK → `quarters.id`, `on delete restrict`, only when `quarterly` |
+| `quarter` | int | yes | null | 1–4, only when `quarterly`. **A number, not a FK — see below** |
 | `period_key` | text | no | **generated stored** | see below |
 | `score` | numeric(5,2) | yes | null | 0–100 **[bundle: `min:0 max:100 step:0.1`]**. null = comment only |
 | `comment` | text | yes | null | |
@@ -712,7 +712,7 @@ this is the shape of every other catalogue table we have, e.g. `AssignmentType`,
 period_key text generated always as (
   case period_kind
     when 'monthly'   then 'M:' || year || '-' || lpad(month::text, 2, '0')
-    when 'quarterly' then 'Q:' || coalesce(quarter_id, '')
+    when 'quarterly' then 'Q:' || year || '-' || quarter
     else                  'Y:' || year
   end
 ) stored
@@ -720,15 +720,36 @@ period_key text generated always as (
 
 * **Unique `(student_id, subject_id, period_key)`.** A generated key is used
   instead of a multi-column unique index because Postgres treats `NULL`s as
-  distinct, so `(student_id, subject_id, period_kind, year, month, quarter_id)`
+  distinct, so `(student_id, subject_id, period_kind, year, month, quarter)`
   would happily accept two yearly marks for the same pupil and subject.
+
+* **`quarter` is an `int`, and there is deliberately no FK to `quarters`.**
+  EduSchool sends a `quarterId` **[bundle]**. We must not. Two reasons, both
+  from our own code:
+  1. `PUT /api/admin/settings/quarters` **[ours,
+     `SettingsController.cs:29`]** does `db.Quarters.RemoveRange(db.Quarters)`
+     and re-adds every row **with fresh GUIDs**. Every save of the Choraklar
+     screen would orphan every quarterly mark, and with a `restrict` FK it would
+     instead throw a 500 and make the screen unusable.
+  2. Nothing else in this system references `QuarterPeriod.Id`. `JournalEntry`,
+     `QuarterGrade` and `WeekAssignment` all carry `Quarter` as an `int`
+     **[ours]**. Following the house style keeps the join with existing grade
+     data trivial.
+  `(year, quarter)` is exactly as expressive as an id — `quarters` holds only the
+  current year's four rows and has no year column of its own — and it survives
+  that destructive save.
+  *(The delete-and-recreate in `SaveQuarters` is a latent bug worth fixing on its
+  own merits, but it is not this module's job and this design does not depend on
+  it being fixed.)*
 * Index `(class_id, subject_id, period_key)` — the entry screen, the pivot and
   the coverage report all filter on exactly that.
 * Index `(period_key)`.
 * Checks: `period_kind in ('monthly','quarterly','yearly')`;
   `(period_kind = 'monthly') = (month is not null)`;
-  `(period_kind = 'quarterly') = (quarter_id is not null)`;
+  `(period_kind = 'quarterly') = (quarter is not null)`;
   `month is null or month between 1 and 12`;
+  `quarter is null or quarter between 1 and 4`;
+  `year between 2000 and 2100`;
   `score is null or (score >= 0 and score <= 100)`;
   `comment is null or char_length(btrim(comment)) >= 3`
   **[bundle: the inline editor refuses a 1–2 character comment]**;
@@ -774,6 +795,31 @@ schema change.
 **Nothing else changes.** No column is dropped, renamed or retyped anywhere.
 If `--autogenerate` emits a `Drop*` for anything outside this list, the
 migration is wrong — read it (global rule) and delete the spurious operation.
+
+### 5.14 Referential side effects on existing delete endpoints
+
+These twelve tables are the **first** in this database to declare real foreign
+keys onto `subjects` and `classes`. Today those tables have no inbound FK at all
+— `JournalEntry.SubjectId` is a bare `text` column. Adding `on delete restrict`
+therefore changes the behaviour of endpoints that already exist, and the change
+must be handled or it becomes a 500.
+
+| Existing endpoint | New inbound FK | What happens if nothing is done | Required additive fix |
+|---|---|---|---|
+| `DELETE /api/admin/subjects/{id}` **[ours, `SubjectsController.cs:39`]** — deletes unconditionally today | `question_banks.subject_id`, `exam_sections.subject_id`, `seasonal_marks.subject_id` | `DbUpdateException` → 500 | pre-check the three tables, return **409** with `"Bu fan test bazasi / imtihon / mavsumiy baholashda ishlatilgan — o'chirib bo'lmaydi."` |
+| `DELETE /api/admin/classes/{id}` **[ours, `ClassesController.cs:98`]** — already refuses when pupils exist | `exam_participants.class_id` (`set null`), `seasonal_marks.class_id` (`restrict`) | `DbUpdateException` → 500 once a class has seasonal marks | add one more pre-check in the same style as the existing pupil check, return **400** with `"Bu sinfda mavsumiy baholash yozuvlari bor — avval ularni o'chiring."` |
+| `DELETE /api/admin/students/{id}` **[ours, `StudentsController.cs:271`]** — already refuses when invoices or payments exist | `exam_participants.student_id`, `seasonal_marks.student_id` — both `cascade` | pupil deleted, their marks and exam rows go with them | **none.** Deleting a pupil is the "created by mistake" path; the normal exit is archiving (`IsArchived`). Cascade is correct here and matches the existing behaviour for journal data. |
+| `DELETE /api/admin/leads/{id}` | `exam_participants.lead_id` — `cascade` | participation removed with the lead | **none** (§8.5) — the board's delete must keep working |
+| `PUT /api/admin/settings/quarters` **[ours, `SettingsController.cs:29`]** — deletes and recreates all four rows with new GUIDs on every save | **none** | nothing | **none** — `seasonal_marks.quarter` is an `int`, precisely so this screen keeps working (§5.12) |
+
+One consequence for the plan: `SubjectsController.cs` and `ClassesController.cs`
+are **touched by this module** even though they belong to other features, and
+each edit is a single guard clause — no restructuring. They are listed in §11.
+`SettingsController.cs` is **not** touched.
+
+Do not "solve" this by dropping the foreign keys. Referential integrity between
+a seasonal mark and its subject is exactly the thing that stops a report from
+one day showing a score against a subject that no longer exists.
 
 ---
 
@@ -988,7 +1034,7 @@ templates `savollar_shablon.xlsx` and `natijalar_shablon.xlsx`. All built with
 | POST | `/api/admin/exams/participants/{pid}/invitation` | `{ validFrom?, validUntil? }` | `{ url, tokenHint, validFrom, validUntil }` — **the only time `url` is ever returned** | `admission` |
 | DELETE | `/api/admin/exams/participants/{pid}/invitation` | — | 204 (revoke) | `admission` |
 | POST | `/api/admin/exams/{id}/invitations` | `{ validFrom?, validUntil? }` | `{ issued, skipped }` — bulk issue for everyone `assigned` with no live invitation | `admission` |
-| POST | `/api/admin/exams/participants/{pid}/unlock-device` | `{ reason }` | 204 — clears the device lock, keeps the answers (§7.4.5) | `admission` |
+| POST | `/api/admin/exams/participants/{pid}/unlock-device` | `{ reason }` | 204 — clears the device lock, keeps the answers (§7.4, point 5) | `admission` |
 
 `url` is `{PublicBaseUrl}/qabul-test/{token}`, where `PublicBaseUrl` is the new
 configuration key **`Admission:PublicBaseUrl`** (`appsettings.json`, overridable
@@ -1048,17 +1094,17 @@ PublicResultDto {
 
 | Method | Path | Body / query | Response | Perm |
 |---|---|---|---|---|
-| GET | `/api/admin/seasonal-marks` | `page,limit,search,periodKind,year,month,quarterId,classId,subjectId,studentId` | paged `SeasonalMarkRowDto` | `seasonalMarks` |
+| GET | `/api/admin/seasonal-marks` | `page,limit,search,periodKind,year,month,quarter,classId,subjectId,studentId` | paged `SeasonalMarkRowDto` | `seasonalMarks` |
 | GET | `/api/admin/seasonal-marks/scope` | `classId?` | `ScopeDto` (bare) | `seasonalMarks` |
-| GET | `/api/admin/seasonal-marks/students` | `classId,subjectId,periodKind,year,month?,quarterId?` | `SeasonalEntryRowDto[]` (bare) | `seasonalMarks` |
-| POST | `/api/admin/seasonal-marks/bulk` | `{ classId, subjectId, periodKind, year, month?, quarterId?, rows:[{studentId, score, comment}] }` | `{ created, updated, deleted }` | `seasonalMarks` |
+| GET | `/api/admin/seasonal-marks/students` | `classId,subjectId,periodKind,year,month?,quarter?` | `SeasonalEntryRowDto[]` (bare) | `seasonalMarks` |
+| POST | `/api/admin/seasonal-marks/bulk` | `{ classId, subjectId, periodKind, year, month?, quarter?, rows:[{studentId, score, comment}] }` | `{ created, updated, deleted }` | `seasonalMarks` |
 | PUT | `/api/admin/seasonal-marks/{id}` | `{ score?, comment? }` | `SeasonalMarkRowDto` | `seasonalMarks` |
 | DELETE | `/api/admin/seasonal-marks/{id}` | — | 204 | `seasonalMarks` |
 | GET | `/api/admin/seasonal-marks/export` | same query as list | `.xlsx` | `seasonalMarks` |
-| GET | `/api/admin/seasonal-marks/by-subjects` | `page,limit,classIds[],subjectIds[],periodKind,year,month?,quarterId?` | paged pivot | `seasonalMarks` |
+| GET | `/api/admin/seasonal-marks/by-subjects` | `page,limit,classIds[],subjectIds[],periodKind,year,month?,quarter?` | paged pivot | `seasonalMarks` |
 | GET | `/api/admin/seasonal-marks/by-subjects/export` | same | `.xlsx` | `seasonalMarks` |
-| GET | `/api/admin/seasonal-marks/coverage` | `page,limit,periodKind,year,month?,quarterId?,teacherIds[]` | paged `CoverageRowDto` | `seasonalMarks` |
-| GET | `/api/admin/seasonal-marks/coverage/detail` | `teacherId,periodKind,year,month?,quarterId?,hasMark?` | paged pupil rows | `seasonalMarks` |
+| GET | `/api/admin/seasonal-marks/coverage` | `page,limit,periodKind,year,month?,quarter?,teacherIds[]` | paged `CoverageRowDto` | `seasonalMarks` |
+| GET | `/api/admin/seasonal-marks/coverage/detail` | `teacherId,periodKind,year,month?,quarter?,hasMark?` | paged pupil rows | `seasonalMarks` |
 | GET | `/api/admin/seasonal-marks/coverage/export` | same as coverage | `.xlsx` | `seasonalMarks` |
 | GET | `/api/teacher/seasonal-marks/scope` | — | `ScopeDto` — only pairs this teacher teaches | teacher `seasonalMarks` |
 | GET | `/api/teacher/seasonal-marks/students` | as above, own pairs only | `SeasonalEntryRowDto[]` | teacher `seasonalMarks` |
@@ -1089,7 +1135,7 @@ adding; every subject a class is taught can receive a seasonal mark.
 SeasonalMarkRowDto {
   id, student: { id, fullName }, class: { id, name },
   subject: { id, name },
-  periodKind, year, month, quarter: { id, quarter } | null,
+  periodKind, year, month, quarter,          // quarter = 1..4 or null
   periodLabel,               // server-formatted: "Mart 2026" | "2 - chorak 2026" | "2026"
   score, comment, updatedAt, createdByName
 }
@@ -1507,10 +1553,13 @@ none → invited → testing → tested → accepted → enrolled
 * Teacher scope: `/api/teacher/seasonal-marks/**` accepts only (class, subject)
   pairs the teacher teaches, checked the way `TeacherPortalController.Authorized`
   **[ours]** already checks the journal. An admin has no such restriction.
-* `quarterly` requires a `quarter_id` that exists in `quarters`
-  (`QuarterPeriod` **[ours]**). `QuarterPeriod.GradesOpen` is **not** consulted:
-  it gates the 2–5 quarter grade in the journal, and conflating the two locks
-  would surprise everyone.
+* `quarterly` requires `quarter ∈ {1,2,3,4}`. The server checks that a
+  `QuarterPeriod` row with that number exists **[ours]** — a soft validation, not
+  a foreign key (§5.12) — and rejects with
+  `"Bunday chorak sozlanmagan"` if not.
+* `QuarterPeriod.GradesOpen` is **not** consulted. It gates the 2–5 quarter grade
+  in the journal; conflating the two locks would mean closing the journal for
+  grading silently also closes seasonal assessment, which nobody asked for.
 
 ---
 
@@ -1649,6 +1698,10 @@ agent, in this order, and let the others rebase.
 | **S4** `schoollms.client/src/config/navigation.ts` | C1–C5 | three new admin sections + one teacher entry |
 | **S5** `schoollms.client/src/App.tsx` | C1–C6 | 14 admin/teacher routes **and** the one public route outside `ProtectedRoute` |
 | `SchoolLms.Infrastructure/Migrations/MigrationSql.cs` | A3 | one embedded-resource name |
+| `SchoolLms.Domain/Entities.cs` (again) | A1 | one flag on `SchoolMeta` (§5.13) — same file as the `Lead` fields, one edit |
+| `SchoolLms.Server/Controllers/SubjectsController.cs` | B4 | one guard clause before delete (§5.14) |
+| `SchoolLms.Server/Controllers/ClassesController.cs` | B4 | one guard clause before delete (§5.14) |
+| `schoollms.client/src/pages/admin/settings/SchoolSettings.tsx` + `SchoolController.cs` / `SettingsController.cs` school DTO | C1 | one checkbox for `AdmissionShowAnswersToCandidate` (§7.7) and the field on `SchoolInfoDto` |
 
 Recommended order: `A1 → A2 → A3 → S1 → S3 → (B1‖B2‖B4) → B3 → B5 → S2 → S4 → S5 → (C1‖C2‖C3‖C4) → C5 → C6 → (D1‖D2‖D3‖D4)`.
 
