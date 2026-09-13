@@ -198,6 +198,8 @@ the one thing it does well.
 **Evidence [bundle].** `seasonal-mark` carries a **0–100 score** (`min:0`,
 `max:100`, `step:"0.1"`) plus a free-text comment plus an edit history, keyed by
 `(student, class, subject, type, year, month|quarterId)` where
+
+`(student, class, subject, type, year, month|quarter)` where
 `type ∈ {monthly, quarterly, yearly}`.
 
 **Evidence [ours].** Nothing we have holds that.
@@ -279,6 +281,66 @@ it from `/admin/teacher-reports` is a one-line follow-up, not part of this spec.
 | # | Screen | Route | Perm | Notes |
 |---|---|---|---|---|
 | 15 | Qabul testi | `/qabul-test/:token` | **none** | §7. Registered as a **sibling** of `/login`, outside `ProtectedRoute`. |
+
+
+### 3.6 Navigation
+
+Added to `navByRole.admin` in `schoollms.client/src/config/navigation.ts`
+**[ours]**, placed after `Jurnal` and before `Xabarlar`:
+
+```
+{ label: 'Qabul',              to: '/admin/admission/candidates', icon: UserRoundCheck, perm: 'admission', children: [
+    { label: 'Nomzodlar',      to: '/admin/admission/candidates', end: true },
+    { label: 'Test bazasi',    to: '/admin/admission/banks' } ] }
+
+{ label: 'Imtihonlar',         to: '/admin/exams/list',           icon: ClipboardCheck, perm: 'exams', children: [
+    { label: 'Imtihonlar',     to: '/admin/exams/list' },
+    { label: 'Imtihon turi',   to: '/admin/exams/types' },
+    { label: 'Natijalar',      to: '/admin/exams/results' } ] }
+
+{ label: 'Mavsumiy baholash',  to: '/admin/seasonal-marks',       icon: BarChart3,      perm: 'seasonalMarks', children: [
+    { label: 'Baholar',        to: '/admin/seasonal-marks', end: true },
+    { label: 'Fanlar kesimida',to: '/admin/seasonal-marks/by-subjects' },
+    { label: 'Hisobot',        to: '/admin/seasonal-marks/report' } ] }
+```
+
+Added to `navByRole.teacher`, after `Feedback`:
+
+```
+{ label: 'Mavsumiy baholash', to: '/teacher/seasonal-marks', icon: BarChart3, perm: 'seasonalMarks' }
+```
+
+The three icon names are chosen because they are already imported and building
+in this project (`UserRoundCheck` in `components/layout/NotificationsBell.tsx`,
+`ClipboardCheck` and `BarChart3` in `config/navigation.ts` **[ours]**). Pick a
+different `lucide-react` name only after confirming it exists in the installed
+version — the icon is decoration, a failed import is a broken build. The
+bulk-entry routes
+(`/admin/seasonal-marks/entry`, `/admin/exams/results/:examId/entry`,
+`/admin/admission/banks/:bankId`, `/admin/admission/candidates/:leadId`) are
+reached from their parent screen and are **not** nav entries.
+
+### 3.7 What a permission hides
+
+`RequirePerm` **[ours, `components/auth/RequirePerm.tsx`]** wraps the route, and
+`Sidebar` filters `navByRole` by `perm` — so a `staff` account without the key
+sees neither the menu entry nor the page. Inside a page, the write controls
+follow the same key, because `AdminPermAttribute` will reject the request anyway
+and a button that always 403s is worse than no button:
+
+| Hidden without the perm | Screens |
+|---|---|
+| "Baza qo'shish", edit, delete, the settings Saqlash | 3, 4 |
+| "Savol qo'shish", "Excel'dan import", question edit/delete | 4 |
+| "Imtihonga biriktirish", "Havolani qayta chiqarish", "Bekor qilish", "Natijani qayta hisoblash" | 1, 2 |
+| "O'quvchi qilib ro'yxatga olish" — needs **`admission` and `students`** | 2 |
+| "Imtihon qo'shish", edit, publish, cancel | 6, 7 |
+| Every editable cell in the entry grid, Saqlash, import | 9 |
+| Inline score/comment editing, delete, "Baholash" | 10, 11, 14 |
+| "Natijani qayta hisoblash" / attempt reset — needs **`exams` and `admission`** | 2, 8 |
+
+Read-only screens (8, 12, 13) show data and the export button, nothing else.
+The public page (15) has no permission concept at all.
 
 ---
 
@@ -603,6 +665,8 @@ this is the shape of every other catalogue table we have, e.g. `AssignmentType`,
 | `user_agent` | text | no | | truncated to 400 chars |
 | `answered_count` | int | no | 0 | cheap progress + abuse ceiling (§7.6) |
 
+| `abuse_flagged` | boolean | no | false | set when the ceiling is hit; shows a badge on the admin card |
+
 * **Unique `(participant_id)`** — one attempt, ever. The second `start` returns
   the existing attempt if `in_progress`, or the result if `finished`. Retaking
   requires an admin to reset (§8.3), which writes an audit row.
@@ -641,6 +705,8 @@ this is the shape of every other catalogue table we have, e.g. `AssignmentType`,
 | `year` | int | no | | e.g. 2026 |
 | `month` | int | yes | null | 1–12, only when `monthly` |
 | `quarter_id` | text | yes | null | FK → `quarters.id`, `on delete restrict`, only when `quarterly` |
+
+| `quarter` | int | yes | null | 1–4, only when `quarterly`. **A number, not a FK — see below** |
 | `period_key` | text | no | **generated stored** | see below |
 | `score` | numeric(5,2) | yes | null | 0–100 **[bundle: `min:0 max:100 step:0.1`]**. null = comment only |
 | `comment` | text | yes | null | |
@@ -653,6 +719,8 @@ period_key text generated always as (
   case period_kind
     when 'monthly'   then 'M:' || year || '-' || lpad(month::text, 2, '0')
     when 'quarterly' then 'Q:' || coalesce(quarter_id, '')
+
+    when 'quarterly' then 'Q:' || year || '-' || quarter
     else                  'Y:' || year
   end
 ) stored
@@ -662,6 +730,28 @@ period_key text generated always as (
   instead of a multi-column unique index because Postgres treats `NULL`s as
   distinct, so `(student_id, subject_id, period_kind, year, month, quarter_id)`
   would happily accept two yearly marks for the same pupil and subject.
+
+  distinct, so `(student_id, subject_id, period_kind, year, month, quarter)`
+  would happily accept two yearly marks for the same pupil and subject.
+
+* **`quarter` is an `int`, and there is deliberately no FK to `quarters`.**
+  EduSchool sends a `quarterId` **[bundle]**. We must not. Two reasons, both
+  from our own code:
+  1. `PUT /api/admin/settings/quarters` **[ours,
+     `SettingsController.cs:29`]** does `db.Quarters.RemoveRange(db.Quarters)`
+     and re-adds every row **with fresh GUIDs**. Every save of the Choraklar
+     screen would orphan every quarterly mark, and with a `restrict` FK it would
+     instead throw a 500 and make the screen unusable.
+  2. Nothing else in this system references `QuarterPeriod.Id`. `JournalEntry`,
+     `QuarterGrade` and `WeekAssignment` all carry `Quarter` as an `int`
+     **[ours]**. Following the house style keeps the join with existing grade
+     data trivial.
+  `(year, quarter)` is exactly as expressive as an id — `quarters` holds only the
+  current year's four rows and has no year column of its own — and it survives
+  that destructive save.
+  *(The delete-and-recreate in `SaveQuarters` is a latent bug worth fixing on its
+  own merits, but it is not this module's job and this design does not depend on
+  it being fixed.)*
 * Index `(class_id, subject_id, period_key)` — the entry screen, the pivot and
   the coverage report all filter on exactly that.
 * Index `(period_key)`.
@@ -669,6 +759,11 @@ period_key text generated always as (
   `(period_kind = 'monthly') = (month is not null)`;
   `(period_kind = 'quarterly') = (quarter_id is not null)`;
   `month is null or month between 1 and 12`;
+
+  `(period_kind = 'quarterly') = (quarter is not null)`;
+  `month is null or month between 1 and 12`;
+  `quarter is null or quarter between 1 and 4`;
+  `year between 2000 and 2100`;
   `score is null or (score >= 0 and score <= 100)`;
   `comment is null or char_length(btrim(comment)) >= 3`
   **[bundle: the inline editor refuses a 1–2 character comment]**;
@@ -700,6 +795,49 @@ student_id       text null references students(id) on delete set null
 
 `teachers.permissions` — back-fill `"seasonalMarks"` (§4.2). Data change, not
 schema change.
+
+
+`school_meta` — one column:
+
+```
+admission_show_answers_to_candidate boolean not null default false
+```
+
+Gates whether the finished public page shows the per-question review (§7.7).
+Default `false` on purpose: shipping with EduSchool's behaviour and turning it
+off later means the first cohort has already seen the bank.
+
+`teachers.permissions` — back-fill `"seasonalMarks"` (§4.2). Data change, not
+schema change.
+
+**Nothing else changes.** No column is dropped, renamed or retyped anywhere.
+If `--autogenerate` emits a `Drop*` for anything outside this list, the
+migration is wrong — read it (global rule) and delete the spurious operation.
+
+### 5.14 Referential side effects on existing delete endpoints
+
+These twelve tables are the **first** in this database to declare real foreign
+keys onto `subjects` and `classes`. Today those tables have no inbound FK at all
+— `JournalEntry.SubjectId` is a bare `text` column. Adding `on delete restrict`
+therefore changes the behaviour of endpoints that already exist, and the change
+must be handled or it becomes a 500.
+
+| Existing endpoint | New inbound FK | What happens if nothing is done | Required additive fix |
+|---|---|---|---|
+| `DELETE /api/admin/subjects/{id}` **[ours, `SubjectsController.cs:39`]** — deletes unconditionally today | `question_banks.subject_id`, `exam_sections.subject_id`, `seasonal_marks.subject_id` | `DbUpdateException` → 500 | pre-check the three tables, return **409** with `"Bu fan test bazasi / imtihon / mavsumiy baholashda ishlatilgan — o'chirib bo'lmaydi."` |
+| `DELETE /api/admin/classes/{id}` **[ours, `ClassesController.cs:98`]** — already refuses when pupils exist | `exam_participants.class_id` (`set null`), `seasonal_marks.class_id` (`restrict`) | `DbUpdateException` → 500 once a class has seasonal marks | add one more pre-check in the same style as the existing pupil check, return **400** with `"Bu sinfda mavsumiy baholash yozuvlari bor — avval ularni o'chiring."` |
+| `DELETE /api/admin/students/{id}` **[ours, `StudentsController.cs:271`]** — already refuses when invoices or payments exist | `exam_participants.student_id`, `seasonal_marks.student_id` — both `cascade` | pupil deleted, their marks and exam rows go with them | **none.** Deleting a pupil is the "created by mistake" path; the normal exit is archiving (`IsArchived`). Cascade is correct here and matches the existing behaviour for journal data. |
+| `DELETE /api/admin/leads/{id}` | `exam_participants.lead_id` — `cascade` | participation removed with the lead | **none** (§8.5) — the board's delete must keep working |
+| `PUT /api/admin/settings/quarters` **[ours, `SettingsController.cs:29`]** — deletes and recreates all four rows with new GUIDs on every save | **none** | nothing | **none** — `seasonal_marks.quarter` is an `int`, precisely so this screen keeps working (§5.12) |
+
+One consequence for the plan: `SubjectsController.cs` and `ClassesController.cs`
+are **touched by this module** even though they belong to other features, and
+each edit is a single guard clause — no restructuring. They are listed in §11.
+`SettingsController.cs` is **not** touched.
+
+Do not "solve" this by dropping the foreign keys. Referential integrity between
+a seasonal mark and its subject is exactly the thing that stops a report from
+one day showing a score against a subject that no longer exists.
 
 ---
 
@@ -788,6 +926,8 @@ CandidateRowDto {
 | POST | `/api/admin/admission/questions` | `{ bankId, text, imageUrl?, options:[{text,isCorrect}] }` | `QuestionDto` | `admission` |
 | PUT | `/api/admin/admission/questions/{id}` | `{ text, imageUrl?, options:[{id?,text,isCorrect}] }` | `QuestionDto` | `admission` |
 | DELETE | `/api/admin/admission/questions/{id}` | — | 204, or **409** if answered | `admission` |
+
+| DELETE | `/api/admin/admission/questions/{id}` | — | 204, or **409** if the question has been answered, or if its bank feeds a `published` exam (§8.2) | `admission` |
 | GET | `/api/admin/admission/questions/import/template` | `bankId` | `savollar_shablon.xlsx` | `admission` |
 | POST | `/api/admin/admission/questions/import` | multipart `file`, `bankId`, `dryRun` | `QuestionImportResultDto` | `admission` |
 
@@ -807,12 +947,32 @@ QuestionImportResultDto {
 ```
 
 Template columns (sheet `Savollar`), one row per question:
+
+Template columns (sheet `Savollar`), one row per question, in this order:
 `Savol matni | A | B | C | D | E | F | To'g'ri javob (A-F) | Rasm havolasi`.
 A second sheet `Yo'riqnoma` carries the rules, matching
 `StudentsController.ImportHeaders` **[ours]**. File must be `.xlsx`; `.xls` is
 rejected with `"Faqat .xlsx (Excel) fayl qabul qilinadi"` (EduSchool accepts
 `.xls` **[bundle]**; `ExcelImport` **[ours]** does not, and adding a second
 parser for a dead format is not worth it).
+
+
+`reason` is one of exactly these seven strings — the UI renders each as one chip
+with the offending row numbers, so the set must be closed:
+
+| `reason` | Uzbek chip text | Trigger |
+|---|---|---|
+| `emptyText` | `Savol matni bo'sh` | column A blank after trim |
+| `tooFewOptions` | `Variant 2 tadan kam` | fewer than 2 non-blank option cells |
+| `tooManyOptions` | `Variant 6 tadan ko'p` | more than 6 (structurally impossible with 6 columns; kept for a hand-edited sheet) |
+| `noCorrect` | `To'g'ri javob ko'rsatilmagan` | column H blank |
+| `badCorrect` | `To'g'ri javob noto'g'ri` | column H is not A–F, or points at a blank option |
+| `duplicateOption` | `Bir xil variant` | two option cells identical after trim |
+| `badImageUrl` | `Rasm havolasi noto'g'ri` | column I is non-empty and does not start with `/uploads/` |
+
+A row with any error is skipped whole; valid rows in the same file still import
+when `dryRun=false`. Row numbers in `rows[]` are **1-based sheet rows including
+the header**, so they match what the user sees in Excel.
 
 ### 6.3 Exams
 
@@ -840,6 +1000,9 @@ parser for a dead format is not worth it).
 | GET | `/api/admin/exams/participants/{pid}/review` | — | `AttemptReviewDto` (**with** correct answers) | `exams` or `admission` |
 | POST | `/api/admin/exams/participants/{pid}/reset-attempt` | `{ reason }` | 204 | `exams` **and** `admission` |
 
+| POST | `/api/admin/exams/participants/{pid}/force-finish` | `{ reason }` | `AttemptReviewDto` — grade now, `finish_reason='admin'` (§8.3) | `exams` |
+| POST | `/api/admin/exams/participants/{pid}/reset-attempt` | `{ reason }` | 204 — destroys the attempt (§8.3) | `exams` **and** `admission` |
+
 `POST /exams/{id}/participants` with `classIds` expands to every non-archived
 pupil in those classes. It is idempotent: a pupil already on the exam is counted
 in `skipped`, not duplicated (the unique indexes in §5.7 make that structural).
@@ -847,6 +1010,48 @@ in `skipped`, not duplicated (the unique indexes in §5.7 make that structural).
 The entry table returns a bare array capped at 500 rows because a single sitting
 never exceeds one grade's worth of pupils; if the cap is hit the endpoint returns
 409 telling the user to split the exam, rather than silently truncating.
+
+
+```
+ExamUpsertDto {
+  title, kind,            // admission | block   — immutable after create
+  delivery,               // online | manual     — immutable after create
+  examTypeId?, grade?, examDate?, opensAt?, closesAt?, timeLimitMin?,
+  sections: [ { subjectId, bankId?, questionCount?, maxScore?, order } ]
+}
+
+EntryTableDto {
+  examId, title, examDate,
+  columns: [ { sectionId, subjectId, name, maxScore } ],
+  rows: [ {
+    participantId, fullName, className,
+    status,                                   // assigned|finished|absent|cancelled
+    scores: { "<sectionId>": 42.5 | null },
+    totalPoints, maxPoints, percent
+  } ]
+}
+
+AttemptReviewDto {                            // admin only — carries the answer key
+  participant: { id, fullName, kind, grade, className },
+  exam:        { id, title, kind, examDate },
+  attempt:     { startedAt, finishedAt, finishReason, deviceLabel, firstIp,
+                 answeredCount, abuseFlagged } | null,   // null for manual exams
+  summary:     { correctCount, totalCount, totalPoints, maxPoints, percent },
+  perSubject:  [ { subjectId, name, correct, total, points, maxPoints } ],
+  questions:   [ { id, subjectId, order, text, imageUrl,
+                   options: [ { id, text } ],
+                   selectedOptionId, correctOptionId, isCorrect } ] | null
+}
+```
+
+Export file names, so two agents do not invent two conventions:
+`natijalar_<examId-short>_<yyyy-MM-dd>.xlsx`,
+`mavsumiy_baholash_<yyyy-MM-dd>.xlsx`,
+`mavsumiy_baholash_fanlar_<yyyy-MM-dd>.xlsx`,
+`mavsumiy_baholash_hisoboti_<yyyy-MM-dd>.xlsx`,
+templates `savollar_shablon.xlsx` and `natijalar_shablon.xlsx`. All built with
+`ExcelExport.Build` **[ours]** and returned with
+`application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`.
 
 ### 6.4 Invitations (admin side of the public token)
 
@@ -859,6 +1064,20 @@ never exceeds one grade's worth of pupils; if the cap is hit the endpoint return
 `url` is `{PublicBaseUrl}/qabul-test/{token}`. `PublicBaseUrl` comes from
 configuration, not from the request `Host` header — a `Host`-derived link is a
 host-header-injection primitive.
+
+| POST | `/api/admin/exams/participants/{pid}/unlock-device` | `{ reason }` | 204 — clears the device lock, keeps the answers (§7.4, point 5) | `admission` |
+
+`url` is `{PublicBaseUrl}/qabul-test/{token}`, where `PublicBaseUrl` is the new
+configuration key **`Admission:PublicBaseUrl`** (`appsettings.json`, overridable
+by `Admission__PublicBaseUrl` in the environment; add it to `.env.example` and
+`docker-compose.server.yml`). No trailing slash. If the key is empty the issue
+endpoint returns **500** with
+`"Admission:PublicBaseUrl sozlanmagan — havola yaratib bo'lmaydi"`.
+
+It must **not** be derived from the request `Host` header. A `Host`-derived link
+is a host-header-injection primitive: an attacker who can reach the admin API
+sets `Host: evil.tld` and the school then SMSes candidates a link to
+`evil.tld/qabul-test/<real token>`, harvesting live tokens.
 
 ### 6.5 Public exam endpoints — anonymous
 
@@ -919,6 +1138,61 @@ PublicResultDto {
 | GET | `/api/admin/seasonal-marks/coverage/export` | same as coverage | `.xlsx` | `seasonalMarks` |
 | GET | `/api/teacher/seasonal-marks/students` | as above, own pairs only | `SeasonalEntryRowDto[]` | teacher `seasonalMarks` |
 | POST | `/api/teacher/seasonal-marks/bulk` | as above, own pairs only | `{ created, updated, deleted }` | teacher `seasonalMarks` |
+
+
+| GET | `/api/admin/seasonal-marks` | `page,limit,search,periodKind,year,month,quarter,classId,subjectId,studentId` | paged `SeasonalMarkRowDto` | `seasonalMarks` |
+| GET | `/api/admin/seasonal-marks/scope` | `classId?` | `ScopeDto` (bare) | `seasonalMarks` |
+| GET | `/api/admin/seasonal-marks/students` | `classId,subjectId,periodKind,year,month?,quarter?` | `SeasonalEntryRowDto[]` (bare) | `seasonalMarks` |
+| POST | `/api/admin/seasonal-marks/bulk` | `{ classId, subjectId, periodKind, year, month?, quarter?, rows:[{studentId, score, comment}] }` | `{ created, updated, deleted }` | `seasonalMarks` |
+| PUT | `/api/admin/seasonal-marks/{id}` | `{ score?, comment? }` | `SeasonalMarkRowDto` | `seasonalMarks` |
+| DELETE | `/api/admin/seasonal-marks/{id}` | — | 204 | `seasonalMarks` |
+| GET | `/api/admin/seasonal-marks/export` | same query as list | `.xlsx` | `seasonalMarks` |
+| GET | `/api/admin/seasonal-marks/by-subjects` | `page,limit,classIds[],subjectIds[],periodKind,year,month?,quarter?` | paged pivot | `seasonalMarks` |
+| GET | `/api/admin/seasonal-marks/by-subjects/export` | same | `.xlsx` | `seasonalMarks` |
+| GET | `/api/admin/seasonal-marks/coverage` | `page,limit,periodKind,year,month?,quarter?,teacherIds[]` | paged `CoverageRowDto` | `seasonalMarks` |
+| GET | `/api/admin/seasonal-marks/coverage/detail` | `teacherId,periodKind,year,month?,quarter?,hasMark?` | paged pupil rows | `seasonalMarks` |
+| GET | `/api/admin/seasonal-marks/coverage/export` | same as coverage | `.xlsx` | `seasonalMarks` |
+| GET | `/api/teacher/seasonal-marks/scope` | — | `ScopeDto` — only pairs this teacher teaches | teacher `seasonalMarks` |
+| GET | `/api/teacher/seasonal-marks/students` | as above, own pairs only | `SeasonalEntryRowDto[]` | teacher `seasonalMarks` |
+| POST | `/api/teacher/seasonal-marks/bulk` | as above, own pairs only | `{ created, updated, deleted }` | teacher `seasonalMarks` |
+
+**`/scope` exists because nothing today answers "which subjects are taught in
+this class".** `SubjectsController` **[ours]** returns the global subject list;
+`JournalController` **[ours]** always receives `classId` *and* `subjectId` from a
+caller that already knows both. The entry screens (11 and 14) have to populate a
+subject dropdown from the class, so:
+
+```
+ScopeDto {
+  classes:  [ { id, name, grade } ],
+  pairs:    [ { classId, subjectId, subjectName, teacherId, teacherFullName } ]
+}
+```
+
+Built from `ScheduleTemplate` → `ScheduleLesson` **[ours]** — the distinct
+`(ClassId, SubjectId, TeacherId)` triples of the current academic year, which is
+the same join `TeacherActivityReport` **[ours]** already performs. For the
+teacher route, filtered to `TeacherId = the caller`. EduSchool solves this with
+`/journal/seasonal-mark-subjects?_id=<classId>&isSeasonalMark=true` **[bundle]**
+— a per-class flag on the class-subject link that we do not have and are not
+adding; every subject a class is taught can receive a seasonal mark.
+
+```
+SeasonalMarkRowDto {
+  id, student: { id, fullName }, class: { id, name },
+  subject: { id, name },
+  periodKind, year, month, quarter,          // quarter = 1..4 or null
+  periodLabel,               // server-formatted: "Mart 2026" | "2 - chorak 2026" | "2026"
+  score, comment, updatedAt, createdByName
+}
+
+SeasonalEntryRowDto {        // the bulk-entry grid, one row per pupil
+  studentId, fullName, score, comment, markId    // markId null = nothing stored yet
+}
+```
+
+`periodLabel` is formatted **on the server**, in Uzbek, so the list, the export
+and the pivot cannot disagree about how a period is spelt.
 
 Pivot response, because a dynamic-column table needs its columns described:
 
@@ -1048,6 +1322,31 @@ ko'rsatiladi. Yo'qotsangiz — qayta chiqaring, eskisi ishlamay qoladi."*
 again from the same device it returns the same paper; from a different device it
 returns `blocked`.
 
+| State | When | HTTP |
+|---|---|---|
+| `not_assigned` | token valid; exam `draft` or participant `cancelled` | 200 |
+| `lobby` | token valid, exam `published`, inside the window, no attempt yet | 200 |
+| `in_progress` | attempt exists, `status='in_progress'`, **this** device | 200 |
+| `blocked` | attempt exists, `status='in_progress'`, **different** device | 200 on `/state`; **409** on `/answer` and `/finish` |
+| `finished` | attempt `status='finished'` | 200 |
+| *(none)* | token unknown, revoked, expired, or exam `cancelled` | **404** |
+
+Three transition rules that are easy to get wrong and must not be:
+
+* **`start` is idempotent.** From the same device it returns the same paper.
+  From a different device it returns `blocked` (409). It never re-draws a paper
+  and never resets the deadline.
+* **`finish` is idempotent.** On an attempt that is already `finished` — by the
+  candidate, by the timer or by the sweep — it returns **200 with the existing
+  `PublicResultDto`**, not 409. This is required by the time-up flow: the server
+  grades on the deadline, the client then calls `finish`, and that call must
+  succeed. `not_in_progress` (409) is therefore raised by **`/answer` only**.
+* **The device check is dropped once the attempt is `finished`.** After that the
+  token alone is enough to read the result. Rationale: the result carries no
+  answer key (§7.7), the candidate has usually closed the tab by then, and
+  refusing to show them their own score because a cookie expired is a support
+  call for nothing.
+
 ### 7.4 Device binding
 
 1. `start` generates a 32-byte session value, stores `SHA-256(value)` in
@@ -1061,12 +1360,42 @@ returns `blocked`.
 2. Every subsequent `state`/`answer`/`finish` re-hashes the cookie and compares.
    Mismatch or missing → `blocked` (409 for the write endpoints) with
    `deviceLabel` from `exam_attempts.device_label`.
+
+   Set-Cookie: wk_exam_<attemptId>=<value>; HttpOnly; SameSite=Lax;
+               Path=/api/public/exam; Max-Age=<seconds until deadline_at>
+               [; Secure]      // only when Request.IsHttps
+   ```
+
+   **The cookie name carries the attempt id** so that a candidate who sits two
+   exams from the same browser does not present exam A's cookie to exam B. The
+   server resolves token → participant → attempt first, then reads
+   `Request.Cookies["wk_exam_" + attempt.Id]`.
+
+   **`Secure` is conditional on `Request.IsHttps`.** An unconditional `Secure`
+   flag is silently dropped by the browser on `http://localhost`, so every
+   developer and every e2e run would see `blocked` on the second request and
+   nobody would know why. Production is HTTPS behind Caddy, so the flag is set
+   there.
+
+2. Every subsequent `state`/`answer`/`finish` re-hashes the cookie and compares
+   in constant time. Mismatch or missing → `blocked` (409 for the write
+   endpoints) with `deviceLabel` from `exam_attempts.device_label`.
 3. `device_label` is a coarse User-Agent parse — `"Chrome · Windows"`,
    `"Safari · iPhone"`, or `"Noma'lum qurilma"`. Coarse on purpose: the string
    is shown to an unauthenticated stranger.
 4. `first_ip` and `user_agent` are recorded for the admin card. IP is **not** part
    of the check — mobile networks rotate addresses mid-exam and we would lock out
    honest candidates.
+
+5. **Escape hatch.** A candidate who clears cookies, switches from the SMS
+   browser to Chrome, or has a phone die mid-exam is locked out with progress
+   intact. `POST /api/admin/exams/participants/{pid}/unlock-device` (perm
+   `admission`) clears `device_session_hash`; the next `start`/`state` re-binds
+   to whatever device arrives and the answers already saved are untouched. It
+   writes an `AuditLog` row with the caller. This is **not** the same as
+   `reset-attempt` (§8.3), which destroys the attempt — an agent must implement
+   both, and the UI must label them so nobody reaches for the wrong one:
+   *"Qurilma qulfini ochish"* versus *"Urinishni bekor qilish (natija o'chadi)"*.
 
 Same-origin, so no CORS change is needed: the SPA and the API are served from one
 host by Caddy and `Program.cs` **[ours]** registers no CORS policy. If a build
@@ -1093,6 +1422,8 @@ Other codes:
 | 409 | `blocked` | another device holds the attempt; body carries `deviceLabel` |
 | 409 | `time_up` | deadline passed; the server has already finished and graded the attempt |
 | 409 | `not_in_progress` | `answer`/`finish` when the attempt is finished or absent |
+
+| 409 | `not_in_progress` | **`answer` only** — the attempt is finished or does not exist. `finish` is idempotent and returns 200 (§7.3) |
 | 409 | `not_published` | exam is `draft` (the `state` call reports `not_assigned` instead) |
 | 400 | `bad_question` | `questionId` is not a row of this attempt's paper |
 | 400 | `bad_option` | `optionId` does not belong to `questionId` |
@@ -1113,6 +1444,14 @@ behaviour with readable codes.
   accepted `answer`. Above `question_count × 10` the attempt is finished with
   `finish_reason='admin'` and flagged on the admin card. A candidate who genuinely
   changes their mind ten times per question does not exist.
+
+  accepted `answer`. Above `question_count × 10` the endpoint returns **429** and
+  sets `exam_attempts.abuse_flagged = true`, which shows a warning badge on the
+  admin card. A candidate who genuinely changes their mind ten times per question
+  does not exist.
+  It **does not terminate the attempt.** Ending someone's entrance exam because
+  a flaky connection retried is a worse outcome than the abuse it would prevent;
+  the ceiling exists to stop a script, and 429 stops a script perfectly well.
 * `answer` is rejected unless `now <= deadline_at + 5s`. The five seconds absorb
   request latency on the last click and nothing more.
 * Request body is `{ token, questionId, optionId }` and **nothing else**. No
@@ -1138,6 +1477,13 @@ behaviour with readable codes.
   A school setting `admission.showAnswersToCandidate` (default **false**) can
   restore EduSchool's behaviour if the client insists; when false,
   `PublicResultDto.questions` is `null`.
+
+  A school setting can restore EduSchool's behaviour if the client insists:
+  `SchoolMeta.AdmissionShowAnswersToCandidate` (`boolean not null default false`),
+  alongside the existing `TurnstileEnabled` / `GpsEnabled` / `CameraEnabled`
+  flags **[ours, `Entities.cs:623,643,655`]**, surfaced in
+  `/admin/settings/school`. When false, `PublicResultDto.questions` is `null`
+  and the server does not even project the questions.
 * Question images are `/uploads/<guid>.<ext>`, served as public static files with
   GUID names from `UploadGuard.SafeName` **[ours]** — unguessable, and the
   directory is not listable. Accepted as is; no token-scoped image proxy.
@@ -1203,6 +1549,40 @@ At `start`, per section in `order`:
 ### 8.3 Grading
 
 * Manual (`finish`, `time_up`, admin close), in one transaction:
+
+At `start`, in one transaction, per section in `order`:
+
+* Take `question_count` questions from `bank_id`, **at random without
+  replacement** (`Random.Shared.Shuffle` then `Take`). No seed is stored and none
+  is needed — the drawn set is persisted as `exam_answers` rows, so the paper is
+  fixed from that moment whatever the random source does next.
+* Insert them into `exam_answers` with a global `order` running across sections
+  (section 0's questions get 0…n-1, section 1's get n…, and so on), so a
+  section's questions are consecutive — that is what the subject blocks and the
+  per-subject progress counters render **[bundle: their grouping function walks
+  the list and starts a new group whenever `subjectId` changes]**.
+* Option order within a question is the stored `order`, **not** shuffled. A
+  shuffled option order makes an invigilator's paper copy useless for
+  cross-checking and buys nothing once the questions themselves are random.
+* `deadline_at = min(started_at + exams.time_limit_min, exams.closes_at)`.
+
+**The bank cannot shrink under a live exam.** `DELETE /admission/questions/{id}`
+returns **409** if the question's bank is referenced by any `exam_sections` row
+whose exam is `published` (§6.2 already refuses a question that has been
+answered; this is the wider rule). Without it, a bank edited between publish and
+the first sitting could leave a section unable to draw its `question_count`, and
+"take whatever is left" would quietly give one candidate a shorter paper than
+another. Deleting is allowed again once the exam is `closed` or `cancelled`.
+
+### 8.3 Grading
+
+Online exams only; a `delivery='manual'` exam is scored by §8.4.
+
+* Triggered by `POST /public/exam/finish` (`finish_reason='manual'`), by the
+  deadline sweep (`'timer'`), or by
+  `POST /api/admin/exams/participants/{pid}/force-finish` — perm `exams`,
+  body `{ reason }`, used when a candidate walks out — (`'admin'`).
+  All three call **one** service method. In one transaction:
   * per section: `correct = count(answers where selected option is_correct)`,
     `points = correct × points_per_correct`;
   * write `exam_section_scores`;
@@ -1246,6 +1626,12 @@ none → invited → testing → tested → accepted → enrolled
   automatic: the system does not decide admissions on a score.
 * `enrolled` — `POST /leads/{id}/enrol` created the pupil.
 * Backward moves are allowed only to `rejected` and only by hand.
+
+* **Cancelling never regresses a fact.** Cancelling a participation, or
+  cancelling the whole exam, sets `admission_status` back to `'invited'` **only
+  if it is currently `'testing'`**. `tested`, `accepted`, `rejected` and
+  `enrolled` are left alone: the candidate really was tested, and withdrawing the
+  sitting does not unmake that.
 * Deleting a lead that has an `exam_participants` row cascades that row away
   (§5.7). That is intentional: `DELETE /api/admin/leads/{id}` already exists and
   is used by the board; making it fail on a foreign key would break a protected
@@ -1267,6 +1653,14 @@ none → invited → testing → tested → accepted → enrolled
   (`QuarterPeriod` **[ours]**). `QuarterPeriod.GradesOpen` is **not** consulted:
   it gates the 2–5 quarter grade in the journal, and conflating the two locks
   would surprise everyone.
+
+* `quarterly` requires `quarter ∈ {1,2,3,4}`. The server checks that a
+  `QuarterPeriod` row with that number exists **[ours]** — a soft validation, not
+  a foreign key (§5.12) — and rejects with
+  `"Bunday chorak sozlanmagan"` if not.
+* `QuarterPeriod.GradesOpen` is **not** consulted. It gates the 2–5 quarter grade
+  in the journal; conflating the two locks would mean closing the journal for
+  grading silently also closes seasonal assessment, which nobody asked for.
 
 ---
 
@@ -1345,6 +1739,8 @@ Everything here starts after A3 and the four units are independent of each other
 | **B1 Question bank** | `AdmissionBanksController.cs`, `AdmissionQuestionsController.cs`, `Application/Services/QuestionBankService.cs`, `QuestionImportService.cs`, DTOs | A3, **S1** | **yes** | 2.5 |
 | **B2 Exams + manual results** | `ExamsController.cs`, `ExamTypesController.cs`, `ExamResultsController.cs`, `Application/Services/ExamService.cs`, `ExamScoringService.cs`, `ResultImportService.cs` | A3 | **yes** | 3.5 |
 | **B3 Online delivery + public endpoint** | `PublicExamController.cs`, `Application/Services/ExamAttemptService.cs`, `ExamInvitationService.cs`, `ExamDeviceGuard.cs`, `ExamExpirySweep.cs` (hosted), `Program.cs` (rate policy + hosted service) | A3, **B2** (shares `ExamScoringService`), **S3** | no — needs B2's scoring service | 4.0 |
+
+| **B3 Online delivery + public endpoint** | `PublicExamController.cs`, `ExamAttemptAdminController.cs` (review / force-finish / reset / unlock-device / invitations), `Application/Services/ExamAttemptService.cs`, `ExamInvitationService.cs`, `ExamDeviceGuard.cs`, `ExamExpirySweep.cs` (hosted), `Program.cs` (rate policy + hosted service) | A3, **B2** (shares `ExamScoringService`), **S3** | no — needs B2's scoring service | 4.5 |
 | **B4 Seasonal marks + reports** | `SeasonalMarksController.cs`, `TeacherSeasonalMarksController.cs`, `Application/Services/SeasonalMarkService.cs`, `SeasonalCoverageReport.cs`, `SeasonalPivotQuery.cs` | A3 | **yes** | 3.0 |
 | **B5 Candidate projection** | `LeadsController.cs` (4 additive endpoints), `Application/Services/CandidateQuery.cs` | A3, B2 | no — needs `exam_participants` populated by B2 | 1.5 |
 
@@ -1370,6 +1766,10 @@ Everything here starts after A3 and the four units are independent of each other
 
 **Total ≈ 41.5 developer-days.** Longest dependency chain:
 A1 → A2 → A3 → B2 → B3 → C6 → D1 ≈ 16 days.
+
+**Total ≈ 42 developer-days.** Longest dependency chain:
+A1 → A2 → A3 → B2 → B3 → C6 → D1 ≈ 16.5 days. With four agents running the
+parallel units, wall-clock is bounded by that chain, not by the total.
 
 ### Reports, not storage
 
@@ -1404,6 +1804,11 @@ agent, in this order, and let the others rebase.
 | **S4** `schoollms.client/src/config/navigation.ts` | C1–C5 | three new admin sections + one teacher entry |
 | **S5** `schoollms.client/src/App.tsx` | C1–C6 | 14 admin/teacher routes **and** the one public route outside `ProtectedRoute` |
 | `SchoolLms.Infrastructure/Migrations/MigrationSql.cs` | A3 | one embedded-resource name |
+
+| `SchoolLms.Domain/Entities.cs` (again) | A1 | one flag on `SchoolMeta` (§5.13) — same file as the `Lead` fields, one edit |
+| `SchoolLms.Server/Controllers/SubjectsController.cs` | B4 | one guard clause before delete (§5.14) |
+| `SchoolLms.Server/Controllers/ClassesController.cs` | B4 | one guard clause before delete (§5.14) |
+| `schoollms.client/src/pages/admin/settings/SchoolSettings.tsx` + `SchoolController.cs` / `SettingsController.cs` school DTO | C1 | one checkbox for `AdmissionShowAnswersToCandidate` (§7.7) and the field on `SchoolInfoDto` |
 
 Recommended order: `A1 → A2 → A3 → S1 → S3 → (B1‖B2‖B4) → B3 → B5 → S2 → S4 → S5 → (C1‖C2‖C3‖C4) → C5 → C6 → (D1‖D2‖D3‖D4)`.
 
@@ -1441,6 +1846,20 @@ Public endpoint (the security surface)
 - [ ] A second browser (no cookie) gets `blocked`, not the paper.
 - [ ] `answer` after `deadline_at + 5s` returns `time_up` and the attempt is
       graded exactly once.
+
+- [ ] Over plain HTTP the `Set-Cookie` header carries **no** `Secure` flag, and
+      the second request from the same client is **not** `blocked` — i.e. the
+      whole flow passes end-to-end against `http://localhost`.
+- [ ] Two attempts by one person on two different exams from the same browser
+      do not block each other (per-attempt cookie name).
+- [ ] `POST /unlock-device` lets a new device continue **with the answers
+      already saved still selected**, and writes an `AuditLog` row.
+- [ ] `finish` called twice returns 200 both times with the identical result;
+      the second call does not re-grade and does not change `finished_at`.
+- [ ] `answer` after `deadline_at + 5s` returns `time_up` and the attempt is
+      graded exactly once.
+- [ ] Exceeding the per-attempt answer ceiling returns 429 and sets
+      `abuse_flagged`; the attempt is still `in_progress`.
 - [ ] `answer` with a `questionId` from another attempt returns `bad_question`
       and writes nothing.
 - [ ] The 121st request in a minute from one IP returns 429.
@@ -1468,6 +1887,12 @@ Behaviour
 - [ ] A published exam's sections cannot be edited.
 - [ ] Editing `points_per_correct` on a bank does not change a finished exam's
       score.
+
+- [ ] Deleting a question whose bank feeds a `published` exam returns 409.
+- [ ] Editing `points_per_correct` on a bank does not change a finished exam's
+      score.
+- [ ] Cancelling a participation whose `admission_status` is `tested` leaves it
+      `tested`; cancelling one that is `testing` returns it to `invited`.
 - [ ] Manual entry rejects `points > max_score`.
 - [ ] `seasonal-marks/bulk` with an empty score and empty comment deletes the row
       and writes an `AuditLog` `delete`.
