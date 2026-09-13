@@ -51,6 +51,35 @@ export interface AdminStats {
   averageGrade: number
   /** Umumiy davomat foizi (0-100); o'tilgan dars bo'lmasa null */
   attendanceRate: number | null
+  /** Sinfga biriktirilmagan faol o'quvchilar */
+  unassignedCount: number
+  classesCount: number
+  archivedCount: number
+  /** Avansi bor o'quvchilar — "haqdorlar" */
+  creditCount: number
+  debtorCount: number
+  /** Hech bo'lmasa bitta to'lov qilganlar */
+  paidAtLeastOnceCount: number
+}
+
+/** Bitta dars soati kesimidagi davomat — bosh sahifadagi jadval va diagramma */
+export interface AttendanceByPeriod {
+  period: number
+  expected: number
+  present: number
+  absent: number
+  /** Davomati umuman belgilanmaganlar — ATAYLAB alohida, "keldi" ga qo'shilmaydi */
+  unchecked: number
+}
+
+/** Dars qoldirayotgan o'quvchi — bosh sahifadagi ro'yxat */
+export interface AbsentStudent {
+  studentId: string
+  fullName: string
+  className: string
+  /** Oxirgi 30 kunda SABABSIZ qoldirgan kunlari */
+  missedDays: number
+  lastSeen: string | null
 }
 
 export interface ClassPerformance {
@@ -75,6 +104,10 @@ export interface AdminDashboard {
   classPerformance: ClassPerformance[]
   /** O'rtacha baho bo'yicha eng yuqori sinflar */
   topClasses: TopClass[]
+  /** Bugungi davomat — dars soatlari kesimida */
+  attendanceByPeriod: AttendanceByPeriod[]
+  /** Oxirgi 30 kunda eng ko'p sababsiz qoldirganlar */
+  absentStudents: AbsentStudent[]
 }
 
 /* ---------- Lidlar (maktabga qiziqqanlar) ---------- */

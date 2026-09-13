@@ -7,6 +7,12 @@ export const adminDashboardMock: AdminDashboard = {
     teachersCount: 86,
     averageGrade: 4.2,
     attendanceRate: 94,
+    unassignedCount: 37,
+    classesCount: 42,
+    archivedCount: 64,
+    creditCount: 51,
+    debtorCount: 29,
+    paidAtLeastOnceCount: 1180,
   },
   classPerformance: [
     { classId: '1', className: '5-A', averageGrade: 4.5, attendanceRate: 97 },
@@ -26,4 +32,12 @@ export const adminDashboardMock: AdminDashboard = {
     { id: '2', name: '5-B', studentsCount: 31, averageGrade: 4.1 },
     { id: '5', name: '8-B', studentsCount: 27, averageGrade: 4.0 },
   ],
+  attendanceByPeriod: Array.from({ length: 10 }, (_, i) => ({
+    period: i + 1,
+    expected: 1248,
+    present: 1160 - i * 12,
+    absent: 60 + i * 4,
+    unchecked: 28 + i * 8,
+  })),
+  absentStudents: [],
 }

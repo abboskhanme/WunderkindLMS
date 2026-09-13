@@ -279,11 +279,45 @@ public record NotificationListDto(List<NotificationDto> Items, int UnreadCount);
 public record UnreadCountDto(int UnreadCount);
 
 /* ---------- Dashboard ---------- */
-public record AdminStatsDto(int StudentsCount, int TeachersCount, double AverageGrade, double? AttendanceRate);
+/// <summary>
+/// Bosh sahifadagi raqamlar.
+///
+/// <para>
+/// Pul bilan bog'liq uchtasi — <see cref="CreditCount"/>, <see cref="DebtorCount"/>,
+/// <see cref="PaidAtLeastOnceCount"/> — <c>StudentBalanceQuery</c> dan
+/// HISOBLANADI. O'quvchi qatorida saqlangan qoldiq YO'Q (P1-21): u bir marta
+/// haqiqatdan ajralib ketgan va shu sababli o'chirilgan.
+/// </para>
+/// </summary>
+/// <param name="StudentsCount">Faol (arxivlanmagan) o'quvchilar.</param>
+/// <param name="UnassignedCount">Sinfga biriktirilmagan faol o'quvchilar.</param>
+/// <param name="ClassesCount">Sinflar soni.</param>
+/// <param name="ArchivedCount">Arxivdagi o'quvchilar.</param>
+/// <param name="CreditCount">Avansi bor (qoldig'i musbat) o'quvchilar — "haqdorlar".</param>
+/// <param name="DebtorCount">Qarzdor (qoldig'i manfiy) o'quvchilar.</param>
+/// <param name="PaidAtLeastOnceCount">Hech bo'lmasa bitta to'lov qilganlar.</param>
+public record AdminStatsDto(
+    int StudentsCount, int TeachersCount, double AverageGrade, double? AttendanceRate,
+    int UnassignedCount, int ClassesCount, int ArchivedCount,
+    int CreditCount, int DebtorCount, int PaidAtLeastOnceCount);
+
+/// <summary>Bitta dars soati kesimidagi davomat (bosh sahifadagi jadval va diagramma).</summary>
+/// <param name="Period">Dars raqami (1..10).</param>
+/// <param name="Expected">Shu soatda darsi bo'lgan o'quvchilar soni.</param>
+/// <param name="Absent">Sababli yoki sababsiz kelmaganlar.</param>
+/// <param name="Unchecked">Davomati umuman belgilanmaganlar.</param>
+public record AttendanceByPeriodDto(int Period, int Expected, int Present, int Absent, int Unchecked);
+
+/// <summary>Dars qoldirayotgan o'quvchi — bosh sahifadagi ro'yxat.</summary>
+/// <param name="MissedDays">Oxirgi 30 kunda sababsiz qoldirgan kunlari.</param>
+/// <param name="LastSeen">Oxirgi kelgan sanasi (hech qachon kelmagan bo'lsa — null).</param>
+public record AbsentStudentDto(
+    string StudentId, string FullName, string ClassName, int MissedDays, string? LastSeen);
 public record ClassPerformanceItemDto(string ClassId, string ClassName, double AverageGrade, double? AttendanceRate);
 public record TopClassDto(string Id, string Name, int StudentsCount, double AverageGrade);
 public record AdminDashboardDto(
-    AdminStatsDto Stats, List<ClassPerformanceItemDto> ClassPerformance, List<TopClassDto> TopClasses);
+    AdminStatsDto Stats, List<ClassPerformanceItemDto> ClassPerformance, List<TopClassDto> TopClasses,
+    List<AttendanceByPeriodDto> AttendanceByPeriod, List<AbsentStudentDto> AbsentStudents);
 
 /* ---------- Class performance / rating ---------- */
 public record SubjectDto(string Id, string Name);
