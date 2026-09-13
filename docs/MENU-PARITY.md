@@ -4,38 +4,64 @@ The client asked on 2026-09-13 that our sidebar match EduSchool's — *"menular
 ketma ketligi ham bir xil bo'lsin, ichidagi funksionallik ham"*. This file is
 the target order and the record of every deviation.
 
-The order below is EduSchool's own, read from its bundle in the sequence the
-menu array is built, not alphabetised.
+**Two orders exist, and the live one wins.** Reading the bundle gives the
+*default* menu array that EduSchool ships. The school has reordered its own
+sidebar since — the `Berkitish` control and a `sidebarVisibility` setting let
+them — so what the client actually sees differs. The table below is the **live**
+order, read off the running page on 2026-09-13, because that is the one he is
+comparing us against.
 
-## Target order
+## Target order (live)
 
-| # | EduSchool | Ours today | Note |
+| # | EduSchool (live) | Ours today | Note |
 |---|---|---|---|
 | 1 | Dashboard | Bosh sahifa | — |
-| 2 | Lead | Lidlar | — |
-| 3 | Dars jadval | Dars jadvali | — |
-| 4 | Topshiriqlar (staff tasks) | — | `docs/modules/staff-tasks.md` |
+| 2 | Lidlar | Lidlar | — |
+| 3 | Moliya | Moliya | — |
+| 4 | Jurnal | Jurnal | — |
 | 5 | O'quv bo'limi | O'quv bo'limi | new group; absorbed our separate O'quvchilar, Sinflar, Fanlar, Shartnomalar |
-| 6 | Keldi-ketdi | Keldi-ketdi | was buried inside O'quvchilar as "Turniket" |
-| 7 | Jurnal | Jurnal | — |
+| 6 | Topshiriqlar (staff tasks) | — | `docs/modules/staff-tasks.md` |
+| 7 | Dars jadvali | Dars jadvali | — |
 | 8 | Chat | Xabarlar | label kept — ours is not only chat |
-| 9 | Imtihonlar | — | `docs/modules/admission-and-testing.md` |
-| 10 | Qabul | — | same file |
-| 11 | Analitika | Analitika | new group; absorbed Baholar hisoboti, O'qituvchilar hisoboti, Sinflar reytingi |
-| 12 | Gamifikatsiya | — | `docs/modules/gamification.md` |
-| 13 | Blok Test | — | `docs/modules/admission-and-testing.md` |
-| 14 | WareHouse | — | `docs/modules/warehouse.md` |
-| 15 | Moliya | Moliya | — |
-| 16 | HR | HR | new group; absorbed O'qituvchilar + davomat + oylik |
-| 17 | Boshqaruv | Boshqaruv | — |
-| 18 | Administrator (cross-branch) | — | **deliberately not built** — single branch, `docs/ASSUMPTIONS.md` 2026-09-13 |
-| 19 | Sozlamalar | Sozlamalar | — |
-| 20 | Xulq-atvor | Xulq-atvor | was "Intizomiy ball" |
+| 9 | Gamifikatsiya | — | `docs/modules/gamification.md` |
+| 10 | Qabul | — | `docs/modules/admission-and-testing.md` |
+| 11 | Imtihonlar | — | same file |
+| 12 | HR | HR | new group; absorbed O'qituvchilar + davomat + oylik |
+| 13 | Analitika | Analitika | new group; absorbed Baholar hisoboti, O'qituvchilar hisoboti, Sinflar reytingi |
+| 14 | Boshqaruv | Boshqaruv | — |
+| 15 | Xulq-atvor | Xulq-atvor | was "Intizomiy ball" |
+| 16 | Blok Test | — | `docs/modules/admission-and-testing.md` |
+| 17 | Sozlamalar | Sozlamalar | — |
+
+Hidden in their live sidebar but present in the product: **WareHouse**,
+**Keldi-ketdi**, **Administrator**, **Mavsumiy baholash**. WareHouse still has a
+spec (`docs/modules/warehouse.md`) because the client asked for parity with the
+product, not with one school's current sidebar configuration; Administrator is
+out by decision (single branch).
+
+Ours with no EduSchool counterpart, placed where they belong rather than forced
+into the sequence: **Davomat** and **Keldi-ketdi** after Xabarlar (both are
+attendance), **Ilova** after Analitika.
 
 **Unbuilt modules are absent from the menu, not present and empty.** A menu entry
 that leads to a blank page is worse than no entry: it reads as a broken product
 rather than an unfinished one. Each row above names the spec that will fill it,
 and the position it takes when it lands.
+
+## Labels come from their translation file, not the source
+
+The `title` field in the bundle is a fallback. The rendered UI uses the i18n
+key, and the two differ — the source says `Sinf`, `Group`, `Sertifikat`; the
+screen says **Sinflar**, **Guruhlar**, **Sertifikatlar**. Ours follow the screen.
+
+## How submenus open
+
+Side flyout, not a downward accordion. Opening a parent shows a panel to its
+right with the children split into columns under uppercase group headings —
+`O'QUV JARAYONI`, `O'QUVCHILAR`, `HUJJATLAR`. `NavChild.group` carries that.
+
+Below `lg` the panel would run off the screen (256px sidebar on a 375px phone),
+so small screens keep the accordion. One open state, two renderings.
 
 ## Deviations, and why
 
