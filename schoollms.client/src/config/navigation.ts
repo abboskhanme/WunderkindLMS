@@ -2,9 +2,7 @@ import type { LucideIcon } from 'lucide-react'
 import {
   LayoutDashboard,
   UserPlus,
-  Users,
   GraduationCap,
-  School,
   NotebookText,
   CalendarRange,
   ClipboardList,
@@ -15,7 +13,6 @@ import {
   Settings,
   Smartphone,
   BarChart3,
-  FileSignature,
   Building2,
   BookOpen,
   ShieldAlert,
@@ -46,33 +43,18 @@ export interface NavItem {
 
 /** Har bir rol uchun yon menyu (sidebar) elementlari */
 export const navByRole: Record<Role, NavItem[]> = {
+  // ==========================================================================
+  //  TARTIB EDUSCHOOL BILAN BIR XIL (mijoz talabi, 2026-09-13).
+  //  Maqsad ro'yxati va farqlar: docs/MENU-PARITY.md
+  //
+  //  Hali qurilmagan modullar (Topshiriqlar/xodim vazifalari, Imtihonlar,
+  //  Qabul, Gamifikatsiya, Blok Test, WareHouse) bu yerda YO'Q — bo'sh menyu
+  //  yozuvi ishlamaydigan sahifaga olib borardi. Har biri o'z o'rniga
+  //  qo'shiladi; o'rni MENU-PARITY.md da belgilangan.
+  // ==========================================================================
   admin: [
     { label: 'Bosh sahifa', to: '/admin', icon: LayoutDashboard },
     { label: 'Lidlar', to: '/admin/leads', icon: UserPlus, perm: 'leads' },
-    {
-      label: "O'quvchilar",
-      to: '/admin/students',
-      icon: Users,
-      perm: 'students',
-      children: [
-        { label: "O'quvchilar ro'yxati", to: '/admin/students', end: true },
-        { label: 'Turniket', to: '/admin/students/turniket' },
-        { label: "O'quvchilarga feedback", to: '/admin/students/baholash' },
-        { label: 'Feedback nomi', to: '/admin/students/baholash-turlari' },
-      ],
-    },
-    {
-      label: "O'qituvchilar",
-      to: '/admin/teachers',
-      icon: GraduationCap,
-      perm: 'teachers',
-      children: [
-        { label: "O'qituvchilar ro'yxati", to: '/admin/teachers', end: true },
-        { label: "O'qituvchilar davomati", to: '/admin/teachers/attendance' },
-        { label: 'Oylik hisoblash', to: '/admin/teachers/salary' },
-      ],
-    },
-    { label: 'Davomat', to: '/admin/attendance', icon: CalendarCheck, perm: 'attendance' },
     {
       label: 'Dars jadvali',
       to: '/admin/schedule',
@@ -83,24 +65,51 @@ export const navByRole: Record<Role, NavItem[]> = {
         { label: "O'qituvchi jadvali", to: '/admin/schedule/teachers' },
         { label: 'Dars jadvali yaratish', to: '/admin/schedule/manage' },
         { label: 'Bayram kunlari', to: '/admin/schedule/holidays' },
-        { label: 'Fanlar', to: '/admin/subjects' },
         { label: 'Choraklar', to: '/admin/settings/quarters' },
         { label: 'Dars vaqtlari', to: '/admin/settings/lesson-times' },
         { label: 'Davomat sabablari', to: '/admin/settings/reasons' },
       ],
     },
     {
-      label: 'Sinflar',
-      to: '/admin/classes',
-      icon: School,
-      perm: 'classes',
+      // EduSchool'dagi "O'quv bo'limi". Ilgari bizda `O'quvchilar`, `Sinflar`,
+      // `Fanlar` va `Shartnomalar` alohida yuqori daraja edi — endi shu guruh
+      // ostida, ularnikidek.
+      label: "O'quv bo'limi",
+      to: '/admin/students',
+      icon: BookOpen,
+      perm: 'students',
       children: [
-        { label: "Sinflar ro'yxati", to: '/admin/classes', end: true },
-        { label: 'Reyting', to: '/admin/classes/rating' },
+        { label: 'Sinflar', to: '/admin/classes', end: true },
+        { label: 'Fanlar', to: '/admin/subjects' },
+        { label: "O'quvchilar", to: '/admin/students', end: true },
+        { label: 'Ota-onalar', to: '/admin/parents' },
+        { label: "O'quvchilar manzili", to: '/admin/locations' },
+        { label: 'Shartnomalar', to: '/admin/contracts', perm: 'contracts' },
+        { label: "O'quvchilarga feedback", to: '/admin/students/baholash' },
+        { label: 'Feedback nomi', to: '/admin/students/baholash-turlari' },
       ],
     },
+    // EduSchool'da "Keldi-ketdi" — alohida yuqori daraja. Bizda turniket
+    // shu vazifani bajaradi, ilgari `O'quvchilar` ichida ko'milgan edi.
+    { label: 'Keldi-ketdi', to: '/admin/students/turniket', icon: ClipboardCheck, perm: 'students' },
     { label: 'Jurnal', to: '/admin/journal', icon: NotebookText, perm: 'journal' },
+    { label: 'Davomat', to: '/admin/attendance', icon: CalendarCheck, perm: 'attendance' },
     { label: 'Xabarlar', to: '/admin/messages', icon: MessageSquare, perm: 'messages' },
+    {
+      // EduSchool'da "Analitika" — 15 ta hisobot. Bizdagilar shu yerga yig'ildi;
+      // qolganlari qo'shilgan sari shu guruhga tushadi.
+      label: 'Analitika',
+      to: '/admin/grades-report/school',
+      icon: BarChart3,
+      perm: 'gradesReport',
+      children: [
+        { label: "Maktab bo'yicha baholar", to: '/admin/grades-report/school' },
+        { label: "Sinf bo'yicha baholar", to: '/admin/grades-report/class' },
+        { label: "O'quvchi bo'yicha baholar", to: '/admin/grades-report/student' },
+        { label: 'Sinflar reytingi', to: '/admin/classes/rating' },
+        { label: "O'qituvchilar hisoboti", to: '/admin/teacher-reports', perm: 'teacherReports' },
+      ],
+    },
     {
       label: 'Ilova',
       to: '/admin/assignments',
@@ -110,35 +119,10 @@ export const navByRole: Record<Role, NavItem[]> = {
         { label: 'Topshiriqlar', to: '/admin/assignments' },
         { label: 'Topshiriqlar bali', to: '/admin/assignment-scores' },
         { label: "Ta'lim (LMS)", to: '/admin/lms' },
-        { label: 'Joylashuv', to: '/admin/locations' },
         { label: 'Oshxona', to: '/admin/canteen' },
-        { label: 'Ota-onalar', to: '/admin/parents' },
         { label: "O'qituvchilar", to: '/admin/app/teachers' },
       ],
     },
-    {
-      label: 'Baholar hisoboti',
-      to: '/admin/grades-report',
-      icon: ClipboardList,
-      perm: 'gradesReport',
-      children: [
-        { label: "Maktab bo'yicha", to: '/admin/grades-report/school' },
-        { label: "Sinf bo'yicha", to: '/admin/grades-report/class' },
-        { label: "O'quvchi bo'yicha", to: '/admin/grades-report/student' },
-      ],
-    },
-    { label: "O'qituvchilar hisoboti", to: '/admin/teacher-reports', icon: BarChart3, perm: 'teacherReports' },
-    {
-      label: 'Intizomiy ball',
-      to: '/admin/discipline',
-      icon: ShieldAlert,
-      perm: 'discipline',
-      children: [
-        { label: 'Ballar nazorati', to: '/admin/discipline', end: true },
-        { label: 'Ball sabablar', to: '/admin/discipline/reasons' },
-      ],
-    },
-    { label: 'Shartnomalar', to: '/admin/contracts', icon: FileSignature, perm: 'contracts' },
     {
       label: 'Moliya',
       to: '/admin/finance',
@@ -161,6 +145,19 @@ export const navByRole: Record<Role, NavItem[]> = {
         { label: 'Obunalar', to: '/admin/billing/subscriptions', roles: ['admin', 'superadmin'] },
         { label: 'Chegirmalar', to: '/admin/billing/discounts', roles: ['admin', 'superadmin'] },
         { label: 'Chiqimlar', to: '/admin/billing/expenses', roles: ['admin', 'superadmin'] },
+      ],
+    },
+    {
+      // EduSchool'da "HR". Bizda hozircha o'qituvchi tomoni bor; ish haqi,
+      // tabel, jarima va arizalar docs/modules/hr.md bo'yicha shu yerga qo'shiladi.
+      label: 'HR',
+      to: '/admin/teachers',
+      icon: GraduationCap,
+      perm: 'teachers',
+      children: [
+        { label: "O'qituvchilar", to: '/admin/teachers', end: true },
+        { label: "O'qituvchilar davomati", to: '/admin/teachers/attendance' },
+        { label: 'Oylik hisoblash', to: '/admin/teachers/salary' },
       ],
     },
     {
@@ -188,6 +185,17 @@ export const navByRole: Record<Role, NavItem[]> = {
         { label: 'GPS integratsiya', to: '/admin/settings/gps' },
         { label: 'Kamera integratsiya', to: '/admin/settings/cameras' },
         { label: "Yangi o'quv yiliga o'tish", to: '/admin/academic-year', perm: 'academicYear' },
+      ],
+    },
+    {
+      // EduSchool'da "Xulq-atvor" — eng oxirgi yuqori daraja.
+      label: 'Xulq-atvor',
+      to: '/admin/discipline',
+      icon: ShieldAlert,
+      perm: 'discipline',
+      children: [
+        { label: 'Ballar nazorati', to: '/admin/discipline', end: true },
+        { label: 'Ball sabablar', to: '/admin/discipline/reasons' },
       ],
     },
   ],
