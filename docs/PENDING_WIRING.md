@@ -1377,3 +1377,51 @@ sync-created link from a hand-made one.
 2. Add a `source` column (`sync` | `manual`) to `student_guardians` and let the
    sync own only its own rows. Heavier, but it also answers the same question for
    the Excel import path.
+
+### 23. Any staff account can read every `[AdminPerm]` endpoint
+
+`SchoolLms.Server/Controllers/AdminPermAttribute.cs:42` lets **every** GET, HEAD
+and OPTIONS through for anyone in role `staff`, regardless of which permissions
+they hold:
+
+```csharp
+// O'qish har doim ochiq (bo'limlararo bog'liqliklar uchun); yozish — ruxsatga bog'liq.
+if (HttpMethods.IsGet(method) || HttpMethods.IsHead(method) || HttpMethods.IsOptions(method)) return;
+```
+
+It is deliberate and the comment says why — cross-section screens read each
+other's data. But it applies to 38 controllers, and it means the permission
+checkboxes in "Xodimlar va rollar" only ever gate **writes**. A director ticking
+nothing is not restricting what that person can see.
+
+Measured on the local stack with `sobirovanasiba` (role `staff`, `permissions`
+= `{}` — no permissions at all):
+
+```
+GET  /api/admin/finance/salary-report   200   ← teacher salaries
+GET  /api/admin/students                200   ← every student record
+GET  /api/admin/finance/pnl             403   ← correctly gated
+POST /api/admin/students                403   ← writes are gated
+```
+
+The new finance reports are safe: P1-13/P1-18 put them in
+`FinanceReportsController` behind `[Authorize(Roles = Roles.FinanceStaff)]`,
+which is a role gate and does not pass through this attribute. The legacy
+`FinanceController` salary report does not have that protection.
+
+**Not fixed here** because closing it is not a one-line change: 38 controllers
+rely on the open read, and several screens legitimately read across sections
+(a journal screen needs the class list, the schedule needs subjects). Doing it
+properly means deciding, per controller, which reads are "reference data anyone
+on staff may see" and which are not.
+
+**Recommended shape:** keep the open read as the default, but add an opt-in
+`[AdminPerm("finance", GatedRead = true)]` for the endpoints that expose
+salaries, student personal data and money, and set it on those first. That is
+additive, reviewable one controller at a time, and does not risk the working
+screens. The admission spec (`docs/modules/admission-and-testing.md` §5.14)
+proposes the same property for the entrance-test answer key, so the two needs
+agree.
+
+This is a **decision for the client**, not a silent change: it narrows what
+existing staff accounts can see.
