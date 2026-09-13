@@ -22,6 +22,12 @@ import type { Role } from '@/types'
 export interface NavChild {
   label: string
   to: string
+  /**
+   * Yonga ochiladigan panel ichidagi ustun sarlavhasi (EduSchool naqshi:
+   * "O'QUV JARAYONI", "O'QUVCHILAR", "HUJJATLAR"). Berilmasa — bolalar
+   * bitta ustunda, sarlavhasiz chiqadi.
+   */
+  group?: string
   /** NavLink exact match (faqat shu manzilda faol) */
   end?: boolean
   /** Faqat shu rollarga ko'rinadi (yo'q = barcha rollarga) */
@@ -56,58 +62,82 @@ export const navByRole: Record<Role, NavItem[]> = {
     { label: 'Bosh sahifa', to: '/admin', icon: LayoutDashboard },
     { label: 'Lidlar', to: '/admin/leads', icon: UserPlus, perm: 'leads' },
     {
-      label: 'Dars jadvali',
-      to: '/admin/schedule',
-      icon: CalendarRange,
-      perm: 'schedule',
+      label: 'Moliya',
+      to: '/admin/finance',
+      icon: Wallet,
+      perm: 'finance',
       children: [
-        { label: 'Sinf jadvali', to: '/admin/schedule', end: true },
-        { label: "O'qituvchi jadvali", to: '/admin/schedule/teachers' },
-        { label: 'Dars jadvali yaratish', to: '/admin/schedule/manage' },
-        { label: 'Bayram kunlari', to: '/admin/schedule/holidays' },
-        { label: 'Choraklar', to: '/admin/settings/quarters' },
-        { label: 'Dars vaqtlari', to: '/admin/settings/lesson-times' },
-        { label: 'Davomat sabablari', to: '/admin/settings/reasons' },
+        { label: 'Umumiy', to: '/admin/finance', end: true, group: 'AMALIYOT' },
+        // Billing katalogi — `perm: 'finance'` yolg'iz o'zi buni finance ruxsatli
+        // xodimga ham ko'rsatardi, server esa unga 403 beradi. Shuning uchun rol
+        // ham ko'rsatiladi: menyu va endpoint bir xil qoidaga bo'ysunsin.
+        { label: "To'lov toifalari", to: '/admin/billing/categories', roles: ['admin', 'superadmin'], group: 'AMALIYOT' },
+        { label: 'Obunalar', to: '/admin/billing/subscriptions', roles: ['admin', 'superadmin'], group: 'AMALIYOT' },
+        { label: 'Chegirmalar', to: '/admin/billing/discounts', roles: ['admin', 'superadmin'], group: 'AMALIYOT' },
+        { label: 'Chiqimlar', to: '/admin/billing/expenses', roles: ['admin', 'superadmin'], group: 'AMALIYOT' },
+        // SPEC §4.3: moliya hisobotlari faqat admin va direktorga ochiq —
+        // 'finance' ruxsatli xodim (staff) ham bu yerni ko'rmaydi, chunki
+        // endpoint unga 403 qaytaradi. Menyuni ham, marshrutni ham yopamiz.
+        { label: 'Pul aylanmasi', to: '/admin/finance/money-flow', roles: ['admin', 'superadmin'], group: 'HISOBOTLAR' },
       ],
     },
+    { label: 'Jurnal', to: '/admin/journal', icon: NotebookText, perm: 'journal' },
     {
-      // EduSchool'dagi "O'quv bo'limi". Ilgari bizda `O'quvchilar`, `Sinflar`,
-      // `Fanlar` va `Shartnomalar` alohida yuqori daraja edi — endi shu guruh
-      // ostida, ularnikidek.
       label: "O'quv bo'limi",
       to: '/admin/students',
       icon: BookOpen,
       perm: 'students',
       children: [
-        { label: 'Sinflar', to: '/admin/classes', end: true },
-        { label: 'Fanlar', to: '/admin/subjects' },
-        { label: "O'quvchilar", to: '/admin/students', end: true },
-        { label: 'Ota-onalar', to: '/admin/parents' },
-        { label: "O'quvchilar manzili", to: '/admin/locations' },
-        { label: 'Shartnomalar', to: '/admin/contracts', perm: 'contracts' },
-        { label: "O'quvchilarga feedback", to: '/admin/students/baholash' },
-        { label: 'Feedback nomi', to: '/admin/students/baholash-turlari' },
+        { label: 'Sinflar', to: '/admin/classes', end: true, group: "O'QUV JARAYONI" },
+        { label: 'Fanlar', to: '/admin/subjects', group: "O'QUV JARAYONI" },
+        { label: "O'quvchilar", to: '/admin/students', end: true, group: "O'QUVCHILAR" },
+        { label: "O'quvchilar manzili", to: '/admin/locations', group: "O'QUVCHILAR" },
+        { label: 'Ota-onalar', to: '/admin/parents', group: "O'QUVCHILAR" },
+        { label: 'Shartnomalar', to: '/admin/contracts', perm: 'contracts', group: 'HUJJATLAR' },
+        { label: "O'quvchilarga feedback", to: '/admin/students/baholash', group: 'BAHOLASH' },
+        { label: 'Feedback nomi', to: '/admin/students/baholash-turlari', group: 'BAHOLASH' },
       ],
     },
-    // EduSchool'da "Keldi-ketdi" — alohida yuqori daraja. Bizda turniket
-    // shu vazifani bajaradi, ilgari `O'quvchilar` ichida ko'milgan edi.
-    { label: 'Keldi-ketdi', to: '/admin/students/turniket', icon: ClipboardCheck, perm: 'students' },
-    { label: 'Jurnal', to: '/admin/journal', icon: NotebookText, perm: 'journal' },
-    { label: 'Davomat', to: '/admin/attendance', icon: CalendarCheck, perm: 'attendance' },
-    { label: 'Xabarlar', to: '/admin/messages', icon: MessageSquare, perm: 'messages' },
     {
-      // EduSchool'da "Analitika" — 15 ta hisobot. Bizdagilar shu yerga yig'ildi;
-      // qolganlari qo'shilgan sari shu guruhga tushadi.
+      label: 'Dars jadvali',
+      to: '/admin/schedule',
+      icon: CalendarRange,
+      perm: 'schedule',
+      children: [
+        { label: 'Sinf jadvali', to: '/admin/schedule', end: true, group: 'JADVAL' },
+        { label: "O'qituvchi jadvali", to: '/admin/schedule/teachers', group: 'JADVAL' },
+        { label: 'Dars jadvali yaratish', to: '/admin/schedule/manage', group: 'JADVAL' },
+        { label: 'Bayram kunlari', to: '/admin/schedule/holidays', group: 'SOZLAMA' },
+        { label: 'Choraklar', to: '/admin/settings/quarters', group: 'SOZLAMA' },
+        { label: 'Dars vaqtlari', to: '/admin/settings/lesson-times', group: 'SOZLAMA' },
+        { label: 'Davomat sabablari', to: '/admin/settings/reasons', group: 'SOZLAMA' },
+      ],
+    },
+    { label: 'Xabarlar', to: '/admin/messages', icon: MessageSquare, perm: 'messages' },
+    { label: 'Davomat', to: '/admin/attendance', icon: CalendarCheck, perm: 'attendance' },
+    { label: 'Keldi-ketdi', to: '/admin/students/turniket', icon: ClipboardCheck, perm: 'students' },
+    {
+      label: 'HR',
+      to: '/admin/teachers',
+      icon: GraduationCap,
+      perm: 'teachers',
+      children: [
+        { label: "O'qituvchilar", to: '/admin/teachers', end: true, group: 'XODIMLAR' },
+        { label: "O'qituvchilar davomati", to: '/admin/teachers/attendance', group: 'XODIMLAR' },
+        { label: 'Oylik hisoblash', to: '/admin/teachers/salary', group: 'ISH HAQI' },
+      ],
+    },
+    {
       label: 'Analitika',
       to: '/admin/grades-report/school',
       icon: BarChart3,
       perm: 'gradesReport',
       children: [
-        { label: "Maktab bo'yicha baholar", to: '/admin/grades-report/school' },
-        { label: "Sinf bo'yicha baholar", to: '/admin/grades-report/class' },
-        { label: "O'quvchi bo'yicha baholar", to: '/admin/grades-report/student' },
-        { label: 'Sinflar reytingi', to: '/admin/classes/rating' },
-        { label: "O'qituvchilar hisoboti", to: '/admin/teacher-reports', perm: 'teacherReports' },
+        { label: "Maktab bo'yicha baholar", to: '/admin/grades-report/school', group: "O'QUV" },
+        { label: "Sinf bo'yicha baholar", to: '/admin/grades-report/class', group: "O'QUV" },
+        { label: "O'quvchi bo'yicha baholar", to: '/admin/grades-report/student', group: "O'QUV" },
+        { label: 'Sinflar reytingi', to: '/admin/classes/rating', group: "O'QUV" },
+        { label: "O'qituvchilar hisoboti", to: '/admin/teacher-reports', perm: 'teacherReports', group: 'XODIMLAR' },
       ],
     },
     {
@@ -116,48 +146,11 @@ export const navByRole: Record<Role, NavItem[]> = {
       icon: Smartphone,
       perm: 'app',
       children: [
-        { label: 'Topshiriqlar', to: '/admin/assignments' },
-        { label: 'Topshiriqlar bali', to: '/admin/assignment-scores' },
-        { label: "Ta'lim (LMS)", to: '/admin/lms' },
-        { label: 'Oshxona', to: '/admin/canteen' },
-        { label: "O'qituvchilar", to: '/admin/app/teachers' },
-      ],
-    },
-    {
-      label: 'Moliya',
-      to: '/admin/finance',
-      icon: Wallet,
-      perm: 'finance',
-      children: [
-        { label: 'Umumiy', to: '/admin/finance', end: true },
-        // SPEC §4.3: moliya hisobotlari faqat admin va direktorga ochiq —
-        // 'finance' ruxsatli xodim (staff) ham bu yerni ko'rmaydi, chunki
-        // endpoint unga 403 qaytaradi. Menyuni ham, marshrutni ham yopamiz.
-        {
-          label: 'Pul aylanmasi',
-          to: '/admin/finance/money-flow',
-          roles: ['admin', 'superadmin'],
-        },
-        // Billing katalogi — `perm: 'finance'` yolg'iz o'zi buni finance ruxsatli
-        // xodimga ham ko'rsatardi, server esa unga 403 beradi. Shuning uchun rol
-        // ham ko'rsatiladi: menyu va endpoint bir xil qoidaga bo'ysunsin.
-        { label: "To'lov toifalari", to: '/admin/billing/categories', roles: ['admin', 'superadmin'] },
-        { label: 'Obunalar', to: '/admin/billing/subscriptions', roles: ['admin', 'superadmin'] },
-        { label: 'Chegirmalar', to: '/admin/billing/discounts', roles: ['admin', 'superadmin'] },
-        { label: 'Chiqimlar', to: '/admin/billing/expenses', roles: ['admin', 'superadmin'] },
-      ],
-    },
-    {
-      // EduSchool'da "HR". Bizda hozircha o'qituvchi tomoni bor; ish haqi,
-      // tabel, jarima va arizalar docs/modules/hr.md bo'yicha shu yerga qo'shiladi.
-      label: 'HR',
-      to: '/admin/teachers',
-      icon: GraduationCap,
-      perm: 'teachers',
-      children: [
-        { label: "O'qituvchilar", to: '/admin/teachers', end: true },
-        { label: "O'qituvchilar davomati", to: '/admin/teachers/attendance' },
-        { label: 'Oylik hisoblash', to: '/admin/teachers/salary' },
+        { label: 'Topshiriqlar', to: '/admin/assignments', group: "TA'LIM" },
+        { label: 'Topshiriqlar bali', to: '/admin/assignment-scores', group: "TA'LIM" },
+        { label: "Ta'lim (LMS)", to: '/admin/lms', group: "TA'LIM" },
+        { label: 'Oshxona', to: '/admin/canteen', group: 'BOSHQA' },
+        { label: "O'qituvchilar", to: '/admin/app/teachers', group: 'BOSHQA' },
       ],
     },
     {
@@ -165,11 +158,21 @@ export const navByRole: Record<Role, NavItem[]> = {
       to: '/admin/boshqaruv/staff',
       icon: Building2,
       children: [
-        { label: 'Avtobus-gps', to: '/admin/boshqaruv/gps', perm: 'gps' },
-        { label: 'Kameralar', to: '/admin/boshqaruv/cameras', perm: 'cameras' },
-        { label: 'Filiallar', to: '/admin/boshqaruv/branches', roles: ['superadmin'] },
-        { label: 'Xodimlar va rollar', to: '/admin/boshqaruv/staff', perm: 'staff' },
-        { label: 'Taklif va shikoyatlar', to: '/admin/boshqaruv/feedback', perm: 'feedback' },
+        { label: 'Filiallar', to: '/admin/boshqaruv/branches', roles: ['superadmin'], group: 'TASHKILOT' },
+        { label: 'Xodimlar va rollar', to: '/admin/boshqaruv/staff', perm: 'staff', group: 'TASHKILOT' },
+        { label: 'Avtobus-gps', to: '/admin/boshqaruv/gps', perm: 'gps', group: 'KUZATUV' },
+        { label: 'Kameralar', to: '/admin/boshqaruv/cameras', perm: 'cameras', group: 'KUZATUV' },
+        { label: 'Taklif va shikoyatlar', to: '/admin/boshqaruv/feedback', perm: 'feedback', group: 'FIKR' },
+      ],
+    },
+    {
+      label: 'Xulq-atvor',
+      to: '/admin/discipline',
+      icon: ShieldAlert,
+      perm: 'discipline',
+      children: [
+        { label: 'Ballar nazorati', to: '/admin/discipline', end: true },
+        { label: 'Ball sabablar', to: '/admin/discipline/reasons' },
       ],
     },
     {
@@ -178,24 +181,13 @@ export const navByRole: Record<Role, NavItem[]> = {
       icon: Settings,
       perm: 'settings',
       children: [
-        { label: "Maktab ma'lumotlari", to: '/admin/settings/school' },
-        { label: 'Telegram bot', to: '/admin/settings/telegram' },
-        { label: 'Push (Firebase)', to: '/admin/settings/firebase' },
-        { label: 'Turniket integratsiya', to: '/admin/settings/turnstile' },
-        { label: 'GPS integratsiya', to: '/admin/settings/gps' },
-        { label: 'Kamera integratsiya', to: '/admin/settings/cameras' },
-        { label: "Yangi o'quv yiliga o'tish", to: '/admin/academic-year', perm: 'academicYear' },
-      ],
-    },
-    {
-      // EduSchool'da "Xulq-atvor" — eng oxirgi yuqori daraja.
-      label: 'Xulq-atvor',
-      to: '/admin/discipline',
-      icon: ShieldAlert,
-      perm: 'discipline',
-      children: [
-        { label: 'Ballar nazorati', to: '/admin/discipline', end: true },
-        { label: 'Ball sabablar', to: '/admin/discipline/reasons' },
+        { label: "Maktab ma'lumotlari", to: '/admin/settings/school', group: 'UMUMIY' },
+        { label: "Yangi o'quv yiliga o'tish", to: '/admin/academic-year', perm: 'academicYear', group: 'UMUMIY' },
+        { label: 'Telegram bot', to: '/admin/settings/telegram', group: 'INTEGRATSIYALAR' },
+        { label: 'Push (Firebase)', to: '/admin/settings/firebase', group: 'INTEGRATSIYALAR' },
+        { label: 'Turniket integratsiya', to: '/admin/settings/turnstile', group: 'INTEGRATSIYALAR' },
+        { label: 'GPS integratsiya', to: '/admin/settings/gps', group: 'INTEGRATSIYALAR' },
+        { label: 'Kamera integratsiya', to: '/admin/settings/cameras', group: 'INTEGRATSIYALAR' },
       ],
     },
   ],
