@@ -45,3 +45,6 @@ backups/
 
 # Agent worktree papkalari — repozitoriyaga tushmasin
 .claude/worktrees/
+
+# EduSchool frontend bundle — tahlil uchun mahalliy nusxa, repozitoriyaga kirmaydi
+.eduschool-bundle/
