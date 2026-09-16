@@ -468,6 +468,10 @@ export interface LedgerPayment {
   note?: string
   /** Qaysi oy uchun to'langani ("YYYY-MM"), agar biriktirilgan bo'lsa */
   month?: string
+  /** Bu qatorning O'ZI storno (bekor qiluvchi yozuv) */
+  isReversal?: boolean
+  /** Bu to'lov keyinchalik storno qilingan */
+  reversed?: boolean
 }
 
 export interface StudentLedger {

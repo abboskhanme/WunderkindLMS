@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { MonthStatus, Student, StudentLedger } from '@/types'
+import type { LedgerPayment, MonthStatus, Student, StudentLedger } from '@/types'
 import { getStudentLedger } from '@/api/services/students'
 import { Modal } from '@/components/ui/Modal'
 import { Loader } from '@/components/ui/Loader'
@@ -140,20 +140,7 @@ export function PaymentHistoryModal({ student, onClose }: Props) {
             ) : (
               <ul className="space-y-1.5">
                 {ledger.payments.map((p, i) => (
-                  <li
-                    key={i}
-                    className="flex items-center justify-between rounded-lg border border-slate-100 px-3 py-2 text-sm"
-                  >
-                    <span className="flex items-center gap-2 text-slate-500">
-                      {formatDate(p.date)}
-                      {p.month && (
-                        <span className="rounded-md bg-slate-100 px-1.5 py-0.5 text-xs font-medium text-slate-500">
-                          {formatMonth(p.month)} uchun
-                        </span>
-                      )}
-                    </span>
-                    <span className="font-medium text-emerald-600">+{formatMoney(p.amount)}</span>
-                  </li>
+                  <PaymentRow key={i} payment={p} />
                 ))}
               </ul>
             )}
@@ -170,5 +157,64 @@ export function PaymentHistoryModal({ student, onClose }: Props) {
         </div>
       )}
     </Modal>
+  )
+}
+
+/**
+ * Bitta to'lov qatori.
+ *
+ * <b>Storno YASHIRILMAYDI</b> (SPEC §4.1: xato to'lov o'chirilmaydi, ustiga
+ * qarshi yozuv qo'yiladi). Shuning uchun bu yerda uch xil qator bor: oddiy
+ * to'lov, bekor QILINGAN to'lov (chizib tashlangan) va bekor QILUVCHI storno
+ * qatori (manfiy, qizil). Uchovi ham ro'yxatda qoladi — direktor pulning
+ * kelib, keyin qaytganini ko'rishi kerak, "hech narsa bo'lmagan" ko'rinish
+ * emas. Holat izoh matnidan emas, serverning bayrog'idan olinadi.
+ */
+function PaymentRow({ payment }: { payment: LedgerPayment }) {
+  const reversal = payment.isReversal === true
+  const cancelled = payment.reversed === true
+
+  return (
+    <li
+      className={cn(
+        'flex items-center justify-between rounded-lg border px-3 py-2 text-sm',
+        reversal ? 'border-red-100 bg-red-50/40' : 'border-slate-100',
+      )}
+    >
+      <span className="flex flex-wrap items-center gap-2 text-slate-500">
+        <span className={cancelled ? 'line-through decoration-slate-300' : undefined}>
+          {formatDate(payment.date)}
+        </span>
+
+        {payment.month && (
+          <span className="rounded-md bg-slate-100 px-1.5 py-0.5 text-xs font-medium text-slate-500">
+            {formatMonth(payment.month)} uchun
+          </span>
+        )}
+
+        {reversal && (
+          <span className="rounded-md bg-red-100 px-1.5 py-0.5 text-xs font-medium text-red-700">
+            STORNO
+          </span>
+        )}
+        {cancelled && (
+          <span className="rounded-md bg-slate-200 px-1.5 py-0.5 text-xs font-medium text-slate-600">
+            bekor qilingan
+          </span>
+        )}
+
+        {payment.note && <span className="text-xs text-slate-400">{payment.note}</span>}
+      </span>
+
+      <span
+        className={cn(
+          'font-medium',
+          reversal ? 'text-red-600' : cancelled ? 'text-slate-400 line-through' : 'text-emerald-600',
+        )}
+      >
+        {reversal ? '−' : '+'}
+        {formatMoney(payment.amount)}
+      </span>
+    </li>
   )
 }

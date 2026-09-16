@@ -143,19 +143,22 @@ public static class StudentLedger
 
         var balance = await new StudentBalanceQuery(db).ForAsync(student.Id);
 
+        // Storno ikki tomonlama ko'rinadi: bekor QILUVCHI qator ham, bekor
+        // QILINGAN asl to'lov ham. Ikkovi ham ro'yxatda QOLADI (SPEC §4.1: to'lov
+        // o'chirilmaydi), lekin ikkovi ham `totalPaid` ga kirmaydi — quyidagi
+        // yig'indi shuni ta'minlaydi. Ekran ularni bayroq bo'yicha chizadi.
         var paymentDtos = payments.Select(p =>
         {
             var applied = monthsByPayment.GetValueOrDefault(p.Id) ?? [];
-            var note = p.ReversalOf is not null ? Prefix("STORNO", p.Note)
-                : p.Reversed ? Prefix("bekor qilingan", p.Note)
-                : p.Note;
             return new PaymentDto(
                 AppClock.LocalDateOf(p.ReceivedAt).ToString("yyyy-MM-dd"),
                 p.Amount,
-                note,
+                p.Note,
                 // Bir necha oyga bo'lingan to'lovda oy ustuni bo'sh qoladi —
                 // bitta katakka ikki oyni yozish yolg'on bo'lardi.
-                applied.Count == 1 ? applied[0].ToString("yyyy-MM") : null);
+                applied.Count == 1 ? applied[0].ToString("yyyy-MM") : null,
+                IsReversal: p.ReversalOf is not null,
+                Reversed: p.Reversed);
         }).ToList();
 
         return new StudentLedgerDto(
@@ -167,9 +170,6 @@ public static class StudentLedger
             decimal.Round(totalPaid, MoneyScale),
             months, paymentDtos);
     }
-
-    private static string Prefix(string label, string? note) =>
-        string.IsNullOrWhiteSpace(note) ? $"[{label}]" : $"[{label}] {note}";
 
     private static StudentDto Map(Student s, decimal balance) => new(
         s.Id, s.FullName, s.BirthDate, s.Address, s.Gender,

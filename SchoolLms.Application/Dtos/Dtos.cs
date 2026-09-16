@@ -632,7 +632,21 @@ public record SaveTurnstileSettingsRequest(
 /// (manfiy bo'lsa 0). Manba: `invoices` + `payment_allocations` (P1-21).</summary>
 public record MonthLedgerDto(
     string Month, decimal Charged, decimal Discount, decimal Paid, decimal Remaining, string Status);
-public record PaymentDto(string Date, decimal Amount, string? Note, string? Month);
+/// <summary>
+/// Daftar (ledger) ko'rinishidagi bitta to'lov qatori.
+///
+/// <para>
+/// <b>Storno holati IZOHDA emas, bayroqda.</b> Ilgari <c>StudentLedger</c> izoh
+/// matniga <c>[STORNO]</c> deb yozib qo'yardi: ekran uni ajratib ko'rsata
+/// olmasdi, filtrlay olmasdi, va kassir izohga o'sha so'zni yozsa qator yolg'on
+/// ko'rinardi. Endi ikkita bayroq bor va izoh — faqat izoh.
+/// </para>
+/// </summary>
+/// <param name="IsReversal">Bu qatorning O'ZI storno (bekor qiluvchi yozuv).</param>
+/// <param name="Reversed">Bu to'lov keyinchalik storno qilingan.</param>
+public record PaymentDto(
+    string Date, decimal Amount, string? Note, string? Month,
+    bool IsReversal = false, bool Reversed = false);
 public record StudentLedgerDto(
     StudentDto Student, decimal Balance, decimal MonthlyFee,
     decimal TotalCharged, decimal TotalDiscount, decimal TotalPaid,
