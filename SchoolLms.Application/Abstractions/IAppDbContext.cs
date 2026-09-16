@@ -101,6 +101,17 @@ public interface IAppDbContext
     /// </summary>
     DbSet<FinanceAnomalyFlag> FinanceAnomalyFlags { get; }
 
+    // ---------- Ikkinchi to'lqin (docs/modules/existing-module-gaps.md) ----------
+    // Sxema oldin keladi, ekranlar keyin: bu to'plamni hozircha HECH BIR xizmat
+    // o'qimaydi. Ular shu yerda ro'yxatda turibdi, chunki ketma-ket keladigan
+    // uchta modul (qarzdorlar §3.5, sertifikatlar §2.3, arxiv sabablari §2.2)
+    // aks holda shu bitta faylga uch marta tegishga majbur bo'lardi.
+    DbSet<DebtorStatus> DebtorStatuses { get; }
+    DbSet<DebtorAction> DebtorActions { get; }
+    DbSet<CertificateType> CertificateTypes { get; }
+    DbSet<Certificate> Certificates { get; }
+    DbSet<StudentArchiveReason> StudentArchiveReasons { get; }
+
     int SaveChanges();
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 

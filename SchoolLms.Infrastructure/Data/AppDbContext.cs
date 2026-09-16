@@ -88,6 +88,16 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
     // Tungi tekshiruv bayroqlari — SPEC §4.6, P1-14. Konfiguratsiya: AnomalyModel.cs.
     public DbSet<FinanceAnomalyFlag> FinanceAnomalyFlags => Set<FinanceAnomalyFlag>();
 
+    // Ikkinchi to'lqin (docs/modules/existing-module-gaps.md): qarzdorlar ish oqimi
+    // (§3.5), sertifikatlar (§2.3) va arxivlash sabablari katalogi (§2.2).
+    // Konfiguratsiya: ParityModel.cs. Hozircha ilovadan HECH KIM o'qimaydi —
+    // sxema oldin keladi, ekranlar keyin.
+    public DbSet<DebtorStatus> DebtorStatuses => Set<DebtorStatus>();
+    public DbSet<DebtorAction> DebtorActions => Set<DebtorAction>();
+    public DbSet<CertificateType> CertificateTypes => Set<CertificateType>();
+    public DbSet<Certificate> Certificates => Set<Certificate>();
+    public DbSet<StudentArchiveReason> StudentArchiveReasons => Set<StudentArchiveReason>();
+
     /// <inheritdoc />
     public Task<Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction> BeginTransactionAsync(
         CancellationToken cancellationToken = default) =>
@@ -122,6 +132,23 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
         b.Entity<AuditLog>().HasIndex(a => a.Timestamp);
         b.Entity<AuditLog>().HasIndex(a => a.StudentId);
         b.Entity<AuditLog>().HasIndex(a => a.TeacherId);
+
+        // Turniket hodisalari — (qurilma ID, hodisa vaqti).
+        //
+        // NEGA KERAK. Uchala turniket hisoboti ham (`TurnstileAnalyticsQueries`)
+        // `event_at` oralig'i bo'yicha filtrlaydi, `TurnstileService.IngestAsync`
+        // esa dublikatni aniqlash uchun butun jadvaldan `device_user_id|event_at`
+        // juftliklarini o'qiydi. Indekssiz ikkalasi ham TO'LIQ SKAN edi, shuning
+        // uchun hisobotlardagi oraliq `MaxRangeDays = 92` kun bilan cheklab
+        // qo'yilgan. Ustun tartibi ataylab shunday: (1) dedup so'rovi aynan shu
+        // ikki ustunni o'qiydi va endi u index-only scan bo'ladi, (2) bitta
+        // xodim/o'quvchining o'tish tarixi — `device_user_id` bo'yicha aniq
+        // qidiruv.
+        //
+        // `event_at` — `text` (ISO "yyyy-MM-ddTHH:mm:ss"), ya'ni leksikografik
+        // tartib xronologik tartib bilan mos tushadi va oraliq so'rovi btree'da
+        // to'g'ri ishlaydi.
+        b.Entity<TurnstileEvent>().HasIndex(e => new { e.DeviceUserId, e.EventAt });
 
         // Xabarlar (chat/e'lon/telegram)
         b.Entity<ChatMessage>().HasIndex(m => new { m.ClassName, m.CreatedAt });
@@ -190,6 +217,12 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
         // ----- Vasiylar (SPEC §3.2) va Telegram Mini App (SPEC §6 Faza 3) -----
         // Uchinchi alohida fayl, yuqoridagilar bilan bir xil sabab.
         GuardianModel.Apply(b);
+
+        // ----- Ikkinchi to'lqin (docs/modules/existing-module-gaps.md) -----
+        // Qarzdorlar ish oqimi (§3.5), sertifikatlar (§2.3), arxivlash sabablari
+        // (§2.2), `discipline_reasons` ning yangi ustunlari (§6.3) va
+        // `school_meta` ning to'rtta bayrog'i (§5.5). To'rtinchi alohida fayl.
+        ParityModel.Apply(b);
 
         // ----- PostgreSQL: vaqt turi -----
         // Tizim sanalarni Toshkent "devor soati" sifatida saqlaydi (AppClock.Now — Kind=Unspecified),
