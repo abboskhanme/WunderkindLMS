@@ -52,9 +52,10 @@ namespace SchoolLms.Application.Services;
 //  ----------
 //  Har bir hisobot sanab bo'ladigan miqdordagi so'rov yuboradi (6-9 ta),
 //  o'quvchilar yoki kunlar soniga BOG'LIQ EMAS — sikl ichida `await` yo'q.
-//  `turnstile_events` da `event_at` bo'yicha indeks HOZIRCHA YO'Q (migratsiya
-//  yozish bu vazifaning doirasidan tashqarida), shuning uchun oraliq
-//  <see cref="MaxRangeDays"/> kun bilan cheklangan.
+//  `turnstile_events` da `(device_user_id, event_at)` indeksi BOR
+//  (`ParityWave2Schema` migratsiyasi), shuning uchun oraliq bo'yicha filtr
+//  butun jadvalni skanerlamaydi. Oraliq baribir <see cref="MaxRangeDays"/>
+//  kun bilan cheklangan — bu endi indeks emas, JAVOB HAJMI chegarasi.
 
 /// <summary>
 /// Turniket hisobotlari: davomat (#11), kirib-chiqish statistikasi (#12) va
@@ -62,8 +63,19 @@ namespace SchoolLms.Application.Services;
 /// </summary>
 public class TurnstileAnalyticsQueries(IAppDbContext db)
 {
-    /// <summary>Eng uzun so'raladigan oraliq (kun). Undan uzunini controller rad etadi.</summary>
-    public const int MaxRangeDays = 92;
+    /// <summary>
+    /// Eng uzun so'raladigan oraliq (kun). Undan uzunini controller rad etadi.
+    ///
+    /// <para>
+    /// Chegara 92 kundan bir o'quv yiliga (366 kun) kengaytirildi:
+    /// <c>ParityWave2Schema</c> migratsiyasi <c>turnstile_events</c> ga
+    /// <c>(device_user_id, event_at)</c> indeksini qo'shdi, ya'ni oraliq
+    /// bo'yicha filtr endi butun jadvalni skanerlamaydi. Chegara mutlaqo
+    /// olib tashlanmadi: hisobot xotirada yig'iladi va "butun tarix" so'rovi
+    /// bitta sahifada o'qib bo'lmaydigan javob qaytarardi.
+    /// </para>
+    /// </summary>
+    public const int MaxRangeDays = 366;
 
     /// <summary>Kelishmovchiliklar ro'yxati shu sondan uzun bo'lsa kesiladi (jami soni baribir qaytadi).</summary>
     private const int MaxMismatches = 300;

@@ -144,8 +144,10 @@ public class TurnstileAnalyticsTests(ApiFixture fixture) : IAsyncLifetime
     }
 
     /// <summary>
-    /// Juda uzun oraliq — 400. <c>turnstile_events</c> da <c>event_at</c> indeksi yo'q,
-    /// ya'ni bir yillik so'rov butun jadvalni skanerlardi.
+    /// Juda uzun oraliq — 400. Chegara endi indeks emas, JAVOB HAJMI uchun:
+    /// <c>ParityWave2Schema</c> migratsiyasi <c>(device_user_id, event_at)</c>
+    /// indeksini qo'shgach chegara 92 kundan 366 kunga kengaytirildi, lekin
+    /// butunlay olib tashlanmadi — hisobot xotirada yig'iladi.
     /// </summary>
     [Fact]
     public async Task Juda_uzun_oraliq_400_qaytaradi()

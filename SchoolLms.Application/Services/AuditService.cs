@@ -51,6 +51,15 @@ public class AuditService(IAppDbContext db, IHttpContextAccessor http)
     /// <summary>Tungi tekshiruv bayrog'ini yopish (<c>AnomalyService</c>).</summary>
     public const string EntityAnomalyFlag = "AnomalyFlag";
 
+    /// <summary>Sertifikat (§2.3) — yozuv, tahrir, o'chirish.</summary>
+    public const string EntityCertificate = "Certificate";
+
+    /// <summary>Qarzdor bilan ishlash amali (§3.5) — izoh, status, va'da qilingan sana.</summary>
+    public const string EntityDebtorAction = "DebtorAction";
+
+    /// <summary>Xulq-atvor bali (§6) — qo'lda qo'yilgan ball va uning sababi.</summary>
+    public const string EntityDisciplinePoint = "DisciplinePoint";
+
     /// <summary>Audit yozuvini joriy DbContext'ga qo'shadi (hali SaveChanges qilinmaydi).</summary>
     public void Record(
         string entityType, string entityId, string action, string summary,
