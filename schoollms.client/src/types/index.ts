@@ -890,6 +890,51 @@ export interface DisciplinePoint {
   source: 'manual' | 'attendance'
 }
 
+/** Maktab bo'ylab "Harakatlar" lentasidagi bitta qator (o'quvchi va sinf bilan) */
+export interface DisciplineFeedRow {
+  id: string
+  studentId: string
+  fullName: string
+  className: string
+  /** Yozuv paytidagi NUSXA — sabab keyin qayta nomlansa ham shu nom qoladi */
+  reasonName: string
+  points: number
+  note: string
+  createdAt: string
+  createdBy: string
+  /** "manual" — qo'lda kiritilgan, "attendance" — jurnal davomatidan */
+  source: 'manual' | 'attendance'
+}
+
+/** "Harakatlar" lentasi: bitta sahifa + butun filtrlangan to'plamning jamlamasi */
+export interface DisciplineFeed {
+  items: DisciplineFeedRow[]
+  total: number
+  page: number
+  pageSize: number
+  plusCount: number
+  minusCount: number
+  pointsSum: number
+  /** Filtr ro'yxatlari — filtrga bog'liq emas, butun bazadan */
+  authors: string[]
+  classNames: string[]
+}
+
+/** "Harakatlar" lentasining filtrlari (hammasi ixtiyoriy) */
+export interface DisciplineFeedFilters {
+  /** YYYY-MM-DD, ikkalasi ham davrga KIRADI */
+  from?: string
+  to?: string
+  className?: string
+  reasonId?: string
+  author?: string
+  sign?: 'positive' | 'negative'
+  source?: 'manual' | 'attendance'
+  search?: string
+  page?: number
+  pageSize?: number
+}
+
 /** Bayram/dam olish kuni (butun maktab) — bu sanada dars bo'lmaydi */
 export interface Holiday {
   /** Sana "YYYY-MM-DD" */

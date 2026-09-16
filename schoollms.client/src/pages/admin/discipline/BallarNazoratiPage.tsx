@@ -1,5 +1,15 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Plus, History, Trash2, Search } from 'lucide-react'
+import {
+  Plus,
+  History,
+  Trash2,
+  Search,
+  Download,
+  Users,
+  Scale,
+  ArrowUpCircle,
+  ArrowDownCircle,
+} from 'lucide-react'
 import type { DisciplineReason, DisciplineScoreRow, DisciplinePoint } from '@/types'
 import {
   getDisciplineScores,
@@ -7,6 +17,7 @@ import {
   addDisciplinePoint,
   getStudentDisciplinePoints,
   deleteDisciplinePoint,
+  downloadDisciplineScores,
 } from '@/api/services/discipline'
 import { cn, formatDate } from '@/lib/utils'
 import { Card } from '@/components/ui/Card'
@@ -14,6 +25,7 @@ import { Button } from '@/components/ui/Button'
 import { Loader } from '@/components/ui/Loader'
 import { Modal } from '@/components/ui/Modal'
 import { Input } from '@/components/ui/Input'
+import { StatCard } from '@/components/ui/StatCard'
 
 const control =
   'rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-brand-400'
@@ -36,6 +48,10 @@ export function BallarNazoratiPage() {
   const [classFilter, setClassFilter] = useState('all')
   const [search, setSearch] = useState('')
   const [sort, setSort] = useState<Sort>('class')
+  // Qoldi bo'yicha chegara — bo'sh qoldirilsa chegara yo'q.
+  const [minPoints, setMinPoints] = useState('')
+  const [maxPoints, setMaxPoints] = useState('')
+  const [exporting, setExporting] = useState(false)
 
   // Ball kiritish modali
   const [entryFor, setEntryFor] = useState<DisciplineScoreRow | null>(null)
@@ -64,10 +80,14 @@ export function BallarNazoratiPage() {
 
   const rows = useMemo(() => {
     const q = search.trim().toLowerCase()
-    let list = scores.filter(
+    const min = minPoints === '' ? null : Number(minPoints)
+    const max = maxPoints === '' ? null : Number(maxPoints)
+    const list = scores.filter(
       (s) =>
         (classFilter === 'all' || s.className === classFilter) &&
-        (!q || s.fullName.toLowerCase().includes(q)),
+        (!q || s.fullName.toLowerCase().includes(q)) &&
+        (min === null || Number.isNaN(min) || s.remaining >= min) &&
+        (max === null || Number.isNaN(max) || s.remaining <= max),
     )
     const by = {
       class: (a: DisciplineScoreRow, b: DisciplineScoreRow) =>
@@ -78,7 +98,36 @@ export function BallarNazoratiPage() {
       minus_desc: (a: DisciplineScoreRow, b: DisciplineScoreRow) => b.minus - a.minus,
     }[sort]
     return [...list].sort(by)
-  }, [scores, classFilter, search, sort])
+  }, [scores, classFilter, search, sort, minPoints, maxPoints])
+
+  // Sarlavhadagi jamlama — EKRANDAGI (filtrlangan) qatorlar bo'yicha, butun maktab bo'yicha emas:
+  // sinf tanlanganda "o'rtacha" o'sha sinfniki bo'lishi kutiladi.
+  const stats = useMemo(() => {
+    if (rows.length === 0) return null
+    const values = rows.map((r) => r.remaining)
+    const sum = values.reduce((a, b) => a + b, 0)
+    return {
+      total: rows.length,
+      avg: Math.round((sum / values.length) * 10) / 10,
+      min: Math.min(...values),
+      max: Math.max(...values),
+    }
+  }, [rows])
+
+  const exportXlsx = async () => {
+    setExporting(true)
+    try {
+      await downloadDisciplineScores({
+        className: classFilter,
+        search: search.trim() || undefined,
+        minPoints: minPoints === '' ? undefined : Number(minPoints),
+        maxPoints: maxPoints === '' ? undefined : Number(maxPoints),
+        sort,
+      })
+    } finally {
+      setExporting(false)
+    }
+  }
 
   const applyDelta = (studentId: string, pts: number) =>
     setScores((prev) =>
@@ -135,12 +184,45 @@ export function BallarNazoratiPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-xl font-semibold text-slate-800">Ballar nazorati</h1>
-        <p className="text-sm text-slate-400">
-          Har o'quvchi 100 balldan boshlaydi. Sabab bo'yicha ball kiriting — qoldi avtomatik hisoblanadi.
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-semibold text-slate-800">Ballar nazorati</h1>
+          <p className="text-sm text-slate-400">
+            Har o'quvchi 100 balldan boshlaydi. Sabab bo'yicha ball kiriting — qoldi avtomatik hisoblanadi.
+          </p>
+        </div>
+        <Button variant="secondary" onClick={exportXlsx} disabled={exporting || rows.length === 0}>
+          <Download className="h-4 w-4" />
+          {exporting ? 'Tayyorlanmoqda...' : 'Excel'}
+        </Button>
       </div>
+
+      {stats && (
+        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+          <StatCard label="O'quvchilar" value={stats.total} icon={Users} />
+          <StatCard
+            label="O'rtacha ball"
+            value={stats.avg}
+            icon={Scale}
+            iconBg="bg-slate-100"
+            iconColor="text-slate-600"
+          />
+          <StatCard
+            label="Eng yuqori"
+            value={stats.max}
+            icon={ArrowUpCircle}
+            iconBg="bg-emerald-50"
+            iconColor="text-emerald-600"
+          />
+          <StatCard
+            label="Eng past"
+            value={stats.min}
+            icon={ArrowDownCircle}
+            iconBg="bg-red-50"
+            iconColor="text-red-600"
+          />
+        </div>
+      )}
 
       <Card className="p-0">
         {/* Filtrlar */}
@@ -162,6 +244,23 @@ export function BallarNazoratiPage() {
               </option>
             ))}
           </select>
+          <div className="flex items-center gap-2">
+            <input
+              type="number"
+              value={minPoints}
+              onChange={(e) => setMinPoints(e.target.value)}
+              placeholder="Balldan"
+              className={cn(control, 'w-[110px]')}
+            />
+            <span className="text-sm text-slate-400">—</span>
+            <input
+              type="number"
+              value={maxPoints}
+              onChange={(e) => setMaxPoints(e.target.value)}
+              placeholder="Ballgacha"
+              className={cn(control, 'w-[110px]')}
+            />
+          </div>
           <select value={sort} onChange={(e) => setSort(e.target.value as Sort)} className={control}>
             {SORTS.map((s) => (
               <option key={s.value} value={s.value}>

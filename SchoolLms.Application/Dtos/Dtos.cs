@@ -418,6 +418,27 @@ public record DisciplinePointDto(
     string CreatedBy, string Source);
 /// <summary>O'quvchi/ota-ona ilovasi uchun intizomiy ball: qoldi + plus/minus + tarix (100 dan boshlanadi).</summary>
 public record StudentDisciplineDto(int Remaining, int Plus, int Minus, List<DisciplinePointDto> Items);
+
+/// <summary>
+/// "Harakatlar" lentasidagi bitta qator — maktab bo'ylab, o'quvchi nomi va sinfi bilan.
+/// <c>ReasonName</c> va <c>Points</c> — YOZUV PAYTIDAGI nusxa (sabab keyin o'zgarsa ham tarix
+/// o'zgarmaydi), shuning uchun sabab bo'yicha filtr <c>ReasonId</c> ustidan ishlaydi, ekranda esa
+/// nusxa ko'rinadi. <c>Source</c>: "manual" (qo'lda kiritilgan) yoki "attendance" (jurnal davomati).
+/// </summary>
+public record DisciplineFeedRowDto(
+    string Id, string StudentId, string FullName, string ClassName, string ReasonName, int Points,
+    string Note, string CreatedAt, string CreatedBy, string Source);
+
+/// <summary>
+/// "Harakatlar" lentasi: bitta sahifa + filtrlangan to'plamning jamlamasi + filtr ro'yxatlari.
+/// <c>Authors</c> va <c>ClassNames</c> filtrga BOG'LIQ EMAS (butun bazadan) — tanlangan filtr
+/// ro'yxatni qisqartirib, foydalanuvchini qamalda qoldirmasligi uchun.
+/// </summary>
+public record DisciplineFeedDto(
+    IReadOnlyList<DisciplineFeedRowDto> Items,
+    int Total, int Page, int PageSize,
+    int PlusCount, int MinusCount, int PointsSum,
+    IReadOnlyList<string> Authors, IReadOnlyList<string> ClassNames);
 /// <summary>O'quvchini arxivdan qaytarish — ixtiyoriy yangi parol (arxivlanganda parol bloklangan edi).</summary>
 public record RestoreStudentRequest(string? NewPassword);
 
