@@ -48,6 +48,76 @@ export async function getSchoolGradesReport(
   return data
 }
 
+/* ---------- O'zlashtirish (fanlar bo'yicha) ---------- */
+
+/** Pivotning bitta katagi: sinf × fan, tanlangan choraklar bo'yicha */
+export interface SubjectAttainmentCell {
+  subjectId: string
+  /** Katakka tushgan (o'quvchi × chorak) baho qiymatlari soni */
+  values: number
+  /** O'rtacha baho; qiymat bo'lmasa null (nol EMAS: "baho yo'q" ≠ "0") */
+  average: number | null
+  /** Sifat ko'rsatkichi — 4 va 5 baholarning ulushi (%) */
+  qualityPct: number
+  /** Chorak → o'rtacha baho (faqat qiymati bor choraklar) */
+  byQuarter: Record<string, number>
+}
+
+/**
+ * Pivotning bitta qatori. `cells` hisobotdagi `subjects` ro'yxati bilan bir xil tartibda
+ * va bir xil uzunlikda — sinf o'tmaydigan fan katagi ham bor (`values = 0`).
+ */
+export interface SubjectAttainmentRow {
+  kind: 'class' | 'school'
+  classId: string
+  className: string
+  grade: number
+  students: number
+  cells: SubjectAttainmentCell[]
+  average: number | null
+  qualityPct: number
+}
+
+export interface SubjectAttainmentReport {
+  quarters: number[]
+  subjects: Subject[]
+  rows: SubjectAttainmentRow[]
+  school: SubjectAttainmentRow
+}
+
+/**
+ * O'zlashtirish (fanlar bo'yicha) — sinf × fan pivoti, chorak kesimi bilan.
+ * O'rtacha va foizlar SERVERDA hisoblanadi.
+ */
+export async function getSubjectAttainment(
+  classIds: string[],
+  quarters: number[],
+): Promise<SubjectAttainmentReport> {
+  const empty: SubjectAttainmentReport = {
+    quarters: [],
+    subjects: [],
+    rows: [],
+    school: {
+      kind: 'school',
+      classId: '',
+      className: 'Maktab',
+      grade: 0,
+      students: 0,
+      cells: [],
+      average: null,
+      qualityPct: 0,
+    },
+  }
+  if (USE_MOCK) {
+    await delay()
+    return empty
+  }
+  const { data } = await api.get<SubjectAttainmentReport>('/admin/grades-report/subjects', {
+    params: { classIds: classIds.join(','), quarters: quarters.join(',') },
+  })
+  return data
+}
+
 /* ---------- Sinf bo'yicha hisobot ---------- */
 
 export interface ClassReportStudent {

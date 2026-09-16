@@ -82,6 +82,23 @@ public class AttendanceController(AppDbContext db) : ControllerBase
         return new DailyAttendanceDto(total, result);
     }
 
+    /// <summary>
+    /// Davomat analitikasi — zavuch ekrani: davr bo'yicha jami, sinflar kesimi, tanlangan
+    /// kunning dars soatlari kesimi, kunlik trend va sabablar taqsimoti.
+    ///
+    /// <para>Foizlar SERVERDA hisoblanadi (brauzerda emas) va "tekshirilmagan" hech qachon
+    /// "keldi"ga qo'shilmaydi — ta'rif <see cref="AttendanceAnalytics"/> da.</para>
+    /// </summary>
+    /// <param name="classId">Bitta sinf; berilmasa — butun maktab.</param>
+    /// <param name="from">Davr boshi "yyyy-MM-dd"; berilmasa — bugundan ikki hafta orqaga.</param>
+    /// <param name="to">Davr oxiri "yyyy-MM-dd"; berilmasa — bugun.</param>
+    /// <param name="day">Dars soatlari kesimi uchun kun; berilmasa — davrning oxirgi kuni.</param>
+    [HttpGet("analytics")]
+    public async Task<ActionResult<AttendanceAnalyticsDto>> Analytics(
+        [FromQuery] string? classId, [FromQuery] string? from,
+        [FromQuery] string? to, [FromQuery] string? day)
+        => await AttendanceAnalytics.BuildAsync(db, classId, from, to, day);
+
     /// <summary>Bitta fan/kun bo'yicha har bir o'quvchining holati.</summary>
     [HttpGet("subject")]
     public async Task<ActionResult<IEnumerable<StudentStatusDto>>> GetSubjectDetail(

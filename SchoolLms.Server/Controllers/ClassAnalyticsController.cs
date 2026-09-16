@@ -174,6 +174,32 @@ public class ClassAnalyticsController(AppDbContext db) : ControllerBase
     }
 
     /// <summary>
+    /// O'zlashtirish (fanlar bo'yicha) — sinf × fan pivoti: har katakda tanlangan choraklar
+    /// bo'yicha o'rtacha baho, sifat foizi va chorak yoyilmasi; oxirida maktab o'rtachasi.
+    ///
+    /// <para>Bu <c>grades-report</c> oilasining davomi: baho manbai va rasmiy chorak bahosining
+    /// ustunligi <see cref="ClassReport"/> bilan aynan bir xil (<see cref="SubjectAttainmentReport"/>).
+    /// O'rtacha va foizlar SERVERDA hisoblanadi.</para>
+    /// </summary>
+    /// <param name="classIds">Vergul bilan ajratilgan sinf id'lari.</param>
+    /// <param name="quarters">Vergul bilan ajratilgan chorak raqamlari (1-4).</param>
+    [HttpGet("api/admin/grades-report/subjects")]
+    public async Task<ActionResult<SubjectAttainmentReportDto>> SubjectAttainment(
+        [FromQuery] string? classIds, [FromQuery] string? quarters)
+        => await SubjectAttainmentReport.BuildAsync(db, SplitIds(classIds), SplitQuarters(quarters));
+
+    /// <summary>Vergulli ro'yxatni id'larga ajratadi (bo'sh elementlar tashlanadi).</summary>
+    private static List<string> SplitIds(string? csv) =>
+        [.. (csv ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)];
+
+    /// <summary>Vergulli ro'yxatni chorak raqamlariga ajratadi (1-4 dan tashqarisi tashlanadi).</summary>
+    private static List<int> SplitQuarters(string? csv) =>
+        [.. (csv ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(s => int.TryParse(s, out var n) ? n : 0)
+            .Where(n => n is >= 1 and <= 4)
+            .Distinct()];
+
+    /// <summary>
     /// Bitta o'quvchining o'zlashtirish va qatnashish hisoboti: har fan bo'yicha chorak baholari
     /// + chorak bo'yicha qoldirilgan kunlar/darslar va kech qolishlar.
     /// </summary>
