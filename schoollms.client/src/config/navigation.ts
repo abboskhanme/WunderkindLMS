@@ -116,8 +116,30 @@ export const navByRole: Record<Role, NavItem[]> = {
       ],
     },
     { label: 'Xabarlar', to: '/admin/messages', icon: MessageSquare, perm: 'messages' },
-    { label: 'Davomat', to: '/admin/attendance', icon: CalendarCheck, perm: 'attendance' },
-    { label: 'Keldi-ketdi', to: '/admin/students/turniket', icon: ClipboardCheck, perm: 'students' },
+    {
+      label: 'Davomat',
+      to: '/admin/attendance',
+      icon: CalendarCheck,
+      perm: 'attendance',
+      children: [
+        { label: 'Kunlik davomat', to: '/admin/attendance', end: true, group: 'DAVOMAT' },
+        { label: 'Davomat analitikasi', to: '/admin/attendance/analytics', group: 'DAVOMAT' },
+      ],
+    },
+    {
+      label: 'Keldi-ketdi',
+      to: '/admin/students/turniket',
+      icon: ClipboardCheck,
+      perm: 'students',
+      children: [
+        { label: 'Jonli turniket', to: '/admin/students/turniket', end: true, group: 'TURNIKET' },
+        { label: 'Turniket analitikasi', to: '/admin/students/turniket/analitika', group: 'HISOBOTLAR' },
+        { label: 'Kirib-chiqish statistikasi', to: '/admin/students/turniket/kirish-chiqish', group: 'HISOBOTLAR' },
+        // Ruxsat kaliti `students` — endpoint ham shunday. `attendance` ostiga
+        // qo'yilsa menyu bilan server bir xodim uchun ZID javob berardi.
+        { label: 'Kunlik davomat hisoboti', to: '/admin/students/turniket/kunlik-davomat', group: 'HISOBOTLAR' },
+      ],
+    },
     {
       label: 'HR',
       to: '/admin/teachers',
@@ -138,6 +160,7 @@ export const navByRole: Record<Role, NavItem[]> = {
         { label: "Maktab bo'yicha baholar", to: '/admin/grades-report/school', group: "O'QUV" },
         { label: "Sinf bo'yicha baholar", to: '/admin/grades-report/class', group: "O'QUV" },
         { label: "O'quvchi bo'yicha baholar", to: '/admin/grades-report/student', group: "O'QUV" },
+        { label: "Fanlar bo'yicha baholar", to: '/admin/grades-report/subjects', group: "O'QUV" },
         { label: 'Sinflar reytingi', to: '/admin/classes/rating', group: "O'QUV" },
         { label: "O'qituvchilar hisoboti", to: '/admin/teacher-reports', perm: 'teacherReports', group: 'XODIMLAR' },
       ],
@@ -174,6 +197,7 @@ export const navByRole: Record<Role, NavItem[]> = {
       perm: 'discipline',
       children: [
         { label: 'Ballar nazorati', to: '/admin/discipline', end: true },
+        { label: 'Harakatlar', to: '/admin/discipline/incidents' },
         { label: 'Ball sabablar', to: '/admin/discipline/reasons' },
       ],
     },

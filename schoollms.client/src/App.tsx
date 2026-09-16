@@ -56,6 +56,11 @@ import { TeacherAppPage } from '@/pages/admin/parents/TeacherAppPage'
 import { CanteenPage } from '@/pages/admin/canteen/CanteenPage'
 import { FinancePage } from '@/pages/admin/finance/FinancePage'
 import { ArrearsPage } from '@/pages/admin/finance/ArrearsPage'
+import { HarakatlarPage } from '@/pages/admin/discipline/HarakatlarPage'
+import { AttendanceAnalyticsPage } from '@/pages/admin/attendance/AttendanceAnalyticsPage'
+import { TurnstileAnalyticsPage } from '@/pages/admin/turnstile/TurnstileAnalyticsPage'
+import { TurnstileFlowPage } from '@/pages/admin/turnstile/TurnstileFlowPage'
+import { DailyAttendanceReportPage } from '@/pages/admin/turnstile/DailyAttendanceReportPage'
 import { SettingsPage } from '@/pages/admin/settings/SettingsPage'
 import { AccountPage } from '@/pages/admin/account/AccountPage'
 import { TeacherAppRedirect } from '@/components/TeacherAppRedirect'
@@ -82,6 +87,9 @@ export default function App() {
           <Route path="students/baholash" element={<RequirePerm perm="students"><StudentEvaluationPage /></RequirePerm>} />
           <Route path="students/baholash-turlari" element={<RequirePerm perm="students"><EvaluationTypesPage /></RequirePerm>} />
           <Route path="students/turniket" element={<RequirePerm perm="students"><StudentTurnstilePage /></RequirePerm>} />
+          <Route path="students/turniket/analitika" element={<RequirePerm perm="students"><TurnstileAnalyticsPage /></RequirePerm>} />
+          <Route path="students/turniket/kirish-chiqish" element={<RequirePerm perm="students"><TurnstileFlowPage /></RequirePerm>} />
+          <Route path="students/turniket/kunlik-davomat" element={<RequirePerm perm="students"><DailyAttendanceReportPage /></RequirePerm>} />
           <Route path="students/:id" element={<RequirePerm perm="students"><StudentDetailPage /></RequirePerm>} />
           <Route path="teachers" element={<RequirePerm perm="teachers"><TeachersPage /></RequirePerm>} />
           <Route path="teachers/attendance" element={<RequirePerm perm="teachers"><TeacherAttendancePage /></RequirePerm>} />
@@ -95,6 +103,7 @@ export default function App() {
           <Route path="schedule/holidays" element={<RequirePerm perm="schedule"><HolidaysPage /></RequirePerm>} />
           <Route path="discipline" element={<RequirePerm perm="discipline"><BallarNazoratiPage /></RequirePerm>} />
           <Route path="discipline/reasons" element={<RequirePerm perm="discipline"><BallSabablarPage /></RequirePerm>} />
+          <Route path="discipline/incidents" element={<RequirePerm perm="discipline"><HarakatlarPage /></RequirePerm>} />
           <Route path="schedule/manage/:id" element={<RequirePerm perm="schedule"><ClassSchedulePage /></RequirePerm>} />
           <Route path="schedule/manage/:id/template/:templateId" element={<RequirePerm perm="schedule"><TemplateEditorPage /></RequirePerm>} />
           <Route path="subjects" element={<RequirePerm perm="schedule"><SubjectsPage /></RequirePerm>} />
@@ -111,6 +120,7 @@ export default function App() {
           <Route path="teacher-reports" element={<RequirePerm perm="teacherReports"><TeacherReportsPage /></RequirePerm>} />
           <Route path="contracts" element={<RequirePerm perm="contracts"><ContractsPage /></RequirePerm>} />
           <Route path="attendance" element={<RequirePerm perm="attendance"><AttendancePage /></RequirePerm>} />
+          <Route path="attendance/analytics" element={<RequirePerm perm="attendance"><AttendanceAnalyticsPage /></RequirePerm>} />
           <Route path="locations" element={<RequirePerm perm="app"><LocationPage /></RequirePerm>} />
           <Route path="parents" element={<RequirePerm perm="app"><ParentsPage /></RequirePerm>} />
           <Route path="app/teachers" element={<RequirePerm perm="app"><TeacherAppPage /></RequirePerm>} />
