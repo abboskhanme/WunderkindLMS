@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using SchoolLms.Infrastructure.Data;
 using SchoolLms.Application.Dtos;
+using SchoolLms.Application.Services;
 using SchoolLms.Domain;
 
 namespace SchoolLms.Server.Controllers;
@@ -16,6 +17,26 @@ public class LeadsController(AppDbContext db) : ControllerBase
     [HttpGet]
     public async Task<ActionResult<IEnumerable<Lead>>> GetAll() =>
         await db.Leads.ToListAsync();
+
+    /// <summary>
+    /// Buyurtmalar voronkasi (§4, #9) — alohida sahifa uchun. Lidlar DOSKASIGA hech qanday
+    /// aloqasi yo'q: bu faqat o'qish.
+    ///
+    /// <para>
+    /// <c>lostStages</c> — vergul bilan ajratilgan ustun id'lari: qaysi ustunlar "yo'qotildi"
+    /// deb hisoblansin. Bazada bunday bayroq yo'q (ustunlar mijozniki, u ularni xohlagancha
+    /// nomlaydi), shuning uchun tanlovni chaqiruvchi beradi. Berilmasa — barcha ustunlar
+    /// voronka bosqichi deb qaraladi.
+    /// </para>
+    /// </summary>
+    [HttpGet("funnel")]
+    public async Task<ActionResult<LeadFunnelDto>> Funnel([FromQuery] string? lostStages)
+    {
+        var lost = string.IsNullOrWhiteSpace(lostStages)
+            ? null
+            : lostStages.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        return await LeadFunnelQuery.BuildAsync(db, lost);
+    }
 
     [HttpPost]
     public async Task<ActionResult<Lead>> Create(LeadCreateRequest p)
