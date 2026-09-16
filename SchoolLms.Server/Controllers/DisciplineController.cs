@@ -85,6 +85,60 @@ public class DisciplineController(AppDbContext db) : ControllerBase
     /// </summary>
     [HttpGet("scores")]
     public async Task<ActionResult<IEnumerable<DisciplineScoreRowDto>>> GetScores()
+        => await BuildScoresAsync();
+
+    /// <summary>
+    /// Ballar nazorati Excel (.xlsx) ga — ekrandagi FILTRLAR bilan bir xil qatorlar.
+    /// Filtrlar sahifada mijoz tarafida qo'llanadi (<c>/scores</c> butun ro'yxatni qaytaradi),
+    /// shuning uchun eksport ham xuddi shu filtrlarni qabul qiladi — yuklangan fayl ekranda
+    /// ko'rinib turgan narsaga aynan mos bo'lishi uchun.
+    /// </summary>
+    [HttpGet("scores/export")]
+    public async Task<IActionResult> ExportScores(
+        [FromQuery] string? className, [FromQuery] string? search,
+        [FromQuery] int? minPoints, [FromQuery] int? maxPoints, [FromQuery] string? sort)
+    {
+        var rows = FilterScores(await BuildScoresAsync(), className, search, minPoints, maxPoints, sort);
+
+        var headers = new[] { "F.I.SH.", "Sinf", "Rag'bat (+)", "Jazo (−)", "Qoldi" };
+        var cells = rows.Select(r => (IReadOnlyList<string>)new[]
+        {
+            r.FullName, r.ClassName, r.Plus.ToString(), r.Minus.ToString(), r.Remaining.ToString(),
+        });
+
+        var bytes = ExcelExport.Build("Ballar nazorati", headers, cells);
+        return File(bytes,
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            $"ballar_nazorati_{AppClock.Now:yyyy-MM-dd}.xlsx");
+    }
+
+    /// <summary>
+    /// Ekrandagi filtrlarning server tarafdagi nusxasi (eksport uchun). <c>sort</c> qiymatlari
+    /// sahifadagi tanlov bilan bir xil: class | remaining_desc | remaining_asc | plus_desc | minus_desc.
+    /// </summary>
+    private static List<DisciplineScoreRowDto> FilterScores(
+        List<DisciplineScoreRowDto> rows, string? className, string? search,
+        int? minPoints, int? maxPoints, string? sort)
+    {
+        var q = (search ?? "").Trim();
+        var list = rows.Where(r =>
+                (string.IsNullOrWhiteSpace(className) || className == "all" || r.ClassName == className)
+                && (q.Length == 0 || r.FullName.Contains(q, StringComparison.OrdinalIgnoreCase))
+                && (minPoints is null || r.Remaining >= minPoints)
+                && (maxPoints is null || r.Remaining <= maxPoints))
+            .ToList();
+
+        return sort switch
+        {
+            "remaining_desc" => list.OrderByDescending(r => r.Remaining).ToList(),
+            "remaining_asc" => list.OrderBy(r => r.Remaining).ToList(),
+            "plus_desc" => list.OrderByDescending(r => r.Plus).ToList(),
+            "minus_desc" => list.OrderByDescending(r => r.Minus).ToList(),
+            _ => list, // "class" — BuildScoresAsync allaqachon sinf+F.I.SH bo'yicha tartiblagan
+        };
+    }
+
+    private async Task<List<DisciplineScoreRowDto>> BuildScoresAsync()
     {
         var students = await db.Students.Where(s => !s.IsArchived)
             .Select(s => new { s.Id, s.FullName, s.ClassName }).ToListAsync();
@@ -173,6 +227,146 @@ public class DisciplineController(AppDbContext db) : ControllerBase
         }
 
         return result.OrderByDescending(p => p.CreatedAt, StringComparer.Ordinal).ToList();
+    }
+
+    // ---------- Harakatlar (maktab bo'ylab lenta) ----------
+
+    private const int DefaultPageSize = 50;
+    private const int MaxPageSize = 200;
+    /// <summary>Davr berilmasa ko'riladigan oxirgi kunlar soni.</summary>
+    private const int DefaultWindowDays = 30;
+
+    /// <summary>
+    /// Maktab bo'ylab "nima bo'ldi" lentasi — <c>GET points?studentId=</c> dan farqli ravishda
+    /// BITTA o'quvchiga bog'lanmagan. Ikki manba birlashtiriladi: qo'lda kiritilgan ballar va
+    /// jurnal davomati (sabab balli != 0 bo'lganlari) — ikkinchisi <c>source: "attendance"</c>
+    /// bilan belgilanadi.
+    ///
+    /// <para>Filtrlar (hammasi ixtiyoriy): <c>from</c>/<c>to</c> (YYYY-MM-DD, ikkalasi ham
+    /// KIRADI), <c>className</c>, <c>reasonId</c>, <c>author</c> (qo'lda kiritgan xodim),
+    /// <c>sign</c> = positive|negative, <c>source</c> = manual|attendance, <c>search</c> (F.I.SH).
+    /// Davr BUTUNLAY berilmasa — oxirgi 30 kun (<see cref="DefaultWindowDays"/>), butun tarixni
+    /// har so'rovda skanerlamaslik uchun.</para>
+    ///
+    /// <para>Sabab bo'yicha filtr <c>ReasonId</c> ustidan ishlaydi, ekranga esa yozuv paytidagi
+    /// NUSXA (<c>ReasonName</c>/<c>Points</c>) chiqadi — sabab keyin tahrirlansa ham tarix
+    /// o'zgarmasligi uchun (<see cref="DisciplinePoint"/>).</para>
+    /// </summary>
+    [HttpGet("feed")]
+    public async Task<ActionResult<DisciplineFeedDto>> GetFeed(
+        [FromQuery] string? from, [FromQuery] string? to, [FromQuery] string? className,
+        [FromQuery] string? reasonId, [FromQuery] string? author, [FromQuery] string? sign,
+        [FromQuery] string? source, [FromQuery] string? search,
+        [FromQuery] int page = 1, [FromQuery] int pageSize = DefaultPageSize)
+    {
+        if (!TryDay(from, out var fromDay)) return BadRequest(new { message = "Davr boshi noto'g'ri (YYYY-MM-DD)" });
+        if (!TryDay(to, out var toDay)) return BadRequest(new { message = "Davr oxiri noto'g'ri (YYYY-MM-DD)" });
+        if (fromDay is not null && toDay is not null && toDay < fromDay)
+            return BadRequest(new { message = "Davr oxiri boshidan oldin bo'lishi mumkin emas" });
+        if (fromDay is null && toDay is null) fromDay = AppClock.Today.AddDays(-DefaultWindowDays);
+
+        page = Math.Max(page, 1);
+        pageSize = Math.Clamp(pageSize, 1, MaxPageSize);
+
+        var fromText = fromDay?.ToString("yyyy-MM-dd");
+        var toText = toDay?.ToString("yyyy-MM-dd");
+        // Qo'lda kiritilgan yozuvda vaqt ham bor ("2026-09-16T10:12:..."), shuning uchun yuqori
+        // chegara — ERTANGI kun va qat'iy kichik. Aks holda oxirgi kunning yozuvlari tushib qolardi.
+        var toExclusive = toDay?.AddDays(1).ToString("yyyy-MM-dd");
+
+        var students = await db.Students.AsNoTracking()
+            .Select(s => new { s.Id, s.FullName, s.ClassName, s.IsArchived }).ToListAsync();
+        var byStudent = students.ToDictionary(s => s.Id);
+
+        var wantClass = string.IsNullOrWhiteSpace(className) || className == "all" ? null : className.Trim();
+        var term = (search ?? "").Trim();
+
+        // Arxivlangan o'quvchi ham chiqadi: uning yozuvi TARIX, va u sinfdan ketgani bilan
+        // o'sha kuni bo'lgan voqea bo'lmagan bo'lib qolmaydi.
+        (string FullName, string ClassName)? Student(string id)
+        {
+            if (!byStudent.TryGetValue(id, out var s)) return null;
+            if (wantClass is not null && s.ClassName != wantClass) return null;
+            if (term.Length > 0 && !s.FullName.Contains(term, StringComparison.OrdinalIgnoreCase)) return null;
+            return (s.FullName, s.ClassName);
+        }
+
+        var rows = new List<DisciplineFeedRowDto>();
+
+        if (source != "attendance")
+        {
+            var q = db.DisciplinePoints.AsNoTracking().AsQueryable();
+            if (fromText is { } f) q = q.Where(p => string.Compare(p.CreatedAt, f) >= 0);
+            if (toExclusive is { } t) q = q.Where(p => string.Compare(p.CreatedAt, t) < 0);
+            if (!string.IsNullOrWhiteSpace(reasonId)) q = q.Where(p => p.ReasonId == reasonId);
+            if (!string.IsNullOrWhiteSpace(author)) q = q.Where(p => p.CreatedBy == author);
+            if (sign == "positive") q = q.Where(p => p.Points > 0);
+            else if (sign == "negative") q = q.Where(p => p.Points < 0);
+
+            var drNames = await db.DisciplineReasons.AsNoTracking().ToDictionaryAsync(r => r.Id, r => r.Name);
+            foreach (var p in await q.ToListAsync())
+            {
+                if (Student(p.StudentId) is not { } s) continue;
+                rows.Add(new DisciplineFeedRowDto(
+                    p.Id, p.StudentId, s.FullName, s.ClassName,
+                    string.IsNullOrEmpty(p.ReasonName) ? drNames.GetValueOrDefault(p.ReasonId, "—") : p.ReasonName,
+                    p.Points, p.Note, p.CreatedAt, p.CreatedBy, "manual"));
+            }
+        }
+
+        // Jurnal davomatida MUALLIF yo'q (belgini o'qituvchi jurnalda qo'yadi, yozuvda saqlanmaydi) —
+        // shuning uchun xodim bo'yicha filtr tanlanganda bu manba umuman qatnashmaydi.
+        if (source != "manual" && string.IsNullOrWhiteSpace(author))
+        {
+            var absReasons = await db.AbsenceReasons.AsNoTracking()
+                .ToDictionaryAsync(r => r.Id, r => new { r.Name, r.Points });
+            var q = db.JournalEntries.AsNoTracking().Where(e => e.ReasonId != null);
+            if (fromText is { } f) q = q.Where(e => string.Compare(e.Date, f) >= 0);
+            if (toText is { } t) q = q.Where(e => string.Compare(e.Date, t) <= 0);
+            if (!string.IsNullOrWhiteSpace(reasonId)) q = q.Where(e => e.ReasonId == reasonId);
+
+            foreach (var e in await q.ToListAsync())
+            {
+                if (e.ReasonId is null || !absReasons.TryGetValue(e.ReasonId, out var r) || r.Points == 0) continue;
+                if (sign == "positive" && r.Points < 0) continue;
+                if (sign == "negative" && r.Points > 0) continue;
+                if (Student(e.StudentId) is not { } s) continue;
+                rows.Add(new DisciplineFeedRowDto(
+                    e.Id, e.StudentId, s.FullName, s.ClassName, r.Name, r.Points,
+                    "Jurnal davomati", e.Date, "", "attendance"));
+            }
+        }
+
+        // Ikki manba bitta kalit bilan tartiblanadi: qo'lda kiritilganda to'liq vaqt bor,
+        // jurnalda faqat sana — ISO satr sifatida taqqoslash ikkalasida ham to'g'ri ishlaydi.
+        var ordered = rows
+            .OrderByDescending(r => r.CreatedAt, StringComparer.Ordinal)
+            .ThenBy(r => r.Id, StringComparer.Ordinal)
+            .ToList();
+
+        var authors = (await db.DisciplinePoints.AsNoTracking()
+                .Select(p => p.CreatedBy).Distinct().ToListAsync())
+            .Where(a => !string.IsNullOrWhiteSpace(a))
+            .OrderBy(a => a, StringComparer.OrdinalIgnoreCase).ToList();
+        var classNames = students
+            .Where(s => !s.IsArchived && !string.IsNullOrWhiteSpace(s.ClassName))
+            .Select(s => s.ClassName).Distinct()
+            .OrderBy(c => c, StringComparer.OrdinalIgnoreCase).ToList();
+
+        return new DisciplineFeedDto(
+            ordered.Skip((page - 1) * pageSize).Take(pageSize).ToList(),
+            ordered.Count, page, pageSize,
+            ordered.Count(r => r.Points > 0), ordered.Count(r => r.Points < 0), ordered.Sum(r => r.Points),
+            authors, classNames);
+    }
+
+    private static bool TryDay(string? value, out DateOnly? day)
+    {
+        day = null;
+        if (string.IsNullOrWhiteSpace(value)) return true;
+        if (!DateOnly.TryParseExact(value.Trim(), "yyyy-MM-dd", out var parsed)) return false;
+        day = parsed;
+        return true;
     }
 
     /// <summary>Qo'lda kiritilgan ball yozuvini o'chiradi (jurnal davomatini emas).</summary>
