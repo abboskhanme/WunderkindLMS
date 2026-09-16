@@ -126,6 +126,13 @@ public class Student
     public string? ArchivedAt { get; set; }
     /// <summary>Arxivga ko'chirish sababi (admin kiritadi: "boshqa maktabga ketdi", ...).</summary>
     public string? ArchiveReason { get; set; }
+    /// <summary>
+    /// Arxivlash sababi KATALOGDAN (<see cref="StudentArchiveReason"/>, §2.2).
+    /// null = eski yozuv yoki "Boshqa" tanlangan — bunday holatda tafsilot
+    /// yuqoridagi erkin matnda (<see cref="ArchiveReason"/>) qoladi.
+    /// Ikkala ustun ham kerak: bu guruhlash uchun, u tafsilot uchun.
+    /// </summary>
+    public Guid? ArchiveReasonId { get; set; }
     /// <summary>Sinf arxivlanishi tufayli arxivlangan bo'lsa true — sinf arxivdan chiqarilganda
     /// faqat shu o'quvchilar avtomatik qaytariladi (alohida arxivlanganlar tegilmaydi).</summary>
     public bool ArchivedWithClass { get; set; }
@@ -380,6 +387,36 @@ public class DisciplineReason
     public string Name { get; set; } = string.Empty;
     /// <summary>Ball o'zgarishi (musbat yoki manfiy).</summary>
     public int Points { get; set; }
+
+    // ----- §6.3, 4- va 5-qadam: ota-onaga xabar va sabab kartochkasi -----
+
+    /// <summary>
+    /// Shu sabab bo'yicha ball qo'yilganda OTA-ONAGA xabar bormi (§6.3, 4-qadam).
+    /// Xabar mavjud kanal orqali ketadi — <b>Telegram</b> (TelegramService /
+    /// NotificationsController). SMS ustuni ATAYLAB YO'Q: bu mahsulotda yagona
+    /// kanal Telegram (CLAUDE.md), EduSchool'dagi `behaviorSmsTemplate` ning
+    /// nusxasi bizga kerak emas.
+    ///
+    /// <para>
+    /// <b>Sukut bo'yicha false, va mavjud HAR BIR sababda ham false.</b>
+    /// §6.3 ning o'z ogohlantirishi: ota-onaga xabar yuboradigan intizomiy
+    /// ball — butunlay boshqa ijtimoiy hodisa. Har kechikishda ota-onaga
+    /// xabar yuboradigan tizim bir hafta ichida o'chiriladi va o'zi bilan
+    /// birga butun modulni olib ketadi. Maktab uni har sabab uchun ALOHIDA,
+    /// ataylab yoqishi kerak.
+    /// </para>
+    /// </summary>
+    public bool NotifyParent { get; set; }
+
+    /// <summary>Sabab izohi — qachon qo'yiladi, nimani anglatadi (§6.3, 5-qadam).</summary>
+    public string? Description { get; set; }
+
+    /// <summary>
+    /// false = yangi ball qo'yishda tanlanmaydi, lekin ESKI yozuvlar joyida
+    /// qoladi (<see cref="DisciplinePoint"/> nom va ballni nusxalab oladi).
+    /// Sukut bo'yicha true — mavjud sabablarning hammasi faol.
+    /// </summary>
+    public bool IsActive { get; set; } = true;
 }
 
 /// <summary>
@@ -653,6 +690,57 @@ public class SchoolMeta
     // ---------- Kamera (videokuzatuv) integratsiyasi ----------
     /// <summary>Kamera kuzatuvi yoqilganmi.</summary>
     public bool CameraEnabled { get; set; }
+
+    // =======================================================================
+    //  Umumiy sozlama bayroqlari — §5.5. FAQAT TO'RTTASI.
+    //
+    //  EduSchool'ning `/settings` obyektida ~40 ta bayroq bor; §5.5 ulardan
+    //  ATAYLAB to'rttasini oladi. Qolganlari rad etilgan, jumladan MODUL
+    //  O'CHIRGICHLARI (`enableBehaviorSystem`, `gamification`, `warehouse`,
+    //  `receptionAttendanceEnabled`): mijoz sotib olgan narsani yetkazamiz,
+    //  o'chirilgan modul esa umuman build'da bo'lmasligi kerak.
+    // =======================================================================
+
+    /// <summary>
+    /// Qarzi bor o'quvchini arxivlashni TAQIQLAYDI (§5.5, mijoz savoli Q4).
+    ///
+    /// <para>
+    /// Sukut bo'yicha <b>true</b> — Q4 ning "javob bo'lmasa" qarori aynan shu:
+    /// arxivlash qarzning yo'qolishining eng oson yo'li va u yopiq turishi
+    /// kerak. Superadmin uchun chetlab o'tish imkoni ilova qatlamida beriladi.
+    /// </para>
+    /// </summary>
+    public bool ArchiveOnlyNonDebtorStudents { get; set; } = true;
+
+    /// <summary>
+    /// Jurnalda "sababsiz" qoldirib bo'lmaydi — yo'qlik belgilanganda sabab
+    /// MAJBURIY (§5.5). Ma'lumot sifatiga eng kuchli ta'sir qiladigan bayroq.
+    ///
+    /// <para>
+    /// Sukut bo'yicha <b>false</b> — bugungi xatti-harakat shunday. Yoqilishi
+    /// o'qituvchining kunlik ishini o'zgartiradi, ya'ni buni maktab o'zi,
+    /// ataylab qilishi kerak; migratsiya emas.
+    /// </para>
+    /// </summary>
+    public bool MakeAttendanceReasonRequired { get; set; }
+
+    /// <summary>
+    /// Baholar qo'yilmagan darsni yopib bo'lmaydi (§5.5). Sukut bo'yicha
+    /// <b>false</b> — yuqoridagi bilan bir xil sabab.
+    /// </summary>
+    public bool IsStudentGradeRequired { get; set; }
+
+    /// <summary>
+    /// Ota-ona kabinetida o'zlashtirish (baholar/progress) ko'rinadimi (§5.5).
+    ///
+    /// <para>
+    /// Sukut bo'yicha <b>true</b> — bugun ota-onalar buni ko'rishadi va
+    /// migratsiya mavjud xatti-harakatni o'zgartirmasligi kerak. Bayroq yomon
+    /// chorakda uni VAQTINCHA o'chirish uchun kerak — hozir buning uchun
+    /// deploy talab qilinardi.
+    /// </para>
+    /// </summary>
+    public bool ShowLearningProgressInParentDashboard { get; set; } = true;
 }
 
 /// <summary>Yangi o'quv yiliga o'tishda saqlangan eski o'quv yili arxivi (to'liq snapshot).</summary>
