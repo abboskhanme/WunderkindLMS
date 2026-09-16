@@ -98,22 +98,49 @@ export async function uploadAdminFile(file: File): Promise<UploadedFile> {
  *  newPassword — ixtiyoriy: tahrirda kiritilsa o'quvchi akkaunti paroli almashtiriladi. */
 export type StudentPayload = Omit<Student, 'id' | 'balance'> & { newPassword?: string }
 
-export async function getStudents(): Promise<Student[]> {
+/**
+ * §2.3 — o'quvchilar ro'yxatining sertifikat filtrlari. QO'SHIMCHA: berilmasa
+ * so'rov bugungiday, hech qanday parametrsiz ketadi.
+ */
+export interface StudentCertificateFilters {
+  /** Sertifikat turlari (ko'p tanlov). Orasidagi bog'lovchi — YOKI. */
+  certificateTypeIds?: string[]
+  /** Sertifikatni bergan o'qituvchi. */
+  certificateTeacherId?: string
+}
+
+/** Filtrlarni so'rov satriga aylantiradi. Bo'sh bo'lsa — bo'sh satr. */
+function certificateQuery(filters?: StudentCertificateFilters): string {
+  const params = new URLSearchParams()
+  // Vergul bilan — server ham aynan shunday o'qiydi (CertificateService.ParseIds).
+  if (filters?.certificateTypeIds?.length)
+    params.set('certificateTypeIds', filters.certificateTypeIds.join(','))
+  if (filters?.certificateTeacherId)
+    params.set('certificateTeacherId', filters.certificateTeacherId)
+  const text = params.toString()
+  return text ? `?${text}` : ''
+}
+
+export async function getStudents(filters?: StudentCertificateFilters): Promise<Student[]> {
   if (USE_MOCK) {
     await delay()
     return studentsMock
   }
-  const { data } = await api.get<Student[]>('/admin/students')
+  const { data } = await api.get<Student[]>(`/admin/students${certificateQuery(filters)}`)
   return data
 }
 
 /** Faqat arxivlangan o'quvchilar ro'yxati (alohida ko'rish uchun). */
-export async function getArchivedStudents(): Promise<Student[]> {
+export async function getArchivedStudents(
+  filters?: StudentCertificateFilters,
+): Promise<Student[]> {
   if (USE_MOCK) {
     await delay()
     return []
   }
-  const { data } = await api.get<Student[]>('/admin/students/archived')
+  const { data } = await api.get<Student[]>(
+    `/admin/students/archived${certificateQuery(filters)}`,
+  )
   return data
 }
 

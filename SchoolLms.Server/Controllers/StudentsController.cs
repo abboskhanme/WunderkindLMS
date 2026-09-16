@@ -31,14 +31,42 @@ public class StudentsController(AppDbContext db, AuditService audit) : Controlle
     /// so'rov), o'quvchi boshiga so'rov YO'Q.
     /// </para>
     /// </summary>
+    /// <param name="certificateTypeIds">
+    /// §2.3 — sertifikat turi bo'yicha filtr: vergul bilan ajratilgan id'lar,
+    /// ular orasida YOKI ("IELTS yoki SAT bor bolalar").
+    /// </param>
+    /// <param name="certificateTeacherId">§2.3 — sertifikatni BERGAN o'qituvchi bo'yicha filtr.</param>
     [HttpGet]
     public async Task<ActionResult<IEnumerable<StudentDto>>> GetAll(
-        [FromQuery] bool includeArchived = false, CancellationToken ct = default)
+        [FromQuery] bool includeArchived = false,
+        [FromQuery] string? certificateTypeIds = null,
+        [FromQuery] string? certificateTeacherId = null,
+        CancellationToken ct = default)
     {
         var q = db.Students.AsNoTracking();
         if (!includeArchived) q = q.Where(s => !s.IsArchived);
+        q = WithCertificateFilter(q, certificateTypeIds, certificateTeacherId);
         var students = await q.OrderBy(s => s.FullName).ToListAsync(ct);
         return await WithBalancesAsync(students, ct);
+    }
+
+    /// <summary>
+    /// §2.3 — sertifikat filtrlari. Ikkalasi ham berilmasa so'rov TEGILMAYDI, ya'ni
+    /// sahifa bugungiday ishlaydi (qo'shimcha JOIN ham, qo'shimcha sub-select ham yo'q).
+    ///
+    /// <para>
+    /// Filtrlash SERVERDA, qo'shimcha so'rov (<c>EXISTS</c>) bilan bo'ladi: sertifikat
+    /// egalarining id'lari ilovaga tortilmaydi, ya'ni ro'yxat qancha o'ssa ham xotira
+    /// bir xil qoladi.
+    /// </para>
+    /// </summary>
+    private IQueryable<Student> WithCertificateFilter(
+        IQueryable<Student> q, string? certificateTypeIds, string? certificateTeacherId)
+    {
+        var holders = CertificateService.HolderStudentIds(
+            db, CertificateService.ParseIds(certificateTypeIds), certificateTeacherId);
+
+        return holders is null ? q : q.Where(s => holders.Contains(s.Id));
     }
 
     /// <summary>O'quvchi shaxsiy daftari — bitta o'quvchi haqida barcha ma'lumot (profil, o'zlashtirish, davomat, intizom, topshiriqlar, oylik baholash, uy vazifa/xulq).</summary>
@@ -50,11 +78,21 @@ public class StudentsController(AppDbContext db, AuditService audit) : Controlle
         return await StudentProfileBuilder.BuildAsync(db, st);
     }
 
-    /// <summary>Faqat arxivlangan o'quvchilar ro'yxati (qoldig'i bilan — qarz arxivda ham qarz).</summary>
+    /// <summary>
+    /// Faqat arxivlangan o'quvchilar ro'yxati (qoldig'i bilan — qarz arxivda ham qarz).
+    /// Sertifikat filtrlari bu yerda ham ishlaydi: bitgan bolaning IELTS'i ham hujjat,
+    /// va "Arxiv" tab'iga o'tganda filtr jimgina o'chib qolmasligi kerak.
+    /// </summary>
     [HttpGet("archived")]
-    public async Task<ActionResult<IEnumerable<StudentDto>>> GetArchived(CancellationToken ct = default)
+    public async Task<ActionResult<IEnumerable<StudentDto>>> GetArchived(
+        [FromQuery] string? certificateTypeIds = null,
+        [FromQuery] string? certificateTeacherId = null,
+        CancellationToken ct = default)
     {
-        var students = await db.Students.AsNoTracking().Where(s => s.IsArchived)
+        var q = WithCertificateFilter(
+            db.Students.AsNoTracking().Where(s => s.IsArchived),
+            certificateTypeIds, certificateTeacherId);
+        var students = await q
             .OrderByDescending(s => s.ArchivedAt).ThenBy(s => s.FullName).ToListAsync(ct);
         return await WithBalancesAsync(students, ct);
     }

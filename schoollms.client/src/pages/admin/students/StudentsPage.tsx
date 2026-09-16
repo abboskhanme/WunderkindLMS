@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { StudentViewModal } from './StudentViewModal'
-import { Plus, Search, Pencil, Trash2, Send, Download, X, History, Archive, RotateCcw, FileDown, Upload } from 'lucide-react'
+import { Plus, Search, Pencil, Trash2, Send, Download, X, History, Archive, RotateCcw, FileDown, Upload, Award, ChevronDown } from 'lucide-react'
 import type { Gender, Student } from '@/types'
 import type { StudentPayload, StudentImportResult } from '@/api/services/students'
 import {
@@ -17,6 +17,12 @@ import {
   importStudents,
 } from '@/api/services/students'
 import { getClasses } from '@/api/services/classes'
+import {
+  getCertificateTypes,
+  getIssuingTeachers,
+  type CertificateType,
+  type IssuingTeacher,
+} from '@/api/services/certificates'
 import { genderLabels } from '@/config/constants'
 import { formatDate, formatMoney, exportToCsv, cn } from '@/lib/utils'
 import { useAuth } from '@/context/auth-context'
@@ -52,6 +58,16 @@ export function StudentsPage() {
   const [genderFilter, setGenderFilter] = useState<'all' | Gender>('all')
   const [balanceFilter, setBalanceFilter] = useState<BalanceFilter>('all')
 
+  // §2.3 — sertifikat filtrlari. Bular QOLGANLARIDAN FARQ QILADI: serverda
+  // bajariladi (ro'yxat qayta so'raladi), chunki sertifikat boshqa jadvalda va
+  // uni brauzerga tortib kelish butun registrni yuklab olish degani bo'lardi.
+  // Ikkalasi ham bo'sh bo'lsa so'rov bugungi so'rovning aynan o'zi.
+  const [certTypeIds, setCertTypeIds] = useState<string[]>([])
+  const [certTeacherId, setCertTeacherId] = useState('')
+  const [certTypes, setCertTypes] = useState<CertificateType[]>([])
+  const [certIssuers, setCertIssuers] = useState<IssuingTeacher[]>([])
+  const [certMenuOpen, setCertMenuOpen] = useState(false)
+
   // tanlash
   const [selected, setSelected] = useState<Set<string>>(new Set())
 
@@ -77,7 +93,15 @@ export function StudentsPage() {
     try {
       const result = await importStudents(file)
       setImportResult(result)
-      if (result.created > 0) setStudents(await getStudents())
+      // Joriy sertifikat filtri bilan qayta o'qiymiz — aks holda filtrlangan
+      // ro'yxat importdan keyin jimgina to'liq ro'yxatga aylanib qolardi.
+      if (result.created > 0)
+        setStudents(
+          await getStudents({
+            certificateTypeIds: certTypeIds.length > 0 ? certTypeIds : undefined,
+            certificateTeacherId: certTeacherId || undefined,
+          }),
+        )
     } catch (err) {
       const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message
       alert('Yuklashda xatolik: ' + (msg ?? 'fayl noto\'g\'ri yoki server xatosi'))
@@ -87,15 +111,35 @@ export function StudentsPage() {
   }
 
   useEffect(() => {
+    getClasses().then((cs) => setClassNames(cs.map((c) => c.name)))
+    // §2.3 — filtr tanlovlari. Sertifikat turi yo'q maktabda ikkala filtr ham
+    // umuman ko'rinmaydi, ya'ni sahifa bugungi ko'rinishida qoladi.
+    getCertificateTypes().then(setCertTypes)
+    getIssuingTeachers().then(setCertIssuers)
+  }, [])
+
+  useEffect(() => {
+    const filters = {
+      certificateTypeIds: certTypeIds.length > 0 ? certTypeIds : undefined,
+      certificateTeacherId: certTeacherId || undefined,
+    }
+    // Poyga (race) himoyasi: tez filtrlanganda faqat oxirgi javob qabul qilinadi.
+    let active = true
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- yangi so'rovdan oldin holatni belgilaymiz (maqsadli)
     setLoading(true)
-    Promise.all([getStudents(), getArchivedStudents()])
-      .then(([active, arch]) => {
-        setStudents(active)
+    Promise.all([getStudents(filters), getArchivedStudents(filters)])
+      .then(([list, arch]) => {
+        if (!active) return
+        setStudents(list)
         setArchived(arch)
       })
-      .finally(() => setLoading(false))
-    getClasses().then((cs) => setClassNames(cs.map((c) => c.name)))
-  }, [])
+      .finally(() => {
+        if (active) setLoading(false)
+      })
+    return () => {
+      active = false
+    }
+  }, [certTypeIds, certTeacherId])
 
   // Joriy tab manbai.
   const source = tab === 'active' ? students : archived
@@ -356,6 +400,81 @@ export function StudentsPage() {
             <option value="debt">Qarzdorlar</option>
             <option value="paid">Qarzsizlar</option>
           </select>
+
+          {/* §2.3 — sertifikat turi bo'yicha KO'P TANLOVLI filtr:
+              "IELTS sertifikati bor har bir bolani ko'rsat". Tur qo'shilmagan
+              maktabda umuman chiqmaydi. */}
+          {certTypes.length > 0 && (
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setCertMenuOpen((v) => !v)}
+                className={cn(control, 'inline-flex items-center gap-1.5')}
+              >
+                <Award className="h-4 w-4 text-slate-400" />
+                {certTypeIds.length === 0
+                  ? 'Sertifikat: hammasi'
+                  : certTypeIds.length === 1
+                    ? (certTypes.find((t) => t.id === certTypeIds[0])?.name ?? 'Sertifikat')
+                    : `Sertifikat: ${certTypeIds.length} ta`}
+                <ChevronDown className="h-4 w-4 text-slate-400" />
+              </button>
+              {certMenuOpen && (
+                <>
+                  {/* Tashqariga bosilganda yopiladi. */}
+                  <div className="fixed inset-0 z-10" onClick={() => setCertMenuOpen(false)} />
+                  <div className="absolute left-0 z-20 mt-1 max-h-64 w-64 overflow-y-auto rounded-xl border border-slate-200 bg-white p-2 shadow-lg">
+                    {certTypeIds.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setCertTypeIds([])}
+                        className="mb-1 w-full rounded-lg px-2 py-1.5 text-left text-sm text-slate-500 hover:bg-slate-50"
+                      >
+                        Tanlovni tozalash
+                      </button>
+                    )}
+                    {certTypes.map((t) => (
+                      <label
+                        key={t.id}
+                        className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={certTypeIds.includes(t.id)}
+                          onChange={() =>
+                            setCertTypeIds((prev) =>
+                              prev.includes(t.id)
+                                ? prev.filter((x) => x !== t.id)
+                                : [...prev, t.id],
+                            )
+                          }
+                          className="h-4 w-4 rounded border-slate-300 accent-brand-600"
+                        />
+                        {t.name}
+                      </label>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
+          {/* §2.3 — sertifikatni BERGAN o'qituvchi bo'yicha filtr. */}
+          {certIssuers.length > 0 && (
+            <select
+              value={certTeacherId}
+              onChange={(e) => setCertTeacherId(e.target.value)}
+              className={control}
+              title="Sertifikatni bergan o'qituvchi"
+            >
+              <option value="">Sertifikat bergan: hammasi</option>
+              {certIssuers.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.fullName}
+                </option>
+              ))}
+            </select>
+          )}
         </div>
 
         {/* Tanlanganlar uchun amal paneli */}
