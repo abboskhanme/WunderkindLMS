@@ -61,3 +61,26 @@ unless the client asks.
 
 More broadly: our own visual language — iOS/Apple-flavoured minimalism — stays
 ours. We are rebuilding EduSchool's **functionality**, never its appearance.
+
+## PRODUCT RULE: Telegram is the only channel
+
+Stated by the client on 2026-09-16: *"bizda mobile app bo'lmaydi faqat telegram mini app
+bo'ladi xolos va shunga mos ravishda sms ham, mobile app uchun push notification ham
+bo'lmaydi, bizda hamma narsa telegram orqali bo'ladi."*
+
+So, for every feature in this repository:
+
+- **There is no mobile app.** The parent and student surfaces are the Telegram Mini App and
+  the web portal. Nothing else ships.
+- **There is no SMS.** No provider, no templates, no auto-SMS rules, no message log, no
+  `sms_template` column on anything. EduSchool has all of it; we decline it. The 58 h SMS
+  block in `docs/modules/existing-module-gaps.md` §7.2 is **cancelled, not deferred**.
+- **There is no mobile push.** Firebase/FCM is not part of the product going forward.
+  `FcmService.cs` and the `Sozlamalar → Push (Firebase)` screen are legacy; do not build on
+  them, and do not delete them unasked either — that is its own cleanup task.
+- **Every outbound message goes through Telegram** — `TelegramService` / `TelegramBotService`
+  and the Mini App. A feature that needs to reach a parent reaches them there or not at all.
+
+When a spec in `docs/` says "SMS", read it as "Telegram message", and when it offers SMS as an
+option alongside Telegram, the option is gone. If a feature only makes sense with SMS, it does
+not ship — say so instead of building half of it.

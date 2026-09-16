@@ -657,7 +657,7 @@ Performance: two queries, no N+1 — one grouped over `invoices`, one grouped ov
 
 | Item | Cost | Verdict |
 |---|---|---|
-| Arrears pivot (`/admin/finance/arrears`) | 10 h backend + 16 h frontend | **Do it. Highest value-per-hour in this entire file.** No migration, no new table, one query pair over data we already have, and it answers the director's daily question. |
+| Arrears pivot (`/admin/finance/arrears`) | 10 h backend + 16 h frontend | ✅ **Shipped 2026-09-16.** `GET /api/admin/finance/arrears-pivot` → `FinanceReportQueries.ArrearsPivotAsync` → `pages/admin/finance/ArrearsPage.tsx`. Was: No migration, no new table, one query pair over data we already have, and it answers the director's daily question. |
 | Per-student month history | — | **We already have it.** `SchoolLms.Application/Services/StudentLedger.cs` returns per-month accrued / discount / paid / remaining plus the payment list, reading `payment_allocations` (not a FIFO guess — see the P1-21 note in that file); surfaced by `GET /api/admin/students/{id}/ledger` → `getStudentLedger` → `schoollms.client/src/pages/admin/students/PaymentHistoryModal.tsx`, with `paid/partial/unpaid` month chips and an `AuditHistoryList`. **Remaining delta:** it aggregates all fee categories into one month row (deliberately — see the file's own comment); a per-category breakdown already exists separately at `GET /api/student/billing` (`InvoiceService.ForStudentAsync`). Nothing to build. ~4 h if we want the reversal rows shown explicitly. |
 | `beforeAmount` / `afterAmount` running balance | — | **Refuse.** SPEC §4. The balance is derived by `StudentBalanceQuery.cs` and stays derived. |
 | "Delete all subscription transactions" | — | **Refuse.** `app_rw` cannot delete from `payments` or `payment_allocations`, by design, and that is the point. |
@@ -1033,7 +1033,7 @@ not be in the build.
 
 | | |
 |---|---|
-| **Cheap, high value** | SMS provider + templates + log (~38 h, **needs client go-ahead** — money leaves the machine); the two auto-SMS rules (~16 h); surveys (~36 h); the four general-settings flags (~6 h); news (~24 h) |
+| **Cheap, high value** | ~~SMS provider + templates + log~~ and ~~the two auto-SMS rules~~ — **cancelled 2026-09-16, Telegram only**; surveys (~36 h); the four general-settings flags (~6 h); news (~24 h, delivered through Telegram) |
 | **Expensive** | Teacher evaluation (~62 h) — worth it **only** if the school already does lesson observations |
 | **Decline** | Integration catalogue, MCP slot, Story, module kill switches, editable payment methods / transaction types / currencies |
 | **Out of scope by client decision** | Atmos, Bito Pay and every other payment provider — `docs/SPEC.md` §8.1 Q13. A dropdown label is the whole feature. |
@@ -1101,7 +1101,7 @@ Two details that matter:
 | Xulq-atvor reytingi | `GET /discipline/scores` + `BallarNazoratiPage.tsx` | **Have.** Missing: `pointsMin`/`pointsMax` filters, the stats header (`totalStudents`, `avg`, `min`, `max`) and **export**. |
 | Points arrive from attendance | `AbsenceReason.Points` | **We are ahead.** |
 | Baseline of 100 | ours | They start from 0. Ours is friendlier to parents; keep it. |
-| SMS to the parent on an incident | none | **The one real gap.** |
+| SMS to the parent on an incident | none | **Not a gap any more** — no SMS in this product (2026-09-16). The parent loop goes through Telegram. |
 | Coverage report (`getNotAssignedClasses`) | none | Small, and it is what keeps the system honest. |
 | Feature flag | none | Not wanted. |
 
@@ -1118,8 +1118,8 @@ So: **the data model is done; the missing part is the school-wide view and the p
    last entry date, and which classes have zero. *4 h + 4 h.*
 4. **Parent notification** — `DisciplineReason.NotifyParent: bool` + an optional message
    template; the notification goes out through the **existing** channel
-   (`TelegramService` / `NotificationsController`), and through SMS **only if** §5.4 has been
-   built and switched on. *6 h + 3 h.*
+   (`TelegramService` / `NotificationsController`). **Telegram only** — SMS was cancelled on
+   2026-09-16 and §5.4 will not be built. *6 h + 3 h.*
 5. **`DisciplineReason.Description` and `IsActive`** — two columns and two inputs. *2 h + 2 h.*
 
 Total ≈ **24 h backend + 25 h frontend**.
@@ -1145,13 +1145,15 @@ One table, ordered by value per hour. Hours are backend + frontend for one devel
 
 ### 7.1 Cheap and high value — do these first (**329 h** ≈ 4 weeks for one backend + one frontend developer working in parallel)
 
+**Progress: #1 shipped on 2026-09-16 (26 h of the 329). 303 h left in this list.**
+
 "Cheap" here means: **no new subsystem, and in most cases no new table** — a screen over data
 the database already holds. Not one of these fourteen items requires a decision from the
 client before it can start, and not one of them touches a financial write path.
 
 | # | Item | § | Hours | Why first |
 |---|---|---|---|---|
-| 1 | **Month-by-month arrears pivot** | 3.4 | 26 | Zero new tables. One query pair over `invoices` + `payment_allocations`. Answers the director's daily question in one screen. |
+| 1 | ✅ **Month-by-month arrears pivot** — **shipped 2026-09-16** | 3.4 | 26 | Zero new tables. One query pair over `invoices` + `payment_allocations`. Answers the director's daily question in one screen. |
 | 2 | **Attendance analytics + daily attendance report** | 4 (#5, #13) | 26 | The head teacher's morning screen. Data already collected. |
 | 3 | **School-wide discipline incident feed** | 6.3 | 18 | Makes an existing, unused feature usable. |
 | 4 | **Debtor workflow** (statuses, actions, promised date) | 3.5 | 28 | Turns a debtor list into collections. Two small tables. |
@@ -1170,7 +1172,7 @@ client before it can start, and not one of them touches a financial write path.
 
 | Item | § | Hours | Condition |
 |---|---|---|---|
-| **SMS provider + templates + log + 2 auto-rules** | 5.4 | 58 | **Needs the client's provider account and an explicit go-ahead — money leaves the machine.** Until then, `SmsModal.tsx`'s `alert()` should be replaced with an honest "hali ulanmagan" state; a stub that claims success is worse than a missing feature. |
+| ~~SMS provider + templates + log + 2 auto-rules~~ | 5.4 | ~~58~~ **0** | ❌ **CANCELLED 2026-09-16 by the client** — Telegram is the only channel (`CLAUDE.md`, "Telegram is the only channel"). No provider, no templates, no log, no auto-SMS rules, no `sms_template` column anywhere. `SmsModal.tsx` stops being a stub waiting for SMS and becomes a Telegram message dialog. Everything below in this table is unaffected. |
 | **Teacher evaluation** | 5.3 | 62 | Only if the school already does lesson observations. Ask first. |
 | **Group separate from Sinf** | 2.5 | 184 standalone / ≈90 folded into Phase 2 | Only if the client confirms they teach cross-class groups. One question decides it. |
 | **P&L 2.0 forecast + planned expenses + balance sheet** | 3.6 | 60 | Revisit after one full year of actuals in the ledger. |
@@ -1211,7 +1213,7 @@ pass, at the end of each batch.
 
 | File | Who touches it | Rule |
 |---|---|---|
-| `SchoolLms.Infrastructure/Migrations/AppDbContextModelSnapshot.cs` | every new table | **One migration per batch, one owner.** Certificates, debtor workflow, surveys, news, SMS and discipline columns are six migrations if written separately and one conflict if written in parallel. |
+| `SchoolLms.Infrastructure/Migrations/AppDbContextModelSnapshot.cs` | every new table | **One migration per batch, one owner.** Certificates, debtor workflow, surveys, news and the discipline columns are five migrations if written separately and one conflict if written in parallel (SMS is gone — cancelled 2026-09-16). |
 | `SchoolLms.Infrastructure/Data/AppDbContext.cs` | every new table | one `XModel.Apply(b)` line each; follow `GuardianModel.cs` |
 | `SchoolLms.Infrastructure/Migrations/Sql/*.sql` + the `csproj` `EmbeddedResource` list | every new table | new tables need a `GRANT … TO app_rw` following `billing_guards.sql`. **None of the tables proposed in this file is financial**; do not copy the append-only `REVOKE` pattern onto them. |
 | `deploy/init-roles.sql` | nothing proposed here | Its §5 list is authoritative for append-only tables. Grep it before naming a table; a name already in it carries protection that a rename would silently drop. |
@@ -1242,7 +1244,7 @@ difference between a five-week schema change and none.
 **Decision if silent: do not build teacher evaluation.** An observation system with no observer
 is an empty screen that makes the product look unfinished.
 
-**Q3 — Which SMS provider, and whose account?**
+**Q3 — Which SMS provider, and whose account?** — **ANSWERED 2026-09-16: none.** The client ruled out SMS, the mobile app and mobile push in one sentence; every message goes through Telegram. The rest of this entry is kept for the record and no longer describes the plan.
 **Decision if silent: build nothing, and replace `SmsModal.tsx`'s `alert()` with an honest
 "SMS hali ulanmagan" state.** Sending an SMS spends the client's money and leaves the machine
 — both are stop-and-ask conditions under the global rules. A stub that says "yuborildi" when
