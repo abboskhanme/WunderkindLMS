@@ -59,6 +59,8 @@ import { ArrearsPage } from '@/pages/admin/finance/ArrearsPage'
 import { CashDayPage } from '@/pages/admin/finance/CashDayPage'
 import { LeadFunnelPage } from '@/pages/admin/leads-funnel/LeadFunnelPage'
 import { AttendanceDisciplineReportPage } from '@/pages/admin/discipline/AttendanceDisciplineReportPage'
+import { CertificatesPage } from '@/pages/admin/certificates/CertificatesPage'
+import { CertificateTypesPage } from '@/pages/admin/certificates/CertificateTypesPage'
 import { HarakatlarPage } from '@/pages/admin/discipline/HarakatlarPage'
 import { AttendanceAnalyticsPage } from '@/pages/admin/attendance/AttendanceAnalyticsPage'
 import { TurnstileAnalyticsPage } from '@/pages/admin/turnstile/TurnstileAnalyticsPage'
@@ -124,6 +126,8 @@ export default function App() {
           <Route path="grades-report/:section" element={<RequirePerm perm="gradesReport"><GradesReportPage /></RequirePerm>} />
           <Route path="teacher-reports" element={<RequirePerm perm="teacherReports"><TeacherReportsPage /></RequirePerm>} />
           <Route path="contracts" element={<RequirePerm perm="contracts"><ContractsPage /></RequirePerm>} />
+          <Route path="certificates" element={<RequirePerm perm="students"><CertificatesPage /></RequirePerm>} />
+          <Route path="certificates/types" element={<RequirePerm perm="students"><CertificateTypesPage /></RequirePerm>} />
           <Route path="attendance" element={<RequirePerm perm="attendance"><AttendancePage /></RequirePerm>} />
           <Route path="attendance/analytics" element={<RequirePerm perm="attendance"><AttendanceAnalyticsPage /></RequirePerm>} />
           <Route path="locations" element={<RequirePerm perm="app"><LocationPage /></RequirePerm>} />

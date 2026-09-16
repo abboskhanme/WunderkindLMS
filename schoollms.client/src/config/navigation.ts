@@ -109,6 +109,10 @@ export const navByRole: Record<Role, NavItem[]> = {
         { label: "O'quvchilar manzili", to: '/admin/locations', group: "O'QUVCHILAR" },
         { label: 'Ota-onalar', to: '/admin/parents', group: "O'QUVCHILAR" },
         { label: 'Shartnomalar', to: '/admin/contracts', perm: 'contracts', group: 'HUJJATLAR' },
+        // Sertifikat turlari SOZLAMALAR ostida emas: u yerdagi marshrut `settings`
+        // ruxsatiga bog'langan, API esa `students` ga — menyu va server zid bo'lardi.
+        { label: 'Sertifikatlar', to: '/admin/certificates', end: true, group: 'HUJJATLAR' },
+        { label: 'Sertifikat turlari', to: '/admin/certificates/types', group: 'HUJJATLAR' },
         { label: "O'quvchilarga feedback", to: '/admin/students/baholash', group: 'BAHOLASH' },
         { label: 'Feedback nomi', to: '/admin/students/baholash-turlari', group: 'BAHOLASH' },
       ],

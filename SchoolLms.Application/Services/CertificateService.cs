@@ -29,11 +29,10 @@ namespace SchoolLms.Application.Services;
 public static class CertificateService
 {
     /// <summary>
-    /// Audit jurnalidagi yorliq. <c>AuditService</c> ga yangi konstanta QO'SHILMADI —
-    /// bu to'lqinda o'sha fayl boshqa agent qo'lida. Ko'chirilganda
-    /// <c>AuditService.EntityCertificate</c> ga aylanadi, qiymati o'zgarmaydi.
+    /// Audit jurnalidagi yorliq — <c>AuditService.EntityCertificate</c> ning o'zi.
+    /// Qiymat O'ZGARMASLIGI shart: audit qatorlari shu matn bo'yicha topiladi.
     /// </summary>
-    public const string AuditEntity = "Certificate";
+    public const string AuditEntity = AuditService.EntityCertificate;
 
     /// <summary>Tur katalogidagi o'zgarishlar uchun yorliq.</summary>
     public const string AuditEntityType = "CertificateType";
