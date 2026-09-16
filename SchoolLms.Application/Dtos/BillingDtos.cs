@@ -342,6 +342,47 @@ public record BillingMonthlyDto(
     // Yig'ilish darajasi, % (Collected / Accrued × 100). Accrued = 0 bo'lsa null.
     decimal? CollectionRate);
 
+/* ---------- Oyma-oy qarzdorlik (arrears pivot) ---------- */
+
+/// <summary>
+/// Jadvalning bitta katagi: bitta o'quvchining bitta oyi.
+/// <c>ToBePaid</c> = <c>max(0, Amount − Paid)</c> — server hisoblaydi,
+/// frontend pul arifmetikasini qaytarmaydi (bu fayldagi 2-qoida).
+/// </summary>
+public record ArrearsCellDto(decimal Amount, decimal Paid, decimal ToBePaid);
+
+/// <summary>
+/// Jadvalning bitta qatori — bitta o'quvchi.
+///
+/// <para>
+/// <see cref="Cells"/> kaliti — "YYYY-MM". Oyda hisob-faktura bo'lmasa kalit
+/// UMUMAN yo'q: "maktabda bo'lmagan oy" va "to'lab bo'lingan oy" ekranda ham,
+/// bu yerda ham bir xil ko'rinmasligi kerak.
+/// </para>
+/// <para>
+/// <b>Invariant:</b> <see cref="Total"/> — kataklar yig'indisi.
+/// </para>
+/// </summary>
+public record ArrearsRowDto(
+    string StudentId, string FullName, string ClassName,
+    // Arxivdagi (maktabdan ketgan) o'quvchi — qarzi qoladi, ekranda belgilanadi.
+    bool IsArchived,
+    IReadOnlyDictionary<string, ArrearsCellDto> Cells,
+    ArrearsCellDto Total);
+
+/// <summary>
+/// Oyma-oy qarzdorlik jadvali: o'quvchi × oy.
+/// <see cref="Footer"/> — ustun yakunlari (kalit "YYYY-MM"),
+/// <see cref="Total"/> — butun jadval yakuni. Ikkovi ham FAQAT filtrdan
+/// o'tgan qatorlardan yig'iladi.
+/// </summary>
+public record ArrearsPivotDto(
+    // Ustunlar tartibi — "YYYY-MM", oyma-oy, bo'sh oy ham ro'yxatda qoladi.
+    IReadOnlyList<string> Months,
+    IReadOnlyList<ArrearsRowDto> Rows,
+    IReadOnlyDictionary<string, ArrearsCellDto> Footer,
+    ArrearsCellDto Total);
+
 /* ---------- Moliya sozlamalari (mijoz javobi: SPEC §8.1 Q6) ---------- */
 
 /// <summary>To'lov muddati sozlamalari — qat'iy raqam emas, tahrirlanadi.</summary>

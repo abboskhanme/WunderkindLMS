@@ -1,3 +1,4 @@
+using System.Globalization;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using SchoolLms.Application.Billing;
@@ -138,6 +139,73 @@ public class FinanceReportsController(AppDbContext db) : ControllerBase
     }
 
     /// <summary>
+    /// Oyma-oy qarzdorlik jadvali: o'quvchi × oy. Har katakda hisoblangan,
+    /// to'langan va qolgan summa; pastda ustun yakunlari.
+    ///
+    /// <para>
+    /// Direktorning kundalik savoli — "kim, qaysi oydan beri to'lamayapti".
+    /// Qarzdorlar hisoboti unga BITTA raqam bilan javob beradi, bu jadval esa
+    /// qarzning qaysi oyda boshlangani va uzilib-uzilib to'langanini
+    /// ko'rsatadi. Arifmetika ikkovida bir xil manbadan
+    /// (<see cref="FinanceReportQueries.ArrearsPivotAsync"/>).
+    /// </para>
+    /// </summary>
+    /// <param name="fromMonth">Birinchi oy, "YYYY-MM". Sukut: joriy o'quv
+    /// yilining sentyabri.</param>
+    /// <param name="toMonth">Oxirgi oy, "YYYY-MM". Sukut: joriy oy.</param>
+    /// <param name="className">Sinf bo'yicha filtr (aniq moslik).</param>
+    /// <param name="categoryId">Bitta to'lov toifasi. Berilmasa — hammasi
+    /// bitta katakka yig'iladi.</param>
+    /// <param name="debtorsOnly">true = qoldig'i bor o'quvchilargina.</param>
+    /// <param name="includeArchived">false = arxivlangan o'quvchilarni yashirish.</param>
+    [HttpGet("arrears-pivot")]
+    public async Task<ActionResult<ArrearsPivotDto>> ArrearsPivot(
+        [FromQuery] string? fromMonth,
+        [FromQuery] string? toMonth,
+        [FromQuery] string? className,
+        [FromQuery] Guid? categoryId,
+        [FromQuery] bool debtorsOnly = false,
+        [FromQuery] bool includeArchived = true,
+        CancellationToken ct = default)
+    {
+        if (!TryMonth(toMonth, DefaultToMonth(), out var to))
+            return InvalidMonth(nameof(toMonth), toMonth);
+        if (!TryMonth(fromMonth, DefaultFromMonth(to), out var from))
+            return InvalidMonth(nameof(fromMonth), fromMonth);
+
+        if (to < from) return InvalidPeriod(from, to);
+
+        var months = FinanceReportQueries.MonthsBetween(from, to);
+        if (months > FinanceReportQueries.MaxArrearsMonths)
+            return BadRequest(new
+            {
+                message = $"Davr juda uzun: {months} oy. Ruxsat etilgani — "
+                          + $"{FinanceReportQueries.MaxArrearsMonths} oy.",
+            });
+
+        var query = new ArrearsPivotQuery(
+            FromMonth: from,
+            ToMonth: to,
+            ClassName: className,
+            CategoryId: categoryId,
+            DebtorsOnly: debtorsOnly,
+            IncludeArchived: includeArchived);
+
+        try
+        {
+            return Ok(await _reports.ArrearsPivotAsync(query, ct));
+        }
+        catch (ArgumentOutOfRangeException tooWide)
+        {
+            // Yagona sabab — o'quvchilar chegarasi (oy chegarasi yuqorida
+            // tekshirilgan). Bu 500 emas: so'rov noto'g'ri, tuzatish esa
+            // foydalanuvchi qo'lida — sinfni tanlasin.
+            return BadRequest(new { message = tooWide.Message });
+        }
+    }
+
+
+    /// <summary>
     /// Davrni to'ldiradi: <paramref name="to"/> berilmasa — bugun,
     /// <paramref name="from"/> berilmasa — shuncha oy oldingi oyning 1-kuni.
     /// Sukut qiymatlar ataylab kichik: hisobot ochilishi bilan butun tarixni
@@ -152,4 +220,59 @@ public class FinanceReportsController(AppDbContext db) : ControllerBase
 
     private BadRequestObjectResult InvalidPeriod(DateOnly from, DateOnly to) =>
         BadRequest(new { message = $"Davr oxiri boshidan oldin: {from:yyyy-MM-dd} … {to:yyyy-MM-dd}" });
+
+    /// <summary>
+    /// "YYYY-MM" (yoki to'liq sana) ni oyning birinchi kuniga o'giradi.
+    /// Bo'sh qiymat — xato emas: <paramref name="fallback"/> ishlatiladi.
+    /// </summary>
+    private static bool TryMonth(string? text, DateOnly fallback, out DateOnly month)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            month = fallback;
+            return true;
+        }
+
+        var value = text.Trim();
+        if (DateOnly.TryParseExact(value, "yyyy-MM", CultureInfo.InvariantCulture,
+                DateTimeStyles.None, out var parsed)
+            || DateOnly.TryParseExact(value, "yyyy-MM-dd", CultureInfo.InvariantCulture,
+                DateTimeStyles.None, out parsed))
+        {
+            month = new DateOnly(parsed.Year, parsed.Month, 1);
+            return true;
+        }
+
+        month = fallback;
+        return false;
+    }
+
+    /// <summary>Sukut: joriy oy.</summary>
+    private static DateOnly DefaultToMonth()
+    {
+        var today = AppClock.Today;
+        return new DateOnly(today.Year, today.Month, 1);
+    }
+
+    /// <summary>
+    /// Sukut: joriy O'QUV YILINING sentyabri (sentyabrgacha — o'tgan yilniki).
+    /// Kalendar yili emas: yanvarda ochilgan jadval sentyabr–dekabr qarzini
+    /// tashlab ketmasligi kerak, aynan o'sha oylar qarzdor bo'ladi.
+    /// </summary>
+    private static DateOnly DefaultFromMonth(DateOnly to)
+    {
+        var year = to.Month >= AcademicYearStartMonth ? to.Year : to.Year - 1;
+        var start = new DateOnly(year, AcademicYearStartMonth, 1);
+        return start <= to ? start : to;
+    }
+
+    /// <summary>O'quv yili sentyabrda boshlanadi (SPEC §3.2).</summary>
+    private const int AcademicYearStartMonth = 9;
+
+    private BadRequestObjectResult InvalidMonth(string field, string? value) =>
+        BadRequest(new
+        {
+            message = $"Oy formati noto'g'ri ({field}: \"{value}\"). Kutilgani — \"YYYY-MM\", masalan 2026-09.",
+        });
 }
+

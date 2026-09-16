@@ -351,3 +351,84 @@ export async function resolveFinanceFlag(id: string, reason: string): Promise<Fi
     throw toUzbekError(e, 'Nomuvofiqlikni hal qilish')
   }
 }
+
+/* =========================================================================
+   7) Oyma-oy qarzdorlik — GET /api/admin/finance/arrears-pivot
+   ========================================================================= */
+
+/**
+ * Jadvalning bitta katagi: bitta o'quvchining bitta oyi.
+ *
+ * `toBePaid` SERVERDAN keladi (`max(0, amount − paid)`), bu yerda qayta
+ * hisoblanmaydi — fayl boshidagi qoida: pulni frontend hisoblamaydi.
+ */
+export interface ArrearsCell {
+  /** Shu oyga hisoblangan, chegirmadan keyin. */
+  amount: number
+  /** Shu oyga HAQIQATAN tushgan pul (storno chiqarib tashlangan). */
+  paid: number
+  /** Qolgan qarz. */
+  toBePaid: number
+}
+
+/** Jadvalning bitta qatori — bitta o'quvchi. */
+export interface ArrearsRow {
+  studentId: string
+  fullName: string
+  className: string
+  /** Arxivdagi (maktabdan ketgan) o'quvchi — qarzi qoladi. */
+  isArchived: boolean
+  /**
+   * Kalit — "YYYY-MM". Oyda hisob-faktura bo'lmasa kalit UMUMAN yo'q:
+   * "maktabda bo'lmagan oy" va "to'lab bo'lingan oy" ekranda ham bir xil
+   * ko'rinmasligi kerak.
+   */
+  cells: Record<string, ArrearsCell>
+  /** Qator yakuni — kataklar yig'indisi (server hisoblaydi). */
+  total: ArrearsCell
+}
+
+/** Oyma-oy qarzdorlik jadvali. */
+export interface ArrearsPivot {
+  /** Ustunlar tartibi — "YYYY-MM", bo'sh oy ham ro'yxatda qoladi. */
+  months: string[]
+  rows: ArrearsRow[]
+  /** Ustun yakunlari, kalit "YYYY-MM". */
+  footer: Record<string, ArrearsCell>
+  /** Butun jadval yakuni. */
+  total: ArrearsCell
+}
+
+export interface ArrearsFilters {
+  /** Birinchi oy, "YYYY-MM". Sukut: joriy o'quv yilining sentyabri. */
+  fromMonth?: string
+  /** Oxirgi oy, "YYYY-MM". Sukut: joriy oy. */
+  toMonth?: string
+  /** Sinf (aniq moslik). */
+  className?: string
+  /** Bitta to'lov toifasi. Berilmasa — hammasi bitta katakka yig'iladi. */
+  categoryId?: string
+  /** true = qoldig'i bor o'quvchilargina. */
+  debtorsOnly?: boolean
+  /** false = arxivlangan o'quvchilarni yashirish. */
+  includeArchived?: boolean
+}
+
+/**
+ * Oyma-oy qarzdorlik: o'quvchi × oy.
+ *
+ * Server ikki chegara qo'yadi va ikkovi ham 400 bilan qaytadi: davr 12 oydan
+ * uzun bo'lsa, va filtrdan keyin 600 dan ko'p o'quvchi qolsa (sinf filtri
+ * talab qilinadi). Ikkovining ham xabari o'zbekcha va to'g'ridan-to'g'ri
+ * ekranga chiqariladi.
+ */
+export async function getArrearsPivot(filters: ArrearsFilters = {}): Promise<ArrearsPivot> {
+  try {
+    const { data } = await api.get<ArrearsPivot>('/admin/finance/arrears-pivot', {
+      params: clean({ ...filters }),
+    })
+    return data
+  } catch (e) {
+    throw toUzbekError(e, 'Oyma-oy qarzdorlik hisoboti')
+  }
+}

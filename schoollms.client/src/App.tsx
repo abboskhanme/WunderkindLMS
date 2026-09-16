@@ -55,6 +55,7 @@ import { ParentsPage } from '@/pages/admin/parents/ParentsPage'
 import { TeacherAppPage } from '@/pages/admin/parents/TeacherAppPage'
 import { CanteenPage } from '@/pages/admin/canteen/CanteenPage'
 import { FinancePage } from '@/pages/admin/finance/FinancePage'
+import { ArrearsPage } from '@/pages/admin/finance/ArrearsPage'
 import { SettingsPage } from '@/pages/admin/settings/SettingsPage'
 import { AccountPage } from '@/pages/admin/account/AccountPage'
 import { TeacherAppRedirect } from '@/components/TeacherAppRedirect'
@@ -117,6 +118,8 @@ export default function App() {
           <Route path="finance" element={<RequirePerm perm="finance"><FinancePage /></RequirePerm>} />
           {/* Rol tekshiruvi sahifaning ichida (SPEC §4.3: faqat admin/direktor) */}
           <Route path="finance/money-flow" element={<Suspense fallback={<Loader label="Yuklanmoqda…" />}><MoneyFlowPage /></Suspense>} />
+          {/* Rol tekshiruvi sahifaning ichida (SPEC §4.3: faqat admin/direktor) */}
+          <Route path="finance/arrears" element={<ArrearsPage />} />
           <Route path="billing/categories" element={<RequirePerm perm="finance"><CategoriesPage /></RequirePerm>} />
           <Route path="billing/subscriptions" element={<RequirePerm perm="finance"><SubscriptionsPage /></RequirePerm>} />
           <Route path="billing/discounts" element={<RequirePerm perm="finance"><DiscountsPage /></RequirePerm>} />

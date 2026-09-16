@@ -69,6 +69,32 @@ public record DebtorReportQuery(
     bool OnlyOverdue = false,
     bool IncludeArchived = true);
 
+/// <summary>
+/// Oyma-oy qarzdorlik jadvalining (arrears pivot) filtri.
+///
+/// <para>
+/// Oy — HISOB-FAKTURA oyi (<c>invoices.period_month</c>), pul kelgan kun
+/// emas. Sabab <see cref="FinanceReportQueries.CollectionRateAsync"/> da
+/// batafsil: shunda jadvalning oy ustuni AYNAN qarzdorlar hisobotidagi
+/// o'sha oyning qarziga teng chiqadi.
+/// </para>
+/// </summary>
+/// <param name="FromMonth">Birinchi oy (kuni ahamiyatsiz).</param>
+/// <param name="ToMonth">Oxirgi oy (kuni ahamiyatsiz).</param>
+/// <param name="ClassName">Sinf (aniq moslik). null = barcha sinflar.</param>
+/// <param name="CategoryId">Bitta to'lov toifasi (o'qish / avtobus / …).
+/// null = hamma toifa bitta katakka yig'iladi.</param>
+/// <param name="DebtorsOnly">true = qoldig'i bor o'quvchilargina.</param>
+/// <param name="IncludeArchived">Sukut true: maktabdan ketgan o'quvchining
+/// qarzi ham qarz (<see cref="DebtorReportQuery"/> bilan bir xil qoida).</param>
+public record ArrearsPivotQuery(
+    DateOnly FromMonth,
+    DateOnly ToMonth,
+    string? ClassName = null,
+    Guid? CategoryId = null,
+    bool DebtorsOnly = false,
+    bool IncludeArchived = true);
+
 /// <summary>P&amp;L ning bitta satri: hisob kodi va davr bo'yicha sof summasi.</summary>
 /// <param name="Account">Hisob kodi (<see cref="Accounts"/> yopiq ro'yxatidan).</param>
 /// <param name="Amount">Daromad uchun kredit−debet, chiqim uchun debet−kredit.
@@ -492,6 +518,214 @@ public sealed class FinanceReportQueries(IAppDbContext db)
                     paid,
                     r.Accrued == 0m ? null : decimal.Round(paid / r.Accrued * 100m, RateScale));
             })];
+    }
+
+    // =====================================================================
+    //  5) Oyma-oy qarzdorlik (arrears pivot) — o'quvchi × oy jadvali
+    // =====================================================================
+
+    /// <summary>Jadval qamrab oladigan eng ko'p oy (bitta o'quv yili + zaxira).</summary>
+    public const int MaxArrearsMonths = 12;
+
+    /// <summary>
+    /// Filtrdan keyin qoladigan eng ko'p o'quvchi. Undan oshsa sinf filtri
+    /// talab qilinadi: 600 × 12 = 7 200 katak — brauzer chizadigan chegara,
+    /// undan keyingisi foydalanuvchi o'qiy olmaydigan devor.
+    /// </summary>
+    public const int MaxArrearsStudents = 600;
+
+    /// <summary>
+    /// Oyma-oy qarzdorlik: har o'quvchi bitta qator, har oy bitta katak
+    /// (hisoblangan / to'langan / qoldiq).
+    ///
+    /// <para>
+    /// <b>Yangi arifmetika YO'Q.</b> Bu — <c>StudentLedger</c> ning butun
+    /// maktab bo'yicha ag'darilgan (transpose) ko'rinishi: hisoblangan summa
+    /// <see cref="BillableInvoices"/> dan, to'langani
+    /// <see cref="EffectiveAllocations"/> dan olinadi, ya'ni "qarz" ning
+    /// ikkinchi ta'rifi paydo bo'lmaydi. Bu faylning boshidagi ogohlantirish
+    /// aynan shu haqda.
+    /// </para>
+    /// <para>
+    /// <b>Bo'sh katak va nol katak — BOSHQA-BOSHQA narsa.</b> Oyda
+    /// hisob-faktura bo'lmasa katak UMUMAN qaytarilmaydi ("o'qimagan"),
+    /// hisoblanib to'liq to'langan bo'lsa <c>ToBePaid = 0</c> ("to'lagan").
+    /// Ikkovini bitta nolga aylantirish direktorga maktabda bo'lmagan oyni
+    /// "to'langan" qilib ko'rsatardi.
+    /// </para>
+    /// <para>
+    /// <b>Invariant:</b> qator yakuni — kataklar yig'indisi. Shuning uchun
+    /// <c>ToBePaid</c> HAR KATAKDA alohida qirqiladi
+    /// (<c>max(0, amount − paid)</c>) va keyin qo'shiladi: bir oyning ortiqcha
+    /// to'lovi boshqa oyning qarzini jimgina yopib yubormaydi. Ortiqcha pul
+    /// taqsimlanmagan bo'lsa u <c>PaidWithoutAllocation</c> anomaliyasi
+    /// sifatida alohida ko'rinadi (<c>Anomaly.cs</c>), bu yerda emas.
+    /// </para>
+    /// <para>
+    /// Unumdorlik: ikki so'rov (hisoblangan va to'langan), ikkovi ham bazada
+    /// guruhlanadi; o'quvchilar yoki oylar soniga bog'liq sikl yo'q.
+    /// Tayanadigan indekslar mavjud: <c>invoices (student_id, category_id,
+    /// period_month)</c> va <c>payment_allocations (invoice_id)</c>.
+    /// </para>
+    /// </summary>
+    /// <exception cref="ArgumentOutOfRangeException">Davr teskari, 12 oydan
+    /// uzun, yoki filtrdan keyin 600 dan ko'p o'quvchi qolgan.</exception>
+    public async Task<ArrearsPivotDto> ArrearsPivotAsync(
+        ArrearsPivotQuery query, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(query);
+
+        var first = FirstDayOfMonth(query.FromMonth);
+        var last = FirstDayOfMonth(query.ToMonth);
+        RequireRange(first, last);
+
+        var monthCount = MonthsBetween(first, last);
+        if (monthCount > MaxArrearsMonths)
+            throw new ArgumentOutOfRangeException(
+                nameof(query), monthCount,
+                $"Davr juda uzun: {monthCount} oy. Ruxsat etilgani — {MaxArrearsMonths} oy.");
+
+        var students = ArrearsStudents(query);
+
+        // Chegara so'rovdan OLDIN tekshiriladi: 7 200 katakdan katta javobni
+        // yig'ib, keyin tashlab yuborishning ma'nosi yo'q.
+        var studentCount = await students.CountAsync(ct);
+        if (studentCount > MaxArrearsStudents)
+            throw new ArgumentOutOfRangeException(
+                nameof(query), studentCount,
+                $"Filtrga {studentCount} o'quvchi tushdi, ruxsat etilgani — "
+                + $"{MaxArrearsStudents}. Sinf filtrini tanlang.");
+
+        var invoices = BillableInvoices()
+            .Where(i => i.PeriodMonth >= first && i.PeriodMonth <= last);
+        if (query.CategoryId is { } categoryId)
+            invoices = invoices.Where(i => i.CategoryId == categoryId);
+
+        // ---- So'rov 1: o'quvchi × oy kesimida HISOBLANGAN (chegirmadan keyin) ----
+        var accrued = await (
+            from inv in invoices
+            join s in students on inv.StudentId equals s.Id
+            group inv by new
+            {
+                inv.StudentId,
+                s.FullName,
+                s.ClassName,
+                s.IsArchived,
+                inv.PeriodMonth,
+            }
+            into g
+            select new
+            {
+                g.Key.StudentId,
+                g.Key.FullName,
+                g.Key.ClassName,
+                g.Key.IsArchived,
+                g.Key.PeriodMonth,
+                Amount = g.Sum(x => x.Amount - x.Discount),
+            }).ToListAsync(ct);
+
+        // ---- So'rov 2: O'SHA kataklarga haqiqatan tushgan pul ----
+        var paid = await (
+            from a in EffectiveAllocations()
+            join inv in invoices on a.InvoiceId equals inv.Id
+            join s in students on inv.StudentId equals s.Id
+            group a by new { inv.StudentId, inv.PeriodMonth }
+            into g
+            select new { g.Key.StudentId, g.Key.PeriodMonth, Paid = g.Sum(x => x.Amount) })
+            .ToListAsync(ct);
+
+        var paidByCell = paid.ToDictionary(x => (x.StudentId, x.PeriodMonth), x => x.Paid);
+
+        var months = Enumerable.Range(0, monthCount)
+            .Select(i => MonthKey(first.AddMonths(i)))
+            .ToList();
+
+        var footer = months.ToDictionary(m => m, _ => new MutableCell());
+        var grand = new MutableCell();
+
+        var rows = new List<ArrearsRowDto>();
+        foreach (var studentGroup in accrued.GroupBy(r => r.StudentId))
+        {
+            var head = studentGroup.First();
+            var cells = new Dictionary<string, ArrearsCellDto>();
+            var rowTotal = new MutableCell();
+
+            foreach (var cell in studentGroup)
+            {
+                var key = MonthKey(cell.PeriodMonth);
+                var cellPaid = paidByCell.GetValueOrDefault((cell.StudentId, cell.PeriodMonth));
+                var toBePaid = Math.Max(0m, cell.Amount - cellPaid);
+
+                cells[key] = new ArrearsCellDto(cell.Amount, cellPaid, toBePaid);
+                rowTotal.Add(cell.Amount, cellPaid, toBePaid);
+            }
+
+            if (query.DebtorsOnly && rowTotal.ToBePaid <= 0m) continue;
+
+            rows.Add(new ArrearsRowDto(
+                head.StudentId, head.FullName, head.ClassName, head.IsArchived,
+                cells, rowTotal.ToDto()));
+
+            // Yakun FAQAT ko'rinadigan qatorlardan yig'iladi: ekranda
+            // qo'shilmaydigan ikki raqam turishidan yomoni yo'q.
+            foreach (var (key, cell) in cells)
+            {
+                footer[key].Add(cell.Amount, cell.Paid, cell.ToBePaid);
+                grand.Add(cell.Amount, cell.Paid, cell.ToBePaid);
+            }
+        }
+
+        return new ArrearsPivotDto(
+            months,
+            [.. rows.OrderBy(r => r.ClassName, StringComparer.Ordinal)
+                    .ThenBy(r => r.FullName, StringComparer.Ordinal)],
+            footer.ToDictionary(kv => kv.Key, kv => kv.Value.ToDto()),
+            grand.ToDto());
+    }
+
+    /// <summary>
+    /// Jadvalga tushadigan o'quvchilar. <see cref="DebtorsAsync"/> dagi filtr
+    /// bilan AYNAN bir xil bo'lishi shart — ikki ekran bir xil savolga har xil
+    /// javob bermasin.
+    /// </summary>
+    private IQueryable<Student> ArrearsStudents(ArrearsPivotQuery query)
+    {
+        var students = db.Students.AsNoTracking();
+        if (!query.IncludeArchived) students = students.Where(s => !s.IsArchived);
+        if (!string.IsNullOrWhiteSpace(query.ClassName))
+        {
+            var className = query.ClassName.Trim();
+            students = students.Where(s => s.ClassName == className);
+        }
+
+        return students;
+    }
+
+    /// <summary>Katak kaliti — "YYYY-MM". Sana emas, matn: JSON kaliti bo'ladi.</summary>
+    private static string MonthKey(DateOnly month) =>
+        month.ToString("yyyy-MM", System.Globalization.CultureInfo.InvariantCulture);
+
+    /// <summary>
+    /// Yig'indini to'playdigan o'zgaruvchan katak. DTO <c>record</c> bo'lgani
+    /// uchun (o'zgarmas) yig'ish shu yerda bajariladi va oxirida bir marta
+    /// <see cref="ToDto"/> bilan qotiriladi.
+    /// </summary>
+    private sealed class MutableCell
+    {
+        public decimal Amount { get; private set; }
+
+        public decimal Paid { get; private set; }
+
+        public decimal ToBePaid { get; private set; }
+
+        public void Add(decimal amount, decimal paid, decimal toBePaid)
+        {
+            Amount += amount;
+            Paid += paid;
+            ToBePaid += toBePaid;
+        }
+
+        public ArrearsCellDto ToDto() => new(Amount, Paid, ToBePaid);
     }
 
     // =====================================================================

@@ -3,6 +3,7 @@ using System.Net;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using SchoolLms.Application.Billing;
+using SchoolLms.Application.Dtos.Billing;
 using SchoolLms.Domain;
 using SchoolLms.Infrastructure.Auth;
 using SchoolLms.Infrastructure.Data;
@@ -35,8 +36,9 @@ public class FinanceReportsTests(ApiFixture fixture, ITestOutputHelper output)
     private const string Pnl = "/api/admin/finance/pnl";
     private const string CashFlow = "/api/admin/finance/cashflow";
     private const string CollectionRate = "/api/admin/finance/collection-rate";
+    private const string ArrearsPivot = "/api/admin/finance/arrears-pivot";
 
-    private static readonly string[] AllReports = [Debtors, Pnl, CashFlow, CollectionRate];
+    private static readonly string[] AllReports = [Debtors, Pnl, CashFlow, CollectionRate, ArrearsPivot];
 
     // =====================================================================
     //  1. RUXSAT — SPEC §4.3
@@ -53,6 +55,7 @@ public class FinanceReportsTests(ApiFixture fixture, ITestOutputHelper output)
     [InlineData(Pnl)]
     [InlineData(CashFlow)]
     [InlineData(CollectionRate)]
+    [InlineData(ArrearsPivot)]
     public async Task Kassir_moliya_hisobotlariga_kira_olmaydi_403(string url)
     {
         using var client = await fixture.Api.ClientAsAsync(Roles.Cashier);
@@ -576,6 +579,162 @@ public class FinanceReportsTests(ApiFixture fixture, ITestOutputHelper output)
             Assert.True(warm < 500,
                 $"{name}: {warm:F1} ms — SPEC §7 chegarasi 500 ms (sovuq o'lchov {cold:F1} ms).");
         }
+    }
+
+    // =====================================================================
+    //  8. Oyma-oy qarzdorlik (arrears pivot)
+    // =====================================================================
+
+    /// <summary>
+    /// Jadvalning butun ma'nosi shu testda: <b>bo'sh katak</b> (o'qimagan oy)
+    /// va <b>nol katak</b> (to'lab bo'lingan oy) — boshqa-boshqa narsa, va
+    /// storno to'lov katakni "to'langan" qilib qo'ymaydi.
+    ///
+    /// <para>
+    /// Yana bitta invariant tekshiriladi: qator yakuni — kataklar yig'indisi,
+    /// ustun yakuni esa faqat KO'RINADIGAN qatorlardan. Ekranda qo'shilmaydigan
+    /// ikki raqam turishi — hisobotdagi eng tez seziladigan xato.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task Arrears_bosh_katak_nol_katak_va_stornoni_ajratadi()
+    {
+        await using var db = await NewBillingDbAsync("arrears");
+        var (cashierId, shiftId) = await SeedCashDeskAsync(db);
+
+        var tuition = await CategoryIdAsync(db, "tuition");
+        var meals = await CategoryIdAsync(db, "meals");
+
+        var debtor = Guid.NewGuid().ToString();
+        var solvent = Guid.NewGuid().ToString();
+        db.Students.Add(NewStudent(debtor, "Qarzdor Alisher", "5-A"));
+        db.Students.Add(NewStudent(solvent, "Qarzsiz Nodira", "5-B"));
+
+        // Sentabr: chegirmali 800 000, undan 300 000 to'langan → qoldiq 500 000.
+        var sep = NewInvoice(debtor, tuition, new DateOnly(2025, 9, 1), 1_000_000m, 200_000m);
+        // Oktabr: to'liq to'langan → katak BOR, qoldig'i 0.
+        var oct = NewInvoice(debtor, tuition, new DateOnly(2025, 10, 1), 500_000m);
+        // Noyabr: to'langan, keyin STORNO → katak to'lanmagan bo'lib qoladi.
+        var nov = NewInvoice(debtor, tuition, new DateOnly(2025, 11, 1), 300_000m);
+        // Dekabr: xato hisoblangan oy (void) → katak UMUMAN yo'q.
+        var dec = NewInvoice(debtor, meals, new DateOnly(2025, 12, 1), 400_000m);
+        dec.Status = InvoiceStatus.Void;
+        // Qarzsiz o'quvchining bitta oyi — to'liq to'langan.
+        var solventSep = NewInvoice(solvent, tuition, new DateOnly(2025, 9, 1), 700_000m);
+
+        db.Invoices.AddRange(sep, oct, nov, dec, solventSep);
+        await db.SaveChangesAsync();
+
+        await PayAsync(db, debtor, cashierId, shiftId, 300_000m, [(sep.Id, 300_000m)]);
+        await PayAsync(db, debtor, cashierId, shiftId, 500_000m, [(oct.Id, 500_000m)]);
+        await PayAsync(db, solvent, cashierId, shiftId, 700_000m, [(solventSep.Id, 700_000m)]);
+
+        var reversed = await PayAsync(db, debtor, cashierId, shiftId, 300_000m, [(nov.Id, 300_000m)]);
+        await PayAsync(db, debtor, cashierId, shiftId, 300_000m, [(nov.Id, 300_000m)],
+            reversalOf: reversed);
+
+        var pivot = await new FinanceReportQueries(db).ArrearsPivotAsync(new ArrearsPivotQuery(
+            new DateOnly(2025, 9, 1), new DateOnly(2025, 12, 1)));
+
+        // Ustunlar — davrning HAMMA oyi, ma'lumot bor-yo'qligidan qat'i nazar.
+        Assert.Equal(new[] { "2025-09", "2025-10", "2025-11", "2025-12" }, pivot.Months.ToArray());
+
+        var row = pivot.Rows.Single(r => r.StudentId == debtor);
+
+        // Sentabr: 1 000 000 − 200 000 hisoblangan, 300 000 to'langan.
+        Assert.Equal(new ArrearsCellDto(800_000m, 300_000m, 500_000m), row.Cells["2025-09"]);
+        // Oktabr: katak BOR va qoldig'i nol — "o'qidi, to'ladi".
+        Assert.Equal(new ArrearsCellDto(500_000m, 500_000m, 0m), row.Cells["2025-10"]);
+        // Noyabr: storno qilingan to'lov hisobga OLINMAYDI.
+        Assert.Equal(new ArrearsCellDto(300_000m, 0m, 300_000m), row.Cells["2025-11"]);
+        // Dekabr: bekor qilingan hisob-faktura — katak YO'Q (nol emas).
+        Assert.False(row.Cells.ContainsKey("2025-12"));
+
+        // Qator yakuni — kataklar yig'indisi.
+        Assert.Equal(1_600_000m, row.Total.Amount);
+        Assert.Equal(800_000m, row.Total.Paid);
+        Assert.Equal(800_000m, row.Total.ToBePaid);
+
+        // Ustun yakuni ikkala o'quvchini ham qamraydi.
+        Assert.Equal(new ArrearsCellDto(1_500_000m, 1_000_000m, 500_000m), pivot.Footer["2025-09"]);
+        Assert.Equal(new ArrearsCellDto(2_300_000m, 1_500_000m, 800_000m), pivot.Total);
+
+        // Jadval yakuni — ustun yakunlarining yig'indisi.
+        Assert.Equal(pivot.Total.Amount, pivot.Footer.Values.Sum(c => c.Amount));
+        Assert.Equal(pivot.Total.ToBePaid, pivot.Footer.Values.Sum(c => c.ToBePaid));
+    }
+
+    /// <summary>
+    /// Filtrlar: <c>debtorsOnly</c> qarzi yo'q qatorni butunlay olib tashlaydi
+    /// (va u ustun yakuniga ham qo'shilmaydi), sinf filtri esa bazada ishlaydi.
+    /// </summary>
+    [Fact]
+    public async Task Arrears_debtorsOnly_va_sinf_filtri_yakunni_ham_toraytiradi()
+    {
+        await using var db = await NewBillingDbAsync("arrearsfilter");
+        var (cashierId, shiftId) = await SeedCashDeskAsync(db);
+        var tuition = await CategoryIdAsync(db, "tuition");
+
+        var debtor = Guid.NewGuid().ToString();
+        var solvent = Guid.NewGuid().ToString();
+        db.Students.Add(NewStudent(debtor, "Qarzdor Alisher", "5-A"));
+        db.Students.Add(NewStudent(solvent, "Qarzsiz Nodira", "5-B"));
+
+        var debtorSep = NewInvoice(debtor, tuition, new DateOnly(2025, 9, 1), 900_000m);
+        var solventSep = NewInvoice(solvent, tuition, new DateOnly(2025, 9, 1), 700_000m);
+        db.Invoices.AddRange(debtorSep, solventSep);
+        await db.SaveChangesAsync();
+
+        await PayAsync(db, solvent, cashierId, shiftId, 700_000m, [(solventSep.Id, 700_000m)]);
+
+        var queries = new FinanceReportQueries(db);
+        var month = new DateOnly(2025, 9, 1);
+
+        var all = await queries.ArrearsPivotAsync(new ArrearsPivotQuery(month, month));
+        Assert.Equal(2, all.Rows.Count);
+        Assert.Equal(1_600_000m, all.Total.Amount);
+
+        var onlyDebtors = await queries.ArrearsPivotAsync(
+            new ArrearsPivotQuery(month, month, DebtorsOnly: true));
+        Assert.Equal(debtor, Assert.Single(onlyDebtors.Rows).StudentId);
+        // Yakun ham faqat ko'rinadigan qatordan: 700 000 unga QO'SHILMAYDI.
+        Assert.Equal(900_000m, onlyDebtors.Total.Amount);
+        Assert.Equal(900_000m, onlyDebtors.Footer["2025-09"].Amount);
+
+        var byClass = await queries.ArrearsPivotAsync(
+            new ArrearsPivotQuery(month, month, ClassName: "5-B"));
+        Assert.Equal(solvent, Assert.Single(byClass.Rows).StudentId);
+    }
+
+    /// <summary>
+    /// HTTP yuzasi: JSON kalitlari (frontend shularga bog'lanadi), davr
+    /// chegarasi va oy formatining xatosi. Uchovi ham 400 bo'lishi kerak —
+    /// bo'sh jadval yoki 500 emas.
+    /// </summary>
+    [Fact]
+    public async Task Arrears_HTTP_javob_shakli_va_xato_holatlari()
+    {
+        using var client = await fixture.Api.ClientAsAsync(Roles.Admin);
+
+        var ok = await client.GetAsync($"{ArrearsPivot}?fromMonth=2025-09&toMonth=2025-10");
+        Assert.True(ok.IsSuccessStatusCode, $"{(int)ok.StatusCode} {ok.StatusCode}");
+
+        using var body = JsonDocument.Parse(await ok.Content.ReadAsStringAsync());
+        Assert.Equal(2, body.RootElement.GetProperty("months").GetArrayLength());
+        Assert.True(body.RootElement.TryGetProperty("rows", out _));
+        Assert.True(body.RootElement.TryGetProperty("footer", out _));
+        Assert.True(body.RootElement.GetProperty("total").TryGetProperty("toBePaid", out _));
+
+        var tooLong = await client.GetAsync($"{ArrearsPivot}?fromMonth=2024-01&toMonth=2025-12");
+        Assert.Equal(HttpStatusCode.BadRequest, tooLong.StatusCode);
+        Assert.Contains("Davr juda uzun", await tooLong.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+
+        var badMonth = await client.GetAsync($"{ArrearsPivot}?fromMonth=sentabr");
+        Assert.Equal(HttpStatusCode.BadRequest, badMonth.StatusCode);
+        Assert.Contains("Oy formati", await badMonth.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+
+        var reversed = await client.GetAsync($"{ArrearsPivot}?fromMonth=2025-10&toMonth=2025-09");
+        Assert.Equal(HttpStatusCode.BadRequest, reversed.StatusCode);
     }
 
     // =====================================================================

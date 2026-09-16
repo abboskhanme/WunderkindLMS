@@ -79,6 +79,8 @@ export const navByRole: Record<Role, NavItem[]> = {
         // 'finance' ruxsatli xodim (staff) ham bu yerni ko'rmaydi, chunki
         // endpoint unga 403 qaytaradi. Menyuni ham, marshrutni ham yopamiz.
         { label: 'Pul aylanmasi', to: '/admin/finance/money-flow', roles: ['admin', 'superadmin'], group: 'HISOBOTLAR' },
+        // EduSchool: "Abonement tranzaksiyalari (qarzdorlik oyma-oy)" — MENU-PARITY.md §Moliya.
+        { label: 'Oyma-oy qarzdorlik', to: '/admin/finance/arrears', roles: ['admin', 'superadmin'], group: 'HISOBOTLAR' },
       ],
     },
     { label: 'Jurnal', to: '/admin/journal', icon: NotebookText, perm: 'journal' },
