@@ -60,7 +60,18 @@ export const navByRole: Record<Role, NavItem[]> = {
   // ==========================================================================
   admin: [
     { label: 'Bosh sahifa', to: '/admin', icon: LayoutDashboard },
-    { label: 'Lidlar', to: '/admin/leads', icon: UserPlus, perm: 'leads' },
+    {
+      label: 'Lidlar',
+      to: '/admin/leads',
+      icon: UserPlus,
+      perm: 'leads',
+      children: [
+        // Taxtaning O'ZI o'zgarmaydi (CLAUDE.md: dizayni muzlatilgan) — voronka
+        // yonidagi ALOHIDA sahifa, menyuda esa qo'shni yozuv.
+        { label: 'Doska', to: '/admin/leads', end: true },
+        { label: 'Voronka', to: '/admin/leads/funnel' },
+      ],
+    },
     {
       label: 'Moliya',
       to: '/admin/finance',
@@ -200,6 +211,7 @@ export const navByRole: Record<Role, NavItem[]> = {
       children: [
         { label: 'Ballar nazorati', to: '/admin/discipline', end: true },
         { label: 'Harakatlar', to: '/admin/discipline/incidents' },
+        { label: 'Davomat intizomi', to: '/admin/discipline/attendance-report' },
         { label: 'Ball sabablar', to: '/admin/discipline/reasons' },
       ],
     },
