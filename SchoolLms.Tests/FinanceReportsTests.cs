@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Net;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 using SchoolLms.Application.Billing;
 using SchoolLms.Application.Dtos.Billing;
 using SchoolLms.Domain;
@@ -30,8 +31,26 @@ namespace SchoolLms.Tests;
 /// </list>
 /// </summary>
 [Collection(SchoolLmsCollection.Name)]
-public class FinanceReportsTests(ApiFixture fixture, ITestOutputHelper output)
+public class FinanceReportsTests(ApiFixture fixture, ITestOutputHelper output) : IAsyncLifetime
 {
+    /// <summary>
+    /// Shu klass yaratgan bazalarning ulanish satrlari — test tugagach
+    /// hovuzlari yopiladi. Tozalanmasa ulanishlar ochiq qolib, konteynerdagi
+    /// <c>max_connections</c> tugaydi va KEYINGI klasslar <c>53300</c> bilan
+    /// yiqiladi (<c>AllocationTests</c> dagi izoh bilan bir xil sabab).
+    /// </summary>
+    private readonly List<string> _connectionStrings = [];
+
+    public Task InitializeAsync() => Task.CompletedTask;
+
+    public Task DisposeAsync()
+    {
+        foreach (var connectionString in _connectionStrings)
+            NpgsqlConnection.ClearPool(new NpgsqlConnection(connectionString));
+
+        return Task.CompletedTask;
+    }
+
     private const string Debtors = "/api/admin/finance/debtors";
     private const string Pnl = "/api/admin/finance/pnl";
     private const string CashFlow = "/api/admin/finance/cashflow";
@@ -757,6 +776,7 @@ public class FinanceReportsTests(ApiFixture fixture, ITestOutputHelper output)
     private async Task<AppDbContext> NewBillingDbAsync(string prefix)
     {
         var database = await fixture.Postgres.CreateDatabaseAsync("finrep_" + prefix);
+        _connectionStrings.Add(database.OwnerConnectionString);
         return PostgresFixture.NewContext(database.OwnerConnectionString);
     }
 

@@ -1145,7 +1145,7 @@ One table, ordered by value per hour. Hours are backend + frontend for one devel
 
 ### 7.1 Cheap and high value — do these first (**329 h** ≈ 4 weeks for one backend + one frontend developer working in parallel)
 
-**Progress: #1 shipped on 2026-09-16 (26 h of the 329). 303 h left in this list.**
+**Progress (2026-09-16): #1, #2, #3, #6 and #7 are done; #10 and #11 are part-done — about 160 h of the 329 shipped, ≈169 h left in this list.** Everything shipped so far is read-only: no migration, no new table, no financial write path — which is exactly why five of them could be built in parallel worktrees in one afternoon. Most of what remains needs a schema change, so it has to be sequenced behind a single migration owner (§8).
 
 "Cheap" here means: **no new subsystem, and in most cases no new table** — a screen over data
 the database already holds. Not one of these fourteen items requires a decision from the
@@ -1154,16 +1154,16 @@ client before it can start, and not one of them touches a financial write path.
 | # | Item | § | Hours | Why first |
 |---|---|---|---|---|
 | 1 | ✅ **Month-by-month arrears pivot** — **shipped 2026-09-16** | 3.4 | 26 | Zero new tables. One query pair over `invoices` + `payment_allocations`. Answers the director's daily question in one screen. |
-| 2 | **Attendance analytics + daily attendance report** | 4 (#5, #13) | 26 | The head teacher's morning screen. Data already collected. |
-| 3 | **School-wide discipline incident feed** | 6.3 | 18 | Makes an existing, unused feature usable. |
+| 2 | ✅ **Attendance analytics + daily attendance report** — **shipped 2026-09-16** | 4 (#5, #13) | 26 | The head teacher's morning screen. Data already collected. |
+| 3 | ✅ **School-wide discipline incident feed** — **shipped 2026-09-16** (`GET /api/admin/discipline/feed` → `HarakatlarPage.tsx`) | 6.3 | 18 | Makes an existing, unused feature usable. |
 | 4 | **Debtor workflow** (statuses, actions, promised date) | 3.5 | 28 | Turns a debtor list into collections. Two small tables. |
 | 5 | **Certificates register** | 2.3 | 30 | Frequently asked for; two small tables; no interaction with anything fragile. |
-| 6 | **Kassa kuni dashboard** (`fin-map` equivalent) | 3.2 | 44 | Reads only. The cashier and director open it every day. |
-| 7 | **Turnstile analytics + entrance/exit stats** | 4 (#11, #12) | 26 | Events already ingested; we currently show a live feed and nothing historical. |
+| 6 | ✅ **Kassa kuni dashboard** (`fin-map` equivalent) — **shipped 2026-09-16** (`/api/admin/finance/cash-day` + `/calendar` → `CashDayPage.tsx`) | 3.2 | 44 | Reads only. The cashier and director open it every day. |
+| 7 | ✅ **Turnstile analytics + entrance/exit stats** — **shipped 2026-09-16** (`/api/admin/turnstile-analytics/*`) | 4 (#11, #12) | 26 | Events already ingested; we currently show a live feed and nothing historical. |
 | 8 | **Surveys → leads** (public form) | 5.2 | 36 | The only item that brings money in. Feeds the leads funnel. |
 | 9 | **Show reversals explicitly in the student month history** | 3.4 | 4 | The history itself already exists (`StudentLedger.cs` + `PaymentHistoryModal.tsx`); only storno rows are invisible. |
-| 10 | **Discipline: parent notification + rating filters/stats/export** | 6.3 | 19 | Completes #3. |
-| 11 | **By-subject attainment pivot** + **discipline attendance report** + **leads funnel** | 4 (#3, #6, #9) | 34 | Three small reports over existing data. Leads funnel is a **new page**; the board stays frozen. |
+| 10 | ◑ **Discipline: parent notification + rating filters/stats/export** — rating filters, stats and Excel export **shipped 2026-09-16**; the parent notification (~9 h) needs `DisciplineReason.NotifyParent`, i.e. a migration, and goes through Telegram | 6.3 | 19 | Completes #3. |
+| 11 | ◑ By-subject attainment pivot **shipped 2026-09-16** (`/admin/grades-report/subjects`); **discipline attendance report** (~12 h) and **leads funnel** (~12 h, new page — the board stays frozen) remain | 4 (#3, #6, #9) | 34 | Three small reports over existing data. Leads funnel is a **new page**; the board stays frozen. |
 | 12 | **Archive-reason catalogue + bulk archive** | 2.2 | 8 | Small, and it makes the archive list analysable. |
 | 13 | **Four general-settings flags** | 5.5 | 6 | One column and one switch each. `archive_only_non_debtor_students` is a money-integrity rule. |
 | 14 | **News feed** | 5.2 | 24 | Replaces "broadcast and hope" with something that has a history. |

@@ -26,17 +26,8 @@ import { cn, exportToCsv } from '@/lib/utils'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Loader } from '@/components/ui/Loader'
-import {
-  ClassFilter,
-  DateInput,
-  PageHead,
-  Tile,
-  daysAgo,
-  shortDate,
-  syncLabel,
-  today,
-  useClassNames,
-} from './shared'
+import { ClassFilter, DateInput, PageHead, Tile } from './shared'
+import { daysAgo, shortDate, syncLabel, today, useClassNames } from './helpers'
 
 /**
  * Turniket analitikasi (#11).
@@ -98,6 +89,7 @@ export function TurnstileAnalyticsPage() {
       .finally(() => setLoading(false))
   }, [from, to, className, status])
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- filtr yoki sahifa o'zgarganda qayta yuklash (maqsadli, loyihadagi mavjud naqsh)
   useEffect(load, [load])
 
   useEffect(() => {

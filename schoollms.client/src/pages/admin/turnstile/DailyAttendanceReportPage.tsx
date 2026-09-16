@@ -8,7 +8,8 @@ import { cn, exportToCsv } from '@/lib/utils'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Loader } from '@/components/ui/Loader'
-import { DateInput, PageHead, Tile, shortDate, today } from './shared'
+import { DateInput, PageHead, Tile } from './shared'
+import { shortDate, today } from './helpers'
 
 /**
  * Kunlik davomat hisoboti (#13).
@@ -52,6 +53,7 @@ export function DailyAttendanceReportPage() {
       .finally(() => setLoading(false))
   }, [date])
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- sana o'zgarganda hisobotni qayta yuklash (maqsadli, loyihadagi mavjud naqsh)
   useEffect(load, [load])
 
   const exportClasses = () =>

@@ -99,6 +99,7 @@ export function HarakatlarPage() {
 
   useEffect(() => {
     let cancelled = false
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- filtr o'zgarganda lentani qayta yuklash (maqsadli, loyihadagi mavjud naqsh)
     setLoading(true)
     getDisciplineFeed({
       from: filters.from || undefined,

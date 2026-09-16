@@ -3,6 +3,7 @@ using System.Text.Json;
 using SchoolLms.Application.Services;
 using SchoolLms.Domain;
 using SchoolLms.Infrastructure.Data;
+using Npgsql;
 using SchoolLms.Tests.Fixtures;
 
 namespace SchoolLms.Tests;
@@ -24,8 +25,32 @@ namespace SchoolLms.Tests;
 /// </list>
 /// </summary>
 [Collection(SchoolLmsCollection.Name)]
-public class TurnstileAnalyticsTests(ApiFixture fixture)
+public class TurnstileAnalyticsTests(ApiFixture fixture) : IAsyncLifetime
 {
+    /// <summary>
+    /// Shu klass yaratgan bazalarning ulanish satrlari.
+    ///
+    /// <para>
+    /// <b>Nega kerak.</b> Har test O'Z bazasini oladi, ya'ni O'Z ulanish
+    /// hovuzini ham. Hovuz tozalanmasa tugagan testning ulanishlari ochiq
+    /// qolib, konteynerdagi <c>max_connections</c> ni yeb qo'yadi va KEYINGI
+    /// test klasslari <c>53300</c> bilan yiqiladi — o'z aybi bilan emas.
+    /// <c>AllocationTests</c> da xuddi shu izoh bor; bu yerda bazalar test
+    /// ichida yaratilgani uchun ro'yxat yuritiladi.
+    /// </para>
+    /// </summary>
+    private readonly List<string> _connectionStrings = [];
+
+    public Task InitializeAsync() => Task.CompletedTask;
+
+    public Task DisposeAsync()
+    {
+        foreach (var connectionString in _connectionStrings)
+            NpgsqlConnection.ClearPool(new NpgsqlConnection(connectionString));
+
+        return Task.CompletedTask;
+    }
+
     private const string Base = "/api/admin/turnstile-analytics";
 
     private static readonly string[] AllEndpoints =
@@ -415,6 +440,7 @@ public class TurnstileAnalyticsTests(ApiFixture fixture)
     private async Task<AppDbContext> NewDbAsync(string prefix)
     {
         var database = await fixture.Postgres.CreateDatabaseAsync("turnstile_" + prefix);
+        _connectionStrings.Add(database.OwnerConnectionString);
         return PostgresFixture.NewContext(database.OwnerConnectionString);
     }
 

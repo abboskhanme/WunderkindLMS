@@ -19,7 +19,8 @@ import { cn, exportToCsv } from '@/lib/utils'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Loader } from '@/components/ui/Loader'
-import { ClassFilter, DateInput, PageHead, Tile, daysAgo, today, useClassNames } from './shared'
+import { ClassFilter, DateInput, PageHead, Tile } from './shared'
+import { daysAgo, today, useClassNames } from './helpers'
 
 /**
  * Turniket kirib-chiqish statistikasi (#12).
@@ -58,6 +59,7 @@ export function TurnstileFlowPage() {
       .finally(() => setLoading(false))
   }, [from, to, className, groupBy])
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- filtr o'zgarganda hisobotni qayta yuklash (maqsadli, loyihadagi mavjud naqsh)
   useEffect(load, [load])
 
   const chartData = (report?.buckets ?? []).map((b) => ({
