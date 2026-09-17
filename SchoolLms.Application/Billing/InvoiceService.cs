@@ -146,17 +146,30 @@ public sealed class InvoiceService(IAppDbContext db, ILedgerService ledger) : II
     public const string AuditEntity = AuditService.EntityInvoice;
 
     /// <summary>
-    /// <b>HISOB-FAKTURANI BEKOR QILISH QULFI (advisory lock).</b> Kalit satr
-    /// bilan nomlangan (<c>invoice_void:{id}</c>), chunki advisory lock'ning
-    /// 64-bitli fazosi butun bazada YAGONA: xom <c>id</c> hash'i
-    /// <c>billing_guards.sql</c> dagi taqsimot qulfi, <c>ExpenseService</c> ning
-    /// tasdiq qulfi yoki <c>CashShiftService</c> ning chek qulfi bilan
-    /// tasodifan to'qnashib, bir-biriga aloqasi yo'q ikki amalni navbatga
-    /// qo'yardi. Batafsil: <see cref="VoidAsync"/>.
+    /// <b>BITTA HISOB-FAKTURA ustidagi advisory lock — bekor qilish VA to'lov
+    /// taqsimoti UCHUN BIR XIL.</b> Kalit satr bilan nomlangan
+    /// (<c>invoice_void:{id}</c> — nom tarixiy, endi ikkalasini ham qamraydi),
+    /// chunki advisory lock'ning 64-bitli fazosi butun bazada YAGONA: xom
+    /// <c>id</c> hash'i <c>billing_guards.sql</c> dagi taqsimot qulfi,
+    /// <c>ExpenseService</c> ning tasdiq qulfi yoki <c>CashShiftService</c>
+    /// ning chek qulfi bilan tasodifan to'qnashib, bir-biriga aloqasi yo'q
+    /// ikki amalni navbatga qo'yardi. Batafsil: <see cref="VoidAsync"/>.
+    ///
+    /// <para>
+    /// <b>F1.10 (docs/modules/finance-parity.md §2.1) shu KALITNI qayta
+    /// ishlatadi</b> — <see cref="PaymentService.AcceptAsync"/> taqsimotdan
+    /// oldin AYNAN shu qulfni oladi. Ikkalasi BIR XIL kalit bo'lishi SHART:
+    /// aks holda bitta hisob-fakturani "bekor qilish" va unga "to'lov
+    /// taqsimlash" ikki xil qulfda yurib, bir-birini KO'RMAY qolardi —
+    /// ya'ni admin invoice'ni void qilayotganda kassir AYNAN o'sha lahzada
+    /// unga pul taqsimlab qo'yishi mumkin bo'lardi. <c>internal</c> — faqat
+    /// shu assembly (<c>SchoolLms.Application</c>) ichida, <c>CashShiftService
+    /// .ShiftLockKey</c> bilan bir xil naqsh.
+    /// </para>
     /// </summary>
     private const string VoidLockSql = "SELECT pg_advisory_xact_lock(hashtextextended({0}::text, 0))";
 
-    private static string VoidLockKey(Guid invoiceId) => $"invoice_void:{invoiceId:D}";
+    internal static string VoidLockKey(Guid invoiceId) => $"invoice_void:{invoiceId:D}";
 
     /// <summary>Audit qatoridagi <c>actor_name</c> uchun — keshlangan (N+1 ga qarshi).</summary>
     private readonly ActorNames actors = new(db);

@@ -333,6 +333,84 @@ public class PaymentsTests(ApiFixture fixture)
     }
 
     // -----------------------------------------------------------------
+    //  F1.10 (docs/modules/finance-parity.md §2.1) — hisob-faktura darajasidagi
+    //  advisory lock ISBOTI: bir vaqtda ikki kassa bitta hisob-fakturaga
+    // -----------------------------------------------------------------
+
+    /// <summary>
+    /// Qulfsiz oldin: ikkita MUSTAQIL ulanish (ikkita kassir, ikkita smena) BIR
+    /// VAQTDA bir xil 500 000 so'mlik hisob-fakturaga TO'LIQ summani taqsimlashga
+    /// urinsa, ikkalasi ham "qoldiq yetarli" holatini ko'rib, ikkalasi ham o'tib
+    /// ketishi mumkin edi — natija "ortiqcha to'langan hisob-faktura" (qoldiq
+    /// manfiy), jimgina, faqat storno bilan orqaga qaytariladigan holat
+    /// (<c>PaymentService.AcceptAsync</c> dagi F1.10 izohi).
+    ///
+    /// <para>
+    /// Qulf bilan: ikkinchi urinish NAVBATDA turadi, birinchisi commit bo'lgach
+    /// QAYTA o'qiydi (READ COMMITTED) va qoldiqni ALLAQACHON kamaygan holda
+    /// ko'radi — ortiqcha taqsimot <b>ANIQ</b> <c>allocation_exceeds_invoice</c>
+    /// xatosi bilan rad etiladi. Natija: bazada BITTA to'lov, hisob-faktura
+    /// to'liq to'langan, jurnal balansda.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task Ikki_kassa_bir_vaqtda_bitta_hisob_fakturaga_tolasa_faqat_bittasi_otadi()
+    {
+        var studentId = await NewStudentAsync();
+        var invoiceId = await NewInvoiceAsync(studentId, "tuition", 500_000m);
+
+        var (cashierA, _) = await ActorAsync(Roles.Cashier);
+        var (cashierB, _) = await ActorAsync(Roles.Cashier);
+        await OpenShiftAsync(cashierA.Id);
+        await OpenShiftAsync(cashierB.Id);
+
+        // Ikkita MUSTAQIL ulanish — advisory lock ulanish (sessiya) darajasida,
+        // bitta DbContext ustida "parallel" chaqiruv haqiqiy poyga sinamaydi.
+        await using var dbA = NewDb();
+        await using var dbB = NewDb();
+        var serviceA = new PaymentService(dbA, new ShiftDouble(dbA), new LedgerService(dbA));
+        var serviceB = new PaymentService(dbB, new ShiftDouble(dbB), new LedgerService(dbB));
+
+        var request = new AcceptPaymentRequest(
+            studentId, 500_000m, PaymentMethod.Cash, null,
+            [new AllocationRequest(invoiceId, 500_000m)]);
+
+        var results = await Task.WhenAll(
+            TryAcceptAsync(serviceA, request, cashierA.Id),
+            TryAcceptAsync(serviceB, request, cashierB.Id));
+
+        Assert.Equal(1, results.Count(r => r.Success));
+        Assert.Single(results, r => !r.Success && r.Code == "allocation_exceeds_invoice");
+
+        await using var db = NewDb();
+        Assert.Single(await db.Payments.AsNoTracking()
+            .Where(p => p.StudentId == studentId).ToListAsync());
+        Assert.Equal(500_000m, await db.PaymentAllocations.AsNoTracking()
+            .Where(a => a.InvoiceId == invoiceId).SumAsync(a => a.Amount));
+        Assert.Equal(InvoiceStatus.Paid,
+            await db.Invoices.Where(i => i.Id == invoiceId).Select(i => i.Status).SingleAsync());
+
+        // Pul yo'li testi (SPEC §4) — butun jurnal (davrdan qat'i nazar) balansda.
+        var trial = await new LedgerService(db).TrialBalanceAsync();
+        Assert.Equal(trial.Sum(t => t.Debit), trial.Sum(t => t.Credit));
+    }
+
+    /// <summary><see cref="PaymentException"/> ni ushlab, muvaffaqiyat/xato kodini qaytaradi.</summary>
+    private static async Task<(bool Success, string? Code)> TryAcceptAsync(
+        PaymentService service, AcceptPaymentRequest request, string cashierId)
+    {
+        try
+        {
+            await service.AcceptAsync(request, cashierId);
+            return (true, null);
+        }
+        catch (PaymentException ex)
+        {
+            return (false, ex.Code);
+        }
+    }
+
+    // -----------------------------------------------------------------
     //  Taqsimlanmagan qoldiq = kredit, o'zgaruvchan balans ustuni EMAS
     // -----------------------------------------------------------------
 
@@ -389,6 +467,81 @@ public class PaymentsTests(ApiFixture fixture)
             .SingleAsync(e => e.RefId == dto.Id && e.Direction == LedgerDirection.Debit);
 
         Assert.Equal(Accounts.Bank, debit.Account);
+    }
+
+    // -----------------------------------------------------------------
+    //  F1.07 (SPEC §4.7) — chek qabul qilingach FON VAZIFASIDA avtomatik
+    //  Telegramga yuboriladi (qo'lda bosilmasdan)
+    // -----------------------------------------------------------------
+
+    /// <summary>
+    /// To'lov 200 (Ok) bilan javob berishi — Telegram yuborilishini KUTMASDAN
+    /// (fire-and-forget). Yuborish o'zi esa baribir sodir bo'lishi kerak: shu
+    /// so'rov skopi yopilgandan KEYIN ham. <see cref="RecordingReceiptService"/>
+    /// chaqirilgan to'lov id'sini <see cref="TaskCompletionSource{T}"/> ga
+    /// yozadi — test buni chegaralangan vaqt (5 s) ichida kutadi, uxlab
+    /// (sleep) emas.
+    /// </summary>
+    [Fact]
+    public async Task Tolov_qabul_qilingach_chek_fon_vazifasida_avtomatik_yuboriladi()
+    {
+        var recorder = new RecordingReceiptService();
+        await using var factory = WiredWithReceipts(recorder);
+
+        var (cashier, _) = await fixture.Api.SeedUserAsync(Roles.Cashier);
+        await OpenShiftAsync(cashier.Id);
+        var studentId = await NewStudentAsync();
+        var tuition = await NewInvoiceAsync(studentId, "tuition", 500_000m);
+
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+            "Bearer", fixture.Api.TokenFor(Roles.Cashier, cashier.Id, cashier.FullName, cashier.Email));
+
+        var response = await client.PostAsJsonAsync("/api/cash/payments", new
+        {
+            studentId,
+            amount = 500_000m,
+            method = PaymentMethod.Cash,
+            allocations = new[] { new { invoiceId = tuition, amount = 500_000m } },
+        });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var dto = await response.Content.ReadFromJsonAsync<PaymentDto>();
+
+        var completed = await Task.WhenAny(recorder.Sent.Task, Task.Delay(TimeSpan.FromSeconds(5)));
+        Assert.True(ReferenceEquals(recorder.Sent.Task, completed),
+            "Chek fon vazifasida Telegramga yuborish 5 soniya ichida chaqirilmadi.");
+        Assert.Equal(dto!.Id, await recorder.Sent.Task);
+    }
+
+    private WebApplicationFactory<AuthController> WiredWithReceipts(IReceiptService receipts) =>
+        fixture.Api.WithWebHostBuilder(builder =>
+            builder.ConfigureServices(services =>
+            {
+                services.AddScoped<ILedgerService, LedgerService>();
+                services.AddScoped<ICashShiftService, ShiftDouble>();
+                services.AddScoped<IPaymentService, PaymentService>();
+                services.AddSingleton(receipts);
+            }));
+
+    /// <summary>
+    /// <see cref="IReceiptService"/> ning yozib oluvchi soxtasi — haqiqiy PDF
+    /// yoki Telegram YO'Q, faqat "chaqirildimi, qaysi to'lov id'si bilan"
+    /// degan savolga javob beradi.
+    /// </summary>
+    private sealed class RecordingReceiptService : IReceiptService
+    {
+        public TaskCompletionSource<Guid> Sent { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public Task<byte[]> RenderPdfAsync(Guid paymentId, CancellationToken ct = default) =>
+            throw new NotSupportedException("Bu test faqat Telegramga yuborishni sinaydi.");
+
+        public Task<bool> SendToGuardianAsync(Guid paymentId, CancellationToken ct = default)
+        {
+            Sent.TrySetResult(paymentId);
+            return Task.FromResult(true);
+        }
     }
 
     // -----------------------------------------------------------------
