@@ -15,12 +15,17 @@ interface Props {
 }
 
 /**
- * Xona formasi — docs/modules/students-parity.md §2.6 (R-1).
+ * Xona formasi — docs/modules/students-parity.md §2.6 (R-1) + faollik
+ * (Batch C qo'shimchasi).
  *
  * EduSchool formasida uchta maydon bor (nom, bino, sig'im); bizda yana ikkitasi:
  * qavat va TUR. Tur kerak, chunki jadval moduli "sport zali" bilan "laboratoriya"ni
  * ajrata olishi kerak, aks holda darsni noto'g'ri xonaga qo'yish hech narsa
  * bilan to'xtatilmasdi.
+ *
+ * "Faol" — o'chirish o'rniga faolsizlantirish: ishlatilgan xonani ham
+ * yopish mumkin (sinf ekranlari buzilmaydi), faqat yangi tanlovda
+ * ko'rinmay qoladi.
  */
 export function RoomFormModal({ open, room, buildings, onClose, onSubmit }: Props) {
   const [name, setName] = useState('')
@@ -28,6 +33,7 @@ export function RoomFormModal({ open, room, buildings, onClose, onSubmit }: Prop
   const [floor, setFloor] = useState('')
   const [capacity, setCapacity] = useState('30')
   const [kind, setKind] = useState<RoomKind>('classroom')
+  const [isActive, setIsActive] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
@@ -39,6 +45,7 @@ export function RoomFormModal({ open, room, buildings, onClose, onSubmit }: Prop
     setFloor(room?.floor != null ? String(room.floor) : '')
     setCapacity(room?.capacity != null ? String(room.capacity) : '30')
     setKind(room?.kind ?? 'classroom')
+    setIsActive(room?.isActive ?? true)
     setError(null)
   }, [open, room])
 
@@ -57,6 +64,7 @@ export function RoomFormModal({ open, room, buildings, onClose, onSubmit }: Prop
         floor: floor.trim() === '' ? null : Number(floor),
         capacity: capacity.trim() === '' ? null : Number(capacity),
         kind,
+        isActive,
       })
     } catch (err) {
       setError(
@@ -134,6 +142,16 @@ export function RoomFormModal({ open, room, buildings, onClose, onSubmit }: Prop
             ))}
           </Select>
         </div>
+
+        <label className="inline-flex cursor-pointer items-center gap-2 text-sm text-slate-700">
+          <input
+            type="checkbox"
+            checked={isActive}
+            onChange={(e) => setIsActive(e.target.checked)}
+            className="h-4 w-4 rounded border-slate-300 accent-brand-600"
+          />
+          Faol — dars jadvali tanlovida ko'rinadi
+        </label>
 
         {error && <p className="text-sm text-red-600">{error}</p>}
       </form>

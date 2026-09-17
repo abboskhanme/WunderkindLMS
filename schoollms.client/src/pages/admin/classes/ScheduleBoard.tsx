@@ -26,6 +26,14 @@ interface Props {
 /** O'qituvchi → band soatlar xaritasi. teacherId → [{day, period, className, templateName, ownerKind}] */
 type OccupiedSlots = Record<string, OccupiedSlot[]>
 
+/** `#RRGGBB` ni `rgba(...)` ga o'giradi — F-3 katak bo'yog'i uchun (noto'g'ri shakl — undefined). */
+function tint(hex: string, alpha: number): string | undefined {
+  const m = /^#([0-9a-fA-F]{6})$/.exec(hex)
+  if (!m) return undefined
+  const n = parseInt(m[1], 16)
+  return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`
+}
+
 /** Bitta jadval variantining (template) haftalik gridi + yonidagi inline tahrir paneli */
 export function ScheduleBoard({ classId, template }: Props) {
   const ownerKind = template.ownerKind ?? 'class'
@@ -71,7 +79,20 @@ export function ScheduleBoard({ classId, template }: Props) {
   }, [template.id, template.lessons])
 
   const subjectName = (sid: string) => subjects.find((s) => s.id === sid)?.name ?? ''
+  /** F-3: jadval katakchasini bo'yaydigan rang — fanda ko'rsatilmagan bo'lsa null. */
+  const subjectColor = (sid: string) => subjects.find((s) => s.id === sid)?.color ?? null
   const teacherName = (tid: string) => teachers.find((t) => t.id === tid)?.fullName ?? ''
+  /**
+   * Tahrir panelidagi fan tanlovi FAQAT faol fanlarni ko'rsatadi (F-3: "must
+   * disappear from pickers for NEW rows") — lekin joriy katakda ALLAQACHON
+   * tanlangan (endi faolsizlantirilgan bo'lishi mumkin) fan ro'yxatdan
+   * TUSHIB QOLMAYDI, aks holda mavjud darsni tahrirlashda tanlov bo'sh
+   * ko'rinib qolardi ("must not break existing... rows").
+   */
+  const pickableSubjects = (() => {
+    const keep = new Set((selected?.lessons ?? []).map((l) => l.subjectId))
+    return subjects.filter((s) => s.isActive !== false || keep.has(s.id))
+  })()
   /** Bir (day, period) katakdagi BARCHA darslar (0..2 ta). */
   const lessonsAt = (day: number, period: number) =>
     lessons.filter((l) => l.day === day && l.period === period)
@@ -149,16 +170,29 @@ export function ScheduleBoard({ classId, template }: Props) {
                         slotLessons.length > 1 ||
                         (slotLessons.length === 1 && (slotLessons[0].subGroup ?? 0) > 0)
                       const isSelected = selected?.day === day && selected?.period === period
+                      // F-3: butun katak faqat BO'LINMAGAN darsda bo'yaladi — bo'lingan
+                      // katakda G1/G2 nishonlari allaqachon o'z rangini tashiydi va katak
+                      // foni ular bilan to'qnashib ketardi.
+                      const soleColor =
+                        !isSplit && slotLessons.length === 1
+                          ? subjectColor(slotLessons[0].subjectId)
+                          : null
+                      const soleTint = soleColor ? tint(soleColor, 0.14) : undefined
                       return (
                         <td key={day} className="px-1.5 py-1.5 align-top">
                           <button
                             type="button"
                             onClick={() => setSelected({ day, period, lessons: slotLessons })}
+                            style={
+                              soleTint
+                                ? { backgroundColor: soleTint, borderColor: tint(soleColor!, 0.4) }
+                                : undefined
+                            }
                             className={cn(
-                              'flex min-h-[60px] w-full flex-col justify-center rounded-lg p-2 text-left transition-colors',
+                              'flex min-h-[60px] w-full flex-col justify-center rounded-lg border p-2 text-left transition-colors',
                               slotLessons.length > 0
-                                ? 'border border-brand-100 bg-brand-50 hover:border-brand-300'
-                                : 'border border-dashed border-slate-200 text-slate-300 hover:bg-slate-50',
+                                ? cn('hover:border-brand-300', !soleTint && 'border-brand-100 bg-brand-50')
+                                : 'border-dashed border-slate-200 text-slate-300 hover:bg-slate-50',
                               isSelected && 'ring-2 ring-brand-400 ring-offset-1',
                             )}
                           >
@@ -181,7 +215,13 @@ export function ScheduleBoard({ classId, template }: Props) {
                                       >
                                         G{l.subGroup}
                                       </span>
-                                      <span className="text-xs font-medium text-slate-800">
+                                      <span className="flex items-center gap-1 text-xs font-medium text-slate-800">
+                                        {subjectColor(l.subjectId) && (
+                                          <span
+                                            className="h-1.5 w-1.5 shrink-0 rounded-full"
+                                            style={{ backgroundColor: subjectColor(l.subjectId)! }}
+                                          />
+                                        )}
                                         {subjectName(l.subjectId)}
                                       </span>
                                       {l.teacherId && (
@@ -232,7 +272,7 @@ export function ScheduleBoard({ classId, template }: Props) {
       <div className="w-full shrink-0 xl:sticky xl:top-4 xl:w-[340px]">
         <LessonEditorPanel
           slot={selected}
-          subjects={subjects}
+          subjects={pickableSubjects}
           teachers={teachers}
           occupiedSlots={occupiedSlots}
           ownerKind={ownerKind}

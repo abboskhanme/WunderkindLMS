@@ -17,6 +17,12 @@ namespace SchoolLms.Application.Dtos;
 /// Nechta sinf shu xonani (nomi bo'yicha) ko'rsatgan. 0 dan katta bo'lsa
 /// xona o'chirilmaydi — sinflar "xonasiz" qolib ketmasligi uchun.
 /// </param>
+/// <param name="IsActive">
+/// Xona faolmi. <c>false = "ishlatilmaydi, lekin saqlanadi"</c> — R-1 dan
+/// keyingi qo'shimcha (batch C, <see cref="SchoolLms.Domain.Room.IsActive"/>):
+/// yangi jadval/tanlovda ko'rinmaydi, unga bog'langan eski sinf esa JOYIDA
+/// qoladi.
+/// </param>
 public record RoomDto(
     Guid Id,
     string Name,
@@ -24,15 +30,21 @@ public record RoomDto(
     short? Floor,
     short Capacity,
     string Kind,
-    int UsedByClasses);
+    int UsedByClasses,
+    bool IsActive);
 
-/// <summary>Xona yaratish/tahrirlash.</summary>
+/// <summary>
+/// Xona yaratish/tahrirlash. <paramref name="IsActive"/> — sig'im va tur
+/// bilan bir xil "qisman" naqsh: berilmasa joyida qoladi (yaratishda —
+/// entity DEFAULT'i, ya'ni <c>true</c>, g'olib chiqadi).
+/// </summary>
 public record SaveRoomRequest(
     string? Name,
     string? Building,
     short? Floor,
     short? Capacity,
-    string? Kind);
+    string? Kind,
+    bool? IsActive = null);
 
 /// <summary>
 /// Ommaviy yaratish (EduSchool'dagi <c>rooms/multiple</c>, §2.6.1):

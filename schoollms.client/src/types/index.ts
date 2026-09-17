@@ -251,6 +251,14 @@ export interface Subject {
    * mumkin, shuning uchun ixtiyoriy.
    */
   isGroupable?: boolean
+  /** Jadval katakchasini bo'yaydigan rang `#RRGGBB` (F-3). null/yo'q — neytral. */
+  color?: string | null
+  /**
+   * Fan faolmi (F-3). `false` — o'chirish o'rniga arxivlash: yangi jadval va
+   * tanlovda ko'rinmaydi, lekin unga bog'langan eski yozuvlar joyida qoladi.
+   * Eski javoblarda bo'lmasligi mumkin — shu holatda "faol" deb o'qiladi.
+   */
+  isActive?: boolean
 }
 
 /* ---------- Sinflar ---------- */

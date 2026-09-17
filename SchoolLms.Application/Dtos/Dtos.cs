@@ -196,8 +196,21 @@ public record SaveCameraSettingsRequest(bool Enabled);
 /// (students-parity.md §2.5, G-9): faqat shunday fanga o'quv guruhi ochiladi.
 /// Sukut qiymati <c>false</c> ataylab: eski chaqiruvchi bayroqni yubormasa
 /// fan guruhli BO'LIB QOLMAYDI.
+///
+/// <para>
+/// <paramref name="Color"/> va <paramref name="IsActive"/> — F-3
+/// (students-parity.md §2.5.3): jadval katakchasini bo'yaydigan rang va
+/// o'chirish o'rniga arxivlash bayrog'i. Forma <c>IsGroupable</c> bilan bir
+/// xil naqshda HAR DOIM to'liq obyekt yuboradi — shuning uchun bu yerda ham
+/// qisman ("berilmasa tegilmaydi") yangilash yo'q, Update() hammasini
+/// almashtiradi.
+/// </para>
 /// </summary>
-public record SubjectPayload(string Name, bool IsGroupable = false);
+public record SubjectPayload(
+    string Name,
+    bool IsGroupable = false,
+    string? Color = null,
+    bool IsActive = true);
 
 /* ---------- Classes ---------- */
 /// <summary>
