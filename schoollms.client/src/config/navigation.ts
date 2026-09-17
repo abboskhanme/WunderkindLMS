@@ -99,6 +99,12 @@ export const navByRole: Record<Role, NavItem[]> = {
         // admin qo'yadi, tasdiqni faqat superadmin beradi, va o'z so'rovini
         // o'zi tasdiqlay olmaydi (bazadagi `ck_student_refunds_approver_differs`).
         { label: 'Qaytarimlar', to: '/admin/finance/refunds', roles: ['admin', 'superadmin'], group: 'AMALIYOT' },
+        // Bonus va Jarima EduSchool'da ham Moliya ostida turadi (HR emas).
+        // Xodimning pulini o'zgartiradigan amal, shuning uchun kassir ham,
+        // oddiy xodim ham kira olmaydi — server `ManagePayrollAdjustments`
+        // bilan qo'riqlaydi.
+        { label: 'Bonus', to: '/admin/finance/bonus', roles: ['admin', 'superadmin'], group: 'AMALIYOT' },
+        { label: 'Jarima', to: '/admin/finance/penalty', roles: ['admin', 'superadmin'], group: 'AMALIYOT' },
         { label: 'Moliya sozlamalari', to: '/admin/billing/settings', roles: ['admin', 'superadmin'], group: 'AMALIYOT' },
         // SPEC §4.3: moliya hisobotlari faqat admin va direktorga ochiq —
         // 'finance' ruxsatli xodim (staff) ham bu yerni ko'rmaydi, chunki

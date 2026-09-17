@@ -6,6 +6,7 @@ import { RequirePerm } from '@/components/auth/RequirePerm'
 import { CategoriesPage } from '@/pages/admin/billing/CategoriesPage'
 import { BillingSettingsPage } from '@/pages/admin/billing/BillingSettingsPage'
 import { RefundsPage } from '@/pages/admin/finance/RefundsPage'
+import { AdjustmentsPage } from '@/pages/admin/hr/AdjustmentsPage'
 import { SubscriptionsPage } from '@/pages/admin/billing/SubscriptionsPage'
 import { DiscountsPage } from '@/pages/admin/billing/DiscountsPage'
 import { ExpensesPage } from '@/pages/admin/billing/ExpensesPage'
@@ -167,6 +168,8 @@ export default function App() {
           <Route path="billing/categories" element={<RequirePerm perm="finance"><CategoriesPage /></RequirePerm>} />
           <Route path="billing/settings" element={<RequirePerm perm="finance"><BillingSettingsPage /></RequirePerm>} />
           <Route path="finance/refunds" element={<RequirePerm perm="finance"><RefundsPage /></RequirePerm>} />
+          <Route path="finance/bonus" element={<RequirePerm perm="finance"><AdjustmentsPage kind="bonus" /></RequirePerm>} />
+          <Route path="finance/penalty" element={<RequirePerm perm="finance"><AdjustmentsPage kind="penalty" /></RequirePerm>} />
           <Route path="billing/subscriptions" element={<RequirePerm perm="finance"><SubscriptionsPage /></RequirePerm>} />
           <Route path="billing/discounts" element={<RequirePerm perm="finance"><DiscountsPage /></RequirePerm>} />
           <Route path="billing/expenses" element={<RequirePerm perm="finance"><ExpensesPage /></RequirePerm>} />
