@@ -159,16 +159,19 @@ internal static class StudyGroupModel
 
             // Bitta guruhda bitta o'quvchining ko'pi bilan bitta faol a'zoligi.
             e.HasIndex(x => new { x.GroupId, x.StudentId }, "ux_group_members_one_active")
-                .IsUnique().HasFilter("left_on is null");
+                .IsUnique().HasFilter("left_on is null")
+                .HasDatabaseName("ux_group_members_one_active");
 
             // MIJOZ SAVOLI Q1 ning "javob bo'lmasa" qarori — BAZA KAFOLATI:
             // bitta o'quvchi bitta fandan ko'pi bilan BITTA faol guruhda.
             // Mijoz "ha" desa aynan shu indeks olib tashlanadi (§5 Q1).
             e.HasIndex(x => new { x.StudentId, x.SubjectId }, "ux_group_members_one_group_per_subject")
-                .IsUnique().HasFilter("left_on is null");
+                .IsUnique().HasFilter("left_on is null")
+                .HasDatabaseName("ux_group_members_one_group_per_subject");
 
             // O'quvchi kartochkasidagi "Sinf va guruhlar" tarixi (G-10).
-            e.HasIndex(x => x.StudentId, "ix_group_members_student");
+            e.HasIndex(x => x.StudentId, "ix_group_members_student")
+                .HasDatabaseName("ix_group_members_student");
 
             e.ToTable(t => t.HasCheckConstraint(
                 "ck_study_group_members_period", "left_on is null or left_on >= joined_on"));
@@ -213,16 +216,19 @@ internal static class StudyGroupModel
 
             // BAZA KAFOLATI: bitta o'quvchida ko'pi bilan BITTA faol sinf.
             e.HasIndex(x => x.StudentId, "ux_class_memberships_one_active")
-                .IsUnique().HasFilter("left_on is null");
+                .IsUnique().HasFilter("left_on is null")
+                .HasDatabaseName("ux_class_memberships_one_active");
 
             // Sinf ro'yxati (roster) — faqat faol a'zolar.
             e.HasIndex(x => x.ClassId, "ix_class_memberships_class")
-                .HasFilter("left_on is null");
+                .HasFilter("left_on is null")
+                .HasDatabaseName("ix_class_memberships_class");
 
             // O'quvchining to'liq sinf tarixi (G-10: "faol davr", kunlar soni)
             // va o'quvchi o'chirilganda CASCADE qidiruvi. Qisman indeks buni
             // qoplamaydi — u yopilgan qatorlarni ko'rmaydi.
-            e.HasIndex(x => x.StudentId, "ix_class_memberships_student");
+            e.HasIndex(x => x.StudentId, "ix_class_memberships_student")
+                .HasDatabaseName("ix_class_memberships_student");
 
             e.ToTable(t => t.HasCheckConstraint(
                 "ck_class_memberships_period", "left_on is null or left_on >= joined_on"));
