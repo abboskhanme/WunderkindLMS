@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { AlertTriangle } from 'lucide-react'
 import type { LedgerPayment, MonthStatus, Student, StudentLedger } from '@/types'
 import { getStudentLedger } from '@/api/services/students'
 import { Modal } from '@/components/ui/Modal'
@@ -21,20 +22,40 @@ const statusStyles: Record<MonthStatus, string> = {
 export function PaymentHistoryModal({ student, onClose }: Props) {
   const [ledger, setLedger] = useState<StudentLedger | null>(null)
   const [loading, setLoading] = useState(false)
+  /**
+   * Xato matni. Ilgari bu oyna xatoni UMUMAN ushlamasdi: moliya roli yo'q
+   * xodimga server 403 qaytarardi, `ledger` null bo'lib qolardi va ekranda
+   * CHEKSIZ aylanuvchi doira turardi. Ruxsat yo'qligi — o'qiladigan yozuv.
+   */
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!student) return
     // eslint-disable-next-line react-hooks/set-state-in-effect -- modal ochilganda tarixni yuklash (maqsadli)
     setLoading(true)
     setLedger(null)
+    setError(null)
     getStudentLedger(student.id)
       .then(setLedger)
+      .catch((e) =>
+        setError(
+          (e as { response?: { status?: number; data?: { message?: string } } })?.response?.status === 403
+            ? "To'lov tarixini ko'rish uchun moliya ruxsati kerak"
+            : (e as { response?: { data?: { message?: string } } })?.response?.data?.message ??
+              "To'lov tarixini olib bo'lmadi",
+        ),
+      )
       .finally(() => setLoading(false))
   }, [student])
 
   return (
     <Modal open={!!student} onClose={onClose} size="lg" title="To'lov tarixi">
-      {loading || !ledger ? (
+      {error ? (
+        <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>{error}</span>
+        </div>
+      ) : loading || !ledger ? (
         <Loader label="Yuklanmoqda..." />
       ) : (
         <div className="space-y-5">
