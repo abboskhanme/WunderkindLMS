@@ -164,3 +164,45 @@ export async function generateStudentContract(
   const { data } = await api.post<StudentContract>('/admin/student-contracts/generate', input)
   return data
 }
+
+/* =========================================================================
+ *  K-5 — ommaviy biriktirish (bir xil raqam va sana, tanlangan o'quvchilarga)
+ * ========================================================================= */
+
+export interface BulkAttachContractInput {
+  studentIds: string[]
+  number: string
+  signedOn?: string | null
+  endsOn?: string | null
+  comment?: string | null
+}
+
+/** Bitta o'quvchi uchun natija: muvaffaqiyatli bo'lsa yangi yozuv id'si, aks holda sabab. */
+export interface BulkAttachContractRow {
+  studentId: string
+  studentName: string | null
+  ok: boolean
+  contractId: string | null
+  reason: string | null
+}
+
+export interface BulkAttachContractResult {
+  attached: number
+  results: BulkAttachContractRow[]
+}
+
+/**
+ * K-5 — bitta shartnoma raqami va sanasini bir nechta tanlangan o'quvchiga
+ * birdaniga biriktiradi. `student_contracts.number` QISMAN UNIKAL bo'lgani
+ * uchun (bitta raqam — bitta yozuv) faqat BITTASI muvaffaqiyatli bo'ladi;
+ * qolganlari ANIQ sababi bilan qaytadi (allaqachon raqami bor / raqam band).
+ */
+export async function attachContractsMany(
+  input: BulkAttachContractInput,
+): Promise<BulkAttachContractResult> {
+  const { data } = await api.post<BulkAttachContractResult>(
+    '/admin/student-contracts/attach-many',
+    input,
+  )
+  return data
+}

@@ -9,6 +9,7 @@ import type {
   TelegramStatus,
 } from '@/types'
 import { api, USE_MOCK } from '../client'
+import type { StudentListFilter } from './studentSearch'
 
 /** Xabarlar bo'limi uchun sinflar ro'yxati (o'quvchi soni, ro'yxatdagi ota-onalar, oxirgi xabar) */
 export async function getMessageClasses(): Promise<MessageClass[]> {
@@ -71,8 +72,12 @@ export async function getBroadcasts(className?: string): Promise<Broadcast[]> {
 
 /** E'lon yuborish so'rovi. Matnda o'rinbosarlar: {fish} {sinf} {qarzdorlik} {balans} {ota-ona} {telefon}. */
 export interface SendBroadcastReq {
-  /** Qamrov: tanlangan sinf / o'quv guruhi / barcha sinf / tanlangan o'quvchilar */
-  scope: 'class' | 'group' | 'all' | 'selected'
+  /**
+   * Qamrov: tanlangan sinf / o'quv guruhi / barcha sinf / tanlangan
+   * o'quvchilar / o'quvchilar ro'yxatining JORIY FILTRIGA mos hammasi (S-6,
+   * EduSchool'dagi "barcha sahifalar").
+   */
+  scope: 'class' | 'group' | 'all' | 'selected' | 'filter'
   /** scope === 'class' bo'lganda sinf nomi */
   className?: string
   /**
@@ -85,6 +90,13 @@ export interface SendBroadcastReq {
   onlyDebtors: boolean
   /** scope === 'selected' bo'lganda tanlangan o'quvchi id'lari */
   studentIds?: string[]
+  /**
+   * scope === 'filter' bo'lganda — o'quvchilar ro'yxati ekranidagi joriy
+   * filtr (`StudentListFilter` bilan AYNAN bir xil maydonlar). Server bu
+   * to'plamni `StudentListQuery` orqali AYNAN ekranda ko'rinayotgan qatorlar
+   * kabi hisoblaydi — ya'ni "nima ko'ryapman, o'shanga yuboraman".
+   */
+  filter?: StudentListFilter
   text: string
 }
 
