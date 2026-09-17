@@ -12,7 +12,7 @@ namespace SchoolLms.Server.Controllers;
 [Authorize]
 [AdminPerm("settings")]
 [Route("api/admin/settings")]
-public class SettingsController(AppDbContext db, TelegramService telegram) : ControllerBase
+public class SettingsController(AppDbContext db, TelegramService telegram, ContractService contracts) : ControllerBase
 {
     [HttpGet]
     public async Task<ActionResult<SchoolSettingsDto>> Get()
@@ -309,6 +309,40 @@ public class SettingsController(AppDbContext db, TelegramService telegram) : Con
         m.CameraEnabled = req.Enabled;
         await db.SaveChangesAsync();
         return await GetCameras();
+    }
+
+    // ---------- Shartnoma raqamlash qoidasi (K-6) ----------
+    //
+    //  `auto` — raqam tizim tomonidan generatsiya qilinadi (StudentContractsController
+    //  ning NextNumberAsync'i), forma maydoni faqat o'qish uchun. `manual` — xodim
+    //  o'zi kiritadi; unikallik BAZA darajasida ham ta'minlangan
+    //  (`ux_student_contracts_number` — qisman unikal indeks, faqat raqam berilganda),
+    //  ilova qatlami esa uni oldindan tekshirib, tushunarli xato qaytaradi
+    //  (`StudentContractsController.NumberTakenMessage`).
+
+    public const string ContractNumberModeInvalidMessage = "Nomerlash rejimi noto'g'ri (auto yoki manual bo'lsin)";
+
+    [HttpGet("contracts")]
+    public async Task<ActionResult<ContractNumberSettingsDto>> GetContractNumbering(CancellationToken ct = default)
+    {
+        var mode = await contracts.GetNumberModeAsync(ct);
+        return new ContractNumberSettingsDto(mode);
+    }
+
+    [HttpPut("contracts")]
+    public async Task<ActionResult<ContractNumberSettingsDto>> SaveContractNumbering(
+        SaveContractNumberSettingsRequest req, CancellationToken ct = default)
+    {
+        var mode = (req.NumberMode ?? "").Trim().ToLowerInvariant();
+        if (!ContractNumberMode.IsValid(mode))
+            return BadRequest(new { message = ContractNumberModeInvalidMessage });
+
+        var m = await db.SchoolMeta.FirstOrDefaultAsync(ct);
+        if (m is null) { m = new SchoolMeta(); db.SchoolMeta.Add(m); }
+        m.ContractNumberMode = mode;
+        await db.SaveChangesAsync(ct);
+
+        return new ContractNumberSettingsDto(mode);
     }
 
     [HttpPut("absence-reasons")]

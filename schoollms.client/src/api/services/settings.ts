@@ -273,6 +273,31 @@ export async function saveCameraSettings(payload: { enabled: boolean }): Promise
   return data
 }
 
+/* ---------- Shartnoma raqamlash qoidasi (K-6) ---------- */
+
+/**
+ * `auto` — raqamni tizim o'zi generatsiya qiladi (forma maydoni faqat o'qish uchun).
+ * `manual` — xodim o'zi kiritadi; unikallik SERVERDA (baza qisman unikal indeksi +
+ * ilova tekshiruvi) ta'minlanadi, faqat formada emas.
+ */
+export type ContractNumberMode = 'auto' | 'manual'
+
+export interface ContractNumberSettings {
+  numberMode: ContractNumberMode
+}
+
+export async function getContractNumberSettings(): Promise<ContractNumberSettings> {
+  const { data } = await api.get<ContractNumberSettings>('/admin/settings/contracts')
+  return data
+}
+
+export async function saveContractNumberSettings(
+  numberMode: ContractNumberMode,
+): Promise<ContractNumberSettings> {
+  const { data } = await api.put<ContractNumberSettings>('/admin/settings/contracts', { numberMode })
+  return data
+}
+
 /** Maktab nomi (brending — barcha rollar uchun) */
 export async function getSchoolName(): Promise<string> {
   if (USE_MOCK) {
