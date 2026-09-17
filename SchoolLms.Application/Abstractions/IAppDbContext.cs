@@ -112,6 +112,16 @@ public interface IAppDbContext
     DbSet<Certificate> Certificates { get; }
     DbSet<StudentArchiveReason> StudentArchiveReasons { get; }
 
+    // ---------- O'quv guruhlari va sinf a'zoligi (students-parity.md §3.1) ----------
+    // Sxema oldin keladi (M-slice), xizmatlar keyin (1-slice). `class_memberships`
+    // migratsiya lahzasida `students.class_name` dan to'ldirilgan NUSXA: a'zolik
+    // xizmati ikkalasini birga yuritmaguncha haqiqat manbai `class_name`.
+    DbSet<StudyGroup> StudyGroups { get; }
+    DbSet<StudyGroupClass> StudyGroupClasses { get; }
+    DbSet<StudyGroupTeacher> StudyGroupTeachers { get; }
+    DbSet<StudyGroupMember> StudyGroupMembers { get; }
+    DbSet<ClassMembership> ClassMemberships { get; }
+
     int SaveChanges();
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 
