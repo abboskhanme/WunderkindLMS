@@ -109,7 +109,11 @@ public class SubjectsController(AppDbContext db) : ControllerBase
         await CountAsync(used, "jurnal yozuvi", db.JournalEntries.Where(e => e.SubjectId == id), ct);
         await CountAsync(used, "chorak bahosi", db.QuarterGrades.Where(g => g.SubjectId == id), ct);
         await CountAsync(used, "dars mavzusi", db.LessonNotes.Where(n => n.SubjectId == id), ct);
-        await CountAsync(used, "sertifikat", db.Certificates.Where(c => c.SubjectId == id), ct);
+        // Z-3: bitta sertifikat bir nechta fanni qamrab olishi mumkin —
+        // `certificate_subjects` endi HAR bir fan (asosiysi ham) uchun qator saqlaydi,
+        // shuning uchun eski `certificates.subject_id` tekshiruvi shu bilan almashtirildi
+        // (docs/modules/students-parity.md §2.7 Z-3; eski ustunning o'zi tegilmagan).
+        await CountAsync(used, "sertifikat", db.CertificateSubjects.Where(cs => cs.SubjectId == id), ct);
         await CountAsync(used, "topshiriq", db.Assignments.Where(a => a.SubjectId == id), ct);
 
         if (used.Count > 0)

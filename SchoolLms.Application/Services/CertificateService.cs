@@ -134,10 +134,23 @@ public static class CertificateService
             if (expires < issued) return "Amal qilish muddati berilgan sanadan oldin bo'la olmaydi";
         }
 
-        // ---- Ixtiyoriy havolalar ----
-        var subjectId = Clean(p.SubjectId);
-        if (subjectId is not null && !await db.Subjects.AnyAsync(s => s.Id == subjectId, ct))
-            return "Fan topilmadi";
+        // ---- Fan(lar) — Z-3: bitta hujjat bir nechta fanni qamrab olishi mumkin ----
+        // `SubjectIds` yo'q/bo'sh bo'lsa — eski bitta-fanli `SubjectId` bitta elementli
+        // ro'yxat sifatida olinadi (CertificateDtos.cs dagi izoh, orqaga moslik).
+        var subjectIds = (p.SubjectIds ?? [])
+            .Select(Clean)
+            .Where(s => s is not null)
+            .Select(s => s!)
+            .Distinct()
+            .ToList();
+        if (subjectIds.Count == 0 && Clean(p.SubjectId) is { } legacySubjectId)
+            subjectIds.Add(legacySubjectId);
+
+        if (subjectIds.Count > 0)
+        {
+            var foundSubjects = await db.Subjects.CountAsync(s => subjectIds.Contains(s.Id), ct);
+            if (foundSubjects != subjectIds.Count) return "Fan topilmadi";
+        }
 
         var teacherId = Clean(p.TeacherId);
         if (teacherId is not null && !await db.Teachers.AnyAsync(t => t.Id == teacherId, ct))
@@ -154,7 +167,10 @@ public static class CertificateService
         // ---- Hammasi joyida: yozamiz ----
         row.StudentId = studentId;
         row.TypeId = type.Id;
-        row.SubjectId = subjectId;
+        // `subject_id` — BIRINCHI tanlangan fan. Ustun O'RNIGA emas YONIGA qo'shilgan
+        // `certificate_subjects`ning yagona sababi shu: eski ustunni o'qiydigan kod
+        // (ro'yxatdagi "Fan" ustuni, `SubjectsController.Delete`) ishlashda davom etadi.
+        row.SubjectId = subjectIds.Count > 0 ? subjectIds[0] : null;
         row.TeacherId = teacherId;
         row.Number = Clean(p.Number);
         row.Score = score;
@@ -162,7 +178,35 @@ public static class CertificateService
         row.ExpiresOn = expires;
         row.FileUrl = fileUrl;
         row.Comment = Clean(p.Comment);
+
+        await SyncSubjectLinksAsync(db, row.Id, subjectIds, ct);
         return null;
+    }
+
+    /// <summary>
+    /// <c>certificate_subjects</c> ni <paramref name="subjectIds"/> bilan moslaydi (Z-3):
+    /// yo'qolganlarni o'chiradi, yangilarni qo'shadi, turgan qatorga tegmaydi.
+    ///
+    /// <para>
+    /// <b>Nega "hammasini o'chirib, hammasini qayta qo'shish" emas.</b> EF Core bitta
+    /// kalit (<c>certificate_id, subject_id</c>) uchun ikkita instansiyani (biri
+    /// o'chirilayotgan, biri qo'shilayotgan) bir vaqtda kuzata olmaydi — xato beradi.
+    /// Shuning uchun farq (diff) olinadi: faqat chindan yo'qolgan/yangi qatorlarga tegiladi.
+    /// </para>
+    /// </summary>
+    private static async Task SyncSubjectLinksAsync(
+        IAppDbContext db, Guid certificateId, List<string> subjectIds, CancellationToken ct)
+    {
+        var existing = await db.CertificateSubjects
+            .Where(cs => cs.CertificateId == certificateId).ToListAsync(ct);
+        var existingIds = existing.Select(e => e.SubjectId).ToHashSet();
+        var wantedIds = subjectIds.ToHashSet();
+
+        foreach (var stale in existing.Where(e => !wantedIds.Contains(e.SubjectId)))
+            db.CertificateSubjects.Remove(stale);
+
+        foreach (var sid in subjectIds.Where(id => !existingIds.Contains(id)))
+            db.CertificateSubjects.Add(new CertificateSubject { CertificateId = certificateId, SubjectId = sid });
     }
 
     /// <summary>Bo'sh/probel matnni <c>null</c> ga aylantiradi (bazada "" saqlanmasin).</summary>
@@ -204,7 +248,10 @@ public static class CertificateService
         if (!string.IsNullOrWhiteSpace(studentId)) q = q.Where(c => c.StudentId == studentId);
         if (typeId is { } tid) q = q.Where(c => c.TypeId == tid);
         if (!string.IsNullOrWhiteSpace(teacherId)) q = q.Where(c => c.TeacherId == teacherId);
-        if (!string.IsNullOrWhiteSpace(subjectId)) q = q.Where(c => c.SubjectId == subjectId);
+        if (!string.IsNullOrWhiteSpace(subjectId))
+            // Z-3: filtr hujjatning ISTALGAN fani bo'yicha ishlaydi, faqat asosiy
+            // (birinchi) fan emas — shuning uchun `certificate_subjects` orqali.
+            q = q.Where(c => db.CertificateSubjects.Any(cs => cs.CertificateId == c.Id && cs.SubjectId == subjectId));
         if (from is { } f) q = q.Where(c => c.IssuedOn >= f);
         if (to is { } u) q = q.Where(c => c.IssuedOn <= u);
         if (expiringInDays is { } days)
@@ -234,17 +281,36 @@ public static class CertificateService
                 r.Student.FullName.Contains(needle, StringComparison.OrdinalIgnoreCase)
                 || (r.Cert.Number ?? "").Contains(needle, StringComparison.OrdinalIgnoreCase))];
 
-        return [.. rows.Select(r => new CertificateDto(
-            r.Cert.Id,
-            r.Cert.StudentId, r.Student.FullName, r.Student.ClassName,
-            r.Cert.TypeId, r.Type.Name, r.Type.IsScored,
-            r.Cert.SubjectId, r.Subject == null ? null : r.Subject.Name,
-            r.Cert.TeacherId, r.Teacher == null ? null : r.Teacher.FullName,
-            r.Cert.Number, r.Cert.Score,
-            Fmt(r.Cert.IssuedOn),
-            r.Cert.ExpiresOn is { } e ? Fmt(e) : null,
-            r.Cert.ExpiresOn is { } x && x < today,
-            r.Cert.FileUrl, r.Cert.Comment))];
+        // Z-3: har hujjatning HAMMA fani — bitta qo'shimcha so'rovda (sikl ichida so'rov yo'q).
+        var certIds = rows.Select(r => r.Cert.Id).ToList();
+        var subjectLinks = await (
+            from cs in db.CertificateSubjects.AsNoTracking()
+            join sub in db.Subjects.AsNoTracking() on cs.SubjectId equals sub.Id
+            where certIds.Contains(cs.CertificateId)
+            orderby sub.Name
+            select new { cs.CertificateId, sub.Id, sub.Name })
+            .ToListAsync(ct);
+        var subjectsByCert = subjectLinks
+            .GroupBy(x => x.CertificateId)
+            .ToDictionary(g => g.Key, g => g.ToList());
+
+        return [.. rows.Select(r =>
+        {
+            subjectsByCert.TryGetValue(r.Cert.Id, out var subs);
+            return new CertificateDto(
+                r.Cert.Id,
+                r.Cert.StudentId, r.Student.FullName, r.Student.ClassName,
+                r.Cert.TypeId, r.Type.Name, r.Type.IsScored,
+                r.Cert.SubjectId, r.Subject == null ? null : r.Subject.Name,
+                r.Cert.TeacherId, r.Teacher == null ? null : r.Teacher.FullName,
+                r.Cert.Number, r.Cert.Score,
+                Fmt(r.Cert.IssuedOn),
+                r.Cert.ExpiresOn is { } e ? Fmt(e) : null,
+                r.Cert.ExpiresOn is { } x && x < today,
+                r.Cert.FileUrl, r.Cert.Comment,
+                subs is null ? [] : [.. subs.Select(s => s.Id)],
+                subs is null ? [] : [.. subs.Select(s => s.Name)]);
+        })];
     }
 
     // =====================================================================

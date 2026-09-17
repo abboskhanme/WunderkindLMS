@@ -12,6 +12,7 @@ import { uploadAdminFile } from '@/api/services/students'
 import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
 import { Input, Select, Textarea } from '@/components/ui/Input'
+import { cn } from '@/lib/utils'
 
 interface Props {
   editing: Certificate | null
@@ -52,7 +53,12 @@ export function CertificateFormModal({
 }: Props) {
   const [studentId, setStudentId] = useState(editing?.studentId ?? defaultStudentId ?? '')
   const [typeId, setTypeId] = useState(editing?.typeId ?? '')
-  const [subjectId, setSubjectId] = useState(editing?.subjectId ?? '')
+  // Z-3: bir nechta fan. Eski, bitta-fanli hujjatlarda ham `subjectIds` backfill orqali
+  // to'ldirilgan (docs/modules/students-parity.md §2.7 Z-3); shunga qaramay `subjectId`
+  // ham zaxira sifatida tekshiriladi — hech qanday holatda fan "yo'qolib qolmasin".
+  const [subjectIds, setSubjectIds] = useState<string[]>(
+    editing?.subjectIds?.length ? editing.subjectIds : editing?.subjectId ? [editing.subjectId] : [],
+  )
   const [teacherId, setTeacherId] = useState(editing?.teacherId ?? '')
   const [number, setNumber] = useState(editing?.number ?? '')
   const [score, setScore] = useState(editing?.score != null ? String(editing.score) : '')
@@ -95,6 +101,9 @@ export function CertificateFormModal({
     return list
   }, [students, studentSearch, studentId])
 
+  const toggleSubject = (id: string) =>
+    setSubjectIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
+
   const pickFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     e.target.value = ''
@@ -120,7 +129,7 @@ export function CertificateFormModal({
       const payload = {
         studentId,
         typeId,
-        subjectId: subjectId || null,
+        subjectIds,
         teacherId: teacherId || null,
         number: number.trim() || null,
         // Ballsiz turda maydon yashirin — qiymat ham yuborilmaydi.
@@ -219,14 +228,35 @@ export function CertificateFormModal({
             )}
           </div>
 
-          <Select label="Fan" value={subjectId} onChange={(e) => setSubjectId(e.target.value)}>
-            <option value="">— tanlanmagan —</option>
-            {subjects.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name}
-              </option>
-            ))}
-          </Select>
+          <div className="sm:col-span-2">
+            {/* Z-3: bitta hujjat bir nechta fanni qamrab olishi mumkin — masalan
+                "Matematika + Fizika olimpiadasi". Birinchi belgilangan fan ASOSIY
+                bo'lib qoladi (ro'yxatdagi "Fan" ustuni, eksport). */}
+            <span className="mb-2 block text-sm font-medium text-slate-600">Fan(lar)</span>
+            <div className="flex flex-wrap gap-2">
+              {subjects.map((s) => {
+                const active = subjectIds.includes(s.id)
+                return (
+                  <button
+                    key={s.id}
+                    type="button"
+                    onClick={() => toggleSubject(s.id)}
+                    className={cn(
+                      'rounded-full border px-3 py-1 text-sm transition-colors',
+                      active
+                        ? 'border-brand-500 bg-brand-50 text-brand-700'
+                        : 'border-slate-200 text-slate-600 hover:bg-slate-50',
+                    )}
+                  >
+                    {s.name}
+                  </button>
+                )
+              })}
+              {subjects.length === 0 && (
+                <p className="text-sm text-slate-400">Avval fan qo'shing</p>
+              )}
+            </div>
+          </div>
 
           <Select
             label="O'qituvchi"

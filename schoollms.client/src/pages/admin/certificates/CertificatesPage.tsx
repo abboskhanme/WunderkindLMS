@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Award, Paperclip, Pencil, Plus, Search, Settings2, Trash2 } from 'lucide-react'
+import { Award, FileSpreadsheet, Paperclip, Pencil, Plus, Search, Settings2, Trash2 } from 'lucide-react'
 import type { Student, Subject, Teacher } from '@/types'
 import {
   getCertificates,
   getCertificateTypes,
   getIssuingTeachers,
   deleteCertificate,
+  exportCertificates,
   certificateError,
   type Certificate,
   type CertificateType,
@@ -147,6 +148,18 @@ export function CertificatesPage() {
 
   const scoredTypes = types.filter((t) => t.isScored)
 
+  /** Z-2 — joriy filtrlar bilan xlsx eksporti (ro'yxatning o'zi so'ralayotgani bilan bir xil). */
+  const doExport = () =>
+    exportCertificates({
+      search: search.trim() || undefined,
+      typeId: typeFilter || undefined,
+      teacherId: teacherFilter || undefined,
+      className: classFilter || undefined,
+      from: from || undefined,
+      to: to || undefined,
+      expiringInDays: expiring ? 60 : undefined,
+    })
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -184,6 +197,9 @@ export function CertificatesPage() {
               <Settings2 className="h-4 w-4" /> Turlar
             </Button>
           </Link>
+          <Button variant="secondary" onClick={doExport} disabled={rows.length === 0}>
+            <FileSpreadsheet className="h-4 w-4" /> Eksport
+          </Button>
           <Button onClick={openCreate} disabled={types.length === 0}>
             <Plus className="h-4 w-4" /> Yangi sertifikat
           </Button>
@@ -301,7 +317,7 @@ export function CertificatesPage() {
                     <th className="px-4 py-3">O'quvchi</th>
                     <th className="px-4 py-3">Sinf</th>
                     <th className="px-4 py-3">Turi</th>
-                    <th className="px-4 py-3">Fan</th>
+                    <th className="px-4 py-3">Fan(lar)</th>
                     <th className="px-4 py-3">O'qituvchi</th>
                     <th className="px-4 py-3">Raqami</th>
                     <th className="px-4 py-3 text-right">Ball</th>
@@ -316,7 +332,9 @@ export function CertificatesPage() {
                       <td className="px-4 py-3 font-medium text-slate-800">{r.studentName}</td>
                       <td className="px-4 py-3 text-slate-500">{r.className || '—'}</td>
                       <td className="px-4 py-3 text-slate-600">{r.typeName}</td>
-                      <td className="px-4 py-3 text-slate-500">{r.subjectName ?? '—'}</td>
+                      <td className="px-4 py-3 text-slate-500">
+                        {r.subjectNames.length > 0 ? r.subjectNames.join(', ') : '—'}
+                      </td>
                       <td className="px-4 py-3 text-slate-500">{r.teacherName ?? '—'}</td>
                       <td className="px-4 py-3 text-slate-500">{r.number ?? '—'}</td>
                       <td className="px-4 py-3 text-right font-semibold text-slate-800">
