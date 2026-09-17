@@ -319,6 +319,175 @@ public class TeacherPortalController(
         return classes;
     }
 
+    // ---------- O'quv guruhlari — "Guruhlarim" (X-3, students-parity.md §2.11) ----------
+    //
+    // RO'YXATNI KO'RISH — reach: guruhga BIRIKTIRILGAN (study_group_teachers) YOKI
+    // jadvalda unda darsi bor o'qituvchi (xuddi /classes va guruh chatidagi kabi —
+    // TeacherOwnerAccess.ReachesAsync, G-12).
+    //
+    // RO'YXATNI TAHRIRLASH — "when allowed" qoidasi: teacher-portal ruxsatlari
+    // (TeacherPermissions) orasida guruh uchun alohida kalit yo'q, va study-group
+    // modelida "kim tahrirlay oladi" degan qoida hali yozilmagan. ENG XAVFSIZ o'qish
+    // tanlandi: FAQAT guruhga BIRIKTIRILGAN (study_group_teachers — "guruh o'qituvchisi",
+    // ya'ni guruhni "yetakchi" bo'lgan) o'qituvchi qo'sha/chiqara oladi. Faqat jadvalda
+    // darsi bor, biriktirilmagan o'qituvchi ro'yxatni FAQAT ko'radi — bu xuddi sinf
+    // rahbarligi bilan darsning nomutanosibligiga o'xshaydi (TeacherOwnerAccess.cs fayl
+    // boshidagi izoh: "GURUH EGASIDA SINF RAHBARI NIMA").
+
+    /// <summary>O'qituvchining O'Z guruhlari — /classes bilan bir xil ega ro'yxatidan (G-12),
+    /// lekin ro'yxat sahifasiga xos maydonlar (a'zolar soni, tahrirlash huquqi) bilan.</summary>
+    [HttpGet("groups")]
+    public async Task<ActionResult<IEnumerable<TeacherGroupDto>>> Groups()
+    {
+        var t = await Me();
+        if (t is null) return NotFound();
+
+        var owners = (await TeacherOwnerAccess.OwnersAsync(db, t)).Where(o => o.Owner.IsGroup).ToList();
+        if (owners.Count == 0) return new List<TeacherGroupDto>();
+
+        var groupIds = owners.Select(o => Guid.Parse(o.Owner.Id)).ToList();
+        var groupsById = (await db.StudyGroups.AsNoTracking()
+            .Where(g => groupIds.Contains(g.Id)).ToListAsync()).ToDictionary(g => g.Id);
+        var subjectNames = await db.Subjects.AsNoTracking().ToDictionaryAsync(s => s.Id, s => s.Name);
+
+        var classRows = await db.StudyGroupClasses.AsNoTracking()
+            .Where(c => groupIds.Contains(c.GroupId))
+            .Join(db.Classes.AsNoTracking(), c => c.ClassId, cls => cls.Id,
+                (c, cls) => new { c.GroupId, cls.Id, cls.Name, cls.Grade })
+            .ToListAsync();
+        var counts = await db.StudyGroupMembers.AsNoTracking()
+            .Where(m => groupIds.Contains(m.GroupId) && m.LeftOn == null)
+            .GroupBy(m => m.GroupId)
+            .Select(g => new { GroupId = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(x => x.GroupId, x => x.Count);
+
+        return owners.Select(o =>
+        {
+            var id = Guid.Parse(o.Owner.Id);
+            return new TeacherGroupDto(
+                id, o.Owner.Name, o.Owner.SubjectId ?? "",
+                subjectNames.GetValueOrDefault(o.Owner.SubjectId ?? "", ""),
+                groupsById.GetValueOrDefault(id)?.Gender,
+                [.. classRows.Where(c => c.GroupId == id).OrderBy(c => c.Grade).ThenBy(c => c.Name)
+                    .Select(c => new StudyGroupClassRefDto(c.Id, c.Name, c.Grade))],
+                counts.GetValueOrDefault(id),
+                o.IsHomeroom); // guruh uchun IsHomeroom == biriktirilgan ("yetakchi")
+        })
+        .OrderBy(g => g.Name, StringComparer.OrdinalIgnoreCase)
+        .ToList();
+    }
+
+    /// <summary>Guruh ro'yxati (FAOL a'zolar) — o'qituvchi guruhga YETSA ko'radi,
+    /// tahrirlash huquqidan qat'i nazar (biriktirilgan yoki jadvalda darsi bor).</summary>
+    [HttpGet("groups/{id:guid}/members")]
+    public async Task<ActionResult<IEnumerable<StudyGroupMemberDto>>> GroupMembers(Guid id)
+    {
+        var (t, group, reaches, _) = await GroupAccessAsync(id);
+        if (t is null) return NotFound();
+        if (group is null || !reaches) return Forbid();
+
+        return await GroupMembersAsync(group.Id);
+    }
+
+    /// <summary>Ro'yxatga qo'shish mumkin bo'lgan nomzodlar (guruh boqadigan sinflardan,
+    /// jins va fan mosligi tekshirilib) — FAQAT guruhga biriktirilgan o'qituvchiga.</summary>
+    [HttpGet("groups/{id:guid}/candidates")]
+    public async Task<ActionResult<IEnumerable<GroupCandidateDto>>> GroupCandidates(Guid id)
+    {
+        var (t, group, _, canEdit) = await GroupAccessAsync(id);
+        if (t is null) return NotFound();
+        if (group is null || !canEdit) return Forbid();
+
+        var feedingClassIds = await db.StudyGroupClasses
+            .Where(c => c.GroupId == id).Select(c => c.ClassId).ToListAsync();
+        return await new StudyGroupService(db)
+            .CandidatesAsync(feedingClassIds, group.Gender, group.SubjectId, excludeGroupId: id);
+    }
+
+    /// <summary>Guruhga bir yoki bir nechta o'quvchi qo'shadi — FAQAT biriktirilgan o'qituvchiga.
+    /// Tekshiruvlar (boquvchi sinf, jins, "bitta fandan bitta guruh") — StudyGroupService'da.</summary>
+    [HttpPost("groups/{id:guid}/members")]
+    public async Task<IActionResult> AddGroupMembers(Guid id, AddGroupMembersRequest req)
+    {
+        var (t, group, _, canEdit) = await GroupAccessAsync(id);
+        if (t is null) return NotFound();
+        if (group is null || !canEdit) return Forbid();
+
+        var uid = User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "";
+        var error = await new StudyGroupService(db).AddMembersAsync(group, req.StudentIds ?? [], uid);
+        if (error is not null) return BadRequest(new { message = error });
+
+        try
+        {
+            await db.SaveChangesAsync();
+        }
+        catch (DbUpdateException ex) when (StudyGroupService.IsOneGroupPerSubjectViolation(ex))
+        {
+            return Conflict(new { message = StudyGroupService.OneGroupPerSubjectMessage });
+        }
+        return NoContent();
+    }
+
+    /// <summary>O'quvchini guruhdan chiqarish — a'zolik SABAB bilan yopiladi, o'chirilmaydi.
+    /// FAQAT biriktirilgan o'qituvchiga.</summary>
+    [HttpPost("groups/{id:guid}/members/{memberId:guid}/remove")]
+    public async Task<IActionResult> RemoveGroupMember(Guid id, Guid memberId, RemoveGroupMemberRequest? req)
+    {
+        var (t, group, _, canEdit) = await GroupAccessAsync(id);
+        if (t is null) return NotFound();
+        if (group is null || !canEdit) return Forbid();
+
+        var member = await db.StudyGroupMembers
+            .FirstOrDefaultAsync(m => m.Id == memberId && m.GroupId == id);
+        if (member is null) return NotFound();
+        if (member.LeftOn is not null) return BadRequest(new { message = "Bu a'zolik allaqachon yopilgan" });
+
+        StudyGroupService.CloseMember(member, req?.Reason);
+        await db.SaveChangesAsync();
+        return NoContent();
+    }
+
+    /// <summary>
+    /// X-3 ruxsat darvozasi: guruh (topilsa), reach (ko'rish — biriktirilgan YOKI
+    /// jadvalda darsi bor) va tahrirlash huquqi (FAQAT biriktirilgan). Tokendagi
+    /// foydalanuvchidan aniqlangan o'qituvchidan boshqasi hech qachon ishlatilmaydi —
+    /// so'rovdan teacherId QABUL QILINMAYDI.
+    /// </summary>
+    private async Task<(Teacher? Teacher, StudyGroup? Group, bool Reaches, bool CanEdit)> GroupAccessAsync(Guid id)
+    {
+        var t = await Me();
+        if (t is null) return (null, null, false, false);
+
+        var group = await db.StudyGroups.FirstOrDefaultAsync(g => g.Id == id);
+        if (group is null) return (t, null, false, false);
+
+        var reaches = await TeacherOwnerAccess.ReachesAsync(db, t, id.ToString());
+        var canEdit = reaches && await db.StudyGroupTeachers
+            .AnyAsync(x => x.GroupId == id && x.TeacherId == t.Id);
+        return (t, group, reaches, canEdit);
+    }
+
+    /// <summary>Guruh a'zolari (FAOL) — StudyGroupsController.MembersAsync bilan bir xil shakl,
+    /// lekin bu yerda tarix (LeftOn != null) qaytarilmaydi: o'qituvchi ekrani faqat bugungi
+    /// ro'yxatni ko'rsatadi.</summary>
+    private async Task<List<StudyGroupMemberDto>> GroupMembersAsync(Guid groupId)
+    {
+        var rows = await db.StudyGroupMembers.AsNoTracking()
+            .Where(m => m.GroupId == groupId && m.LeftOn == null)
+            .Join(db.Students.AsNoTracking(), m => m.StudentId, s => s.Id, (m, s) => new
+            {
+                m.Id, m.StudentId, s.FullName, s.ClassName, s.Gender,
+                m.JoinedOn, m.LeftOn, m.LeaveReason,
+            })
+            .ToListAsync();
+
+        return [.. rows
+            .OrderBy(r => r.FullName, StringComparer.OrdinalIgnoreCase)
+            .Select(r => new StudyGroupMemberDto(
+                r.Id, r.StudentId, r.FullName, r.ClassName, r.Gender,
+                r.JoinedOn, r.LeftOn, r.LeaveReason))];
+    }
+
     // ---------- Jadval ----------
 
     [HttpGet("schedule")]
