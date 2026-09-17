@@ -82,6 +82,17 @@ public enum FinanceAction
 
     /// <summary>Moliya sozlamalari (`payment_due_day`, `overdue_after_day`).</summary>
     ManageBillingSettings,
+
+    /// <summary>
+    /// Xodimga bonus/jarima yozish, bekor qilish va sabab katalogini
+    /// boshqarish (F11.01, F11.02; hr.md §5.4 — "Manage penalty/bonus rules"
+    /// bilan bir xil ruxsat darajasi, lekin ATAYLAB alohida nom: bu yerdagi
+    /// qo'lda kiritiladigan bir martalik yozuv, `hr_rules` qoidalar
+    /// dvigateli emas — hr.md §2.7). Xodimning pulini o'zgartiradigan amal,
+    /// shuning uchun kassir va oddiy xodim YO'Q — F3.05 xatosi bu yerda
+    /// TAKRORLANMASLIGI kerak (SPEC §4.3).
+    /// </summary>
+    ManagePayrollAdjustments,
 }
 
 /// <summary>
@@ -153,6 +164,13 @@ public static class FinanceMatrix
 
         new(FinanceAction.ManageBillingSettings, AdminAndDirector,
             "To'lov muddati sozlamalari (payment_due_day, overdue_after_day)"),
+
+        // F11.01/F11.02 — xodimga bonus/jarima. Kassir ham, oddiy xodim ham
+        // YO'Q (hr.md §5.4 ning "Manage penalty/bonus rules" qatori bilan
+        // bir xil daraja) — bu pulga tegishli amal, AdminPerm("teachers")
+        // emas (F3.05 ning aynan o'zi bu yerda takrorlanmasligi kerak).
+        new(FinanceAction.ManagePayrollAdjustments, AdminAndDirector,
+            "Xodimga bonus/jarima yozish, bekor qilish va sabab katalogini boshqarish"),
     ];
 
     /// <summary>
