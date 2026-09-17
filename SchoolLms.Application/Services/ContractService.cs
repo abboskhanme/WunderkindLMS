@@ -1,6 +1,8 @@
 using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Wordprocessing;
 using System.Text.RegularExpressions;
+using Microsoft.EntityFrameworkCore;
+using SchoolLms.Application.Abstractions;
 
 namespace SchoolLms.Application.Services;
 
@@ -9,8 +11,16 @@ namespace SchoolLms.Application.Services;
 /// (masalan <c>@fish</c>) berilgan qiymatlar bilan almashtiradi. Word matnni bir nechta "run"ga
 /// bo'lib yozishi mumkinligi sababli almashtirish PARAGRAF darajasida bajariladi (run matnlari
 /// birlashtiriladi, almashtiriladi, birinchi runga yoziladi). Noma'lum tokenlar o'z holicha qoladi.
+///
+/// <para>
+/// <b>Raqamlash rejimi (K-6) ham shu yerda.</b> <see cref="GetNumberModeAsync"/> va
+/// <see cref="Resolve"/> — <c>school_meta.contract_number_mode</c> ustidagi
+/// yagona haqiqat manbai, ikkala chaqiruvchi uchun ham bir xil: eski umumiy generator
+/// (<c>ContractsController</c>, <c>Contracts</c> jadvali) va o'quvchi reyestri
+/// (<c>StudentContractsController</c>, <c>StudentContracts</c> jadvali, K-1..K-5).
+/// </para>
 /// </summary>
-public class ContractService(IWebHostEnvironment env)
+public class ContractService(IWebHostEnvironment env, IAppDbContext db)
 {
     private static readonly Regex TokenRx = new(@"@[A-Za-z_]+", RegexOptions.Compiled);
 
@@ -84,4 +94,70 @@ public class ContractService(IWebHostEnvironment env)
 
     private static string Apply(string input, IDictionary<string, string> tokens) =>
         TokenRx.Replace(input, m => tokens.TryGetValue(m.Value, out var v) ? v : m.Value);
+
+    // =========================================================================
+    //  Raqamlash rejimi — K-6 (docs/modules/students-parity.md §2.10.3).
+    // =========================================================================
+
+    /// <summary>Qo'lda rejimda raqam bo'sh qoldirilganda qaytariladigan xabar.</summary>
+    public const string ManualNumberRequiredMessage =
+        "Qo'lda nomerlash rejimida shartnoma raqami kiritilishi shart";
+
+    /// <summary>
+    /// Joriy raqamlash rejimi (<see cref="SchoolLms.Domain.ContractNumberMode"/>).
+    /// Qator umuman yo'q yoki qiymat buzilgan bo'lsa — sukut <c>auto</c>
+    /// (<c>SchoolMeta.ContractNumberMode</c> dagi baza DEFAULT'i bilan bir xil).
+    /// </summary>
+    public async Task<string> GetNumberModeAsync(CancellationToken ct = default)
+    {
+        var mode = await db.SchoolMeta.AsNoTracking()
+            .Select(m => m.ContractNumberMode).FirstOrDefaultAsync(ct);
+        return SchoolLms.Domain.ContractNumberMode.IsValid(mode)
+            ? mode!
+            : SchoolLms.Domain.ContractNumberMode.Auto;
+    }
+
+    /// <summary>
+    /// K-6 qoidasi: <c>auto</c> rejimida qo'lda kiritilgan qiymat E'TIBORGA
+    /// OLINMAYDI — chaqiruvchi uni tashlab, ketma-ket generatsiyaga o'tishi kerak
+    /// (masalan <c>StudentContractsController.NextNumberAsync</c>). <c>manual</c>
+    /// rejimida esa raqam MAJBURIY.
+    ///
+    /// <para>
+    /// Bu metod DIZAYN BO'YICHA sof (baza bilan ishlamaydi) — <see cref="GetNumberModeAsync"/>
+    /// bilan birga chaqiriladi: <c>Resolve(await GetNumberModeAsync(ct), raw)</c>.
+    /// Unikallik BU YERDA tekshirilmaydi: u chaqiruvchining ishi (masalan
+    /// <c>StudentContractsController.NumberTakenAsync</c>) VA baza darajasida
+    /// <c>ux_student_contracts_number</c> qisman unikal indeksi — ikkalovi ham
+    /// rejimdan qat'i nazar ishlaydi.
+    /// </para>
+    /// </summary>
+    public static ContractNumberDecision Resolve(string mode, string? rawNumber)
+    {
+        var trimmed = (rawNumber ?? "").Trim();
+        if (mode == SchoolLms.Domain.ContractNumberMode.Manual)
+            return trimmed.Length == 0
+                ? ContractNumberDecision.Reject(ManualNumberRequiredMessage)
+                : ContractNumberDecision.UseManual(trimmed);
+        return ContractNumberDecision.GenerateNext;
+    }
+}
+
+/// <summary>
+/// <see cref="ContractService.Resolve"/> natijasi — uchta o'zaro istisno holat:
+/// generatsiya qil, berilgan raqamni ishlat, yoki rad et (xabar bilan).
+/// </summary>
+public readonly record struct ContractNumberDecision
+{
+    public bool ShouldGenerate { get; private init; }
+    public string? ManualNumber { get; private init; }
+    public string? Error { get; private init; }
+
+    public bool IsValid => Error is null;
+
+    public static readonly ContractNumberDecision GenerateNext = new() { ShouldGenerate = true };
+
+    public static ContractNumberDecision UseManual(string number) => new() { ManualNumber = number };
+
+    public static ContractNumberDecision Reject(string error) => new() { Error = error };
 }

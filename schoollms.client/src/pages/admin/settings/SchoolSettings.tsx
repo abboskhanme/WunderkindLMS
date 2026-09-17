@@ -2,10 +2,13 @@ import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Check } from 'lucide-react'
 import {
+  getContractNumberSettings,
   getGeneralSettings,
   getSchoolInfo,
+  saveContractNumberSettings,
   saveGeneralSettings,
   saveSchoolInfo,
+  type ContractNumberMode,
   type GeneralSettings,
   type SchoolInfo,
 } from '@/api/services/settings'
@@ -63,12 +66,20 @@ export function SchoolSettings() {
   const [flagsStatus, setFlagsStatus] = useState<'idle' | 'saving' | 'saved'>('idle')
   const [flagsError, setFlagsError] = useState<string | null>(null)
 
+  // Shartnoma raqamlash qoidasi (K-6) — null = hali yuklanmadi.
+  const [numberMode, setNumberMode] = useState<ContractNumberMode | null>(null)
+  const [numberModeStatus, setNumberModeStatus] = useState<'idle' | 'saving' | 'saved'>('idle')
+  const [numberModeError, setNumberModeError] = useState<string | null>(null)
+
   useEffect(() => {
     Promise.all([
       getSchoolInfo().then(setForm),
       getGeneralSettings()
         .then(setFlags)
         .catch(() => setFlags(null)),
+      getContractNumberSettings()
+        .then((s) => setNumberMode(s.numberMode))
+        .catch(() => setNumberMode(null)),
     ]).finally(() => setLoading(false))
   }, [])
 
@@ -96,6 +107,23 @@ export function SchoolSettings() {
     } catch (err) {
       setFlagsStatus('idle')
       setFlagsError(
+        (err as { response?: { data?: { message?: string } } })?.response?.data?.message ??
+          "Saqlab bo'lmadi",
+      )
+    }
+  }
+
+  const onSaveNumberMode = async (mode: ContractNumberMode) => {
+    setNumberModeStatus('saving')
+    setNumberModeError(null)
+    try {
+      const saved = await saveContractNumberSettings(mode)
+      setNumberMode(saved.numberMode)
+      setNumberModeStatus('saved')
+      setTimeout(() => setNumberModeStatus('idle'), 2000)
+    } catch (err) {
+      setNumberModeStatus('idle')
+      setNumberModeError(
         (err as { response?: { data?: { message?: string } } })?.response?.data?.message ??
           "Saqlab bo'lmadi",
       )
@@ -187,6 +215,61 @@ export function SchoolSettings() {
           </div>
         </Card>
       )}
+
+      {numberMode && (
+        <Card>
+          <div className="mb-1 font-semibold text-slate-800">Shartnoma raqamlash</div>
+          <p className="mb-4 text-sm text-slate-400">
+            O'quvchi shartnomasi reyestriga (Shartnomalar) raqam qanday beriladi — tanlov
+            darrov kuchga kiradi va butun maktab bo'ylab amal qiladi.
+          </p>
+          <div className="max-w-2xl space-y-2">
+            {numberModeOptions.map((opt) => (
+              <label
+                key={opt.value}
+                className="flex cursor-pointer items-start gap-3 rounded-lg border border-slate-200 p-3 transition-colors hover:bg-slate-50"
+              >
+                <input
+                  type="radio"
+                  name="contract-number-mode"
+                  checked={numberMode === opt.value}
+                  onChange={() => onSaveNumberMode(opt.value)}
+                  className="mt-0.5 h-4 w-4 accent-brand-600"
+                />
+                <span>
+                  <span className="block text-sm font-medium text-slate-800">{opt.title}</span>
+                  <span className="block text-xs text-slate-400">{opt.hint}</span>
+                </span>
+              </label>
+            ))}
+          </div>
+          <div className="mt-3 flex items-center gap-3">
+            {numberModeStatus === 'saving' && (
+              <span className="text-sm text-slate-400">Saqlanmoqda...</span>
+            )}
+            {numberModeStatus === 'saved' && (
+              <span className="inline-flex items-center gap-1 text-sm font-medium text-emerald-600">
+                <Check className="h-4 w-4" /> Saqlandi
+              </span>
+            )}
+            {numberModeError && <span className="text-sm text-red-600">{numberModeError}</span>}
+          </div>
+        </Card>
+      )}
     </div>
   )
 }
+
+/** K-6 — ikkita rejim, har biri ANIQ nima qilishi ko'rsatilgan. */
+const numberModeOptions: { value: ContractNumberMode; title: string; hint: string }[] = [
+  {
+    value: 'auto',
+    title: 'Avtomatik',
+    hint: "Raqamni tizim o'zi beradi (ketma-ket) — shartnoma hosil qilish formasidagi raqam maydoni faqat ko'rsatish uchun.",
+  },
+  {
+    value: 'manual',
+    title: "Qo'lda",
+    hint: "Xodim raqamni o'zi kiritadi (masalan davlat blankasi yoki eski qog'oz arxivi bilan davom etish uchun). Takrorlangan raqam serverda rad etiladi.",
+  },
+]
