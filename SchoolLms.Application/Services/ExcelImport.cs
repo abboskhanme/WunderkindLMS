@@ -31,10 +31,19 @@ public static class ExcelImport
             var cells = new string[columnCount];
             for (var i = 0; i < columnCount; i++) cells[i] = "";
 
+            // Katakning manzili (`r="B3"`) IXTIYORIY. Excel uni har doim
+            // yozadi, LEKIN bizning `ExcelExport` yozmaydi — ya'ni o'zimiz
+            // yaratgan faylni o'zimiz o'qiy olmasdik: hamma katak "" bo'lib
+            // qolardi va fayl "bo'sh" ko'rinardi. Manzil bo'lmasa katak
+            // KETMA-KET joyda turadi (OpenXML qoidasi), shu sabab o'rinni
+            // o'zimiz sanaymiz.
+            var next = 0;
             foreach (var cell in row.Elements<Cell>())
             {
                 var col = ColumnIndex(cell.CellReference?.Value);
-                if (col < 0 || col >= columnCount) continue;
+                if (col < 0) col = next;
+                next = col + 1;
+                if (col >= columnCount) continue;
                 cells[col] = GetValue(cell, shared);
             }
             result.Add(cells);

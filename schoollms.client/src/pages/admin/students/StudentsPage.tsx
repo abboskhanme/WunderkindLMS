@@ -1,20 +1,42 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { StudentViewModal } from './StudentViewModal'
-import { Plus, Search, Pencil, Trash2, Send, Download, X, History, Archive, RotateCcw, FileDown, Upload, Award, ChevronDown } from 'lucide-react'
-import type { Gender, Student } from '@/types'
-import type { StudentPayload, StudentImportResult } from '@/api/services/students'
 import {
-  getStudents,
-  getArchivedStudents,
-  restoreStudent,
+  Plus,
+  Pencil,
+  Trash2,
+  Send,
+  Download,
+  X,
+  History,
+  Archive,
+  RotateCcw,
+  Upload,
+  MessageSquare,
+  ChevronUp,
+  ChevronDown,
+  FileSpreadsheet,
+} from 'lucide-react'
+import type { Student } from '@/types'
+import type { StudentPayload } from '@/api/services/students'
+import {
   createStudent,
   updateStudent,
+  restoreStudent,
   deleteStudent,
   downloadStudentCredentials,
-  downloadStudentImportTemplate,
-  importStudents,
 } from '@/api/services/students'
+import {
+  searchStudents,
+  exportStudents,
+  deleteStudentsMany,
+  type StudentListFilter,
+  type StudentListPage,
+  type StudentListRow,
+  type StudentSortKey,
+} from '@/api/services/studentSearch'
+import { getStudentStatuses, setStudentStatus, type StudentStatusTag } from '@/api/services/studentStatuses'
+import { getArchiveReasons, type ArchiveReason } from '@/api/services/archiveReasons'
 import { getClasses } from '@/api/services/classes'
 import {
   getCertificateTypes,
@@ -25,171 +47,252 @@ import {
 import { genderLabels } from '@/config/constants'
 import { formatDate, formatMoney, exportToCsv, cn } from '@/lib/utils'
 import { useAuth } from '@/context/auth-context'
+import { BILLING_ROLES } from '@/pages/admin/billing/access'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Loader } from '@/components/ui/Loader'
-import { Modal } from '@/components/ui/Modal'
 import { StudentFormModal } from './StudentFormModal'
 import { SmsModal } from './SmsModal'
 import { PaymentHistoryModal } from './PaymentHistoryModal'
 import { ArchiveStudentsModal } from './ArchiveStudentsModal'
+import { StudentListFilters } from './StudentListFilters'
+import { StudentImportModal } from './StudentImportModal'
+import { StudentCommentsModal } from './StudentCommentsModal'
+import { StatusChip } from './StatusChip'
 
-type BalanceFilter = 'all' | 'debt' | 'paid'
+/**
+ * O'quvchilar ro'yxati — docs/modules/students-parity.md §2.3 (S-1..S-7, K-4)
+ * va §2.4 (A-1..A-3).
+ *
+ * FILTR VA TARTIB ENDI SERVERDA. Ilgari sahifa BUTUN registrni brauzerga
+ * tortib, keyin uni JavaScript'da filtrlardi. Endi `GET students/search`
+ * filtrni, tartibni va sahifani o'zi bajaradi; brauzerga faqat bitta sahifa
+ * keladi. Eski `GET students` endpoint'i TEGILMAGAN — uni boshqa ekranlar
+ * o'qiydi.
+ *
+ * FILTRSIZ KO'RINISH BUGUNGIDEK: hech qanday filtr qo'yilmasa server aynan
+ * eski ro'yxatni, aynan eski tartibda qaytaradi (`StudentListQuery` izohi va
+ * `StudentListTests`).
+ *
+ * TANLOV SAHIFADAN SAHIFAGA SAQLANADI: tanlangan qator obyekti bilan birga
+ * eslab qolinadi, shuning uchun ommaviy amal AYNAN tanlanganlarga tegadi —
+ * ko'rinmay qolgan qator ham, ko'rinib turgan-u tanlanmagan qator ham emas.
+ */
+
 type Tab = 'active' | 'archived'
 
-const control =
-  'rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-brand-400'
+/** Bir so'rovda keladigan qatorlar. Maktab hajmida ro'yxat odatda bitta sahifaga sig'adi. */
+const PAGE_SIZE = 200
+
+const EMPTY_PAGE: StudentListPage = {
+  items: [],
+  total: 0,
+  page: 1,
+  pageSize: PAGE_SIZE,
+  totalDebt: 0,
+  totalCredit: 0,
+}
+
+const errorText = (e: unknown, fallback: string) =>
+  (e as { response?: { data?: { message?: string } } })?.response?.data?.message ?? fallback
+
+/**
+ * Ro'yxat qatoridan tahrirlash formasi kutadigan obyekt. Formada yo'q
+ * maydonlar (`parentPassportUrl`) `null` bo'lib ketadi va server `null` ni
+ * "tegma" deb o'qiydi (StudentsController.Update) — ya'ni hech narsa
+ * yo'qolmaydi.
+ */
+function toStudent(row: StudentListRow): Student {
+  return {
+    id: row.id,
+    fullName: row.fullName,
+    birthDate: row.birthDate,
+    birthCertificateUrl: row.photoUrl,
+    address: row.address,
+    gender: row.gender,
+    parentFullName: row.parentFullName,
+    parentPhone: row.parentPhone,
+    className: row.className,
+    enrollmentDate: row.enrollmentDate,
+    isArchived: row.isArchived,
+    archivedAt: row.archivedAt,
+    archiveReason: row.archiveReason,
+    balance: row.balance,
+  }
+}
 
 export function StudentsPage() {
   const { user } = useAuth()
   const navigate = useNavigate()
+
   const [tab, setTab] = useState<Tab>('active')
-  const [students, setStudents] = useState<Student[]>([])
-  const [archived, setArchived] = useState<Student[]>([])
-  const [classNames, setClassNames] = useState<string[]>([])
+  const [filter, setFilter] = useState<StudentListFilter>({})
+  const [sortBy, setSortBy] = useState<StudentSortKey | undefined>(undefined)
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc')
+  const [pageNo, setPageNo] = useState(1)
+  const [refresh, setRefresh] = useState(0)
+
+  const [page, setPage] = useState<StudentListPage>(EMPTY_PAGE)
   const [loading, setLoading] = useState(true)
-  /** Arxivlash modali — bitta yoki bir nechta o'quvchi (sabab katalogi + izoh, §2.2). */
-  const [archiveTargets, setArchiveTargets] = useState<Student[]>([])
+  const [archivedTotal, setArchivedTotal] = useState(0)
 
-  // filtrlar
-  const [search, setSearch] = useState('')
-  const [classFilter, setClassFilter] = useState('all')
-  const [genderFilter, setGenderFilter] = useState<'all' | Gender>('all')
-  const [balanceFilter, setBalanceFilter] = useState<BalanceFilter>('all')
-
-  // §2.3 — sertifikat filtrlari. Bular QOLGANLARIDAN FARQ QILADI: serverda
-  // bajariladi (ro'yxat qayta so'raladi), chunki sertifikat boshqa jadvalda va
-  // uni brauzerga tortib kelish butun registrni yuklab olish degani bo'lardi.
-  // Ikkalasi ham bo'sh bo'lsa so'rov bugungi so'rovning aynan o'zi.
-  const [certTypeIds, setCertTypeIds] = useState<string[]>([])
-  const [certTeacherId, setCertTeacherId] = useState('')
+  // Ma'lumotnomalar (filtr tanlovlari uchun).
+  const [classNames, setClassNames] = useState<string[]>([])
+  const [grades, setGrades] = useState<number[]>([])
+  const [statuses, setStatuses] = useState<StudentStatusTag[]>([])
+  const [archiveReasons, setArchiveReasons] = useState<ArchiveReason[]>([])
   const [certTypes, setCertTypes] = useState<CertificateType[]>([])
   const [certIssuers, setCertIssuers] = useState<IssuingTeacher[]>([])
-  const [certMenuOpen, setCertMenuOpen] = useState(false)
 
-  // tanlash
-  const [selected, setSelected] = useState<Set<string>>(new Set())
+  // Tanlov — qator obyekti bilan birga (sahifa almashsa ham yo'qolmaydi).
+  const [selected, setSelected] = useState<Map<string, StudentListRow>>(new Map())
 
-  // modallar
+  // Modallar
   const [formOpen, setFormOpen] = useState(false)
   const [editing, setEditing] = useState<Student | null>(null)
-  // Yangi o'quvchi yaratilgach login/parolni ko'rsatish uchun (Eye tugmasi esa shaxsiy daftarga boradi).
   const [viewing, setViewing] = useState<Student | null>(null)
-  const openNotebook = (s: Student) => navigate(`/admin/students/${s.id}`)
   const [smsOpen, setSmsOpen] = useState(false)
+  const [importOpen, setImportOpen] = useState(false)
   const [historyOf, setHistoryOf] = useState<Student | null>(null)
+  const [commentsOf, setCommentsOf] = useState<StudentListRow | null>(null)
+  const [archiveTargets, setArchiveTargets] = useState<Student[]>([])
+  const [banner, setBanner] = useState<string | null>(null)
 
-  // Excel'dan ommaviy import
-  const [importing, setImporting] = useState(false)
-  const [importResult, setImportResult] = useState<StudentImportResult | null>(null)
-  const fileInputRef = useRef<HTMLInputElement>(null)
+  /** Moliya roli — S-4 yakunlari (jami qarz / jami avans) faqat shu rolga ko'rinadi. */
+  const canSeeTotals = !!user && BILLING_ROLES.includes(user.role)
 
-  const handleImportFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    e.target.value = '' // bir xil faylni qayta tanlash mumkin bo'lsin
-    if (!file) return
-    setImporting(true)
-    try {
-      const result = await importStudents(file)
-      setImportResult(result)
-      // Joriy sertifikat filtri bilan qayta o'qiymiz — aks holda filtrlangan
-      // ro'yxat importdan keyin jimgina to'liq ro'yxatga aylanib qolardi.
-      if (result.created > 0)
-        setStudents(
-          await getStudents({
-            certificateTypeIds: certTypeIds.length > 0 ? certTypeIds : undefined,
-            certificateTeacherId: certTeacherId || undefined,
-          }),
-        )
-    } catch (err) {
-      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message
-      alert('Yuklashda xatolik: ' + (msg ?? 'fayl noto\'g\'ri yoki server xatosi'))
-    } finally {
-      setImporting(false)
-    }
-  }
+  const effective: StudentListFilter = useMemo(
+    () => ({
+      ...filter,
+      // "active" — serverning sukut holati, shuning uchun so'rovga qo'shilmaydi.
+      state: tab === 'archived' ? 'archived' : undefined,
+      sortBy,
+      sortOrder: sortBy ? sortOrder : undefined,
+      page: pageNo,
+      pageSize: PAGE_SIZE,
+    }),
+    [filter, tab, sortBy, sortOrder, pageNo],
+  )
 
   useEffect(() => {
-    getClasses().then((cs) => setClassNames(cs.map((c) => c.name)))
-    // §2.3 — filtr tanlovlari. Sertifikat turi yo'q maktabda ikkala filtr ham
-    // umuman ko'rinmaydi, ya'ni sahifa bugungi ko'rinishida qoladi.
+    getClasses().then((cs) => {
+      setClassNames(cs.map((c) => c.name))
+      setGrades([...new Set(cs.map((c) => c.grade))].sort((a, b) => a - b))
+    })
+    getStudentStatuses().then(setStatuses)
+    getArchiveReasons(true).then(setArchiveReasons)
     getCertificateTypes().then(setCertTypes)
     getIssuingTeachers().then(setCertIssuers)
   }, [])
 
+  // Arxiv soni tab yorlig'ida turadi (bugungi ekrandagidek). Filtrga BOG'LIQ
+  // EMAS — shuning uchun faqat ma'lumot o'zgarganda qayta so'raladi, har
+  // harf bosilganda emas.
   useEffect(() => {
-    const filters = {
-      certificateTypeIds: certTypeIds.length > 0 ? certTypeIds : undefined,
-      certificateTeacherId: certTeacherId || undefined,
-    }
-    // Poyga (race) himoyasi: tez filtrlanganda faqat oxirgi javob qabul qilinadi.
-    let active = true
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- yangi so'rovdan oldin holatni belgilaymiz (maqsadli)
+    searchStudents({ state: 'archived', pageSize: 1 }).then((p) => setArchivedTotal(p.total))
+  }, [refresh])
+
+  useEffect(() => {
+    let alive = true
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- yangi so'rovdan oldin "yuklanmoqda" holatini qo'yamiz (maqsadli)
     setLoading(true)
-    Promise.all([getStudents(filters), getArchivedStudents(filters)])
-      .then(([list, arch]) => {
-        if (!active) return
-        setStudents(list)
-        setArchived(arch)
-      })
-      .finally(() => {
-        if (active) setLoading(false)
-      })
+    // Matn maydonlari har bosishda so'rov yubormasin — qisqa kechikish.
+    const timer = setTimeout(() => {
+      searchStudents(effective)
+        .then((result) => {
+          if (alive) setPage(result)
+        })
+        .finally(() => {
+          if (alive) setLoading(false)
+        })
+    }, 250)
     return () => {
-      active = false
+      alive = false
+      clearTimeout(timer)
     }
-  }, [certTypeIds, certTeacherId])
+  }, [effective, refresh])
 
-  // Joriy tab manbai.
-  const source = tab === 'active' ? students : archived
+  // Filtr o'zgarsa birinchi sahifaga qaytamiz — aks holda "3-sahifa" bo'sh chiqardi.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- filtr o'zgarganda sahifani boshiga qaytaramiz (maqsadli)
+    setPageNo(1)
+  }, [filter, tab, sortBy, sortOrder])
 
-  const filtered = source.filter((s) => {
-    const q = search.trim().toLowerCase()
-    const matchSearch =
-      !q ||
-      s.fullName.toLowerCase().includes(q) ||
-      s.parentFullName.toLowerCase().includes(q)
-    const matchClass = classFilter === 'all' || s.className === classFilter
-    const matchGender = genderFilter === 'all' || s.gender === genderFilter
-    const matchBalance =
-      balanceFilter === 'all' ||
-      (balanceFilter === 'debt' ? (s.balance ?? 0) < 0 : (s.balance ?? 0) >= 0)
-    return matchSearch && matchClass && matchGender && matchBalance
-  })
+  const rows = page.items
+  const reload = () => setRefresh((v) => v + 1)
 
-  const selectedStudents = source.filter((s) => selected.has(s.id))
+  /** Nechta filtr qo'yilgan — "Filtrlar" tugmasidagi son. */
+  const activeCount = useMemo(
+    () =>
+      Object.entries(filter).filter(([, value]) => {
+        if (value === undefined || value === null || value === '') return false
+        if (Array.isArray(value)) return value.length > 0
+        return true
+      }).length,
+    [filter],
+  )
 
-  // hammasini tanlash holati
-  const allSelected = filtered.length > 0 && filtered.every((s) => selected.has(s.id))
-  const someSelected = filtered.some((s) => selected.has(s.id)) && !allSelected
+  const patchFilter = (patch: Partial<StudentListFilter>) =>
+    setFilter((prev) => {
+      const next = { ...prev, ...patch }
+      // Bo'sh qiymatlar saqlanmaydi — "nechta filtr qo'yilgan" soni to'g'ri chiqsin.
+      for (const key of Object.keys(next) as Array<keyof StudentListFilter>) {
+        const value = next[key]
+        if (value === undefined || value === '' || (Array.isArray(value) && value.length === 0))
+          delete next[key]
+      }
+      return next
+    })
+
+  const selectedRows = [...selected.values()]
+  const selectedStudents = selectedRows.map(toStudent)
+
+  const allSelected = rows.length > 0 && rows.every((r) => selected.has(r.id))
+  const someSelected = rows.some((r) => selected.has(r.id)) && !allSelected
   const headerCbRef = useRef<HTMLInputElement>(null)
   useEffect(() => {
     if (headerCbRef.current) headerCbRef.current.indeterminate = someSelected
   })
 
-  const toggleOne = (id: string) =>
+  const toggleOne = (row: StudentListRow) =>
     setSelected((prev) => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
+      const next = new Map(prev)
+      if (next.has(row.id)) next.delete(row.id)
+      else next.set(row.id, row)
       return next
     })
 
   const toggleAll = () =>
     setSelected((prev) => {
-      const next = new Set(prev)
-      if (allSelected) filtered.forEach((s) => next.delete(s.id))
-      else filtered.forEach((s) => next.add(s.id))
+      const next = new Map(prev)
+      if (allSelected) rows.forEach((r) => next.delete(r.id))
+      else rows.forEach((r) => next.set(r.id, r))
       return next
     })
 
-  const clearSelection = () => setSelected(new Set())
+  const clearSelection = () => setSelected(new Map())
 
-  const handleExport = () => {
+  const dropFromSelection = (ids: string[]) =>
+    setSelected((prev) => {
+      const next = new Map(prev)
+      ids.forEach((id) => next.delete(id))
+      return next
+    })
+
+  const sortOn = (key: StudentSortKey) => {
+    if (sortBy === key) {
+      setSortOrder((o) => (o === 'asc' ? 'desc' : 'asc'))
+      return
+    }
+    setSortBy(key)
+    setSortOrder('asc')
+  }
+
+  const handleCsv = () => {
     exportToCsv(
       'oquvchilar.csv',
-      ['F.I.SH', 'Sinf', 'Jinsi', "Tug'ilgan kun", 'Manzil', 'Ota-ona', 'Telefon', 'Balans'],
-      selectedStudents.map((s) => [
+      ['F.I.SH', 'Sinf', 'Jinsi', "Tug'ilgan kun", 'Manzil', 'Ota-ona', 'Telefon', 'Holat', 'Balans'],
+      selectedRows.map((s) => [
         s.fullName,
         s.className,
         genderLabels[s.gender],
@@ -197,72 +300,94 @@ export function StudentsPage() {
         s.address,
         s.parentFullName,
         s.parentPhone,
-        formatMoney(s.balance ?? 0),
+        s.statusName ?? '',
+        formatMoney(s.balance),
       ]),
     )
   }
 
   const handleFormSubmit = (values: StudentPayload) => {
     if (editing) {
-      const id = editing.id
-      updateStudent(id, values)
-      // balansni saqlab qolib, qolgan maydonlarni yangilaymiz
-      setStudents((prev) => prev.map((s) => (s.id === id ? { ...s, ...values } : s)))
+      updateStudent(editing.id, values).then(reload)
     } else {
       createStudent(values).then((created) => {
-        setStudents((prev) => [created, ...prev])
-        // Yangi o'quvchining login/parolini darrov ko'rsatamiz.
         setViewing(created)
+        reload()
       })
     }
     setFormOpen(false)
     setEditing(null)
   }
 
-  // P1-21: "To'lov kiritish" tugmasi bu yerdan olib tashlandi. Pul faqat
-  // kassada qabul qilinadi (ochiq smena + kassir + chek raqami, SPEC §4.2) —
-  // kassir ish o'rni `/cashier`. Bu yerda to'lov TARIXI o'qish uchun qoladi.
-
-  const handleDelete = (s: Student) => {
-    if (!confirm(`"${s.fullName}" o'quvchini BUTUNLAY o'chirishni tasdiqlaysizmi? Bu amal qaytarib bo'lmaydi.`)) return
-    deleteStudent(s.id).then(() => {
-      setStudents((prev) => prev.filter((x) => x.id !== s.id))
-      setArchived((prev) => prev.filter((x) => x.id !== s.id))
-      setSelected((prev) => {
-        const next = new Set(prev)
-        next.delete(s.id)
-        return next
+  const handleDelete = (row: StudentListRow) => {
+    if (!confirm(`"${row.fullName}" o'quvchini BUTUNLAY o'chirishni tasdiqlaysizmi? Bu amal qaytarib bo'lmaydi.`))
+      return
+    deleteStudent(row.id)
+      .then(() => {
+        dropFromSelection([row.id])
+        reload()
       })
+      .catch((err) => alert(errorText(err, "O'chirib bo'lmadi")))
+  }
+
+  /** S-7 — tanlanganlarni butunlay o'chirish (arxiv tab'i). Hammasi yoki hech nima. */
+  const handleDeleteMany = async () => {
+    const ids = selectedRows.map((r) => r.id)
+    if (ids.length === 0) return
+    if (!confirm(`${ids.length} ta o'quvchi BUTUNLAY o'chiriladi. Bu amal qaytarib bo'lmaydi. Davom etamizmi?`))
+      return
+    try {
+      const result = await deleteStudentsMany(ids)
+      dropFromSelection(ids)
+      setBanner(`${result.deleted} ta o'quvchi o'chirildi`)
+      reload()
+    } catch (err) {
+      const data = (err as { response?: { data?: { blocked?: Array<{ fullName: string }>; message?: string } } })
+        ?.response?.data
+      const names = (data?.blocked ?? []).map((b) => b.fullName).join(', ')
+      alert(
+        (data?.message ?? "O'chirib bo'lmadi") + (names ? `\n\nTo'sganlar: ${names}` : ''),
+      )
+    }
+  }
+
+  const handleArchived = (ids: string[]) => {
+    dropFromSelection(ids)
+    setArchiveTargets([])
+    reload()
+  }
+
+  const handleRestore = (row: StudentListRow) => {
+    if (!confirm(`"${row.fullName}" o'quvchini arxivdan qaytarish? Login bloklangicha qoladi — keyin parol generatsiya qiling.`))
+      return
+    restoreStudent(row.id).then(() => {
+      dropFromSelection([row.id])
+      reload()
     })
   }
 
-  /** Arxivga ko'chirish — oyna sabab so'raydi va backend'ga o'zi uzatadi (ArchiveStudentsModal). */
-  const openArchive = (s: Student) => setArchiveTargets([s])
-  const handleArchived = (ids: string[], reason: string) => {
-    const done = new Set(ids)
-    const today = new Date().toISOString().slice(0, 10)
-    // Faol ro'yxatdan olib tashlab, arxivga qo'shamiz (yangi sana va sabab bilan).
-    const moved = students
-      .filter((s) => done.has(s.id))
-      .map((s): Student => ({ ...s, isArchived: true, archivedAt: today, archiveReason: reason }))
-    setStudents((prev) => prev.filter((x) => !done.has(x.id)))
-    setArchived((prev) => [...moved, ...prev])
-    setSelected((prev) => {
-      const next = new Set(prev)
-      done.forEach((id) => next.delete(id))
-      return next
-    })
-    setArchiveTargets([])
+  /** S-5 — ro'yxatdan turib holat almashtirish (EduSchool'dagi inline tanlov). */
+  const changeStatus = async (row: StudentListRow, statusId: string) => {
+    const previous = page
+    // Optimistik: nishon darrov almashadi, xato bo'lsa orqaga qaytariladi.
+    const chosen = statuses.find((s) => s.id === statusId) ?? null
+    setPage((p) => ({
+      ...p,
+      items: p.items.map((r) =>
+        r.id === row.id
+          ? { ...r, statusId: chosen?.id ?? null, statusName: chosen?.name ?? null, statusColor: chosen?.color ?? null }
+          : r,
+      ),
+    }))
+    try {
+      await setStudentStatus(row.id, statusId || null)
+    } catch (err) {
+      setPage(previous)
+      alert(errorText(err, "Holatni o'zgartirib bo'lmadi"))
+    }
   }
-  /** Arxivdan qaytarish. */
-  const handleRestore = (s: Student) => {
-    if (!confirm(`"${s.fullName}" o'quvchini arxivdan qaytarish? Login bloklangicha qoladi — keyin parol generatsiya qiling.`)) return
-    restoreStudent(s.id).then(() => {
-      const updated: Student = { ...s, isArchived: false, archivedAt: null, archiveReason: null }
-      setArchived((prev) => prev.filter((x) => x.id !== s.id))
-      setStudents((prev) => [updated, ...prev])
-    })
-  }
+
+  const totalPages = Math.max(1, Math.ceil(page.total / (page.pageSize || PAGE_SIZE)))
 
   return (
     <div className="space-y-6">
@@ -271,12 +396,11 @@ export function StudentsPage() {
           <h1 className="text-xl font-semibold text-slate-800">O'quvchilar</h1>
           <p className="text-sm text-slate-400">
             {tab === 'active'
-              ? `Faol: ${students.length} ta · Arxivda: ${archived.length} ta`
-              : `Arxivda: ${archived.length} ta o'quvchi`}
+              ? `Topildi: ${page.total} ta · Arxivda: ${archivedTotal} ta`
+              : `Arxivda: ${page.total} ta o'quvchi`}
           </p>
         </div>
         <div className="flex items-center gap-2">
-          {/* Faol/Arxiv tab toggle */}
           <div className="flex gap-1 rounded-lg bg-slate-100 p-1">
             <button
               type="button"
@@ -286,9 +410,7 @@ export function StudentsPage() {
               }}
               className={cn(
                 'rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
-                tab === 'active'
-                  ? 'bg-white text-brand-700 shadow-sm'
-                  : 'text-slate-500 hover:text-slate-700',
+                tab === 'active' ? 'bg-white text-brand-700 shadow-sm' : 'text-slate-500 hover:text-slate-700',
               )}
             >
               Faol
@@ -301,41 +423,29 @@ export function StudentsPage() {
               }}
               className={cn(
                 'rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
-                tab === 'archived'
-                  ? 'bg-white text-amber-700 shadow-sm'
-                  : 'text-slate-500 hover:text-slate-700',
+                tab === 'archived' ? 'bg-white text-amber-700 shadow-sm' : 'text-slate-500 hover:text-slate-700',
               )}
             >
               <Archive className="mr-1 inline h-4 w-4" />
-              Arxiv ({archived.length})
+              Arxiv ({archivedTotal})
             </button>
           </div>
-          {/* Faqat superadmin: barcha o'quvchilarni login/parol bilan Excel'ga yuklab olish.
-              Parol faqat foydalanuvchi hali kirmagan bo'lsa ko'rinadi. */}
+
           {user?.role === 'superadmin' && (
             <Button variant="secondary" onClick={() => downloadStudentCredentials()}>
               <Download className="h-4 w-4" /> Login/parollar
             </Button>
           )}
+
+          <Button variant="secondary" onClick={() => exportStudents({ ...effective, page: undefined, pageSize: undefined })}>
+            <FileSpreadsheet className="h-4 w-4" /> Eksport
+          </Button>
+
           {tab === 'active' && (
             <>
-              <Button variant="secondary" onClick={() => downloadStudentImportTemplate()}>
-                <FileDown className="h-4 w-4" /> Shablon
+              <Button variant="secondary" onClick={() => setImportOpen(true)}>
+                <Upload className="h-4 w-4" /> Excel yuklash
               </Button>
-              <Button
-                variant="secondary"
-                disabled={importing}
-                onClick={() => fileInputRef.current?.click()}
-              >
-                <Upload className="h-4 w-4" /> {importing ? 'Yuklanmoqda…' : 'Excel yuklash'}
-              </Button>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".xlsx"
-                className="hidden"
-                onChange={handleImportFile}
-              />
               <Button
                 onClick={() => {
                   setEditing(null)
@@ -349,140 +459,48 @@ export function StudentsPage() {
         </div>
       </div>
 
-      <Card className="p-0">
-        {/* Filtrlar */}
-        <div className="flex flex-wrap items-center gap-3 border-b border-slate-100 p-4">
-          <div className="relative flex-1 min-w-[200px]">
-            <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="F.I.SH yoki ota-ona bo'yicha qidirish..."
-              className={cn(control, 'w-full pl-9')}
-            />
-          </div>
-          <select
-            value={classFilter}
-            onChange={(e) => setClassFilter(e.target.value)}
-            className={control}
-          >
-            <option value="all">Barcha sinflar</option>
-            {classNames.map((c) => (
-              <option key={c} value={c}>
-                {c}
-              </option>
-            ))}
-          </select>
-          <select
-            value={genderFilter}
-            onChange={(e) => setGenderFilter(e.target.value as 'all' | Gender)}
-            className={control}
-          >
-            <option value="all">Barcha jinslar</option>
-            <option value="male">{genderLabels.male}</option>
-            <option value="female">{genderLabels.female}</option>
-          </select>
-          <select
-            value={balanceFilter}
-            onChange={(e) => setBalanceFilter(e.target.value as BalanceFilter)}
-            className={control}
-          >
-            <option value="all">Barcha balans</option>
-            <option value="debt">Qarzdorlar</option>
-            <option value="paid">Qarzsizlar</option>
-          </select>
-
-          {/* §2.3 — sertifikat turi bo'yicha KO'P TANLOVLI filtr:
-              "IELTS sertifikati bor har bir bolani ko'rsat". Tur qo'shilmagan
-              maktabda umuman chiqmaydi. */}
-          {certTypes.length > 0 && (
-            <div className="relative">
-              <button
-                type="button"
-                onClick={() => setCertMenuOpen((v) => !v)}
-                className={cn(control, 'inline-flex items-center gap-1.5')}
-              >
-                <Award className="h-4 w-4 text-slate-400" />
-                {certTypeIds.length === 0
-                  ? 'Sertifikat: hammasi'
-                  : certTypeIds.length === 1
-                    ? (certTypes.find((t) => t.id === certTypeIds[0])?.name ?? 'Sertifikat')
-                    : `Sertifikat: ${certTypeIds.length} ta`}
-                <ChevronDown className="h-4 w-4 text-slate-400" />
-              </button>
-              {certMenuOpen && (
-                <>
-                  {/* Tashqariga bosilganda yopiladi. */}
-                  <div className="fixed inset-0 z-10" onClick={() => setCertMenuOpen(false)} />
-                  <div className="absolute left-0 z-20 mt-1 max-h-64 w-64 overflow-y-auto rounded-xl border border-slate-200 bg-white p-2 shadow-lg">
-                    {certTypeIds.length > 0 && (
-                      <button
-                        type="button"
-                        onClick={() => setCertTypeIds([])}
-                        className="mb-1 w-full rounded-lg px-2 py-1.5 text-left text-sm text-slate-500 hover:bg-slate-50"
-                      >
-                        Tanlovni tozalash
-                      </button>
-                    )}
-                    {certTypes.map((t) => (
-                      <label
-                        key={t.id}
-                        className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={certTypeIds.includes(t.id)}
-                          onChange={() =>
-                            setCertTypeIds((prev) =>
-                              prev.includes(t.id)
-                                ? prev.filter((x) => x !== t.id)
-                                : [...prev, t.id],
-                            )
-                          }
-                          className="h-4 w-4 rounded border-slate-300 accent-brand-600"
-                        />
-                        {t.name}
-                      </label>
-                    ))}
-                  </div>
-                </>
-              )}
-            </div>
-          )}
-
-          {/* §2.3 — sertifikatni BERGAN o'qituvchi bo'yicha filtr. */}
-          {certIssuers.length > 0 && (
-            <select
-              value={certTeacherId}
-              onChange={(e) => setCertTeacherId(e.target.value)}
-              className={control}
-              title="Sertifikatni bergan o'qituvchi"
-            >
-              <option value="">Sertifikat bergan: hammasi</option>
-              {certIssuers.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.fullName}
-                </option>
-              ))}
-            </select>
-          )}
+      {banner && (
+        <div className="flex items-center gap-2 rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+          {banner}
+          <button type="button" onClick={() => setBanner(null)} className="ml-auto text-emerald-600">
+            <X className="h-4 w-4" />
+          </button>
         </div>
+      )}
+
+      <Card className="p-0">
+        <StudentListFilters
+          filter={filter}
+          onChange={patchFilter}
+          onReset={() => setFilter({})}
+          archived={tab === 'archived'}
+          classNames={classNames}
+          grades={grades}
+          statuses={statuses}
+          archiveReasons={archiveReasons}
+          certTypes={certTypes}
+          certIssuers={certIssuers}
+          activeCount={activeCount}
+        />
 
         {/* Tanlanganlar uchun amal paneli */}
         {selected.size > 0 && (
           <div className="flex flex-wrap items-center gap-3 border-b border-slate-100 bg-brand-50/60 px-4 py-3">
-            <span className="text-sm font-medium text-brand-700">
-              {selected.size} ta tanlandi
-            </span>
+            <span className="text-sm font-medium text-brand-700">{selected.size} ta tanlandi</span>
             <Button variant="secondary" onClick={() => setSmsOpen(true)}>
-              <Send className="h-4 w-4" /> SMS yuborish
+              <Send className="h-4 w-4" /> Xabar yuborish
             </Button>
-            <Button variant="secondary" onClick={handleExport}>
+            <Button variant="secondary" onClick={handleCsv}>
               <Download className="h-4 w-4" /> Yuklab olish (CSV)
             </Button>
             {tab === 'active' && (
               <Button variant="secondary" onClick={() => setArchiveTargets(selectedStudents)}>
                 <Archive className="h-4 w-4" /> Arxivlash
+              </Button>
+            )}
+            {tab === 'archived' && (
+              <Button variant="danger" onClick={handleDeleteMany}>
+                <Trash2 className="h-4 w-4" /> Butunlay o'chirish
               </Button>
             )}
             <button
@@ -494,7 +512,6 @@ export function StudentsPage() {
           </div>
         )}
 
-        {/* Jadval */}
         {loading ? (
           <Loader label="Yuklanmoqda..." />
         ) : (
@@ -512,23 +529,27 @@ export function StudentsPage() {
                     />
                   </th>
                   <th className="w-10 px-2 py-3">#</th>
-                  <th className="px-4 py-3">F.I.SH</th>
-                  <th className="px-4 py-3">Sinf</th>
+                  <SortHeader label="F.I.SH" sortKey="fullName" active={sortBy} order={sortOrder} onSort={sortOn} />
+                  <SortHeader label="Sinf" sortKey="className" active={sortBy} order={sortOrder} onSort={sortOn} />
                   <th className="px-4 py-3">Jinsi</th>
-                  <th className="px-4 py-3">Tug'ilgan kun</th>
-                  <th className="px-4 py-3">Ota-ona</th>
+                  <SortHeader label="Tug'ilgan kun" sortKey="birthDate" active={sortBy} order={sortOrder} onSort={sortOn} />
                   <th className="px-4 py-3">Telefon</th>
-                  <th className="px-4 py-3">Balans</th>
-                  {tab === 'archived' && <th className="px-4 py-3">Arxiv sanasi</th>}
+                  <th className="px-4 py-3">Ota-ona</th>
+                  <th className="px-4 py-3">Ota-ona tel.</th>
+                  <SortHeader label="Holat" sortKey="status" active={sortBy} order={sortOrder} onSort={sortOn} />
+                  <SortHeader label="Balans" sortKey="balance" active={sortBy} order={sortOrder} onSort={sortOn} />
+                  {tab === 'archived' && (
+                    <SortHeader label="Arxiv sanasi" sortKey="archivedAt" active={sortBy} order={sortOrder} onSort={sortOn} />
+                  )}
                   {tab === 'archived' && <th className="px-4 py-3">Sabab</th>}
                   <th className="px-4 py-3 text-right">Amallar</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {filtered.map((s, i) => (
+                {rows.map((s, i) => (
                   <tr
                     key={s.id}
-                    onClick={() => openNotebook(s)}
+                    onClick={() => navigate(`/admin/students/${s.id}`)}
                     title="Shaxsiy daftarni ochish"
                     className="cursor-pointer hover:bg-slate-50/60"
                   >
@@ -536,86 +557,153 @@ export function StudentsPage() {
                       <input
                         type="checkbox"
                         checked={selected.has(s.id)}
-                        onChange={() => toggleOne(s.id)}
+                        onChange={() => toggleOne(s)}
                         className="h-4 w-4 accent-brand-600"
                       />
                     </td>
-                    <td className="px-2 py-3 text-slate-400">{i + 1}</td>
-                    <td className="px-4 py-3 font-medium text-slate-800">
-                      {s.fullName}
-                    </td>
+                    <td className="px-2 py-3 text-slate-400">{(page.page - 1) * page.pageSize + i + 1}</td>
+                    <td className="px-4 py-3 font-medium text-slate-800">{s.fullName}</td>
                     <td className="px-4 py-3">
                       <span className="rounded-md bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
                         {s.className}
                       </span>
                     </td>
                     <td className="px-4 py-3 text-slate-600">{genderLabels[s.gender]}</td>
-                    <td className="px-4 py-3 text-slate-600">{formatDate(s.birthDate)}</td>
+                    <td className="px-4 py-3 text-slate-600">
+                      {formatDate(s.birthDate)}
+                      {s.age !== null && <span className="ml-1 text-xs text-slate-400">({s.age})</span>}
+                    </td>
+                    <td className="px-4 py-3 text-slate-600">{s.phone ?? '—'}</td>
                     <td className="px-4 py-3 text-slate-600">{s.parentFullName}</td>
                     <td className="px-4 py-3 text-slate-600">{s.parentPhone}</td>
+                    <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                      {statuses.length === 0 ? (
+                        <span className="text-slate-300">—</span>
+                      ) : (
+                        <div className="relative inline-flex items-center">
+                          {s.statusName ? (
+                            <StatusChip name={s.statusName} color={s.statusColor} />
+                          ) : (
+                            <span className="rounded-md border border-dashed border-slate-200 px-2 py-0.5 text-xs text-slate-400">
+                              Holat yo'q
+                            </span>
+                          )}
+                          {/* Ko'rinmas select — nishonning o'zi bosiladi (EduSchool'dagidek). */}
+                          <select
+                            value={s.statusId ?? ''}
+                            onChange={(e) => changeStatus(s, e.target.value)}
+                            title="Holatni o'zgartirish"
+                            className="absolute inset-0 cursor-pointer opacity-0"
+                          >
+                            <option value="">Holat yo'q</option>
+                            {statuses.map((st) => (
+                              <option key={st.id} value={st.id}>
+                                {st.name}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
+                    </td>
                     <td className="px-4 py-3">
                       <span
                         className={cn(
                           'font-medium',
-                          (s.balance ?? 0) < 0
-                            ? 'text-red-600'
-                            : (s.balance ?? 0) > 0
-                              ? 'text-emerald-600'
-                              : 'text-slate-500',
+                          s.balance < 0 ? 'text-red-600' : s.balance > 0 ? 'text-emerald-600' : 'text-slate-500',
                         )}
                       >
-                        {(s.balance ?? 0) > 0
-                          ? `+${formatMoney(s.balance ?? 0)}`
-                          : formatMoney(s.balance ?? 0)}
+                        {s.balance > 0 ? `+${formatMoney(s.balance)}` : formatMoney(s.balance)}
                       </span>
                     </td>
                     {tab === 'archived' && (
-                      <td className="px-4 py-3 text-slate-600">{s.archivedAt ? formatDate(s.archivedAt) : '—'}</td>
+                      <td className="px-4 py-3 text-slate-600">
+                        {s.archivedAt ? formatDate(s.archivedAt) : '—'}
+                      </td>
                     )}
                     {tab === 'archived' && (
-                      <td className="px-4 py-3 text-slate-600 max-w-[18rem] truncate" title={s.archiveReason ?? ''}>
+                      <td
+                        className="max-w-[18rem] truncate px-4 py-3 text-slate-600"
+                        title={s.archiveReason ?? ''}
+                      >
                         {s.archiveReason || '—'}
                       </td>
                     )}
                     <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center justify-end gap-0.5">
+                        <IconBtn icon={MessageSquare} title="Izohlar" onClick={() => setCommentsOf(s)} />
                         {tab === 'active' ? (
                           <>
-                            <IconBtn icon={History} title="To'lov tarixi" onClick={() => setHistoryOf(s)} />
+                            <IconBtn icon={History} title="To'lov tarixi" onClick={() => setHistoryOf(toStudent(s))} />
                             <IconBtn
                               icon={Pencil}
                               title="Tahrirlash"
                               onClick={() => {
-                                setEditing(s)
+                                setEditing(toStudent(s))
                                 setFormOpen(true)
                               }}
                             />
-                            <IconBtn icon={Archive} title="Arxivga ko'chirish" onClick={() => openArchive(s)} />
+                            <IconBtn
+                              icon={Archive}
+                              title="Arxivga ko'chirish"
+                              onClick={() => setArchiveTargets([toStudent(s)])}
+                            />
                           </>
                         ) : (
                           <>
                             <IconBtn icon={RotateCcw} title="Arxivdan qaytarish" onClick={() => handleRestore(s)} />
-                            <IconBtn
-                              icon={Trash2}
-                              title="Butunlay o'chirish"
-                              danger
-                              onClick={() => handleDelete(s)}
-                            />
+                            <IconBtn icon={Trash2} title="Butunlay o'chirish" danger onClick={() => handleDelete(s)} />
                           </>
                         )}
                       </div>
                     </td>
                   </tr>
                 ))}
-                {filtered.length === 0 && (
+                {rows.length === 0 && (
                   <tr>
-                    <td colSpan={tab === 'archived' ? 12 : 10} className="px-4 py-12 text-center text-slate-400">
-                      {tab === 'archived' ? 'Arxivda o\'quvchi yo\'q' : 'Hech narsa topilmadi'}
+                    <td colSpan={tab === 'archived' ? 14 : 12} className="px-4 py-12 text-center text-slate-400">
+                      {tab === 'archived' ? "Arxivda o'quvchi yo'q" : 'Hech narsa topilmadi'}
                     </td>
                   </tr>
                 )}
               </tbody>
             </table>
+          </div>
+        )}
+
+        {/* Yakun va sahifalar */}
+        {!loading && page.total > 0 && (
+          <div className="flex flex-wrap items-center gap-4 border-t border-slate-100 px-4 py-3 text-sm">
+            {canSeeTotals && (
+              <>
+                <span className="text-slate-500">
+                  Jami qarz: <b className="text-red-600">{formatMoney(page.totalDebt)}</b>
+                </span>
+                <span className="text-slate-500">
+                  Jami avans: <b className="text-emerald-600">{formatMoney(page.totalCredit)}</b>
+                </span>
+              </>
+            )}
+            {totalPages > 1 && (
+              <div className="ml-auto flex items-center gap-2">
+                <Button
+                  variant="secondary"
+                  disabled={page.page <= 1}
+                  onClick={() => setPageNo((p) => Math.max(1, p - 1))}
+                >
+                  Oldingi
+                </Button>
+                <span className="text-slate-500">
+                  {page.page} / {totalPages}
+                </span>
+                <Button
+                  variant="secondary"
+                  disabled={page.page >= totalPages}
+                  onClick={() => setPageNo((p) => Math.min(totalPages, p + 1))}
+                >
+                  Keyingi
+                </Button>
+              </div>
+            )}
           </div>
         )}
       </Card>
@@ -638,64 +726,47 @@ export function StudentsPage() {
         onClose={() => setArchiveTargets([])}
         onArchived={handleArchived}
       />
-
-      {/* Excel'dan import natijasi */}
-      <Modal
-        open={!!importResult}
-        onClose={() => setImportResult(null)}
-        title="Excel'dan yuklash natijasi"
-        size="md"
-        footer={<Button onClick={() => setImportResult(null)}>Yopish</Button>}
-      >
-        {importResult && (
-          <div className="space-y-3 text-sm">
-            <div className="flex flex-wrap gap-x-5 gap-y-1">
-              <span className="text-emerald-700">
-                ✓ Qo'shildi: <b>{importResult.created}</b>
-              </span>
-              {importResult.failed > 0 && (
-                <span className="text-red-600">
-                  ✗ Xato: <b>{importResult.failed}</b>
-                </span>
-              )}
-              {importResult.skipped > 0 && (
-                <span className="text-slate-500">
-                  O'tkazib yuborildi (bo'sh): <b>{importResult.skipped}</b>
-                </span>
-              )}
-            </div>
-
-            {importResult.errors.length > 0 && (
-              <div className="max-h-72 overflow-auto rounded-lg border border-slate-100">
-                <table className="w-full text-left text-sm">
-                  <thead className="sticky top-0 bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
-                    <tr>
-                      <th className="w-16 px-3 py-2">Qator</th>
-                      <th className="px-3 py-2">Xato</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {importResult.errors.map((e, i) => (
-                      <tr key={i}>
-                        <td className="px-3 py-2 text-slate-500">{e.row}</td>
-                        <td className="px-3 py-2 text-red-600">{e.message}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-
-            {importResult.created > 0 && (
-              <p className="text-slate-500">
-                Yangi o'quvchilarning login/parollarini <b>"Login/parollar"</b> tugmasi orqali yuklab olishingiz mumkin.
-              </p>
-            )}
-          </div>
-        )}
-      </Modal>
-
+      <StudentImportModal
+        open={importOpen}
+        onClose={() => setImportOpen(false)}
+        onImported={(created, updated) => {
+          setBanner(`Excel'dan yuklandi: ${created} ta yangi, ${updated} ta yangilandi`)
+          reload()
+        }}
+      />
+      <StudentCommentsModal
+        studentId={commentsOf?.id ?? null}
+        studentName={commentsOf?.fullName ?? ''}
+        onClose={() => setCommentsOf(null)}
+      />
     </div>
+  )
+}
+
+interface SortHeaderProps {
+  label: string
+  sortKey: StudentSortKey
+  active: StudentSortKey | undefined
+  order: 'asc' | 'desc'
+  onSort: (key: StudentSortKey) => void
+}
+
+function SortHeader({ label, sortKey, active, order, onSort }: SortHeaderProps) {
+  const on = active === sortKey
+  return (
+    <th className="px-4 py-3">
+      <button
+        type="button"
+        onClick={() => onSort(sortKey)}
+        className={cn(
+          'inline-flex items-center gap-1 uppercase tracking-wide transition-colors',
+          on ? 'text-brand-600' : 'hover:text-slate-600',
+        )}
+      >
+        {label}
+        {on && (order === 'asc' ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />)}
+      </button>
+    </th>
   )
 }
 
