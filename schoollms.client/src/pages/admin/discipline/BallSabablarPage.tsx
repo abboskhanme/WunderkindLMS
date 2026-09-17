@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Plus, Pencil, Trash2, CalendarCheck } from 'lucide-react'
+import { Plus, Pencil, Trash2, CalendarCheck, Send } from 'lucide-react'
 import type { DisciplineReason } from '@/types'
 import {
   getDisciplineReasons,
@@ -13,7 +13,7 @@ import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Loader } from '@/components/ui/Loader'
 import { Modal } from '@/components/ui/Modal'
-import { Input } from '@/components/ui/Input'
+import { Input, Textarea } from '@/components/ui/Input'
 
 export function BallSabablarPage() {
   const [reasons, setReasons] = useState<DisciplineReason[]>([])
@@ -22,6 +22,10 @@ export function BallSabablarPage() {
   const [editing, setEditing] = useState<DisciplineReason | null>(null)
   const [name, setName] = useState('')
   const [points, setPoints] = useState(0)
+  // §6.3, 4–5-qadam: ota-onaga xabar (sukut — O'CHIQ), izoh va faollik.
+  const [notifyParent, setNotifyParent] = useState(false)
+  const [description, setDescription] = useState('')
+  const [isActive, setIsActive] = useState(true)
 
   useEffect(() => {
     getDisciplineReasons()
@@ -36,12 +40,18 @@ export function BallSabablarPage() {
     setEditing(null)
     setName('')
     setPoints(0)
+    setNotifyParent(false)
+    setDescription('')
+    setIsActive(true)
     setOpen(true)
   }
   const openEdit = (r: DisciplineReason) => {
     setEditing(r)
     setName(r.name)
     setPoints(r.points)
+    setNotifyParent(r.notifyParent)
+    setDescription(r.description ?? '')
+    setIsActive(r.isActive)
     setOpen(true)
   }
 
@@ -49,14 +59,15 @@ export function BallSabablarPage() {
     e.preventDefault()
     const isAttendance = editing?.kind === 'attendance'
     if (!isAttendance && (!name.trim() || points === 0)) return
+    const input = { name: name.trim(), points, notifyParent, description: description.trim(), isActive }
     let saved: DisciplineReason
     if (editing) {
       saved = isAttendance
         ? await setAttendanceReasonPoints(editing.id, points)
-        : await updateDisciplineReason(editing.id, name.trim(), points)
+        : await updateDisciplineReason(editing.id, input)
       setReasons((p) => p.map((x) => (x.id === saved.id ? saved : x)))
     } else {
-      saved = await createDisciplineReason(name.trim(), points)
+      saved = await createDisciplineReason(input)
       setReasons((p) => [...p, saved])
     }
     setOpen(false)
@@ -173,7 +184,27 @@ export function BallSabablarPage() {
                   {other.map((r, i) => (
                     <tr key={r.id} className="hover:bg-slate-50/60">
                       <td className="px-4 py-3 text-slate-400">{i + 1}</td>
-                      <td className="px-4 py-3 font-medium text-slate-800">{r.name}</td>
+                      <td className="px-4 py-3">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className={cn('font-medium', r.isActive ? 'text-slate-800' : 'text-slate-400')}>
+                            {r.name}
+                          </span>
+                          {r.notifyParent && (
+                            <span
+                              title="Ball qo'yilganda ota-onaga Telegram orqali xabar yuboriladi"
+                              className="inline-flex items-center gap-1 rounded-md bg-sky-50 px-1.5 py-0.5 text-xs font-medium text-sky-600"
+                            >
+                              <Send className="h-3 w-3" /> Ota-onaga xabar
+                            </span>
+                          )}
+                          {!r.isActive && (
+                            <span className="rounded-md bg-slate-100 px-1.5 py-0.5 text-xs text-slate-400">
+                              Faol emas
+                            </span>
+                          )}
+                        </div>
+                        {r.description && <p className="mt-0.5 text-xs text-slate-400">{r.description}</p>}
+                      </td>
                       <td className="px-4 py-3">
                         <PointsBadge p={r.points} />
                       </td>
@@ -223,7 +254,7 @@ export function BallSabablarPage() {
               : 'Sababni tahrirlash'
             : 'Yangi sabab'
         }
-        size="sm"
+        size={editing?.kind === 'attendance' ? 'sm' : 'md'}
         footer={
           <>
             <Button variant="secondary" onClick={() => setOpen(false)}>
@@ -254,6 +285,47 @@ export function BallSabablarPage() {
             value={points}
             onChange={(e) => setPoints(Number(e.target.value) || 0)}
           />
+          {editing?.kind !== 'attendance' && (
+            <>
+              <Textarea
+                label="Izoh (ixtiyoriy)"
+                rows={2}
+                placeholder="qachon qo'yiladi, nimani anglatadi"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+              />
+              <label className="flex cursor-pointer items-start gap-2">
+                <input
+                  type="checkbox"
+                  checked={notifyParent}
+                  onChange={(e) => setNotifyParent(e.target.checked)}
+                  className="mt-0.5 h-4 w-4 rounded border-slate-300 accent-brand-600"
+                />
+                <span>
+                  <span className="block text-sm font-medium text-slate-700">Ota-onaga xabar yuborish</span>
+                  <span className="block text-xs text-slate-400">
+                    Shu sabab bilan ball qo'yilganda ota-onaga Telegram bot orqali xabar boradi (faqat botga
+                    ulangan ota-onalarga). Oldingi ballar uchun xabar yuborilmaydi. Har kechikishda xabar
+                    oladigan ota-ona tez orada botni o'chirib qo'yadi — faqat muhim sabablar uchun yoqing.
+                  </span>
+                </span>
+              </label>
+              <label className="flex cursor-pointer items-start gap-2">
+                <input
+                  type="checkbox"
+                  checked={isActive}
+                  onChange={(e) => setIsActive(e.target.checked)}
+                  className="mt-0.5 h-4 w-4 rounded border-slate-300 accent-brand-600"
+                />
+                <span>
+                  <span className="block text-sm font-medium text-slate-700">Faol</span>
+                  <span className="block text-xs text-slate-400">
+                    Faol bo'lmagan sabab bilan yangi ball qo'yilmaydi; eski yozuvlar tarixda qoladi.
+                  </span>
+                </span>
+              </label>
+            </>
+          )}
           {editing?.kind === 'attendance' ? (
             <p className="text-xs text-slate-400">
               Davomat sababi nomi "Sozlamalar → Davomat sabablari"da o'zgartiriladi. Bu yerda faqat ball

@@ -68,7 +68,8 @@ export function BallarNazoratiPage() {
     Promise.all([getDisciplineScores(), getDisciplineReasons()])
       .then(([s, r]) => {
         setScores(s)
-        setReasons(r)
+        // Faolsizlantirilgan sabab bilan yangi ball qo'yilmaydi (server ham rad etadi).
+        setReasons(r.filter((x) => x.isActive))
       })
       .finally(() => setLoading(false))
   }, [])
@@ -400,6 +401,11 @@ export function BallarNazoratiPage() {
                   </optgroup>
                 )}
               </select>
+              {reasons.find((r) => r.id === reasonId)?.notifyParent && (
+                <p className="mt-1 text-xs text-brand-700">
+                  Bu sabab bo'yicha ota-onaga Telegram orqali xabar yuboriladi (izoh ham xabarga qo'shiladi).
+                </p>
+              )}
             </div>
           )}
           <Input

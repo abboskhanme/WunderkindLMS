@@ -16,7 +16,7 @@ import { useEffect, useState } from 'react'
 import { CalendarDays, GraduationCap, Home, UserRoundX, UtensilsCrossed, Wallet } from 'lucide-react'
 import { EmptyState, ErrorState, Hero, Loader, Screen, TabBar } from '../components/ui'
 import { useAsync } from '../lib/useAsync'
-import { listChildren } from '../lib/parentApi'
+import { getShowLearningProgress, listChildren } from '../lib/parentApi'
 import { showBackButton } from '../lib/telegram'
 import { ChildSwitcher } from './parent/ChildSwitcher'
 import { HomeTab } from './parent/HomeTab'
@@ -38,6 +38,11 @@ export function ParentPanel({ user }) {
   const [childId, setChildId] = useState(null)
 
   const state = useAsync(() => listChildren(), [])
+  // §5.5 — maktab ota-onaga baholarni yopgan bo'lsa "Baholar" tabi umuman chiqmaydi.
+  // Javob kelguncha tab ko'rinadi (eski xatti-harakat); qulf baribir serverda.
+  const progress = useAsync(() => getShowLearningProgress(), [])
+  const showGrades = progress.data !== false
+  const tabs = showGrades ? TABS : TABS.filter((t) => t.value !== 'grades')
   const children = state.data ?? []
   // Tanlanmagan bo'lsa — birinchi farzand. Tanlangani ro'yxatdan chiqib
   // ketsa (arxivlandi, bog'lanish o'chdi) yana birinchisiga qaytamiz: bo'sh
@@ -47,6 +52,11 @@ export function ParentPanel({ user }) {
   useEffect(() => {
     if (child && child.id !== childId) setChildId(child.id)
   }, [child, childId])
+
+  // Baholar tabi ochiq turganda yopilib qolsa — Boshga qaytamiz.
+  useEffect(() => {
+    if (!showGrades && tab === 'grades') setTab('home')
+  }, [showGrades, tab])
 
   // Telegramning o'z "orqaga" tugmasi — ichki tabdan Boshga qaytaradi.
   useEffect(() => {
@@ -86,15 +96,15 @@ export function ParentPanel({ user }) {
         )}
 
         {child && tab === 'home' && (
-          <HomeTab key={child.id} child={child} onOpenTab={setTab} />
+          <HomeTab key={child.id} child={child} onOpenTab={setTab} showGrades={showGrades} />
         )}
-        {child && tab === 'grades' && <GradesTab key={child.id} child={child} />}
+        {child && showGrades && tab === 'grades' && <GradesTab key={child.id} child={child} />}
         {child && tab === 'schedule' && <ScheduleTab key={child.id} child={child} />}
         {child && tab === 'finance' && <FinanceTab key={child.id} child={child} />}
         {child && tab === 'menu' && <MenuTab key={child.id} child={child} />}
       </Screen>
 
-      <TabBar tabs={TABS} value={tab} onChange={setTab} />
+      <TabBar tabs={tabs} value={tab} onChange={setTab} />
     </>
   )
 }

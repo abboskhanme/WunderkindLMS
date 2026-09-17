@@ -144,13 +144,28 @@ export async function getArchivedStudents(
   return data
 }
 
-/** O'quvchini arxivga ko'chirish (sabab bilan). Login bloklanadi. */
-export async function archiveStudent(id: string, reason: string): Promise<void> {
+/**
+ * O'quvchini arxivga ko'chirish. Login bloklanadi.
+ *
+ * `reason` (erkin matn) MAJBURIY, `archiveReasonId` (katalog qatori, §2.2) ixtiyoriy.
+ * Qarzi bor o'quvchi rad etiladi — `force` faqat superadmin uchun ishlaydi.
+ *
+ * Ekranlar `archiveManyStudents` dan foydalanadi (bitta o'quvchi ham shu yerdan ketadi):
+ * xato javobi bitta shaklda bo'lishi uchun. Bu funksiya API to'liqligi uchun qoladi.
+ */
+export async function archiveStudent(
+  id: string,
+  input: { reason: string; archiveReasonId?: string | null; force?: boolean },
+): Promise<void> {
   if (USE_MOCK) {
     await delay(150)
     return
   }
-  await api.post(`/admin/students/${id}/archive`, { reason })
+  await api.post(`/admin/students/${id}/archive`, {
+    reason: input.reason,
+    archiveReasonId: input.archiveReasonId ?? null,
+    force: input.force ?? false,
+  })
 }
 
 /** Arxivdan qaytarish. Ixtiyoriy yangi parol bilan (parol bo'sh = login bloklangicha qoladi). */

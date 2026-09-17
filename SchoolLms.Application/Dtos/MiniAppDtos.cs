@@ -123,11 +123,20 @@ public record TgChildDto(
 /// Mini App qobig'ining birinchi chaqiruvi: men kimman, nimani ko'raman.
 /// <c>Children</c> faqat <c>parent</c> uchun, <c>Teacher</c> faqat <c>teacher</c> uchun to'ladi.
 /// </summary>
+/// <param name="ShowLearningProgress">
+/// Shu foydalanuvchi o'zlashtirishni (baholarni) ko'radimi — §5.5
+/// <c>show_learning_progress_in_parent_dashboard</c>. Faqat <c>parent</c> uchun
+/// <c>false</c> bo'lishi mumkin; o'quvchi va o'qituvchi uchun har doim <c>true</c>.
+/// Qobiq shunga qarab "Baholar" bo'limini KO'RSATMAYDI — server tarafdagi qulf esa
+/// <c>StudentPortalController</c> / <c>TelegramParentController</c> da, chunki faqat
+/// ekranda yashirish yolg'on bo'lardi.
+/// </param>
 public record TgProfileDto(
     string UserId, string FullName, string Role, string SchoolName,
     TgTelegramUserDto Telegram,
     List<TgChildDto> Children,
-    TeacherProfileDto? Teacher);
+    TeacherProfileDto? Teacher,
+    bool ShowLearningProgress = true);
 
 /* ---------- Ota-ona ekranlari ---------- */
 

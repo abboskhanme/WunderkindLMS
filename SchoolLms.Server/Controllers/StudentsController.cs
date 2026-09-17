@@ -334,35 +334,54 @@ public class StudentsController(AppDbContext db, AuditService audit) : Controlle
     /* ---------- Arxiv ---------- */
 
     /// <summary>
-    /// O'quvchini arxivga ko'chirish: <c>IsArchived=true</c>, sana saqlanadi, sabab yoziladi,
-    /// akkaunt login bloklanadi (PasswordHash bo'shaltiriladi). Tarixiy ma'lumotlar saqlanadi.
+    /// O'quvchini arxivga ko'chirish: <c>IsArchived=true</c>, sana saqlanadi, sabab yoziladi
+    /// (erkin matn + katalog qatori, §2.2), akkaunt login bloklanadi. Tarixiy ma'lumot saqlanadi.
+    ///
+    /// <para>
+    /// Qarzi bor o'quvchi RAD ETILADI (§5.5 <c>archive_only_non_debtor_students</c>, §9 Q4).
+    /// Qoida va uni chetlab o'tish <see cref="StudentArchiveService"/> da — ommaviy arxivlash
+    /// bilan BIR joyda, aks holda ikkitasining biridan teshik ochilardi.
+    /// </para>
     /// </summary>
     [HttpPost("{id}/archive")]
-    public async Task<IActionResult> Archive(string id, ArchiveStudentRequest req)
+    public async Task<IActionResult> Archive(
+        string id, ArchiveStudentRequest req, CancellationToken ct = default)
     {
-        var student = await db.Students.FindAsync(id);
+        var student = await db.Students.FindAsync([id], ct);
         if (student is null) return NotFound();
         if (student.IsArchived)
             return BadRequest(new { message = "O'quvchi allaqachon arxivda" });
 
-        student.IsArchived = true;
-        student.ArchivedAt = AppClock.Today.ToString("yyyy-MM-dd");
-        student.ArchiveReason = (req.Reason ?? "").Trim();
+        var archive = new StudentArchiveService(db);
+        var isSuperAdmin = User.IsInRole(Roles.SuperAdmin);
 
-        // Login bloklash — PasswordHash bo'shaltiriladi (login imkonsiz bo'ladi).
-        if (student.UserId is not null)
+        // Erkin matn MAJBURIY: katalog qatori "nega" ni guruhlaydi, matn tafsilotni yozadi (§2.2).
+        var reason = (req.Reason ?? "").Trim();
+        if (reason.Length == 0)
+            return BadRequest(new { message = StudentArchiveService.ReasonRequiredMessage });
+        if (!await archive.ReasonIsUsableAsync(req.ArchiveReasonId, ct))
+            return BadRequest(new { message = StudentArchiveService.ReasonNotFoundMessage });
+
+        if (await archive.DebtorGuardAppliesAsync(isSuperAdmin, req.Force, ct))
         {
-            var user = await db.Users.FindAsync(student.UserId);
-            if (user is not null)
-                user.BlockLogin();
+            var blocked = await archive.DebtorsAmongAsync([student], ct);
+            if (blocked.Count > 0)
+                return BadRequest(new BulkArchiveResultDto(
+                    0, blocked, isSuperAdmin,
+                    isSuperAdmin
+                        ? StudentArchiveService.DebtorOverrideHintMessage
+                        : StudentArchiveService.DebtorBlockedMessage));
         }
 
+        // Login bloklash — PasswordHash bo'shaltiriladi (akkaunt qatori qoladi).
+        (await archive.ApplyAsync(student, reason, req.ArchiveReasonId, ct))?.BlockLogin();
+
         audit.Record(AuditService.EntityStudentDiscount, student.Id, "update",
-            $"O'quvchi arxivga ko'chirildi ({student.FullName})"
-                + (string.IsNullOrWhiteSpace(student.ArchiveReason) ? "" : $": \"{student.ArchiveReason}\""),
+            $"O'quvchi arxivga ko'chirildi ({student.FullName}): \"{reason}\""
+                + (isSuperAdmin && req.Force ? " — qarzdorlik to'sig'i chetlab o'tildi" : ""),
             studentId: student.Id);
 
-        await db.SaveChangesAsync();
+        await db.SaveChangesAsync(ct);
         return NoContent();
     }
 
@@ -381,6 +400,9 @@ public class StudentsController(AppDbContext db, AuditService audit) : Controlle
         student.IsArchived = false;
         student.ArchivedAt = null;
         student.ArchiveReason = null;
+        // Katalog havolasi ham bo'shaydi — o'quvchi qaytdi, ya'ni "nega ketgani" endi yo'q.
+        // Bo'shatilmasa katalogdagi qator "ishlatilgan" bo'lib qolar va o'chirilmasdi (§2.2).
+        student.ArchiveReasonId = null;
         student.ArchivedWithClass = false;
 
         var newPwd = (req?.NewPassword ?? "").Trim();

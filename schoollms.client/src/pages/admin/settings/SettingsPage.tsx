@@ -19,6 +19,7 @@ import { FirebaseSettings } from './FirebaseSettings'
 import { TurnstileSettings } from './TurnstileSettings'
 import { GpsSettings } from './GpsSettings'
 import { CameraSettings } from './CameraSettings'
+import { ArchiveReasonsSettings } from './ArchiveReasonsSettings'
 
 type Status = 'idle' | 'saving' | 'saved'
 
@@ -30,6 +31,7 @@ const sectionTitles: Record<string, string> = {
   'lesson-times': 'Dars vaqtlari',
   reasons: 'Davomat sabablari',
   school: "Maktab ma'lumotlari",
+  'archive-reasons': 'Arxivlash sabablari',
   telegram: 'Telegram bot',
   firebase: 'Push (Firebase)',
   turnstile: 'Turniket integratsiya',
@@ -309,6 +311,9 @@ export function SettingsPage() {
 
           {/* Kamera (videokuzatuv) integratsiya */}
           {section === 'cameras' && <CameraSettings />}
+
+          {/* Arxivlash sabablari katalogi (§2.2) */}
+          {section === 'archive-reasons' && <ArchiveReasonsSettings />}
         </div>
       )}
     </div>

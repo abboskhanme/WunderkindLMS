@@ -60,8 +60,19 @@ public static class JournalService
     /// SubGroup o'quvchining Student.SubGroup'idan olinadi — guruh o'zgarsa journal yozuvi
     /// yangi guruh ostida ko'rinadi.
     /// </summary>
-    public static async Task SetEntryAsync(IAppDbContext db, SetJournalEntryRequest req, FcmService? fcm = null)
+    /// <returns>
+    /// <c>null</c> — yozildi. Aks holda foydalanuvchiga ko'rsatiladigan xato matni
+    /// (§5.5 <c>make_attendance_reason_required</c>) — chaqiruvchi uni 400 bilan qaytaradi.
+    /// </returns>
+    public static async Task<string?> SetEntryAsync(IAppDbContext db, SetJournalEntryRequest req, FcmService? fcm = null)
     {
+        var flags = await JournalSettingsGuard.FlagsAsync(db);
+
+        // §5.5 — sababsiz yo'qlik yozilmaydi: id bo'sh yoki katalogda yo'q bo'lsa rad.
+        if (flags.AttendanceReasonRequired
+            && !await JournalSettingsGuard.ReasonIsUsableAsync(db, req.ReasonId))
+            return JournalSettingsGuard.ReasonRequiredMessage;
+
         var entry = await db.JournalEntries.FirstOrDefaultAsync(e =>
             e.ClassId == req.ClassId && e.SubjectId == req.SubjectId && e.Quarter == req.Quarter &&
             e.StudentId == req.StudentId && e.Date == req.Date && e.Period == req.Period);
@@ -94,14 +105,27 @@ public static class JournalService
         entry.Mastery = req.Mastery;
         entry.SubGroup = subGroup;
 
-        // Baho/davomat/uyga vazifa/xulq/o'zlashtirish kiritilsa — shu darsni "o'tildi" deb avtomatik belgilaymiz.
-        if (req.Grade.HasValue || req.ReasonId is not null || req.Homework != 0 || req.Behavior != 0 || req.Mastery.HasValue)
+        var touched = req.Grade.HasValue || req.ReasonId is not null
+            || req.Homework != 0 || req.Behavior != 0 || req.Mastery.HasValue;
+
+        // Katakning O'ZI avval yoziladi — quyidagi "baholar to'liqmi" tekshiruvi ayni shu
+        // bahoni ham hisobga olishi kerak, EF so'rovi esa saqlanmagan o'zgarishni ko'rmaydi.
+        await db.SaveChangesAsync();
+
+        // Baho/davomat/uyga vazifa/xulq/o'zlashtirish kiritilsa — shu darsni "o'tildi" deb
+        // avtomatik belgilaymiz. §5.5 `is_student_grade_required` yoqiq bo'lsa, bu AVTOMATIK
+        // belgi baholar to'lgunicha kutadi (rad etilmaydi — aks holda birinchi bahoni ham
+        // kiritib bo'lmasdi; batafsil izoh JournalSettingsGuard'da).
+        if (touched
+            && (!flags.GradeRequired || await JournalSettingsGuard.SlotFullyGradedAsync(
+                db, req.ClassId, req.SubjectId, req.Quarter, req.Date, req.Period, subGroup)))
         {
             var note = await db.LessonNotes.FirstOrDefaultAsync(n =>
                 n.ClassId == req.ClassId && n.SubjectId == req.SubjectId &&
                 n.Quarter == req.Quarter && n.Date == req.Date && n.Period == req.Period &&
                 n.SubGroup == subGroup);
             if (note is null)
+            {
                 db.LessonNotes.Add(new LessonNote
                 {
                     ClassId = req.ClassId,
@@ -112,14 +136,18 @@ public static class JournalService
                     SubGroup = subGroup,
                     Conducted = true,
                 });
+                await db.SaveChangesAsync();
+            }
             else if (!note.Conducted)
+            {
                 note.Conducted = true;
+                await db.SaveChangesAsync();
+            }
         }
-
-        await db.SaveChangesAsync();
 
         // Avtomatik push: farzandi baho olsa yoki davomatda belgilansa, oila ilovasiga xabar.
         await NotifyEntryAsync(db, fcm, req, student, oldGrade, oldReason);
+        return null;
     }
 
     /// <summary>Baho/davomat yozuvi o'zgarganda oila ilovasiga push yuboradi (fire-and-forget).</summary>
@@ -228,8 +256,21 @@ public static class JournalService
             .Select(n => new JournalTopicDto(n.Date, n.Period, n.Topic, n.Homework, n.Conducted, n.SubGroup))
             .ToListAsync();
 
-    public static async Task SetNoteAsync(IAppDbContext db, SetLessonNoteRequest req)
+    /// <returns>
+    /// <c>null</c> — yozildi. Aks holda foydalanuvchiga ko'rsatiladigan xato matni
+    /// (§5.5 <c>is_student_grade_required</c>) — chaqiruvchi uni 400 bilan qaytaradi.
+    /// </returns>
+    public static async Task<string?> SetNoteAsync(IAppDbContext db, SetLessonNoteRequest req)
     {
+        // §5.5 — darsni ATAYLAB yopish: baholar to'liq bo'lmasa rad etiladi.
+        if (req.Conducted)
+        {
+            var flags = await JournalSettingsGuard.FlagsAsync(db);
+            if (flags.GradeRequired && !await JournalSettingsGuard.SlotFullyGradedAsync(
+                    db, req.ClassId, req.SubjectId, req.Quarter, req.Date, req.Period, req.SubGroup))
+                return JournalSettingsGuard.GradesRequiredMessage;
+        }
+
         var note = await db.LessonNotes.FirstOrDefaultAsync(n =>
             n.ClassId == req.ClassId && n.SubjectId == req.SubjectId &&
             n.Quarter == req.Quarter && n.Date == req.Date && n.Period == req.Period &&
@@ -263,6 +304,7 @@ public static class JournalService
             note.Conducted = req.Conducted;
         }
         await db.SaveChangesAsync();
+        return null;
     }
 
     // ---------- Mavzular Excel shablon / import (mavzu + uy vazifa; darsni "o'tilgan" QILMAYDI) ----------

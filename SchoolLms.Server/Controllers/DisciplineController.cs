@@ -19,21 +19,52 @@ namespace SchoolLms.Server.Controllers;
 [Authorize]
 [AdminPerm("discipline")]
 [Route("api/admin/discipline")]
-public class DisciplineController(AppDbContext db) : ControllerBase
+public class DisciplineController(
+    AppDbContext db, TelegramService telegram, ILogger<DisciplineParentNotifier> notifierLogger)
+    : ControllerBase
 {
     private const int BaseScore = 100;
     private string Uid => User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "";
 
+    /// <summary>
+    /// Ota-onaga xabar yuboruvchi. DI'da ro'yxatdan o'tkazilmagan — <c>Program.cs</c> shu
+    /// to'lqinda umumiy (konflikt) fayl, xizmat esa holatsiz va ikkita bog'liqlikka ega.
+    /// <c>FinanceReportQueries</c> bilan bir xil naqsh (docs/PENDING_WIRING.md §3a).
+    /// </summary>
+    private DisciplineParentNotifier Notifier => new(db, telegram, notifierLogger);
+
     // ---------- Ball sabablar (birlashgan) ----------
 
-    /// <summary>Barcha sabablar: mustaqil intizomiy ("other") + davomat sabablari ("attendance").</summary>
+    /// <summary>
+    /// Barcha sabablar: mustaqil intizomiy ("other") + davomat sabablari ("attendance").
+    ///
+    /// <para>
+    /// Davomat sabablarida <c>notifyParent</c> har doim <c>false</c> va <c>isActive</c> har
+    /// doim <c>true</c>: ular <see cref="AbsenceReason"/> jadvalidan keladi, u yerda bunday
+    /// ustunlar YO'Q va ATAYLAB yo'q — jurnaldagi har bir kechikish uchun ota-onaga xabar
+    /// yuboradigan tizim aynan §6.3 ogohlantirgan narsa.
+    /// </para>
+    /// <para>
+    /// Sukut bo'yicha faolsizlantirilgan sabablar HAM qaytadi — "Harakatlar" lentasining
+    /// sabab filtri tarixdagi har bir sababni ko'rsatishi kerak, va bu endpoint oldin ham
+    /// shunday ishlagan. <paramref name="activeOnly"/> = true — faqat faollari. Ball QO'YISH
+    /// esa serverda ham tekshiriladi (<see cref="AddPoint"/>), ya'ni ekran unutsa ham
+    /// faolsiz sabab bilan yangi yozuv tushmaydi.
+    /// </para>
+    /// </summary>
     [HttpGet("reasons")]
-    public async Task<ActionResult<IEnumerable<DisciplineReasonDto>>> GetReasons()
+    public async Task<ActionResult<IEnumerable<DisciplineReasonDto>>> GetReasons(
+        [FromQuery] bool activeOnly = false)
     {
-        var other = await db.DisciplineReasons.OrderBy(r => r.Name)
-            .Select(r => new DisciplineReasonDto(r.Id, r.Name, r.Points, "other")).ToListAsync();
+        var other = await db.DisciplineReasons
+            .Where(r => !activeOnly || r.IsActive)
+            .OrderBy(r => r.Name)
+            .Select(r => new DisciplineReasonDto(
+                r.Id, r.Name, r.Points, "other", r.NotifyParent, r.Description, r.IsActive))
+            .ToListAsync();
         var attendance = await db.AbsenceReasons.OrderBy(r => r.Name)
-            .Select(r => new DisciplineReasonDto(r.Id, r.Name, r.Points, "attendance")).ToListAsync();
+            .Select(r => new DisciplineReasonDto(r.Id, r.Name, r.Points, "attendance", false, null, true))
+            .ToListAsync();
         return other.Concat(attendance).ToList();
     }
 
@@ -41,10 +72,18 @@ public class DisciplineController(AppDbContext db) : ControllerBase
     public async Task<ActionResult<DisciplineReasonDto>> CreateReason(SaveDisciplineReasonRequest req)
     {
         if (string.IsNullOrWhiteSpace(req.Name)) return BadRequest(new { message = "Sabab nomi kerak" });
-        var r = new DisciplineReason { Name = req.Name.Trim(), Points = req.Points };
+        var r = new DisciplineReason
+        {
+            Name = req.Name.Trim(),
+            Points = req.Points,
+            // Sukut bo'yicha O'CHIQ — §6.3: maktab har bir sabab uchun ataylab yoqsin.
+            NotifyParent = req.NotifyParent ?? false,
+            Description = Trimmed(req.Description),
+            IsActive = req.IsActive ?? true,
+        };
         db.DisciplineReasons.Add(r);
         await db.SaveChangesAsync();
-        return new DisciplineReasonDto(r.Id, r.Name, r.Points, "other");
+        return Dto(r);
     }
 
     [HttpPut("reasons/{id}")]
@@ -54,9 +93,20 @@ public class DisciplineController(AppDbContext db) : ControllerBase
         if (r is null) return NotFound();
         r.Name = (req.Name ?? "").Trim();
         r.Points = req.Points;
+        // Berilmagan maydon O'ZGARMAYDI — eski mijoz sababni tahrirlaganda xabar
+        // bayrog'ini tasodifan o'chirib yubormasin.
+        if (req.NotifyParent is { } notify) r.NotifyParent = notify;
+        if (req.Description is not null) r.Description = Trimmed(req.Description);
+        if (req.IsActive is { } active) r.IsActive = active;
         await db.SaveChangesAsync();
-        return new DisciplineReasonDto(r.Id, r.Name, r.Points, "other");
+        return Dto(r);
     }
+
+    private static string? Trimmed(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    private static DisciplineReasonDto Dto(DisciplineReason r) =>
+        new(r.Id, r.Name, r.Points, "other", r.NotifyParent, r.Description, r.IsActive);
 
     [HttpDelete("reasons/{id}")]
     public async Task<IActionResult> DeleteReason(string id)
@@ -74,7 +124,7 @@ public class DisciplineController(AppDbContext db) : ControllerBase
         if (r is null) return NotFound();
         r.Points = req.Points;
         await db.SaveChangesAsync();
-        return new DisciplineReasonDto(r.Id, r.Name, r.Points, "attendance");
+        return new DisciplineReasonDto(r.Id, r.Name, r.Points, "attendance", false, null, true);
     }
 
     // ---------- Ballar nazorati ----------
@@ -169,25 +219,41 @@ public class DisciplineController(AppDbContext db) : ControllerBase
         .ToList();
     }
 
-    /// <summary>O'quvchiga qo'lda ball kiritadi (sabab "other" yoki "attendance" bo'lishi mumkin).</summary>
+    /// <summary>
+    /// O'quvchiga qo'lda ball kiritadi (sabab "other" yoki "attendance" bo'lishi mumkin).
+    ///
+    /// <para>
+    /// Sababda <c>notify_parent</c> yoqilgan bo'lsa — ota-onaga TELEGRAM xabari ketadi
+    /// (§6.3, 4-qadam). Qaror va matn <see cref="DisciplineParentNotifier"/> da;
+    /// javobdagi <c>notifiedParents</c> — HAQIQATAN yuborilgan chatlar soni, ya'ni 0
+    /// "sabab bayrog'i o'chiq" ni ham, "ota-ona botga ulanmagan" ni ham anglatishi mumkin.
+    /// Xabar yuborilmagani ball yozilmaganini ANGLATMAYDI.
+    /// </para>
+    /// </summary>
     [HttpPost("points")]
-    public async Task<ActionResult<DisciplinePointDto>> AddPoint(AddDisciplinePointRequest req)
+    public async Task<ActionResult<DisciplinePointDto>> AddPoint(
+        AddDisciplinePointRequest req, CancellationToken ct = default)
     {
-        var student = await db.Students.FindAsync(req.StudentId);
+        var student = await db.Students.FindAsync([req.StudentId], ct);
         if (student is null) return NotFound(new { message = "O'quvchi topilmadi" });
 
         string name;
         int pts;
-        var dr = await db.DisciplineReasons.FindAsync(req.ReasonId);
-        if (dr is not null) { name = dr.Name; pts = dr.Points; }
+        var dr = await db.DisciplineReasons.FindAsync([req.ReasonId], ct);
+        if (dr is not null)
+        {
+            // Faolsizlantirilgan sabab bilan YANGI ball qo'yilmaydi; eski yozuvlar joyida qoladi.
+            if (!dr.IsActive) return BadRequest(new { message = "Bu sabab faol emas" });
+            name = dr.Name; pts = dr.Points;
+        }
         else
         {
-            var ar = await db.AbsenceReasons.FindAsync(req.ReasonId);
+            var ar = await db.AbsenceReasons.FindAsync([req.ReasonId], ct);
             if (ar is null) return BadRequest(new { message = "Sabab tanlanmadi" });
             name = ar.Name; pts = ar.Points;
         }
 
-        var user = await db.Users.FindAsync(Uid);
+        var user = await db.Users.FindAsync([Uid], ct);
         var p = new DisciplinePoint
         {
             StudentId = student.Id,
@@ -199,8 +265,14 @@ public class DisciplineController(AppDbContext db) : ControllerBase
             CreatedBy = user?.FullName ?? "Administrator",
         };
         db.DisciplinePoints.Add(p);
-        await db.SaveChangesAsync();
-        return new DisciplinePointDto(p.Id, p.StudentId, name, pts, p.Note, p.CreatedAt, p.CreatedBy, "manual");
+        await db.SaveChangesAsync(ct);
+
+        // Xabar YOZUVDAN KEYIN: yuborish muvaffaqiyatsiz bo'lsa ham ball saqlanib qolsin.
+        // `dr is null` — davomat sababi, unda `notify_parent` ustuni umuman yo'q.
+        var notified = dr is null ? 0 : await Notifier.NotifyAsync(student, dr, p, ct);
+
+        return new DisciplinePointDto(
+            p.Id, p.StudentId, name, pts, p.Note, p.CreatedAt, p.CreatedBy, "manual", notified);
     }
 
     /// <summary>O'quvchining ball tarixi: qo'lda kiritilgan (o'chirsa bo'ladi) + jurnal davomati (faqat ko'rish).</summary>

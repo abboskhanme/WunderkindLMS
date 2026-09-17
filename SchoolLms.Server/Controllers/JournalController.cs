@@ -43,7 +43,8 @@ public class JournalController(AppDbContext db, FcmService fcm) : ControllerBase
     [HttpPut]
     public async Task<IActionResult> SetEntry(SetJournalEntryRequest req)
     {
-        await JournalService.SetEntryAsync(db, req, fcm);
+        var error = await JournalService.SetEntryAsync(db, req, fcm);
+        if (error is not null) return BadRequest(new { message = error });
         return NoContent();
     }
 
@@ -66,7 +67,8 @@ public class JournalController(AppDbContext db, FcmService fcm) : ControllerBase
     [HttpPut("notes")]
     public async Task<IActionResult> SetNote(SetLessonNoteRequest req)
     {
-        await JournalService.SetNoteAsync(db, req);
+        var error = await JournalService.SetNoteAsync(db, req);
+        if (error is not null) return BadRequest(new { message = error });
         return NoContent();
     }
 
