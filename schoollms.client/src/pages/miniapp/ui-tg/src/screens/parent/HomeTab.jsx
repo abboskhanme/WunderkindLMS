@@ -199,17 +199,20 @@ function LessonsCard({ lessons, grades, rows }) {
 
   return (
     <Card title="Bugungi darslar">
+      {/* Guruh darsi sinf jadvalida yo'q — nomini ko'rsatmasak, ota-ona
+          "bu dars qayerdan chiqdi?" degan savolga javob topolmaydi (G-18). */}
       {lessons.map((l) => {
         const g = gradeOf.get(l.period)
         const absence = rowOf.get(l.period)
         return (
           <Row
-            key={`${l.period}-${l.subjectId}`}
+            key={`${l.ownerKind ?? 'class'}-${l.period}-${l.subjectId}`}
             lead={<DateChip day={l.period} month="dars" tone={absence ? 'danger' : 'neutral'} />}
             title={l.subjectName}
             subtitle={[
               l.startTime && l.endTime ? `${l.startTime}–${l.endTime}` : null,
               l.teacherName,
+              l.ownerKind === 'group' && l.ownerName ? `Guruh: ${l.ownerName}` : null,
             ].filter(Boolean).join(' · ')}
             right={
               absence ? (

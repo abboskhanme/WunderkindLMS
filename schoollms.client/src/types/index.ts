@@ -593,9 +593,12 @@ export interface TeacherReportRow {
 
 /** Sinf/fan kesimida bitta qator (batafsil hisobot) */
 export interface TeacherReportBreakdown {
+  /** Sinf yoki GURUH nomi — qaysiligini `ownerKind` aytadi (G-15) */
   className: string
   subjectName: string
   subGroup: number
+  /** 'group' bo'lsa qator guruh darsiga tegishli; berilmasa 'class' */
+  ownerKind?: LessonOwnerKind
   expected: number
   conducted: number
   donePct: number | null
@@ -1507,6 +1510,19 @@ export interface ZReport {
   receiptFrom?: number
   receiptTo?: number
   reversalsCount: number
+  /**
+   * Javondan CHIQQAN naqd (F1.03, F1.04). Ikkalasi ham musbat = kassadan
+   * chiqdi; storno allaqachon ayirilgan.
+   *
+   * Nega kerak: naqd tushum bilan `expectedCash` orasidagi farqni AYNAN shu
+   * ikki qator tushuntiradi. Invariant:
+   * `openingFloat + (cash usuli) − cashExpensesTotal − cashHandoversTotal
+   *  === expectedCash`.
+   */
+  cashExpensesTotal: number
+  cashExpensesCount: number
+  cashHandoversTotal: number
+  cashHandoversCount: number
 }
 
 /* ---------- To'lovlar ---------- */

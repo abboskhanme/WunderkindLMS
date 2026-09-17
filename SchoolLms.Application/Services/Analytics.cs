@@ -6,6 +6,15 @@ namespace SchoolLms.Application.Services;
 /// <summary>
 /// Jurnal yozuvlaridan reyting/ko'rsatkichlarni hisoblovchi yordamchi.
 /// Baholar JournalEntry.Grade, davomat esa ReasonId belgilangan yozuvlardan olinadi.
+///
+/// <para>
+/// <b>G-15 — guruh darslari.</b> Qatorlar endi SINFNIKI ham, GURUHNIKI ham
+/// bo'lishi mumkin (ikkalasi ham <c>class_id</c> da, farqi <c>owner_kind</c>).
+/// "Qaysi qator qaysi o'quvchi uchun sanaladi" degan yagona qoida
+/// <see cref="ClassAttainment"/> da; bu yerda faqat qo'llaniladi.
+/// <paramref name="attainment"/> berilmasa (yoki o'chirgich o'chiq bo'lsa)
+/// hamma qator sinfniki deb qaraladi — ya'ni bugungi xatti-harakat.
+/// </para>
 /// </summary>
 public static class Analytics
 {
@@ -28,8 +37,13 @@ public static class Analytics
         IReadOnlyList<JournalEntry> classEntries,
         IReadOnlyList<LessonNote> classNotes,
         IReadOnlyList<QuarterGrade>? classQuarterGrades = null,
-        IReadOnlyCollection<string>? lateReasonIds = null)
+        IReadOnlyCollection<string>? lateReasonIds = null,
+        ClassAttainment? attainment = null)
     {
+        // G-15 qoidasi. `attainment` berilmasa — hamma qator sinfniki (bugungi xulq).
+        bool Counts(Student student, string ownerId, string ownerKind) =>
+            attainment is null || attainment.CountsFor(student.Id, ownerId, ownerKind);
+
         // Rasmiy chorak bahosi kunlik o'rtacha o'rnini bosadi (faqat berilganda — hisobotlarda).
         // Berilmaganda (dashboard/reyting) eski xulq saqlanadi.
         var quarterGrades = classQuarterGrades ?? [];
@@ -40,8 +54,10 @@ public static class Analytics
         // Davomat FAQAT o'tilgan darslar bo'yicha (ptichka/baho/davomat). Bir kun ichidagi har dars
         // (sana+dars raqami) alohida hisoblanadi. SubGroup saqlanadi — bo'lingan darslarda har
         // o'quvchi faqat o'z guruhi (yoki butun sinf, SubGroup=0) darslari bo'yicha baholanadi.
+        // G-15: egasi ham saqlanadi — guruh darsi faqat o'z a'zolarining maxrajiga kiradi.
         var conductedNotes = classNotes.Where(n => n.Conducted)
-            .Select(n => (n.SubjectId, n.Date, n.Period, n.SubGroup)).ToHashSet();
+            .Select(n => (n.ClassId, n.OwnerKind, n.SubjectId, n.Date, n.Period, n.SubGroup))
+            .ToHashSet();
 
         var fromSchedule = classTemplates.SelectMany(t => t.Lessons).Select(l => l.SubjectId).Distinct().ToList();
         var subjectIds = fromSchedule.Count > 0 ? fromSchedule : allSubjects.Select(s => s.Id).ToList();
@@ -53,8 +69,14 @@ public static class Analytics
 
         var rows = students.Select(student =>
         {
-            var studentEntries = classEntries.Where(e => e.StudentId == student.Id).ToList();
-            var studentQGrades = quarterGrades.Where(g => g.StudentId == student.Id).ToList();
+            var studentEntries = classEntries
+                .Where(e => e.StudentId == student.Id
+                            && Counts(student, e.ClassId, e.OwnerKind))
+                .ToList();
+            var studentQGrades = quarterGrades
+                .Where(g => g.StudentId == student.Id
+                            && Counts(student, g.ClassId, g.OwnerKind))
+                .ToList();
 
             var grades = new Dictionary<string, double>();
             foreach (var subj in subjects)
@@ -99,8 +121,12 @@ public static class Analytics
 
             // Shu o'quvchi qatnashadigan o'tilgan darslar: butun sinf (SubGroup=0) YOKI o'quvchining
             // o'z guruhi. Boshqa guruh darslari maxrajga (va davomatsizlikka) kirmaydi.
+            // G-15: guruh darsida bo'linish yo'q — u a'zolarning HAMMASIGA tegishli, shuning
+            // uchun SubGroup filtri faqat SINF darslariga qo'llanadi.
             var studentConducted = conductedNotes
-                .Where(c => c.SubGroup == 0 || c.SubGroup == student.SubGroup)
+                .Where(c => Counts(student, c.ClassId, c.OwnerKind)
+                            && (c.OwnerKind == LessonOwnerKind.Group
+                                || c.SubGroup == 0 || c.SubGroup == student.SubGroup))
                 .Select(c => (c.SubjectId, c.Date, c.Period))
                 .ToHashSet();
             var conducted = studentConducted.Count;

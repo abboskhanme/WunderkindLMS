@@ -15,13 +15,25 @@ public class ClassAnalyticsController(AppDbContext db) : ControllerBase
     private async Task<(List<Student>, List<Subject>)> LoadCommon() =>
         (await db.Students.ToListAsync(), await db.Subjects.ToListAsync());
 
-    private async Task<Analytics.ClassResult> BuildFor(SchoolClass cls, List<Student> students, List<Subject> subjects)
+    /// <summary>
+    /// G-15: bitta sinfning o'zlashtirishi — sinf qatorlari + shu sinf
+    /// o'quvchilarining guruh qatorlari, qoidasi
+    /// <see cref="ClassAttainment"/> da. O'chirgich o'chiq bo'lsa qamrov
+    /// bo'sh, ya'ni so'rovlar bugungisining aynan o'zi.
+    /// </summary>
+    private async Task<Analytics.ClassResult> BuildFor(
+        SchoolClass cls, List<Student> students, List<Subject> subjects, ClassAttainment attainment)
     {
-        var templates = await db.ScheduleTemplates.Include(t => t.Lessons).Where(t => t.ClassId == cls.Id).ToListAsync();
-        var entries = await db.JournalEntries.Where(e => e.ClassId == cls.Id).ToListAsync();
-        var notes = await db.LessonNotes.Where(n => n.ClassId == cls.Id).ToListAsync();
+        var ownerIds = attainment.OwnerIdsForClass(
+            cls.Id, ClassAttainment.StudentIdsOf(cls, students));
+        var templates = await db.ScheduleTemplates.Include(t => t.Lessons)
+            .Where(t => ownerIds.Contains(t.ClassId)).ToListAsync();
+        var entries = await db.JournalEntries.Where(e => ownerIds.Contains(e.ClassId)).ToListAsync();
+        var notes = await db.LessonNotes.Where(n => ownerIds.Contains(n.ClassId)).ToListAsync();
         var lateIds = await db.AbsenceReasons.Where(r => r.IsLate).Select(r => r.Id).ToListAsync();
-        return Analytics.BuildClass(cls, students, subjects, templates, entries, notes, lateReasonIds: lateIds);
+        return Analytics.BuildClass(
+            cls, students, subjects, templates, entries, notes,
+            lateReasonIds: lateIds, attainment: attainment);
     }
 
     [HttpGet("api/admin/classes/{classId}/performance")]
@@ -30,7 +42,7 @@ public class ClassAnalyticsController(AppDbContext db) : ControllerBase
         var cls = await db.Classes.FindAsync(classId);
         if (cls is null) return new ClassPerformanceDataDto([], []);
         var (students, subjects) = await LoadCommon();
-        var res = await BuildFor(cls, students, subjects);
+        var res = await BuildFor(cls, students, subjects, await ClassAttainment.BuildAsync(db));
         return new ClassPerformanceDataDto(res.Subjects, res.Rows);
     }
 
@@ -39,10 +51,11 @@ public class ClassAnalyticsController(AppDbContext db) : ControllerBase
     {
         var (students, subjects) = await LoadCommon();
         var classes = await db.Classes.ToListAsync();
+        var attainment = await ClassAttainment.BuildAsync(db);
         var result = new Dictionary<string, ClassStatsDto>();
         foreach (var cls in classes)
         {
-            var rows = (await BuildFor(cls, students, subjects)).Rows;
+            var rows = (await BuildFor(cls, students, subjects, attainment)).Rows;
             var n = rows.Count;
             var att = rows.Where(r => r.Attendance.HasValue).Select(r => r.Attendance!.Value).ToList();
             result[cls.Id] = new ClassStatsDto(
@@ -79,18 +92,24 @@ public class ClassAnalyticsController(AppDbContext db) : ControllerBase
             .OrderBy(c => c.Grade).ThenBy(c => c.Name).ToListAsync();
 
         var lateIds = await db.AbsenceReasons.Where(r => r.IsLate).Select(r => r.Id).ToListAsync();
+        var attainment = await ClassAttainment.BuildAsync(db);
         var perClass = new List<(SchoolClass Cls, ClassStat Stat)>();
         foreach (var cls in classes)
         {
+            // G-15: sinf + shu sinf o'quvchilarining guruhlari (o'chirgich
+            // o'chiq bo'lsa — faqat sinf).
+            var ownerIds = attainment.OwnerIdsForClass(
+                cls.Id, ClassAttainment.StudentIdsOf(cls, students));
             var templates = await db.ScheduleTemplates.Include(t => t.Lessons)
-                .Where(t => t.ClassId == cls.Id).ToListAsync();
-            var entries = (await db.JournalEntries.Where(e => e.ClassId == cls.Id).ToListAsync())
+                .Where(t => ownerIds.Contains(t.ClassId)).ToListAsync();
+            var entries = (await db.JournalEntries.Where(e => ownerIds.Contains(e.ClassId)).ToListAsync())
                 .Where(e => quarterList.Contains(e.Quarter)).ToList();
-            var notes = (await db.LessonNotes.Where(n => n.ClassId == cls.Id).ToListAsync())
+            var notes = (await db.LessonNotes.Where(n => ownerIds.Contains(n.ClassId)).ToListAsync())
                 .Where(n => quarterList.Contains(n.Quarter)).ToList();
-            var qgrades = (await db.QuarterGrades.Where(g => g.ClassId == cls.Id).ToListAsync())
+            var qgrades = (await db.QuarterGrades.Where(g => ownerIds.Contains(g.ClassId)).ToListAsync())
                 .Where(g => quarterList.Contains(g.Quarter)).ToList();
-            var res = Analytics.BuildClass(cls, students, subjects, templates, entries, notes, qgrades, lateIds);
+            var res = Analytics.BuildClass(
+                cls, students, subjects, templates, entries, notes, qgrades, lateIds, attainment);
             perClass.Add((cls, ComputeStat(res)));
         }
 
@@ -135,14 +154,21 @@ public class ClassAnalyticsController(AppDbContext db) : ControllerBase
         var students = await db.Students.Where(s => s.ClassName == cls.Name)
             .OrderBy(s => s.FullName).ToListAsync();
         var allSubjects = await db.Subjects.ToListAsync();
+        // G-15: sinf qatorlari + shu sinf o'quvchilarining guruh qatorlari.
+        var attainment = await ClassAttainment.BuildAsync(db);
+        var ownerIds = attainment.OwnerIdsForClass(
+            cls.Id, ClassAttainment.StudentIdsOf(cls, students));
         var templates = await db.ScheduleTemplates.Include(t => t.Lessons)
-            .Where(t => t.ClassId == cls.Id).ToListAsync();
+            .Where(t => ownerIds.Contains(t.ClassId)).ToListAsync();
         var entries = await db.JournalEntries
-            .Where(e => e.ClassId == cls.Id && e.Grade != null).ToListAsync();
-        var quarterGrades = await db.QuarterGrades.Where(g => g.ClassId == cls.Id).ToListAsync();
+            .Where(e => ownerIds.Contains(e.ClassId) && e.Grade != null).ToListAsync();
+        var quarterGrades = await db.QuarterGrades.Where(g => ownerIds.Contains(g.ClassId)).ToListAsync();
 
         var fromSchedule = templates.SelectMany(t => t.Lessons).Select(l => l.SubjectId).Distinct().ToList();
         var subjectIds = fromSchedule.Count > 0 ? fromSchedule : allSubjects.Select(s => s.Id).ToList();
+        // Guruh jadvali hali tuzilmagan bo'lsa ham uning fani ustun bo'lishi kerak.
+        subjectIds = [.. subjectIds.Union(
+            attainment.GroupSubjectsOf(students.Select(s => s.Id)), StringComparer.Ordinal)];
         var subjects = subjectIds
             .Select(id => allSubjects.FirstOrDefault(s => s.Id == id))
             .Where(s => s is not null)
@@ -158,12 +184,18 @@ public class ClassAnalyticsController(AppDbContext db) : ControllerBase
             foreach (var subj in subjects)
             {
                 var byQuarter = entries
-                    .Where(e => e.StudentId == s.Id && e.SubjectId == subj.Id)
+                    .Where(e => e.StudentId == s.Id && e.SubjectId == subj.Id
+                                && attainment.CountsFor(s.Id, e.ClassId, e.OwnerKind))
                     .GroupBy(e => e.Quarter)
                     .ToDictionary(g => g.Key, g => Math.Round(g.Average(e => (double)e.Grade!.Value), 2));
-                // Rasmiy chorak bahosi kunlik o'rtacha o'rnini bosadi.
-                foreach (var qg in quarterGrades.Where(g => g.StudentId == s.Id && g.SubjectId == subj.Id))
-                    byQuarter[qg.Quarter] = qg.Grade;
+                // Rasmiy chorak bahosi kunlik o'rtacha o'rnini bosadi. G-15: sinf va
+                // guruh ikkalasi ham rasmiy baho qo'ygan bo'lsa — ikkalasining o'rtachasi
+                // (`grades-report/subjects` bilan bir xil qoida).
+                foreach (var g in quarterGrades
+                             .Where(g => g.StudentId == s.Id && g.SubjectId == subj.Id
+                                         && attainment.CountsFor(s.Id, g.ClassId, g.OwnerKind))
+                             .GroupBy(g => g.Quarter))
+                    byQuarter[g.Key] = g.Average(x => x.Grade);
                 if (byQuarter.Count > 0) avgs[subj.Id] = byQuarter;
             }
             return new ClassReportStudentDto(s.Id, s.FullName, avgs);

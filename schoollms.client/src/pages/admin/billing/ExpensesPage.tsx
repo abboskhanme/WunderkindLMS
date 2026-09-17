@@ -20,25 +20,39 @@
  * olingan"). Endi holat `ExpenseRecord.status` dan, chegara esa
  * `GET /admin/expenses/approval-policy` dan keladi va faqat forma
  * ogohlantirishi uchun ishlatiladi.
+ *
+ * S2 QO'SHGANLARI
+ * ---------------
+ * F1.09 — "O'qituvchi" ustuni: maosh chiqimi KIMGA berilgani endi ro'yxatda
+ *   ko'rinadi (ilgari faqat izoh matnida bo'lardi).
+ * F1.08 — "Hujjat" ustuni: chiqimga biriktirilgan chek/shartnoma soni va
+ *   ularni ochadigan oyna. O'CHIRISH TUGMASI YO'Q — hujjat dalil, jadval
+ *   bazada faqat qo'shiladi.
+ * F1.03 — naqd chiqim ochiq smenani talab qiladi; forma buni oldindan aytadi
+ *   va server 409 `no_open_shift` bilan rad etadi.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Check, Clock, Plus, ShieldCheck, Undo2, Wallet } from 'lucide-react'
-import type { ExpenseInput, ExpenseRecord } from '@/api/services/expenses'
+import { Check, Clock, Paperclip, Plus, ShieldCheck, Undo2, Wallet } from 'lucide-react'
+import type { ExpenseAttachment, ExpenseInput, ExpenseRecord } from '@/api/services/expenses'
 import type { PaymentMethod } from '@/types'
 import {
   approveExpense,
+  attachExpenseFile,
   createExpense,
   expenseState,
   getExpenseApprovalThreshold,
+  getExpenseAttachments,
   getExpenses,
   needsApproval,
   reverseExpense,
 } from '@/api/services/expenses'
+import { uploadAdminFile } from '@/api/services/students'
 import { billingErrorMessage, isEndpointMissing } from '@/api/services/billingError'
 import { expenseCategories, financeCategoryLabel } from '@/config/constants'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Input, Select } from '@/components/ui/Input'
+import { Modal } from '@/components/ui/Modal'
 import { formatMoney } from '@/lib/utils'
 import { AsyncBlock, BillingGuard, Notice, PendingQueue, StatusPill } from './BillingUi'
 import { useBillingAccess } from './access'
@@ -72,6 +86,8 @@ function ExpensesView() {
   const [formOpen, setFormOpen] = useState(false)
   const [approving, setApproving] = useState<ExpenseRecord | null>(null)
   const [reversing, setReversing] = useState<ExpenseRecord | null>(null)
+  /** Hujjatlari ko'rilayotgan chiqim (F1.08). */
+  const [viewingFiles, setViewingFiles] = useState<ExpenseRecord | null>(null)
   const [busy, setBusy] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
@@ -143,16 +159,42 @@ function ExpensesView() {
     [pending, canApproveExpense, isOwn],
   )
 
-  const handleCreate = async (values: ExpenseInput) => {
+  /**
+   * Chiqim yoziladi, so'ng (bo'lsa) hujjatlar biriktiriladi.
+   *
+   * TARTIB MUHIM: hujjat chiqimning id'siga bog'lanadi, ya'ni avval chiqim
+   * yozilishi kerak. Fayl yuklashda xato bo'lsa CHIQIM QOLDIRILADI va
+   * foydalanuvchiga aniq aytiladi — chiqimni "orqaga qaytarish" degan narsa
+   * yo'q (SPEC §4.1: tuzatish faqat storno bilan), shuning uchun uni
+   * yashirish eng yomon variant bo'lardi. Hujjatni keyin ham biriktirsa
+   * bo'ladi.
+   */
+  const handleCreate = async (values: ExpenseInput, files: File[]) => {
     setBusy(true)
     setActionError(null)
     try {
       const created = await createExpense(values)
+      let attachError: string | null = null
+      for (const file of files) {
+        try {
+          const uploaded = await uploadAdminFile(file)
+          await attachExpenseFile(created.id, {
+            fileUrl: uploaded.url,
+            fileName: uploaded.name,
+            contentType: uploaded.contentType,
+            sizeBytes: uploaded.size,
+          })
+        } catch (e: unknown) {
+          attachError = billingErrorMessage(e, `"${file.name}" biriktirilmadi`)
+          break
+        }
+      }
       setFormOpen(false)
       setNotice(
-        needsApproval(created)
+        (needsApproval(created)
           ? `Chiqim yozildi va tasdiq navbatiga tushdi (${formatMoney(created.amount)}).`
-          : `Chiqim yozildi (${formatMoney(created.amount)}).`,
+          : `Chiqim yozildi (${formatMoney(created.amount)}).`) +
+          (attachError === null ? '' : ` Lekin hujjat biriktirilmadi: ${attachError}`),
       )
       load()
     } catch (e: unknown) {
@@ -396,10 +438,12 @@ function ExpensesView() {
                 <tr>
                   <th className="px-4 py-3">Sana</th>
                   <th className="px-4 py-3">Toifa</th>
+                  <th className="px-4 py-3">O'qituvchi</th>
                   <th className="px-4 py-3 text-right">Summa</th>
                   <th className="px-4 py-3">Izoh</th>
                   <th className="px-4 py-3">Kim yozdi</th>
                   <th className="px-4 py-3">Kim tasdiqladi</th>
+                  <th className="px-4 py-3">Hujjat</th>
                   <th className="px-4 py-3">Holat</th>
                   <th className="px-4 py-3 text-right">Amal</th>
                 </tr>
@@ -420,6 +464,7 @@ function ExpensesView() {
                           </span>
                         </span>
                       </td>
+                      <td className="px-4 py-3 text-slate-600">{row.teacherName ?? '—'}</td>
                       <td
                         className={`px-4 py-3 text-right tabular-nums ${
                           reversed ? 'text-slate-400 line-through' : 'font-medium text-slate-800'
@@ -437,6 +482,19 @@ function ExpensesView() {
                       </td>
                       <td className="px-4 py-3 text-slate-600">{row.createdByName}</td>
                       <td className="px-4 py-3 text-slate-600">{row.approvedByName ?? '—'}</td>
+                      <td className="px-4 py-3">
+                        {row.attachmentCount > 0 ? (
+                          <button
+                            type="button"
+                            className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-200"
+                            onClick={() => setViewingFiles(row)}
+                          >
+                            <Paperclip className="h-3 w-3" /> {row.attachmentCount}
+                          </button>
+                        ) : (
+                          <span className="text-xs text-slate-300">—</span>
+                        )}
+                      </td>
                       <td className="px-4 py-3">{renderState(row)}</td>
                       <td className="px-4 py-3">{renderActions(row)}</td>
                     </tr>
@@ -491,6 +549,77 @@ function ExpensesView() {
           onConfirm={handleReverse}
         />
       )}
+
+      {viewingFiles && (
+        <AttachmentsModal expense={viewingFiles} onClose={() => setViewingFiles(null)} />
+      )}
     </div>
+  )
+}
+
+/**
+ * Chiqimning hujjatlari (F1.08) — FAQAT ko'rish.
+ *
+ * O'chirish tugmasi yo'q va bo'lmaydi: hujjat pul yozuvining dalili va
+ * `expense_attachments` bazada faqat qo'shiladi (`app_rw` da UPDATE/DELETE
+ * yo'q). Noto'g'ri fayl yuklansa, to'g'risi yangi qator bo'lib qo'shiladi.
+ */
+function AttachmentsModal({
+  expense,
+  onClose,
+}: {
+  expense: ExpenseRecord
+  onClose: () => void
+}) {
+  const [rows, setRows] = useState<ExpenseAttachment[] | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let alive = true
+    getExpenseAttachments(expense.id)
+      .then((data) => {
+        if (alive) setRows(data)
+      })
+      .catch((e: unknown) => {
+        if (alive) setError(billingErrorMessage(e, "Hujjatlarni yuklab bo'lmadi"))
+      })
+    return () => {
+      alive = false
+    }
+  }, [expense.id])
+
+  return (
+    <Modal open onClose={onClose} title="Chiqim hujjatlari" size="md">
+      {error && <Notice>{error}</Notice>}
+      {!error && rows === null && <p className="text-sm text-slate-400">Yuklanmoqda...</p>}
+      {!error && rows !== null && rows.length === 0 && (
+        <p className="text-sm text-slate-400">Bu chiqimga hujjat biriktirilmagan.</p>
+      )}
+      {!error && rows !== null && rows.length > 0 && (
+        <ul className="space-y-2">
+          {rows.map((file) => (
+            <li
+              key={file.id}
+              className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 px-3 py-2 text-sm"
+            >
+              <a
+                href={file.fileUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="flex min-w-0 items-center gap-2 text-brand-600 hover:underline"
+              >
+                <Paperclip className="h-4 w-4 shrink-0" />
+                <span className="truncate">{file.fileName}</span>
+              </a>
+              <span className="shrink-0 text-xs text-slate-400">{file.uploadedByName}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      <p className="mt-3 text-xs text-slate-400">
+        Hujjat o'chirilmaydi va almashtirilmaydi — u pul yozuvining dalili. Noto'g'ri fayl
+        yuklansa, to'g'risini yangi hujjat sifatida biriktiring.
+      </p>
+    </Modal>
   )
 }

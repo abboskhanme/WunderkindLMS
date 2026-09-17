@@ -3,12 +3,23 @@
  *
  * SHARTNOMA — `SchoolLms.Application/Billing/ExpenseService.cs` ning ko'zgusi:
  *
- *   GET  /admin/expenses?from&to&category&status
+ *   GET  /admin/expenses?from&to&category&status&teacherId
  *   GET  /admin/expenses/approval-policy      → { threshold }
  *   GET  /admin/expenses/{id}
- *   POST /admin/expenses            { onDate, category, amount, method, note? }
+ *   POST /admin/expenses            { onDate, category, amount, method, note?, teacherId? }
  *   POST /admin/expenses/{id}/approve   { method }
  *   POST /admin/expenses/{id}/reverse   { reason }
+ *   GET  /admin/expenses/{id}/attachments
+ *   POST /admin/expenses/{id}/attachments { fileUrl, fileName, contentType, sizeBytes }
+ *
+ * NAQD CHIQIM SMENAGA TEGISHLI (F1.03)
+ * ------------------------------------
+ * `method = 'cash'` bo'lganda server YOZUVCHINING (tasdiqda —
+ * TASDIQLOVCHINING, stornoda — STORNO QILUVCHINING) ochiq smenasini talab
+ * qiladi va 409 `no_open_shift` qaytaradi. Sababi: naqd pul javondan
+ * chiqadi, ya'ni o'sha smenaning kutilgan naqdi kamayishi kerak — ilgari
+ * kamaymasdi va har naqd chiqim kassirning "kamomadi" bo'lib ko'rinardi.
+ * `cashShiftId` so'rovda YUBORILMAYDI (SPEC §4.4).
  *
  * IKKI TUZATILGAN NOSOZLIK (finance-parity.md §1.1)
  * -------------------------------------------------
@@ -74,6 +85,27 @@ export interface ExpenseRecord {
   /** Maosh chiqimi kimga berilgani (faqat `salary` toifasida). */
   teacherId: string | null
   teacherName: string | null
+  /**
+   * Naqd chiqim qaysi kassa smenasidan to'landi (F1.03). `null` = pul
+   * bankdan chiqqan yoki chiqim hali jurnalga tushmagan.
+   */
+  cashShiftId: string | null
+  /** Biriktirilgan hujjatlar soni (F1.08). */
+  attachmentCount: number
+}
+
+/** Chiqimga biriktirilgan hujjat — `ExpenseAttachmentDto` ning ko'zgusi. */
+export interface ExpenseAttachment {
+  id: string
+  expenseId: string
+  /** `/uploads/...` — `POST /admin/uploads` qaytargan yo'l. */
+  fileUrl: string
+  fileName: string
+  contentType: string
+  sizeBytes: number
+  uploadedBy: string
+  uploadedByName: string
+  uploadedAt: string
 }
 
 /** Ekrandagi holat — serverning `status` iga qarab, chegara HISOBLANMAYDI. */
@@ -102,6 +134,8 @@ export interface ExpenseFilters {
   from?: string
   to?: string
   category?: string
+  /** Maosh chiqimlarini bitta o'qituvchi bo'yicha (F1.09). */
+  teacherId?: string
 }
 
 export interface ExpenseInput {
@@ -112,6 +146,11 @@ export interface ExpenseInput {
   /** Pul qaysi usulda chiqdi — server uni TALAB qiladi (F1.01). */
   method: PaymentMethod
   note?: string
+  /**
+   * Maosh kimga berilyapti (F1.09). FAQAT `salary` toifasida yuboriladi —
+   * boshqa toifada server 400 `teacher_not_allowed` qaytaradi.
+   */
+  teacherId?: string
 }
 
 export async function getExpenses(filters: ExpenseFilters = {}): Promise<ExpenseRecord[]> {
@@ -154,5 +193,32 @@ export async function approveExpense(id: string, method: PaymentMethod): Promise
  */
 export async function reverseExpense(id: string, reason: string): Promise<ExpenseRecord> {
   const { data } = await api.post<ExpenseRecord>(`${BASE}/${id}/reverse`, { reason })
+  return data
+}
+
+/* ========================================================================
+   Hujjatlar (F1.08) — chiqimning DALILI
+   ======================================================================== */
+
+/**
+ * Chiqimga hujjat biriktirish. Fayl AVVAL `POST /admin/uploads` orqali
+ * yuklanadi (`uploadFile`) va uning javobidagi qiymatlar AYNAN shu yerga
+ * beriladi — ikkinchi yuklash yo'li yo'q va bo'lmaydi.
+ *
+ * O'CHIRISH YO'Q: hujjat — pul yozuvining dalili, bazada jadval faqat
+ * qo'shiladi. Noto'g'ri fayl yuklansa, to'g'risi YANGI qator bo'lib
+ * qo'shiladi va ekran oxirgisini ko'rsatadi.
+ */
+export async function attachExpenseFile(
+  id: string,
+  file: { fileUrl: string; fileName: string; contentType: string; sizeBytes: number },
+): Promise<ExpenseAttachment> {
+  const { data } = await api.post<ExpenseAttachment>(`${BASE}/${id}/attachments`, file)
+  return data
+}
+
+/** Chiqimning hujjatlari (yangisidan eskisiga). */
+export async function getExpenseAttachments(id: string): Promise<ExpenseAttachment[]> {
+  const { data } = await api.get<ExpenseAttachment[]>(`${BASE}/${id}/attachments`)
   return data
 }

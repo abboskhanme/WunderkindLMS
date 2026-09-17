@@ -9,6 +9,15 @@
  * bazada generated column — ya'ni yopilgandan keyin uni hech kim, hech
  * qanday endpoint orqali tuzata olmaydi. Ekranda ham u faqat KO'RSATILADI:
  * bu jadvalda tahrirlash tugmasi yo'q.
+ *
+ * "KASSADAN CHIQQAN NAQD" QATORLARI (F1.03, F1.04)
+ * -----------------------------------------------
+ * Ilgari Z-hisobotda naqd TUSHUM bor edi, naqd CHIQIM yo'q — ya'ni
+ * "kutilgan naqd" raqami ochilish qoldig'i va tushumdan kelib chiqmasdi va
+ * uni hech kim tekshira olmasdi. Endi ikkita qator turibdi va ular AYNAN
+ * `expected_cash` ni hisoblagan metoddan keladi
+ * (`CashShiftService.CashOutflowAsync`), ya'ni ular bilan kutilgan naqd
+ * orasidagi mos kelish tasodif emas, kod tuzilishining natijasi.
  */
 import { useState } from 'react'
 import { Banknote, CreditCard, Receipt, Scale } from 'lucide-react'
@@ -305,6 +314,46 @@ function ZReportModal({ shift, onClose }: { shift: CashShift; onClose: () => voi
                   </tbody>
                 </table>
               )}
+            </div>
+
+            {/* ---- Javondan CHIQQAN naqd (F1.03, F1.04) ---- */}
+            <div>
+              <h4 className="mb-2 text-sm font-semibold text-slate-700">
+                Kassadan chiqqan naqd
+              </h4>
+              <table className="w-full text-left text-sm">
+                <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
+                  <tr>
+                    <th className="px-3 py-2">Sabab</th>
+                    <th className="px-3 py-2 text-right">Soni</th>
+                    <th className="px-3 py-2 text-right">Summa</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  <tr>
+                    <td className="px-3 py-2 text-slate-600">Chiqimlar</td>
+                    <td className="px-3 py-2 text-right text-slate-500">
+                      {data.cashExpensesCount}
+                    </td>
+                    <td className="px-3 py-2 text-right font-medium text-slate-700">
+                      {formatMoney(data.cashExpensesTotal)}
+                    </td>
+                  </tr>
+                  <tr>
+                    <td className="px-3 py-2 text-slate-600">Bankka / seyfga topshirilgan</td>
+                    <td className="px-3 py-2 text-right text-slate-500">
+                      {data.cashHandoversCount}
+                    </td>
+                    <td className="px-3 py-2 text-right font-medium text-slate-700">
+                      {formatMoney(data.cashHandoversTotal)}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+              <p className="mt-2 text-xs text-slate-400">
+                Kutilgan naqd = ochilish qoldig'i + naqd tushum − shu ikki qator. Storno
+                summalari allaqachon ayirilgan.
+              </p>
             </div>
 
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">

@@ -79,6 +79,9 @@ export const navByRole: Record<Role, NavItem[]> = {
       perm: 'finance',
       children: [
         { label: 'Umumiy', to: '/admin/finance', end: true, group: 'AMALIYOT' },
+        // Kassa ish joyi — admin/direktor uchun ham ochiq (F1.11). Kassirning
+        // o'z menyusi alohida va qisqa: `navByRole.cashier`.
+        { label: 'Kassa', to: '/cashier', roles: ['admin', 'superadmin'], group: 'AMALIYOT' },
         // Billing katalogi — `perm: 'finance'` yolg'iz o'zi buni finance ruxsatli
         // xodimga ham ko'rsatardi, server esa unga 403 beradi. Shuning uchun rol
         // ham ko'rsatiladi: menyu va endpoint bir xil qoidaga bo'ysunsin.

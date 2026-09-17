@@ -51,9 +51,15 @@ namespace SchoolLms.Application.Billing;
 /// tasdiqlovchining smenasida turadi — shuning uchun
 /// <see cref="ExpectedCashAsync"/> qaytarilgan to'lovlarni originalning id'si
 /// orqali oladi. Ikkala tomon BIR XIL to'plamdan kelib chiqqani uchun
-/// <c>opening_float + (Z-hisobotdagi cash qatori) == expected_cash</c>
+/// <c>opening_float + (Z-hisobotdagi cash qatori)
+///  − (Z-hisobotdagi "Chiqimlar") − (Z-hisobotdagi "Topshirilgan")
+///  == expected_cash</c>
 /// invarianti har doim bajariladi — aks holda ikkita "haqiqat" paydo bo'lardi
-/// va qaysi biri to'g'riligini hech kim ayta olmasdi.
+/// va qaysi biri to'g'riligini hech kim ayta olmasdi. Oxirgi ikki had F1.03 va
+/// F1.04 bilan qo'shildi va ikkalasini ham AYNAN bitta metod hisoblaydi
+/// (<see cref="CashOutflowAsync"/>), ya'ni invariant kod tuzilishidan kelib
+/// chiqadi, kelishuvdan emas. Uni <c>CashDeskOutflowTests</c> har yurishda
+/// tekshiradi.
 /// </para>
 /// <para>
 /// Vaqt oralig'i bo'yicha filtrlash ATAYLAB ishlatilmadi: <c>ledger_entries</c>
@@ -91,7 +97,25 @@ public sealed class CashShiftService(IAppDbContext db) : ICashShiftService
     /// </summary>
     private const string LockSql = "SELECT pg_advisory_xact_lock(hashtextextended({0}::text, 0))";
 
-    private static string LockKey(Guid shiftId) => $"cash_shift_receipt:{shiftId:D}";
+    /// <summary>
+    /// Smena qulfining KALITI — <b>ochiq</b>, chunki uni shu fayldan tashqarida
+    /// ham olish kerak (F1.03).
+    ///
+    /// <para>
+    /// <b>Nega ochiq.</b> Naqd chiqim va kassadan topshiriq smenaga
+    /// biriktiriladi, ya'ni ikkalasi ham "smena hali ochiqmi?" deb tekshirib,
+    /// so'ng yozadi. Bu tekshir-va-yoz esa <see cref="CloseAsync"/> bilan
+    /// poyga: qulfsiz chiqim smena yopilgandan KEYIN unga biriktirilib
+    /// qolardi va <c>expected_cash</c> uni hech qachon ko'rmasdi — ya'ni
+    /// F1.03 ning o'zi, faqat kamroq uchraydigan ko'rinishda. Kalitni
+    /// nusxalash o'rniga shu yerdan berish kerak: ikkita "bir xil" satr bir
+    /// kun albatta bir-biridan uzoqlashadi va o'shanda ikki amal BIR-BIRINI
+    /// KUTMAY qo'yardi — xato esa faqat yuk ostida ko'rinardi.
+    /// </para>
+    /// </summary>
+    public static string ShiftLockKey(Guid shiftId) => $"cash_shift_receipt:{shiftId:D}";
+
+    private static string LockKey(Guid shiftId) => ShiftLockKey(shiftId);
 
     /// <summary>
     /// Xom SQL uchun kontekstning o'zi. <see cref="IAppDbContext"/> da
@@ -439,13 +463,24 @@ public sealed class CashShiftService(IAppDbContext db) : ICashShiftService
         var receiptFrom = await receipts.MinAsync(p => (long?)p.ReceiptNo, ct);
         var receiptTo = await receipts.MaxAsync(p => (long?)p.ReceiptNo, ct);
 
+        // "Chiqimlar" va "Topshirilgan" qatorlari (F1.03, F1.04) — AYNAN
+        // `ExpectedCashAsync` ishlatadigan metoddan. Bu Z-hisobotning eng
+        // muhim qo'shimchasi: usullar kesimidagi naqd tushum bilan
+        // `expected_cash` orasidagi FARQNI tushuntiradigan yagona qator
+        // shu edi, va u yo'q edi.
+        var outflow = await CashOutflowAsync(shift, ct);
+
         return new ZReportDto(
             Shift: await SingleDtoAsync(shift, ct),
             ByMethod: byMethod,
             ByCategory: byCategory,
             ReceiptFrom: receiptFrom,
             ReceiptTo: receiptTo,
-            ReversalsCount: totals.Where(t => t.IsReversal).Sum(t => t.Count));
+            ReversalsCount: totals.Where(t => t.IsReversal).Sum(t => t.Count),
+            CashExpensesTotal: outflow.Expenses,
+            CashExpensesCount: outflow.ExpensesCount,
+            CashHandoversTotal: outflow.Handovers,
+            CashHandoversCount: outflow.HandoversCount);
     }
 
     /// <inheritdoc />
@@ -503,7 +538,18 @@ public sealed class CashShiftService(IAppDbContext db) : ICashShiftService
 
     /// <summary>
     /// Kutilgan naqd = ochilish qoldig'i + shu smena to'lovlari keltirgan
-    /// <c>cash</c> harakati (debet − kredit) LEDGER bo'yicha.
+    /// <c>cash</c> harakati (debet − kredit) LEDGER bo'yicha − shu smenadan
+    /// chiqqan naqd (<see cref="CashOutflowAsync"/>: chiqimlar va
+    /// topshiriqlar).
+    ///
+    /// <para>
+    /// <b>F1.03 dan OLDIN</b> formulada oxirgi had YO'Q edi: naqd chiqim
+    /// jurnalga <c>credit cash</c> bo'lib tushardi, lekin smenaga umuman
+    /// bog'lanmagani uchun bu yerdagi so'rov uni KO'RMASDI. Natija: kassadan
+    /// pul chiqadi, kutilgan naqd esa o'zgarmaydi — smena AYNAN o'sha summaga
+    /// kam pul bilan yopiladi va <c>shift_variance</c> bayrog'i aybsiz
+    /// kassirning ustiga tushadi. Har naqd chiqim uchun, har kuni.
+    /// </para>
     ///
     /// <para>
     /// Nega ledger'dan, <c>payments</c> dan emas — SPEC §4.2 shuni talab qiladi:
@@ -561,8 +607,122 @@ public sealed class CashShiftService(IAppDbContext db) : ICashShiftService
         var debit = rows.FirstOrDefault(r => r.Direction == LedgerDirection.Debit)?.Total ?? 0m;
         var credit = rows.FirstOrDefault(r => r.Direction == LedgerDirection.Credit)?.Total ?? 0m;
 
-        return decimal.Round(shift.OpeningFloat + debit - credit, MoneyScale);
+        // Javondan CHIQQAN naqd (F1.03, F1.04). AYNAN shu metod Z-hisobotni
+        // ham to'ldiradi — ikkita ta'rif bo'lmasligi uchun (fayl boshidagi
+        // invariant).
+        var outflow = await CashOutflowAsync(shift, ct);
+
+        return decimal.Round(
+            shift.OpeningFloat + debit - credit - outflow.Expenses - outflow.Handovers,
+            MoneyScale);
     }
+
+    /// <summary>
+    /// Shu smenaning javonidan CHIQQAN naqd: chiqimlar (F1.03) va bankka /
+    /// seyfga topshirilgan pul (F1.04). Musbat son = kassadan chiqqan pul.
+    ///
+    /// <para>
+    /// <b>Nega bitta metod.</b> <see cref="ExpectedCashAsync"/> ham,
+    /// <see cref="ZReportAsync"/> ham shu yerdan o'qiydi. Ikkalasi o'z
+    /// so'rovini yozsa, ular bir kun albatta bir-biridan farq qilardi va
+    /// "kutilgan naqd" bilan "Z-hisobotdagi chiqimlar" qatori bir-birini rad
+    /// etardi — tekshiruvchi qaysi biriga ishonishni bilmasdi.
+    /// </para>
+    ///
+    /// <para>
+    /// <b>CHIQIM — JURNALDAN, TOPSHIRIQ — JADVALDAN. Nega har xil.</b>
+    /// Chiqim jurnalda <c>credit cash</c> bo'lib yotadi, ya'ni javobni
+    /// jurnalning o'zi beradi. Topshiriqda esa <c>safe</c> manzili jurnalga
+    /// UMUMAN yozilmaydi (pul maktabniki bo'lib qolaveradi, faqat javondan
+    /// direktorning seyfiga ko'chadi — hisoblar rejasida ikkalasi ham
+    /// <see cref="Accounts.Cash"/>). Shuning uchun topshiriq
+    /// <c>cash_handovers</c> dan o'qiladi; <c>bank</c> manzilining jurnal
+    /// satrlari esa bu yerda ATAYLAB hisobga olinmaydi — aks holda bitta
+    /// topshiriq ikki marta ayirilardi.
+    /// </para>
+    ///
+    /// <para>
+    /// <b>Storno qaysi smenaga tushadi.</b> Topshiriqning qarshi qatori o'z
+    /// <c>cash_shift_id</c> siga ega (pul AYNAN storno qilayotgan odamning
+    /// javoniga qaytadi), ya'ni u shu yerda oddiy ayirma bo'lib chiqadi.
+    /// Chiqim stornosida esa bunday ustun YO'Q va qo'shib bo'lmaydi
+    /// (<c>ledger_entries</c> o'zgarmas, <c>expenses</c> ga ikkinchi qator
+    /// yozilmaydi — <c>ExpenseService</c> fayl boshidagi izoh). Shuning uchun
+    /// ko'zgu satr storno qiluvchining ISMI (<c>created_by</c>) va
+    /// smenasining VAQT ORALIG'I bo'yicha biriktiriladi. Bu yerda vaqt
+    /// oralig'i xavfsiz — klass izohidagi ogohlantirish "hamma cash satri"
+    /// haqida edi; bu yerda to'plam avval <c>created_by</c> bilan BITTA
+    /// kassirga toraytirilgan, bitta kassirda esa bir vaqtning o'zida ikkita
+    /// smena bo'lishi mumkin emas (<c>ux_cash_shifts_one_open_per_cashier</c>)
+    /// va smenasiz storno umuman qabul qilinmaydi (<c>no_open_shift</c>).
+    /// </para>
+    ///
+    /// <para>
+    /// <b>Yopilgan smena qayta hisoblanmaydi.</b> Oraliqning yuqori chegarasi —
+    /// <c>closed_at</c>, ya'ni smena yopilgandan KEYIN qilingan storno unga
+    /// tushmaydi. Ochiq smenada chegara yo'q (hozirgacha hamma narsa kiradi),
+    /// va yopish ayni o'sha tranzaksiyada bo'lgani uchun oraliq bir lahzada
+    /// muzlaydi.
+    /// </para>
+    /// </summary>
+    private async Task<CashOutflow> CashOutflowAsync(CashShift shift, CancellationToken ct)
+    {
+        // ---- 1. Naqd chiqimlar (F1.03) ----
+
+        // Shu smenaga biriktirilgan chiqimlar. Ustunni `ExpenseService`
+        // to'ldiradi: chiqim naqd bo'lsa va jurnalga tushsa.
+        var shiftExpenseIds = db.Expenses.AsNoTracking()
+            .Where(e => e.CashShiftId == shift.Id)
+            .Select(e => (Guid?)e.Id);
+
+        // Ko'zgu satr qaysi chiqimniki ekanini `ref_id` aytadi. To'lov
+        // stornosining ko'zgusi ham `cash` va `reversal` bo'ladi, shuning
+        // uchun to'plam chiqim id'lari bilan kesiladi — id fazolari
+        // kesishmaydi, ya'ni bu aniq ajratish.
+        var expenseIds = db.Expenses.AsNoTracking().Select(e => (Guid?)e.Id);
+
+        var windowTo = shift.ClosedAt ?? DateTimeOffset.MaxValue;
+
+        var expenseRows = await db.LedgerEntries.AsNoTracking()
+            .Where(e => e.Account == Accounts.Cash
+                        && ((e.RefType == LedgerRefType.Expense
+                             && shiftExpenseIds.Contains(e.RefId))
+                            || (e.RefType == LedgerRefType.Reversal
+                                && expenseIds.Contains(e.RefId)
+                                && e.CreatedBy == shift.CashierId
+                                && e.CreatedAt >= shift.OpenedAt
+                                && e.CreatedAt <= windowTo)))
+            .GroupBy(e => e.Direction)
+            .Select(g => new { Direction = g.Key, Total = g.Sum(x => x.Amount), Count = g.Count() })
+            .ToListAsync(ct);
+
+        // Kredit — pul javondan chiqdi, debet — storno uni qaytardi.
+        var spent = expenseRows.FirstOrDefault(r => r.Direction == LedgerDirection.Credit);
+        var refunded = expenseRows.FirstOrDefault(r => r.Direction == LedgerDirection.Debit);
+
+        // ---- 2. Topshiriqlar (F1.04) ----
+        var handoverRows = await db.CashHandovers.AsNoTracking()
+            .Where(h => h.CashShiftId == shift.Id)
+            .GroupBy(h => h.ReversalOf != null)
+            .Select(g => new { IsReversal = g.Key, Total = g.Sum(x => x.Amount), Count = g.Count() })
+            .ToListAsync(ct);
+
+        var handedOver = handoverRows.FirstOrDefault(r => !r.IsReversal);
+        var returned = handoverRows.FirstOrDefault(r => r.IsReversal);
+
+        return new CashOutflow(
+            Expenses: decimal.Round((spent?.Total ?? 0m) - (refunded?.Total ?? 0m), MoneyScale),
+            ExpensesCount: (spent?.Count ?? 0) + (refunded?.Count ?? 0),
+            Handovers: decimal.Round((handedOver?.Total ?? 0m) - (returned?.Total ?? 0m), MoneyScale),
+            HandoversCount: (handedOver?.Count ?? 0) + (returned?.Count ?? 0));
+    }
+
+    /// <summary>
+    /// Javondan chiqqan naqd, ikki sabab bo'yicha. Musbat = kassadan chiqdi,
+    /// manfiy = storno chiqqandan ko'proq qaytargan (nazariy holat).
+    /// </summary>
+    private sealed record CashOutflow(
+        decimal Expenses, int ExpensesCount, decimal Handovers, int HandoversCount);
 
     /// <summary>
     /// Smena × usul × (storno mi) kesimidagi yig'indilar — BITTA so'rov.

@@ -223,7 +223,12 @@ public class AnomalyScanTests(ApiFixture fixture)
         var directorId = await NewUserAsync(Roles.SuperAdmin);
 
         await using var db = NewDb();
-        var expenses = new ExpenseService(db, new LedgerService(db));
+        // `ICashShiftService` — F1.03 dan keyingi bog'liqlik: naqd chiqim
+        // ochiq smenani talab qiladi. Bu testdagi chiqimlar BANKDAN chiqadi
+        // (`PaymentMethod.Transfer`), ya'ni smena so'ralmaydi; xizmat esa
+        // baribir haqiqiysi bo'lishi kerak — soxta nusxa "smena kerak edimi"
+        // degan savolni yashirib qo'yardi.
+        var expenses = new ExpenseService(db, new LedgerService(db), new CashShiftService(db));
 
         // (a) Chegaradan past — darhol jurnalga tushadi.
         var small = await expenses.CreateAsync(

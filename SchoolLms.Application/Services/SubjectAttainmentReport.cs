@@ -22,6 +22,13 @@ namespace SchoolLms.Application.Services;
 ///
 /// <para><b>Baho yo'q = null, nol EMAS.</b> Bahosi yo'q fan katagi bo'sh ko'rsatiladi; nol
 /// bilan to'ldirish sinf o'rtachasini asossiz pastga tortardi.</para>
+///
+/// <para><b>G-15 — guruh darslari.</b> Guruh pivotda ALOHIDA QATOR bo'lmaydi: uning baholari
+/// o'quvchining sinf rahbarligidagi sinfi qatorida turadi (<see cref="ClassAttainment"/>).
+/// Shu sababli (o'quvchi × fan × chorak) qiymati endi EGA bo'yicha emas, O'QUVCHI bo'yicha
+/// yig'iladi: bolaning sinfdagi va guruhdagi shu fandagi baholari BIRGA o'rtachalanadi va
+/// katakka BIR MARTA tushadi. O'chirgich o'chiq bo'lsa guruh qatori umuman bo'lmaydi —
+/// bugungi raqamning aynan o'zi.</para>
 /// </summary>
 public static class SubjectAttainmentReport
 {
@@ -74,26 +81,34 @@ public static class SubjectAttainmentReport
             .Select(s => new { s.Id, s.ClassName })
             .ToListAsync();
 
+        // G-15: shu sinflarning o'quvchilari qaysi guruhlarda — bir yurishda.
+        // O'chirgich o'chiq bo'lsa qamrov bo'sh va `ownerIds == presentIds`.
+        var attainment = await ClassAttainment.BuildAsync(db);
+        var ownerIds = attainment.OwnerIds(presentIds);
+
         var templates = await db.ScheduleTemplates.AsNoTracking()
             .Include(t => t.Lessons)
-            .Where(t => presentIds.Contains(t.ClassId))
+            .Where(t => ownerIds.Contains(t.ClassId))
             .ToListAsync();
 
         var entries = await db.JournalEntries.AsNoTracking()
-            .Where(e => presentIds.Contains(e.ClassId) && e.Grade != null
+            .Where(e => ownerIds.Contains(e.ClassId) && e.Grade != null
                         && quarterList.Contains(e.Quarter))
             .Select(e => new { e.ClassId, e.SubjectId, e.Quarter, e.StudentId, e.Grade })
             .ToListAsync();
 
         var quarterGrades = await db.QuarterGrades.AsNoTracking()
-            .Where(g => presentIds.Contains(g.ClassId) && quarterList.Contains(g.Quarter))
+            .Where(g => ownerIds.Contains(g.ClassId) && quarterList.Contains(g.Quarter))
             .Select(g => new { g.ClassId, g.SubjectId, g.Quarter, g.StudentId, g.Grade })
             .ToListAsync();
 
-        // Kunlik baholar: (sinf, fan, chorak, o'quvchi) -> o'rtacha.
-        var dailyAvg = entries
+        // Kunlik baholar: (ega, fan, chorak, o'quvchi) -> yig'indi va soni.
+        // YIG'INDI/SON saqlanadi, tayyor o'rtacha emas: bola shu fanni sinfda ham,
+        // guruhda ham o'qisa ikkala manbaning baholari BIRGA o'rtachalanishi kerak
+        // (`grades-report/class` jadvali ham aynan shunday hisoblaydi).
+        var dailySum = entries
             .GroupBy(e => (e.ClassId, e.SubjectId, e.Quarter, e.StudentId))
-            .ToDictionary(g => g.Key, g => g.Average(e => (double)e.Grade!.Value));
+            .ToDictionary(g => g.Key, g => (Sum: g.Sum(e => (double)e.Grade!.Value), Count: g.Count()));
         // Rasmiy chorak baholari — kunlik o'rtachaning USTIDAN yozadi.
         var officialGrade = new Dictionary<(string, string, int, string), double>();
         foreach (var g in quarterGrades)
@@ -104,15 +119,21 @@ public static class SubjectAttainmentReport
         var studentsByClass = students
             .GroupBy(s => s.ClassName, StringComparer.Ordinal)
             .ToDictionary(g => g.Key, g => g.Select(s => s.Id).ToList(), StringComparer.Ordinal);
+        // Sinf ustunlari: o'z jadvali/baholari + shu sinf o'quvchilarining
+        // guruhlaridan keladigan fanlar (guruh alohida qator emas, ustun manbai).
         var subjectsByClass = new Dictionary<string, List<string>>(StringComparer.Ordinal);
         foreach (var cls in classes)
         {
-            var fromSchedule = templates.Where(t => t.ClassId == cls.Id)
+            var classStudentIds = studentsByClass.GetValueOrDefault(cls.Name) ?? [];
+            var classOwners = attainment.OwnerIdsForClass(cls.Id, classStudentIds);
+            var fromSchedule = templates.Where(t => classOwners.Contains(t.ClassId))
                 .SelectMany(t => t.Lessons).Select(l => l.SubjectId).Distinct().ToList();
-            var fromGrades = entries.Where(e => e.ClassId == cls.Id).Select(e => e.SubjectId)
-                .Concat(quarterGrades.Where(g => g.ClassId == cls.Id).Select(g => g.SubjectId))
+            var fromGrades = entries.Where(e => classOwners.Contains(e.ClassId)).Select(e => e.SubjectId)
+                .Concat(quarterGrades.Where(g => classOwners.Contains(g.ClassId)).Select(g => g.SubjectId))
                 .Distinct().ToList();
-            subjectsByClass[cls.Id] = fromSchedule.Union(fromGrades, StringComparer.Ordinal)
+            subjectsByClass[cls.Id] = fromSchedule
+                .Union(fromGrades, StringComparer.Ordinal)
+                .Union(attainment.GroupSubjectsOf(classStudentIds), StringComparer.Ordinal)
                 .Where(subjectNames.ContainsKey)
                 .ToList();
         }
@@ -142,11 +163,34 @@ public static class SubjectAttainmentReport
                 foreach (var q in quarterList)
                     foreach (var studentId in classStudents)
                     {
-                        var key = (cls.Id, subjectId, q, studentId);
+                        // G-15: qiymat SINFdan ham, bolaning FAOL GURUHlaridan ham
+                        // kelishi mumkin. Har ega bo'yicha bitta qiymat olinadi
+                        // (rasmiy chorak bahosi kunlikning ustidan), keyin ular
+                        // BIRGA o'rtachalanadi va katakka BIR MARTA qo'shiladi —
+                        // "o'quvchi × chorak = bitta qiymat" qoidasi buzilmasin.
+                        double officialSum = 0, dailyTotal = 0;
+                        int officialCount = 0, dailyCount = 0;
+                        foreach (var ownerId in attainment.OwnerIdsForStudent(studentId, cls.Id))
+                        {
+                            var key = (ownerId, subjectId, q, studentId);
+                            if (officialGrade.TryGetValue(key, out var official))
+                            {
+                                officialSum += official;
+                                officialCount++;
+                            }
+                            if (dailySum.TryGetValue(key, out var daily))
+                            {
+                                dailyTotal += daily.Sum;
+                                dailyCount += daily.Count;
+                            }
+                        }
+                        // Rasmiy baho bo'lsa — faqat o'sha (bir nechta ega bo'lsa o'rtachasi);
+                        // bo'lmasa barcha kunlik baholarning o'rtachasi. Ikkalasi ham yo'q —
+                        // bu chorakda bu fandan bahosi yo'q, katakka kirmaydi.
                         double value;
-                        if (officialGrade.TryGetValue(key, out var official)) value = official;
-                        else if (dailyAvg.TryGetValue(key, out var daily)) value = daily;
-                        else continue; // bu chorakda bu fandan bahosi yo'q — katakka kirmaydi
+                        if (officialCount > 0) value = officialSum / officialCount;
+                        else if (dailyCount > 0) value = dailyTotal / dailyCount;
+                        else continue;
 
                         bySubject[subjectId].Add(value);
                         Bucket(bySubjectQuarter, (subjectId, q)).Add(value);

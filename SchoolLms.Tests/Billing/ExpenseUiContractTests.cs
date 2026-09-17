@@ -289,12 +289,35 @@ public class ExpenseUiContractTests(ApiFixture fixture)
     //  Yordamchilar
     // =================================================================
 
+    /// <summary>
+    /// Rol uchun foydalanuvchi, token va — kassa stoli rollarida — OCHIQ SMENA.
+    ///
+    /// <para>
+    /// F1.03 dan keyin naqd chiqim ochiq smenani talab qiladi. Bu fayl
+    /// EKRAN ↔ SERVER shartnomasini tekshiradi (maydon nomlari, tana shakli),
+    /// smena qoidasini emas, shuning uchun smena umumiy tayyorgarlik
+    /// sifatida shu yerda ochiladi. Qoidaning o'zi <c>CashDeskOutflowTests</c>
+    /// da sinaladi.
+    /// </para>
+    /// <para>
+    /// Ekranda ham xuddi shunday: <c>ExpenseFormModal</c> "Naqd" usuli
+    /// tanlanganda ochiq smena kerakligini OLDINDAN aytadi.
+    /// </para>
+    /// </summary>
     private async Task<(AppUser User, HttpClient Client)> ActorAsync(string role)
     {
         var (user, _) = await fixture.Api.SeedUserAsync(role);
         var client = fixture.Api.CreateClient();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
             "Bearer", fixture.Api.TokenFor(role, user.Id, user.FullName, user.Email));
+
+        if (role is Roles.Admin or Roles.SuperAdmin or Roles.Cashier)
+        {
+            var opened = await client.PostAsJsonAsync(
+                "/api/cash/shifts/open", new { openingFloat = 0m });
+            Assert.Equal(HttpStatusCode.OK, opened.StatusCode);
+        }
+
         return (user, client);
     }
 

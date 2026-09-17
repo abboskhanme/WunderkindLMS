@@ -1,15 +1,34 @@
-import { useState } from 'react'
-import { AlertTriangle, CircleDot, LockKeyhole, RefreshCw, ShieldQuestion, Unlock } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import {
+  AlertTriangle,
+  CircleDot,
+  LockKeyhole,
+  RefreshCw,
+  Send,
+  ShieldQuestion,
+  Undo2,
+  Unlock,
+} from 'lucide-react'
 import type { CashShift } from '@/types'
+import type { CashHandover, CashHandoverDestination } from '@/api/services/cashHandovers'
+import {
+  cashHandoverDestinationLabels,
+  getCashHandovers,
+  recordCashHandover,
+  reverseCashHandover,
+} from '@/api/services/cashHandovers'
 import { closeShift, financeErrorMessage, openShift } from '@/api/services/cashier'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { Loader } from '@/components/ui/Loader'
 import { Modal } from '@/components/ui/Modal'
-import { Textarea } from '@/components/ui/Input'
+import { Select, Textarea } from '@/components/ui/Input'
 import { cn } from '@/lib/utils'
 import { MoneyInput } from './MoneyInput'
 import { formatDateTime, formatSumWithUnit, parseSum } from './format'
+
+/** Manzillar tartibi: bankka topshirish kundalik amal, seyf — kamroq. */
+const destinations: CashHandoverDestination[] = ['bank', 'safe']
 
 interface ShiftBarProps {
   shift: CashShift | null
@@ -33,10 +52,23 @@ interface ShiftBarProps {
  * qancha bo'lishi kerak" deb aytish bilan bir xil. SPEC §4.2 ning butun
  * ma'nosi shunda: sanoq kutilayotgan summani KO'RMASDAN qilinadi. Shuning
  * uchun bu yerda faqat vaqt va to'lovlar SONI turadi.
+ *
+ * PUL TOPSHIRISH (F1.04) — SHU YERDA, VA U QOIDANI BUZMAYDI
+ * ---------------------------------------------------------
+ * Kassir javondagi pulni bankka topshiradi yoki direktorning seyfiga beradi.
+ * Bu yozuv bo'lmasa `cash` hisobi faqat o'sadi va smenaning kutilgan naqdi
+ * haqiqatdan har kuni uzoqlashadi.
+ *
+ * Ro'yxatda KASSIRNING O'Z amallari ko'rinadi — u qancha topshirganini
+ * o'zi biladi va tasdiqlashi kerak. "Kutilgan naqd" esa bu yerda ham, hech
+ * qayerda ham chiqmaydi: ekran topshiriqlar yig'indisini ham hisoblamaydi,
+ * chunki uni ochilish qoldig'i bilan qo'shib kassir kutilayotgan summani
+ * taxmin qila boshlardi.
  */
 export function ShiftBar({ shift, loading, error, onRetry, onShiftChange }: ShiftBarProps) {
   const [openDialog, setOpenDialog] = useState(false)
   const [closeDialog, setCloseDialog] = useState(false)
+  const [handoverDialog, setHandoverDialog] = useState(false)
 
   if (loading) {
     return (
@@ -110,11 +142,22 @@ export function ShiftBar({ shift, loading, error, onRetry, onShiftChange }: Shif
               </p>
             </div>
           </div>
-          <Button variant="secondary" onClick={() => setCloseDialog(true)}>
-            <LockKeyhole className="h-4 w-4" /> Smenani yopish
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="secondary" onClick={() => setHandoverDialog(true)}>
+              <Send className="h-4 w-4" /> Pul topshirish
+            </Button>
+            <Button variant="secondary" onClick={() => setCloseDialog(true)}>
+              <LockKeyhole className="h-4 w-4" /> Smenani yopish
+            </Button>
+          </div>
         </div>
       </Card>
+
+      <HandoverDialog
+        open={handoverDialog}
+        shift={shift}
+        onClose={() => setHandoverDialog(false)}
+      />
 
       <CloseShiftDialog
         open={closeDialog}
@@ -193,6 +236,212 @@ function OpenShiftDialog({ open, onClose, onOpened }: OpenShiftDialogProps) {
         />
         {error && (
           <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>
+        )}
+      </div>
+    </Modal>
+  )
+}
+
+/* ======================================================================
+   Pul topshirish — F1.04
+   ====================================================================== */
+
+interface HandoverDialogProps {
+  open: boolean
+  shift: CashShift
+  onClose: () => void
+}
+
+/**
+ * Javondagi naqdni bankka topshirish yoki direktorning seyfiga berish.
+ *
+ * IKKI MANZIL, IKKI XIL MA'NO: `bank` — pul boshqa hisobga ko'chadi;
+ * `safe` — pul maktabniki bo'lib qolaveradi, faqat kassirning javonidan
+ * chiqadi. Ikkalasi ham smenaning kutilgan naqdini kamaytiradi.
+ *
+ * O'CHIRISH YO'Q: xato topshiriq STORNO bilan tuzatiladi va pul shu
+ * smenaga QAYTADI — ya'ni storno kassirdan ko'proq pul talab qiladi, kamroq
+ * emas. Aynan shu sababli uni kassirning o'zi qila oladi (to'lov stornosidan
+ * farqli o'laroq, u ikkinchi shaxsni talab qiladi).
+ */
+function HandoverDialog({ open, shift, onClose }: HandoverDialogProps) {
+  const [amount, setAmount] = useState('')
+  const [destination, setDestination] = useState<CashHandoverDestination>('bank')
+  const [note, setNote] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [rows, setRows] = useState<CashHandover[]>([])
+
+  const parsed = parseSum(amount)
+  const valid = parsed !== null && parsed > 0
+
+  const reload = () => {
+    getCashHandovers({ shiftId: shift.id })
+      .then(setRows)
+      .catch(() => undefined)
+  }
+
+  useEffect(() => {
+    if (!open) return
+    /* eslint-disable react-hooks/set-state-in-effect -- oyna ochilganda formani tozalash (maqsadli) */
+    setAmount('')
+    setDestination('bank')
+    setNote('')
+    setError(null)
+    /* eslint-enable react-hooks/set-state-in-effect */
+    let alive = true
+    getCashHandovers({ shiftId: shift.id })
+      .then((data) => {
+        if (alive) setRows(data)
+      })
+      .catch(() => undefined)
+    return () => {
+      alive = false
+    }
+  }, [open, shift.id])
+
+  const submit = async () => {
+    // `parsed` ni ALOHIDA tekshiramiz (`valid` orqali emas): TypeScript
+    // boolean o'zgaruvchidan `number | null` ni toraytirmaydi.
+    if (parsed === null || parsed <= 0 || busy) return
+    setBusy(true)
+    setError(null)
+    try {
+      await recordCashHandover({
+        amount: parsed,
+        destination,
+        note: note.trim() || undefined,
+      })
+      setAmount('')
+      setNote('')
+      reload()
+    } catch (err) {
+      setError(financeErrorMessage(err, "Topshiriqni yozib bo'lmadi."))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const undo = async (row: CashHandover) => {
+    if (busy) return
+    setBusy(true)
+    setError(null)
+    try {
+      await reverseCashHandover(row.id, 'Kassirning tuzatishi')
+      reload()
+    } catch (err) {
+      setError(financeErrorMessage(err, "Storno qilib bo'lmadi."))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="Kassadan pul topshirish"
+      size="md"
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose} disabled={busy}>
+            Yopish
+          </Button>
+          <Button onClick={submit} disabled={!valid || busy}>
+            {busy ? 'Yozilmoqda...' : 'Topshirildi'}
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-4">
+        <p className="text-sm text-slate-500">
+          Javondan chiqqan pulni shu yerga yozing. Yozilmasa, smena yopilganda o'sha summa
+          kamomad bo'lib ko'rinadi.
+        </p>
+
+        <MoneyInput
+          label="Summa (so'm)"
+          value={amount}
+          onValueChange={setAmount}
+          disabled={busy}
+          invalid={amount.length > 0 && !valid}
+          hint={amount.length > 0 && !valid ? "Summa noldan katta bo'lishi kerak." : undefined}
+          autoFocus
+        />
+
+        <Select
+          label="Qayerga"
+          value={destination}
+          disabled={busy}
+          onChange={(e) => setDestination(e.target.value as CashHandoverDestination)}
+        >
+          {destinations.map((d) => (
+            <option key={d} value={d}>
+              {cashHandoverDestinationLabels[d]}
+            </option>
+          ))}
+        </Select>
+
+        <Textarea
+          label="Izoh (ixtiyoriy)"
+          rows={2}
+          value={note}
+          disabled={busy}
+          onChange={(e) => setNote(e.target.value)}
+          placeholder="masalan: inkassatsiya kvitansiyasi №145"
+        />
+
+        {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
+
+        {rows.length > 0 && (
+          <div>
+            <p className="mb-2 text-sm font-medium text-slate-600">Shu smenada topshirilgan</p>
+            <ul className="space-y-1">
+              {rows.map((row) => (
+                <li
+                  key={row.id}
+                  className={cn(
+                    'flex items-center justify-between gap-3 rounded-lg px-3 py-2 text-sm',
+                    row.reversed || row.reversalOf
+                      ? 'bg-slate-50 text-slate-400'
+                      : 'bg-slate-50 text-slate-700',
+                  )}
+                >
+                  <span className="min-w-0">
+                    <span
+                      className={cn(
+                        'font-semibold tabular-nums',
+                        row.reversalOf && 'text-emerald-700',
+                        row.reversed && 'line-through',
+                      )}
+                    >
+                      {row.reversalOf ? '+' : '−'}
+                      {formatSumWithUnit(row.amount)}
+                    </span>
+                    <span className="ml-2 text-xs">
+                      {row.reversalOf
+                        ? 'storno'
+                        : cashHandoverDestinationLabels[row.destination]}
+                    </span>
+                  </span>
+                  {!row.reversed && !row.reversalOf && (
+                    <button
+                      type="button"
+                      className="inline-flex shrink-0 items-center gap-1 text-xs text-slate-500 hover:text-red-600"
+                      disabled={busy}
+                      onClick={() => undo(row)}
+                    >
+                      <Undo2 className="h-3.5 w-3.5" /> Storno
+                    </button>
+                  )}
+                </li>
+              ))}
+            </ul>
+            <p className="mt-2 text-xs text-slate-400">
+              Yozuv o'chirilmaydi. Storno ustiga qarshi qator qo'yadi va pul shu smenaga
+              qaytadi.
+            </p>
+          </div>
         )}
       </div>
     </Modal>
