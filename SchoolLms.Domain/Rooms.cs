@@ -59,4 +59,28 @@ public class Room
     /// o'sha modulning ishini bekorga sekinlashtirardi.
     /// </summary>
     public string Kind { get; set; } = RoomKind.Classroom;
+
+    // =======================================================================
+    //  §3.3 dan TASHQARI — R-1 slice'ining talabi (Batch C migratsiyasi).
+    // =======================================================================
+
+    /// <summary>
+    /// Xona faolmi. <b>false = "ishlatilmaydi, lekin saqlanadi"</b>: yangi
+    /// jadvalda va tanlovlarda ko'rinmaydi, lekin unga havola qilgan eski
+    /// yozuvlar joyida qoladi.
+    ///
+    /// <para>
+    /// <b>Nega kerak bo'ldi:</b> bugun reyestrda faqat O'CHIRISH bor, va
+    /// sinf ko'rsatib turgan xonani o'chirib bo'lmaydi
+    /// (<c>RoomTests.Sinf_korsatgan_xona_ochirilmaydi</c>) — ya'ni ta'mirga
+    /// yopilgan xonani ro'yxatdan olib qo'yishning YO'LI YO'Q. Bu ustun
+    /// <see cref="StudentStatus.IsActive"/> va
+    /// <see cref="CertificateType.IsActive"/> bilan bir xil naqsh.
+    /// </para>
+    /// <para>
+    /// Sukut <b>true</b> — mavjud har bir xona faol bo'lib qoladi, ya'ni
+    /// bugungi ro'yxat va o'chirish qoidasi o'zgarmaydi.
+    /// </para>
+    /// </summary>
+    public bool IsActive { get; set; } = true;
 }

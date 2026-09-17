@@ -126,6 +126,13 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<StudentContract> StudentContracts => Set<StudentContract>();
     public DbSet<Room> Rooms => Set<Room>();
 
+    // O'quv bo'limi pariteti, P2 (students-parity.md §3.3). Konfiguratsiya:
+    // StudentsParityP2Model.cs. Sxema oldin, ekranlar keyin — hozircha
+    // ilovadan hech kim o'qimaydi (§4.4 dagi kichik slice'lar o'qiydi).
+    public DbSet<CertificateSubject> CertificateSubjects => Set<CertificateSubject>();
+    public DbSet<StudentLocation> StudentLocations => Set<StudentLocation>();
+    public DbSet<UserTableSetting> UserTableSettings => Set<UserTableSetting>();
+
     /// <inheritdoc />
     public Task<Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction> BeginTransactionAsync(
         CancellationToken cancellationToken = default) =>
@@ -259,6 +266,12 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
 
         // ----- O'quvchi kartochkasi: status, izoh, shartnoma, xonalar (§3.2) -----
         StudentsParityModel.Apply(b);
+
+        // ----- O'quv bo'limi pariteti, P2 (§3.3) -----
+        // Yettinchi alohida fayl. Sinf sig'imi, fan rangi/faolligi, mo'ljaldagi
+        // sinf, sertifikat fanlari, joylashuvlar, jadval sozlamalari, shartnoma
+        // raqamlash rejimi, topshiriq egasi va `rooms.is_active`.
+        StudentsParityP2Model.Apply(b);
 
         // ----- Kassa stoli: A to'plami (finance-parity.md §3.1) -----
         // Oltinchi alohida fayl. `expenses.cash_shift_id` (A1) ham shu yerda —
