@@ -23,6 +23,29 @@ public class ContractService(IWebHostEnvironment env)
         return File.Exists(path) ? File.ReadAllBytes(path) : null;
     }
 
+    /// <summary>
+    /// Hosil qilingan .docx ni <c>uploads/</c> papkasiga yozadi va uning
+    /// <c>/uploads/...</c> manzilini qaytaradi (K-2).
+    ///
+    /// <para>
+    /// <b>Bu YUKLASH yo'li emas.</b> Foydalanuvchi fayli baribir
+    /// <c>UploadsController</c> + <see cref="UploadGuard"/> orqali keladi
+    /// (K-3). Bu yerda esa SERVERNING O'ZI hosil qilgan hujjat saqlanadi:
+    /// tashqaridan hech narsa kelmaydi, shuning uchun tekshiradigan narsa
+    /// ham yo'q. Papka va nom qoidasi <see cref="UploadGuard.SafeName"/>
+    /// bilan bir xil — fayllar bitta joyda tursin va <c>/uploads</c> statik
+    /// yo'nalishi (Program.cs) ularni bir xil yetkazsin.
+    /// </para>
+    /// </summary>
+    public string SaveGenerated(byte[] docxBytes)
+    {
+        var dir = Path.Combine(env.ContentRootPath, "uploads");
+        Directory.CreateDirectory(dir);
+        var stored = $"{Guid.NewGuid():N}.docx";
+        File.WriteAllBytes(Path.Combine(dir, stored), docxBytes);
+        return $"/uploads/{stored}";
+    }
+
     /// <summary>Andoza baytlarini nusxalab, tokenlarni almashtiradi va yangi .docx baytlarini qaytaradi.</summary>
     public byte[] FillTemplate(byte[] docxBytes, IDictionary<string, string> tokens)
     {
