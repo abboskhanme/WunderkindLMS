@@ -388,7 +388,19 @@ public record ArrearsRowDto(
     // Arxivdagi (maktabdan ketgan) o'quvchi — qarzi qoladi, ekranda belgilanadi.
     bool IsArchived,
     IReadOnlyDictionary<string, ArrearsCellDto> Cells,
-    ArrearsCellDto Total);
+    ArrearsCellDto Total,
+    // ---- finance-parity.md §2.13 gaplari — YANGI MAYDONLAR OXIRIDA ----
+    // (ArrearsRowDto pozitsion record: mavjud chaqiruvlar o'zgarishsiz qolishi
+    // uchun qo'shimcha maydon HAR DOIM oxiriga, sukut qiymati bilan qo'shiladi —
+    // xuddi `ZReportDto` dagi kabi.)
+
+    // F13.03 — ota-ona telefoni (qarzdorlar hisobotidagi `DebtorRowDto.ParentPhone`
+    // bilan bir xil manba: `students.parent_phone`).
+    string ParentPhone = "",
+    // F13.02 — "toifalar bo'yicha ajratish" YOQILGANDA shu qatorning toifasi;
+    // O'CHIQ bo'lsa ikkovi ham null (qator — butun o'quvchi, barcha toifa yig'indisi).
+    string? CategoryCode = null,
+    string? CategoryName = null);
 
 /// <summary>
 /// Oyma-oy qarzdorlik jadvali: o'quvchi × oy.

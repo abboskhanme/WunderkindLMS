@@ -100,13 +100,33 @@ public record DebtorReportQuery(
 /// <param name="DebtorsOnly">true = qoldig'i bor o'quvchilargina.</param>
 /// <param name="IncludeArchived">Sukut true: maktabdan ketgan o'quvchining
 /// qarzi ham qarz (<see cref="DebtorReportQuery"/> bilan bir xil qoida).</param>
+/// <param name="ClassNames">
+/// finance-parity.md F13.01 — BIR NECHTA sinf birdaniga (EduSchool: sinf
+/// filtri ko'p tanlovli). Berilsa <see cref="ClassName"/> dan USTUN turadi;
+/// <see cref="ClassName"/> yagona sinf tanlanganda ham ishlab turaveradi —
+/// eski chaqiruvlar (test, boshqa ekran) o'zgarishsiz qoladi.
+/// </param>
+/// <param name="StudyGroupId">
+/// finance-parity.md F13.06 — bitta o'quv guruhi (<c>study_groups</c>).
+/// Faqat shu guruhning HOZIRGI (<c>left_on is null</c>) a'zolari qoladi.
+/// null = guruh bo'yicha filtr yo'q.
+/// </param>
+/// <param name="SplitByCategory">
+/// finance-parity.md F13.02 — true bo'lsa jadvalda bitta o'quvchi — bitta
+/// TOIFA uchun bitta qator (EduSchool: bitta o'quvchi — bitta OBUNA uchun
+/// bitta qator; bizda toifa aniqroq va obunaga ekvivalent). Sukut — false:
+/// bitta o'quvchi — bitta qator, toifalar yig'indisi (eski xulq).
+/// </param>
 public record ArrearsPivotQuery(
     DateOnly FromMonth,
     DateOnly ToMonth,
     string? ClassName = null,
     Guid? CategoryId = null,
     bool DebtorsOnly = false,
-    bool IncludeArchived = true);
+    bool IncludeArchived = true,
+    IReadOnlyList<string>? ClassNames = null,
+    Guid? StudyGroupId = null,
+    bool SplitByCategory = false);
 
 /// <summary>P&amp;L ning bitta satri: hisob kodi va davr bo'yicha sof summasi.</summary>
 /// <param name="Account">Hisob kodi (<see cref="Accounts"/> yopiq ro'yxatidan).</param>
@@ -592,6 +612,17 @@ public sealed partial class FinanceReportQueries(IAppDbContext db)
     /// <c>ToBePaid</c> HAR KATAKDA alohida qirqiladi
     /// (<c>max(0, amount − paid)</c>) va keyin qo'shiladi: bir oyning ortiqcha
     /// to'lovi boshqa oyning qarzini jimgina yopib yubormaydi. Ortiqcha pul
+    /// <para>
+    /// <b>finance-parity.md §2.13 gaplari (F13.01, F13.02, F13.03, F13.06).</b>
+    /// Ko'p tanlovli sinf (<see cref="ArrearsPivotQuery.ClassNames"/>) va
+    /// guruh (<see cref="ArrearsPivotQuery.StudyGroupId"/>) — QAYSI o'quvchi
+    /// tushishini toraytiradi (<see cref="ArrearsStudents"/>). Toifa bo'yicha
+    /// ajratish (<see cref="ArrearsPivotQuery.SplitByCategory"/>) — QATORNING
+    /// O'ZI nimani anglatishini o'zgartiradi (bitta o'quvchi yoki bitta
+    /// o'quvchi × toifa); yordamchi tur va qurilish
+    /// <c>FinanceReportQueries.SubscriptionTransactionsPivot.cs</c> da.
+    /// Ota-ona telefoni (F13.03) — har doim qo'shiladi, filtr emas.
+    /// </para>
     /// taqsimlanmagan bo'lsa u <c>PaidWithoutAllocation</c> anomaliyasi
     /// sifatida alohida ko'rinadi (<c>Anomaly.cs</c>), bu yerda emas.
     /// </para>
@@ -635,17 +666,25 @@ public sealed partial class FinanceReportQueries(IAppDbContext db)
         if (query.CategoryId is { } categoryId)
             invoices = invoices.Where(i => i.CategoryId == categoryId);
 
-        // ---- So'rov 1: o'quvchi × oy kesimida HISOBLANGAN (chegirmadan keyin) ----
-        var accrued = await (
+        // ---- So'rov 1: o'quvchi × TOIFA × oy kesimida HISOBLANGAN ----
+        // Toifa HAR DOIM so'raladi (F13.02 uchun): "ajratish" o'chiq bo'lsa
+        // pastda XOTIRADA qo'shiladi — ikkinchi so'rov yozilmaydi, ikkinchi
+        // arifmetika ham paydo bo'lmaydi (fayl boshidagi qoida).
+        var accruedByCategory = await (
             from inv in invoices
             join s in students on inv.StudentId equals s.Id
+            join c in db.FeeCategories.AsNoTracking() on inv.CategoryId equals c.Id
             group inv by new
             {
                 inv.StudentId,
                 s.FullName,
                 s.ClassName,
+                s.ParentPhone,
                 s.IsArchived,
                 inv.PeriodMonth,
+                inv.CategoryId,
+                CategoryCode = c.Code,
+                CategoryName = c.Name,
             }
             into g
             select new
@@ -653,22 +692,47 @@ public sealed partial class FinanceReportQueries(IAppDbContext db)
                 g.Key.StudentId,
                 g.Key.FullName,
                 g.Key.ClassName,
+                g.Key.ParentPhone,
                 g.Key.IsArchived,
                 g.Key.PeriodMonth,
+                g.Key.CategoryId,
+                g.Key.CategoryCode,
+                g.Key.CategoryName,
                 Amount = g.Sum(x => x.Amount - x.Discount),
             }).ToListAsync(ct);
 
-        // ---- So'rov 2: O'SHA kataklarga haqiqatan tushgan pul ----
-        var paid = await (
+        // ---- So'rov 2: O'SHA kataklarga (TOIFA bilan) haqiqatan tushgan pul ----
+        var paidByCategory = await (
             from a in EffectiveAllocations()
             join inv in invoices on a.InvoiceId equals inv.Id
             join s in students on inv.StudentId equals s.Id
-            group a by new { inv.StudentId, inv.PeriodMonth }
+            group a by new { inv.StudentId, inv.PeriodMonth, inv.CategoryId }
             into g
-            select new { g.Key.StudentId, g.Key.PeriodMonth, Paid = g.Sum(x => x.Amount) })
+            select new { g.Key.StudentId, g.Key.PeriodMonth, g.Key.CategoryId, Paid = g.Sum(x => x.Amount) })
             .ToListAsync(ct);
 
-        var paidByCell = paid.ToDictionary(x => (x.StudentId, x.PeriodMonth), x => x.Paid);
+        // F13.02 — "ajratish" YOQIQ: toifa kataklarni ajratib turadi (o'zi).
+        // O'CHIQ (sukut, eski xulq): toifalar XOTIRADA bitta katakka
+        // qo'shiladi va CategoryId shu qatorlar uchun `null` bo'ladi —
+        // pastdagi qator qurish tsikli buni STUDENT-DARAJASIDAGI bitta
+        // qator sifatida o'qiydi (guruhlash kaliti `null` bo'yicha ham to'g'ri
+        // ishlaydi).
+        List<ArrearsAccrualCell> accrued = query.SplitByCategory
+            ? [.. accruedByCategory.Select(r => new ArrearsAccrualCell(
+                r.StudentId, r.FullName, r.ClassName, r.ParentPhone, r.IsArchived, r.PeriodMonth,
+                r.CategoryId, r.CategoryCode, r.CategoryName, r.Amount))]
+            : [.. accruedByCategory
+                .GroupBy(r => new { r.StudentId, r.FullName, r.ClassName, r.ParentPhone, r.IsArchived, r.PeriodMonth })
+                .Select(g => new ArrearsAccrualCell(
+                    g.Key.StudentId, g.Key.FullName, g.Key.ClassName, g.Key.ParentPhone, g.Key.IsArchived,
+                    g.Key.PeriodMonth, null, null, null, g.Sum(x => x.Amount)))];
+
+        var paidByCell = query.SplitByCategory
+            ? paidByCategory.ToDictionary(
+                x => (x.StudentId, x.PeriodMonth, (Guid?)x.CategoryId), x => x.Paid)
+            : paidByCategory
+                .GroupBy(x => new { x.StudentId, x.PeriodMonth })
+                .ToDictionary(g => (g.Key.StudentId, g.Key.PeriodMonth, (Guid?)null), g => g.Sum(x => x.Paid));
 
         var months = Enumerable.Range(0, monthCount)
             .Select(i => MonthKey(first.AddMonths(i)))
@@ -677,17 +741,20 @@ public sealed partial class FinanceReportQueries(IAppDbContext db)
         var footer = months.ToDictionary(m => m, _ => new MutableCell());
         var grand = new MutableCell();
 
+        // Qator kaliti — o'quvchi (+ toifa, faqat "ajratish" yoqilganda; aks
+        // holda hammasida `CategoryId` bir xil `null`, ya'ni guruhlash
+        // avtomatik ravishda yagona-qator xulqiga qaytadi).
         var rows = new List<ArrearsRowDto>();
-        foreach (var studentGroup in accrued.GroupBy(r => r.StudentId))
+        foreach (var rowGroup in accrued.GroupBy(r => new { r.StudentId, r.CategoryId }))
         {
-            var head = studentGroup.First();
+            var head = rowGroup.First();
             var cells = new Dictionary<string, ArrearsCellDto>();
             var rowTotal = new MutableCell();
 
-            foreach (var cell in studentGroup)
+            foreach (var cell in rowGroup)
             {
                 var key = MonthKey(cell.PeriodMonth);
-                var cellPaid = paidByCell.GetValueOrDefault((cell.StudentId, cell.PeriodMonth));
+                var cellPaid = paidByCell.GetValueOrDefault((cell.StudentId, cell.PeriodMonth, cell.CategoryId));
                 var toBePaid = Math.Max(0m, cell.Amount - cellPaid);
 
                 cells[key] = new ArrearsCellDto(cell.Amount, cellPaid, toBePaid);
@@ -698,7 +765,8 @@ public sealed partial class FinanceReportQueries(IAppDbContext db)
 
             rows.Add(new ArrearsRowDto(
                 head.StudentId, head.FullName, head.ClassName, head.IsArchived,
-                cells, rowTotal.ToDto()));
+                cells, rowTotal.ToDto(),
+                head.ParentPhone, head.CategoryCode, head.CategoryName));
 
             // Yakun FAQAT ko'rinadigan qatorlardan yig'iladi: ekranda
             // qo'shilmaydigan ikki raqam turishidan yomoni yo'q.
@@ -712,24 +780,46 @@ public sealed partial class FinanceReportQueries(IAppDbContext db)
         return new ArrearsPivotDto(
             months,
             [.. rows.OrderBy(r => r.ClassName, StringComparer.Ordinal)
-                    .ThenBy(r => r.FullName, StringComparer.Ordinal)],
+                    .ThenBy(r => r.FullName, StringComparer.Ordinal)
+                    // "Ajratish" o'chiq bo'lsa CategoryCode hammada `null` —
+                    // bu qator tartibga ta'sir qilmaydi.
+                    .ThenBy(r => r.CategoryCode, StringComparer.Ordinal)],
             footer.ToDictionary(kv => kv.Key, kv => kv.Value.ToDto()),
             grand.ToDto());
     }
 
     /// <summary>
     /// Jadvalga tushadigan o'quvchilar. <see cref="DebtorsAsync"/> dagi filtr
-    /// bilan AYNAN bir xil bo'lishi shart — ikki ekran bir xil savolga har xil
-    /// javob bermasin.
+    /// bilan bitta sinf tanlanganda AYNAN bir xil — ikki ekran bir xil savolga
+    /// har xil javob bermasin. <see cref="ArrearsPivotQuery.ClassNames"/>,
+    /// <see cref="ArrearsPivotQuery.StudyGroupId"/> esa FAQAT shu jadvalga xos
+    /// qo'shimcha (F13.01, F13.06) — <see cref="DebtorsAsync"/> ularsiz ham
+    /// to'g'ri ishlayveradi, chunki ular sukut bo'yicha "filtr yo'q" bilan teng.
     /// </summary>
     private IQueryable<Student> ArrearsStudents(ArrearsPivotQuery query)
     {
         var students = db.Students.AsNoTracking();
         if (!query.IncludeArchived) students = students.Where(s => !s.IsArchived);
-        if (!string.IsNullOrWhiteSpace(query.ClassName))
+
+        // Ko'p tanlovli sinf (F13.01) yagona sinfdan USTUN turadi — ikkovi
+        // bir vaqtda kelsa, eskisini e'tiborsiz qoldirish emas, YANGISINI
+        // qo'llash aniqroq: frontend ikkovini birga yubormaydi.
+        if (query.ClassNames is { Count: > 0 } classNames)
+        {
+            students = students.Where(s => classNames.Contains(s.ClassName));
+        }
+        else if (!string.IsNullOrWhiteSpace(query.ClassName))
         {
             var className = query.ClassName.Trim();
             students = students.Where(s => s.ClassName == className);
+        }
+
+        // F13.06 — bitta o'quv guruhining HOZIRGI a'zolari. `StudyGroupMembers`
+        // sanali (tarixiy) jadval: `left_on is null` — hali chiqmagan a'zo.
+        if (query.StudyGroupId is { } groupId)
+        {
+            var memberIds = ActiveGroupMemberIds(groupId);
+            students = students.Where(s => memberIds.Contains(s.Id));
         }
 
         return students;
