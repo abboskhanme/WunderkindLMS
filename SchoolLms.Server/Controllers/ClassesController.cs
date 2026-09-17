@@ -74,6 +74,29 @@ public class ClassesController(AppDbContext db, AuditService audit) : Controller
         var cls = await db.Classes.FindAsync(id);
         if (cls is null) return NotFound();
 
+        // G-1: o'quvchi sinfiga NOM bilan bog'langan (`students.class_name`). Nom o'zgarsa
+        // hamma nusxasi shu so'rovning o'zida, bitta tranzaksiyada yangilanadi — aks holda
+        // sinfdagi har bir o'quvchi jimgina sinfsiz qolardi.
+        var oldName = cls.Name;
+        var renamed = !string.Equals(oldName, p.Name, StringComparison.Ordinal);
+        if (renamed)
+        {
+            // Bo'sh nom kaskad bilan sinfsiz (class_name = '') o'quvchilarning hammasini shu
+            // sinfga qo'shib yuborardi.
+            if (string.IsNullOrWhiteSpace(p.Name))
+                return BadRequest(new { message = "Sinf nomi bo'sh bo'lishi mumkin emas." });
+            // Arxivdagi sinf ham hisoblanadi: uning o'quvchilari shu nom bilan arxivda turibdi.
+            if (await db.Classes.AnyAsync(c => c.Id != cls.Id && c.Name == p.Name))
+                return Conflict(new
+                {
+                    message = $"\"{p.Name}\" nomli sinf allaqachon mavjud — boshqa nom tanlang. " +
+                              "Aks holda ikki sinfning o'quvchilari bitta sinfga aralashib ketadi.",
+                });
+        }
+
+        await using var tx = renamed ? await db.Database.BeginTransactionAsync() : null;
+        if (renamed) await CascadeRenameAsync(cls.Id, oldName, p.Name);
+
         var oldFee = cls.MonthlyFee;
         cls.Name = p.Name;
         cls.Grade = p.Grade;
@@ -92,7 +115,81 @@ public class ClassesController(AppDbContext db, AuditService audit) : Controller
         }
 
         await db.SaveChangesAsync();
+        if (tx is not null) await tx.CommitAsync();
         return cls;
+    }
+
+    /// <summary>
+    /// Sinf nomining saqlangan HAR BIR nusxasini yangi nomga o'tkazadi va buni audit qiladi.
+    /// Chaqiruvchi ochgan tranzaksiya ichida ishlaydi: ommaviy UPDATE'lar darhol bajariladi,
+    /// qolgani (o'quvchi, o'qituvchi, o'qish belgilari, audit) keyingi <c>SaveChanges</c> da.
+    ///
+    /// <para>Nom nusxalari (butun backend bo'yicha qidirildi):</para>
+    /// <list type="bullet">
+    ///   <item><c>students.class_name</c> — arxivdagilari ham (sinf arxivdan chiqarilganda
+    ///     <c>ArchivedWithClass</c> o'quvchilar nom bo'yicha qaytadi);</item>
+    ///   <item><c>teachers.homeroom_class</c>;</item>
+    ///   <item><c>chat_messages.class_name</c> — sinf chati kanali;</item>
+    ///   <item><c>chat_reads.channel</c> — o'qituvchining shu kanalni qachon o'qigani; usiz
+    ///     butun tarix "o'qilmagan" bo'lib qolardi;</item>
+    ///   <item><c>broadcasts.class_name</c> — qamrov YORLIG'I: aniq nom yoki
+    ///     "&lt;sinf&gt; — qarzdorlar" (ota-ona Mini App'i e'lonlarni aynan shu ikki shakl
+    ///     bo'yicha topadi, <c>TelegramParentController.AnnouncementsFor</c>);</item>
+    ///   <item><c>pickup_requests.class_name</c> — sinf rahbari so'rovlarni shu bo'yicha ko'radi.</item>
+    /// </list>
+    /// <para>
+    /// Ataylab o'zgartirilMAYDI: <c>push_messages.audience</c> ("Ota-onalar — 9-A") — faqat
+    /// tarix ro'yxatida ko'rinadigan matn, hech narsa uni kalit sifatida o'qimaydi;
+    /// <c>audit_logs</c> va <c>school_year_archives</c> — o'tmishning yozuvi.
+    /// </para>
+    /// </summary>
+    private async Task CascadeRenameAsync(string classId, string oldName, string newName)
+    {
+        var students = await db.Students.Where(s => s.ClassName == oldName).ToListAsync();
+        foreach (var s in students) s.ClassName = newName;
+
+        var teachers = await db.Teachers.Where(t => t.HomeroomClass == oldName).ToListAsync();
+        foreach (var t in teachers) t.HomeroomClass = newName;
+
+        var messages = await db.ChatMessages.Where(m => m.ClassName == oldName)
+            .ExecuteUpdateAsync(u => u.SetProperty(m => m.ClassName, newName));
+
+        // Avval "<sinf> — ..." yorliqlari o'qiladi, keyin aniq nom yangilanadi: tartib teskari
+        // bo'lsa, "— " bilan boshlanadigan yangi nom ikkinchi marta almashtirilardi.
+        var broadcastPrefix = oldName + " —";
+        var labelled = await db.Broadcasts.Where(b => b.ClassName.StartsWith(broadcastPrefix)).ToListAsync();
+        foreach (var b in labelled) b.ClassName = newName + b.ClassName[oldName.Length..];
+        var broadcasts = labelled.Count + await db.Broadcasts.Where(b => b.ClassName == oldName)
+            .ExecuteUpdateAsync(u => u.SetProperty(b => b.ClassName, newName));
+
+        var pickups = await db.PickupRequests.Where(r => r.ClassName == oldName)
+            .ExecuteUpdateAsync(u => u.SetProperty(r => r.ClassName, newName));
+
+        // `channel` — birlamchi kalitning qismi, uni joyida o'zgartirib bo'lmaydi: eski qator
+        // o'chadi, yangisi yoziladi. Yangi nomda eskirgan belgi bo'lsa (shu nomli sinf ilgari
+        // o'chirilgan) — to'qnashuv o'rniga KECHROQ o'qilgan vaqt qoladi.
+        var reads = await db.ChatReads.Where(r => r.Channel == oldName || r.Channel == newName).ToListAsync();
+        var existing = reads.Where(r => r.Channel == newName).ToDictionary(r => r.UserId, StringComparer.Ordinal);
+        foreach (var old in reads.Where(r => r.Channel == oldName))
+        {
+            db.ChatReads.Remove(old);
+            if (existing.TryGetValue(old.UserId, out var current))
+            {
+                if (old.ReadAt > current.ReadAt) current.ReadAt = old.ReadAt;
+            }
+            else
+            {
+                db.ChatReads.Add(new ChatRead { UserId = old.UserId, Channel = newName, ReadAt = old.ReadAt });
+            }
+        }
+
+        audit.Record(AuditService.EntityStudentClass, classId, "update",
+            $"Sinf nomi o'zgartirildi: {oldName} → {newName} — {students.Count} ta o'quvchi, " +
+            $"{teachers.Count} ta sinf rahbari, {messages} ta chat xabari, {broadcasts} ta e'lon, " +
+            $"{pickups} ta olib ketish so'rovi yangi nomga o'tkazildi",
+            before: new { Name = oldName },
+            after: new { Name = newName, Students = students.Count, Homeroom = teachers.Count,
+                ChatMessages = messages, Broadcasts = broadcasts, Pickups = pickups });
     }
 
     [HttpDelete("{id}")]
