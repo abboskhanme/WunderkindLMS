@@ -673,10 +673,20 @@ public class StudentPortalController(
                 entries = await db.JournalEntries
                     .Where(e => e.ClassId == cls.Id && e.StudentId == s.Id && e.Date == today && e.Grade != null)
                     .ToListAsync();
+            // G-2: bo'lingan darsda bir (sana, dars, fan) uchun 1- va 2-guruhning ALOHIDA izohi
+            // bor — ToDictionary ular bilan yiqilardi (HTTP 500). O'quvchiga faqat butun sinf
+            // izohi yoki O'Z guruhiniki tegishli; ikkalasi bo'lsa o'z guruhiniki ustun.
+            var subGroup = s.SubGroup;
             var notes = await db.LessonNotes
-                .Where(n => n.ClassId == cls.Id && n.Date == today)
+                .Where(n => n.ClassId == cls.Id && n.Date == today
+                            && (n.SubGroup == 0 || n.SubGroup == subGroup))
                 .ToListAsync();
-            var noteMap = notes.ToDictionary(n => (n.Date, n.Period, n.SubjectId));
+            var noteMap = notes
+                .GroupBy(n => (n.Date, n.Period, n.SubjectId))
+                .ToDictionary(g => g.Key, g => g
+                    .OrderByDescending(n => n.SubGroup == subGroup)
+                    .ThenBy(n => n.Id, StringComparer.Ordinal)
+                    .First());
             var reasons = await db.AbsenceReasons.ToDictionaryAsync(r => r.Id);
 
             todayGrades = entries
