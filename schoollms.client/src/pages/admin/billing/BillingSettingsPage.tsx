@@ -19,10 +19,48 @@
  * Bu forma allaqachon hisoblangan hisob-fakturalarga yoki tasdiq kutayotgan
  * chiqimlarga TEGMAYDI — pastdagi izoh shuni ochiq aytadi (tafsilot:
  * `BillingSettingsService.cs` fayl boshidagi izoh).
+ *
+ * KATALOGLAR RO'YXATI — SAHIFA ENDI KIRISH NUQTASI HAM (2026-09-18)
+ * -------------------------------------------------------------------
+ * Moliya flyoutini mijoz ko'rsatgan EduSchool ekrani bilan solishtirib
+ * qisqartirganda (b499848), sakkizta o'zimiz qo'shgan ekran menyu
+ * yozuvisiz qolishi mumkin. EduSchool bu ekranlarni aynan shu — "Finance
+ * settings" (`/finance-settings`) — sahifasidan beradi (finance-parity.md
+ * §2.14.1). Shu sababli bu sahifa ENDI faqat forma emas, balki o'sha
+ * kataloglarga kirish nuqtasi ham.
+ *
+ * NIMA KIRITILDI VA NEGA (finance-parity.md §2.14):
+ *   - To'lov toifalari, Obunalar, Chegirmalar — §2.14.2 ularni aynan shu
+ *     bo'limning "ours" ekranlari deb ataydi (TRANSACTION_TYPE/SUBSCRIPTION/
+ *     DISCOUNT tablarining o'rnini bosadi).
+ *   - Qarzdor holatlari — §2.14.1 jadvalida `DEBTOR_STATUSES` nomi bilan
+ *     AYNAN shu bo'limda turadi.
+ *   - Chiqimlar — §2.14.1'dagi `PLANNED_EXPENSE` bilan bir xil EMAS (u —
+ *     rejalashtirilgan chiqim SHABLONI, hali qurilmagan, F6.01/P2). Baribir
+ *     shu yerga qo'shildi: mijoz buni kundalik ishlatiladigan ekran deb
+ *     alohida ta'kidladi va boshqa joyda unga munosib uy yo'q — yorliq mos
+ *     kelishidan ko'ra yetib borish muhimroq.
+ *
+ * NIMA KIRITILMADI (qarang: pastdagi uchtasi §2.14'da yo'q — ular katalog
+ * emas, ish jarayoni/hisobot ekranlari):
+ *   - Umumiy (`/admin/finance`) — direktor paneli (P&L, pul oqimi, Z-hisobot,
+ *     qarzdorlar), Moliya bo'limining o'zi, katalog emas. U hali ham AMALLAR
+ *     guruhining oxirida alohida menyu yozuviga ega (`navigation.ts`), shu
+ *     sabab bu yerga qo'shilmadi.
+ *   - Kassa kuni (`/admin/finance/cash-day`) — menyudan mijozning O'ZI
+ *     so'rab OLIB TASHLATGAN (b499848 izohi). Munosib uyi — Umumiy panelidagi
+ *     Z-hisobot/Nomuvofiqlik tablari yonida, sozlamalar emas.
+ *   - Qaytarimlar (`/admin/finance/refunds`) — ikki qavatli tasdiq jarayoni,
+ *     lekin EduSchool §2.14'da REFUND degan tab yo'q; tabiiy uyi
+ *     Tranzaksiyalar/o'quvchi balansi yonida, katalog ro'yxati emas.
+ *   Uchalasi ham `FinancePage.tsx` / `navigation.ts` ga tegishli — ular
+ *   boshqa vazifa doirasida (P&L 2.0 agenti, navigatsiya o'zgartirish
+ *   taqiqlangan) va shu PR qamrovidan tashqarida qoldirildi.
  */
 import { useCallback, useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
-import { Check, ShieldCheck } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import { Check, ChevronRight, Layers, ShieldCheck, Tag, Users, Wallet } from 'lucide-react'
 import type { BillingSettingsInput } from '@/api/services/billingCatalog'
 import { getBillingSettings, updateBillingSettings } from '@/api/services/billingCatalog'
 import { billingErrorMessage } from '@/api/services/billingError'
@@ -32,6 +70,81 @@ import { Input } from '@/components/ui/Input'
 import { formatDate, formatMoney } from '@/lib/utils'
 import { AsyncBlock, BillingGuard, Notice } from './BillingUi'
 import { useBillingAccess } from './access'
+
+/**
+ * Moliya kataloglari — EduSchool'ning "Finance settings" ekrani (§2.14.1)
+ * dagi tablarga mos keladigan bizning sahifalarimiz. Ro'yxat ataylab shu
+ * yerda, `CatalogLinks` komponentida — sahifalarning o'zi (`CategoriesPage`
+ * va h.k.) TEGILMAYDI, faqat ularga havola qo'shiladi (CLAUDE.md: additive).
+ */
+const catalogLinks: Array<{
+  label: string
+  description: string
+  to: string
+  icon: typeof Layers
+}> = [
+  {
+    label: "To'lov toifalari",
+    description: "Maktab, avtobus, yotoqxona kabi to'lov toifalari — kod, nom, faollik.",
+    to: '/admin/billing/categories',
+    icon: Layers,
+  },
+  {
+    label: 'Obunalar',
+    description: "O'quvchi obunalari: kim nimaga yozilgan, summasi va muddati.",
+    to: '/admin/billing/subscriptions',
+    icon: Users,
+  },
+  {
+    label: 'Chegirmalar',
+    description: "Chegirma so'rovlari va direktor tasdig'i navbati.",
+    to: '/admin/billing/discounts',
+    icon: ShieldCheck,
+  },
+  {
+    label: 'Chiqimlar',
+    description: "Chiqim yozish, hujjat biriktirish va tasdiq navbati.",
+    to: '/admin/billing/expenses',
+    icon: Wallet,
+  },
+  {
+    label: 'Qarzdor holatlari',
+    description: "Qarzdorlar bilan ishlash jarayonidagi holatlar katalogi.",
+    to: '/admin/finance/debtor-statuses',
+    icon: Tag,
+  },
+]
+
+function CatalogLinks() {
+  return (
+    <Card className="p-0">
+      <div className="border-b border-slate-100 p-5 pb-4">
+        <h2 className="text-base font-semibold text-slate-800">Kataloglar</h2>
+        <p className="mt-1 text-sm text-slate-400">
+          Moliya bo'limining ma'lumotnomalari — har biri o'z sahifasida ochiladi.
+        </p>
+      </div>
+      <div className="divide-y divide-slate-100">
+        {catalogLinks.map(({ label, description, to, icon: Icon }) => (
+          <Link
+            key={to}
+            to={to}
+            className="flex items-center gap-4 px-5 py-4 transition-colors hover:bg-slate-50"
+          >
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-600">
+              <Icon className="h-5 w-5" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-medium text-slate-800">{label}</p>
+              <p className="truncate text-xs text-slate-400">{description}</p>
+            </div>
+            <ChevronRight className="h-4 w-4 shrink-0 text-slate-300" />
+          </Link>
+        ))}
+      </div>
+    </Card>
+  )
+}
 
 export function BillingSettingsPage() {
   return (
@@ -232,6 +345,8 @@ function BillingSettingsView() {
           )}
         </AsyncBlock>
       </Card>
+
+      <CatalogLinks />
     </div>
   )
 }
