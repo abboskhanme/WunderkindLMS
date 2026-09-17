@@ -84,12 +84,20 @@ export function DebtorsTab() {
   const [className, setClassName] = useState('')
   const [search, setSearch] = useState('')
 
+  // Oy filtri (§2.2 F2.02) — SERVERGA beriladi: "sentyabr qarzi" degani
+  // sentyabr hisob-fakturalarining qoldig'i, ya'ni qatorni ekranda kesib
+  // bo'lmaydi, uni server hisoblashi kerak.
+  const [month, setMonth] = useState('')
+
   const [acting, setActing] = useState<DebtorRow | null>(null)
 
   const { data, loading, error, refetch } = useAsync(
-    () => getDebtors({ onlyOverdue, includeArchived }),
-    [onlyOverdue, includeArchived],
+    () => getDebtors({ onlyOverdue, includeArchived, month: month || undefined }),
+    [onlyOverdue, includeArchived, month],
   )
+
+  /** Oy tanlangan bo'lsa ustun va kartochka nomi shuni aytib tursin. */
+  const debtLabel = month ? `${formatMonthLabel(month)} qarzi` : 'Jami qarz'
 
   // Ish oqimi — ALOHIDA so'rov (§3.5). Sinf filtri serverga BERILMAYDI:
   // qarzdorlar ro'yxati ham to'liq keladi va filtr ekranda qo'llanadi, ya'ni
@@ -143,13 +151,13 @@ export function DebtorsTab() {
 
   const handleExport = () => {
     exportToCsv(
-      'qarzdorlar.csv',
+      month ? `qarzdorlar_${month}.csv` : 'qarzdorlar.csv',
       [
         "O'quvchi",
         'Sinf',
         'Telefon',
         ...columns.map((c) => c.name),
-        'Jami qarz',
+        debtLabel,
         'Kechikish (kun)',
         'Eng eski oy',
         'Holat',
@@ -196,6 +204,20 @@ export function DebtorsTab() {
             </option>
           ))}
         </select>
+        <div className="flex items-center gap-2">
+          <input
+            type="month"
+            value={month}
+            onChange={(e) => setMonth(e.target.value)}
+            aria-label="Hisob-faktura oyi"
+            className={control}
+          />
+          {month && (
+            <Button variant="ghost" className="px-2 py-1" onClick={() => setMonth('')}>
+              Barcha oylar
+            </Button>
+          )}
+        </div>
         <label className="flex items-center gap-2 text-sm text-slate-600">
           <input
             type="checkbox"
@@ -232,7 +254,7 @@ export function DebtorsTab() {
         <div className="space-y-6">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <StatCard
-              label="Jami qarz"
+              label={debtLabel}
               value={formatMoney(totals.debt)}
               icon={Wallet}
               iconBg="bg-red-50"
@@ -286,7 +308,9 @@ export function DebtorsTab() {
             <div className="border-b border-slate-100 p-4">
               <h2 className="font-semibold text-slate-800">Qarzdorlar ro'yxati</h2>
               <p className="text-sm text-slate-400">
-                Jami qarz bo'yicha kamayish tartibida · qizil qator — muddati o'tgan
+                {month
+                  ? `${formatMonthLabel(month)} hisob-fakturalari bo'yicha · qizil qator — muddati o'tgan`
+                  : "Jami qarz bo'yicha kamayish tartibida · qizil qator — muddati o'tgan"}
               </p>
             </div>
             <div className="overflow-x-auto">
@@ -301,7 +325,7 @@ export function DebtorsTab() {
                         {c.name}
                       </th>
                     ))}
-                    <th className="px-4 py-3 text-right">Jami qarz</th>
+                    <th className="px-4 py-3 text-right">{debtLabel}</th>
                     <th className="px-4 py-3 text-right">Kechikish</th>
                     <th className="px-4 py-3">Eng eski oy</th>
                     {/* §3.5 — qarz haqida NIMA QILINGANI */}

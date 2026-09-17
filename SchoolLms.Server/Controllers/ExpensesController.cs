@@ -112,6 +112,24 @@ public class ExpensesController(IExpenseService expenses) : ControllerBase
         return Ok(list);
     }
 
+    /// <summary>
+    /// Ikki qavatli nazorat chegarasi (SPEC §4.5) —
+    /// <c>billing_settings.expense_approval_threshold</c>.
+    ///
+    /// <para>
+    /// Nega alohida endpoint: chegara SOZLAMA, konstanta emas. Interfeys uni
+    /// o'zida takrorlaganida (<c>expenses.ts</c> dagi 5 000 000) sozlama
+    /// o'zgargan kuni ekran chiqim holatini NOTO'G'RI ko'rsatardi — tasdiq
+    /// navbati jimgina bo'shab qolardi. Holatning o'zi ham shu sababli
+    /// serverdan keladi (<see cref="ExpenseDto.Status"/>), bu raqam esa faqat
+    /// formadagi ogohlantirish uchun.
+    /// </para>
+    /// </summary>
+    [HttpGet("approval-policy")]
+    [FinanceRole(FinanceAction.ViewBillingReports)]
+    public async Task<ActionResult<ExpenseApprovalPolicyDto>> ApprovalPolicy(CancellationToken ct) =>
+        Ok(await expenses.ApprovalPolicyAsync(ct));
+
     /// <summary>Bitta chiqim.</summary>
     [HttpGet("{id:guid}")]
     [FinanceRole(FinanceAction.ViewBillingReports)]

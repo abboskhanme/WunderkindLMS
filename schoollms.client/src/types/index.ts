@@ -1542,6 +1542,17 @@ export interface Expense {
   /** Tasdiqlovchi yaratuvchidan BOSHQA shaxs bo'lishi shart (SPEC §4.5) */
   approvedByName?: string
   createdAt: string
+  /**
+   * Server hisoblagan holat: `pending` (tasdiq kutmoqda) · `posted` (jurnalga
+   * tushgan) · `reversed` (storno). Ixtiyoriy — mock ma'lumotda yo'q bo'lishi
+   * mumkin, lekin real serverda HAR DOIM keladi va holatning yagona haqiqiy
+   * manbai shu (`ExpenseService.ExpenseStatus`).
+   */
+  status?: 'pending' | 'posted' | 'reversed'
+  /** Pul qayerdan chiqdi: `cash` yoki `bank`. Tasdiq kutayotganda null. */
+  settlementAccount?: string | null
+  /** Jurnalga qaysi buxgalteriya sanasi bilan tushgani. */
+  postedOn?: string | null
 }
 
 /* ---------- Ledger ---------- */

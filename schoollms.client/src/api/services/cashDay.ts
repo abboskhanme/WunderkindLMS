@@ -83,6 +83,21 @@ export interface CashDayTypeRow {
   amount: number
 }
 
+/**
+ * To'lov usullari kesimi (§2.8 F8.02). FAQAT to'lovlar: chiqimda usul
+ * saqlanmaydi, shuning uchun `outflow` — shu kuni storno qilingan qism.
+ */
+export interface CashDayMethodRow {
+  /** `cash` | `card` | `transfer` | `online` */
+  method: string
+  /** O'zbekcha nom — SERVERDAN. */
+  label: string
+  inflow: number
+  outflow: number
+  amount: number
+  count: number
+}
+
 /** To'lov toifalari kesimi. `amount` belgili: to'lov +, storno −. */
 export interface CashDayCategoryRow {
   categoryId: string
@@ -119,6 +134,8 @@ export interface CashDay {
   movementsTotal: number
   topFive: CashDayMovement[]
   byType: CashDayTypeRow[]
+  /** To'lov usullari kesimi — faqat to'lovlar (§2.8 F8.02). */
+  byMethod: CashDayMethodRow[]
   byCategory: CashDayCategoryRow[]
   allocatedTotal: number
   /** Taqsimlanmagan qism = avans (pul keldi, hisob-fakturaga biriktirilmadi). */

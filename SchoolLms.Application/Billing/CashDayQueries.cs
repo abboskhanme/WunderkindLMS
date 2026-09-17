@@ -123,6 +123,27 @@ public sealed record CashDayMovementDto(
 public sealed record CashDayTypeRowDto(
     string Key, string Account, string Label, bool IsReversal, int Count, decimal Amount);
 
+/// <summary>
+/// Kunning TO'LOV USULLARI kesimi (§2.8 F8.02): naqd, karta, o'tkazma,
+/// onlayn.
+///
+/// <para>
+/// <b>Faqat KIRIM tomoni to'liq.</b> Usul to'lovda saqlanadi, chiqimda esa
+/// umuman yo'q (<c>expenses</c> jadvalida bunday ustun yo'q) — shuning
+/// uchun bu yerda chiqim faqat STORNO qilingan to'lovlardan iborat.
+/// Chiqimning usul kesimini o'ylab topish "pul qayerdan chiqdi" degan
+/// savolga yolg'on javob bo'lardi.
+/// </para>
+/// </summary>
+/// <param name="Method">cash | card | transfer | online.</param>
+/// <param name="Label">O'zbekcha nom — SERVERDAN.</param>
+/// <param name="Inflow">Qabul qilingan pul.</param>
+/// <param name="Outflow">Shu kuni storno qilingan qismi.</param>
+/// <param name="Amount">Inflow − Outflow.</param>
+/// <param name="Count">Jurnal satrlari soni (storno ham sanaladi).</param>
+public sealed record CashDayMethodRowDto(
+    string Method, string Label, decimal Inflow, decimal Outflow, decimal Amount, int Count);
+
 /// <summary>Kunning to'lov toifalari kesimi (nimaga to'landi).</summary>
 /// <param name="CategoryId">Toifa id'si.</param>
 /// <param name="CategoryCode">tuition | bus | dormitory | meals | other …</param>
@@ -171,6 +192,7 @@ public sealed record CashDayShiftDto(
 /// <param name="MovementsTotal">Kundagi harakatlarning HAQIQIY soni.</param>
 /// <param name="TopFive">Kunning eng yirik beshta harakati (modul bo'yicha).</param>
 /// <param name="ByType">Turlar kesimi (qarshi hisob bo'yicha).</param>
+/// <param name="ByMethod">To'lov usullari kesimi (faqat to'lovlar — §2.8 F8.02).</param>
 /// <param name="ByCategory">To'lov toifalari kesimi.</param>
 /// <param name="AllocatedTotal">Toifalarga taqsimlangan summa (= ByCategory yig'indisi).</param>
 /// <param name="UnallocatedTotal">Taqsimlanmagan qism (avans): to'lovlar − taqsimlanganlar.</param>
@@ -184,6 +206,7 @@ public sealed record CashDayDto(
     int MovementsTotal,
     List<CashDayMovementDto> TopFive,
     List<CashDayTypeRowDto> ByType,
+    List<CashDayMethodRowDto> ByMethod,
     List<CashDayCategoryRowDto> ByCategory,
     decimal AllocatedTotal,
     decimal UnallocatedTotal,
@@ -347,6 +370,7 @@ public sealed class CashDayQueries(IAppDbContext db, ICashShiftService shifts)
                 .ThenByDescending(m => m.EntryId)
                 .Take(TopCount)],
             ByType: TypeRows(movements, counterByBatch),
+            ByMethod: MethodRows(movements),
             ByCategory: byCategory,
             AllocatedTotal: allocated,
             UnallocatedTotal: decimal.Round(paymentInflow - allocated, MoneyScale),
@@ -586,6 +610,36 @@ public sealed class CashDayQueries(IAppDbContext db, ICashShiftService shifts)
             .OrderByDescending(r => Math.Abs(r.Amount))
             .ThenBy(r => r.Key, StringComparer.Ordinal)];
     }
+
+    /// <summary>
+    /// To'lov usullari kesimi (§2.8 F8.02). QO'SHIMCHA SO'ROV YO'Q: usul
+    /// harakat qatorida allaqachon bor (<see cref="ToMovement"/> uni to'lov
+    /// yozuvidan oladi), shuning uchun bu yerda faqat guruhlash.
+    ///
+    /// <para>
+    /// Usuli yo'q qatorlar (chiqim, maosh) TUSHMAYDI — ular "noma'lum usul"
+    /// emas, usulsiz harakat; ularni bitta "boshqa" qatoriga yig'ish
+    /// kesimning ma'nosini buzardi. Ular "Turlar bo'yicha" da ko'rinadi.
+    /// </para>
+    /// </summary>
+    private static List<CashDayMethodRowDto> MethodRows(IReadOnlyList<CashDayMovementDto> movements) =>
+        [.. movements
+            .Where(m => m.Method is not null)
+            .GroupBy(m => m.Method!, StringComparer.Ordinal)
+            .Select(g =>
+            {
+                var inflow = g.Where(m => m.Direction == LedgerDirection.Debit).Sum(m => m.Amount);
+                var outflow = g.Where(m => m.Direction == LedgerDirection.Credit).Sum(m => m.Amount);
+                return new CashDayMethodRowDto(
+                    g.Key,
+                    FinanceReportQueries.MethodLabel(g.Key),
+                    decimal.Round(inflow, MoneyScale),
+                    decimal.Round(outflow, MoneyScale),
+                    decimal.Round(inflow - outflow, MoneyScale),
+                    g.Count());
+            })
+            .OrderByDescending(r => r.Amount)
+            .ThenBy(r => r.Method, StringComparer.Ordinal)];
 
     /// <summary>
     /// Qarshi hisobning o'zbekcha nomi. <c>revenue:*</c> va <c>expense:*</c>

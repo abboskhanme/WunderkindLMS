@@ -112,7 +112,7 @@ public sealed class TelegramTeacherController(
     public async Task<ActionResult<TgRosterDto>> Roster(
         [FromQuery] string classId, [FromQuery] string subjectId,
         [FromQuery] int quarter, [FromQuery] string? date, [FromQuery] int period,
-        CancellationToken ct)
+        [FromQuery] int? subGroup, CancellationToken ct)
     {
         var t = await MeAsync(ct);
         if (t is null) return NotFound(new { message = "O'qituvchi topilmadi" });
@@ -120,6 +120,7 @@ public sealed class TelegramTeacherController(
         if (string.IsNullOrWhiteSpace(classId) || string.IsNullOrWhiteSpace(subjectId))
             return BadRequest(new { message = "classId va subjectId kerak" });
         if (period <= 0) return BadRequest(new { message = "period kerak" });
+        if (subGroup is < 0 or > 2) return BadRequest(new { message = "subGroup 0, 1 yoki 2 bo'lishi kerak" });
 
         // Faqat o'zi dars beradigan sinf+fan — `TeacherPortalController.Authorized` bilan bir xil qoida.
         if (!await TeachesAsync(t.Id, classId, subjectId, ct)) return Forbid();
@@ -146,9 +147,19 @@ public sealed class TelegramTeacherController(
         var reasonRows = await db.AbsenceReasons.AsNoTracking().ToListAsync(ct);
         var reasons = reasonRows.ToDictionary(r => r.Id);
 
-        var note = await db.LessonNotes.AsNoTracking().FirstOrDefaultAsync(
-            n => n.ClassId == classId && n.SubjectId == subjectId
-                 && n.Date == day && n.Period == period, ct);
+        // G-2: bo'lingan darsda shu katakda 1- va 2-guruhning ALOHIDA izohi bor. Filtrsiz
+        // `FirstOrDefault` 2-guruh o'qituvchisiga 1-guruhning mavzusini ko'rsatishi mumkin edi.
+        // Guruh: so'rovda aniq berilgan bo'lsa — o'sha; aks holda jadvaldan (o'qituvchining
+        // shu kun va dars raqamidagi O'Z darsi); aniqlab bo'lmasa — butun sinf (0).
+        var sg = subGroup ?? await TeacherSubGroupAsync(t.Id, classId, subjectId, day, period, ct);
+        var note = (await db.LessonNotes.AsNoTracking()
+                .Where(n => n.ClassId == classId && n.SubjectId == subjectId
+                            && n.Date == day && n.Period == period
+                            && (n.SubGroup == 0 || n.SubGroup == sg))
+                .ToListAsync(ct))
+            .OrderByDescending(n => n.SubGroup == sg)
+            .ThenBy(n => n.Id, StringComparer.Ordinal)
+            .FirstOrDefault();
 
         var rows = students.Select(s =>
         {
@@ -299,6 +310,28 @@ public sealed class TelegramTeacherController(
     }
 
     /// <summary>O'qituvchi shu sinfda shu fanni o'qitadimi (jadval shablonlari bo'yicha).</summary>
+    /// <summary>
+    /// O'qituvchining shu sinfdagi, shu fandan, shu hafta kuni va dars raqamidagi darsi qaysi
+    /// guruhga (0/1/2) tegishli. Manba — <see cref="TeachesAsync"/> bilan bir xil (sinfning
+    /// shablonlari). Topilmasa yoki shablonlarda har xil bo'lsa — 0 (butun sinf).
+    /// </summary>
+    private async Task<int> TeacherSubGroupAsync(
+        string teacherId, string classId, string subjectId, string date, int period, CancellationToken ct)
+    {
+        if (!DateOnly.TryParseExact(date, "yyyy-MM-dd", out var d)) return 0;
+        var dayIndex = ((int)d.DayOfWeek + 6) % 7; // Dushanba = 0, ScheduleLesson.Day bilan bir xil
+
+        var groups = await db.ScheduleTemplates.AsNoTracking()
+            .Where(t => t.ClassId == classId)
+            .SelectMany(t => t.Lessons)
+            .Where(l => l.TeacherId == teacherId && l.SubjectId == subjectId
+                        && l.Day == dayIndex && l.Period == period)
+            .Select(l => l.SubGroup)
+            .Distinct()
+            .ToListAsync(ct);
+        return groups.Count == 1 ? groups[0] : 0;
+    }
+
     private async Task<bool> TeachesAsync(string teacherId, string classId, string subjectId, CancellationToken ct)
     {
         var templates = await db.ScheduleTemplates.AsNoTracking().Include(t => t.Lessons)

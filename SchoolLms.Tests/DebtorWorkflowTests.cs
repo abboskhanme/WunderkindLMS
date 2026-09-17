@@ -273,6 +273,51 @@ public class DebtorWorkflowTests(ApiFixture fixture) : IAsyncLifetime
     }
 
     /// <summary>
+    /// <b>Regressiya (§2.2 F2.01).</b> "O'zgartirilmasin" tanlangan amal
+    /// (<c>status_id = null</c>) holatni O'ZGARTIRMAYDI — u shunchaki izoh
+    /// yoki yangi va'da sanasi. Ilgari ro'yxat eng oxirgi amalning
+    /// <c>StatusId</c> sini olardi, ya'ni izoh yozilishi bilan "Holat"
+    /// ustuni JIMGINA bo'shab qolardi va qarzdor "hali hech kim bog'lanmagan"
+    /// bo'lib ko'rinardi.
+    ///
+    /// <para>
+    /// Joriy holat = eng oxirgi tirik amal <b>holati bilan</b>; oxirgi izoh
+    /// va oxirgi amal vaqti esa baribir ENG OXIRGI qatordan keladi.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task Izoh_uchun_yozilgan_amal_joriy_holatni_ochirmaydi()
+    {
+        await using var db = await NewDbAsync("keepstatus");
+        var actorId = await SeedUserAsync(db, Roles.Admin);
+        var studentId = await SeedStudentAsync(db, "Holat Saqlanadi", "8-V");
+
+        var service = new DebtorWorkflowService(db);
+        var promisedStatus = (await service.StatusesAsync())
+            .Single(s => s.Name == "To'lash va'da qilindi");
+
+        await service.AddActionAsync(
+            studentId,
+            new CreateDebtorActionRequest("To'layman dedi", promisedStatus.Id, AppClock.Today.AddDays(6)),
+            actorId);
+
+        // Holat tanlanmagan amal — "O'zgartirilmasin" (DebtorActionModal.tsx).
+        await service.AddActionAsync(
+            studentId, new CreateDebtorActionRequest("Yana bir marta eslatildi", null), actorId);
+
+        var row = Assert.Single(await service.RowsAsync());
+
+        Assert.Equal(promisedStatus.Id, row.StatusId);
+        Assert.Equal("To'lash va'da qilindi", row.StatusName);
+        Assert.Equal("#FF9500", row.StatusColor);
+
+        // Oxirgi amal — baribir eng oxirgi qator.
+        Assert.Equal("Yana bir marta eslatildi", row.LastComment);
+        Assert.Equal(2, row.ActionCount);
+        Assert.Equal(AppClock.Today.AddDays(6), row.PromisedOn);
+    }
+
+    /// <summary>
     /// Oxirgi amal o'chirilsa (yumshoq), joriy holat AVVALGISIGA qaytadi —
     /// aynan shu xossa "holat hisoblanadi" degan qarorning qiymati. Saqlangan
     /// ustun bo'lganida u eski qiymatda qotib qolardi.

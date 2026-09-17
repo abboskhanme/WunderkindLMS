@@ -25,8 +25,11 @@ namespace SchoolLms.Application.Billing;
 //  UCHTA QAT'IY QOIDA
 //  ------------------
 //  1. JORIY HOLAT HISOBLANADI — saqlanmaydi. U eng oxirgi tirik amalning
-//     holati (<see cref="RowsAsync"/>). Alohida ustun bo'lganida u tarix
-//     bilan bir kunda ziddiyatga tushardi (`students.balance`, P1-21).
+//     HOLATI, aniqrog'i: holat tanlangan (`status_id is not null`) eng
+//     oxirgi tirik amalniki (<see cref="RowsAsync"/>). Izoh uchun yozilgan
+//     amal ("O'zgartirilmasin") holatni bekor qilmaydi. Alohida ustun
+//     bo'lganida u tarix bilan bir kunda ziddiyatga tushardi
+//     (`students.balance`, P1-21).
 //  2. AMAL O'CHIRILMAYDI — <c>deleted_at</c> qo'yiladi
 //     (<see cref="DeleteActionAsync"/>). Uch yildan keyin kimdir aynan
 //     "nima va'da qilingan edi" deb qaraydi.
@@ -204,8 +207,10 @@ public sealed partial class DebtorWorkflowService(IAppDbContext db)
     }
 
     /// <summary>
-    /// Yangi amal yozadi. Shu amaldan keyin o'quvchining JORIY holati —
-    /// aynan shu qatorniki (u eng oxirgisi bo'lib qoladi).
+    /// Yangi amal yozadi. Holat tanlangan bo'lsa, shu amaldan keyin
+    /// o'quvchining JORIY holati aynan shu qatorniki bo'ladi; tanlanmasa
+    /// (<c>StatusId = null</c> — "O'zgartirilmasin") avvalgi holat kuchida
+    /// qoladi, qator esa faqat izoh va va'da sanasini yozadi.
     /// </summary>
     /// <param name="studentId">Qaysi o'quvchi (bo'lmasa 404).</param>
     /// <param name="request">Izoh (majburiy), holat va va'da sanasi (ixtiyoriy).</param>
@@ -333,7 +338,13 @@ public sealed partial class DebtorWorkflowService(IAppDbContext db)
     /// ham yo'q.
     /// </para>
     /// <para>
-    /// <b>Uchta so'rov + qoldiq</b>, o'quvchilar soniga bog'liq emas. Sikl
+    /// <b>Joriy holat</b> — holat tanlangan eng oxirgi tirik amaldan;
+    /// <b>oxirgi izoh va vaqt</b> — eng oxirgi tirik amaldan. Ular bir qator
+    /// bo'lishi shart emas: "O'zgartirilmasin" bilan yozilgan izoh holatni
+    /// bekor qilmaydi (§2.2 F2.01).
+    /// </para>
+    /// <para>
+    /// <b>To'rtta so'rov + qoldiq</b>, o'quvchilar soniga bog'liq emas. Sikl
     /// ichida <c>await</c> yo'q.
     /// </para>
     /// </summary>
@@ -343,13 +354,26 @@ public sealed partial class DebtorWorkflowService(IAppDbContext db)
     {
         var live = db.DebtorActions.AsNoTracking().Where(a => a.DeletedAt == null);
 
-        // ---- 1. Eng oxirgi amal (joriy holat shundan) ----
+        // ---- 1. Eng oxirgi amal (oxirgi izoh va sana shundan) ----
         var latestRows = await live
             .Where(a => !live.Any(b => b.StudentId == a.StudentId && b.CreatedAt > a.CreatedAt))
             .ToListAsync(ct);
 
         var latest = Reduce(latestRows);
         if (latest.Count == 0) return [];
+
+        // ---- 1b. Eng oxirgi HOLATLI amal (joriy holat shundan) ----
+        // `status_id = null` — "holat o'zgarmadi" (`Debtors.cs`), ya'ni
+        // izoh uchun yozilgan amal oldingi holatni BEKOR QILMAYDI. Oxirgi
+        // qatorning `StatusId` sini olish esa uni jimgina bo'shatib
+        // yuborardi va qarzdor ro'yxatda "ish boshlanmagan" bo'lib
+        // ko'rinardi (§2.2 F2.01).
+        var statusActions = live.Where(a => a.StatusId != null);
+        var statusRows = await statusActions
+            .Where(a => !statusActions.Any(b => b.StudentId == a.StudentId && b.CreatedAt > a.CreatedAt))
+            .ToListAsync(ct);
+
+        var currentStatus = Reduce(statusRows);
 
         // ---- 2. Eng oxirgi VA'DA (oxirgi amalda va'da bo'lmasligi mumkin) ----
         var promises = live.Where(a => a.PromisedOn != null);
@@ -381,7 +405,7 @@ public sealed partial class DebtorWorkflowService(IAppDbContext db)
         if (students.Count == 0) return [];
 
         // ---- 5. Holat nomlari va mualliflar ----
-        var statusIds = latest.Values.Where(a => a.StatusId != null).Select(a => a.StatusId!.Value)
+        var statusIds = currentStatus.Values.Where(a => a.StatusId != null).Select(a => a.StatusId!.Value)
             .Distinct().ToList();
         var statuses = await db.DebtorStatuses.AsNoTracking()
             .Where(s => statusIds.Contains(s.Id))
@@ -410,14 +434,17 @@ public sealed partial class DebtorWorkflowService(IAppDbContext db)
             .Select(s =>
             {
                 var last = latest[s.Id];
-                var status = last.StatusId is { } id ? statuses.GetValueOrDefault(id) : null;
+                // Holat oxirgi HOLATLI amaldan, izoh va vaqt esa oxirgi
+                // amaldan — ikkovi bir qator bo'lishi SHART emas.
+                var statusAction = currentStatus.GetValueOrDefault(s.Id);
+                var status = statusAction?.StatusId is { } id ? statuses.GetValueOrDefault(id) : null;
                 var promisedOn = promise.TryGetValue(s.Id, out var p) ? p.PromisedOn : null;
 
                 return new DebtorWorkflowRowDto(
                     StudentId: s.Id,
                     FullName: s.FullName,
                     ClassName: s.ClassName,
-                    StatusId: last.StatusId,
+                    StatusId: statusAction?.StatusId,
                     StatusName: status?.Name,
                     StatusColor: status?.Color,
                     LastActionAt: last.CreatedAt,

@@ -370,8 +370,19 @@ public sealed class TelegramParentController(
         if (entries.Count == 0) return (lessons, []);
 
         var subjects = await db.Subjects.ToDictionaryAsync(x => x.Id, x => x.Name, ct);
-        var notes = (await db.LessonNotes.Where(n => n.ClassId == classId && n.Date == today).ToListAsync(ct))
-            .ToDictionary(n => (n.Date, n.Period, n.SubjectId));
+        // G-2: bo'lingan darsda bir (sana, dars, fan) uchun 1- va 2-guruhning ALOHIDA izohi
+        // bor — ToDictionary ular bilan yiqilardi (Mini App bosh sahifasi 500). Farzandga
+        // faqat butun sinf izohi yoki O'Z guruhiniki tegishli; ikkalasi bo'lsa o'z guruhiniki.
+        var subGroup = child.SubGroup;
+        var notes = (await db.LessonNotes
+                .Where(n => n.ClassId == classId && n.Date == today
+                            && (n.SubGroup == 0 || n.SubGroup == subGroup))
+                .ToListAsync(ct))
+            .GroupBy(n => (n.Date, n.Period, n.SubjectId))
+            .ToDictionary(g => g.Key, g => g
+                .OrderByDescending(n => n.SubGroup == subGroup)
+                .ThenBy(n => n.Id, StringComparer.Ordinal)
+                .First());
         var reasons = await db.AbsenceReasons.ToDictionaryAsync(r => r.Id, ct);
 
         var grades = entries

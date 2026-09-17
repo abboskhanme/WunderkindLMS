@@ -90,6 +90,7 @@ export const navByRole: Record<Role, NavItem[]> = {
         // SPEC §4.3: moliya hisobotlari faqat admin va direktorga ochiq —
         // 'finance' ruxsatli xodim (staff) ham bu yerni ko'rmaydi, chunki
         // endpoint unga 403 qaytaradi. Menyuni ham, marshrutni ham yopamiz.
+        { label: 'Moliya hisobotlari', to: '/admin/finance/reports', roles: ['admin', 'superadmin'], group: 'HISOBOTLAR' },
         // Kunlik ekran — pul aylanmasidan oldin turadi, chunki har kuni ochiladi.
         { label: 'Kassa kuni', to: '/admin/finance/cash-day', roles: ['admin', 'superadmin'], group: 'HISOBOTLAR' },
         { label: 'Pul aylanmasi', to: '/admin/finance/money-flow', roles: ['admin', 'superadmin'], group: 'HISOBOTLAR' },

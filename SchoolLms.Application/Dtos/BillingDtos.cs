@@ -293,13 +293,16 @@ public record AllocationSuggestionDto(
 
 /* ---------- Chiqimlar ---------- */
 
-/// <summary>Chiqim. Tasdiqlovchi yaratuvchidan boshqa shaxs bo'lishi shart (§4.5).</summary>
-public record ExpenseDto(
-    Guid Id, DateOnly OnDate, string Category, decimal Amount, string? Note,
-    string CreatedByName, string? ApprovedByName, DateTimeOffset CreatedAt);
-
-/// <summary>Chiqim yozish. `created_by` JWT'dan (§4.4).</summary>
-public record CreateExpenseRequest(DateOnly OnDate, string Category, decimal Amount, string? Note);
+// CHIQIM DTO'LARI BU YERDA EMAS — `SchoolLms.Application/Billing/ExpenseService.cs` da.
+//
+// Bu yerda P1-06 da yozilgan ikkita qoralama bor edi (`ExpenseDto`,
+// `CreateExpenseRequest`) va ular P1-14b da xizmat yozilganda YANGILANMADI:
+// `Method`, `Status`, `SettlementAccount`, `TeacherId` va storno maydonlari
+// faqat `Billing` namespace'idagi nusxada bor. Ikkita bir xil nomli, har xil
+// shaklli shartnoma — chiqimni JO'NATADIGAN kod qaysi biriga qaraganini
+// tasodifga qoldirardi (`AnomalyScanTests` allaqachon to'liq nom bilan
+// yozishga majbur bo'lgan). Ikkalasini ham hech kim ishlatmagani tekshirilib,
+// qoralamalar olib tashlandi; yagona shartnoma — `Billing` dagi.
 
 /* ---------- Ledger (ikki yoqlama jurnal) ---------- */
 
