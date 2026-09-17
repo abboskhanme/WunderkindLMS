@@ -58,8 +58,8 @@ export function ArchiveStudentsModal({ students, onClose, onArchived }: Props) {
   const [blocked, setBlocked] = useState<ArchiveBlockedStudent[]>([])
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- oyna har ochilganda holat tozalanadi (maqsadli)
     if (open) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- oyna har ochilganda holat tozalanadi (maqsadli)
       setReasonId('')
       setNote('')
       setError(null)

@@ -228,6 +228,7 @@ export const navByRole: Record<Role, NavItem[]> = {
       children: [
         { label: "Maktab ma'lumotlari", to: '/admin/settings/school', group: 'UMUMIY' },
         { label: "Yangi o'quv yiliga o'tish", to: '/admin/academic-year', perm: 'academicYear', group: 'UMUMIY' },
+        { label: 'Arxivlash sabablari', to: '/admin/settings/archive-reasons', group: 'UMUMIY' },
         { label: 'Telegram bot', to: '/admin/settings/telegram', group: 'INTEGRATSIYALAR' },
         { label: 'Push (Firebase)', to: '/admin/settings/firebase', group: 'INTEGRATSIYALAR' },
         { label: 'Turniket integratsiya', to: '/admin/settings/turnstile', group: 'INTEGRATSIYALAR' },
