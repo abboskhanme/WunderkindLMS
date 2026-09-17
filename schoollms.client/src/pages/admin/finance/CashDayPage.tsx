@@ -24,12 +24,14 @@
  * "Mening smenam" ekranida ochiq.
  */
 import { useCallback, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   ArrowDownRight,
   ArrowUpRight,
   Banknote,
   CreditCard,
   Landmark,
+  FileBarChart,
   Receipt,
   RefreshCw,
   Undo2,
@@ -69,6 +71,7 @@ const todayStr = new Date().toISOString().slice(0, 10)
 
 export function CashDayPage() {
   const { user } = useAuth()
+  const navigate = useNavigate()
   const allowed = user !== null && ALLOWED_ROLES.includes(user.role)
 
   const [date, setDate] = useState(todayStr)
@@ -137,6 +140,20 @@ export function CashDayPage() {
           />
           <Button variant="ghost" onClick={() => selectDate(todayStr)} disabled={date === todayStr}>
             Bugun
+          </Button>
+          {/*
+            §2.8 F8.01 — kundan hisobotga o'tish. EduSchool'da bu "jurnal"
+            tabi; bizda kunning harakatlari shu sahifaning o'zida turibdi,
+            shuning uchun havola DAVR hisobotiga olib boradi: o'sha kun
+            tanlangan holda toifalar, usullar va grafik ochiladi.
+          */}
+          <Button
+            variant="secondary"
+            onClick={() => navigate(`/admin/finance/reports?from=${date}&to=${date}`)}
+            title="Shu kunni davr hisobotida ochish"
+          >
+            <FileBarChart className="h-4 w-4" />
+            Hisobotda ochish
           </Button>
           <Button
             variant="secondary"
@@ -207,9 +224,10 @@ export function CashDayPage() {
               onShift={shiftMonth}
             />
 
-            {/* --- Turlar va toifalar --- */}
-            <div className="grid gap-4 lg:grid-cols-2">
+            {/* --- Turlar, to'lov usullari va toifalar --- */}
+            <div className="grid gap-4 lg:grid-cols-3">
               <TypesCard day={data} />
+              <MethodsCard day={data} />
               <CategoriesCard day={data} />
             </div>
 
@@ -366,6 +384,50 @@ function TypesCard({ day }: { day: CashDay }) {
                 <td className="px-4 py-2.5 text-slate-600">
                   {row.label}
                   {row.isReversal && <Undo2 className="ml-1.5 inline h-3.5 w-3.5 text-amber-600" />}
+                </td>
+                <td className="px-4 py-2.5 text-right text-slate-400">{row.count} ta</td>
+                <td className={cn('px-4 py-2.5 text-right font-medium', signClass(row.amount))}>
+                  {formatSignedMoney(row.amount)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </Card>
+  )
+}
+
+/**
+ * To'lov usullari kesimi (§2.8 F8.02) — "pul qanday keldi".
+ *
+ * FAQAT to'lovlar: chiqimda usul saqlanmaydi (`expenses` da bunday ustun
+ * yo'q), shuning uchun bu yerdagi chiqim — shu kuni STORNO qilingan qism.
+ * Chiqimning usul kesimini o'ylab topish yolg'on javob bo'lardi; chiqim
+ * "Turlar bo'yicha" da hisob kesimida turibdi.
+ */
+function MethodsCard({ day }: { day: CashDay }) {
+  return (
+    <Card className="p-0">
+      <div className="border-b border-slate-100 p-4">
+        <h2 className="font-semibold text-slate-800">To'lov usullari</h2>
+        <p className="text-sm text-slate-400">Faqat to'lovlar — chiqimda usul saqlanmaydi</p>
+      </div>
+
+      {day.byMethod.length === 0 ? (
+        <p className="p-6 text-center text-sm text-slate-400">Bu kunda to'lov bo'lmagan.</p>
+      ) : (
+        <table className="w-full text-left text-sm">
+          <tbody className="divide-y divide-slate-100">
+            {day.byMethod.map((row) => (
+              <tr key={row.method}>
+                <td className="px-4 py-2.5 text-slate-600">
+                  {row.label}
+                  {row.outflow !== 0 && (
+                    <span className="ml-1.5 text-xs text-amber-600">
+                      (storno {formatMoney(row.outflow)})
+                    </span>
+                  )}
                 </td>
                 <td className="px-4 py-2.5 text-right text-slate-400">{row.count} ta</td>
                 <td className={cn('px-4 py-2.5 text-right font-medium', signClass(row.amount))}>

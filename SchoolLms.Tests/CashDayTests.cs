@@ -140,7 +140,7 @@ public class CashDayTests(ApiFixture fixture) : IAsyncLifetime
         foreach (var field in new[]
                  {
                      "date", "total", "accounts", "movements", "movementsTruncated",
-                     "movementsTotal", "topFive", "byType", "byCategory",
+                     "movementsTotal", "topFive", "byType", "byMethod", "byCategory",
                      "allocatedTotal", "unallocatedTotal", "openShifts",
                  })
             Assert.True(root.TryGetProperty(field, out _), $"'{field}' maydoni yo'q.");
@@ -473,6 +473,64 @@ public class CashDayTests(ApiFixture fixture) : IAsyncLifetime
 
         // Yig'indi kunning sof natijasiga TENG — kesim bo'lakni yo'qotmasin.
         Assert.Equal(result.Total.Net, result.ByType.Sum(r => r.Amount));
+    }
+
+    /// <summary>
+    /// To'lov usullari kesimi (docs/modules/finance-parity.md §2.8 F8.02):
+    /// "pul qanday keldi" — naqd, karta, o'tkazma, onlayn.
+    ///
+    /// <para>
+    /// <b>FAQAT to'lovlar.</b> Chiqimda usul saqlanmaydi (<c>expenses</c> da
+    /// bunday ustun yo'q), shuning uchun chiqim bu kesimga UMUMAN tushmaydi
+    /// va kesim yig'indisi kunning sof natijasiga teng emas — bu ataylab.
+    /// Storno esa o'z usulida MINUS bilan ko'rinadi.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task Usullar_kesimi_faqat_tolovlarni_sanaydi()
+    {
+        await using var db = await NewCashDayDbAsync("methods");
+        var ledger = new LedgerService(db);
+        var cashierId = await SeedUserAsync(db, Roles.Cashier);
+        var approverId = await SeedUserAsync(db, Roles.Admin);
+        var shiftId = await SeedShiftAsync(db, cashierId, openingFloat: 0m);
+
+        // Usul `payments` qatorida saqlanadi, shuning uchun bu test HAQIQIY
+        // to'lov qatorlarini yozadi (jurnal satrining o'zi yetarli emas).
+        var studentId = Guid.NewGuid().ToString();
+        db.Students.Add(NewStudent(studentId, "Usul O'quvchisi", "3-B"));
+        await db.SaveChangesAsync();
+
+        var date = AppClock.Today;
+
+        await CashPaymentAsync(ledger, cashierId, date, 700_000m, PaymentMethod.Cash,
+            db, shiftId, studentId);
+        await CashPaymentAsync(ledger, cashierId, date, 300_000m, PaymentMethod.Card,
+            db, shiftId, studentId);
+        var (_, anchorId) = await CashPaymentAsync(ledger, cashierId, date, 200_000m, PaymentMethod.Cash,
+            db, shiftId, studentId);
+        await ledger.ReverseAsync(anchorId, "Xato chek", approverId);
+
+        // Chiqim — usulsiz, kesimga tushmaydi.
+        await ExpenseAsync(db, ledger, approverId, date, "rent", 900_000m, PaymentMethod.Cash);
+
+        var result = await QueriesFor(db).DayAsync(date);
+
+        var cash = result.ByMethod.Single(r => r.Method == PaymentMethod.Cash);
+        Assert.Equal("Naqd", cash.Label);
+        Assert.Equal(900_000m, cash.Inflow);      // 700 000 + 200 000
+        Assert.Equal(200_000m, cash.Outflow);     // storno
+        Assert.Equal(700_000m, cash.Amount);
+        Assert.Equal(3, cash.Count);
+
+        var card = result.ByMethod.Single(r => r.Method == PaymentMethod.Card);
+        Assert.Equal(300_000m, card.Amount);
+        Assert.Equal("Karta", card.Label);
+
+        // Chiqim bu kesimda YO'Q, lekin turlar kesimida bor.
+        Assert.Equal(2, result.ByMethod.Count);
+        Assert.Contains(result.ByType, r => r.Account == Accounts.ExpenseRent);
+        Assert.NotEqual(result.Total.Net, result.ByMethod.Sum(r => r.Amount));
     }
 
     /// <summary>

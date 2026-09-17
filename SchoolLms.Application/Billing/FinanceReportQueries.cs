@@ -159,8 +159,19 @@ public record CashFlowDto(
 /// saqlangan qoldiq ustuniga murojaat YO'Q, yozish YO'Q, sikl ichida
 /// so'rov YO'Q.
 /// </para>
+/// <para>
+/// <b>Klass <c>partial</c>, chunki hisobot oilasi o'sdi</b> (§2.4, §2.5,
+/// §2.7): yil × oy P&amp;L matritsasi, katakcha ortidagi jurnal satrlari,
+/// toifalar kesimidagi pul oqimi va kunlik panel —
+/// <c>FinanceReportQueries.ProfitLossMatrix.cs</c> va
+/// <c>FinanceReportQueries.CashStatements.cs</c> da. Ular ALOHIDA klass
+/// emas, chunki daromad/chiqim va qarz ta'riflari (
+/// <see cref="Lines"/>, <see cref="Net"/>, <see cref="EffectiveAllocations"/>)
+/// shu yerda turibdi: ikkinchi klass ikkinchi ta'rifni tug'dirardi — aynan
+/// fayl boshidagi ogohlantirish.
+/// </para>
 /// </summary>
-public sealed class FinanceReportQueries(IAppDbContext db)
+public sealed partial class FinanceReportQueries(IAppDbContext db)
 {
     /// <summary>Daromad hisoblari shu prefiks bilan boshlanadi (SPEC §3.7).</summary>
     public const string RevenuePrefix = "revenue:";
