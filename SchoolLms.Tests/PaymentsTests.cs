@@ -635,6 +635,77 @@ public class PaymentsTests(ApiFixture fixture)
     }
 
     // -----------------------------------------------------------------
+    //  DEFEKT (topilgan va tuzatilgan shu vazifada) — "bugungi kun" filtri
+    //  Toshkentda soat 23:00–24:00 orasidagi to'lovni tashlab yubormasin
+    // -----------------------------------------------------------------
+
+    /// <summary>
+    /// BELGILANGAN (fixed) lahzada sinaydi — <c>AppClock.Today</c>/<c>Now</c>
+    /// ga EMAS, shuning uchun bu test kun vaqtiga qarab TUN bo'yicha o'tib-
+    /// tushib turmaydi (aynan shunday xato topilgan edi).
+    ///
+    /// <para>
+    /// <b>Ildiz sabab.</b> <c>PaymentService.SchoolOffset</c> ilgari
+    /// <c>AppClock.ToLocal(DateTimeOffset.UnixEpoch) - DateTimeOffset.UnixEpoch.UtcDateTime</c>
+    /// edi — ofset <b>1970-yil</b> uchun hisoblanardi. <c>Asia/Tashkent</c>
+    /// tzdata'sida 1970-yilgi rasmiy siljish <b>+06:00</b> (Sovet davri),
+    /// hozirgisi (1992-yildan keyin) esa <b>+05:00</b>. Natija: "bugungi kun"
+    /// chegarasi haqiqiydan BIR SOAT ERTA yopilardi — Toshkentda soat
+    /// 23:00–24:00 orasida qabul qilingan HAR BIR to'lov shu kunning
+    /// filtridan tushib qolardi (kassa kuni, Z-hisobot va smena yopilishi
+    /// hisob-kitobiga ham ta'sir qilardi — hammasi shu chegaraga tayanadi).
+    /// </para>
+    /// <para>
+    /// 2026-03-15 (Toshkent) kalendar kuni TO'G'RI holatda UTC
+    /// <c>[2026-03-14T19:00, 2026-03-15T19:00)</c> oralig'i. To'lov AYNAN
+    /// <c>2026-03-15T18:30:00Z</c> da (= Toshkentda 2026-03-15 23:30) qabul
+    /// qilingan deb BELGILANADI (server emas, test o'zi yozadi — bu
+    /// <c>PaymentService.AcceptAsync</c> ning shaxsni server aniqlaydi degan
+    /// qoidasini buzmaydi, chunki bu yerda xizmat emas, to'g'ridan-to'g'ri
+    /// baza sinaladi). Buzuq chegara bilan bu 18:00Z da yopilib to'lov
+    /// CHETDA qolardi; to'g'ri chegara bilan 19:00Z gacha ochiq — to'lov
+    /// ICHKARIDA.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task Kechqurun_qabul_qilingan_tolov_bugungi_filtrdan_tushib_qolmaydi()
+    {
+        var studentId = await NewStudentAsync();
+        var (cashier, client) = await ActorAsync(Roles.Cashier);
+        var shiftId = await OpenShiftAsync(cashier.Id);
+
+        var tashkentDay = new DateOnly(2026, 3, 15);
+        var pinnedReceivedAt = new DateTimeOffset(2026, 3, 15, 18, 30, 0, TimeSpan.Zero);
+
+        await using var db = NewDb();
+        var payment = new Payment
+        {
+            ReceiptNo = 1,
+            StudentId = studentId,
+            Amount = 250_000m,
+            Method = PaymentMethod.Cash,
+            CashShiftId = shiftId,
+            CashierId = cashier.Id,
+            ReceivedAt = pinnedReceivedAt,
+        };
+        db.Payments.Add(payment);
+        await db.SaveChangesAsync();
+
+        var sameDay = await client.GetFromJsonAsync<List<PaymentDto>>(
+            $"/api/billing/payments?studentId={studentId}"
+            + $"&from={tashkentDay:yyyy-MM-dd}&to={tashkentDay:yyyy-MM-dd}");
+        Assert.Contains(sameDay!, p => p.Id == payment.Id);
+
+        // Chegara IKKI TOMONDAN ham to'g'ri bo'lishi shart: keyingi Toshkent
+        // kuniga tushib QOLMAYDI.
+        var nextDay = tashkentDay.AddDays(1);
+        var wrongDay = await client.GetFromJsonAsync<List<PaymentDto>>(
+            $"/api/billing/payments?studentId={studentId}"
+            + $"&from={nextDay:yyyy-MM-dd}&to={nextDay:yyyy-MM-dd}");
+        Assert.DoesNotContain(wrongDay!, p => p.Id == payment.Id);
+    }
+
+    // -----------------------------------------------------------------
     //  SPEC §4.1 / §4.3 — controllerning o'zi
     // -----------------------------------------------------------------
 

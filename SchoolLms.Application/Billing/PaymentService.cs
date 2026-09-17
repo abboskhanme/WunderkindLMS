@@ -134,12 +134,36 @@ public sealed class PaymentService(
     private const string ReceiptUniqueIndex = "ix_payments_cash_shift_id_receipt_no";
 
     /// <summary>
-    /// Maktab mintaqasi ofseti (UTC+5, yozgi vaqt yo'q) — <c>received_at</c>
-    /// (<c>timestamptz</c>) ni KALENDAR KUNI bo'yicha filtrlash uchun.
-    /// <see cref="AppClock"/> dan hisoblab olinadi, qo'lda "+5" yozilmaydi.
+    /// Maktab mintaqasi ofseti (JORIY qoida bo'yicha — Toshkentda 1992-yildan
+    /// beri doim UTC+5, yozgi vaqt yo'q) — <c>received_at</c> (<c>timestamptz</c>)
+    /// ni KALENDAR KUNI bo'yicha filtrlash uchun. <see cref="AppClock"/> dan
+    /// hisoblab olinadi, qo'lda "+5" yozilmaydi.
+    ///
+    /// <para>
+    /// <b>DEFEKT (topilgan va tuzatilgan shu vazifada).</b> Avvalgi kod
+    /// <c>AppClock.ToLocal(DateTimeOffset.UnixEpoch) - DateTimeOffset.UnixEpoch.UtcDateTime</c>
+    /// edi — ya'ni ofset <b>1970-yil</b> uchun hisoblanardi. <c>Asia/Tashkent</c>
+    /// tzdata'sida 1970-yilgi rasmiy siljish <b>+06:00</b> (Sovet davri "dekret
+    /// vaqti"), hozirgi (1992-yildan keyingi) siljish esa <b>+05:00</b> — ikkisi
+    /// FARQ QILADI. Natija: "bugungi kun" chegarasi HAQIQIYDAN 1 soat ERTA
+    /// yopilardi, ya'ni Toshkentda soat 23:00–24:00 orasida qabul qilingan HAR
+    /// BIR to'lov kunlik filtrdan (va demak — kassa kuni, Z-hisobot, smena
+    /// yopilishi hisob-kitobidan) TUSHIB QOLARDI. Endi ofset HOZIRGI lahzadan
+    /// hisoblanadi — tarixiy sana emas, shuning uchun tzdata'ning o'tmishdagi
+    /// o'zgarishlariga bog'liq emas.
+    /// </para>
     /// </summary>
-    private static readonly TimeSpan SchoolOffset =
-        AppClock.ToLocal(DateTimeOffset.UnixEpoch) - DateTimeOffset.UnixEpoch.UtcDateTime;
+    private static TimeSpan SchoolOffset()
+    {
+        var instant = AppClock.NowInstant;
+        // Bitta LAHZANING o'zidan ikki tomonlama o'qiladi (ikkita ALOHIDA "hozir"
+        // chaqiruvi EMAS) — shuning uchun ikkalasi orasida vaqt o'tishidan
+        // paydo bo'ladigan mikrosoniyalik "jitter" yo'q. Yaxlitlash esa
+        // DateTimeOffset konstruktori talab qiladigan "butun daqiqa" shartini
+        // ta'minlaydi (haqiqiy qiymat baribir aniq +05:00).
+        var minutes = Math.Round((AppClock.ToLocal(instant) - instant.UtcDateTime).TotalMinutes);
+        return TimeSpan.FromMinutes(minutes);
+    }
 
     // -----------------------------------------------------------------
     //  To'lov qabul qilish
@@ -739,7 +763,7 @@ public sealed class PaymentService(
 
     /// <summary>Maktab kunining boshlanish lahzasi (kalendar kuni bo'yicha filtr uchun).</summary>
     private static DateTimeOffset StartOfSchoolDay(DateOnly day) =>
-        new DateTimeOffset(day.ToDateTime(TimeOnly.MinValue), SchoolOffset).ToUniversalTime();
+        new DateTimeOffset(day.ToDateTime(TimeOnly.MinValue), SchoolOffset()).ToUniversalTime();
 
     private static string? Trim(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : value.Trim();
