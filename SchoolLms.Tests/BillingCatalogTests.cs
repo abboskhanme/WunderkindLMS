@@ -44,8 +44,11 @@ public class BillingCatalogTests(ApiFixture fixture)
 {
     private AppDbContext NewDb() => PostgresFixture.NewContext(fixture.Database.OwnerConnectionString);
 
+    // F1.06: SubscriptionService endi IInvoiceService ga ham tayanadi
+    // (PreviewEndAsync, sof o'qish) — InvoiceService ning haqiqiy nusxasi
+    // beriladi, InvoiceServiceTests.ServiceFor bilan bir xil naqsh.
     private static SubscriptionService Subscriptions(AppDbContext db) =>
-        new(db, new AuditService(db, new HttpContextAccessor()));
+        new(db, new AuditService(db, new HttpContextAccessor()), new InvoiceService(db, new LedgerService(db)));
 
     private static DiscountService Discounts(AppDbContext db) =>
         new(db, new AuditService(db, new HttpContextAccessor()));

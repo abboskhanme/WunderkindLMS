@@ -119,6 +119,15 @@ public sealed class PaymentService(
     private readonly ActorNames actors = new(db);
 
     /// <summary>
+    /// F1.10 — xom SQL uchun kontekstning o'zi (advisory lock EF LINQ bilan
+    /// ifodalanmaydi). <see cref="InvoiceService"/> va <see cref="ExpenseService"/>
+    /// dagi bilan bir xil yechim.
+    /// </summary>
+    private readonly DbContext ef = db as DbContext ?? throw new ArgumentException(
+        $"{nameof(PaymentService)} EF kontekstini talab qiladi: taqsimot qulfi xom SQL "
+        + "orqali qo'yiladi. Berilgan implementatsiya DbContext emas.", nameof(db));
+
+    /// <summary>
     /// Ro'yxat so'rovining yuqori chegarasi. Kassa oynasi va o'quvchi
     /// kartochkasi doim tor filtr bilan keladi; chegarasiz so'rov esa bir kun
     /// 50 000 qatorni xotiraga tortib, 3 GB serverni yiqitadi. Hisobot kerak
@@ -134,12 +143,43 @@ public sealed class PaymentService(
     private const string ReceiptUniqueIndex = "ix_payments_cash_shift_id_receipt_no";
 
     /// <summary>
-    /// Maktab mintaqasi ofseti (UTC+5, yozgi vaqt yo'q) — <c>received_at</c>
-    /// (<c>timestamptz</c>) ni KALENDAR KUNI bo'yicha filtrlash uchun.
-    /// <see cref="AppClock"/> dan hisoblab olinadi, qo'lda "+5" yozilmaydi.
+    /// F1.10 (docs/modules/finance-parity.md §2.1) — hisob-faktura darajasidagi
+    /// advisory lock. Kalit <see cref="InvoiceService.VoidLockKey"/> dan: bekor
+    /// qilish va taqsimlash BIR XIL qulfda yurishi shart (o'sha metoddagi izoh).
     /// </summary>
-    private static readonly TimeSpan SchoolOffset =
-        AppClock.ToLocal(DateTimeOffset.UnixEpoch) - DateTimeOffset.UnixEpoch.UtcDateTime;
+    private const string InvoiceLockSql = "SELECT pg_advisory_xact_lock(hashtextextended({0}::text, 0))";
+
+    /// <summary>
+    /// Maktab mintaqasi ofseti (JORIY qoida bo'yicha — Toshkentda 1992-yildan
+    /// beri doim UTC+5, yozgi vaqt yo'q) — <c>received_at</c> (<c>timestamptz</c>)
+    /// ni KALENDAR KUNI bo'yicha filtrlash uchun. <see cref="AppClock"/> dan
+    /// hisoblab olinadi, qo'lda "+5" yozilmaydi.
+    ///
+    /// <para>
+    /// <b>DEFEKT (topilgan va tuzatilgan shu vazifada).</b> Avvalgi kod
+    /// <c>AppClock.ToLocal(DateTimeOffset.UnixEpoch) - DateTimeOffset.UnixEpoch.UtcDateTime</c>
+    /// edi — ya'ni ofset <b>1970-yil</b> uchun hisoblanardi. <c>Asia/Tashkent</c>
+    /// tzdata'sida 1970-yilgi rasmiy siljish <b>+06:00</b> (Sovet davri "dekret
+    /// vaqti"), hozirgi (1992-yildan keyingi) siljish esa <b>+05:00</b> — ikkisi
+    /// FARQ QILADI. Natija: "bugungi kun" chegarasi HAQIQIYDAN 1 soat ERTA
+    /// yopilardi, ya'ni Toshkentda soat 23:00–24:00 orasida qabul qilingan HAR
+    /// BIR to'lov kunlik filtrdan (va demak — kassa kuni, Z-hisobot, smena
+    /// yopilishi hisob-kitobidan) TUSHIB QOLARDI. Endi ofset HOZIRGI lahzadan
+    /// hisoblanadi — tarixiy sana emas, shuning uchun tzdata'ning o'tmishdagi
+    /// o'zgarishlariga bog'liq emas.
+    /// </para>
+    /// </summary>
+    private static TimeSpan SchoolOffset()
+    {
+        var instant = AppClock.NowInstant;
+        // Bitta LAHZANING o'zidan ikki tomonlama o'qiladi (ikkita ALOHIDA "hozir"
+        // chaqiruvi EMAS) — shuning uchun ikkalasi orasida vaqt o'tishidan
+        // paydo bo'ladigan mikrosoniyalik "jitter" yo'q. Yaxlitlash esa
+        // DateTimeOffset konstruktori talab qiladigan "butun daqiqa" shartini
+        // ta'minlaydi (haqiqiy qiymat baribir aniq +05:00).
+        var minutes = Math.Round((AppClock.ToLocal(instant) - instant.UtcDateTime).TotalMinutes);
+        return TimeSpan.FromMinutes(minutes);
+    }
 
     // -----------------------------------------------------------------
     //  To'lov qabul qilish
@@ -205,14 +245,25 @@ public sealed class PaymentService(
         // ---- 4. BITTA TRANZAKSIYA ----
         await using var tx = await db.BeginTransactionAsync(ct);
 
-        // Hisob-fakturalar TRANZAKSIYA ICHIDA o'qiladi — qoldiqni yozuvdan
-        // imkon qadar yaqin nuqtada tekshirish uchun. Qator qulfi qo'yilmaydi:
-        // `SELECT ... FOR UPDATE` uchun EF'da xom SQL kerak bo'lardi va
-        // Application qatlamida Relational paketi yo'q. Ya'ni bir xil
-        // hisob-fakturaga BIR VAQTDA ikki kassa to'lov yozsa, ikkalasi ham
-        // o'tib ketishi mumkin — natijasi "ortiqcha to'langan hisob-faktura",
-        // storno bilan tuzatiladigan holat. To'lov summasi bo'yicha invariant
-        // esa qat'iy: uni bazadagi trigger qo'riqlaydi.
+        // F1.10 (docs/modules/finance-parity.md §2.1) — HAR BIR taqsimlanadigan
+        // hisob-fakturaga o'qishdan OLDIN advisory lock (pg_advisory_xact_lock,
+        // kalit InvoiceService.VoidLockKey — bekor qilish bilan BIR XIL qulf,
+        // qarang o'sha metoddagi izoh). Buni oldin YO'Q edi: ikkita kassa BIR
+        // VAQTDA bir xil hisob-fakturaga to'lov yozsa, ikkalasi ham "qoldiq
+        // yetarli" holatini ko'rib, ikkalasi ham o'tib ketishi mumkin edi —
+        // natija "ortiqcha to'langan hisob-faktura" (qoldiq manfiy), buni
+        // faqat storno bilan orqaga qaytarish mumkin edi. Endi: ikkinchi
+        // urinish shu yerda NAVBATDA turadi, birinchisi commit bo'lgach
+        // QAYTA o'qiydi (READ COMMITTED) va qoldiqni ALLAQACHON kamaygan
+        // holda ko'radi — ortiqcha taqsimot ANIQ "allocation_exceeds_invoice"
+        // xatosi bilan RAD ETILADI, jimgina o'tib ketmaydi. Doimiy tartibda
+        // (id bo'yicha saralab) qulflanadi — ikkita to'lov bir xil ikkita
+        // hisob-fakturaga TESKARI tartibda taqsimlasa ham qarama-qarshi
+        // (deadlock) holat bo'lmasin.
+        foreach (var invoiceId in invoiceIds.OrderBy(id => id))
+            await ef.Database.ExecuteSqlRawAsync(InvoiceLockSql, [InvoiceService.VoidLockKey(invoiceId)], ct);
+
+        // Qulf OSTIDA qayta o'qiladi — yuqoridagi izohga qarang.
         // Kuzatiladigan (tracked) holda o'qiymiz: status keyin shu obyektlarda yangilanadi.
         var invoices = await db.Invoices.Where(i => invoiceIds.Contains(i.Id)).ToListAsync(ct);
         var paidBefore = await PaidByInvoiceAsync(invoiceIds, ct);
@@ -739,7 +790,7 @@ public sealed class PaymentService(
 
     /// <summary>Maktab kunining boshlanish lahzasi (kalendar kuni bo'yicha filtr uchun).</summary>
     private static DateTimeOffset StartOfSchoolDay(DateOnly day) =>
-        new DateTimeOffset(day.ToDateTime(TimeOnly.MinValue), SchoolOffset).ToUniversalTime();
+        new DateTimeOffset(day.ToDateTime(TimeOnly.MinValue), SchoolOffset()).ToUniversalTime();
 
     private static string? Trim(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : value.Trim();

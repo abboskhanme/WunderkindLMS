@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.DependencyInjection;
 using SchoolLms.Application.Billing;
 using SchoolLms.Application.Dtos.Billing;
 using SchoolLms.Domain;
@@ -50,7 +51,15 @@ public sealed record PaymentErrorDto(string Code, string Message);
 [ApiController]
 [Authorize]
 [Produces("application/json")]
-public class PaymentsController(IPaymentService payments) : ControllerBase
+public class PaymentsController(
+    IPaymentService payments,
+    // F1.07 (SPEC §4.7) — chekni fon vazifasida Telegramga yuborish uchun.
+    // IReceiptService BEVOSITA emas: u IPaymentService ga bog'liq (ReceiptService
+    // konstruktori), ya'ni PaymentService o'zi IReceiptService'ga bog'lansa DOIRAVIY
+    // bog'liqlik (circular DI) hosil bo'lardi. Shu sabab yuborish PaymentService.cs
+    // emas, shu yerda — controller ikkalasiga ham bog'lanishi mumkin.
+    IServiceScopeFactory scopeFactory,
+    ILogger<PaymentsController> logger) : ControllerBase
 {
     /// <summary>
     /// SPEC §4.4 — SERVER ANIQLAYDIGAN SHAXS. Bu nomlar so'rov tanasida
@@ -111,12 +120,56 @@ public class PaymentsController(IPaymentService payments) : ControllerBase
         {
             var payment = await payments.AcceptAsync(
                 request, FinanceActor.RequireUserId(User), ct);
+
+            SendReceiptInBackground(payment.Id);
+
             return Ok(payment);
         }
         catch (PaymentException ex)
         {
             return Fail(ex);
         }
+    }
+
+    /// <summary>
+    /// F1.07 (SPEC §4.7) — "receipts … are also sent to the guardian's Telegram
+    /// account" avtomatik, qo'lda bosilmasdan. <b>Fire-and-forget:</b> to'lov
+    /// ALLAQACHON qabul qilingan (yuqorida, commit qilingan) — Telegram
+    /// sekin bo'lsa ham (ikki urinish, orasida 2 soniya, qarang
+    /// <see cref="ReceiptService"/>) kassir shuncha kutib turmasin. Qo'lda
+    /// "qayta yuborish" tugmasi (<see cref="ReceiptsController"/>) o'zgarishsiz
+    /// qoladi — bu shunchaki BIRINCHI urinishni avtomatlashtiradi.
+    ///
+    /// <para>
+    /// <b>ALOHIDA DI skopi ataylab.</b> Bu so'rov skopi (demak — shu
+    /// <c>IAppDbContext</c>) javob qaytgach yopiladi, fon vazifasi esa undan
+    /// KEYIN ham ishlashi kerak — shuning uchun <see cref="IServiceScopeFactory"/>
+    /// bilan MUSTAQIL skop ochiladi va <see cref="CancellationToken.None"/>
+    /// ishlatiladi (so'rovning o'z <c>ct</c>'si javob yuborilgach bekor
+    /// bo'ladi). <c>ReceiptService.SendToGuardianAsync</c> ning o'zi HECH
+    /// QACHON istisno tashlamaydi (fayl boshidagi izoh), lekin skop yoki DI
+    /// yechimining o'zi yiqilib qolsa ham to'lov natijasiga (allaqachon
+    /// <c>Ok(payment)</c> qaytgan) ta'sir qilmasin deb baribir tashqi
+    /// <c>try/catch</c> bilan o'raladi — faqat jurnalga yoziladi.
+    /// </para>
+    /// </summary>
+    private void SendReceiptInBackground(Guid paymentId)
+    {
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await using var scope = scopeFactory.CreateAsyncScope();
+                var receipts = scope.ServiceProvider.GetRequiredService<IReceiptService>();
+                await receipts.SendToGuardianAsync(paymentId, CancellationToken.None);
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex,
+                    "Chek {PaymentId}: avtomatik yuborish fon vazifasi yiqildi. "
+                    + "To'lov kuchda — qo'lda qayta yuborish mumkin.", paymentId);
+            }
+        });
     }
 
     /// <summary>

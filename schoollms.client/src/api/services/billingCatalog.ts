@@ -22,7 +22,7 @@
  * interfeys avtomatik ravishda ism solishtirishdan id solishtirishga o'tadi;
  * qarang `pages/admin/billing/dualControl.ts`.
  */
-import type { BillingSettings, Discount, FeeCategory, StudentSubscription } from '@/types'
+import type { BillingSettings, Discount, FeeCategory, Invoice, StudentSubscription } from '@/types'
 import { api } from '../client'
 
 const BASE = '/admin/billing'
@@ -131,6 +131,36 @@ export async function updateSubscription(
 export async function endSubscription(id: string, endsOn: string): Promise<SubscriptionRecord> {
   const { data } = await api.post<SubscriptionRecord>(`${BASE}/subscriptions/${id}/end`, { endsOn })
   return data
+}
+
+/**
+ * F1.06 (docs/modules/finance-parity.md §2.1) — obunani yopishdan OLDIN:
+ * `endsOn` oyidan KEYINGI oylarga allaqachon hisoblangan (hali bekor
+ * qilinmagan) hisob-fakturalar. Tugash oyining o'zi bu ro'yxatda YO'Q — u
+ * proratsiya qilinmay, to'liq qarz bo'lib qoladi (bizning qoidamiz).
+ *
+ * Hech narsa yozmaydi — sof o'qish. Tanlangan qatorlarni bekor qilish uchun
+ * `voidInvoice` (`@/api/services/invoices`) har biriga ALOHIDA chaqiriladi;
+ * "bekor qilish mumkinmi" degan javob esa yangi maydon emas, mavjud
+ * `canVoid(invoice)` orqali (o'sha faylda).
+ */
+export async function previewEndSubscription(
+  id: string,
+  endsOn: string,
+): Promise<EndSubscriptionPreview> {
+  const { data } = await api.post<EndSubscriptionPreview>(
+    `${BASE}/subscriptions/${id}/end/preview`,
+    { endsOn },
+  )
+  return data
+}
+
+export interface EndSubscriptionPreview {
+  subscriptionId: string
+  studentName: string
+  categoryName: string
+  endsOn: string
+  futureInvoices: Invoice[]
 }
 
 /* ---------- Chegirmalar (SPEC §8.1 Q5 — chegara YO'Q) ---------- */

@@ -26,6 +26,7 @@ import {
   updateSubscription,
 } from '@/api/services/billingCatalog'
 import { billingErrorMessage } from '@/api/services/billingError'
+import { voidInvoice } from '@/api/services/invoices'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Select } from '@/components/ui/Input'
@@ -153,13 +154,36 @@ function SubscriptionsView() {
     }
   }
 
-  const handleEnd = async (id: string, endsOn: string) => {
+  /**
+   * F1.06 — obunani yopish + (agar tanlangan bo'lsa) kelajakdagi oylarni
+   * bekor qilish. Ikkalasi ATAYLAB ikkita mustaqil server yo'li: avval har
+   * bir tanlangan hisob-faktura `voidInvoice` bilan KETMA-KET bekor
+   * qilinadi (har biri o'zining advisory qulfi va ikki qavatli nazorati
+   * bilan — F10.02, `InvoiceService.VoidAsync`), so'ng obunaning o'zi
+   * yopiladi. Birortasi rad etilsa — TO'XTAYDI, keyingisiga o'tmaydi va
+   * obunani ham yopmaydi: admin xatoni ko'rib, kerak bo'lsa qayta uradi
+   * (allaqachon bekor qilinganlari serverda idempotent — "already_void").
+   */
+  const handleEnd = async (
+    id: string,
+    endsOn: string,
+    voidInvoiceIds: string[],
+    reason: string,
+  ) => {
     setBusy(true)
     setActionError(null)
     try {
+      for (const invoiceId of voidInvoiceIds) {
+        await voidInvoice(invoiceId, reason)
+      }
+
       const ended = await endSubscription(id, endsOn)
       setEnding(null)
-      setNotice(`${ended.studentName} — "${ended.categoryName}" obunasi ${endsOn} sanasida yopildi.`)
+      const voidedNote =
+        voidInvoiceIds.length > 0 ? ` (${voidInvoiceIds.length} ta kelajak oy bekor qilindi)` : ''
+      setNotice(
+        `${ended.studentName} — "${ended.categoryName}" obunasi ${endsOn} sanasida yopildi${voidedNote}.`,
+      )
       load()
     } catch (e: unknown) {
       setActionError(billingErrorMessage(e, "Obunani yopib bo'lmadi"))

@@ -58,7 +58,48 @@ public interface ISubscriptionService
     /// <summary>Obunani yopadi (o'quvchi avtobusdan chiqdi va h.k.).</summary>
     Task<StudentSubscriptionDto> EndAsync(
         Guid id, EndSubscriptionRequest request, string actorId, CancellationToken ct = default);
+
+    /// <summary>
+    /// F1.06 (docs/modules/finance-parity.md §2.1) — obunani yopishdan OLDIN
+    /// ko'rsatiladigan oldindan ko'rish: <paramref name="endsOn"/> oyidan
+    /// KEYINGI oylarga allaqachon hisoblangan hisob-fakturalar bormi. Hech
+    /// narsa yozmaydi — sof o'qish.
+    /// </summary>
+    Task<EndSubscriptionPreviewDto> PreviewEndAsync(
+        Guid id, DateOnly endsOn, CancellationToken ct = default);
 }
+
+/// <summary>
+/// F1.06 — obunani yopish oldidan ko'rinadigan "kelajakdagi qarz" ro'yxati.
+///
+/// <para>
+/// <b>Nega yozuv shu yerda, <c>BillingDtos.cs</c> da emas.</b> O'sha fayl
+/// P1-06 da MUZLATILGAN shartnoma; bu DTO undan KEYIN, shu vazifada
+/// qo'shildi — <c>InvoiceService.cs</c> dagi <c>InvoicePageDto</c> bilan bir
+/// xil naqsh ("registr DTO'lari bu yerda, xizmat bilan birga o'zgaradi").
+/// </para>
+/// <para>
+/// <b>Nega yangi tip emas, <see cref="InvoiceDto"/> qayta ishlatiladi.</b>
+/// U allaqachon <c>Paid</c>/<c>Remaining</c>/<c>Status</c> ni SERVERDA
+/// hisoblab beradi (<c>InvoiceService.ToDtosAsync</c>). Klientning o'zida ham
+/// <c>api/services/invoices.ts</c> dagi <c>canVoid(invoice)</c> funksiyasi
+/// AYNAN shu maydonlardan "bekor qilish mumkinmi" degan savolga javob
+/// beradi — shuning uchun bu yerda alohida <c>Voidable</c> bayrog'i
+/// TAKRORLANMAYDI, frontend bitta joyda turgan qoidaga tayanadi.
+/// </para>
+/// </summary>
+/// <param name="SubscriptionId">Qaysi obuna.</param>
+/// <param name="StudentName">Ko'rsatish uchun.</param>
+/// <param name="CategoryName">Ko'rsatish uchun.</param>
+/// <param name="EndsOn">So'ralgan tugash sanasi.</param>
+/// <param name="FutureInvoices">
+/// <paramref name="EndsOn"/> OYIDAN KEYINGI oylarga tegishli, hali <c>void</c>
+/// qilinmagan hisob-fakturalar — eng eski oy birinchi. Bo'sh bo'lishi mumkin
+/// (odatiy holat: kelajak oylar hali hisoblanmagan).
+/// </param>
+public record EndSubscriptionPreviewDto(
+    Guid SubscriptionId, string StudentName, string CategoryName,
+    DateOnly EndsOn, IReadOnlyList<InvoiceDto> FutureInvoices);
 
 /// <summary>
 /// Obunalar ro'yxati uchun filtr. <see cref="ActiveOnly"/> — BUGUNGI kunda
@@ -93,7 +134,13 @@ public static class SubscriptionDefaultSource
 }
 
 /// <inheritdoc cref="ISubscriptionService"/>
-public sealed class SubscriptionService(IAppDbContext db, AuditService audit) : ISubscriptionService
+public sealed class SubscriptionService(
+    IAppDbContext db, AuditService audit,
+    // F1.06 — faqat PreviewEndAsync ishlatadi (sof o'qish, IInvoiceService.ListAsync
+    // orqali): "kelajakdagi qarz" ro'yxati hisob-faktura xizmatining o'z hisob-kitobi
+    // (Paid/Remaining/Status) ustida quriladi, bu yerda TAKRORLANMAYDI. Dumaloq
+    // bog'liqlik yo'q — InvoiceService hech qachon ISubscriptionService ni bilmaydi.
+    IInvoiceService invoices) : ISubscriptionService
 {
     /// <summary>Audit yozuvidagi ob'ekt turi (<c>AuditService.Entity*</c> qatoriga mos).</summary>
     private const string AuditEntity = "StudentSubscription";
@@ -278,6 +325,62 @@ public sealed class SubscriptionService(IAppDbContext db, AuditService audit) : 
 
         await db.SaveChangesAsync(ct);
         return await RequireDtoAsync(subscription.Id, ct);
+    }
+
+    /// <inheritdoc />
+    ///
+    /// <remarks>
+    /// F1.06 SETTLEMENT QOIDASI (docs/modules/finance-parity.md §2.1):
+    /// <list type="number">
+    ///   <item><b>Tugash oyining o'zi PRORATSIYA QILINMAYDI</b> — oy oy bilan
+    ///   KESISHSA yetarli (<c>InvoiceService.AccrueMonthAsync</c> dagi
+    ///   qoidaning aynan o'zi, mijoz javobi Q12), ya'ni shu oy uchun
+    ///   allaqachon hisoblangan (yoki hisoblanadigan) hisob-faktura TO'LIQ
+    ///   qarz bo'lib qoladi. Preview buni ko'rsatmaydi — u faqat KEYINGI
+    ///   oylarga tegishli.</item>
+    ///   <item><b>Faqat <paramref name="endsOn"/> OYIDAN KEYINGI oylar</b>
+    ///   ro'yxatga kiradi: ular — obuna hali "kelajak" bo'lgan paytda
+    ///   oldindan hisoblangan (masalan, butun o'quv yili oldindan
+    ///   to'ldirilgan) va endi obuna to'xtagani uchun ENDI QARZ EMAS.</item>
+    ///   <item><b>Voidable qarori bu yerda TAKRORLANMAYDI.</b> Bekor qilish
+    ///   mumkinmi — degan savolga <see cref="InvoiceService.VoidAsync"/> ning
+    ///   o'zi javob beradi (effektiv taqsimoti bo'lmagan qatorgina bekor
+    ///   qilinadi); bu metod faqat <c>Paid</c>/<c>Remaining</c>/<c>Status</c>
+    ///   ni ko'rsatadi, admin esa <c>POST …/invoices/{id}/void</c> ni har
+    ///   bir tanlangan qator uchun ALOHIDA chaqiradi (F10.02, allaqachon
+    ///   bor). Bitta yangi "bulk void" yo'li ATAYLAB YOZILMAGAN: ikkita
+    ///   mustaqil yozuvchi xizmat (obuna va hisob-faktura) bitta
+    ///   tranzaksiyada BIRLASHTIRILMAYDI — har biri o'z qulfi, o'z ikki
+    ///   qavatli nazorati bilan mustaqil ishlaydi, xuddi F10.02 ning o'zi
+    ///   kabi.</item>
+    /// </list>
+    /// </remarks>
+    public async Task<EndSubscriptionPreviewDto> PreviewEndAsync(
+        Guid id, DateOnly endsOn, CancellationToken ct = default)
+    {
+        var subscription = await RequireSubscriptionAsync(id, ct);
+        RequirePeriod(subscription.StartsOn, endsOn);
+
+        var student = await RequireStudentAsync(subscription.StudentId, ct);
+        var category = await RequireCategoryAsync(subscription.CategoryId, ct);
+
+        // Tugash OYIDAN keyingi birinchi oy — shu oyning o'zi qarzda qoladi
+        // (yuqoridagi 1-band), faqat undan KEYINGISI ro'yxatga tushadi.
+        var cutoff = new DateOnly(endsOn.Year, endsOn.Month, 1).AddMonths(1);
+
+        var future = await invoices.ListAsync(
+            new InvoiceQuery(
+                StudentId: subscription.StudentId,
+                CategoryId: subscription.CategoryId,
+                FromMonth: cutoff),
+            ct);
+
+        var rows = future
+            .Where(i => i.Status != InvoiceStatus.Void)
+            .OrderBy(i => i.PeriodMonth)
+            .ToList();
+
+        return new EndSubscriptionPreviewDto(subscription.Id, student.FullName, category.Name, endsOn, rows);
     }
 
     // ==================================================================
