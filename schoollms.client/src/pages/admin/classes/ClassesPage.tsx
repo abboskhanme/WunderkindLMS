@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Plus,
@@ -8,6 +8,9 @@ import {
   Archive,
   ArchiveRestore,
   ClipboardList,
+  Search,
+  Download,
+  ShieldAlert,
 } from 'lucide-react'
 import type { SchoolClass } from '@/types'
 import type { ClassPayload } from '@/api/services/classes'
@@ -19,15 +22,19 @@ import {
   getArchivedClasses,
   archiveClass,
   unarchiveClass,
+  downloadClasses,
+  setHomeroomTeachers,
 } from '@/api/services/classes'
 import { getClassesStats, type ClassStats } from '@/api/services/classPerformance'
 import { languageLabels } from '@/config/constants'
 import { formatMoney, cn } from '@/lib/utils'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
+import { Input } from '@/components/ui/Input'
 import { Loader } from '@/components/ui/Loader'
 import { ClassFormModal } from './ClassFormModal'
 import { ClassGroupsModal } from './ClassGroupsModal'
+import { ClassPointsModal } from './ClassPointsModal'
 
 export function ClassesPage() {
   const navigate = useNavigate()
@@ -38,19 +45,37 @@ export function ClassesPage() {
   const [editing, setEditing] = useState<SchoolClass | null>(null)
   /** Sinf guruhlarini boshqarish oynasi (Guruhlar tugmasi bilan ochiladi) */
   const [groupsFor, setGroupsFor] = useState<SchoolClass | null>(null)
+  /** Sinfga ball qo'yish oynasi (C-6) */
+  const [pointsFor, setPointsFor] = useState<SchoolClass | null>(null)
   /** Arxivlangan sinflar ro'yxati + arxiv ko'rinishi yoqilganmi */
   const [archived, setArchived] = useState<SchoolClass[]>([])
   const [showArchived, setShowArchived] = useState(false)
+  /** C-3: nom/xona bo'yicha qidiruv. */
+  const [search, setSearch] = useState('')
+  const [exporting, setExporting] = useState(false)
 
   useEffect(() => {
-    Promise.all([getClasses(), getClassesStats(), getArchivedClasses()])
-      .then(([cl, st, ar]) => {
-        setClasses(cl)
-        setStats(st)
-        setArchived(ar)
-      })
-      .finally(() => setLoading(false))
+    Promise.all([getClassesStats(), getArchivedClasses()]).then(([st, ar]) => {
+      setStats(st)
+      setArchived(ar)
+    })
   }, [])
+
+  const loadClasses = useCallback(() => {
+    setLoading(true)
+    return getClasses({ search: search.trim() || undefined }).then(setClasses).finally(() => setLoading(false))
+  }, [search])
+
+  // Debounce: qidiruv har harfda so'rov yubormasin (RoomsPage'dagi bilan bir xil naqsh).
+  useEffect(() => {
+    const timer = setTimeout(loadClasses, 250)
+    return () => clearTimeout(timer)
+  }, [loadClasses])
+
+  const handleExport = () => {
+    setExporting(true)
+    downloadClasses(search.trim() || undefined).finally(() => setExporting(false))
+  }
 
   const applyUpdate = (id: string, values: ClassPayload) =>
     updateClass(id, values).then((u) =>
@@ -61,11 +86,21 @@ export function ClassesPage() {
   // Sinf narxi endi mavjud obunalarga ta'sir qilmaydi — u faqat yangi obuna
   // uchun standart qiymat. Savolni qoldirish "Ha" tugmasi hech nima
   // qilmaydigan tugmaga aylanardi.
-  const handleSubmit = (values: ClassPayload) => {
+  //
+  // C-5: sinf rahbari(lari) alohida endpoint bilan saqlanadi (sinf CRUD'idan mustaqil —
+  // `ClassGroupsModal` guruhlarni qanday boshqarsa, shu ham xuddi shunday).
+  const handleSubmit = (values: ClassPayload, homeroomTeacherIds: string[]) => {
+    const saveHomeroom = (classId: string) =>
+      setHomeroomTeachers(classId, homeroomTeacherIds).catch(() =>
+        alert("Sinf saqlandi, lekin sinf rahbarini belgilab bo'lmadi — qayta urinib ko'ring."),
+      )
     if (editing) {
-      applyUpdate(editing.id, values)
+      applyUpdate(editing.id, values).then(() => saveHomeroom(editing.id))
     } else {
-      createClass(values).then((c) => setClasses((prev) => [...prev, c]))
+      createClass(values).then((c) => {
+        setClasses((prev) => [...prev, c])
+        return saveHomeroom(c.id)
+      })
     }
     setFormOpen(false)
     setEditing(null)
@@ -117,6 +152,12 @@ export function ClassesPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          {!showArchived && (
+            <Button variant="secondary" onClick={handleExport} disabled={exporting || classes.length === 0}>
+              <Download className="h-4 w-4" />
+              {exporting ? 'Tayyorlanmoqda...' : 'Excel'}
+            </Button>
+          )}
           <Button variant="secondary" onClick={() => setShowArchived((v) => !v)}>
             {showArchived ? (
               <>
@@ -140,6 +181,22 @@ export function ClassesPage() {
           )}
         </div>
       </div>
+
+      {/* C-3: qidiruv — nom yoki xona bo'yicha. */}
+      {!showArchived && (
+        <Card className="flex items-end gap-3">
+          <div className="relative min-w-[200px] flex-1">
+            <Search className="absolute left-3 top-9 h-4 w-4 text-slate-400" />
+            <Input
+              label="Qidirish"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Sinf nomi yoki xona"
+              className="pl-9"
+            />
+          </div>
+        </Card>
+      )}
 
       <Card className="p-0">
         {loading ? (
@@ -218,6 +275,12 @@ export function ClassesPage() {
                           title="Guruhlar (1/2)"
                           onClick={() => setGroupsFor(c)}
                         />
+                        {/* C-6: butun sinfga bitta intizomiy ball. */}
+                        <IconBtn
+                          icon={ShieldAlert}
+                          title="Sinfga ball qo'yish"
+                          onClick={() => setPointsFor(c)}
+                        />
                         <IconBtn
                           icon={Pencil}
                           title="Tahrirlash"
@@ -269,6 +332,14 @@ export function ClassesPage() {
         classId={groupsFor?.id ?? ''}
         className={groupsFor?.name ?? ''}
         onClose={() => setGroupsFor(null)}
+      />
+
+      <ClassPointsModal
+        open={!!pointsFor}
+        classId={pointsFor?.id ?? ''}
+        className={pointsFor?.name ?? ''}
+        onClose={() => setPointsFor(null)}
+        onDone={() => setPointsFor(null)}
       />
     </div>
   )

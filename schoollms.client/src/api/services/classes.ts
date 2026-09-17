@@ -1,17 +1,50 @@
-import type { ClassGroups, SchoolClass } from '@/types'
+import type { ClassGroups, HomeroomTeacher, SchoolClass } from '@/types'
 import { delay, uid } from '@/lib/utils'
 import { api, USE_MOCK } from '../client'
 import { classesMock } from '../mock/classes'
 
 export type ClassPayload = Omit<SchoolClass, 'id'>
 
-export async function getClasses(): Promise<SchoolClass[]> {
+/** C-3: ro'yxatdagi qidiruv — nom yoki xona bo'yicha. */
+export interface ClassListParams {
+  search?: string
+  includeArchived?: boolean
+}
+
+export async function getClasses(params: ClassListParams = {}): Promise<SchoolClass[]> {
   if (USE_MOCK) {
     await delay()
     return classesMock
   }
-  const { data } = await api.get<SchoolClass[]>('/admin/classes')
+  const { data } = await api.get<SchoolClass[]>('/admin/classes', {
+    params: {
+      search: params.search?.trim() || undefined,
+      includeArchived: params.includeArchived || undefined,
+    },
+  })
   return data
+}
+
+/** Sinflar ro'yxatini Excel (.xlsx) ga yuklab oladi — ekrandagi qidiruv bilan bir xil qatorlar (C-3). */
+export async function downloadClasses(search?: string): Promise<void> {
+  if (USE_MOCK) {
+    alert('Eksport faqat real serverda ishlaydi (VITE_USE_MOCK=false).')
+    return
+  }
+  const res = await api.get('/admin/classes/export', {
+    params: { search: search?.trim() || undefined },
+    responseType: 'blob',
+  })
+  const url = URL.createObjectURL(res.data as Blob)
+  const a = document.createElement('a')
+  a.href = url
+  const cd = (res.headers['content-disposition'] as string | undefined) ?? ''
+  const m = cd.match(/filename="?([^"]+)"?/)
+  a.download = m?.[1] ?? `sinflar_${new Date().toISOString().slice(0, 10)}.xlsx`
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  URL.revokeObjectURL(url)
 }
 
 export async function createClass(payload: ClassPayload): Promise<SchoolClass> {
@@ -110,4 +143,28 @@ export async function autoSplitClassGroups(classId: string): Promise<ClassGroups
   }
   const { data } = await api.post<ClassGroups>(`/admin/classes/${classId}/groups/auto-split`)
   return data
+}
+
+/* ---------- Sinf rahbari(lari) — C-5 ---------- */
+
+/** Shu sinfga biriktirilgan sinf rahbari(lar)i (`teachers.homeroom_class` dan). */
+export async function getHomeroomTeachers(classId: string): Promise<HomeroomTeacher[]> {
+  if (USE_MOCK) {
+    await delay()
+    return []
+  }
+  const { data } = await api.get<HomeroomTeacher[]>(`/admin/classes/${classId}/homeroom-teachers`)
+  return data
+}
+
+/**
+ * Sinf rahbari(lar)ini belgilaydi — ro'yxatda yo'q o'qituvchi bo'shatiladi, bor o'qituvchi
+ * shu sinfga biriktiriladi (bitta o'qituvchi faqat bitta sinf rahbari bo'ladi).
+ */
+export async function setHomeroomTeachers(classId: string, teacherIds: string[]): Promise<void> {
+  if (USE_MOCK) {
+    await delay(150)
+    return
+  }
+  await api.put(`/admin/classes/${classId}/homeroom-teachers`, { teacherIds })
 }

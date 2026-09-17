@@ -275,6 +275,69 @@ public class DisciplineController(
             p.Id, p.StudentId, name, pts, p.Note, p.CreatedAt, p.CreatedBy, "manual", notified);
     }
 
+    /// <summary>
+    /// Bitta sabab bilan SINFNING HAR BIR faol o'quvchisiga alohida ball yozuvi qo'shadi
+    /// (C-6, students-parity.md §2.2.3) — EduSchool'dagi <c>editBehaviorIncidents</c> /
+    /// <c>POST /behavior-incidents/class</c> ning nusxasi. Faqat mustaqil intizomiy sabab
+    /// ("other"): davomat sababi jurnal orqali, dars kesimida qo'yiladi — bu yerdan emas.
+    ///
+    /// <para>
+    /// Har bir yozuv <see cref="AddPoint"/> bilan bir xil qoidaga bo'ysunadi (sabab faol
+    /// bo'lishi shart, xabar <c>notify_parent</c> yoqilgan bo'lsa ketadi) — faqat bitta
+    /// so'rovda BIR NECHA o'quvchiga takrorlanadi.
+    /// </para>
+    /// </summary>
+    [HttpPost("points/class")]
+    public async Task<ActionResult<ClassDisciplinePointResultDto>> AddPointForClass(
+        AddClassDisciplinePointRequest req, CancellationToken ct = default)
+    {
+        var cls = await db.Classes.AsNoTracking().FirstOrDefaultAsync(c => c.Id == req.ClassId, ct);
+        if (cls is null) return NotFound(new { message = "Sinf topilmadi" });
+
+        var dr = await db.DisciplineReasons.FindAsync([req.ReasonId], ct);
+        if (dr is null) return BadRequest(new { message = "Sabab tanlanmadi" });
+        if (!dr.IsActive) return BadRequest(new { message = "Bu sabab faol emas" });
+
+        var students = await db.Students
+            .Where(s => !s.IsArchived && s.ClassName == cls.Name).ToListAsync(ct);
+        if (students.Count == 0) return BadRequest(new { message = "Bu sinfda faol o'quvchi yo'q" });
+
+        var user = await db.Users.FindAsync([Uid], ct);
+        var note = (req.Note ?? "").Trim();
+        var author = user?.FullName ?? "Administrator";
+
+        var pairs = new List<(Student Student, DisciplinePoint Point)>();
+        foreach (var student in students)
+        {
+            var p = new DisciplinePoint
+            {
+                StudentId = student.Id,
+                ReasonId = dr.Id,
+                ReasonName = dr.Name,
+                Points = dr.Points,
+                Note = note,
+                CreatedAt = AppClock.Now.ToString("o"),
+                CreatedBy = author,
+            };
+            db.DisciplinePoints.Add(p);
+            pairs.Add((student, p));
+        }
+        await db.SaveChangesAsync(ct);
+
+        // Xabarlar YOZUVDAN KEYIN: bittasi yuborilmasa ham, ballarning hammasi allaqachon saqlangan.
+        var items = new List<DisciplinePointDto>();
+        var notifiedTotal = 0;
+        foreach (var (student, p) in pairs)
+        {
+            var notified = await Notifier.NotifyAsync(student, dr, p, ct);
+            notifiedTotal += notified;
+            items.Add(new DisciplinePointDto(
+                p.Id, p.StudentId, dr.Name, dr.Points, p.Note, p.CreatedAt, p.CreatedBy, "manual", notified));
+        }
+
+        return new ClassDisciplinePointResultDto(items.Count, notifiedTotal, items);
+    }
+
     /// <summary>O'quvchining ball tarixi: qo'lda kiritilgan (o'chirsa bo'ladi) + jurnal davomati (faqat ko'rish).</summary>
     [HttpGet("points")]
     public async Task<ActionResult<IEnumerable<DisciplinePointDto>>> GetPoints([FromQuery] string studentId)

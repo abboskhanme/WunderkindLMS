@@ -273,6 +273,14 @@ export interface SchoolClass {
   isArchived?: boolean
   /** Arxivga olingan sana (ISO) */
   archivedAt?: string | null
+  /** Sinfga nechta o'quvchi sig'adi (C-4). null/undefined = chek yo'q — ekran faqat OGOHLANTIRADI, taqiqlamaydi */
+  capacity?: number | null
+}
+
+/** Sinfga biriktirilgan sinf rahbari (C-5) — `teachers.homeroom_class` dan. */
+export interface HomeroomTeacher {
+  id: string
+  fullName: string
 }
 
 /* ---------- Dars jadvali ---------- */

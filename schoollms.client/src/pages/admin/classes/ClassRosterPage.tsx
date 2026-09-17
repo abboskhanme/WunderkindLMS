@@ -283,7 +283,11 @@ function AddStudentModal({
   const add = (studentId: string) => {
     setBusy(true)
     addClassMember(classId, studentId)
-      .then(onDone)
+      .then(({ warning }) => {
+        // C-4: sig'im OGOHLANTIRISHI — amal allaqachon bajarilgan, faqat xabar beramiz.
+        if (warning) alert(warning)
+        onDone()
+      })
       .catch((e) =>
         alert(
           (e as { response?: { data?: { message?: string } } })?.response?.data?.message ??
