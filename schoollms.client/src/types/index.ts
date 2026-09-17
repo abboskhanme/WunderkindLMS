@@ -1540,6 +1540,20 @@ export interface Discount {
   createdAt: string
 }
 
+/* ---------- Moliya sozlamalari (F14.01, mijoz javobi SPEC §8.1 Q6) ---------- */
+
+export interface BillingSettings {
+  /** Hisob-faktura to'lov muddati — oyning shu kuni (1..28). */
+  paymentDueDay: number
+  /** Shu kundan keyin qarz "muddati o'tgan" hisoblanadi (1..28, >= paymentDueDay). */
+  overdueAfterDay: number
+  /** Ikki qavatli nazorat chegarasi (so'm) — shu summadan katta chiqim ikkinchi tasdiq talab qiladi. */
+  expenseApprovalThreshold: number
+  /** ISO sana-vaqt (ofset bilan) */
+  updatedAt: string
+  updatedByName?: string
+}
+
 /* ---------- Hisob-fakturalar ---------- */
 
 export interface Invoice {

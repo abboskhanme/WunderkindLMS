@@ -411,7 +411,19 @@ public record BillingSettingsDto(
     int PaymentDueDay,
     // Shu kundan keyin qarz "muddati o'tgan" hisoblanadi (1..28).
     int OverdueAfterDay,
+    // F14.01 (finance-parity.md §2.14.3): ikki qavatli nazorat chegarasi (SPEC §4.5) —
+    // shu summadan KATTA chiqim ikkinchi shaxsning tasdig'isiz jurnalga tushmaydi.
+    // Faqat direktor o'zgartira oladi (BillingSettingsService.UpdateAsync). Bu maydon
+    // PENDING_WIRING.md "E" bandida "frozen DTO ga qo'shilmagan" deb qayd etilgan edi —
+    // shu yerda qo'shildi, chunki fayl boshidagi qoidaga ko'ra yangi maydon buzmaydigan
+    // o'zgarish.
+    decimal ExpenseApprovalThreshold,
     DateTimeOffset UpdatedAt, string? UpdatedByName);
 
-/// <summary>Sozlamalarni saqlash. `updated_by` JWT'dan (§4.4).</summary>
-public record UpdateBillingSettingsRequest(int PaymentDueDay, int OverdueAfterDay);
+/// <summary>
+/// Sozlamalarni saqlash. `updated_by` JWT'dan (§4.4). `ExpenseApprovalThreshold` —
+/// forma HAR DOIM joriy qiymatni yuboradi; u haqiqatan o'zgarganda xizmat direktor
+/// ekanini talab qiladi (F14.01).
+/// </summary>
+public record UpdateBillingSettingsRequest(
+    int PaymentDueDay, int OverdueAfterDay, decimal ExpenseApprovalThreshold);

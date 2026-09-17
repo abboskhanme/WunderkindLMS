@@ -1425,3 +1425,92 @@ agree.
 
 This is a **decision for the client**, not a silent change: it narrows what
 existing staff accounts can see.
+
+---
+
+## From F14.01 — billing settings screen (finance-parity.md §2.14)
+
+New files: `SchoolLms.Application/Billing/BillingSettingsService.cs` (`IBillingSettingsService`),
+two endpoints added to the existing `BillingCatalogController.cs`
+(`GET`/`PUT /api/admin/billing/settings`), `schoollms.client/src/pages/admin/billing/BillingSettingsPage.tsx`,
+and client functions added to the existing `schoollms.client/src/api/services/billingCatalog.ts`.
+Touched **no** shared file except an additive change to `Dtos/BillingDtos.cs`
+(`BillingSettingsDto` and `UpdateBillingSettingsRequest` each gained one field,
+`ExpenseApprovalThreshold` — allowed by that file's own header rule) and a doc-comment
+correction at the top of `BillingCatalogController.cs` (the old "DI hali ulanmagan" note was
+stale: P1-15 already wired the other four services).
+
+### For P1-15 (or whoever owns `Program.cs` now) — one missing registration
+
+`BillingCatalogController` now also injects `IBillingSettingsService`. Add next to the other
+billing `AddScoped` calls (`Program.cs:266-279`):
+
+```csharp
+builder.Services.AddScoped<SchoolLms.Application.Billing.IBillingSettingsService,
+                           SchoolLms.Application.Billing.BillingSettingsService>();
+```
+
+Constructor is `(IAppDbContext, AuditService)`, both already registered — nothing else needed.
+
+**If skipped:** `GET`/`PUT /api/admin/billing/settings` return 500 at request time
+(`Unable to resolve service`). 401/403 still work correctly (the authorization filter runs
+before the controller is constructed), and every *other* `/api/admin/billing/*` endpoint is
+unaffected — a broken settings registration does not take down categories/subscriptions/discounts.
+
+### For P1-20 — route and navigation
+
+No screen exists yet for `BillingSettingsPage`. It is a plain named export and guards its own
+role via `useBillingAccess()` (`canManageBillingSettings`, new — see below), so it is safe to
+mount as-is:
+
+```tsx
+import { BillingSettingsPage } from '@/pages/admin/billing/BillingSettingsPage'
+```
+
+| Path | Element |
+|---|---|
+| `/admin/billing/settings` | `<BillingSettingsPage />` |
+
+Goes inside the existing `admin` `ProtectedRoute` branch, next to the other four
+`/admin/billing/*` routes from P1-17 (`docs/PENDING_WIRING.md` §"P1-20 — P1-17").
+
+Add one entry to the `Moliya` group in `config/navigation.ts` (same shape as the other four,
+`roles: ['admin', 'superadmin']` — **not** `perm: 'finance'` alone, for the same reason P1-17
+gave: a `staff` user granted the `finance` permission would see a menu entry the server answers
+403 for):
+
+```ts
+{ label: 'Sozlamalar', to: '/admin/billing/settings', roles: ['admin', 'superadmin'] },
+```
+
+**If skipped:** the page exists, compiles and is reachable by typed URL, but nothing links to
+it — same as every other P1-17 page before its routes landed.
+
+### Access-control helper added to `pages/admin/billing/access.ts`
+
+Two additions to `useBillingAccess()` (both additive, existing fields untouched):
+
+- `canManageBillingSettings: boolean` — same as `canManageSubscriptions` (admin + superadmin);
+  gates whether the settings page renders its form vs. a read-only view.
+- `isDirector: boolean` — the flag already computed locally for `canApproveDiscount` /
+  `canApproveExpense`, now also exposed directly. `BillingSettingsPage` uses it to disable the
+  threshold field for a non-director admin (the server enforces the real rule —
+  `threshold_requires_director`, 403 — this is purely so an admin does not fill in a value that
+  will bounce).
+
+### Existing-rows note (F14.01 acceptance criterion)
+
+A settings change is **forward-only by construction**, and this task added no new code to make
+that true — it already was:
+
+- `InvoiceService.AccrueMonthAsync` writes `Invoice.DueOn` once, at accrual time. Changing
+  `payment_due_day` afterwards does not touch any stored `DueOn`.
+- `InvoiceService.IsOverdue` clamps its computed boundary to never fall before `invoice.DueOn`
+  (`if (boundary < invoice.DueOn) boundary = invoice.DueOn;`), so lowering `overdue_after_day`
+  cannot retroactively flip an old invoice to overdue.
+- `ExpenseService.ThresholdAsync` reads `expense_approval_threshold` only when a **new** expense
+  is recorded; an existing `pending`/`approved` expense row is immutable (SPEC §4.1) and carries
+  no reference back to the settings row, so it cannot be affected either way.
+
+`BillingSettingsService.UpdateAsync` writes only the `billing_settings` singleton row — it does
+not, and must not, touch `invoices` or `expenses`.
