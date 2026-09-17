@@ -4,6 +4,8 @@ import { ArchiveReasonsSettings } from './ArchiveReasonsSettings'
 import { QuartersSettings } from './QuartersSettings'
 import { LessonTimesSettings } from './LessonTimesSettings'
 import { AttendanceReasonsSettings } from './AttendanceReasonsSettings'
+// Bayram kunlari — Dars jadvalidan KO'CHDI: u jadval emas, sozlama.
+import { HolidaysPage } from '../schedule/HolidaysPage'
 import { cn } from '@/lib/utils'
 
 const sections = [
@@ -15,6 +17,7 @@ const sections = [
   { key: 'quarters', label: 'Choraklar' },
   { key: 'lesson-times', label: 'Dars vaqtlari' },
   { key: 'reasons', label: 'Davomat sabablari' },
+  { key: 'holidays', label: 'Bayram kunlari' },
 ] as const
 
 /**
@@ -66,6 +69,7 @@ export function GeneralSettingsPage() {
           {active === 'archive-reasons' && <ArchiveReasonsSettings />}
           {active === 'quarters' && <QuartersSettings />}
           {active === 'lesson-times' && <LessonTimesSettings />}
+          {active === 'holidays' && <HolidaysPage />}
           {active === 'reasons' && <AttendanceReasonsSettings />}
         </div>
       </div>

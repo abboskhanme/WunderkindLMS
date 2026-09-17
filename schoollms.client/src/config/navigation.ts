@@ -167,13 +167,13 @@ export const navByRole: Record<Role, NavItem[]> = {
       icon: CalendarRange,
       perm: 'schedule',
       children: [
+        // FAQAT JADVAL. Choraklar, Dars vaqtlari, Davomat sabablari va
+        // Bayram kunlari SOZLAMALAR bo'limiga ("Umumiy sozlamalar") ko'chdi —
+        // mijoz qoidasi: ishchi bo'limlar ichida sozlama turmaydi.
+        // Eski manzillar (`/admin/settings/quarters` va h.k.) ishlashda qoladi.
         { label: 'Sinf jadvali', to: '/admin/schedule', end: true, group: 'JADVAL' },
         { label: "O'qituvchi jadvali", to: '/admin/schedule/teachers', group: 'JADVAL' },
         { label: 'Dars jadvali yaratish', to: '/admin/schedule/manage', group: 'JADVAL' },
-        { label: 'Bayram kunlari', to: '/admin/schedule/holidays', group: 'SOZLAMA' },
-        { label: 'Choraklar', to: '/admin/settings/quarters', group: 'SOZLAMA' },
-        { label: 'Dars vaqtlari', to: '/admin/settings/lesson-times', group: 'SOZLAMA' },
-        { label: 'Davomat sabablari', to: '/admin/settings/reasons', group: 'SOZLAMA' },
       ],
     },
     { label: 'Xabarlar', to: '/admin/messages', icon: MessageSquare, perm: 'messages' },
