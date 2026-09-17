@@ -108,7 +108,13 @@ export const navByRole: Record<Role, NavItem[]> = {
       label: "O'quv bo'limi",
       to: '/admin/students',
       icon: BookOpen,
-      perm: 'students',
+      // Bo'limning O'ZIDA `perm` YO'Q — ataylab. Ilgari u `students` edi va
+      // faqat `classes` ruxsatli xodim (Sinflar va Guruhlar aynan uniki)
+      // bo'limni UMUMAN ko'rmasdi. Endi ko'rinishni bolalar hal qiladi:
+      // Sidebar bolalarni filtrlaydi va bolasi qolmagan bo'limni yashiradi,
+      // ya'ni hech bir ekraniga ruxsati yo'q xodimga bo'lim baribir chiqmaydi.
+      // Ota-satr — tugma, u hech qayerga o'tkazmaydi (faqat panelni ochadi),
+      // shuning uchun `to` ning ruxsati bu yerda ahamiyatsiz.
       children: [
         // TARTIB EduSchool'ning O'quv bo'limi menyusidan AYNAN olingan
         // (mijoz ko'rsatgan ekran, 2026-09-17): Sinflar · Guruhlar · Fanlar ·
@@ -117,22 +123,37 @@ export const navByRole: Record<Role, NavItem[]> = {
         // Bizda bor, ularda yo'q yozuvlar (holatlar, sertifikat turlari,
         // feedback) o'z guruhining OXIRIGA qo'yilgan — shunda EduSchool
         // ketma-ketligi buzilmaydi.
-        { label: 'Sinflar', to: '/admin/classes', end: true, group: "O'QUV JARAYONI" },
-        { label: 'Guruhlar', to: '/admin/groups', group: "O'QUV JARAYONI" },
-        { label: 'Fanlar', to: '/admin/subjects', group: "O'QUV JARAYONI" },
-        { label: 'Xonalar', to: '/admin/rooms', group: "O'QUV JARAYONI" },
-        { label: "O'quvchilar", to: '/admin/students', end: true, group: "O'QUVCHILAR" },
-        { label: "Arxiv o'quvchilar", to: '/admin/students/arxiv', group: "O'QUVCHILAR" },
-        { label: "O'quvchilar manzili", to: '/admin/locations', group: "O'QUVCHILAR" },
-        { label: 'Ota-onalar', to: '/admin/parents', group: "O'QUVCHILAR" },
-        { label: "O'quvchi holatlari", to: '/admin/students/holatlar', group: "O'QUVCHILAR" },
-        { label: 'Sertifikatlar', to: '/admin/certificates', end: true, group: 'HUJJATLAR' },
+        //
+        // HAR BIR YOZUVDA `perm` BOR — VA U SAHIFANI HAQIQATDA QO'RIQLAYDIGAN
+        // KALIT. Bo'lim bitta (`O'quv bo'limi`), lekin ichidagi ekranlar TO'RT
+        // xil ruxsat ostida turadi: sinf va guruh `classes`, fan va xona
+        // `schedule`, manzil va ota-ona `app`, qolgani `students`.
+        // Avval bolalarda `perm` yo'q edi va Sidebar ularni HAMMAGA ko'rsatardi:
+        // `students` ruxsatli xodim to'liq menyuni ko'rib, Fanlar yoki Xonalarni
+        // bosganda "ruxsat yo'q" sahifasiga tushardi. Menyu ocholmaydigan
+        // yozuvni ko'rsatmasligi kerak — Sidebar bolalarni ham filtrlaydi va
+        // bolasi qolmagan bo'limni butunlay yashiradi.
+        { label: 'Sinflar', to: '/admin/classes', end: true, perm: 'classes', group: "O'QUV JARAYONI" },
+        { label: 'Guruhlar', to: '/admin/groups', perm: 'classes', group: "O'QUV JARAYONI" },
+        { label: 'Fanlar', to: '/admin/subjects', perm: 'schedule', group: "O'QUV JARAYONI" },
+        { label: 'Xonalar', to: '/admin/rooms', perm: 'schedule', group: "O'QUV JARAYONI" },
+        { label: "O'quvchilar", to: '/admin/students', end: true, perm: 'students', group: "O'QUVCHILAR" },
+        { label: "Arxiv o'quvchilar", to: '/admin/students/arxiv', perm: 'students', group: "O'QUVCHILAR" },
+        // Manzil va Ota-onalar hali `app` ("Ilova") ruxsati ostida — u mobil
+        // ilova davridan qolgan. Ular endi O'quv bo'limida turibdi, ya'ni
+        // kaliti `students` bo'lishi mantiqan to'g'ri; lekin buni SERVERDA
+        // ham ko'chirish kerak (`LocationsController`, `ParentsController`),
+        // aks holda menyu yana yolg'on gapiradi. X-2 bilan birga ko'chadi.
+        { label: "O'quvchilar manzili", to: '/admin/locations', perm: 'app', group: "O'QUVCHILAR" },
+        { label: 'Ota-onalar', to: '/admin/parents', perm: 'app', group: "O'QUVCHILAR" },
+        { label: "O'quvchi holatlari", to: '/admin/students/holatlar', perm: 'students', group: "O'QUVCHILAR" },
+        { label: 'Sertifikatlar', to: '/admin/certificates', end: true, perm: 'students', group: 'HUJJATLAR' },
         { label: 'Shartnomalar', to: '/admin/contracts', perm: 'contracts', group: 'HUJJATLAR' },
         // Sertifikat turlari SOZLAMALAR ostida emas: u yerdagi marshrut `settings`
         // ruxsatiga bog'langan, API esa `students` ga — menyu va server zid bo'lardi.
-        { label: 'Sertifikat turlari', to: '/admin/certificates/types', group: 'HUJJATLAR' },
-        { label: "O'quvchilarga feedback", to: '/admin/students/baholash', group: 'BAHOLASH' },
-        { label: 'Feedback nomi', to: '/admin/students/baholash-turlari', group: 'BAHOLASH' },
+        { label: 'Sertifikat turlari', to: '/admin/certificates/types', perm: 'students', group: 'HUJJATLAR' },
+        { label: "O'quvchilarga feedback", to: '/admin/students/baholash', perm: 'students', group: 'BAHOLASH' },
+        { label: 'Feedback nomi', to: '/admin/students/baholash-turlari', perm: 'students', group: 'BAHOLASH' },
       ],
     },
     {

@@ -117,3 +117,34 @@ so do we now.
 **Arxiv o'quvchilar is a real menu entry, not a tab.** Ours was a tab inside
 the pupil list; `/admin/students/arxiv` now opens that list with the archive
 tab selected, so the menu matches without duplicating the screen.
+
+## The submenu was complete; the permissions were not (2026-09-17)
+
+The client asked whether every entry in EduSchool's flyout actually exists on
+our side — *"bu menular bizni tizimda boshqa joyda bo'lgan bo'lishi ham mumkin,
+agar bo'lsa olib kelib shu yerga qo'y, bo'lmasa yarat"*. Checked entry by entry:
+all ten are present, each with a route and a real page (Guruhlar 319 lines,
+Xonalar 325, Ota-onalar 410, Manzil 224, Shartnomalar 384 — none is a stub).
+
+**What was actually broken was the permission wiring.** The section declared
+`perm: 'students'` and its children declared nothing, so:
+
+- a staff member with only `students` saw the whole flyout and hit "ruxsat
+  yo'q" on Sinflar, Guruhlar, Fanlar, Xonalar, Manzil, Ota-onalar and
+  Shartnomalar — seven of the twelve entries;
+- a staff member with only `classes` did not see the section at all, although
+  Sinflar and Guruhlar are exactly theirs.
+
+The section's `perm` is gone and every child now carries the key that really
+guards its page. `Sidebar` already filters children and hides a group whose
+children are all hidden, so the menu stops offering what the user cannot open.
+The parent row is a button that only opens the panel, so dropping its `perm`
+costs no navigation.
+
+**Four different keys sit inside one section**: `classes` (Sinflar, Guruhlar),
+`schedule` (Fanlar, Xonalar), `app` (Manzil, Ota-onalar), `students` (the rest),
+`contracts` (Shartnomalar). That is the state of the server, not a menu choice.
+`app` is a leftover from the mobile-app era and, now that Manzil and Ota-onalar
+live here, belongs on `students` — but moving it means moving
+`LocationsController` and `ParentsController` too, or the menu starts lying
+again. It travels with X-2.
