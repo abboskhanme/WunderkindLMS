@@ -247,11 +247,13 @@ public record StudentImportPreviewDto(
     string? Message = null);
 
 /// <summary>Ko'rib chiqish jadvalining bitta qatori.</summary>
+/// <param name="Groups">G-19 — qatorda tanilgan guruhlar, vergul bilan ("" — yo'q).</param>
 public record StudentImportPreviewRowDto(
     int Row,
     string FullName,
     string ClassName,
-    string Action);
+    string Action,
+    string Groups = "");
 
 /// <summary>Yozib bo'lingandan keyingi yakun.</summary>
 public record StudentImportCommitDto(int Created, int Updated, int Skipped);

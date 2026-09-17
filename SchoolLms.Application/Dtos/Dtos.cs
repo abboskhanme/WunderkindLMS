@@ -1060,20 +1060,42 @@ public record PushMessageDto(
 public record AssignmentMaterialDto(string Id, string Name, string Url, long Size, string ContentType);
 /// <summary>Test savoli (format=test).</summary>
 public record TestQuestionDto(string Id, string Text, List<string> Options, int CorrectIndex, int Order);
-/// <summary>Topshiriq/test (to'liq). Format: written|file|test|video. CreatedAt/Start/Due — ISO.</summary>
+/// <summary>
+/// Topshiriq/test (to'liq). Format: written|file|test|video. CreatedAt/Start/Due — ISO.
+/// </summary>
+/// <param name="ClassIds">
+/// G-20: <see cref="OwnerKind"/>="group" bo'lsa — o'quv GURUH id'lari (§2.1.4
+/// naqshi: guruh id'si xuddi shu ustunda saqlanadi, alohida ustun yo'q).
+/// </param>
+/// <param name="ClassNames">
+/// Ko'rsatiladigan nomlar — <see cref="OwnerKind"/> qaysi bo'lsa, o'sha
+/// turdagi (sinf yoki guruh) nomlar. Chaqiruvchi tomonda ikkalasi ham bir xil
+/// "yorliqlar ro'yxati" sifatida chiziladi.
+/// </param>
+/// <param name="OwnerKind"><see cref="SchoolLms.Domain.LessonOwnerKind"/> — "class" | "group".</param>
 public record AssignmentDto(
     string Id, string CreatedByUserId, string SubjectId, string SubjectName, string Title,
     string Description, string Format, List<string> ClassIds, List<string> ClassNames,
     string? StartDate, string? DueDate, bool LateAccept, int LatePenaltyPct, int MaxScore,
     bool AutoGrade, string CreatedAt,
-    List<AssignmentMaterialDto> Materials, List<TestQuestionDto> Questions);
+    List<AssignmentMaterialDto> Materials, List<TestQuestionDto> Questions,
+    string OwnerKind = "class");
 public record MaterialInput(string Name, string Url, long Size, string ContentType);
 public record QuestionInput(string Text, List<string> Options, int CorrectIndex);
-/// <summary>Topshiriq yaratish/tahrirlash so'rovi (ham create, ham update).</summary>
+/// <summary>
+/// Topshiriq yaratish/tahrirlash so'rovi (ham create, ham update).
+/// </summary>
+/// <param name="OwnerKind">
+/// G-20: topshiriq SINFGA beriladimi yoki o'quv GURUHIGA —
+/// <see cref="SchoolLms.Domain.LessonOwnerKind"/> ("class" | "group").
+/// null/bo'sh/noma'lum qiymat — "class" (bugungi xatti-harakat, eski
+/// mijoz — o'qituvchi portali — bu maydonni umuman yubormaydi).
+/// </param>
 public record SaveAssignmentRequest(
     string SubjectId, string Title, string? Description, string Format, List<string> ClassIds,
     string? StartDate, string? DueDate, bool LateAccept, int LatePenaltyPct, int MaxScore,
-    bool AutoGrade, List<MaterialInput>? Materials, List<QuestionInput>? Questions);
+    bool AutoGrade, List<MaterialInput>? Materials, List<QuestionInput>? Questions,
+    string? OwnerKind = null);
 /// <summary>Yuklangan fayl haqida ma'lumot (upload javobida).</summary>
 public record UploadedFileDto(string Name, string Url, long Size, string ContentType);
 
@@ -1148,7 +1170,12 @@ public record AssignmentScoreCellDto(string AssignmentId, bool Completed, int? S
 public record AssignmentScoreRowDto(
     string StudentId, string FullName, string ClassName,
     List<AssignmentScoreCellDto> Cells, int TotalScore, int TotalMax, int GradedCount);
-/// <summary>Sinf bo'yicha topshiriqlar ball jadvali (ustunlar = topshiriqlar, qatorlar = o'quvchilar).</summary>
+/// <summary>
+/// Ega (sinf yoki guruh, G-20) bo'yicha topshiriqlar ball jadvali (ustunlar = topshiriqlar,
+/// qatorlar = o'quvchilar). <paramref name="ClassId"/>/<paramref name="ClassName"/> nomiga
+/// qaramay — <c>AssignmentService.GetScoreboardAsync</c> guruh id berilsa guruhning
+/// id'si/nomini qaytaradi (ustun nomlari o'zgartirilmadi — FE hech narsa buzmasin).
+/// </summary>
 public record AssignmentScoreboardDto(
     string ClassId, string ClassName,
     List<AssignmentScoreColumnDto> Assignments, List<AssignmentScoreRowDto> Students);
