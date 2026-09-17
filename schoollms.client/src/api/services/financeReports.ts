@@ -131,6 +131,11 @@ export interface DebtorFilters {
   className?: string
   /** Shu summadan kam qarz ko'rsatilmaydi (server sukuti 0.01). */
   minDebt?: number
+  /**
+   * Bitta hisob-faktura oyi, "YYYY-MM". Berilsa — qator o'sha oyning
+   * qoldig'ini ko'rsatadi (§2.2 F2.02). Bo'sh = butun tarix bo'yicha jami.
+   */
+  month?: string
   /** true = faqat muddati o'tganlar. */
   onlyOverdue?: boolean
   /** false = arxivlangan (maktabdan ketgan) o'quvchilarni yashirish. */
