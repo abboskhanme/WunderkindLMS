@@ -1,7 +1,20 @@
+/**
+ * Oylik hisoblash — soat narxi, ustama va har o'qituvchining oylik maoshi.
+ *
+ * ROL DARVOZASI (F3.05)
+ * ---------------------
+ * Marshrut `RequirePerm perm="teachers"` ostida, ya'ni "teachers" kaliti
+ * bo'lgan XODIM ham bu yerga kirardi — va bu sahifadan maktabning butun
+ * oylik fondini o'zgartira olardi (soat narxi, ustama foizi). Endi server
+ * `SalaryRatesController` ni `Roles.FinanceStaff` bilan yopgan; sahifa esa
+ * shu qarorni TAKRORLAYDI, chunki "tugmani bosdim — 403 oldim" foydalanuvchini
+ * o'z ruxsatlari haqida chalg'itadi. Himoya serverda, bu yerda — halollik.
+ */
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Wallet, Save, Clock, Percent } from 'lucide-react'
+import { Wallet, Save, Clock, Percent, Lock } from 'lucide-react'
 import { getSalaryRates, saveSalaryRates, setBonusBulk, type SalaryRates } from '@/api/services/salaryRates'
 import { teacherCategoryLabel } from '@/config/constants'
+import { useAuth } from '@/context/auth-context'
 import { formatMoney, cn } from '@/lib/utils'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
@@ -22,6 +35,27 @@ function currentMonth(): string {
 }
 
 export function SalaryCalcPage() {
+  const { user } = useAuth()
+  const allowed = user?.role === 'admin' || user?.role === 'superadmin'
+
+  if (!allowed) {
+    return (
+      <Card className="mx-auto max-w-lg text-center">
+        <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-slate-100 text-slate-400">
+          <Lock className="h-6 w-6" />
+        </div>
+        <h2 className="text-base font-semibold text-slate-800">Bu bo'lim sizga yopiq</h2>
+        <p className="mt-2 text-sm text-slate-500">
+          Maosh raqamlari va soat narxlari — administrator va direktor ishi (SPEC §4.3).
+        </p>
+      </Card>
+    )
+  }
+
+  return <SalaryCalcView />
+}
+
+function SalaryCalcView() {
   const [data, setData] = useState<SalaryRates | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)

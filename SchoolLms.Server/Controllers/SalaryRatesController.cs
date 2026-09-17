@@ -9,17 +9,41 @@ using SchoolLms.Infrastructure.Data;
 
 namespace SchoolLms.Server.Controllers;
 
+// ===========================================================================
+//  BUTUN CONTROLLER MOLIYA DARVOZASI ORTIDA — F3.05 / F0.02
+//  (docs/modules/finance-parity.md §1.1, §2.3.4, §2.15)
+// ===========================================================================
+//
+//  Bu yerda o'qituvchi maoshining IKKALA yarmi ham bor: soat narxi va ustama
+//  foizi (narx × dars = oylik). Ya'ni har bir endpoint yo maosh RAQAMINI
+//  ko'rsatadi, yo uni O'ZGARTIRADI — ikkalasi ham SPEC §4.3 bo'yicha admin va
+//  direktorniki.
+//
+//  Ilgari bu yerda faqat `[AdminPerm("teachers")]` turardi:
+//    * har qanday xodim (staff) butun maosh jadvalini O'QIY olardi
+//      (`AdminPermAttribute` GET'ni hammaga ochadi);
+//    * "teachers" kaliti bo'lgan xodim soat narxini va ustamani
+//      O'ZGARTIRA olardi — ya'ni maktabning butun oylik fondini.
+//
+//  Shuning uchun har endpointga `[Authorize(Roles = Roles.FinanceStaff)]`
+//  qo'yilgan; o'qish amallari ustiga `[FinanceRole(ViewBillingReports)]` —
+//  qoida `FinanceMatrix` da, bu yerda emas. Ustama yozuvlari endi AUDIT
+//  qatorini ham qoldiradi: pulni o'zgartirgan amal izsiz qolmaydi (SPEC §4.6).
+// ===========================================================================
+
 /// <summary>
 /// "Dars jadvali → Oylik hisoblash": har TOIFA uchun bir soat dars narxi (admin kiritadi) va
 /// shu narx + dars jadvalidan har o'qituvchining oylik maoshi avtomatik hisoblanadi.
 /// </summary>
 [ApiController]
-[Authorize]
+[Authorize(Roles = Roles.FinanceStaff)]
 [AdminPerm("teachers")]
 [Route("api/admin/salary-rates")]
 public class SalaryRatesController(AppDbContext db, AuditService audit) : ControllerBase
 {
+    /// <summary>Barcha o'qituvchining tanlangan oydagi maoshi — moliya hisoboti (F0.02).</summary>
     [HttpGet]
+    [FinanceRole(FinanceAction.ViewBillingReports)]
     public async Task<ActionResult<SalaryRatesDto>> Get([FromQuery] string? month)
     {
         var m = string.IsNullOrEmpty(month) || month.Length < 7 ? AppClock.Now.ToString("yyyy-MM") : month[..7];
@@ -60,8 +84,9 @@ public class SalaryRatesController(AppDbContext db, AuditService audit) : Contro
     }
 
     /// <summary>Bitta o'qituvchining tanlangan oydagi maosh tafsiloti: reja, kelmagan kunlar (qachon),
-    /// chegirma, jami (net), berilgan va qoldiq.</summary>
+    /// chegirma, jami (net), berilgan va qoldiq. Moliya hisoboti (F0.02).</summary>
     [HttpGet("{teacherId}")]
+    [FinanceRole(FinanceAction.ViewBillingReports)]
     public async Task<ActionResult<TeacherSalaryDetailDto>> Detail(string teacherId, [FromQuery] string? month)
     {
         var t = await db.Teachers.FindAsync(teacherId);
@@ -117,7 +142,10 @@ public class SalaryRatesController(AppDbContext db, AuditService audit) : Contro
             paid, netSalary - paid, absentDays);
     }
 
-    /// <summary>O'qituvchining ustama foizini belgilash (0 = ustama yo'q). Oylik maoshga shu foiz qo'shiladi.</summary>
+    /// <summary>
+    /// O'qituvchining ustama foizini belgilash (0 = ustama yo'q). Oylik maoshga shu foiz
+    /// qo'shiladi, ya'ni bu PUL o'zgarishi — audit qatori majburiy (SPEC §4.6, F3.05).
+    /// </summary>
     [HttpPut("{teacherId}/bonus")]
     public async Task<IActionResult> SetBonus(string teacherId, SetTeacherBonusRequest req)
     {
@@ -125,12 +153,23 @@ public class SalaryRatesController(AppDbContext db, AuditService audit) : Contro
         if (t is null) return NotFound();
         if (req.BonusPct < 0 || req.BonusPct > 1000)
             return BadRequest(new { message = "Ustama foizi 0–1000 oralig'ida bo'lsin" });
+
+        var oldPct = t.BonusPct;
         t.BonusPct = req.BonusPct;
+
+        audit.Record(AuditService.EntityTeacherSalary, t.Id, "update",
+            $"Ustama foizi: {oldPct}% → {req.BonusPct}%",
+            before: new { BonusPct = oldPct }, after: new { t.BonusPct }, teacherId: t.Id);
+
         await db.SaveChangesAsync();
         return NoContent();
     }
 
-    /// <summary>Bir nechta tanlangan o'qituvchiga bir vaqtda ustama foizini tayinlash (0 = olib tashlash).</summary>
+    /// <summary>
+    /// Bir nechta tanlangan o'qituvchiga bir vaqtda ustama foizini tayinlash (0 = olib tashlash).
+    /// Har o'qituvchiga ALOHIDA audit qatori: "kimga qancha" degan savol keyin
+    /// bitta umumiy yozuvdan javob olmasdi.
+    /// </summary>
     [HttpPut("bonus")]
     public async Task<IActionResult> SetBonusBulk(SetBonusBulkRequest req)
     {
@@ -139,7 +178,16 @@ public class SalaryRatesController(AppDbContext db, AuditService audit) : Contro
         var ids = req.TeacherIds ?? new();
         if (ids.Count == 0) return BadRequest(new { message = "O'qituvchi tanlanmagan" });
         var teachers = await db.Teachers.Where(t => ids.Contains(t.Id)).ToListAsync();
-        foreach (var t in teachers) t.BonusPct = req.BonusPct;
+        foreach (var t in teachers)
+        {
+            var oldPct = t.BonusPct;
+            t.BonusPct = req.BonusPct;
+
+            audit.Record(AuditService.EntityTeacherSalary, t.Id, "update",
+                $"Ustama foizi (guruh bilan): {oldPct}% → {req.BonusPct}%",
+                before: new { BonusPct = oldPct }, after: new { t.BonusPct }, teacherId: t.Id);
+        }
+
         await db.SaveChangesAsync();
         return Ok(new { updated = teachers.Count });
     }

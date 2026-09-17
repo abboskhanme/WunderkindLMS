@@ -5,6 +5,7 @@ using SchoolLms.Infrastructure.Data;
 using SchoolLms.Application.Billing;
 using SchoolLms.Application.Dtos;
 using SchoolLms.Application.Services;
+using SchoolLms.Domain;
 
 namespace SchoolLms.Server.Controllers;
 
@@ -39,16 +40,22 @@ namespace SchoolLms.Server.Controllers;
 //  endi `expenses` (`SalaryPaymentQuery`), ya'ni raqam jurnalga tushgan pulga
 //  mos keladi va P&L bilan bir xil bo'ladi.
 //
-//  RUXSAT TEGILMAGAN: `[AdminPerm("finance")]` — bu hisobotni ko'radigan
-//  xodimlar to'plami o'zgarmadi. Yangi hisobotlar (§4.3, faqat admin/direktor)
-//  `FinanceReportsController` da, boshqa darvoza ostida.
+//  RUXSAT TORAYTIRILDI (F0.02, docs/modules/finance-parity.md §2.15)
+//  --------------------------------------------------------------------
+//  Ilgari bu yerda faqat `[AdminPerm("finance")]` turardi va izohda "ko'radigan
+//  xodimlar to'plami o'zgarmadi" deb yozilgandi. Lekin `AdminPermAttribute`
+//  GET'ni HAR QANDAY xodimga ochadi (`:40-42`) — "finance" kaliti ham shart
+//  emas edi. Ya'ni butun maktabning maosh jadvali har bir staff akkauntiga
+//  ko'rinib turardi, SPEC §4.3 esa hisobotlarni admin va direktorga beradi.
+//  Endi bu hisobot ham `FinanceReportsController` bilan bir xil darvoza
+//  ostida: `[Authorize(Roles = Roles.FinanceStaff)]` + `[FinanceRole(...)]`.
 // ===========================================================================
 
 /// <summary>
 /// O'qituvchilarga berilgan maoshlar hisoboti. Batafsil: fayl boshidagi izoh.
 /// </summary>
 [ApiController]
-[Authorize]
+[Authorize(Roles = Roles.FinanceStaff)]
 [AdminPerm("finance")]
 [Route("api/admin/finance")]
 public class FinanceController(AppDbContext db) : ControllerBase
@@ -65,6 +72,7 @@ public class FinanceController(AppDbContext db) : ControllerBase
     /// </para>
     /// </summary>
     [HttpGet("salary-report")]
+    [FinanceRole(FinanceAction.ViewBillingReports)]
     public async Task<ActionResult<IEnumerable<SalaryReportRowDto>>> SalaryReport(
         [FromQuery] string? from, [FromQuery] string? to, CancellationToken ct)
     {
