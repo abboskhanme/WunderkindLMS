@@ -115,6 +115,7 @@ function toStudent(row: StudentListRow): Student {
     parentFullName: row.parentFullName,
     parentPhone: row.parentPhone,
     className: row.className,
+    targetGrade: row.targetGrade,
     enrollmentDate: row.enrollmentDate,
     isArchived: row.isArchived,
     archivedAt: row.archivedAt,
