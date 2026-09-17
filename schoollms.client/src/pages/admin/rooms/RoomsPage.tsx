@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Building2, DoorOpen, Layers, Pencil, Plus, Search, Trash2, Users } from 'lucide-react'
+import { Building2, DoorOpen, Eye, EyeOff, Layers, Pencil, Plus, Search, Trash2, Users } from 'lucide-react'
 import type { BulkRoomsInput, Room, RoomKind, SaveRoomInput } from '@/api/services/rooms'
 import {
   createRoom,
@@ -22,7 +22,8 @@ import { RoomFormModal } from './RoomFormModal'
 
 /**
  * Xonalar reyestri — docs/modules/students-parity.md §2.6 (R-1).
- * "Dars jadvali → Xonalar" (ruxsat: `schedule`).
+ * "O'quv bo'limi → Xonalar" (ruxsat: `students`, F-4 bilan bir vaqtda
+ * to'g'irlandi — ilgari `schedule` edi va menyu bilan mos kelmasdi).
  *
  * BU KATALOG, JADVAL EMAS. Xonani darsga biriktirish, bandlikni ko'rish va
  * to'qnashuvlarni tekshirish jadval modulida qo'shiladi; bu yerda faqat
@@ -30,9 +31,10 @@ import { RoomFormModal } from './RoomFormModal'
  * "Sinflardan ko'chirish" tugmasi o'sha matnlardan reyestrni bir marta
  * to'ldiradi.
  *
- * O'CHIRISH: sinf ko'rsatgan xona o'chirilmaydi (server 400 qaytaradi).
- * Bazada "faol emas" bayrog'i YO'Q, shuning uchun yagona yo'l — avval sinf
- * kartochkasidagi xonani o'zgartirish.
+ * O'CHIRISH va FAOLSIZLANTIRISH — ikki xil amal. Sinf ko'rsatgan xona hamon
+ * o'chirilmaydi (server 400 qaytaradi). Endi "faol emas" bayrog'i bor
+ * (Batch C): ishlatilgan xonani ham FAOLSIZLANTIRISH mumkin — sinf ekranlari
+ * buzilmaydi, faqat yangi tanlovda ko'rinmay qoladi.
  */
 
 const errorText = (e: unknown, fallback: string) =>
@@ -52,6 +54,8 @@ export function RoomsPage() {
   const [search, setSearch] = useState('')
   const [building, setBuilding] = useState('')
   const [kind, setKind] = useState<'' | RoomKind>('')
+  /** Sukut — "Barchasi": faollashtirilgan xona ro'yxatdan yo'qolib qolmasin. */
+  const [activeFilter, setActiveFilter] = useState<'' | 'active' | 'inactive'>('')
   const [formOpen, setFormOpen] = useState(false)
   const [editing, setEditing] = useState<Room | null>(null)
   const [bulkOpen, setBulkOpen] = useState(false)
@@ -66,6 +70,7 @@ export function RoomsPage() {
           search: search.trim() || undefined,
           building: building || undefined,
           kind: kind || undefined,
+          isActive: activeFilter === '' ? undefined : activeFilter === 'active',
         }),
         getRoomBuildings(),
       ])
@@ -74,7 +79,7 @@ export function RoomsPage() {
     } finally {
       setLoading(false)
     }
-  }, [search, building, kind])
+  }, [search, building, kind, activeFilter])
 
   // Debounce: filtr yozilayotganda har harfga so'rov ketmasin. setState bu
   // yerda TO'G'RIDAN-TO'G'RI chaqirilmaydi (taymer orqali), shuning uchun
@@ -142,6 +147,28 @@ export function RoomsPage() {
     }
   }
 
+  /**
+   * Faollikni bir bosishda almashtirish — O'CHIRISHdan farqli, ishlatilgan
+   * xona uchun ham ishlaydi (sinf ekranlari buzilmaydi). Boshqa maydonlar
+   * TO'LIQ qayta yuboriladi — `SaveRoomInput` PUT'ning "berilmasa joyida
+   * qoladi" qismi faqat sig'im/tur/faollikka tegishli, nom va binoga emas.
+   */
+  const toggleActive = async (room: Room) => {
+    try {
+      const saved = await updateRoom(room.id, {
+        name: room.name,
+        building: room.building,
+        floor: room.floor,
+        capacity: room.capacity,
+        kind: room.kind,
+        isActive: !room.isActive,
+      })
+      setRooms((prev) => prev.map((r) => (r.id === saved.id ? saved : r)))
+    } catch (err) {
+      alert(errorText(err, "Holatni almashtirib bo'lmadi"))
+    }
+  }
+
   const totalSeats = rooms.reduce((sum, r) => sum + r.capacity, 0)
 
   return (
@@ -190,6 +217,17 @@ export function RoomsPage() {
             ))}
           </Select>
         </div>
+        <div className="min-w-[160px]">
+          <Select
+            label="Holat"
+            value={activeFilter}
+            onChange={(e) => setActiveFilter(e.target.value as '' | 'active' | 'inactive')}
+          >
+            <option value="">Barchasi</option>
+            <option value="active">Faol</option>
+            <option value="inactive">Faol emas</option>
+          </Select>
+        </div>
       </Card>
 
       {notice && (
@@ -230,12 +268,13 @@ export function RoomsPage() {
                   <th className="px-4 py-3 text-center">Sig'imi</th>
                   <th className="px-4 py-3">Turi</th>
                   <th className="px-4 py-3 text-center">Sinflar</th>
-                  <th className="w-24 px-4 py-3" />
+                  <th className="px-4 py-3">Holat</th>
+                  <th className="w-28 px-4 py-3" />
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {rooms.map((room) => (
-                  <tr key={room.id} className="hover:bg-slate-50/60">
+                  <tr key={room.id} className={cn('hover:bg-slate-50/60', !room.isActive && 'opacity-60')}>
                     <td className="px-4 py-3">
                       <span className="flex items-center gap-2 font-medium text-slate-800">
                         <DoorOpen className="h-4 w-4 text-slate-400" />
@@ -264,7 +303,25 @@ export function RoomsPage() {
                       {room.usedByClasses > 0 ? room.usedByClasses : '—'}
                     </td>
                     <td className="px-4 py-3">
+                      <span
+                        className={cn(
+                          'rounded-md px-2 py-0.5 text-xs font-medium',
+                          room.isActive ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-400',
+                        )}
+                      >
+                        {room.isActive ? 'Faol' : 'Faol emas'}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
                       <div className="flex justify-end gap-1">
+                        <button
+                          type="button"
+                          title={room.isActive ? 'Faolsizlantirish' : 'Faollashtirish'}
+                          onClick={() => toggleActive(room)}
+                          className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
+                        >
+                          {room.isActive ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                        </button>
                         <button
                           type="button"
                           title="Tahrirlash"
@@ -291,7 +348,7 @@ export function RoomsPage() {
                 ))}
                 {rooms.length === 0 && (
                   <tr>
-                    <td colSpan={7} className="px-4 py-12 text-center text-slate-400">
+                    <td colSpan={8} className="px-4 py-12 text-center text-slate-400">
                       Xona topilmadi. "Sinflardan ko'chirish" bilan mavjud nomlarni bir marta
                       olib kelishingiz mumkin.
                     </td>

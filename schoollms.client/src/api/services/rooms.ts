@@ -39,6 +39,12 @@ export interface Room {
   kind: RoomKind
   /** Nechta sinf shu xonani ko'rsatgan. 0 dan katta bo'lsa o'chirib bo'lmaydi. */
   usedByClasses: number
+  /**
+   * Faolmi (Batch C qo'shimchasi, R-1 dan keyin). `false` — "ishlatilmaydi,
+   * lekin saqlanadi": yangi jadval/sinfda ko'rinmaydi, uni ko'rsatgan eski
+   * sinf esa joyida qoladi.
+   */
+  isActive: boolean
 }
 
 export interface SaveRoomInput {
@@ -47,12 +53,16 @@ export interface SaveRoomInput {
   floor?: number | null
   capacity?: number | null
   kind?: RoomKind
+  /** Berilmasa — joyida qoladi (yaratishda sukut — faol). */
+  isActive?: boolean
 }
 
 export interface RoomFilter {
   search?: string
   building?: string
   kind?: RoomKind
+  /** Berilmasa — hammasi (faol ham, faolsiz ham). */
+  isActive?: boolean
 }
 
 export interface BulkRoomsInput {

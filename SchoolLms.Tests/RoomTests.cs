@@ -18,10 +18,11 @@ namespace SchoolLms.Tests;
 /// buni keyin faqat ma'lumot tozalash bilan tuzatib bo'lardi.
 /// </para>
 /// <para>
-/// <b>Ruxsat — <c>schedule</c>.</b> Xona jadval uchun tanlanadi (§2.6.3),
-/// shuning uchun darvoza jadval kaliti bilan bir xil. Test buni ikki
-/// tomondan qamrab oladi: <c>schedule</c> li xodim yozadi, <c>classes</c> li
-/// xodim yozmaydi.
+/// <b>Ruxsat — <c>students</c> (F-4 tuzatuvidan keyin).</b> Xona "O'quv
+/// bo'limi" menyusida (Fanlar bilan yonma-yon), shuning uchun darvoza ham
+/// o'sha bo'lim kaliti. Test buni ikki tomondan qamrab oladi: <c>students</c>
+/// li xodim yozadi, <c>classes</c> li (va eski <c>schedule</c> li) xodim
+/// yozmaydi — ikkinchisi ATAYLAB: F-4 dan oldin xuddi shu ruxsat yozar edi.
 /// </para>
 /// </summary>
 [Collection(SchoolLmsCollection.Name)]
@@ -50,7 +51,7 @@ public class RoomTests(ApiFixture fixture)
     [InlineData(Roles.Cashier)]
     public async Task Oqituvchi_va_kassir_403(string role)
     {
-        using var client = await fixture.Api.ClientAsAsync(role, "schedule");
+        using var client = await fixture.Api.ClientAsAsync(role, "students");
 
         Assert.Equal(HttpStatusCode.Forbidden, (await client.GetAsync(Url)).StatusCode);
         Assert.Equal(HttpStatusCode.Forbidden,
@@ -58,13 +59,16 @@ public class RoomTests(ApiFixture fixture)
     }
 
     /// <summary>
-    /// Xodim reyestrni o'qiydi; "schedule" ruxsatisiz yoza olmaydi —
-    /// "classes" ruxsati ham yordam bermaydi (darvoza jadvalga bog'langan).
+    /// Xodim reyestrni o'qiydi; "students" ruxsatisiz yoza olmaydi —
+    /// "classes" ruxsati ham, ESKI "schedule" ruxsati ham yordam bermaydi
+    /// (F-4: darvoza endi "O'quv bo'limi" kaliti bilan bir xil).
     /// </summary>
-    [Fact]
-    public async Task Xodim_oqiydi_lekin_ruxsatsiz_yozmaydi()
+    [Theory]
+    [InlineData("classes")]
+    [InlineData("schedule")]
+    public async Task Xodim_oqiydi_lekin_ruxsatsiz_yozmaydi(string perm)
     {
-        using var client = await fixture.Api.ClientAsAsync(Roles.Staff, "classes");
+        using var client = await fixture.Api.ClientAsAsync(Roles.Staff, perm);
 
         Assert.Equal(HttpStatusCode.OK, (await client.GetAsync(Url)).StatusCode);
         Assert.Equal(HttpStatusCode.OK, (await client.GetAsync($"{Url}/buildings")).StatusCode);
@@ -82,9 +86,9 @@ public class RoomTests(ApiFixture fixture)
     }
 
     [Fact]
-    public async Task Schedule_ruxsatli_xodim_yozadi()
+    public async Task Oquv_bolimi_ruxsatli_xodim_yozadi()
     {
-        using var client = await fixture.Api.ClientAsAsync(Roles.Staff, "schedule");
+        using var client = await fixture.Api.ClientAsAsync(Roles.Staff, "students");
 
         var created = await client.PostAsJsonAsync(Url, new { name = "X-" + Tag() });
         Assert.Equal(HttpStatusCode.OK, created.StatusCode);
@@ -178,14 +182,84 @@ public class RoomTests(ApiFixture fixture)
         Assert.Equal(HttpStatusCode.BadRequest, (await client.GetAsync($"{Url}?kind=ombor")).StatusCode);
     }
 
+    /// <summary>
+    /// Yangi xona har doim faol (entity DEFAULT'i). "isActive" filtri va
+    /// tahrirlashdagi qisman yangilash (berilmasa — joyida qoladi).
+    /// </summary>
+    [Fact]
+    public async Task Faollik_sukut_true_va_filtrlanadi()
+    {
+        using var client = await fixture.Api.ClientAsAsync(Roles.Admin);
+        var tag = Tag();
+        var name = $"Faol-{tag}";
+
+        var created = await JsonAsync(await client.PostAsJsonAsync(Url, new { name }));
+        var id = created.GetProperty("id").GetGuid();
+        Assert.True(created.GetProperty("isActive").GetBoolean());
+
+        // Faolsizlantirish: boshqa maydonlar tegilmaydi.
+        var off = await JsonAsync(await client.PutAsJsonAsync($"{Url}/{id}",
+            new { name, isActive = false }));
+        Assert.False(off.GetProperty("isActive").GetBoolean());
+        Assert.Equal(name, off.GetProperty("name").GetString());
+
+        // Ro'yxatdagi filtr.
+        var actives = await RowsAsync(client, $"{Url}?isActive=true&search={name}");
+        Assert.DoesNotContain(actives, r => r.GetProperty("id").GetGuid() == id);
+        var inactives = await RowsAsync(client, $"{Url}?isActive=false&search={name}");
+        Assert.Contains(inactives, r => r.GetProperty("id").GetGuid() == id);
+        // Filtrsiz — hammasi (mavjud o'quvchilar/sinflar ekranlarini buzmaslik uchun).
+        var all = await RowsAsync(client, $"{Url}?search={name}");
+        Assert.Contains(all, r => r.GetProperty("id").GetGuid() == id);
+
+        // isActive berilmasa — joyida qoladi.
+        var untouched = await JsonAsync(await client.PutAsJsonAsync($"{Url}/{id}", new { name }));
+        Assert.False(untouched.GetProperty("isActive").GetBoolean());
+
+        // Qaytadan faollashtirish.
+        var on = await JsonAsync(await client.PutAsJsonAsync($"{Url}/{id}",
+            new { name, isActive = true }));
+        Assert.True(on.GetProperty("isActive").GetBoolean());
+    }
+
+    /// <summary>
+    /// Sinf ko'rsatgan xonani ham FAOLSIZLANTIRISH mumkin — bu o'chirish emas:
+    /// sinf ekranlari o'zgarmaydi, faqat yangi tanlovda ko'rinmay qoladi.
+    /// </summary>
+    [Fact]
+    public async Task Faolsizlantirish_ishlatilgan_xonada_ham_ishlaydi()
+    {
+        using var client = await fixture.Api.ClientAsAsync(Roles.Admin);
+        var tag = Tag();
+        var name = $"Band-faolsiz-{tag}";
+
+        var id = (await JsonAsync(await client.PostAsJsonAsync(Url, new { name })))
+            .GetProperty("id").GetGuid();
+
+        await fixture.Api.WithDbAsync(async db =>
+        {
+            db.Classes.Add(new SchoolClass { Name = $"8-{tag[..4]}", Grade = 8, Room = name });
+            await db.SaveChangesAsync();
+        });
+
+        var off = await client.PutAsJsonAsync($"{Url}/{id}", new { name, isActive = false });
+        Assert.Equal(HttpStatusCode.OK, off.StatusCode);
+        var dto = await JsonAsync(off);
+        Assert.False(dto.GetProperty("isActive").GetBoolean());
+        Assert.Equal(1, dto.GetProperty("usedByClasses").GetInt32());
+
+        // O'CHIRISH hamon rad etiladi — faolsizlantirish uni bekor qilmaydi.
+        Assert.Equal(HttpStatusCode.BadRequest, (await client.DeleteAsync($"{Url}/{id}")).StatusCode);
+    }
+
     // =====================================================================
     //  3. SINF KO'RSATGAN XONA
     // =====================================================================
 
     /// <summary>
-    /// Sinf ko'rsatgan xona o'chirilmaydi. Bazada <c>rooms.is_active</c> ustuni
-    /// YO'Q, shuning uchun "faolsizlantirish" o'rniga yagona yo'l — avval sinfni
-    /// bo'shatish. Ustun qo'shilgach bu test "faolsizlantiriladi" ga aylanadi.
+    /// Sinf ko'rsatgan xona o'chirilmaydi — <c>rooms.is_active</c> qo'shilgandan
+    /// keyin ham shunday (o'chirish va faolsizlantirish ikki xil amal, pastdagi
+    /// <see cref="Faolsizlantirish_ishlatilgan_xonada_ham_ishlaydi"/> ga qarang).
     /// </summary>
     [Fact]
     public async Task Sinf_korsatgan_xona_ochirilmaydi()

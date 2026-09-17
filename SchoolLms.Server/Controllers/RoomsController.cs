@@ -8,27 +8,28 @@ using SchoolLms.Infrastructure.Data;
 namespace SchoolLms.Server.Controllers;
 
 /// <summary>
-/// Xonalar reyestri — docs/modules/students-parity.md §2.6 (R-1):
-/// ro'yxat, CRUD, ommaviy yaratish va sinflardagi erkin matnli xona
-/// nomlaridan to'ldirish.
+/// Xonalar reyestri — docs/modules/students-parity.md §2.6 (R-1), faollik
+/// bayrog'i esa Batch C (P2) qo'shimchasi.
 ///
 /// <para>
-/// <b>Ruxsat — <c>schedule</c>, <c>classes</c> emas.</b> Jadval bilan bir
-/// xil kalit, chunki reyestrning O'ZI jadval uchun qurilmoqda: §2.6.3 xonani
-/// darsga biriktirish, to'qnashuvlarni tekshirish va
-/// <c>classes.home_room_id</c> ni JADVAL moduliga qoldiradi, ya'ni ertaga
-/// xonani tanlaydigan ekran — dars jadvali. Xonani qo'shadigan odam ham
-/// o'sha: jadval tuzuvchi. Menyuda ham u "Dars jadvali → SOZLAMA" ostida
-/// (dars vaqtlari, choraklar bilan yonma-yon), ya'ni menyu va server bitta
-/// qoidaga bo'ysunadi. <c>classes</c> ruxsati sinf KATALOGI haqida; sinfning
-/// xonasi esa bugun ham erkin matn va shunday qoladi.
+/// <b>Ruxsat — <c>students</c> (F-4 bilan bir vaqtda tuzatildi).</b> Ilgari
+/// bu yerda <c>schedule</c> turardi, chunki reyestrning kelajakda jadval
+/// modulida ishlatilishi ko'zda tutilgan edi. Lekin <c>navigation.ts</c>
+/// mijozning 2026-09-17 dagi ko'rsatmasi bilan "Xonalar"ni "Dars jadvali"
+/// emas, "O'quv bo'limi" ostiga qo'ydi (Fanlar bilan yonma-yon,
+/// <c>SubjectsController</c>dagi F-4 izohiga qarang) — eski taxmin endi
+/// noto'g'ri. Endi darvoza <c>SubjectsController</c>, <c>StudentStatusesController</c>
+/// va <c>CertificateTypesController</c> bilan bitta qoidaga bo'ysunadi: menyu
+/// qaysi bo'lim ostida — darvoza ham o'sha bo'lim ruxsati. <c>classes</c>
+/// ruxsati sinf KATALOGI haqida; sinfning xonasi esa bugun ham erkin matn va
+/// shunday qoladi.
 /// </para>
 /// <para>
-/// <b>O'CHIRISH va "faolsizlantirish".</b> Sinf ko'rsatgan xona
-/// o'chirilmaydi (400). Bazada <c>rooms.is_active</c> ustuni YO'Q
-/// (§3.2 dagi shakl), shuning uchun "faolsizlantirish" yo'li ham yo'q —
-/// xonani ro'yxatdan olib tashlash uchun avval uni sinflardan bo'shatish
-/// kerak. Ustun qo'shilishi kerakligi hisobotda alohida qayd etilgan.
+/// <b>O'CHIRISH va "faolsizlantirish".</b> Sinf ko'rsatgan xona hali ham
+/// o'chirilmaydi (400) — bu ustundan mustaqil. Endi <c>rooms.is_active</c>
+/// bor (Batch C): ishlatilayotgan yoki yo'q, xonani "faolsizlantirish"
+/// mumkin — u yangi tanlovlarda ko'rinmaydi, lekin uni ko'rsatgan sinflar
+/// joyida qoladi. O'CHIRISH esa hamon faqat ishlatilmagan xona uchun.
 /// </para>
 /// <para>
 /// <b>Turlar</b> (<see cref="RoomKind"/>) bazada CHECK bilan cheklanmagan
@@ -38,7 +39,7 @@ namespace SchoolLms.Server.Controllers;
 /// </summary>
 [ApiController]
 [Authorize]
-[AdminPerm("schedule")]
+[AdminPerm("students")]
 [Route("api/admin/rooms")]
 public class RoomsController(AppDbContext db) : ControllerBase
 {
@@ -57,11 +58,20 @@ public class RoomsController(AppDbContext db) : ControllerBase
     //  1. RO'YXAT
     // =====================================================================
 
-    /// <summary>Reyestr: nom bo'yicha qidiruv, bino va tur filtri.</summary>
+    /// <summary>
+    /// Reyestr: nom bo'yicha qidiruv, bino va tur filtri.
+    ///
+    /// <para>
+    /// <paramref name="isActive"/> berilmasa — HAMMASI qaytadi. Katalog
+    /// ekrani (<c>RoomsPage.tsx</c>) shunday so'raydi va o'zi "faol/faolsiz"
+    /// yorlig'ini ko'rsatadi — faolsizlantirilgan xona ro'yxatdan
+    /// yo'qolib qolmasin (uni qaytadan faollashtirish ham shu ekrandan).
+    /// </para>
+    /// </summary>
     [HttpGet]
     public async Task<ActionResult<IEnumerable<RoomDto>>> GetAll(
         [FromQuery] string? search, [FromQuery] string? building, [FromQuery] string? kind,
-        CancellationToken ct = default)
+        [FromQuery] bool? isActive = null, CancellationToken ct = default)
     {
         var q = db.Rooms.AsNoTracking();
 
@@ -80,6 +90,8 @@ public class RoomsController(AppDbContext db) : ControllerBase
             if (!RoomKind.IsValid(kind)) return BadRequest(new { message = KindMessage });
             q = q.Where(r => r.Kind == kind);
         }
+
+        if (isActive is { } active) q = q.Where(r => r.IsActive == active);
 
         var rooms = await q.OrderBy(r => r.Building).ThenBy(r => r.Name).ToListAsync(ct);
         return (await WithUsageAsync(rooms, ct)).ToList();
@@ -123,9 +135,17 @@ public class RoomsController(AppDbContext db) : ControllerBase
 
     /// <summary>
     /// Tahrirlash. Nom, bino va qavat — TO'LIQ almashtiriladi (forma har doim
-    /// hammasini yuboradi, va binoni TOZALASH imkoni bo'lishi kerak); sig'im
-    /// va tur berilmasa joyida qoladi — ularni jimgina 30/classroom ga
-    /// qaytarib qo'yish yo'qotishdan battar bo'lardi.
+    /// hammasini yuboradi, va binoni TOZALASH imkoni bo'lishi kerak); sig'im,
+    /// tur va <c>isActive</c> berilmasa joyida qoladi — ularni jimgina
+    /// 30/classroom/faol ga qaytarib qo'yish yo'qotishdan battar bo'lardi.
+    ///
+    /// <para>
+    /// <b>Faollik almashtirishga ishlatilgan-ishlatilmaganligi TO'SIQ EMAS</b>
+    /// — Sinflar ko'rsatib turgan xonani ham faolsizlantirish mumkin (ular
+    /// "eskicha" ishlayveradi), faqat YANGI tanlovda ko'rinmay qoladi. Bu
+    /// O'CHIRISHdan farqi: o'chirish hali ham ishlatilgan xona uchun rad
+    /// etiladi (pastdagi <see cref="Delete"/>).
+    /// </para>
     /// </summary>
     [HttpPut("{id:guid}")]
     public async Task<ActionResult<RoomDto>> Update(
@@ -147,6 +167,7 @@ public class RoomsController(AppDbContext db) : ControllerBase
         room.Floor = req.Floor;
         if (req.Capacity is { } capacity) room.Capacity = capacity;
         if (Blank(req.Kind) is { } kind) room.Kind = kind;
+        if (req.IsActive is { } active) room.IsActive = active;
 
         await db.SaveChangesAsync(ct);
         return ToDto(room, await UsedByAsync(room.Name, ct));
@@ -316,7 +337,7 @@ public class RoomsController(AppDbContext db) : ControllerBase
     }
 
     private static RoomDto ToDto(Room r, int usedByClasses) =>
-        new(r.Id, r.Name, r.Building, r.Floor, r.Capacity, r.Kind, usedByClasses);
+        new(r.Id, r.Name, r.Building, r.Floor, r.Capacity, r.Kind, usedByClasses, r.IsActive);
 
     private static string? Blank(string? value)
     {

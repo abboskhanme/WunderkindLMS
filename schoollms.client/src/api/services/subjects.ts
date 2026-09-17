@@ -10,19 +10,29 @@ export interface SubjectPayload {
    * fanga o'quv guruhi ochiladi.
    */
   isGroupable: boolean
+  /** `#RRGGBB` yoki bo'sh/null — rangni tozalaydi (F-3). */
+  color?: string | null
+  /** Faolmi (F-3). Sukut — `true` (yangi fan har doim faol boshlanadi). */
+  isActive?: boolean
 }
 
 /**
  * Fanlar ro'yxati. `groupable` berilsa — faqat guruhlarga bo'linadiganlari
- * (guruh formasining fan tanlovi aynan shuni so'raydi).
+ * (guruh formasining fan tanlovi aynan shuni so'raydi). `isActive` berilsa —
+ * faqat faol (yoki faqat faolsiz) fanlar. Ikkalasi ham BERILMASA — hammasi:
+ * jadval, jurnal, chorak bahosi kabi ko'plab ekran fan nomini ID bo'yicha shu
+ * ro'yxatdan qidiradi va faolsizlantirilgan eski yozuvlar buzilmasligi kerak.
  */
-export async function getSubjects(groupable?: boolean): Promise<Subject[]> {
+export async function getSubjects(groupable?: boolean, isActive?: boolean): Promise<Subject[]> {
   if (USE_MOCK) {
     await delay()
     return subjectsMock
   }
+  const params: Record<string, boolean> = {}
+  if (groupable) params.groupable = true
+  if (isActive !== undefined) params.isActive = isActive
   const { data } = await api.get<Subject[]>('/admin/subjects', {
-    params: groupable ? { groupable: true } : undefined,
+    params: Object.keys(params).length > 0 ? params : undefined,
   })
   return data
 }

@@ -14,6 +14,14 @@ import { Loader } from '@/components/ui/Loader'
 import { cn } from '@/lib/utils'
 import { SubjectFormModal } from './SubjectFormModal'
 
+/**
+ * Fanlar katalogi (students-parity.md §2.5, G-9/F-1/F-3).
+ *
+ * Ro'yxat ATAYLAB filtrsiz so'raladi (faol ham, faolsiz ham) — bu KATALOG
+ * ekrani, StudentStatusesPage/CertificateTypesPage bilan bir xil naqsh:
+ * boshqaruvchi arxivlangan fanni ham ko'rishi va qaytadan faollashtirishi
+ * kerak. Yangi tanlovlar (jadval, guruh) o'zlari faqat faollarni so'raydi.
+ */
 export function SubjectsPage() {
   const [subjects, setSubjects] = useState<Subject[]>([])
   const [loading, setLoading] = useState(true)
@@ -85,16 +93,39 @@ export function SubjectsPage() {
           {subjects.map((s) => (
             <Card key={s.id} className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-50 text-brand-600">
+                <div
+                  className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-50 text-brand-600"
+                  style={
+                    s.color
+                      ? { backgroundColor: `${s.color}1F`, color: s.color }
+                      : undefined
+                  }
+                >
                   <BookOpen className="h-5 w-5" />
                 </div>
                 <div>
-                  <p className="font-medium text-slate-800">{s.name}</p>
-                  {s.isGroupable && (
-                    <span className="mt-0.5 inline-flex items-center gap-1 rounded-md bg-brand-50 px-1.5 py-0.5 text-[11px] font-medium text-brand-600">
-                      <Users className="h-3 w-3" /> Guruhlarga bo'linadi
-                    </span>
-                  )}
+                  <p className="flex items-center gap-1.5 font-medium text-slate-800">
+                    {s.name}
+                    {s.color && (
+                      <span
+                        title={s.color}
+                        className="h-2.5 w-2.5 shrink-0 rounded-full"
+                        style={{ backgroundColor: s.color }}
+                      />
+                    )}
+                  </p>
+                  <div className="mt-0.5 flex flex-wrap items-center gap-1">
+                    {s.isGroupable && (
+                      <span className="inline-flex items-center gap-1 rounded-md bg-brand-50 px-1.5 py-0.5 text-[11px] font-medium text-brand-600">
+                        <Users className="h-3 w-3" /> Guruhlarga bo'linadi
+                      </span>
+                    )}
+                    {s.isActive === false && (
+                      <span className="inline-flex items-center rounded-md bg-slate-100 px-1.5 py-0.5 text-[11px] font-medium text-slate-400">
+                        Faol emas
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
               <div className="flex items-center gap-0.5">
