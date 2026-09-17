@@ -7,7 +7,6 @@ import type { StudentPayload, StudentImportResult } from '@/api/services/student
 import {
   getStudents,
   getArchivedStudents,
-  archiveStudent,
   restoreStudent,
   createStudent,
   updateStudent,
@@ -33,6 +32,7 @@ import { Modal } from '@/components/ui/Modal'
 import { StudentFormModal } from './StudentFormModal'
 import { SmsModal } from './SmsModal'
 import { PaymentHistoryModal } from './PaymentHistoryModal'
+import { ArchiveStudentsModal } from './ArchiveStudentsModal'
 
 type BalanceFilter = 'all' | 'debt' | 'paid'
 type Tab = 'active' | 'archived'
@@ -48,9 +48,8 @@ export function StudentsPage() {
   const [archived, setArchived] = useState<Student[]>([])
   const [classNames, setClassNames] = useState<string[]>([])
   const [loading, setLoading] = useState(true)
-  /** Arxivlash modali — sabab kiritish uchun. */
-  const [archiveTarget, setArchiveTarget] = useState<Student | null>(null)
-  const [archiveReason, setArchiveReason] = useState('')
+  /** Arxivlash modali — bitta yoki bir nechta o'quvchi (sabab katalogi + izoh, §2.2). */
+  const [archiveTargets, setArchiveTargets] = useState<Student[]>([])
 
   // filtrlar
   const [search, setSearch] = useState('')
@@ -237,31 +236,23 @@ export function StudentsPage() {
     })
   }
 
-  /** Arxivga ko'chirish — sabab so'raydi va backend'ga uzatadi. */
-  const openArchive = (s: Student) => {
-    setArchiveTarget(s)
-    setArchiveReason('')
-  }
-  const confirmArchive = () => {
-    if (!archiveTarget) return
-    const s = archiveTarget
-    archiveStudent(s.id, archiveReason.trim()).then(() => {
-      // Faol ro'yxatdan olib tashlab, arxivga qo'shamiz (yangi sana bilan).
-      const updated: Student = {
-        ...s,
-        isArchived: true,
-        archivedAt: new Date().toISOString().slice(0, 10),
-        archiveReason: archiveReason.trim() || null,
-      }
-      setStudents((prev) => prev.filter((x) => x.id !== s.id))
-      setArchived((prev) => [updated, ...prev])
-      setSelected((prev) => {
-        const next = new Set(prev)
-        next.delete(s.id)
-        return next
-      })
-      setArchiveTarget(null)
+  /** Arxivga ko'chirish — oyna sabab so'raydi va backend'ga o'zi uzatadi (ArchiveStudentsModal). */
+  const openArchive = (s: Student) => setArchiveTargets([s])
+  const handleArchived = (ids: string[], reason: string) => {
+    const done = new Set(ids)
+    const today = new Date().toISOString().slice(0, 10)
+    // Faol ro'yxatdan olib tashlab, arxivga qo'shamiz (yangi sana va sabab bilan).
+    const moved = students
+      .filter((s) => done.has(s.id))
+      .map((s): Student => ({ ...s, isArchived: true, archivedAt: today, archiveReason: reason }))
+    setStudents((prev) => prev.filter((x) => !done.has(x.id)))
+    setArchived((prev) => [...moved, ...prev])
+    setSelected((prev) => {
+      const next = new Set(prev)
+      done.forEach((id) => next.delete(id))
+      return next
     })
+    setArchiveTargets([])
   }
   /** Arxivdan qaytarish. */
   const handleRestore = (s: Student) => {
@@ -489,6 +480,11 @@ export function StudentsPage() {
             <Button variant="secondary" onClick={handleExport}>
               <Download className="h-4 w-4" /> Yuklab olish (CSV)
             </Button>
+            {tab === 'active' && (
+              <Button variant="secondary" onClick={() => setArchiveTargets(selectedStudents)}>
+                <Archive className="h-4 w-4" /> Arxivlash
+              </Button>
+            )}
             <button
               onClick={clearSelection}
               className="ml-auto inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-700"
@@ -637,6 +633,11 @@ export function StudentsPage() {
       <StudentViewModal student={viewing} onClose={() => setViewing(null)} />
       <SmsModal open={smsOpen} onClose={() => setSmsOpen(false)} recipients={selectedStudents} />
       <PaymentHistoryModal student={historyOf} onClose={() => setHistoryOf(null)} />
+      <ArchiveStudentsModal
+        students={archiveTargets}
+        onClose={() => setArchiveTargets([])}
+        onArchived={handleArchived}
+      />
 
       {/* Excel'dan import natijasi */}
       <Modal
@@ -694,50 +695,6 @@ export function StudentsPage() {
         )}
       </Modal>
 
-      {/* Arxivga ko'chirish modali — sabab kiritish */}
-      <Modal
-        open={!!archiveTarget}
-        onClose={() => setArchiveTarget(null)}
-        title="O'quvchini arxivga ko'chirish"
-        size="sm"
-        footer={
-          <>
-            <Button variant="secondary" onClick={() => setArchiveTarget(null)}>
-              Bekor qilish
-            </Button>
-            <Button variant="danger" onClick={confirmArchive}>
-              <Archive className="h-4 w-4" /> Arxivga ko'chirish
-            </Button>
-          </>
-        }
-      >
-        {archiveTarget && (
-          <div className="space-y-3 text-sm text-slate-600">
-            <p>
-              <span className="font-medium text-slate-800">{archiveTarget.fullName}</span>{' '}
-              o'quvchini arxivga ko'chirasiz. Tarixiy ma'lumotlar (jurnal, davomat, to'lovlar)
-              saqlanadi, lekin:
-            </p>
-            <ul className="ml-5 list-disc space-y-0.5 text-slate-500">
-              <li>Faol ro'yxatdan yashirinadi (jurnal/davomat/dashboardda ko'rinmaydi)</li>
-              <li>Oylik to'lov hisoblanmaydi</li>
-              <li>Login bloklanadi (akkaunt paroli o'chiriladi)</li>
-            </ul>
-            <div>
-              <span className="mb-1 block text-sm font-medium text-slate-700">
-                Sababi (ixtiyoriy)
-              </span>
-              <input
-                value={archiveReason}
-                onChange={(e) => setArchiveReason(e.target.value)}
-                placeholder="masalan: Boshqa maktabga ko'chdi, oilaviy sabab..."
-                className={cn(control, 'w-full')}
-                autoFocus
-              />
-            </div>
-          </div>
-        )}
-      </Modal>
     </div>
   )
 }

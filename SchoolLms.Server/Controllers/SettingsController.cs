@@ -84,6 +84,62 @@ public class SettingsController(AppDbContext db, TelegramService telegram) : Con
         return NoContent();
     }
 
+    // ---------- Umumiy sozlama bayroqlari (§5.5) ----------
+    //
+    //  NEGA `AdminOrSuper`, `AdminPerm("settings")` NING O'ZI EMAS
+    //  ----------------------------------------------------------
+    //  `AdminPerm` xodimga (staff) HAR QANDAY bo'limni O'QISHga ruxsat beradi —
+    //  bo'limlararo bog'liqliklar uchun shunday qilingan. Bu to'rtta bayroq esa
+    //  maktabning pul va ma'lumot qoidalarini o'zgartiradi (qarzdorni arxivlash,
+    //  ota-onadan baholarni yashirish), ya'ni ularni ko'rish ham, yozish ham
+    //  faqat admin/superadmin ishi. Ikkala atribut birga ishlaydi: rol filtri
+    //  ustiga qo'shiladi, undan ayirilmaydi.
+
+    [HttpGet("general")]
+    [Authorize(Roles = Roles.AdminOrSuper)]
+    public async Task<ActionResult<GeneralSettingsDto>> GetGeneral(CancellationToken ct = default)
+    {
+        var m = await db.SchoolMeta.AsNoTracking().FirstOrDefaultAsync(ct);
+        // Qator umuman yo'q bo'lsa — entity sukutlari (ParityModel.cs dagi DEFAULT'lar
+        // bilan bir xil): ikkita darvoza o'chiq, ikkitasi yoqiq.
+        m ??= new SchoolMeta();
+        return new GeneralSettingsDto(
+            m.ArchiveOnlyNonDebtorStudents,
+            m.MakeAttendanceReasonRequired,
+            m.IsStudentGradeRequired,
+            m.ShowLearningProgressInParentDashboard);
+    }
+
+    [HttpPut("general")]
+    [Authorize(Roles = Roles.AdminOrSuper)]
+    public async Task<ActionResult<GeneralSettingsDto>> SaveGeneral(
+        GeneralSettingsDto req, CancellationToken ct = default)
+    {
+        var m = await db.SchoolMeta.FirstOrDefaultAsync(ct);
+        if (m is null)
+        {
+            // Qator AVVAL alohida yoziladi. Sabab: ikkita bayroqda baza DEFAULT'i `true`
+            // (ParityModel.cs), EF esa YANGI qatorda CLR sukutiga (`false`) teng qiymatni
+            // "berilmagan" deb hisoblab ustunni INSERT'dan tushirib qoldiradi — ya'ni
+            // "o'chirish" jimgina "yoqiq" bo'lib yozilardi. UPDATE da bu muammo yo'q.
+            m = new SchoolMeta();
+            db.SchoolMeta.Add(m);
+            await db.SaveChangesAsync(ct);
+        }
+
+        m.ArchiveOnlyNonDebtorStudents = req.ArchiveOnlyNonDebtorStudents;
+        m.MakeAttendanceReasonRequired = req.MakeAttendanceReasonRequired;
+        m.IsStudentGradeRequired = req.IsStudentGradeRequired;
+        m.ShowLearningProgressInParentDashboard = req.ShowLearningProgressInParentDashboard;
+        await db.SaveChangesAsync(ct);
+
+        return new GeneralSettingsDto(
+            m.ArchiveOnlyNonDebtorStudents,
+            m.MakeAttendanceReasonRequired,
+            m.IsStudentGradeRequired,
+            m.ShowLearningProgressInParentDashboard);
+    }
+
     // ---------- Telegram bot ----------
 
     [HttpGet("telegram")]

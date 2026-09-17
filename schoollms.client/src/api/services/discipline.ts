@@ -15,17 +15,28 @@ export async function getDisciplineReasons(): Promise<DisciplineReason[]> {
   return data
 }
 
-export async function createDisciplineReason(name: string, points: number): Promise<DisciplineReason> {
-  const { data } = await api.post<DisciplineReason>('/admin/discipline/reasons', { name, points })
+/**
+ * Intizomiy sababni saqlash maydonlari. `notifyParent` — ota-onaga Telegram xabari (§6.3):
+ * sukut bo'yicha O'CHIQ, maktab har bir sabab uchun ataylab yoqadi.
+ */
+export interface SaveDisciplineReasonInput {
+  name: string
+  points: number
+  notifyParent: boolean
+  description: string | null
+  isActive: boolean
+}
+
+export async function createDisciplineReason(input: SaveDisciplineReasonInput): Promise<DisciplineReason> {
+  const { data } = await api.post<DisciplineReason>('/admin/discipline/reasons', input)
   return data
 }
 
 export async function updateDisciplineReason(
   id: string,
-  name: string,
-  points: number,
+  input: SaveDisciplineReasonInput,
 ): Promise<DisciplineReason> {
-  const { data } = await api.put<DisciplineReason>(`/admin/discipline/reasons/${id}`, { name, points })
+  const { data } = await api.put<DisciplineReason>(`/admin/discipline/reasons/${id}`, input)
   return data
 }
 

@@ -29,7 +29,7 @@ import {
 import { AsyncBlock, balanceShort, gradeTone, monthLabel } from './shared'
 import { todayISO } from '../../lib/weeks'
 
-export function HomeTab({ child, onOpenTab }) {
+export function HomeTab({ child, onOpenTab, showGrades = true }) {
   const state = useAsync(
     () =>
       Promise.all([
@@ -64,7 +64,8 @@ export function HomeTab({ child, onOpenTab }) {
             <StatGrid
               items={[
                 { label: 'Bugungi darslar', value: String(lessons.length) },
-                {
+                // §5.5 — maktab baholarni yopgan bo'lsa "0 ta baho" ko'rsatilmaydi: bu yolg'on bo'lardi.
+                showGrades && {
                   label: 'Bugungi baholar',
                   value: String(grades.length),
                   note: grades.length ? grades.map((g) => g.grade).join(', ') : null,
@@ -74,7 +75,7 @@ export function HomeTab({ child, onOpenTab }) {
                   value: String(dashboard.pendingAssignmentsCount ?? 0),
                 },
                 balanceShort(billing.debt, billing.credit),
-              ]}
+              ].filter(Boolean)}
             />
 
             {owes && moneyCard}

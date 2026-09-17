@@ -66,6 +66,25 @@ public sealed class TelegramParentController(
     private string? Uid => User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
 
     // =====================================================================
+    //  §5.5 — `show_learning_progress_in_parent_dashboard`
+    //
+    //  Bu controller BUTUNLAY ota-onaniki (`[Authorize(Roles = "parent")]`),
+    //  ya'ni bu yerda "o'quvchimi yoki ota-onami" degan savol yo'q: bayroq
+    //  o'chiq bo'lsa baho ko'rinmaydi, tamom.
+    // =====================================================================
+
+    private const string ProgressHiddenMessage =
+        "Maktab ota-onalar uchun o'zlashtirish ma'lumotini vaqtincha yopgan.";
+
+    private async Task<bool> ProgressHiddenAsync(CancellationToken ct)
+    {
+        var meta = await db.SchoolMeta.AsNoTracking()
+            .Select(m => new { m.ShowLearningProgressInParentDashboard })
+            .FirstOrDefaultAsync(ct);
+        return !(meta?.ShowLearningProgressInParentDashboard ?? true);
+    }
+
+    // =====================================================================
     //  Farzandlar
     // =====================================================================
 
@@ -100,6 +119,8 @@ public sealed class TelegramParentController(
         var (todayLessons, todayGrades) = cls is null
             ? (new List<StudentLessonDto>(), new List<HomeworkItemDto>())
             : await TodayAsync(cls.Id, child, meta, ct);
+        // §5.5 — jadval qoladi, bugungi baholar bo'shaydi.
+        if (await ProgressHiddenAsync(ct)) todayGrades = [];
 
         var billing = await invoices.ForStudentAsync(child.Id, ct);
         var pickup = await PickupService.TodayAsync(db, child.Id, ct);
@@ -168,6 +189,8 @@ public sealed class TelegramParentController(
     {
         var uid = Uid;
         if (uid is null) return Unauthorized();
+        if (await ProgressHiddenAsync(ct))
+            return StatusCode(StatusCodes.Status403Forbidden, new { message = ProgressHiddenMessage });
         var child = await Access.ChildAsync(uid, studentId, ct);
         if (child is null) return NotFound(new { message = "Farzand topilmadi" });
 

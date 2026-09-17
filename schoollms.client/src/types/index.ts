@@ -865,6 +865,15 @@ export interface DisciplineReason {
   points: number
   /** "other" — mustaqil intizomiy sabab; "attendance" — davomat sababi (jurnalda ishlatiladi) */
   kind: 'other' | 'attendance'
+  /**
+   * Shu sabab bilan ball qo'yilganda ota-onaga Telegram xabari ketadimi (§6.3).
+   * Sukut — false; davomat sabablarida har doim false.
+   */
+  notifyParent: boolean
+  /** Sabab izohi — qachon qo'yiladi, nimani anglatadi. */
+  description: string | null
+  /** false = yangi ball qo'yishda tanlanmaydi; eski yozuvlar joyida qoladi. */
+  isActive: boolean
 }
 
 /** Ballar nazorati qatori: o'quvchi, sinf, plus, minus, qoldi (100 + plus − minus) */
@@ -888,6 +897,11 @@ export interface DisciplinePoint {
   createdBy: string
   /** "manual" — qo'lda (o'chirsa bo'ladi), "attendance" — jurnal davomati (faqat ko'rish) */
   source: 'manual' | 'attendance'
+  /**
+   * Shu ball haqida ota-onaga HAQIQATAN yuborilgan Telegram xabarlari soni (§6.3).
+   * Faqat yangi ball qo'yilganda ma'noli; tarixda har doim 0.
+   */
+  notifiedParents?: number
 }
 
 /** Maktab bo'ylab "Harakatlar" lentasidagi bitta qator (o'quvchi va sinf bilan) */

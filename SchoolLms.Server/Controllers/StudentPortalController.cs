@@ -53,9 +53,17 @@ public class StudentPortalController(
             var user = await db.Users.FindAsync(uid);
             if (user is null) return null;
             var phone = NormalizePhone(user.Email);
-            return await db.Students
-                .Where(s => !s.IsArchived)
-                .FirstOrDefaultAsync(s => NormalizePhone(s.ParentPhone) == phone);
+            if (phone.Length == 0) return null;
+            // `NormalizePhone` SQL'ga o'girilmaydi — ilgari u `Where` ichida turardi va
+            // ota-onaning HAR bir so'rovi 500 bilan yiqilardi (EF "could not be translated").
+            // Shuning uchun faqat (id, telefon) juftliklari olinadi va solishtirish xotirada.
+            var candidates = await db.Students.AsNoTracking()
+                .Where(s => !s.IsArchived && s.ParentPhone != "")
+                .OrderBy(s => s.FullName)
+                .Select(s => new { s.Id, s.ParentPhone })
+                .ToListAsync();
+            var match = candidates.FirstOrDefault(s => NormalizePhone(s.ParentPhone) == phone);
+            return match is null ? null : await db.Students.FindAsync(match.Id);
         }
 
         return await db.Students.FirstOrDefaultAsync(s => s.UserId == uid);
@@ -64,6 +72,41 @@ public class StudentPortalController(
     /// <summary>Telefon raqamidan faqat raqamlarni qoldiradi (taqqoslash uchun).</summary>
     private static string NormalizePhone(string? p) =>
         new string((p ?? "").Where(char.IsDigit).ToArray());
+
+    // =====================================================================
+    //  §5.5 — `show_learning_progress_in_parent_dashboard`
+    //
+    //  Bayroq FAQAT OTA-ONAGA tegishli. O'quvchining o'zi va admin shu
+    //  endpointlardan foydalanadi (bu controller uchtasiga ham xizmat qiladi),
+    //  va bolaning o'z bahosini undan yashirish §5.5 da ham, mijozning
+    //  so'rovida ham yo'q: bayroqning maqsadi "yomon chorakda ota-onalar
+    //  kabinetini vaqtincha yopish".
+    //
+    //  Tekshiruv SERVERDA: bayroqni faqat ekranda yashirish — yolg'on.
+    //  Mini App unga qo'shimcha (GET /api/tg/me dagi `showLearningProgress`)
+    //  orqali ekranni ham yopadi, lekin qulf shu yerda.
+    // =====================================================================
+
+    /// <summary>Ota-onaga o'zlashtirish yopilganda qaytariladigan matn.</summary>
+    private const string ProgressHiddenMessage =
+        "Maktab ota-onalar uchun o'zlashtirish ma'lumotini vaqtincha yopgan.";
+
+    /// <summary>
+    /// Shu so'rovda baholar yashirinishi kerakmi. Faqat <c>parent</c> roli uchun
+    /// va faqat bayroq o'chirilgan bo'lsa.
+    /// </summary>
+    private async Task<bool> ProgressHiddenAsync(CancellationToken ct = default)
+    {
+        if (!User.IsInRole("parent")) return false;
+        var meta = await db.SchoolMeta.AsNoTracking()
+            .Select(m => new { m.ShowLearningProgressInParentDashboard })
+            .FirstOrDefaultAsync(ct);
+        // Qator yo'q bo'lsa — entity sukuti (`true`), ya'ni ko'rinadi.
+        return !(meta?.ShowLearningProgressInParentDashboard ?? true);
+    }
+
+    private ObjectResult ProgressHidden() =>
+        StatusCode(StatusCodes.Status403Forbidden, new { message = ProgressHiddenMessage });
 
     /// <summary>
     /// Mutatsiya (yozish) amallari uchun — FAQAT student rolida; admin impersonate qila olmaydi.
@@ -207,6 +250,7 @@ public class StudentPortalController(
     public async Task<ActionResult<StudentNotebookDto>> Notebook([FromQuery] string? studentId)
     {
         if (User.IsInRole("admin") && string.IsNullOrWhiteSpace(studentId)) return NeedStudentId();
+        if (await ProgressHiddenAsync()) return ProgressHidden();
         var s = await TargetAsync(studentId);
         if (s is null) return NotFound();
         return await StudentProfileBuilder.BuildAsync(db, s);
@@ -364,6 +408,7 @@ public class StudentPortalController(
     public async Task<ActionResult<StudentReportDto>> Grades([FromQuery] string? studentId)
     {
         if (User.IsInRole("admin") && string.IsNullOrWhiteSpace(studentId)) return NeedStudentId();
+        if (await ProgressHiddenAsync()) return ProgressHidden();
         var s = await TargetAsync(studentId);
         if (s is null) return NotFound();
         return await StudentReportBuilder.BuildAsync(db, s);
@@ -379,6 +424,8 @@ public class StudentPortalController(
     public async Task<ActionResult<PortalRatingDto>> Rating([FromQuery] string? studentId)
     {
         if (User.IsInRole("admin") && string.IsNullOrWhiteSpace(studentId)) return NeedStudentId();
+        // Reyting o'rtacha BAHO ustidan qurilgan — ya'ni o'zlashtirish.
+        if (await ProgressHiddenAsync()) return ProgressHidden();
         var s = await TargetAsync(studentId);
         if (s is null) return NotFound();
 
@@ -435,6 +482,10 @@ public class StudentPortalController(
 
         var reasons = await db.AbsenceReasons.ToDictionaryAsync(r => r.Id);
 
+        // §5.5 — bu yerda butun javob YOPILMAYDI: uyga vazifa va mavzu ota-onaga kerak,
+        // yopiladigani faqat BAHO. Shuning uchun qator qoladi, `Grade` bo'shaydi.
+        var hideGrades = await ProgressHiddenAsync();
+
         return notes
             .OrderBy(n => n.Date, StringComparer.Ordinal).ThenBy(n => n.Period)
             .Select(n =>
@@ -445,7 +496,7 @@ public class StudentPortalController(
                 return new HomeworkItemDto(
                     n.Date, n.Period, n.SubjectId, subjects.GetValueOrDefault(n.SubjectId, ""),
                     n.Topic, n.Homework, n.Conducted,
-                    en?.Grade, en?.ReasonId, r?.Name, r?.IsLate ?? false);
+                    hideGrades ? null : en?.Grade, en?.ReasonId, r?.Name, r?.IsLate ?? false);
             })
             .ToList();
     }
@@ -496,6 +547,9 @@ public class StudentPortalController(
 
         var reasons = await db.AbsenceReasons.ToDictionaryAsync(r => r.Id);
 
+        // §5.5 — jadval, mavzu va davomat qoladi, faqat baho bo'shaydi (Homework bilan bir xil sabab).
+        var hideGrades = await ProgressHiddenAsync();
+
         var rows = new List<StudentJournalRowDto>();
         foreach (var l in lessons.OrderBy(x => x.Day).ThenBy(x => x.Period))
         {
@@ -516,7 +570,7 @@ public class StudentPortalController(
                 l.SubjectId, subjects.GetValueOrDefault(l.SubjectId, ""),
                 l.TeacherId, teachers.GetValueOrDefault(l.TeacherId, ""),
                 n?.Topic ?? "", n?.Homework, n?.Conducted ?? false,
-                en?.Grade, en?.ReasonId, r?.Name, r?.IsLate ?? false));
+                hideGrades ? null : en?.Grade, en?.ReasonId, r?.Name, r?.IsLate ?? false));
         }
         return rows;
     }
@@ -612,9 +666,13 @@ public class StudentPortalController(
                 .ToList();
 
             // Bugungi baholar — shu o'quvchining bugungi jurnal yozuvlari (Grade != null).
-            var entries = await db.JournalEntries
-                .Where(e => e.ClassId == cls.Id && e.StudentId == s.Id && e.Date == today && e.Grade != null)
-                .ToListAsync();
+            // §5.5 — ota-onaga yopilgan bo'lsa ro'yxat BO'SH qoladi (bu yerda qatorning
+            // O'ZI baho; bahosiz qator "bo'sh nishon" bo'lib ekranni chalg'itardi).
+            var entries = new List<JournalEntry>();
+            if (!await ProgressHiddenAsync())
+                entries = await db.JournalEntries
+                    .Where(e => e.ClassId == cls.Id && e.StudentId == s.Id && e.Date == today && e.Grade != null)
+                    .ToListAsync();
             var notes = await db.LessonNotes
                 .Where(n => n.ClassId == cls.Id && n.Date == today)
                 .ToListAsync();
@@ -945,6 +1003,7 @@ public class StudentPortalController(
     public async Task<ActionResult<StudentAssignmentScoresDto>> AssignmentScores([FromQuery] string? studentId)
     {
         if (User.IsInRole("admin") && string.IsNullOrWhiteSpace(studentId)) return NeedStudentId();
+        if (await ProgressHiddenAsync()) return ProgressHidden();
         var s = await TargetAsync(studentId);
         if (s is null) return NotFound();
         var classId = await ClassIdOf(s);

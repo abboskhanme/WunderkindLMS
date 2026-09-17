@@ -396,7 +396,8 @@ public class TeacherPortalController(
         // Hali o'tilmagan (sanasi kelmagan) darsga baho/jurnal kiritib bo'lmaydi.
         if (string.CompareOrdinal(req.Date, AppClock.Now.ToString("yyyy-MM-dd")) > 0)
             return BadRequest(new { message = "Dars hali o'tilmagan — kelajakdagi sanaga baho qo'yib bo'lmaydi" });
-        await JournalService.SetEntryAsync(db, req, fcm);
+        var error = await JournalService.SetEntryAsync(db, req, fcm);
+        if (error is not null) return BadRequest(new { message = error });
         return NoContent();
     }
 
@@ -422,7 +423,8 @@ public class TeacherPortalController(
     public async Task<IActionResult> SetNote(SetLessonNoteRequest req)
     {
         if (!await Authorized(req.ClassId, req.SubjectId)) return Forbid();
-        await JournalService.SetNoteAsync(db, req);
+        var error = await JournalService.SetNoteAsync(db, req);
+        if (error is not null) return BadRequest(new { message = error });
         return NoContent();
     }
 

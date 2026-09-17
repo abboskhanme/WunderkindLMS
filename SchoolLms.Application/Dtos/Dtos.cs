@@ -345,8 +345,12 @@ public record StudentDto(
     string? ParentPassportUrl = null,
     bool IsArchived = false, string? ArchivedAt = null, string? ArchiveReason = null);
 
-/// <summary>O'quvchini arxivlash so'rovi — sababini saqlaydi.</summary>
-public record ArchiveStudentRequest(string Reason);
+/// <summary>
+/// O'quvchini arxivlash so'rovi. <c>Reason</c> — erkin matn, MAJBURIY (tafsilot);
+/// <c>ArchiveReasonId</c> — katalog qatori, ixtiyoriy (guruhlash uchun, §2.2);
+/// <c>Force</c> — qarzdorlik to'sig'ini chetlab o'tish, faqat superadmin (§9 Q4).
+/// </summary>
+public record ArchiveStudentRequest(string Reason, Guid? ArchiveReasonId = null, bool Force = false);
 
 /// <summary>Bayram/dam olish kuni (butun maktab). Date — "YYYY-MM-DD".</summary>
 public record HolidayDto(string Date, string Name);
@@ -358,8 +362,24 @@ public record SaveHolidayRequest(string Date, string? Name);
 /// Intizomiy ball sababi (nomi + ball). <c>Kind</c>: "other" — mustaqil intizomiy sabab;
 /// "attendance" — davomat sababi (jurnalda ishlatiladi, manbai bitta).
 /// </summary>
-public record DisciplineReasonDto(string Id, string Name, int Points, string Kind);
-public record SaveDisciplineReasonRequest(string Name, int Points);
+/// <param name="NotifyParent">
+/// Shu sabab bilan ball qo'yilganda ota-onaga TELEGRAM xabari ketadimi (§6.3, 4-qadam).
+/// Davomat sabablarida ("attendance") har doim <c>false</c>: ular jurnalda ishlatiladi
+/// va o'z xabar yo'liga ega.
+/// </param>
+/// <param name="Description">Sabab izohi — qachon qo'yiladi, nimani anglatadi (§6.3, 5-qadam).</param>
+/// <param name="IsActive">false = yangi ball qo'yishda tanlanmaydi; eski yozuvlar joyida qoladi.</param>
+public record DisciplineReasonDto(
+    string Id, string Name, int Points, string Kind,
+    bool NotifyParent = false, string? Description = null, bool IsActive = true);
+
+/// <summary>
+/// Sababni yaratish/tahrirlash. Yangi maydonlar NULL bo'lishi mumkin — eski mijoz
+/// (yoki eski test) ularni yubormasa, sukut qiymat qo'llanadi: xabar O'CHIQ, sabab FAOL.
+/// </summary>
+public record SaveDisciplineReasonRequest(
+    string Name, int Points,
+    bool? NotifyParent = null, string? Description = null, bool? IsActive = null);
 /// <summary>Davomat sababiga ball belgilash so'rovi.</summary>
 public record SetReasonPointsRequest(int Points);
 
@@ -413,9 +433,13 @@ public record DisciplineScoreRowDto(
 /// <summary>O'quvchiga ball kiritish so'rovi (sabab bo'yicha).</summary>
 public record AddDisciplinePointRequest(string StudentId, string ReasonId, string? Note);
 /// <summary>Bitta intizomiy ball yozuvi (tarix). <c>Source</c>: "manual" (qo'lda, o'chirsa bo'ladi) yoki "attendance" (jurnal davomati, faqat ko'rish).</summary>
+/// <param name="NotifiedParents">
+/// Shu ball haqida ota-onaga HAQIQATAN yuborilgan Telegram xabarlari soni (§6.3, 4-qadam).
+/// Faqat yangi ball qo'yilganda ma'noga ega; tarixni o'qiyotganda har doim 0.
+/// </param>
 public record DisciplinePointDto(
     string Id, string StudentId, string ReasonName, int Points, string Note, string CreatedAt,
-    string CreatedBy, string Source);
+    string CreatedBy, string Source, int NotifiedParents = 0);
 /// <summary>O'quvchi/ota-ona ilovasi uchun intizomiy ball: qoldi + plus/minus + tarix (100 dan boshlanadi).</summary>
 public record StudentDisciplineDto(int Remaining, int Plus, int Minus, List<DisciplinePointDto> Items);
 

@@ -187,7 +187,11 @@ public sealed class TelegramAuthController(
 
         var account = await db.TelegramAccounts.AsNoTracking()
             .FirstOrDefaultAsync(a => a.UserId == uid, ct);
-        var schoolName = (await db.SchoolMeta.AsNoTracking().FirstOrDefaultAsync(ct))?.Name ?? "";
+        var meta = await db.SchoolMeta.AsNoTracking().FirstOrDefaultAsync(ct);
+        var schoolName = meta?.Name ?? "";
+        // §5.5 — bayroq FAQAT ota-onani yopadi; o'quvchi o'z bahosini ko'raveradi.
+        var showProgress = user.Role != "parent"
+            || (meta?.ShowLearningProgressInParentDashboard ?? true);
 
         var children = user.Role == "parent"
             ? await new GuardianAccess(db).ChildCardsAsync(uid, ct)
@@ -214,7 +218,8 @@ public sealed class TelegramAuthController(
             ? new TgTelegramUserDto("", "", null)
             : new TgTelegramUserDto(account.TelegramUserId.ToString(), account.DisplayName, account.Username);
 
-        return new TgProfileDto(user.Id, user.FullName, user.Role, schoolName, telegramProfile, children, teacher);
+        return new TgProfileDto(
+            user.Id, user.FullName, user.Role, schoolName, telegramProfile, children, teacher, showProgress);
     }
 
     /// <summary>

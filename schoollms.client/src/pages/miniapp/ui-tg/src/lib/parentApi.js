@@ -62,6 +62,27 @@ export async function listChildren() {
   return me ? [{ id: me.id, fullName: me.fullName, className: me.className ?? '' }] : []
 }
 
+/* -------------------------------------------------------------- ko'rinish */
+
+/**
+ * Maktab ota-onaga o'zlashtirishni (baholarni) ko'rsatadimi — §5.5
+ * `show_learning_progress_in_parent_dashboard`, `/api/tg/me` dagi
+ * `showLearningProgress`. O'quvchi hisobi uchun server har doim `true` beradi.
+ *
+ * QULF SERVERDA: bayroq o'chiq bo'lsa baholar endpointlari ota-onaga 403 yoki
+ * bahosiz javob qaytaradi. Bu funksiya faqat ekranni tartibga soladi — bo'sh
+ * "Baholar" tabi va "0 ta baho" ko'rinmasin. Shuning uchun so'rov yiqilsa
+ * `true`: ekranni bekorga yashirmaymiz, ma'lumot baribir kelmaydi.
+ */
+export async function getShowLearningProgress() {
+  try {
+    const me = await api.get('/tg/me')
+    return me?.showLearningProgress !== false
+  } catch {
+    return true
+  }
+}
+
 /* ------------------------------------------------------------------- Bosh */
 
 /** Bosh sahifa: profil, meta, bugungi darslar, bugungi baholar, qoldiq. */

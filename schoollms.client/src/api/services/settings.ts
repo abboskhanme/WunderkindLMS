@@ -75,6 +75,34 @@ export async function saveSchoolInfo(info: SchoolInfo): Promise<void> {
   await api.put('/admin/settings/school', info)
 }
 
+/* ---------- Umumiy qoidalar (§5.5 — to'rtta bayroq) ---------- */
+
+/**
+ * Har biri ANIQ bir joyda ishlaydi, shunchaki ko'rinib turgan tugma emas:
+ * arxivlash qoidasi, jurnaldagi ikkita darvoza va ota-ona kabineti.
+ * Endpoint faqat admin/superadmin uchun ochiq (xodim 403 oladi).
+ */
+export interface GeneralSettings {
+  /** Qarzi bor o'quvchini arxivlash taqiqlanadi (superadmin chetlab o'ta oladi). */
+  archiveOnlyNonDebtorStudents: boolean
+  /** Jurnalda davomat sababi majburiy. */
+  makeAttendanceReasonRequired: boolean
+  /** Baholarsiz darsni yopib bo'lmaydi. */
+  isStudentGradeRequired: boolean
+  /** Ota-ona kabinetida o'zlashtirish (baholar) ko'rinadimi. */
+  showLearningProgressInParentDashboard: boolean
+}
+
+export async function getGeneralSettings(): Promise<GeneralSettings> {
+  const { data } = await api.get<GeneralSettings>('/admin/settings/general')
+  return data
+}
+
+export async function saveGeneralSettings(flags: GeneralSettings): Promise<GeneralSettings> {
+  const { data } = await api.put<GeneralSettings>('/admin/settings/general', flags)
+  return data
+}
+
 /* ---------- Telegram bot sozlamasi ---------- */
 
 export interface TelegramConfig {
