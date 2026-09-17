@@ -5,14 +5,25 @@ import { subjectsMock } from '../mock/subjects'
 
 export interface SubjectPayload {
   name: string
+  /**
+   * "Guruhlarga bo'linadi" (students-parity.md §2.5, G-9) — faqat shunday
+   * fanga o'quv guruhi ochiladi.
+   */
+  isGroupable: boolean
 }
 
-export async function getSubjects(): Promise<Subject[]> {
+/**
+ * Fanlar ro'yxati. `groupable` berilsa — faqat guruhlarga bo'linadiganlari
+ * (guruh formasining fan tanlovi aynan shuni so'raydi).
+ */
+export async function getSubjects(groupable?: boolean): Promise<Subject[]> {
   if (USE_MOCK) {
     await delay()
     return subjectsMock
   }
-  const { data } = await api.get<Subject[]>('/admin/subjects')
+  const { data } = await api.get<Subject[]>('/admin/subjects', {
+    params: groupable ? { groupable: true } : undefined,
+  })
   return data
 }
 

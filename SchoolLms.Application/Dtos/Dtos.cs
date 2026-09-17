@@ -171,7 +171,13 @@ public record CameraSettingsDto(bool Enabled, int CameraCount);
 public record SaveCameraSettingsRequest(bool Enabled);
 
 /* ---------- Subjects ---------- */
-public record SubjectPayload(string Name);
+/// <summary>
+/// Fan formasi. <paramref name="IsGroupable"/> — "guruhlarga bo'linadi"
+/// (students-parity.md §2.5, G-9): faqat shunday fanga o'quv guruhi ochiladi.
+/// Sukut qiymati <c>false</c> ataylab: eski chaqiruvchi bayroqni yubormasa
+/// fan guruhli BO'LIB QOLMAYDI.
+/// </summary>
+public record SubjectPayload(string Name, bool IsGroupable = false);
 
 /* ---------- Classes ---------- */
 public record ClassPayload(string Name, int Grade, string Language, decimal MonthlyFee, string? Room);

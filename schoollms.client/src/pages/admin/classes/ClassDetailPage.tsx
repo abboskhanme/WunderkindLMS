@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
-import { ArrowLeft, Users, Star, CalendarCheck } from 'lucide-react'
+import { ArrowLeft, Users, Star, CalendarCheck, ClipboardList } from 'lucide-react'
 import type { SchoolClass } from '@/types'
 import { getClasses } from '@/api/services/classes'
 import {
@@ -55,24 +55,33 @@ export function ClassDetailPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-3">
-        <Link
-          to="/admin/classes"
-          className="rounded-lg p-2 text-slate-500 transition-colors hover:bg-slate-100"
-        >
-          <ArrowLeft className="h-5 w-5" />
-        </Link>
-        <div>
-          <h1 className="text-xl font-semibold text-slate-800">
-            {cls ? `${cls.name}-sinf` : 'Sinf'}
-          </h1>
-          {cls && (
-            <p className="text-sm text-slate-400">
-              {languageLabels[cls.language]} sinfi
-              {cls.room ? ` · ${cls.room}-xona` : ''} · {formatMoney(cls.monthlyFee)}
-            </p>
-          )}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <Link
+            to="/admin/classes"
+            className="rounded-lg p-2 text-slate-500 transition-colors hover:bg-slate-100"
+          >
+            <ArrowLeft className="h-5 w-5" />
+          </Link>
+          <div>
+            <h1 className="text-xl font-semibold text-slate-800">
+              {cls ? `${cls.name}-sinf` : 'Sinf'}
+            </h1>
+            {cls && (
+              <p className="text-sm text-slate-400">
+                {languageLabels[cls.language]} sinfi
+                {cls.room ? ` · ${cls.room}-xona` : ''} · {formatMoney(cls.monthlyFee)}
+              </p>
+            )}
+          </div>
         </div>
+        {/* C-2: ro'yxatni boshqarish (qo'shish, chiqarish, o'tkazish) alohida sahifada. */}
+        <Link
+          to={`/admin/classes/${id}/roster`}
+          className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50"
+        >
+          <ClipboardList className="h-4 w-4" /> Sinf ro'yxati
+        </Link>
       </div>
 
       {loading ? (

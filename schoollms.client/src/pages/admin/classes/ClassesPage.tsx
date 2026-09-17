@@ -1,6 +1,14 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Plus, Pencil, Trash2, Users, Archive, ArchiveRestore } from 'lucide-react'
+import {
+  Plus,
+  Pencil,
+  Trash2,
+  Users,
+  Archive,
+  ArchiveRestore,
+  ClipboardList,
+} from 'lucide-react'
 import type { SchoolClass } from '@/types'
 import type { ClassPayload } from '@/api/services/classes'
 import {
@@ -199,6 +207,12 @@ export function ClassesPage() {
                         className="flex items-center justify-end gap-0.5"
                         onClick={(e) => e.stopPropagation()}
                       >
+                        {/* C-2: sinf ro'yxati — qo'shish, sabab bilan chiqarish, o'tkazish. */}
+                        <IconBtn
+                          icon={ClipboardList}
+                          title="Sinf ro'yxati"
+                          onClick={() => navigate(`/admin/classes/${c.id}/roster`)}
+                        />
                         <IconBtn
                           icon={Users}
                           title="Guruhlar (1/2)"
