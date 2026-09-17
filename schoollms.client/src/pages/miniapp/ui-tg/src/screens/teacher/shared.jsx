@@ -65,14 +65,32 @@ export function lessonProgress(lesson, now = nowHHmm()) {
 /** Chat kanalining ichki kaliti — xodimlar guruhi sinf emas. */
 export const STAFF_CHANNEL = '__xodimlar__'
 
-/** Kanal kalitini ko'rinadigan nomga aylantiradi. */
-export function channelTitle(name) {
-  return name === STAFF_CHANNEL ? 'Xodimlar guruhi' : `${name} sinf`
+/**
+ * O'quv guruhi kanalining prefiksi — to'liq kalit `grp:<guruh id>` (G-17,
+ * docs/modules/students-parity.md §2.1.6).
+ *
+ * Kalit sinf NOMI bo'lgan kanallar bilan to'qnashmasligi uchun shunday: sinf
+ * nomi erkin matn, guruh kaliti esa faqat mavjud guruh id'si bilan mos kelardi.
+ * Kalitning o'zi ekranda KO'RSATILMAYDI — nomni server `label` sifatida beradi.
+ */
+export const GROUP_CHANNEL_PREFIX = 'grp:'
+
+export function isGroupChannel(name) {
+  return typeof name === 'string' && name.startsWith(GROUP_CHANNEL_PREFIX)
+}
+
+/** Kanal kalitini ko'rinadigan nomga aylantiradi (`label` — serverdan). */
+export function channelTitle(name, label) {
+  if (name === STAFF_CHANNEL) return 'Xodimlar guruhi'
+  if (isGroupChannel(name)) return label || "O'quv guruhi"
+  return `${label || name} sinf`
 }
 
 /** Ro'yxatdagi avatar/kvadrat uchun qisqa belgi. */
-export function channelBadge(name) {
-  return name === STAFF_CHANNEL ? 'XD' : name
+export function channelBadge(name, label) {
+  if (name === STAFF_CHANNEL) return 'XD'
+  if (isGroupChannel(name)) return (label || 'GR').slice(0, 2).toUpperCase()
+  return label || name
 }
 
 /** Bugungi darslardagi takrorlanmas (sinf, fan) juftliklari. */
@@ -86,6 +104,16 @@ export function lessonPairs(lessons) {
     pairs.push({ classId: l.classId, subjectId: l.subjectId })
   }
   return pairs
+}
+
+/**
+ * Dars satrining sarlavhasi: sinf nomi (bo'linish bo'lsa — guruh raqami bilan)
+ * yoki O'QUV GURUHI nomi (§2.1.4 — guruhda sinf ichidagi bo'linish yo'q).
+ */
+export function lessonOwnerTitle(lesson) {
+  if (lesson.ownerKind === 'group') return `Guruh: ${lesson.className}`
+  const sub = lesson.subGroup ?? 0
+  return `${lesson.className}${sub > 0 ? ` · ${sub}-guruh` : ''}`
 }
 
 /** Darsning o'ziga xos kaliti — bir kunda bir sinfda ikki dars bo'lishi mumkin. */
@@ -104,15 +132,19 @@ export function lessonKey(lesson) {
  * Server `readAt` ni saqlay boshlaganda bu funksiya bitta endpoint chaqiruviga
  * qisqaradi.
  */
-export function channelSummaries(names, lastMessages, seen) {
+export function channelSummaries(channels, lastMessages, seen) {
+  // `channels` — `{ key, label, kind }` yoki (eski chaqiruvlar uchun) oddiy kalit satri.
   return Promise.all(
-    (names || []).map(async (name) => {
+    (channels || []).map(async (channel) => {
+      const name = typeof channel === 'string' ? channel : channel.key
+      const label = typeof channel === 'string' ? null : channel.label
       const lastAt = lastMessages?.[name] || null
       const mark = seen?.[name] || null
-      if (!lastAt) return { name, lastAt: null, unread: 0, preview: null, author: null }
+      if (!lastAt) return { name, label, lastAt: null, unread: 0, preview: null, author: null }
       if (!hasUnread(name, lastAt, seen)) {
         return {
           name,
+          label,
           lastAt,
           unread: 0,
           preview: mark?.preview ?? null,
@@ -123,6 +155,7 @@ export function channelSummaries(names, lastMessages, seen) {
       const last = fresh.length ? fresh[fresh.length - 1] : null
       return {
         name,
+        label,
         lastAt,
         unread: fresh.length,
         preview: last?.text ?? null,

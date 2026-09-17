@@ -22,6 +22,13 @@ namespace SchoolLms.Application.Services;
 ///     qatnashgan. U <c>Present</c> ichida qoladi va alohida son sifatida ko'rsatiladi.</item>
 ///   <item><b>Tekshirilmagan</b> — dars o'tilgan, lekin o'quvchi uchun jurnalda YOZUV YO'Q.
 ///     U hech qachon "keldi"ga qo'shilmaydi (bosh sahifadagi ustun bilan bir xil sabab).</item>
+///   <item><b>O'quv guruhi</b> (G-13, students-parity.md §2.1.4) — guruh darsi ham
+///     o'quvchining IMKONIYATI: u ham o'tilgan dars, unda ham davomat belgilanadi.
+///     Guruh darsi har bir qatnashuvchining O'Z SINFI qatoriga yoziladi (§2.1.6 G-15:
+///     guruh baholari o'quvchining sinfi ostida sanaladi), guruhning o'zi alohida
+///     qator bo'lmaydi — aks holda "sinfda nechta o'quvchi" ustuni ma'nosini yo'qotardi.
+///     Cut-over o'chirgichi (<c>group_lessons_enabled</c>) o'chiq bo'lsa guruh UMUMAN
+///     yo'q: quyidagi sikl bugungi siklning aynan o'zi bo'lib qoladi.</item>
 /// </list>
 ///
 /// <para><b>Sababli / sababsiz.</b> Bazada "sababli" bayrog'i YO'Q va uni qo'shish bu ish
@@ -101,16 +108,23 @@ public static class AttendanceAnalytics
             .GroupBy(s => classIdByName[s.ClassName], StringComparer.Ordinal)
             .ToDictionary(g => g.Key, g => g.Select(s => (s.Id, s.SubGroup)).ToList(), StringComparer.Ordinal);
 
+        // O'quv guruhlari (G-13). O'chirgich o'chiq bo'lsa bu lug'at BO'SH bo'ladi va
+        // quyidagi hamma narsa bugungidek ishlaydi.
+        var groupRoster = await GroupRosterAsync(db, students
+            .Where(s => classIdByName.ContainsKey(s.ClassName))
+            .ToDictionary(s => s.Id, s => classIdByName[s.ClassName], StringComparer.Ordinal));
+        var ownerIds = classIds.Concat(groupRoster.Keys).ToList();
+
         // Sanalar "yyyy-MM-dd" satr — leksikografik taqqoslash xronologik bilan bir xil.
         var notes = await db.LessonNotes.AsNoTracking()
-            .Where(n => n.Conducted && classIds.Contains(n.ClassId)
+            .Where(n => n.Conducted && ownerIds.Contains(n.ClassId)
                         && string.Compare(n.Date, fromDate) >= 0
                         && string.Compare(n.Date, toDate) <= 0)
-            .Select(n => new { n.ClassId, n.SubjectId, n.Date, n.Period, n.SubGroup })
+            .Select(n => new { n.ClassId, n.SubjectId, n.Date, n.Period, n.SubGroup, n.OwnerKind })
             .ToListAsync();
 
         var entries = await db.JournalEntries.AsNoTracking()
-            .Where(e => classIds.Contains(e.ClassId)
+            .Where(e => ownerIds.Contains(e.ClassId)
                         && string.Compare(e.Date, fromDate) >= 0
                         && string.Compare(e.Date, toDate) <= 0)
             .Select(e => new { e.ClassId, e.SubjectId, e.Date, e.Period, e.StudentId, e.ReasonId })
@@ -131,28 +145,49 @@ public static class AttendanceAnalytics
 
         foreach (var n in notes)
         {
-            if (!studentsByClass.TryGetValue(n.ClassId, out var classStudents)) continue;
+            var isGroup = n.OwnerKind == LessonOwnerKind.Group;
 
-            var classTally = byClass[n.ClassId];
+            // Shu darsda kim qatnashadi va uning qatori qaysi SINFda. Sinf darsida —
+            // sinfning o'z o'quvchilari (bo'linish filtri bilan); guruh darsida —
+            // guruhning faol a'zolari, har biri O'Z sinfi qatoriga.
+            List<(string StudentId, string ClassId)> participants;
+            if (isGroup)
+            {
+                if (!groupRoster.TryGetValue(n.ClassId, out var members)) continue;
+                participants = members;
+            }
+            else
+            {
+                if (!studentsByClass.TryGetValue(n.ClassId, out var classStudents)) continue;
+                participants = [.. classStudents
+                    // Bo'lingan darsda faqat o'z guruhi (yoki butun sinf darsi).
+                    .Where(s => n.SubGroup == 0 || n.SubGroup == s.SubGroup)
+                    .Select(s => (s.Id, n.ClassId))];
+            }
+
             var dateTally = Get(byDate, n.Date);
             // Dars soatlari kesimi FAQAT tanlangan kun uchun — boshqa kunlarni aralashtirish
             // "3-darsda 40 ta yo'q" degan ma'nosiz raqam berardi.
             var periodTally = n.Date == dayIso ? Get(byPeriod, n.Period) : null;
 
             total.Lessons++;
-            classTally.Lessons++;
             dateTally.Lessons++;
             if (periodTally is not null) periodTally.Lessons++;
+            // Sinf darsi — o'sha sinfning bitta darsi. Guruh darsi esa har bir BOQUVCHI
+            // sinf uchun ham bitta dars (o'sha sinfning bolalari o'sha kuni yana bir
+            // darsda bo'lgan), lekin jami (`total`) bo'yicha — BITTA.
+            foreach (var feedingClassId in isGroup
+                         ? participants.Select(p => p.ClassId).Distinct(StringComparer.Ordinal)
+                         : [n.ClassId])
+                if (byClass.TryGetValue(feedingClassId, out var t)) t.Lessons++;
 
-            foreach (var (studentId, subGroup) in classStudents)
+            foreach (var (studentId, homeroomId) in participants)
             {
-                // Bo'lingan darsda faqat o'z guruhi (yoki butun sinf darsi).
-                if (n.SubGroup != 0 && n.SubGroup != subGroup) continue;
-
                 var has = entryByKey.TryGetValue(
                     (n.ClassId, n.SubjectId, n.Date, n.Period, studentId), out var reasonId);
 
-                Add(total); Add(classTally); Add(dateTally);
+                Add(total); Add(dateTally);
+                if (byClass.TryGetValue(homeroomId, out var classTally)) Add(classTally);
                 if (periodTally is not null) Add(periodTally);
 
                 if (reasonId is not null)
@@ -207,6 +242,43 @@ public static class AttendanceAnalytics
     {
         if (!map.TryGetValue(key, out var t)) map[key] = t = new Tally();
         return t;
+    }
+
+    /// <summary>
+    /// Arxivlanmagan o'quv guruhlarining faol a'zolari: guruh id → (o'quvchi,
+    /// uning SINFI). Hisobotga kirgan sinflarda bo'lmagan o'quvchi tashlanadi —
+    /// shu tufayli <c>classId</c> filtri guruh darslariga ham o'z-o'zidan tarqaladi.
+    ///
+    /// <para>
+    /// Cut-over o'chirgichi o'chiq bo'lsa — BO'SH lug'at, ya'ni guruh darsi
+    /// umuman yo'q va butun hisobot bugungi raqamni beradi (§4.3).
+    /// </para>
+    /// </summary>
+    private static async Task<Dictionary<string, List<(string StudentId, string ClassId)>>> GroupRosterAsync(
+        IAppDbContext db, Dictionary<string, string> classIdByStudent)
+    {
+        var result = new Dictionary<string, List<(string, string)>>(StringComparer.Ordinal);
+        if (classIdByStudent.Count == 0) return result;
+        if (!await LessonRoster.GroupLessonsEnabledAsync(db)) return result;
+
+        var groupIds = (await db.StudyGroups.AsNoTracking()
+            .Where(g => !g.IsArchived).Select(g => g.Id).ToListAsync()).ToHashSet();
+        if (groupIds.Count == 0) return result;
+
+        var members = await db.StudyGroupMembers.AsNoTracking()
+            .Where(m => m.LeftOn == null)
+            .Select(m => new { m.GroupId, m.StudentId })
+            .ToListAsync();
+
+        foreach (var m in members)
+        {
+            if (!groupIds.Contains(m.GroupId)) continue;
+            if (!classIdByStudent.TryGetValue(m.StudentId, out var classId)) continue;
+            var key = m.GroupId.ToString();
+            if (!result.TryGetValue(key, out var list)) result[key] = list = [];
+            list.Add((m.StudentId, classId));
+        }
+        return result;
     }
 
     /// <summary>

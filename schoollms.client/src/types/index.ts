@@ -1177,12 +1177,18 @@ export interface StudentLocationRow {
 
 /** O'qituvchi dars beradigan sinf (o'qituvchi paneli uchun) */
 export interface TeacherClass {
+  /** Eganing id'si: sinf id'si yoki o'quv guruhi id'si (`ownerKind` qaysi ekanini aytadi) */
   classId: string
+  /** Sinf nomi yoki guruh nomi */
   className: string
+  /** Sinf darajasi; o'quv guruhida 0 */
   grade: number
+  /** Sinfda — sinf rahbari; guruhda — guruhga biriktirilgan o'qituvchi */
   isHomeroom: boolean
-  /** Shu sinfda o'qituvchi dars beradigan fanlar */
+  /** Shu egada o'qituvchi dars beradigan fanlar (guruhda — guruhning fani) */
   subjects: Subject[]
+  /** Egasi sinfmi yoki o'quv guruhimi. Eski javoblarda bo'lmasligi mumkin → 'class'. */
+  ownerKind?: LessonOwnerKind
 }
 
 /** Portal umumiy konteksti (choraklar, dars vaqtlari, davomat sabablari + joriy chorak/hafta) */

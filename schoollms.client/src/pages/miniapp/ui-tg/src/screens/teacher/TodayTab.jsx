@@ -18,7 +18,8 @@ import { readSeen } from '../../lib/chatSeen'
 import { todayISO } from '../../lib/weeks'
 import { fullDate, todayIndex, weekdayName } from '../../lib/format'
 import {
-  AsyncBlock, channelSummaries, lessonPairs, lessonProgress, lessonTimeState, nowHHmm,
+  AsyncBlock, channelSummaries, lessonOwnerTitle, lessonPairs, lessonProgress, lessonTimeState,
+  nowHHmm,
 } from './shared'
 
 export function TodayTab({ profile, meta, onOpenAttendance }) {
@@ -322,7 +323,7 @@ function LessonListRow({ lesson, conducted, onClick }) {
           tone={conducted ? 'brand' : state === 'now' ? 'danger' : 'neutral'}
         />
       }
-      title={`${lesson.className}${lesson.subGroup > 0 ? ` · ${lesson.subGroup}-guruh` : ''}`}
+      title={lessonOwnerTitle(lesson)}
       subtitle={`${lesson.subjectName} · ${lesson.startTime}–${lesson.endTime}`}
       right={<Badge tone={badge.tone}>{badge.text}</Badge>}
       onClick={onClick}

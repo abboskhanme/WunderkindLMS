@@ -21,14 +21,23 @@ public class AttendanceController(AppDbContext db) : ControllerBase
         s.Id, s.FullName, s.BirthDate, s.Address, s.Gender,
         s.ParentFullName, s.ParentPhone, s.ClassName, s.EnrollmentDate);
 
+    /// <summary>
+    /// Bir kunning davomati — EGA bo'yicha: sinf yoki o'quv guruhi
+    /// (students-parity.md §2.1.4, G-13). Guruh egasi cut-over o'chirgichi
+    /// yoqilgandagina javob beradi.
+    /// </summary>
     [HttpGet]
     public async Task<ActionResult<DailyAttendanceDto>> GetDaily(
         [FromQuery] string classId, [FromQuery] string date)
     {
-        var cls = await db.Classes.FindAsync(classId);
-        if (cls is null) return new DailyAttendanceDto(0, []);
+        var owner = await LessonRoster.OwnerAsync(db, classId);
+        if (owner is null) return new DailyAttendanceDto(0, []);
+        if (owner.IsGroup && !await LessonRoster.GroupLessonsEnabledAsync(db))
+            return new DailyAttendanceDto(0, []);
 
-        var students = await db.Students.Where(s => s.ClassName == cls.Name).ToListAsync();
+        // Bugungi so'rovning aynan o'zi: sinf uchun ARXIVLANGANLAR BILAN birga
+        // (bu ekran ularni ham sanaydi), guruh uchun faol a'zolar.
+        var students = await LessonRoster.ForLessonAsync(db, owner, includeArchived: true);
         var total = students.Count;
 
         if (!DateOnly.TryParseExact(date, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var d))
@@ -47,7 +56,8 @@ public class AttendanceController(AppDbContext db) : ControllerBase
         if (week is null) return new DailyAttendanceDto(total, []);
 
         var assignment = await db.WeekAssignments.FirstOrDefaultAsync(a =>
-            a.ClassId == classId && a.Quarter == q.Quarter && a.Week == week.Week);
+            a.ClassId == classId && a.Quarter == q.Quarter && a.Week == week.Week
+            && a.OwnerKind == owner.Kind);
         if (assignment?.TemplateId is null) return new DailyAttendanceDto(total, []);
 
         var tpl = await db.ScheduleTemplates.Include(t => t.Lessons)
@@ -62,7 +72,8 @@ public class AttendanceController(AppDbContext db) : ControllerBase
             .ToHashSet();
 
         var entries = await db.JournalEntries
-            .Where(e => e.ClassId == classId && e.Quarter == q.Quarter && e.Date == date && e.ReasonId != null)
+            .Where(e => e.ClassId == classId && e.Quarter == q.Quarter && e.Date == date
+                        && e.ReasonId != null && e.OwnerKind == owner.Kind)
             .ToListAsync();
 
         var result = new List<SubjectAttendanceDto>();
@@ -99,16 +110,17 @@ public class AttendanceController(AppDbContext db) : ControllerBase
         [FromQuery] string? to, [FromQuery] string? day)
         => await AttendanceAnalytics.BuildAsync(db, classId, from, to, day);
 
-    /// <summary>Bitta fan/kun bo'yicha har bir o'quvchining holati.</summary>
+    /// <summary>Bitta fan/kun bo'yicha har bir o'quvchining holati (ega — sinf yoki guruh).</summary>
     [HttpGet("subject")]
     public async Task<ActionResult<IEnumerable<StudentStatusDto>>> GetSubjectDetail(
         [FromQuery] string classId, [FromQuery] string subjectId, [FromQuery] string date)
     {
-        var cls = await db.Classes.FindAsync(classId);
-        if (cls is null) return new List<StudentStatusDto>();
+        var owner = await LessonRoster.OwnerAsync(db, classId);
+        if (owner is null) return new List<StudentStatusDto>();
+        if (owner.IsGroup && !await LessonRoster.GroupLessonsEnabledAsync(db))
+            return new List<StudentStatusDto>();
 
-        var students = await db.Students.Where(s => s.ClassName == cls.Name)
-            .OrderBy(s => s.FullName).ToListAsync();
+        var students = await LessonRoster.ForLessonAsync(db, owner, includeArchived: true);
 
         var q = await db.Quarters.FirstOrDefaultAsync(x =>
             string.Compare(date, x.StartDate) >= 0 && string.Compare(date, x.EndDate) <= 0);
@@ -119,7 +131,7 @@ public class AttendanceController(AppDbContext db) : ControllerBase
             ? new List<JournalEntry>()
             : await db.JournalEntries.Where(e =>
                 e.ClassId == classId && e.SubjectId == subjectId && e.Quarter == q.Quarter &&
-                e.Date == date && e.ReasonId != null).ToListAsync();
+                e.Date == date && e.ReasonId != null && e.OwnerKind == owner.Kind).ToListAsync();
 
         return students.Select(s =>
         {

@@ -4,32 +4,126 @@ using Microsoft.EntityFrameworkCore;
 using SchoolLms.Infrastructure.Data;
 using SchoolLms.Application.Dtos;
 using SchoolLms.Application.Services;
+using SchoolLms.Domain;
 
 namespace SchoolLms.Server.Controllers;
 
+/// <summary>
+/// Admin jurnali. Yo'ldagi/so'rovdagi <c>classId</c> — darsning EGASI: sinf
+/// yoki o'quv guruhi (students-parity.md §2.1.4, G-12). Guruh darslari cut-over
+/// o'chirgichi (<c>group_lessons_enabled</c>) yoqilgandagina ko'rinadi.
+/// </summary>
 [ApiController]
 [Authorize]
 [AdminPerm("journal")]
 [Route("api/admin/journal")]
 public class JournalController(AppDbContext db, FcmService fcm) : ControllerBase
 {
+    /// <summary>
+    /// Jurnal tanlagichi uchun egalar ro'yxati: sinflar (har doim) va o'quv
+    /// guruhlari (faqat o'chirgich yoqilganda).
+    ///
+    /// <para>
+    /// Nega jurnalning O'Z endpointi: aks holda ekran ikkita ro'yxatni
+    /// (<c>classes</c> va <c>study-groups</c>) qo'shib, cut-over o'chirgichini
+    /// ham O'ZI tekshirishi kerak bo'lardi — ya'ni "guruh ko'rinadimi" qoidasi
+    /// brauzerda TAKRORLANARDI. Bu yerda u bir joyda va serverda.
+    /// </para>
+    /// </summary>
+    [HttpGet("owners")]
+    public async Task<ActionResult<IEnumerable<JournalOwnerDto>>> Owners(CancellationToken ct = default)
+    {
+        var students = await db.Students.AsNoTracking()
+            .Where(s => !s.IsArchived)
+            .Select(s => new { s.Id, s.ClassName })
+            .ToListAsync(ct);
+        var countByClassName = students
+            .GroupBy(s => s.ClassName ?? "", StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => g.Count(), StringComparer.Ordinal);
+
+        var result = await db.Classes.AsNoTracking()
+            .Where(c => !c.IsArchived)
+            .OrderBy(c => c.Grade).ThenBy(c => c.Name)
+            .Select(c => new JournalOwnerDto(
+                c.Id, c.Name, LessonOwnerKind.Class, c.Grade, null, null, 0))
+            .ToListAsync(ct);
+        result = [.. result.Select(o => o with
+        {
+            StudentCount = countByClassName.GetValueOrDefault(o.Name, 0),
+        })];
+
+        if (!await LessonRoster.GroupLessonsEnabledAsync(db, ct)) return result;
+
+        var subjectNames = await db.Subjects.AsNoTracking().ToDictionaryAsync(s => s.Id, s => s.Name, ct);
+        var activeIds = students.Select(s => s.Id).ToHashSet(StringComparer.Ordinal);
+        var memberCounts = (await db.StudyGroupMembers.AsNoTracking()
+                .Where(m => m.LeftOn == null)
+                .Select(m => new { m.GroupId, m.StudentId }).ToListAsync(ct))
+            .Where(m => activeIds.Contains(m.StudentId))
+            .GroupBy(m => m.GroupId)
+            .ToDictionary(g => g.Key, g => g.Count());
+
+        var groups = await db.StudyGroups.AsNoTracking()
+            .Where(g => !g.IsArchived).OrderBy(g => g.Name).ToListAsync(ct);
+        result.AddRange(groups.Select(g => new JournalOwnerDto(
+            g.Id.ToString(), g.Name, LessonOwnerKind.Group, 0,
+            g.SubjectId, subjectNames.GetValueOrDefault(g.SubjectId, ""),
+            memberCounts.GetValueOrDefault(g.Id, 0))));
+        return result;
+    }
+
+    /// <summary>
+    /// Eganing jurnal ro'yxati — <see cref="LessonRoster"/> dan. Brauzer endi
+    /// butun maktab ro'yxatini sinf NOMI bo'yicha filtrlamaydi (G-12: guruh
+    /// bir nechta sinfdan yig'iladi, nom bo'yicha filtr uni topa olmaydi).
+    /// </summary>
+    [HttpGet("students")]
+    public async Task<ActionResult<IEnumerable<StudentDto>>> Students(
+        [FromQuery] string classId, [FromQuery] int subGroup = 0, CancellationToken ct = default)
+    {
+        if (subGroup is < 0 or > 2)
+            return BadRequest(new { message = "subGroup 0, 1 yoki 2 bo'lishi kerak" });
+
+        var owner = await LessonRoster.OwnerAsync(db, classId, ct);
+        if (owner is null) return new List<StudentDto>();
+        if (owner.IsGroup && !await LessonRoster.GroupLessonsEnabledAsync(db, ct))
+            return new List<StudentDto>();
+
+        var students = await LessonRoster.ForLessonAsync(db, owner, subGroup, ct: ct);
+        // Jurnal ro'yxatida pul KO'RSATILMAYDI — `Balance` null (P1-21).
+        return students.Select(s => new StudentDto(
+            s.Id, s.FullName, s.BirthDate, s.Address, s.Gender,
+            s.ParentFullName, s.ParentPhone, s.ClassName, s.EnrollmentDate, null,
+            s.SubGroup,
+            s.LastName, s.FirstName, s.MiddleName, s.BirthCertificateUrl,
+            s.ParentLastName, s.ParentFirstName, s.ParentMiddleName, s.ParentPassportUrl,
+            s.IsArchived, s.ArchivedAt, s.ArchiveReason)).ToList();
+    }
+
     /// <summary>Fanning chorakdagi darslari (sana + dars raqami). Bir kunda bir fan bir necha marta bo'lishi mumkin.</summary>
     [HttpGet("columns")]
     public async Task<ActionResult<IEnumerable<JournalColumnDto>>> GetColumns(
         [FromQuery] string classId, [FromQuery] string subjectId, [FromQuery] int quarter)
         => await JournalService.ComputeColumnsAsync(db, classId, subjectId, quarter);
 
-    /// <summary>Berilgan sanada o'tilgan darslar (sinf+fan+dars raqami): ptichka yoki baho/davomat bo'lganlar.</summary>
+    /// <summary>
+    /// Berilgan sanada o'tilgan darslar (ega+fan+dars raqami): ptichka yoki
+    /// baho/davomat bo'lganlar. Guruh qatorlari o'chirgich o'chiq bo'lsa
+    /// CHIQMAYDI — bugungi ro'yxat bir bayt ham o'zgarmaydi.
+    /// </summary>
     [HttpGet("conducted")]
     public async Task<ActionResult<IEnumerable<ConductedLessonDto>>> Conducted([FromQuery] string date)
     {
+        var groupsOn = await LessonRoster.GroupLessonsEnabledAsync(db);
         var fromNotes = await db.LessonNotes
             .Where(n => n.Date == date && n.Conducted)
-            .Select(n => new ConductedLessonDto(n.ClassId, n.SubjectId, n.Period, n.SubGroup))
+            .Where(n => groupsOn || n.OwnerKind != LessonOwnerKind.Group)
+            .Select(n => new ConductedLessonDto(n.ClassId, n.SubjectId, n.Period, n.SubGroup, n.OwnerKind))
             .ToListAsync();
         var fromEntries = await db.JournalEntries
             .Where(e => e.Date == date && (e.Grade != null || e.ReasonId != null))
-            .Select(e => new ConductedLessonDto(e.ClassId, e.SubjectId, e.Period, e.SubGroup))
+            .Where(e => groupsOn || e.OwnerKind != LessonOwnerKind.Group)
+            .Select(e => new ConductedLessonDto(e.ClassId, e.SubjectId, e.Period, e.SubGroup, e.OwnerKind))
             .ToListAsync();
         return fromNotes.Concat(fromEntries).Distinct().ToList();
     }

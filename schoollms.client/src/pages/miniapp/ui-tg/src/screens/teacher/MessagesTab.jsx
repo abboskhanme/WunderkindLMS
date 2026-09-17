@@ -1,7 +1,9 @@
 /**
  * XABARLAR — kanallar ro'yxati va suhbat.
  *
- * Kanal = sinf guruhi (ota-onalar + o'quvchilar) yoki xodimlar guruhi. Server
+ * Kanal = sinf guruhi (ota-onalar + o'quvchilar), O'QUV GURUHI (`grp:<id>`,
+ * G-17) yoki xodimlar guruhi. Guruh kanalining kaliti ekranda ko'rsatilmaydi —
+ * server har kanal uchun `label` (ko'rinadigan nom) beradi. Server
  * hozircha "o'qildi" holatini saqlamaydi, shuning uchun o'qilmaganlar
  * qurilmadagi belgidan (`lib/chatSeen.js`) hisoblanadi va yangi xabarlar
  * `?since=` bilan olinadi — bu bir vaqtning o'zida ham sonini, ham oxirgi
@@ -44,6 +46,7 @@ function shortWhen(iso) {
 }
 
 export function MessagesTab({ profile, user }) {
+  // `{ name, label }` — kalit va ko'rinadigan nom (guruh kanalida ular farq qiladi).
   const [openChannel, setOpenChannel] = useState(null)
 
   useEffect(() => {
@@ -54,7 +57,8 @@ export function MessagesTab({ profile, user }) {
   if (openChannel) {
     return (
       <Conversation
-        channel={openChannel}
+        channel={openChannel.name}
+        label={openChannel.label}
         profile={profile}
         userId={user?.id ?? user?.userId ?? null}
         onBack={() => setOpenChannel(null)}
@@ -68,11 +72,11 @@ export function MessagesTab({ profile, user }) {
 
 function ChannelList({ onOpen }) {
   const q = useAsync(async () => {
-    const [names, lastMap] = await Promise.all([
+    const [channels, lastMap] = await Promise.all([
       teacherApi.chatChannels(),
       teacherApi.chatLastMessages(),
     ])
-    const rows = await channelSummaries(names, lastMap, readSeen())
+    const rows = await channelSummaries(channels, lastMap, readSeen())
     rows.sort((a, b) => (b.lastAt || '').localeCompare(a.lastAt || ''))
     return rows
   }, [])
@@ -99,7 +103,7 @@ function ChannelList({ onOpen }) {
                 <EmptyState
                   icon={<MessageSquare className="h-9 w-9" />}
                   title="Guruh yo'q"
-                  note="Siz hali biror sinfga biriktirilmagansiz, shuning uchun yozishadigan guruh ham yo'q."
+                  note="Siz hali biror sinf yoki guruhga biriktirilmagansiz, shuning uchun yozishadigan guruh ham yo'q."
                 />
               ) : (
                 rows.map((r) => <ChannelRow key={r.name} row={r} onOpen={onOpen} />)
@@ -130,10 +134,10 @@ function ChannelRow({ row, onOpen }) {
             (staff ? 'bg-brand-ink text-brand' : 'bg-brand/25 text-brand-ink')
           }
         >
-          {staff ? <Users className="h-5 w-5" /> : channelBadge(row.name)}
+          {staff ? <Users className="h-5 w-5" /> : channelBadge(row.name, row.label)}
         </div>
       }
-      title={channelTitle(row.name)}
+      title={channelTitle(row.name, row.label)}
       subtitle={subtitle}
       right={
         <div className="flex shrink-0 flex-col items-end gap-1">
@@ -145,7 +149,7 @@ function ChannelRow({ row, onOpen }) {
       }
       onClick={() => {
         haptic()
-        onOpen(row.name)
+        onOpen({ name: row.name, label: row.label })
       }}
     />
   )
@@ -153,7 +157,7 @@ function ChannelRow({ row, onOpen }) {
 
 /* -------------------------------------------------------------- suhbat */
 
-function Conversation({ channel, profile, userId, onBack }) {
+function Conversation({ channel, label, profile, userId, onBack }) {
   const q = useAsync(() => teacherApi.chatMessages(channel), [channel])
   const [extra, setExtra] = useState([])
   const [text, setText] = useState('')
@@ -230,7 +234,7 @@ function Conversation({ channel, profile, userId, onBack }) {
   return (
     <Screen>
       <Hero
-        title={channelTitle(channel)}
+        title={channelTitle(channel, label)}
         subtitle={staff ? "Barcha o'qituvchi va administratorlar" : "Ota-onalar va o'quvchilar"}
         right={
           <button

@@ -6,7 +6,18 @@ import EmptyState, { EmptyIllustration } from '../components/EmptyState'
 import { useFetch } from '../lib/session'
 import { api } from '../lib/api'
 
-const STAFF_NAMES = ['Xodimlar', 'Xodimlar guruhi']
+const STAFF_NAMES = ['Xodimlar', 'Xodimlar guruhi', '__xodimlar__']
+
+// O'quv guruhi kanalining kaliti — `grp:<guruh id>` (G-17,
+// docs/modules/students-parity.md §2.1.6). Kalit ekranda ko'rsatilmaydi:
+// ko'rinadigan nom server bergan `label` da keladi.
+const GROUP_CHANNEL_PREFIX = 'grp:'
+const isGroupChannel = (key) => typeof key === 'string' && key.startsWith(GROUP_CHANNEL_PREFIX)
+
+// Kvadrat avatardagi qisqa belgi: sinfda — nomning o'zi, guruhda — ikki harf.
+function channelBadge(ch) {
+  return isGroupChannel(ch.key) ? (ch.label || 'GR').slice(0, 2).toUpperCase() : ch.label
+}
 
 // Oxirgi faollikni qisqa ko'rinishga aylantirish (bugun → HH:mm, aks holda sana).
 function formatLast(iso) {
@@ -19,9 +30,9 @@ function formatLast(iso) {
   return d.toLocaleDateString('uz', { day: '2-digit', month: '2-digit' })
 }
 
-// Chat channels — search bar + class/staff channel rows with last activity.
+// Chat channels — search bar + class/group/staff channel rows with last activity.
 export default function ChatChannelsScreen({ onNavigate }) {
-  const channelsQ = useFetch(() => api.chatClasses(), [])
+  const channelsQ = useFetch(() => api.chatChannels(), [])
   const lastQ = useFetch(() => api.chatLastMessages(), [])
   const [search, setSearch] = useState('')
 
@@ -30,11 +41,12 @@ export default function ChatChannelsScreen({ onNavigate }) {
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
-    const list = q ? channels.filter((c) => c.toLowerCase().includes(q)) : channels
+    // Qidiruv KALIT bo'yicha emas, ko'rinadigan NOM bo'yicha (guruh kaliti — id).
+    const list = q ? channels.filter((c) => (c.label || '').toLowerCase().includes(q)) : channels
     // Eng so'nggi faollik bo'yicha tartiblash (faollik yo'qlar oxirida).
     return [...list].sort((a, b) => {
-      const ta = lastMap[a] ? Date.parse(lastMap[a]) : 0
-      const tb = lastMap[b] ? Date.parse(lastMap[b]) : 0
+      const ta = lastMap[a.key] ? Date.parse(lastMap[a.key]) : 0
+      const tb = lastMap[b.key] ? Date.parse(lastMap[b.key]) : 0
       return tb - ta
     })
   }, [channels, lastMap, search])
@@ -78,25 +90,27 @@ export default function ChatChannelsScreen({ onNavigate }) {
         }
       >
         <div className="flex-1 overflow-y-auto no-scrollbar px-4 pt-2 pb-6 space-y-1.5">
-          {filtered.map((name) => {
-            const isStaff = STAFF_NAMES.includes(name)
-            const last = formatLast(lastMap[name])
+          {filtered.map((ch) => {
+            const isStaff = STAFF_NAMES.includes(ch.key)
+            const last = formatLast(lastMap[ch.key])
             return (
               <button
-                key={name}
-                onClick={() => onNavigate?.('chatConversation', { className: name })}
+                key={ch.key}
+                onClick={() =>
+                  onNavigate?.('chatConversation', { className: ch.key, channelLabel: ch.label })
+                }
                 className="w-full p-3 rounded-3xl bg-surface border border-border flex items-center gap-3 text-left"
               >
                 <div
                   className="w-12 h-12 rounded-2xl flex items-center justify-center text-white text-[14px] font-extrabold"
                   style={{ background: isStaff ? 'linear-gradient(135deg,#7C3AED,#C026D3)' : 'linear-gradient(135deg,#14B8A6,#0F766E)' }}
                 >
-                  {isStaff ? <Users size={22} /> : name}
+                  {isStaff ? <Users size={22} /> : channelBadge(ch)}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-[14px] font-bold text-text truncate">{name}</p>
+                  <p className="text-[14px] font-bold text-text truncate">{ch.label}</p>
                   <p className="text-[12px] text-muted truncate">
-                    {lastMap[name] ? 'Oxirgi faollik' : 'Hali xabar yo‘q'}
+                    {lastMap[ch.key] ? 'Oxirgi faollik' : 'Hali xabar yo‘q'}
                   </p>
                 </div>
                 <div className="flex flex-col items-end gap-1">

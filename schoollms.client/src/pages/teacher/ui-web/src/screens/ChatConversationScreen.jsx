@@ -25,7 +25,10 @@ function formatTime(iso) {
 
 // Chat conversation — header, message bubbles (left/right), input bar.
 export default function ChatConversationScreen({ params, onBack }) {
+  // `className` — kanal KALITI: sinf nomi, `__xodimlar__` yoki o'quv guruhida
+  // `grp:<id>` (G-17). Ekranda esa `channelLabel` (server bergan nom) ko'rinadi.
   const className = params?.className || ''
+  const channelLabel = params?.channelLabel || className
   const { user } = useSession()
   const myId = user?.id
   const isStaff = STAFF_NAMES.includes(className)
@@ -98,7 +101,7 @@ export default function ChatConversationScreen({ params, onBack }) {
     }
   }
 
-  const avatarText = isStaff ? 'XD' : className.slice(0, 2).toUpperCase()
+  const avatarText = isStaff ? 'XD' : channelLabel.slice(0, 2).toUpperCase()
 
   return (
     <div className="h-full flex flex-col bg-bg-alt">
@@ -116,7 +119,7 @@ export default function ChatConversationScreen({ params, onBack }) {
           {avatarText}
         </div>
         <div className="flex-1">
-          <p className="text-[15px] font-bold text-text">{className}</p>
+          <p className="text-[15px] font-bold text-text">{channelLabel}</p>
           <div className="flex items-center gap-1 text-[11px] text-muted">
             <span className="w-1.5 h-1.5 rounded-full bg-success" /> Online
           </div>

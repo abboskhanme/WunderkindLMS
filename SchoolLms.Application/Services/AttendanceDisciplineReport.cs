@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using SchoolLms.Application.Abstractions;
 using SchoolLms.Application.Dtos;
+using SchoolLms.Domain;
 
 namespace SchoolLms.Application.Services;
 
@@ -39,6 +40,15 @@ namespace SchoolLms.Application.Services;
 /// <para>
 /// <c>Remaining</c> (qoldi) — BUTUN TARIX bo'yicha: 100 + qo'lda kiritilgan ballar + jurnal
 /// davomati ballari. Davr filtri unga ta'sir qilmaydi, chunki qoldiq davrga bo'linmaydi.
+/// </para>
+///
+/// <para>
+/// <b>O'QUV GURUHI</b> (G-13, students-parity.md §2.1.4). Guruh darsi ham o'tiladi va unda
+/// ham davomat belgilanadi, ya'ni u o'quvchining imkoniyatlari (maxraji) va ballariga
+/// SINF darsi kabi kiradi. Qator esa o'quvchining O'Z SINFI ostida qoladi — hisobot
+/// "kim qaysi sinfda ball yo'qotmoqda" degan savolga javob beradi, guruh alohida qator
+/// bo'lmaydi. Cut-over o'chirgichi o'chiq bo'lsa guruh umuman yo'q va hisobot bugungi
+/// raqamning aynan o'zini beradi (§4.3).
 /// </para>
 /// </summary>
 public static class AttendanceDisciplineReport
@@ -84,9 +94,18 @@ public static class AttendanceDisciplineReport
             .ToListAsync();
         var reasonById = reasons.ToDictionary(r => r.Id, StringComparer.Ordinal);
 
+        // O'quvchi → uning faol o'quv guruhlari (G-13). O'chirgich o'chiq bo'lsa — bo'sh.
+        var groupsOn = await LessonRoster.GroupLessonsEnabledAsync(db);
+        var groupsByStudent = await GroupIdsByStudentAsync(db);
+        var groupIdsInScope = students
+            .SelectMany(s => groupsByStudent.GetValueOrDefault(s.Id) ?? [])
+            .Distinct(StringComparer.Ordinal).ToList();
+
         // O'tilgan darslar — davomat maxraji. O'tilmagan dars umuman hisobga olinmaydi.
         var conducted = (await db.LessonNotes.AsNoTracking()
-                .Where(n => n.Conducted && (classId == null || n.ClassId == classId)
+                .Where(n => n.Conducted
+                    && (groupsOn || n.OwnerKind != LessonOwnerKind.Group)
+                    && (classId == null || n.ClassId == classId || groupIdsInScope.Contains(n.ClassId))
                     && string.Compare(n.Date, from) >= 0 && string.Compare(n.Date, to) <= 0)
                 .Select(n => new { n.ClassId, n.SubjectId, n.Date, n.Period, n.SubGroup })
                 .ToListAsync())
@@ -96,8 +115,11 @@ public static class AttendanceDisciplineReport
                 g => g.Select(n => (Slot: new Slot(n.SubjectId, n.Date, n.Period), n.SubGroup)).ToList(),
                 StringComparer.Ordinal);
 
+        // O'chirgich o'chiq — guruh qatorlari UMUMAN o'qilmaydi (sabablar kesimiga ham
+        // tushmasin: §4.3 "hech bir raqam qimirlamaydi").
         var entries = (await db.JournalEntries.AsNoTracking()
-                .Where(e => (classId == null || e.ClassId == classId)
+                .Where(e => (groupsOn || e.OwnerKind != LessonOwnerKind.Group)
+                    && (classId == null || e.ClassId == classId || groupIdsInScope.Contains(e.ClassId))
                     && string.Compare(e.Date, from) >= 0 && string.Compare(e.Date, to) <= 0)
                 .Select(e => new { e.ClassId, e.StudentId, e.SubjectId, e.Date, e.Period, e.ReasonId })
                 .ToListAsync())
@@ -152,9 +174,18 @@ public static class AttendanceDisciplineReport
                     .Select(c => c.Slot)
                     .ToHashSet();
 
+                // O'quv guruhi darslari ham shu o'quvchining imkoniyati (G-13). Guruhda
+                // sinf ichidagi bo'linish yo'q — hamma faol a'zo qatnashadi.
+                var myGroupIds = groupsByStudent.GetValueOrDefault(st.Id) ?? [];
+                foreach (var groupId in myGroupIds)
+                    if (conducted.TryGetValue(groupId, out var groupSlots))
+                        mySlots.UnionWith(groupSlots.Select(g => g.Slot));
+
                 entries.TryGetValue(st.Id, out var myEntries);
                 myEntries ??= [];
-                var myClassEntries = myEntries.Where(e => e.ClassId == cls.Id).ToList();
+                var myClassEntries = myEntries
+                    .Where(e => e.ClassId == cls.Id || myGroupIds.Contains(e.ClassId, StringComparer.Ordinal))
+                    .ToList();
 
                 var onConducted = myClassEntries
                     .Where(e => mySlots.Contains(new Slot(e.SubjectId, e.Date, e.Period)))
@@ -282,5 +313,37 @@ public static class AttendanceDisciplineReport
             .ToList();
 
         return new AttendanceDisciplineReportDto(from, to, totals, classRows, studentRows, reasonRows);
+    }
+
+    /// <summary>
+    /// O'quvchi id → uning faol (arxivlanmagan) o'quv guruhlarining id'lari, satr
+    /// ko'rinishida (<c>class_id</c> ustunidagi qiymat bilan bir xil).
+    ///
+    /// <para>
+    /// Cut-over o'chirgichi o'chiq bo'lsa — BO'SH lug'at, ya'ni hisobot bugungi
+    /// raqamning aynan o'zini beradi (§4.3).
+    /// </para>
+    /// </summary>
+    private static async Task<Dictionary<string, List<string>>> GroupIdsByStudentAsync(IAppDbContext db)
+    {
+        var result = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+        if (!await LessonRoster.GroupLessonsEnabledAsync(db)) return result;
+
+        var groupIds = (await db.StudyGroups.AsNoTracking()
+            .Where(g => !g.IsArchived).Select(g => g.Id).ToListAsync()).ToHashSet();
+        if (groupIds.Count == 0) return result;
+
+        var members = await db.StudyGroupMembers.AsNoTracking()
+            .Where(m => m.LeftOn == null)
+            .Select(m => new { m.GroupId, m.StudentId })
+            .ToListAsync();
+
+        foreach (var m in members)
+        {
+            if (!groupIds.Contains(m.GroupId)) continue;
+            if (!result.TryGetValue(m.StudentId, out var list)) result[m.StudentId] = list = [];
+            list.Add(m.GroupId.ToString());
+        }
+        return result;
     }
 }

@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using SchoolLms.Infrastructure.Data;
 using SchoolLms.Application.Dtos;
+using SchoolLms.Application.Services;
 using SchoolLms.Domain;
 
 namespace SchoolLms.Server.Controllers;
@@ -90,6 +91,12 @@ public class StudentEvaluationController(AppDbContext db) : ControllerBase
     /// turlari bo'yicha baholar (tanlangan oy). Qatnashish hisobi <see cref="Analytics"/> bilan bir xil:
     /// o'tilgan dars (LessonNote.Conducted, guruhga mos) minus o'sha darslardagi davomatsizlik
     /// ("kech keldi" mustasno) — faqat tanlangan davr ichida.
+    ///
+    /// <para>
+    /// <b>O'quv guruhi</b> (G-13): guruh darsi ham o'quvchining qatnashish maxrajiga kiradi —
+    /// u ham o'tilgan dars. Cut-over o'chirgichi o'chiq bo'lsa guruh yo'q va raqamlar
+    /// bugungisi bo'lib qoladi (§4.3).
+    /// </para>
     /// </summary>
     [HttpGet("board")]
     public async Task<ActionResult<EvaluationBoardDto>> GetBoard(
@@ -111,16 +118,21 @@ public class StudentEvaluationController(AppDbContext db) : ControllerBase
         var (start, end) = PeriodRange(month, week);
         var monthPrefix = month + "-";
 
+        // O'chirgich o'chiq — guruh qatorlari UMUMAN o'qilmaydi (§4.3).
+        var groupsOn = await LessonRoster.GroupLessonsEnabledAsync(db);
+
         var students = await db.Students.Where(s => !s.IsArchived)
             .Select(s => new { s.Id, s.FullName, s.ClassName, s.SubGroup }).ToListAsync();
         var classes = await db.Classes.Select(c => new { c.Id, c.Name }).ToListAsync();
         var conducted = (await db.LessonNotes
-                .Where(n => n.Conducted && n.Date.StartsWith(monthPrefix))
+                .Where(n => n.Conducted && n.Date.StartsWith(monthPrefix)
+                            && (groupsOn || n.OwnerKind != LessonOwnerKind.Group))
                 .Select(n => new { n.ClassId, n.SubjectId, n.Date, n.Period, n.SubGroup }).ToListAsync())
             .Where(n => string.CompareOrdinal(n.Date, start) >= 0 && string.CompareOrdinal(n.Date, end) <= 0)
             .ToList();
         var marks = (await db.JournalEntries
-                .Where(e => e.ReasonId != null && e.Date.StartsWith(monthPrefix))
+                .Where(e => e.ReasonId != null && e.Date.StartsWith(monthPrefix)
+                            && (groupsOn || e.OwnerKind != LessonOwnerKind.Group))
                 .Select(e => new { e.StudentId, e.SubjectId, e.Date, e.Period, e.ReasonId }).ToListAsync())
             .Where(e => string.CompareOrdinal(e.Date, start) >= 0 && string.CompareOrdinal(e.Date, end) <= 0)
             .ToList();
@@ -139,6 +151,8 @@ public class StudentEvaluationController(AppDbContext db) : ControllerBase
 
         var classIdByName = classes.GroupBy(c => c.Name)
             .ToDictionary(g => g.Key, g => g.First().Id, StringComparer.OrdinalIgnoreCase);
+        // O'quvchi → uning faol guruhlari. O'chirgich o'chiq bo'lsa — bo'sh lug'at.
+        var groupsByStudent = await GroupIdsByStudentAsync(groupsOn);
         var reasonMap = reasons.ToDictionary(r => r.Id);
         var lateSet = reasons.Where(r => r.IsLate).Select(r => r.Id).ToHashSet();
 
@@ -162,6 +176,11 @@ public class StudentEvaluationController(AppDbContext db) : ControllerBase
                     if (c.SubGroup == 0 || c.SubGroup == s.SubGroup)
                         studentConducted.Add((c.SubjectId, c.Date, c.Period));
             }
+            // Guruh darslari — guruhda sinf ichidagi bo'linish yo'q, hamma a'zo qatnashadi.
+            foreach (var groupId in groupsByStudent.GetValueOrDefault(s.Id) ?? [])
+                if (conductedByClass.TryGetValue(groupId, out var groupConducted))
+                    foreach (var c in groupConducted)
+                        studentConducted.Add((c.SubjectId, c.Date, c.Period));
             var conductedCount = studentConducted.Count;
 
             var studentMarks = marksByStudent.GetValueOrDefault(s.Id) ?? [];
@@ -198,6 +217,30 @@ public class StudentEvaluationController(AppDbContext db) : ControllerBase
 
         return new EvaluationBoardDto(months, month, week, types, rows,
             bySubject ? selectedSubject : "all", subjects);
+    }
+
+    /// <summary>
+    /// O'quvchi id → uning faol o'quv guruhlarining id'lari. Cut-over o'chirgichi
+    /// o'chiq bo'lsa — BO'SH lug'at, ya'ni jadval bugungi raqamni beradi (§4.3).
+    /// </summary>
+    private async Task<Dictionary<string, List<string>>> GroupIdsByStudentAsync(bool groupsOn)
+    {
+        var result = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+        if (!groupsOn) return result;
+
+        var groupIds = (await db.StudyGroups.AsNoTracking()
+            .Where(g => !g.IsArchived).Select(g => g.Id).ToListAsync()).ToHashSet();
+        if (groupIds.Count == 0) return result;
+
+        foreach (var m in await db.StudyGroupMembers.AsNoTracking()
+                     .Where(m => m.LeftOn == null)
+                     .Select(m => new { m.GroupId, m.StudentId }).ToListAsync())
+        {
+            if (!groupIds.Contains(m.GroupId)) continue;
+            if (!result.TryGetValue(m.StudentId, out var list)) result[m.StudentId] = list = [];
+            list.Add(m.GroupId.ToString());
+        }
+        return result;
     }
 
     /// <summary>
