@@ -237,7 +237,12 @@ public record ZReportDto(
     int CashExpensesCount = 0,
     // Bankka yoki seyfga topshirilgan naqd (storno ayirilgan).
     decimal CashHandoversTotal = 0m,
-    int CashHandoversCount = 0);
+    int CashHandoversCount = 0,
+    // F1.05 — shu smenadan o'quvchilarga QAYTARILGAN naqd (storno qilingan
+    // qaytarimlar ayirilgan). AYNAN `CashShiftService.CashOutflowAsync` dan —
+    // yuqoridagi ikkitasi bilan bir manbadan (fayl boshidagi invariant).
+    decimal CashRefundsTotal = 0m,
+    int CashRefundsCount = 0);
 
 /* ---------- To'lovlar ---------- */
 

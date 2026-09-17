@@ -82,6 +82,19 @@ public enum FinanceAction
 
     /// <summary>Moliya sozlamalari (`payment_due_day`, `overdue_after_day`).</summary>
     ManageBillingSettings,
+
+    /// <summary>
+    /// O'quvchiga pul qaytarishni SO'RASH (F1.05, finance-parity §2.1). Har
+    /// doim <c>pending</c> holatda tug'iladi — <see cref="ApproveRefund"/>
+    /// alohida, ikkinchi shaxsning amali.
+    /// </summary>
+    RequestRefund,
+
+    /// <summary>
+    /// Qaytarimni TASDIQLASH (yoki rad etish). Mijoz javobi F1.05 bilan bir
+    /// xil: chegirma tasdig'i kabi — chegara yo'q, faqat direktor.
+    /// </summary>
+    ApproveRefund,
 }
 
 /// <summary>
@@ -153,6 +166,17 @@ public static class FinanceMatrix
 
         new(FinanceAction.ManageBillingSettings, AdminAndDirector,
             "To'lov muddati sozlamalari (payment_due_day, overdue_after_day)"),
+
+        // F1.05 — admin so'raydi, direktor tasdiqlaydi. Kassir bu yerda YO'Q:
+        // qaytarim so'rovi kassa amali emas, ma'muriy qaror.
+        new(FinanceAction.RequestRefund, AdminAndDirector,
+            "O'quvchiga pul qaytarishni so'rash (F1.05)"),
+
+        // Mijoz javobi (finance-parity §2.1, F1.05): faqat direktor —
+        // chegara yo'q, admin ham tasdiqlay olmaydi (chegirma tasdig'i bilan
+        // bir xil naqsh, SPEC §8.1 Q5).
+        new(FinanceAction.ApproveRefund, Director,
+            "Qaytarimni tasdiqlash yoki rad etish — faqat direktor"),
     ];
 
     /// <summary>
