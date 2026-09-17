@@ -57,6 +57,9 @@ public class AuditService(IAppDbContext db, IHttpContextAccessor http)
     /// <summary>Qarzdor bilan ishlash amali (§3.5) — izoh, status, va'da qilingan sana.</summary>
     public const string EntityDebtorAction = "DebtorAction";
 
+    /// <summary>Qarzdor holatlari katalogi (§3.5) — nom, rang, tartib, faollik.</summary>
+    public const string EntityDebtorStatus = "DebtorStatus";
+
     /// <summary>Xulq-atvor bali (§6) — qo'lda qo'yilgan ball va uning sababi.</summary>
     public const string EntityDisciplinePoint = "DisciplinePoint";
 

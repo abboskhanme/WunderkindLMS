@@ -36,11 +36,9 @@ namespace SchoolLms.Application.Billing;
 //
 //  AUDIT
 //  -----
-//  Amallar `AuditService.EntityDebtorAction` ostida yoziladi (umumiy fayl,
-//  docs/modules/existing-module-gaps.md §8). Holat ma'lumotnomasi uchun u
-//  yerda konstanta YO'Q, shuning uchun <see cref="EntityDebtorStatus"/> shu
-//  yerda turibdi — `AuditService` ga ko'chirilishi kerak (hisobotda).
-//  Qiymat o'sha faylning uslubiga mos: entity klass nomining o'zi.
+//  Amallar `AuditService.EntityDebtorAction`, holat ma'lumotnomasi esa
+//  `AuditService.EntityDebtorStatus` ostida yoziladi (umumiy fayl,
+//  docs/modules/existing-module-gaps.md §8). Qiymat — entity klass nomining o'zi.
 //
 //  NEGA DI'DA YO'Q
 //  ---------------
@@ -54,10 +52,10 @@ namespace SchoolLms.Application.Billing;
 public sealed partial class DebtorWorkflowService(IAppDbContext db)
 {
     /// <summary>
-    /// Audit jurnalidagi entity turi — holat ma'lumotnomasi. <c>AuditService</c>
-    /// da hali yo'q; u yerga ko'chirilguncha shu yerda.
+    /// Audit jurnalidagi entity turi — holat ma'lumotnomasi.
+    /// <c>AuditService.EntityDebtorStatus</c> ning o'zi; qiymat O'ZGARMASLIGI shart.
     /// </summary>
-    public const string EntityDebtorStatus = "DebtorStatus";
+    public const string EntityDebtorStatus = AuditService.EntityDebtorStatus;
 
     /// <summary>Izohning yuqori chegarasi — matn maydonini hujjat saqlashga aylantirmaslik uchun.</summary>
     public const int MaxCommentLength = 2000;

@@ -57,6 +57,7 @@ import { CanteenPage } from '@/pages/admin/canteen/CanteenPage'
 import { FinancePage } from '@/pages/admin/finance/FinancePage'
 import { ArrearsPage } from '@/pages/admin/finance/ArrearsPage'
 import { CashDayPage } from '@/pages/admin/finance/CashDayPage'
+import { DebtorStatusesPage } from '@/pages/admin/finance/DebtorStatusesPage'
 import { LeadFunnelPage } from '@/pages/admin/leads-funnel/LeadFunnelPage'
 import { AttendanceDisciplineReportPage } from '@/pages/admin/discipline/AttendanceDisciplineReportPage'
 import { CertificatesPage } from '@/pages/admin/certificates/CertificatesPage'
@@ -139,6 +140,7 @@ export default function App() {
           <Route path="finance/money-flow" element={<Suspense fallback={<Loader label="Yuklanmoqda…" />}><MoneyFlowPage /></Suspense>} />
           {/* Rol tekshiruvi sahifaning ichida (SPEC §4.3: faqat admin/direktor) */}
           <Route path="finance/arrears" element={<ArrearsPage />} />
+          <Route path="finance/debtor-statuses" element={<DebtorStatusesPage />} />
           <Route path="finance/cash-day" element={<CashDayPage />} />
           <Route path="billing/categories" element={<RequirePerm perm="finance"><CategoriesPage /></RequirePerm>} />
           <Route path="billing/subscriptions" element={<RequirePerm perm="finance"><SubscriptionsPage /></RequirePerm>} />
