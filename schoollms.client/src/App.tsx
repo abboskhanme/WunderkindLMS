@@ -62,6 +62,10 @@ import { DebtorStatusesPage } from '@/pages/admin/finance/DebtorStatusesPage'
 import { LeadFunnelPage } from '@/pages/admin/leads-funnel/LeadFunnelPage'
 import { AttendanceDisciplineReportPage } from '@/pages/admin/discipline/AttendanceDisciplineReportPage'
 import { CertificatesPage } from '@/pages/admin/certificates/CertificatesPage'
+import { GroupsPage } from '@/pages/admin/groups/GroupsPage'
+import { GroupFormPage } from '@/pages/admin/groups/GroupFormPage'
+import { GroupRosterPage } from '@/pages/admin/groups/GroupRosterPage'
+import { ClassRosterPage } from '@/pages/admin/classes/ClassRosterPage'
 import { CertificateTypesPage } from '@/pages/admin/certificates/CertificateTypesPage'
 import { HarakatlarPage } from '@/pages/admin/discipline/HarakatlarPage'
 import { AttendanceAnalyticsPage } from '@/pages/admin/attendance/AttendanceAnalyticsPage'
@@ -104,6 +108,11 @@ export default function App() {
           <Route path="classes" element={<RequirePerm perm="classes"><ClassesPage /></RequirePerm>} />
           <Route path="classes/rating" element={<RequirePerm perm="classes"><ClassRatingPage /></RequirePerm>} />
           <Route path="classes/:id" element={<RequirePerm perm="classes"><ClassDetailPage /></RequirePerm>} />
+          <Route path="classes/:id/roster" element={<RequirePerm perm="classes"><ClassRosterPage /></RequirePerm>} />
+          <Route path="groups" element={<RequirePerm perm="classes"><GroupsPage /></RequirePerm>} />
+          <Route path="groups/new" element={<RequirePerm perm="classes"><GroupFormPage /></RequirePerm>} />
+          <Route path="groups/:id" element={<RequirePerm perm="classes"><GroupFormPage /></RequirePerm>} />
+          <Route path="groups/:id/students" element={<RequirePerm perm="classes"><GroupRosterPage /></RequirePerm>} />
           <Route path="schedule" element={<RequirePerm perm="schedule"><ClassScheduleViewPage /></RequirePerm>} />
           <Route path="schedule/teachers" element={<RequirePerm perm="schedule"><TeacherSchedulePage /></RequirePerm>} />
           <Route path="schedule/manage" element={<RequirePerm perm="schedule"><SchedulePage /></RequirePerm>} />

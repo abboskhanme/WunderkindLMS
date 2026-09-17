@@ -60,6 +60,9 @@ public class AuditService(IAppDbContext db, IHttpContextAccessor http)
     /// <summary>Qarzdor holatlari katalogi (§3.5) — nom, rang, tartib, faollik.</summary>
     public const string EntityDebtorStatus = "DebtorStatus";
 
+    /// <summary>O'quv guruhi (§2.1) — yaratish, tahrir, arxiv, ro'yxat o'zgarishi.</summary>
+    public const string EntityStudyGroup = "StudyGroup";
+
     /// <summary>Xulq-atvor bali (§6) — qo'lda qo'yilgan ball va uning sababi.</summary>
     public const string EntityDisciplinePoint = "DisciplinePoint";
 

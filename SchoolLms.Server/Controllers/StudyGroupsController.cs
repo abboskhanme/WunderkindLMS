@@ -38,7 +38,7 @@ public class StudyGroupsController(AppDbContext db, AuditService audit) : Contro
     /// qo'shilganda AYNAN shu satr ishlatiladi, ya'ni bugun yozilgan qatorlar
     /// ertaga ham filtrga tushadi.
     /// </summary>
-    internal const string AuditEntity = "StudyGroup";
+    internal const string AuditEntity = AuditService.EntityStudyGroup;
 
     private StudyGroupService Service => new(db);
 

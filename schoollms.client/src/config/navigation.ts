@@ -106,6 +106,7 @@ export const navByRole: Record<Role, NavItem[]> = {
       perm: 'students',
       children: [
         { label: 'Sinflar', to: '/admin/classes', end: true, group: "O'QUV JARAYONI" },
+        { label: 'Guruhlar', to: '/admin/groups', group: "O'QUV JARAYONI" },
         { label: 'Fanlar', to: '/admin/subjects', group: "O'QUV JARAYONI" },
         { label: "O'quvchilar", to: '/admin/students', end: true, group: "O'QUVCHILAR" },
         { label: "O'quvchilar manzili", to: '/admin/locations', group: "O'QUVCHILAR" },
