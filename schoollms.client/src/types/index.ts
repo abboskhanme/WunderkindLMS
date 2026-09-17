@@ -233,6 +233,12 @@ export interface ClassGroups {
 export interface Subject {
   id: string
   name: string
+  /**
+   * "Guruhlarga bo'linadi" (students-parity.md §2.5, G-9). Faqat shunday fanga
+   * o'quv guruhi (`/admin/groups`) ochiladi. Eski javoblarda maydon bo'lmasligi
+   * mumkin, shuning uchun ixtiyoriy.
+   */
+  isGroupable?: boolean
 }
 
 /* ---------- Sinflar ---------- */

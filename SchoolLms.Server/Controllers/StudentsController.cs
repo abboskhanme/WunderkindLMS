@@ -288,11 +288,111 @@ public class StudentsController(AppDbContext db, AuditService audit) : Controlle
                 studentId: student.Id);
         }
 
+        // C-1: sinf o'zgarishi endi `class_memberships` da ham qoladi.
+        //
+        // `students.class_name` HAQIQAT MANBAI bo'lib qoladi — yuqorida u
+        // allaqachon yozilgan va hech bir mavjud so'rov o'zgarmaydi. Yangilik
+        // shu: o'zgarish sanali a'zolik yozuvida ham ko'rinadi, ya'ni o'quvchi
+        // kartochkasidagi "Sinf va guruhlar" tarixi to'g'ri bo'ladi.
+        //
+        // Nega tranzaksiya: a'zolik xizmati ikki marta saqlaydi (avval eskisini
+        // yopadi, keyin yangisini ochadi) —
+        // `ux_class_memberships_one_active` qisman unikal indeksi bir lahzada
+        // ikkita faol qatorni ko'rmasligi kerak. Ikkalasi bitta tranzaksiyada
+        // ketadi, ya'ni yarim o'tkazish bo'lmaydi.
+        await using var tx = classChanged ? await db.Database.BeginTransactionAsync() : null;
+
         await db.SaveChangesAsync();
+
+        if (classChanged)
+        {
+            await new ClassMembershipService(db)
+                .SyncFromClassNameAsync(student, student.ClassName, CurrentUserId);
+        }
+
+        if (tx is not null) await tx.CommitAsync();
+
         // Ota-ona raqami/ismi o'zgargan bo'lishi mumkin — vasiy bog'lanishini tekislaymiz.
         // Bir tomonlama: o'quvchi qatoridan vasiyga (GuardianSync izohiga qarang).
         await GuardianSync.EnsureAsync(db, student);
         return NoContent();
+    }
+
+    /// <summary>JWT'dagi foydalanuvchi id'si — a'zolik yozuvining muallifi.</summary>
+    private string? CurrentUserId =>
+        User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
+        ?? User.FindFirst("sub")?.Value;
+
+    /// <summary>
+    /// O'quvchi kartochkasining <b>"Sinf va guruhlar"</b> tab'i (G-10, §2.1.6).
+    ///
+    /// <para>
+    /// Sinf va guruh a'zoliklari — TARIXI bilan: qachon qo'shilgan, qachon va
+    /// nega chiqqan, nechа kun turgan. Faol qatorlar birinchi.
+    /// </para>
+    /// <para>
+    /// <c>className</c> alohida qaytadi va u <c>students.class_name</c> ning
+    /// o'zi: migratsiya backfill'i faqat nomi sinf katalogiga MOS tushgan
+    /// o'quvchilarni qamragan (§3.1), ya'ni eski o'quvchida a'zolik qatori
+    /// umuman bo'lmasligi mumkin. Ekran bunday holatni yashirmasligi kerak.
+    /// </para>
+    /// </summary>
+    [HttpGet("{id}/memberships")]
+    public async Task<ActionResult<StudentMembershipsDto>> GetMemberships(
+        string id, CancellationToken ct = default)
+    {
+        var student = await db.Students.AsNoTracking().FirstOrDefaultAsync(s => s.Id == id, ct);
+        if (student is null) return NotFound();
+
+        var today = AppClock.Today;
+
+        var classRows = await db.ClassMemberships.AsNoTracking()
+            .Where(m => m.StudentId == id)
+            .Join(db.Classes.AsNoTracking(), m => m.ClassId, c => c.Id, (m, c) => new
+            {
+                m.Id, m.ClassId, c.Name, c.Grade, m.JoinedOn, m.LeftOn, m.LeaveReason,
+            })
+            .ToListAsync(ct);
+
+        var groupRows = await db.StudyGroupMembers.AsNoTracking()
+            .Where(m => m.StudentId == id)
+            .Join(db.StudyGroups.AsNoTracking(), m => m.GroupId, g => g.Id, (m, g) => new
+            {
+                m.Id, m.GroupId, GroupName = g.Name, g.SubjectId, g.IsArchived,
+                m.JoinedOn, m.LeftOn, m.LeaveReason,
+            })
+            .ToListAsync(ct);
+
+        var subjectIds = groupRows.Select(r => r.SubjectId).Distinct().ToList();
+        var subjects = await db.Subjects.AsNoTracking()
+            .Where(s => subjectIds.Contains(s.Id))
+            .ToDictionaryAsync(s => s.Id, s => s.Name, ct);
+
+        return new StudentMembershipsDto(
+            student.Id,
+            student.ClassName,
+            [.. classRows
+                .OrderBy(r => r.LeftOn != null).ThenByDescending(r => r.JoinedOn)
+                .Select(r => new StudentClassMembershipDto(
+                    r.Id, r.ClassId, r.Name, r.Grade, r.JoinedOn, r.LeftOn, r.LeaveReason,
+                    DaysBetween(r.JoinedOn, r.LeftOn, today)))],
+            [.. groupRows
+                .OrderBy(r => r.LeftOn != null).ThenByDescending(r => r.JoinedOn)
+                .Select(r => new StudentGroupMembershipDto(
+                    r.Id, r.GroupId, r.GroupName, r.SubjectId,
+                    subjects.GetValueOrDefault(r.SubjectId, ""), r.IsArchived,
+                    r.JoinedOn, r.LeftOn, r.LeaveReason,
+                    DaysBetween(r.JoinedOn, r.LeftOn, today)))]);
+    }
+
+    /// <summary>
+    /// A'zolikda o'tgan kunlar. Yopilmagan a'zolik BUGUNGACHA sanaladi; birinchi
+    /// kun ham hisobga kiradi (shu kuni qo'shilib shu kuni chiqqan bola — 1 kun).
+    /// </summary>
+    private static int DaysBetween(DateOnly joined, DateOnly? left, DateOnly today)
+    {
+        var end = left ?? today;
+        return end < joined ? 0 : end.DayNumber - joined.DayNumber + 1;
     }
 
     /// <summary>

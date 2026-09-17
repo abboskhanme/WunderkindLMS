@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Plus, Pencil, Trash2, BookOpen } from 'lucide-react'
+import { Plus, Pencil, Trash2, BookOpen, Users } from 'lucide-react'
 import type { Subject } from '@/types'
 import type { SubjectPayload } from '@/api/services/subjects'
 import {
@@ -26,13 +26,24 @@ export function SubjectsPage() {
       .finally(() => setLoading(false))
   }, [])
 
+  // Server saqlashni yoki o'chirishni RAD ETISHI mumkin (G-9: faol guruhi bor
+  // fandan belgini olib bo'lmaydi; F-1: ishlatilayotgan fan o'chirilmaydi).
+  // Ilgari javob jimgina tashlab yuborilardi — tugma bosilardi, hech narsa
+  // o'zgarmasdi va sababi hech qayerda ko'rinmasdi.
   const handleSubmit = (values: SubjectPayload) => {
-    if (editing) {
-      updateSubject(editing.id, values).then((u) =>
-        setSubjects((prev) => prev.map((s) => (s.id === u.id ? u : s))),
+    const failed = (e: unknown) =>
+      alert(
+        (e as { response?: { data?: { message?: string } } })?.response?.data?.message ??
+          "Fanni saqlab bo'lmadi",
       )
+    if (editing) {
+      updateSubject(editing.id, values)
+        .then((u) => setSubjects((prev) => prev.map((s) => (s.id === u.id ? u : s))))
+        .catch(failed)
     } else {
-      createSubject(values).then((c) => setSubjects((prev) => [...prev, c]))
+      createSubject(values)
+        .then((c) => setSubjects((prev) => [...prev, c]))
+        .catch(failed)
     }
     setFormOpen(false)
     setEditing(null)
@@ -40,7 +51,14 @@ export function SubjectsPage() {
 
   const handleDelete = (s: Subject) => {
     if (!confirm(`"${s.name}" fanini o'chirasizmi?`)) return
-    deleteSubject(s.id).then(() => setSubjects((prev) => prev.filter((x) => x.id !== s.id)))
+    deleteSubject(s.id)
+      .then(() => setSubjects((prev) => prev.filter((x) => x.id !== s.id)))
+      .catch((e) =>
+        alert(
+          (e as { response?: { data?: { message?: string } } })?.response?.data?.message ??
+            "Fanni o'chirib bo'lmadi",
+        ),
+      )
   }
 
   return (
@@ -70,7 +88,14 @@ export function SubjectsPage() {
                 <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-50 text-brand-600">
                   <BookOpen className="h-5 w-5" />
                 </div>
-                <p className="font-medium text-slate-800">{s.name}</p>
+                <div>
+                  <p className="font-medium text-slate-800">{s.name}</p>
+                  {s.isGroupable && (
+                    <span className="mt-0.5 inline-flex items-center gap-1 rounded-md bg-brand-50 px-1.5 py-0.5 text-[11px] font-medium text-brand-600">
+                      <Users className="h-3 w-3" /> Guruhlarga bo'linadi
+                    </span>
+                  )}
+                </div>
               </div>
               <div className="flex items-center gap-0.5">
                 <IconBtn
