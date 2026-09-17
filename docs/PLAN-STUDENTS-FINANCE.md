@@ -31,14 +31,14 @@ paragraph). That is the gap this plan closes.
 
 | Screen | Menu-level today | Known big item |
 |---|---|---|
-| Moliya (`fin-map`) | have — Kassa kuni | — |
+| Moliya (`/cash` — the cash desk) | partial — `/cashier` + Chiqimlar | expense create/approve broken (F1.01–F1.03) |
 | Qarzdorlar bilan ishlash | have (shipped 2026-09-17) | — |
-| Ish haqi | partial — teacher salary calc | payroll spine, `hr.md` HR-1 ~118 h |
+| Ish haqi | partial — teacher salary calc | payroll spine, `hr.md` HR-1 — **206 h** by its own task table, not 118 |
 | Moliya hisobotlari | have | screen-level unknown |
 | P&L | have | — |
 | P&L 2.0 | **missing** | deferred a year by decision (§3.6) |
 | Pul oqimi | have | — |
-| Moliya analitikasi | partial | screen-level unknown |
+| Moliya analitikasi (`fin-map`) | partial — Kassa kuni, Pul aylanmasi | `fin-map` is this screen, not *Moliya* (finance-parity §0.4) |
 | Tranzaksiyalar | partial | cancel/delete/back-date **refused on principle** (§7.4) |
 | Abonement tranzaksiyalari | partial | transaction list (§3.4.2) |
 | Bonus | **missing** | `hr.md` |
@@ -46,6 +46,48 @@ paragraph). That is the gap this plan closes.
 | Qarzdorlik oyma-oy | have (shipped 2026-09-16) | — |
 
 ---
+
+## 1a. What the audits found (2026-09-17)
+
+Both screen-level audits are in: `docs/modules/students-parity.md` and
+`docs/modules/finance-parity.md`.
+
+| Module | P0 | P1 | P2 | Total |
+|---|---|---|---|---|
+| Students | 302 h (Group 282 + class roster 20) | 211 h | 141 h | 654 h |
+| Finance | 69 h | 398 h (206 of it payroll HR-1) | 193 h | 660 h |
+
+**Live defects — verified in the code by the orchestrator, fixed first and deployable alone:**
+
+| Id | Defect |
+|---|---|
+| G-1 | Renaming a class orphans every pupil in it — `students.class_name` is never updated |
+| G-2 | A split lesson (two `LessonNote` rows, same period/subject, different `SubGroup`) crashes the pupil dashboard and the parent Mini App with a 500 — `ToDictionary` on a duplicate key |
+| F1.01 | "Yangi chiqim" always fails — the client sends no `method`, the server requires one |
+| F1.02 | Expense approval always fails — no body posted; client hard-codes the 5 M threshold; no double-approval guard |
+| F1.03 | A cash expense never lowers the shift's expected cash — every one shows as a shortage (needs a column) |
+| F3.05 | Staff can post salary payments and change pay rates (reported; verified by its slice) |
+| F10.02 | `VoidAsync` has no endpoint, refuses invoices whose payment was reversed, and would 500 |
+| F0.03 | `finance_anomaly_flags` is missing from `init-roles.sql` §5 — re-running the script undoes its column lock |
+
+---
+
+## 1b. Execution map
+
+| Wave | Slice | What | Needs schema | State |
+|---|---|---|---|---|
+| S-0 | **M** | Students migrations `StudyGroupsAndMemberships` + `StudentsParityP1` | owns it | running |
+| S-0 | **W** | G-1, G-2 (deploy-first commit), G-3 characterisation tests for journal, schedule, salary, teacher access | no | running |
+| F-1 | **FD** | F1.01, F1.02 (deploy-first commit), F3.05 + S6 access | no | running |
+| F-1 | **S1** | transaction journal, storno UI, invoice register, void fixes | no | running |
+| F-1 | **S4+S5** | finance dashboard, P&L year×month drill-down, cash flow by category, debtor month filter + status bug | no | running |
+| F-2 | **MF** | Finance Batch A migration (`expenses.cash_shift_id`, `cash_handovers`, `student_refunds`, `expense_attachments`) + F0.03 — **after M merges**, one migration owner at a time | owns it | queued |
+| F-2 | S2 → S3 | cash expenses on the shift, handover, attachments → refunds, subscription end/void, automatic Telegram receipt | yes | queued |
+| S-1 | 6 slices | groups + class roster, student list/import/statuses, form/guardians, profile, contracts, rooms — **after M merges** | yes | queued |
+| S-2 | C1–C3 | the Group cut-over: schedule/salary/turnstile, journal/attendance/access/chat, reports/portals — then one switch | yes | queued |
+| F-3 | S7 | payroll HR-1 + employee Bonus/Jarima — **after the payroll questions are answered** | yes | queued |
+
+At most five build agents run at once.
 
 ## 2. Phases
 
