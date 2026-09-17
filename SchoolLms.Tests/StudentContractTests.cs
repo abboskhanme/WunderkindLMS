@@ -305,16 +305,71 @@ public class StudentContractTests(ApiFixture fixture)
         Assert.Equal(HttpStatusCode.OK, second.StatusCode);
         Assert.NotEqual(nextNumber, (await JsonAsync(second)).GetProperty("number").GetString());
 
-        // Band raqam — 400.
-        var taken = await client.PostAsJsonAsync($"{Url}/generate",
-            new { studentId = student, templateId = template, number = nextNumber });
-        Assert.Equal(HttpStatusCode.BadRequest, taken.StatusCode);
-        Assert.Equal(StudentContractsController.NumberTakenMessage, await MessageAsync(taken));
+        // Band raqam — 400. Faqat "manual" rejimda ma'noli: "auto" rejimda
+        // so'ralgan raqam E'TIBORGA OLINMAYDI (K-6, pastdagi
+        // `Generate_auto_rejimida_qolda_kiritilgan_raqamni_etiborsiz_qoldiradi`
+        // ga qarang) — shuning uchun kolliziya shu yerda "manual" ostida
+        // tekshiriladi.
+        await WithNumberModeAsync(client, ContractNumberMode.Manual, async () =>
+        {
+            var taken = await client.PostAsJsonAsync($"{Url}/generate",
+                new { studentId = student, templateId = template, number = nextNumber });
+            Assert.Equal(HttpStatusCode.BadRequest, taken.StatusCode);
+            Assert.Equal(StudentContractsController.NumberTakenMessage, await MessageAsync(taken));
+        });
 
         // Andozasiz — 400 (fayl hosil qilinmaydi).
         var noTemplate = await client.PostAsJsonAsync($"{Url}/generate", new { studentId = student });
         Assert.Equal(HttpStatusCode.BadRequest, noTemplate.StatusCode);
         Assert.Equal(StudentContractsController.TemplateNotFoundMessage, await MessageAsync(noTemplate));
+    }
+
+    /// <summary>
+    /// K-6 — wiring: <c>auto</c> rejimida (sukut) so'rovdagi <c>number</c>
+    /// TO'LIQ E'TIBORGA OLINMAYDI — hosil qilish har doim keyingi bo'sh
+    /// raqamni oladi, hatto u band bo'lса ham (<c>ContractService.Resolve</c>).
+    /// Qo'lda yozuv (<see cref="StudentContractsController.Create"/>) bunga
+    /// kirmaydi — u alohida tekshiriladi (<c>Crud_va_takroriy_raqam_rad_etiladi</c>).
+    /// </summary>
+    [Fact]
+    public async Task Generate_auto_rejimida_qolda_kiritilgan_raqamni_etiborsiz_qoldiradi()
+    {
+        using var client = await fixture.Api.ClientAsAsync(Roles.Admin);
+        var tag = Tag();
+        var student = await SeedStudentAsync(tag);
+        var template = await SeedTemplateAsync(tag, "Shartnoma № @raqam");
+
+        await WithNumberModeAsync(client, ContractNumberMode.Auto, async () =>
+        {
+            var response = await client.PostAsJsonAsync($"{Url}/generate", new
+            {
+                studentId = student,
+                templateId = template,
+                // Qasddan band/g'alati qiymat — auto rejimda baribir ishlatilmaydi.
+                number = "999999999",
+            });
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            var row = await JsonAsync(response);
+            Assert.NotEqual("999999999", row.GetProperty("number").GetString());
+        });
+    }
+
+    /// <summary>K-6 — wiring: <c>manual</c> rejimida bo'sh raqam hosil qilishda rad etiladi.</summary>
+    [Fact]
+    public async Task Generate_manual_rejimida_bosh_raqamni_rad_etadi()
+    {
+        using var client = await fixture.Api.ClientAsAsync(Roles.Admin);
+        var tag = Tag();
+        var student = await SeedStudentAsync(tag);
+        var template = await SeedTemplateAsync(tag, "Shartnoma № @raqam");
+
+        await WithNumberModeAsync(client, ContractNumberMode.Manual, async () =>
+        {
+            var response = await client.PostAsJsonAsync($"{Url}/generate",
+                new { studentId = student, templateId = template });
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+            Assert.Equal(ContractService.ManualNumberRequiredMessage, await MessageAsync(response));
+        });
     }
 
     /// <summary>
@@ -375,6 +430,135 @@ public class StudentContractTests(ApiFixture fixture)
         Assert.Equal("+998901112233", without["@telefon"]);
         Assert.Equal("", without["@ota"]);
         Assert.Equal("", without["@tugash_sana"]);
+    }
+
+    // =====================================================================
+    //  5. OMMAVIY BIRIKTIRISH (K-5)
+    // =====================================================================
+
+    private const string AttachMany = "/api/admin/student-contracts/attach-many";
+
+    /// <summary>
+    /// Uchta o'quvchi tanlansa — BIRINCHISI raqamni oladi, qolgan ikkitasi
+    /// "raqam band" sababi bilan qaytadi (<c>ux_student_contracts_number</c>
+    /// qisman unikal indeksi — bitta raqam bitta yozuvda).
+    /// </summary>
+    [Fact]
+    public async Task Birinchi_oquvchi_raqamni_oladi_qolganlari_sababi_bilan_qaytadi()
+    {
+        using var client = await fixture.Api.ClientAsAsync(Roles.Admin);
+        var tag = Tag();
+        var a = await SeedStudentAsync(tag);
+        var b = await SeedStudentAsync(tag);
+        var c = await SeedStudentAsync(tag);
+
+        var response = await client.PostAsJsonAsync(AttachMany, new
+        {
+            studentIds = new[] { a, b, c },
+            number = $"{tag}-BULK",
+            signedOn = "2026-09-01",
+        });
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var body = await JsonAsync(response);
+        Assert.Equal(1, body.GetProperty("attached").GetInt32());
+        var rows = body.GetProperty("results").EnumerateArray().ToList();
+        Assert.Equal(3, rows.Count);
+
+        var first = rows.First(r => r.GetProperty("studentId").GetString() == a);
+        Assert.True(first.GetProperty("ok").GetBoolean());
+        Assert.False(first.GetProperty("contractId").ValueKind == JsonValueKind.Null);
+
+        foreach (var loser in rows.Where(r => r.GetProperty("studentId").GetString() != a))
+        {
+            Assert.False(loser.GetProperty("ok").GetBoolean());
+            Assert.Equal(StudentContractsController.NumberTakenMessage,
+                loser.GetProperty("reason").GetString());
+        }
+
+        // Yozuv haqiqatan bazada — reyestrdan o'qib tekshiramiz.
+        var rowsInDb = await StudentRowsAsync(client, a);
+        var attached = Assert.Single(rowsInDb);
+        Assert.Equal($"{tag}-BULK", attached.GetProperty("number").GetString());
+        Assert.Equal("uploaded", attached.GetProperty("source").GetString());
+        Assert.Empty(await StudentRowsAsync(client, b));
+    }
+
+    /// <summary>
+    /// Allaqachon raqamli shartnomasi bor o'quvchi ATLAB o'tiladi (EduSchool
+    /// "AllreadyHasContract" bilan bir xil ma'no) — raqami olinmaydi va
+    /// mavjud yozuvi buzilmaydi.
+    /// </summary>
+    [Fact]
+    public async Task Allaqachon_raqami_bor_oquvchi_otkazib_yuboriladi()
+    {
+        using var client = await fixture.Api.ClientAsAsync(Roles.Admin);
+        var tag = Tag();
+        var withNumber = await SeedStudentAsync(tag);
+        var candidate = await SeedStudentAsync(tag);
+
+        var existing = await client.PostAsJsonAsync(Url,
+            new { studentId = withNumber, number = $"{tag}-ESKI" });
+        Assert.Equal(HttpStatusCode.OK, existing.StatusCode);
+
+        var response = await client.PostAsJsonAsync(AttachMany, new
+        {
+            studentIds = new[] { withNumber, candidate },
+            number = $"{tag}-YANGI",
+            signedOn = "2026-09-01",
+        });
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var rows = (await JsonAsync(response)).GetProperty("results").EnumerateArray().ToList();
+        var blocked = rows.First(r => r.GetProperty("studentId").GetString() == withNumber);
+        Assert.False(blocked.GetProperty("ok").GetBoolean());
+        Assert.Equal(StudentContractsController.AlreadyNumberedMessage,
+            blocked.GetProperty("reason").GetString());
+
+        var placed = rows.First(r => r.GetProperty("studentId").GetString() == candidate);
+        Assert.True(placed.GetProperty("ok").GetBoolean());
+
+        // Eski yozuv o'zgarishsiz qoladi.
+        var stayedRow = Assert.Single(await StudentRowsAsync(client, withNumber));
+        Assert.Equal($"{tag}-ESKI", stayedRow.GetProperty("number").GetString());
+    }
+
+    /// <summary>Raqamsiz so'rov, bo'sh ro'yxat va topilmagan o'quvchi — har biri 400/aniq sabab.</summary>
+    [Fact]
+    public async Task Notogri_soroolar_rad_etiladi()
+    {
+        using var client = await fixture.Api.ClientAsAsync(Roles.Admin);
+        var student = await SeedStudentAsync(Tag());
+
+        var noNumber = await client.PostAsJsonAsync(AttachMany, new { studentIds = new[] { student } });
+        Assert.Equal(HttpStatusCode.BadRequest, noNumber.StatusCode);
+        Assert.Equal(StudentContractsController.NumbersRequiredMessage, await MessageAsync(noNumber));
+
+        var noStudents = await client.PostAsJsonAsync(AttachMany,
+            new { studentIds = Array.Empty<string>(), number = "1" });
+        Assert.Equal(HttpStatusCode.BadRequest, noStudents.StatusCode);
+
+        var missing = await client.PostAsJsonAsync(AttachMany,
+            new { studentIds = new[] { "yo-q-id" }, number = Tag() });
+        Assert.Equal(HttpStatusCode.OK, missing.StatusCode);
+        var row = Assert.Single((await JsonAsync(missing)).GetProperty("results").EnumerateArray());
+        Assert.False(row.GetProperty("ok").GetBoolean());
+        Assert.Equal(StudentContractsController.StudentNotFoundMessage, row.GetProperty("reason").GetString());
+    }
+
+    /// <summary>Darvoza — "contracts" ruxsatisiz xodim ommaviy biriktira olmaydi.</summary>
+    [Fact]
+    public async Task Ruxsatsiz_ommaviy_biriktirmaydi()
+    {
+        using var client = await fixture.Api.ClientAsAsync(Roles.Staff);
+        var student = await SeedStudentAsync(Tag());
+
+        Assert.Equal(HttpStatusCode.Forbidden, (await client.PostAsJsonAsync(AttachMany,
+            new { studentIds = new[] { student }, number = "1" })).StatusCode);
+
+        using var anonymous = fixture.Api.AnonymousClient();
+        Assert.Equal(HttpStatusCode.Unauthorized, (await anonymous.PostAsJsonAsync(AttachMany,
+            new { studentIds = new[] { student }, number = "1" })).StatusCode);
     }
 
     // =====================================================================
@@ -472,5 +656,28 @@ public class StudentContractTests(ApiFixture fixture)
     {
         using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         return json.RootElement.GetProperty("message").GetString() ?? "";
+    }
+
+    /// <summary>
+    /// K-6 — <c>school_meta.contract_number_mode</c> ni testning davomiga
+    /// almashtiradi va keyin ASL holatiga qaytaradi (test yiqilsa ham) —
+    /// <c>ContractNumberModeTests.WithModeAsync</c> bilan bir xil naqsh,
+    /// bu yerda esa sozlash endpoint'i (<c>/api/admin/settings/contracts</c>)
+    /// orqali, chunki tekshirilayotgani AYNAN o'sha yo'l bilan ulangan
+    /// controller xatti-harakati.
+    /// </summary>
+    private static async Task WithNumberModeAsync(HttpClient client, string mode, Func<Task> body)
+    {
+        const string url = "/api/admin/settings/contracts";
+        var before = (await JsonAsync(await client.GetAsync(url))).GetProperty("numberMode").GetString()!;
+        (await client.PutAsJsonAsync(url, new { numberMode = mode })).EnsureSuccessStatusCode();
+        try
+        {
+            await body();
+        }
+        finally
+        {
+            await client.PutAsJsonAsync(url, new { numberMode = before });
+        }
     }
 }

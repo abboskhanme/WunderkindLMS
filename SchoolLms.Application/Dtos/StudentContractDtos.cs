@@ -128,3 +128,35 @@ public record StudentContractPreviewDto(
 
 /// <summary>Andozadagi bitta <c>@</c>-o'rinbosar va uning qiymati.</summary>
 public record ContractTokenDto(string Token, string Value);
+
+/* =========================================================================
+ *  K-5 — ommaviy biriktirish (bir xil raqam va sana, tanlangan o'quvchilarga)
+ * ========================================================================= */
+
+/// <summary>
+/// K-5 — bitta shartnoma raqami va sanasini bir nechta tanlangan o'quvchiga
+/// birdaniga biriktirish so'rovi (EduSchool'dagi <c>attach-contract-many</c>).
+/// </summary>
+public record BulkAttachContractRequest(
+    List<string>? StudentIds,
+    string? Number,
+    string? SignedOn,
+    string? EndsOn,
+    string? Comment);
+
+/// <summary>
+/// Bitta o'quvchi uchun natija: <paramref name="Ok"/> true bo'lsa yangi
+/// yozuv id'si, aks holda ANIQ sababi (masalan — raqam band, allaqachon
+/// raqamli shartnomasi bor, o'quvchi topilmadi).
+/// </summary>
+public record BulkAttachContractRowDto(
+    string StudentId,
+    string? StudentName,
+    bool Ok,
+    Guid? ContractId,
+    string? Reason);
+
+/// <summary>Ommaviy biriktirish yakuni — har bir tanlangan o'quvchi bo'yicha bitta qator.</summary>
+public record BulkAttachContractResultDto(
+    int Attached,
+    IReadOnlyList<BulkAttachContractRowDto> Results);

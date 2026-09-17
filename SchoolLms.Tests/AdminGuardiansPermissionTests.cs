@@ -126,7 +126,11 @@ public class AdminGuardiansPermissionTests(ApiFixture fixture)
             gender = "male",
             parentFullName = $"Ota-ona {tag}",
             parentPhone = NewPhone(),
-            className = "",
+            // Sinf nomi — bu test guruh/vasiy ruxsatlarini tekshiradi, sinf
+            // bilan ishi yo'q; §3.3 (S-9) dan beri bo'sh sinf mo'ljal
+            // darajasini talab qiladi, shuning uchun oddiy (mavjud bo'lishi
+            // shart emas) nom beriladi.
+            className = $"AG-{tag[..4]}",
             enrollmentDate = "2026-09-01",
         });
         Assert.True(response.IsSuccessStatusCode, await response.Content.ReadAsStringAsync());

@@ -131,8 +131,8 @@ public class MessagesController(AppDbContext db, ChatService chat, TelegramServi
     ///
     /// <para>
     /// Qamrov (<c>scope</c>): <c>class</c> (sukut) · <c>group</c> (o'quv guruhining FAOL
-    /// a'zolari) · <c>all</c> · <c>selected</c>. Xabar faqat botga RO'YXATDAN O'TGAN
-    /// chatlarga boradi (<c>telegram_registrations</c>); bir bolaning bir nechta chati
+    /// a'zolari) · <c>all</c> · <c>selected</c> · <c>filter</c> (S-6, pastga qarang). Xabar
+    /// faqat botga RO'YXATDAN O'TGAN chatlarga boradi (<c>telegram_registrations</c>); bir bolaning bir nechta chati
     /// bo'lsa — har biriga. Matn har bola uchun alohida moslanadi (<see cref="Personalize"/>)
     /// va "📢 Maktab e'loni" sarlavhasi bilan ketadi.
     /// </para>
@@ -185,6 +185,22 @@ public class MessagesController(AppDbContext db, ChatService chat, TelegramServi
                 break;
             case "all":
                 audience = "Barcha sinflar";
+                break;
+            // S-6 (students-parity.md §2.3.3) — O'QUVCHILAR RO'YXATIDAGI JORIY
+            // FILTRGA mos BARCHA o'quvchi, tanlangan qatorlardan MUSTAQIL
+            // (EduSchool'dagi "SMS yuborish → barcha sahifalar"). Qamrov
+            // AYNAN o'sha `StudentListQuery` orqali hisoblanadi — ya'ni ekran
+            // nechta o'quvchini ko'rsatsa, xabar ham AYNAN o'shalarga boradi.
+            // Sahifa/tartib maydonlari e'tiborsiz: bu yerda BUTUN mos to'plam
+            // kerak, bitta sahifa emas.
+            case "filter":
+                var filtered = await new StudentListQuery(db)
+                    .AllAsync(req.Filter ?? new StudentListFilter());
+                var filterIds = filtered.Select(r => r.Id).ToList();
+                if (filterIds.Count == 0)
+                    return BadRequest(new { message = "Filtrga mos o'quvchi topilmadi" });
+                studentsQ = studentsQ.Where(s => filterIds.Contains(s.Id));
+                audience = $"Filtr bo'yicha ({filterIds.Count} ta)";
                 break;
             default: // class
                 var cn = req.ClassName?.Trim() ?? "";
