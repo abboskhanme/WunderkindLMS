@@ -88,6 +88,18 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
     // Tungi tekshiruv bayroqlari — SPEC §4.6, P1-14. Konfiguratsiya: AnomalyModel.cs.
     public DbSet<FinanceAnomalyFlag> FinanceAnomalyFlags => Set<FinanceAnomalyFlag>();
 
+    // Kassa stoli — moliya pariteti, A to'plami (finance-parity.md §3.1).
+    // Konfiguratsiya: FinanceParityModel.cs. Sxema oldin keladi, ekranlar keyin:
+    // bu uchtasini hozircha HECH BIR xizmat o'qimaydi (S2 va S3 yozadi).
+    //
+    // DIQQAT: uchalasi ham FAQAT INSERT. `app_rw` da UPDATE/DELETE yo'q
+    // (finance_parity_guards.sql), yagona istisno — `StudentRefunds` ning
+    // to'rtta "qaror" ustuni, va ular ham bir marta yozilgach trigger bilan
+    // qulflanadi.
+    public DbSet<CashHandover> CashHandovers => Set<CashHandover>();
+    public DbSet<StudentRefund> StudentRefunds => Set<StudentRefund>();
+    public DbSet<ExpenseAttachment> ExpenseAttachments => Set<ExpenseAttachment>();
+
     // Ikkinchi to'lqin (docs/modules/existing-module-gaps.md): qarzdorlar ish oqimi
     // (§3.5), sertifikatlar (§2.3) va arxivlash sabablari katalogi (§2.2).
     // Konfiguratsiya: ParityModel.cs. Hozircha ilovadan HECH KIM o'qimaydi —
@@ -247,6 +259,11 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
 
         // ----- O'quvchi kartochkasi: status, izoh, shartnoma, xonalar (§3.2) -----
         StudentsParityModel.Apply(b);
+
+        // ----- Kassa stoli: A to'plami (finance-parity.md §3.1) -----
+        // Oltinchi alohida fayl. `expenses.cash_shift_id` (A1) ham shu yerda —
+        // o'zgarish qaysi hujjatdan kelgan bo'lsa, o'sha faylda turadi.
+        FinanceParityModel.Apply(b);
 
         // ----- PostgreSQL: vaqt turi -----
         // Tizim sanalarni Toshkent "devor soati" sifatida saqlaydi (AppClock.Now — Kind=Unspecified),

@@ -167,6 +167,15 @@ ALTER DEFAULT PRIVILEGES FOR ROLE schoollms_owner IN SCHEMA public
 --    UPDATE and DELETE are removed. INSERT stays: a wrong payment is fixed by
 --    inserting a reversal (`reversal_of`), never by editing history.
 --    `access_events` and `point_transactions` are append-only logs.
+--
+--    KEEP THIS LIST IN SYNC WITH THE MIGRATION GUARDS. Every table whose
+--    migration narrows app_rw (`Migrations/Sql/*_guards.sql`) must appear
+--    here too, because step 4 above hands full CRUD back to app_rw on ALL
+--    TABLES every time this script runs. A table that is revoked only in its
+--    migration is silently un-revoked by the next deploy, and nothing fails:
+--    the app keeps working, only the money protection is gone. That was the
+--    `finance_anomaly_flags` defect (finance-parity.md F0.03) — the flag
+--    table's column lock survived exactly until the next run of this file.
 -- ---------------------------------------------------------------------------
 SELECT format('REVOKE UPDATE, DELETE ON public.%I FROM app_rw', t.name)
 FROM (VALUES
@@ -174,8 +183,48 @@ FROM (VALUES
         ('payment_allocations'),
         ('ledger_entries'),
         ('access_events'),
-        ('point_transactions')
+        ('point_transactions'),
+        -- SPEC §4.6 — a flag is closed with a written reason, never deleted.
+        -- Column-level UPDATE is restored in step 5b. (F0.03)
+        ('finance_anomaly_flags'),
+        -- finance-parity.md §3.1 A2 — cash leaving the drawer. Append-only;
+        -- a wrong handover is corrected with a `reversal_of` row.
+        ('cash_handovers'),
+        -- finance-parity.md §3.1 A3 — money leaving the school. Append-only;
+        -- the four decision columns are restored in step 5b.
+        ('student_refunds'),
+        -- finance-parity.md §3.1 A4 — the evidence behind an expense.
+        -- Replacing or deleting it is the fraud SPEC §4 describes; a wrong
+        -- upload is superseded by a new row, never edited away.
+        ('expense_attachments')
      ) AS t(name)
+WHERE to_regclass('public.' || quote_ident(t.name)) IS NOT NULL
+\gexec
+
+
+-- ---------------------------------------------------------------------------
+-- 5b) Column-level UPDATE for the two tables that have a decision flow.
+--
+--     ORDER IS LOAD-BEARING and this block must stay AFTER step 5. In
+--     PostgreSQL, revoking a privilege at table level also revokes the
+--     matching column-level privileges on every column of that table. So the
+--     step-5 `REVOKE UPDATE` above wipes the column grants that
+--     `anomaly_guards.sql` and `finance_parity_guards.sql` installed, and
+--     they have to be re-issued here. Put this block first and the revoke
+--     would take them away again — silently, leaving a database where nobody
+--     can resolve a flag or approve a refund.
+--
+--     The columns are the ONLY writable ones: a flag's text, amount or kind
+--     and a refund's amount, method, reason or requester can never be
+--     "corrected" after the fact. On `student_refunds` a database trigger
+--     (`student_refunds_locked`) narrows it further — each of those four is
+--     written once, and a decision is final.
+-- ---------------------------------------------------------------------------
+SELECT format('GRANT UPDATE (%s) ON public.%I TO app_rw', t.columns, t.name)
+FROM (VALUES
+        ('finance_anomaly_flags', 'resolved_at, resolved_by, resolved_reason'),
+        ('student_refunds', 'approved_by, approved_at, cash_shift_id, rejected_reason')
+     ) AS t(name, columns)
 WHERE to_regclass('public.' || quote_ident(t.name)) IS NOT NULL
 \gexec
 

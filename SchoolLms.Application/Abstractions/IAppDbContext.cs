@@ -101,6 +101,35 @@ public interface IAppDbContext
     /// </summary>
     DbSet<FinanceAnomalyFlag> FinanceAnomalyFlags { get; }
 
+    // ---------- Kassa stoli (docs/modules/finance-parity.md §3.1, A to'plami) ----------
+    // Sxema oldin keladi, ekranlar keyin: bu uchtasini hozircha HECH BIR xizmat
+    // o'qimaydi (S2 — kassa, S3 — qaytarim).
+    //
+    // DIQQAT: uchalasi ham FAQAT INSERT — `app_rw` da UPDATE/DELETE yo'q
+    // (`Migrations/Sql/finance_parity_guards.sql`), ya'ni bu DbSet'lardan olingan
+    // entity'ni o'zgartirib `SaveChanges` qilish 42501 bilan YIQILADI.
+
+    /// <summary>
+    /// Kassadan pul chiqishi (F1.04). Tuzatish faqat <c>ReversalOf</c> bilan.
+    /// </summary>
+    DbSet<CashHandover> CashHandovers { get; }
+
+    /// <summary>
+    /// O'quvchiga qaytarim (F1.05). Yagona ruxsat etilgan UPDATE — to'rtta
+    /// "qaror" ustuni (<c>approved_by</c>, <c>approved_at</c>,
+    /// <c>cash_shift_id</c>, <c>rejected_reason</c>), va u ham FAQAT BIR MARTA:
+    /// qaror qo'yilgach <c>student_refunds_locked</c> trigger'i har qanday
+    /// keyingi UPDATE ni 23514 bilan rad etadi.
+    /// </summary>
+    DbSet<StudentRefund> StudentRefunds { get; }
+
+    /// <summary>
+    /// Chiqim hujjatlari (F1.08) — pul yozuvining dalili. SELECT va INSERT,
+    /// boshqa hech narsa: dalilni almashtirish summani o'zgartirish bilan bir
+    /// og'irlikda.
+    /// </summary>
+    DbSet<ExpenseAttachment> ExpenseAttachments { get; }
+
     // ---------- Ikkinchi to'lqin (docs/modules/existing-module-gaps.md) ----------
     // Sxema oldin keladi, ekranlar keyin: bu to'plamni hozircha HECH BIR xizmat
     // o'qimaydi. Ular shu yerda ro'yxatda turibdi, chunki ketma-ket keladigan

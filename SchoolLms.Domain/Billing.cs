@@ -309,6 +309,29 @@ public class Expense
     /// </para>
     /// </summary>
     public string? TeacherId { get; set; }
+
+    /// <summary>
+    /// Naqd chiqim qaysi kassa smenasidan to'landi (F1.03, finance-parity
+    /// §3.1 A1). <c>null</c> = smenaga bog'lanmagan chiqim.
+    ///
+    /// <para>
+    /// <b>Nega bu ustun kerak.</b> Smenaning kutilgan naqdi jurnal (ledger)
+    /// dan hisoblanadi, chiqim esa smenaga UMUMAN bog'lanmagan edi — ya'ni
+    /// kassadan naqd chiqib ketardi, kutilgan naqd esa o'zgarmasdi va smena
+    /// AYNAN o'sha summaga KAM pul bilan yopilardi. Hisobotda bu "kassir
+    /// yetishmovchiligi" bo'lib ko'rinardi. Bu defekt F1.03.
+    /// </para>
+    ///
+    /// <para>
+    /// <b>Nega null bo'la oladi.</b> `expenses` jonli jadval: bugungacha
+    /// yozilgan har bir chiqimda smena YO'Q va ular yaroqli bo'lib qolishi
+    /// kerak. Eski qatorlarga smena TAXMIN QILINMAYDI — "qaysidir smena
+    /// bo'lgandir" degan taxmin kutilgan naqdni orqaga qarab buzardi.
+    /// Yangi naqd chiqimda smenani XIZMAT talab qiladi (S2), baza emas.
+    /// </para>
+    /// </summary>
+    public Guid? CashShiftId { get; set; }
+
     public string CreatedBy { get; set; } = string.Empty;
     public string? ApprovedBy { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
@@ -356,7 +379,18 @@ public static class LedgerDirection
     public static readonly IReadOnlyList<string> All = [Debit, Credit];
 }
 
-/// <summary>Ledger yozuvi manbai (<see cref="LedgerEntry.RefType"/>).</summary>
+/// <summary>
+/// Ledger yozuvi manbai (<see cref="LedgerEntry.RefType"/>).
+///
+/// <para>
+/// <b>Bazada CHECK YO'Q — ataylab.</b> <c>ledger_entries.ref_type</c> ustuni
+/// hech qanday constraint bilan cheklanmagan (<c>BillingModel.ConfigureLedger</c>
+/// da faqat <c>amount</c>, <c>direction</c> va <c>reversal_not_self</c> bor).
+/// Ya'ni bu ro'yxat KOD kelishuvi: jadvalga faqat <c>LedgerService</c> yozadi
+/// (SPEC §2.2), va yangi manba turi qo'shish migratsiya talab qilmaydi.
+/// Shu sabab finance-parity §3.1 A5 "code only, no DDL" deb belgilangan.
+/// </para>
+/// </summary>
 public static class LedgerRefType
 {
     public const string Payment = "payment";
@@ -365,7 +399,18 @@ public static class LedgerRefType
     public const string Salary = "salary";
     public const string Reversal = "reversal";
 
-    public static readonly IReadOnlyList<string> All = [Payment, Invoice, Expense, Salary, Reversal];
+    /// <summary>
+    /// Kassadan pul chiqishi — <see cref="CashHandover"/> (F1.04).
+    /// Hisobotlarda hozircha "Boshqa harakat" yorlig'i ostida ko'rinadi;
+    /// nomlarni S4 (<c>CashDayQueries</c>) qo'shadi — finance-parity §4.
+    /// </summary>
+    public const string CashHandover = "cash_handover";
+
+    /// <summary>O'quvchiga pul qaytarish — <see cref="StudentRefund"/> (F1.05).</summary>
+    public const string Refund = "refund";
+
+    public static readonly IReadOnlyList<string> All =
+        [Payment, Invoice, Expense, Salary, Reversal, CashHandover, Refund];
 }
 
 /// <summary>
