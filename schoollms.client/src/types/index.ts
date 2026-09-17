@@ -831,8 +831,12 @@ export interface TelegramParent {
   studentName: string
   /** O'quvchi sinfi */
   className: string
-  /** O'quvchi balansi (manfiy = qarz) — qarzdorlar filtri uchun */
-  balance: number
+  /**
+   * O'quvchi balansi (manfiy = qarz) — qarzdorlar filtri uchun.
+   * Moliya ruxsati bo'lmagan xodim uchun `null`: balans ustuni ham,
+   * qarzdorlar filtri ham ko'rsatilmaydi.
+   */
+  balance: number | null
   parentName: string
   phone: string
   chatId: string

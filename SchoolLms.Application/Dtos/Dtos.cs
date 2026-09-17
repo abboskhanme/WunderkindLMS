@@ -962,9 +962,13 @@ public record SendBroadcastRequest(
     string? Scope, string? ClassName, bool OnlyDebtors, List<string>? StudentIds, string Text,
     string? GroupId = null);
 
-/// <summary>Telegramda ro'yxatdan o'tgan ota-ona. ChatId string (JS aniqligi uchun). Balance — qarz aniqlash uchun.</summary>
+/// <summary>
+/// Telegramda ro'yxatdan o'tgan ota-ona. ChatId string (JS aniqligi uchun).
+/// Balance — qarz aniqlash uchun; moliya ruxsati bo'lmagan chaqiruvchi uchun
+/// <c>null</c> (nol emas — nol "qarzi yo'q" degan yolg'on ma'no berardi).
+/// </summary>
 public record TelegramParentDto(
-    string StudentId, string StudentName, string ClassName, decimal Balance,
+    string StudentId, string StudentName, string ClassName, decimal? Balance,
     string ParentName, string Phone, string ChatId, string CreatedAt);
 
 /// <summary>

@@ -17,6 +17,7 @@ import {
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Loader } from '@/components/ui/Loader'
+import { useAuth } from '@/context/auth-context'
 import { cn, formatDate, formatMoney } from '@/lib/utils'
 import { messageTemplates as TEMPLATES, messageTokens as TOKENS } from '@/config/messageTemplates'
 
@@ -24,18 +25,27 @@ type Scope = 'class' | 'group' | 'all' | 'selected'
 
 /** Preview uchun klient tomonida o'rinbosarlarni to'ldiradi (backend bilan bir xil mantiq). */
 function fill(text: string, p: TelegramParent): string {
-  const debt = p.balance < 0 ? formatMoney(-p.balance) : "0 so'm"
+  // Balans faqat moliya ruxsati bilan keladi. Ruxsat yo'q bo'lsa preview PUL
+  // o'rniga chiziqcha ko'rsatadi — xabarning o'ziga esa haqiqiy summani server
+  // qo'yadi, ya'ni yuborish buzilmaydi, faqat ko'rsatilmaydi.
+  const debt = p.balance === null ? '—' : p.balance < 0 ? formatMoney(-p.balance) : "0 so'm"
   return text
     .replace(/\{fish\}/gi, p.studentName)
     .replace(/\{sinf\}/gi, p.className)
     .replace(/\{qarzdorlik\}/gi, debt)
-    .replace(/\{balans\}/gi, formatMoney(p.balance))
+    .replace(/\{balans\}/gi, p.balance === null ? '—' : formatMoney(p.balance))
     .replace(/\{ota[-_]ona\}/gi, p.parentName || 'Ota-ona')
     .replace(/\{telefon\}/gi, p.phone)
 }
 
 /** Ota-onalarga Telegram bot orqali e'lon yuborish: qamrov + andoza + o'rinbosarlar + tarix. */
 export function BroadcastPanel({ classes }: { classes: MessageClass[] }) {
+  // Balans moliya ruxsatiga bog'liq: serverda `null` bilan keladi, bu yerda esa
+  // qarzdorlar filtri ham yashiriladi — aks holda filtr HAR DOIM bo'sh ro'yxat
+  // berardi va foydalanuvchi buni nosozlik deb o'ylardi.
+  const { user } = useAuth()
+  const canSeeBalance = !user?.permissions || user.permissions.includes('finance')
+
   const [scope, setScope] = useState<Scope>('class')
   const [className, setClassName] = useState<string>(() => classes[0]?.name ?? '')
   const [onlyDebtors, setOnlyDebtors] = useState(false)
@@ -97,7 +107,7 @@ export function BroadcastPanel({ classes }: { classes: MessageClass[] }) {
     if (scope === 'class') list = list.filter((p) => p.className === className)
     else if (scope === 'group') list = list.filter((p) => groupMemberIds.has(p.studentId))
     else if (scope === 'selected') list = list.filter((p) => selectedIds.has(p.studentId))
-    if (onlyDebtors && scope !== 'selected') list = list.filter((p) => p.balance < 0)
+    if (onlyDebtors && scope !== 'selected') list = list.filter((p) => p.balance !== null && p.balance < 0)
     return list
   }, [parents, scope, className, groupMemberIds, selectedIds, onlyDebtors])
 
@@ -233,7 +243,7 @@ export function BroadcastPanel({ classes }: { classes: MessageClass[] }) {
             </select>
           )}
 
-          {scope !== 'selected' && (
+          {scope !== 'selected' && canSeeBalance && (
             <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-600">
               <input
                 type="checkbox"
@@ -380,7 +390,7 @@ export function BroadcastPanel({ classes }: { classes: MessageClass[] }) {
                           · {p.className || '—'} · {p.parentName || 'Ota-ona'}
                         </span>
                       </span>
-                      {p.balance < 0 && (
+                      {p.balance !== null && p.balance < 0 && (
                         <span className="shrink-0 rounded-full bg-red-50 px-2 py-0.5 text-xs font-medium text-red-600">
                           qarz
                         </span>

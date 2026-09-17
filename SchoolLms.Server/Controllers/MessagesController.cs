@@ -313,14 +313,21 @@ public class MessagesController(AppDbContext db, ChatService chat, TelegramServi
             .OrderByDescending(r => r.CreatedAt).ToListAsync();
 
         // Qoldiq HISOBLANADI (P1-21) — bitta partiya so'rov butun ro'yxat uchun.
-        var balances = await Balances.ForManyAsync(ids);
+        // Lekin FAQAT moliya ruxsati bo'lganda: bu ekran Telegram ro'yxati uchun,
+        // `messages` ruxsatiga ega har qanday xodim undan butun maktabning qarzini
+        // o'qib ololmasligi kerak. Ruxsat yo'q bo'lsa qoldiq `null` — nol EMAS,
+        // chunki nol "qarzi yo'q" degan YOLG'ON ma'no berardi.
+        var canSeeMoney = User.HasPerm(PermissionCheck.Finance);
+        var balances = canSeeMoney
+            ? await Balances.ForManyAsync(ids)
+            : new Dictionary<string, decimal>(StringComparer.Ordinal);
 
         return regs.Select(r =>
         {
             byId.TryGetValue(r.StudentId, out var s);
             return new TelegramParentDto(
                 r.StudentId, s?.FullName ?? "", s?.ClassName ?? "",
-                balances.GetValueOrDefault(r.StudentId),
+                canSeeMoney ? balances.GetValueOrDefault(r.StudentId) : null,
                 r.ParentName, r.Phone, r.ChatId.ToString(), r.CreatedAt.ToString("o"));
         }).ToList();
     }
