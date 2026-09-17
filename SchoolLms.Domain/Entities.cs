@@ -182,6 +182,23 @@ public class Student
     /// migratsiyadan keyin HAMMA o'quvchi shunday.
     /// </summary>
     public Guid? StatusId { get; set; }
+
+    // =======================================================================
+    //  students-parity.md §3.3 (Batch C, S-9) — qo'shimcha va null bo'la oladi.
+    // =======================================================================
+
+    /// <summary>
+    /// Sinfi hali YO'Q o'quvchining mo'ljaldagi sinf darajasi (S-9): qabul
+    /// qilindi, lekin qaysi sinfga tushishi keyin hal qilinadi.
+    ///
+    /// <para>
+    /// null = mo'ljal ko'rsatilmagan (bugungi HAMMA o'quvchi shunday) — ya'ni
+    /// bu ustun <see cref="ClassName"/> ning o'rniga emas, u BO'SH bo'lgan
+    /// holat uchun. 0 = maktabgacha tayyorlov (<see cref="Lead.TargetGrade"/>
+    /// bilan bir xil o'lchov).
+    /// </para>
+    /// </summary>
+    public short? TargetGrade { get; set; }
 }
 
 /// <summary>O'qituvchi.</summary>
@@ -250,6 +267,29 @@ public class Subject
     /// maktab kerakli fanni o'zi belgilaydi.
     /// </summary>
     public bool IsGroupable { get; set; }
+
+    // =======================================================================
+    //  students-parity.md §3.3 (Batch C, F-3).
+    // =======================================================================
+
+    /// <summary>
+    /// Jadval katakchasini bo'yaydigan rang <c>#RRGGBB</c> ko'rinishida
+    /// (F-3). null = neytral rang — migratsiyadan keyin HAMMA fan shunday.
+    /// Ro'yxat <see cref="StudentStatus.Color"/> bilan bir xil shaklda.
+    /// </summary>
+    public string? Color { get; set; }
+
+    /// <summary>
+    /// Fan faolmi (F-3). <b>false = o'chirish o'rniga arxivlash</b>: yangi
+    /// jadvalda va tanlovlarda ko'rinmaydi, lekin unga bog'langan jurnal,
+    /// baho va sertifikat JOYIDA qoladi.
+    ///
+    /// <para>
+    /// Sukut <b>true</b> — mavjud har bir fan faol bo'lib qoladi, ya'ni
+    /// bugungi birorta ekran o'zgarmaydi.
+    /// </para>
+    /// </summary>
+    public bool IsActive { get; set; } = true;
 }
 
 /// <summary>Sinf.</summary>
@@ -266,6 +306,23 @@ public class SchoolClass
     /// o'quvchilar ham arxivlanadi; arxivdan chiqarilganda — qaytariladi.</summary>
     public bool IsArchived { get; set; }
     public string? ArchivedAt { get; set; }
+
+    // =======================================================================
+    //  students-parity.md §3.3 (Batch C, C-4).
+    // =======================================================================
+
+    /// <summary>
+    /// Sinfga nechta o'quvchi sig'adi (C-4). null = chek YO'Q —
+    /// migratsiyadan keyin HAMMA sinf shunday, ya'ni bugungi qo'shish va
+    /// ko'chirish oqimlari o'zgarmaydi.
+    ///
+    /// <para>
+    /// Bu <b>OGOHLANTIRISH</b> chegarasi, taqiq emas (§2.2.3 C-4): sinf
+    /// to'lganda ekran ogohlantiradi, lekin admin baribir qo'sha oladi —
+    /// maktab hayotida "bitta ortiqcha bola" haqiqiy holat.
+    /// </para>
+    /// </summary>
+    public short? Capacity { get; set; }
 }
 
 /// <summary>Lid (maktabga qiziqqan).</summary>
@@ -846,6 +903,43 @@ public class SchoolMeta
     /// </para>
     /// </summary>
     public bool GroupLessonsEnabled { get; set; }
+
+    // =======================================================================
+    //  Shartnoma raqami — students-parity.md §2.10 (K-6), §3.3.
+    // =======================================================================
+
+    /// <summary>
+    /// Shartnoma raqamlash qoidasi (K-6):
+    /// <see cref="ContractNumberMode"/> — <c>auto</c> | <c>manual</c>.
+    ///
+    /// <para>
+    /// Sukut <b>auto</b>: tizim ketma-ket raqam beradi. Bu bugungi K-1
+    /// reyestrining eng kam ajablanadigan xatti-harakati va §3.3 ning
+    /// talabi. <c>manual</c> da raqamni xodim o'zi yozadi (davlat blankasi,
+    /// eski qog'oz arxivi bilan davom etish).
+    /// </para>
+    /// <para>
+    /// Raqamning O'ZI shu yerda emas — u <see cref="StudentContract.Number"/>
+    /// da va uning qisman unikal indeksi ostida. Bu ustun faqat "raqamni kim
+    /// beradi" degan savolga javob beradi.
+    /// </para>
+    /// </summary>
+    public string ContractNumberMode { get; set; } = SchoolLms.Domain.ContractNumberMode.Auto;
+}
+
+/// <summary><see cref="SchoolMeta.ContractNumberMode"/> qiymatlari (K-6).</summary>
+public static class ContractNumberMode
+{
+    /// <summary>Tizim ketma-ket raqam beradi.</summary>
+    public const string Auto = "auto";
+
+    /// <summary>Raqamni xodim qo'lda kiritadi.</summary>
+    public const string Manual = "manual";
+
+    /// <summary>Baza CHECK cheklovi bilan BIR XIL ro'yxat.</summary>
+    public static readonly string[] All = [Auto, Manual];
+
+    public static bool IsValid(string? value) => value is not null && All.Contains(value);
 }
 
 /// <summary>Yangi o'quv yiliga o'tishda saqlangan eski o'quv yili arxivi (to'liq snapshot).</summary>
@@ -1026,6 +1120,28 @@ public class Assignment
 
     public List<AssignmentMaterial> Materials { get; set; } = new();
     public List<TestQuestion> Questions { get; set; } = new();
+
+    // =======================================================================
+    //  students-parity.md §3.3 (Batch C, G-20) — §3.1 ning 7-bandi bilan
+    //  AYNAN bir xil shakl.
+    // =======================================================================
+
+    /// <summary>
+    /// <see cref="LessonOwnerKind"/> — topshiriq SINFGA beriladimi yoki
+    /// o'quv GURUHIGA (G-20).
+    ///
+    /// <para>
+    /// <c>group</c> bo'lganda guruh id'si <see cref="ClassIds"/> (va eski
+    /// <see cref="ClassId"/>) ichida saqlanadi — beshta dars jadvalidagi
+    /// bilan bir xil qoida: alohida nullable `group_id` ustuni har bir
+    /// so'rovni ikkita ustun bilan ishlashga majbur qilardi.
+    /// </para>
+    /// <para>
+    /// Mavjud HAR BIR topshiriq va yangi yozilgan har bir qator
+    /// <c>class</c> — ya'ni bugungi LMS xatti-harakati o'zgarmaydi.
+    /// </para>
+    /// </summary>
+    public string OwnerKind { get; set; } = LessonOwnerKind.Class;
 }
 
 /// <summary>Topshiriqqa biriktirilgan material (serverga yuklangan fayl yoki havola).</summary>

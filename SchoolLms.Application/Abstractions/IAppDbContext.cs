@@ -157,6 +157,32 @@ public interface IAppDbContext
     DbSet<StudentContract> StudentContracts { get; }
     DbSet<Room> Rooms { get; }
 
+    // ---------- O'quv bo'limi pariteti, P2 (students-parity.md §3.3) ----------
+    // Sxema oldin keladi, ekranlar keyin: bu uchtasini hozircha HECH BIR
+    // xizmat o'qimaydi. Hammasi oddiy CRUD — moliyaviy jadval emas, ya'ni
+    // `app_rw` da to'liq huquq bor (`students_parity_p2_guards.sql`).
+
+    /// <summary>
+    /// Sertifikatning QO'SHIMCHA fanlari (Z-3). `certificates.subject_id`
+    /// ("asosiy fan") JOYIDA qoladi va migratsiya shu jadvalni undan BIR
+    /// MARTA to'ldirgan — ikkalasini birga yuritish sertifikat xizmatining ishi.
+    /// </summary>
+    DbSet<CertificateSubject> CertificateSubjects { get; }
+
+    /// <summary>
+    /// O'quvchining turlangan joylashuvlari (L-2) — har turdan bittadan.
+    /// Eski `students.latitude/longitude/location_address` ustunlari
+    /// TEGILMAGAN va hali ham o'qiladi.
+    /// </summary>
+    DbSet<StudentLocation> StudentLocations { get; }
+
+    /// <summary>
+    /// Foydalanuvchi × ekran jadval ko'rinishi (X-1). Mavjud
+    /// <see cref="UserSettings"/> (foydalanuvchiga bitta qator) bilan
+    /// ALMASHTIRILMAYDI — u til/tema uchun, bu ustunlar uchun.
+    /// </summary>
+    DbSet<UserTableSetting> UserTableSettings { get; }
+
     int SaveChanges();
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 
