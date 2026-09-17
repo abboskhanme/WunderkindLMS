@@ -118,10 +118,7 @@ public class ChatService(IAppDbContext db, IHubContext<ChatHub> hub)
             case "student":
                 {
                     var s = await db.Students.FirstOrDefaultAsync(x => x.UserId == userId);
-                    if (s is null || string.IsNullOrEmpty(s.ClassName)) return [];
-                    var channels = new List<ChatChannelDto> { ClassChannel(s.ClassName) };
-                    channels.AddRange(await GroupChannelsAsync(studentId: s.Id));
-                    return channels;
+                    return s is null ? [] : await ChannelsForStudentAsync(s);
                 }
 
             case "teacher":
@@ -157,6 +154,31 @@ public class ChatService(IAppDbContext db, IHubContext<ChatHub> hub)
         var names = await ClassNamesForUserAsync(userId, role);
         return names.Contains(className);
     }
+
+    /// <summary>
+    /// O'QUVCHINING kanallari — akkaunt emas, o'quvchi QATORI bo'yicha: o'z
+    /// sinfi + faol guruhlari (G-17).
+    ///
+    /// <para>
+    /// Nega akkaunt bo'yicha emas: bu ro'yxatni o'quvchining O'ZI ham, uning
+    /// ota-onasi ham, <c>?studentId=</c> bilan admin ham so'raydi
+    /// (<c>StudentPortalController</c>), va bolaning o'z akkaunti umuman
+    /// bo'lmasligi mumkin. Kanal ro'yxati esa har uchalasi uchun BIR XIL —
+    /// u bolaning sinfi va guruhlaridan kelib chiqadi.
+    /// </para>
+    /// <para>Guruh kanallari FAQAT cut-over o'chirgichi yoqilganda qo'shiladi.</para>
+    /// </summary>
+    public async Task<List<ChatChannelDto>> ChannelsForStudentAsync(Student student)
+    {
+        var channels = new List<ChatChannelDto>();
+        if (!string.IsNullOrEmpty(student.ClassName)) channels.Add(ClassChannel(student.ClassName));
+        channels.AddRange(await GroupChannelsAsync(studentId: student.Id));
+        return channels;
+    }
+
+    /// <summary>O'quvchi (yoki uning nomidan so'rayotgan ota-ona/admin) shu kanalni ocha oladimi.</summary>
+    public async Task<bool> CanStudentAccessAsync(Student student, string channel) =>
+        (await ChannelsForStudentAsync(student)).Any(c => c.Key == channel);
 
     private static ChatChannelDto ClassChannel(string name) =>
         new(name, name, LessonOwnerKind.Class);

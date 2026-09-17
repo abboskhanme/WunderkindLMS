@@ -353,6 +353,14 @@ public class AcademicYearController(AppDbContext db, AuditService audit) : Contr
                     db.WeekAssignments.RemoveRange(
                         await db.WeekAssignments.Where(
                             w => w.ClassId == cls.Id && w.OwnerKind == LessonOwnerKind.Class).ToListAsync());
+                    // `study_group_classes.class_id` FK'si RESTRICT (StudyGroupModel.cs).
+                    // Bitiruvchi sinf biror o'quv guruhini boqayotgan bo'lsa (11-sinflardan
+                    // yig'ilgan ingliz tili guruhi — odatiy holat) `Classes.Remove` BUTUN
+                    // rollover'ni 23503 bilan qaytarib yuborardi. Guruhning o'zi 3b-qadamda
+                    // arxivlanadi va a'zoliklari sana bilan yopiladi, ya'ni tarix joyida
+                    // qoladi — bu yerda faqat "shu sinf boqadi" bog'lanishi uziladi.
+                    db.StudyGroupClasses.RemoveRange(
+                        await db.StudyGroupClasses.Where(g => g.ClassId == cls.Id).ToListAsync());
                     db.Classes.Remove(cls);
                 }
                 else

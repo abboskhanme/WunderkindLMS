@@ -71,10 +71,16 @@ export async function getBroadcasts(className?: string): Promise<Broadcast[]> {
 
 /** E'lon yuborish so'rovi. Matnda o'rinbosarlar: {fish} {sinf} {qarzdorlik} {balans} {ota-ona} {telefon}. */
 export interface SendBroadcastReq {
-  /** Qamrov: tanlangan sinf / barcha sinf / tanlangan o'quvchilar */
-  scope: 'class' | 'all' | 'selected'
+  /** Qamrov: tanlangan sinf / o'quv guruhi / barcha sinf / tanlangan o'quvchilar */
+  scope: 'class' | 'group' | 'all' | 'selected'
   /** scope === 'class' bo'lganda sinf nomi */
   className?: string
+  /**
+   * scope === 'group' bo'lganda o'quv guruhi id'si. Guruhni bir nechta sinf
+   * boqadi, shuning uchun "sinfga e'lon" uning yarmiga yetmasdi — qamrov
+   * guruhning FAOL a'zolari bo'yicha olinadi.
+   */
+  groupId?: string
   /** Faqat balansi manfiy (qarzdor) o'quvchilar */
   onlyDebtors: boolean
   /** scope === 'selected' bo'lganda tanlangan o'quvchi id'lari */

@@ -29,11 +29,13 @@ public static class StudentProfileBuilder
         var lateSet = reasons.Where(r => r.IsLate).Select(r => r.Id).ToHashSet();
 
         // ---- Qatnashish (o'tilgan / qatnashgan) — Analytics bilan bir xil ----
-        // G-15: maxrajga o'quvchining SINF darslari bilan birga FAOL GURUHLARI
-        // darslari ham kiradi (qoida — `ClassAttainment`). O'chirgich o'chiq
-        // bo'lsa qamrov faqat sinfdan iborat, ya'ni bugungi so'rovning aynan o'zi.
+        // G-15: maxrajga o'quvchining SINF darslari bilan birga GURUHLARI
+        // darslari ham kiradi (qoida — `ClassAttainment`). A'zolik TARIX sifatida
+        // o'qiladi (5-band): tark etilgan sinf/guruhning darslari CHIQQAN KUNGA
+        // QADAR maxrajda qoladi, undan keyingilari yo'q. O'chirgich o'chiq bo'lsa
+        // guruh qismi bo'sh.
         var attainment = await ClassAttainment.ForStudentAsync(db, st);
-        var ownerIds = ClassAttainment.OwnerIdsFor(classId, attainment.GroupsOf(st.Id));
+        var ownerIds = attainment.OwnerIdsForStudent(st.Id, classId);
         var conductedNotes = ownerIds.Count == 0
             ? []
             : (await db.LessonNotes.Where(n => n.Conducted && ownerIds.Contains(n.ClassId))
@@ -41,7 +43,7 @@ public static class StudentProfileBuilder
                     .ToListAsync())
                 .Select(n => (n.ClassId, n.OwnerKind, n.SubjectId, n.Date, n.Period, n.SubGroup)).ToList();
         var studentConducted = conductedNotes
-            .Where(c => attainment.CountsFor(st.Id, c.ClassId, c.OwnerKind)
+            .Where(c => attainment.CountsFor(st.Id, c.ClassId, c.OwnerKind, c.Date)
                         && (c.OwnerKind == LessonOwnerKind.Group
                             || c.SubGroup == 0 || c.SubGroup == st.SubGroup))
             .Select(c => (c.SubjectId, c.Date, c.Period)).ToHashSet();

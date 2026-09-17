@@ -12,8 +12,13 @@ namespace SchoolLms.Application.Services;
 /// bo'lishi mumkin (ikkalasi ham <c>class_id</c> da, farqi <c>owner_kind</c>).
 /// "Qaysi qator qaysi o'quvchi uchun sanaladi" degan yagona qoida
 /// <see cref="ClassAttainment"/> da; bu yerda faqat qo'llaniladi.
-/// <paramref name="attainment"/> berilmasa (yoki o'chirgich o'chiq bo'lsa)
-/// hamma qator sinfniki deb qaraladi — ya'ni bugungi xatti-harakat.
+/// <paramref name="attainment"/> berilmasa hamma qator sinfniki deb qaraladi.
+/// </para>
+/// <para>
+/// A'zolik TARIX sifatida o'qiladi (<see cref="ClassAttainment"/> 5-bandi):
+/// sinf almashtirgan bolaning eski sinfdagi qatorlari ham, guruhdan chiqqan
+/// bolaning guruh qatorlari ham uning BUGUNGI sinfi qatorida sanaladi —
+/// chiqqan kunga QADAR yozilganlari.
 /// </para>
 /// </summary>
 public static class Analytics
@@ -41,8 +46,11 @@ public static class Analytics
         ClassAttainment? attainment = null)
     {
         // G-15 qoidasi. `attainment` berilmasa — hamma qator sinfniki (bugungi xulq).
-        bool Counts(Student student, string ownerId, string ownerKind) =>
-            attainment is null || attainment.CountsFor(student.Id, ownerId, ownerKind);
+        // `date` — qator sanasi: a'zolik TARIX sifatida o'qiladi, ya'ni tark
+        // etilgan sinf/guruhning qatori faqat CHIQQAN KUNGA QADAR sanaladi
+        // (`ClassAttainment` 5-bandi). Chorak bahosida sana yo'q — null beriladi.
+        bool Counts(Student student, string ownerId, string ownerKind, string? date = null) =>
+            attainment is null || attainment.CountsFor(student.Id, ownerId, ownerKind, date);
 
         // Rasmiy chorak bahosi kunlik o'rtacha o'rnini bosadi (faqat berilganda — hisobotlarda).
         // Berilmaganda (dashboard/reyting) eski xulq saqlanadi.
@@ -71,7 +79,7 @@ public static class Analytics
         {
             var studentEntries = classEntries
                 .Where(e => e.StudentId == student.Id
-                            && Counts(student, e.ClassId, e.OwnerKind))
+                            && Counts(student, e.ClassId, e.OwnerKind, e.Date))
                 .ToList();
             var studentQGrades = quarterGrades
                 .Where(g => g.StudentId == student.Id
@@ -124,7 +132,7 @@ public static class Analytics
             // G-15: guruh darsida bo'linish yo'q — u a'zolarning HAMMASIGA tegishli, shuning
             // uchun SubGroup filtri faqat SINF darslariga qo'llanadi.
             var studentConducted = conductedNotes
-                .Where(c => Counts(student, c.ClassId, c.OwnerKind)
+                .Where(c => Counts(student, c.ClassId, c.OwnerKind, c.Date)
                             && (c.OwnerKind == LessonOwnerKind.Group
                                 || c.SubGroup == 0 || c.SubGroup == student.SubGroup))
                 .Select(c => (c.SubjectId, c.Date, c.Period))

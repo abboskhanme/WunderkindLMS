@@ -14,7 +14,14 @@ namespace SchoolLms.Application.Services;
 /// <b>G-15 — guruh darslari.</b> Qamrov endi o'quvchining SINFI + FAOL GURUHLARI
 /// (<see cref="ClassAttainment"/>): guruhda qo'yilgan baho ham, guruh darsidagi davomatsizlik
 /// ham shu hisobotga kiradi va fan o'rtachasi ikkalasining birgalikdagi o'rtachasi bo'ladi.
-/// O'chirgich o'chiq bo'lsa qamrov faqat sinfdan iborat, ya'ni so'rov bugungisining aynan o'zi.
+/// O'chirgich o'chiq bo'lsa guruh qismi bo'sh bo'ladi.
+/// </para>
+/// <para>
+/// <b>A'zolik TARIXI</b> (<see cref="ClassAttainment"/> 5-bandi). Qamrovga o'quvchi TARK
+/// ETGAN sinflar va guruhlar ham kiradi: sinf almashtirgan bola eski sinfida olgan
+/// baholarini, guruhdan chiqqan bola esa o'sha guruhdagi baholarini SAQLAB QOLADI —
+/// ilgari ular hisobotdan butunlay tushib qolardi. Chiqqan kundan KEYINGI qatorlar
+/// (masalan eski sinfning keyingi darslari) esa kirmaydi.
 /// </para>
 /// </summary>
 public static class StudentReportBuilder
@@ -23,10 +30,11 @@ public static class StudentReportBuilder
     {
         var cls = await db.Classes.FirstOrDefaultAsync(c => c.Name == st.ClassName);
         var attainment = await ClassAttainment.ForStudentAsync(db, st);
-        var groups = attainment.GroupsOf(st.Id);
-        // Bo'sh ro'yxat = "ega topilmadi" — bugungi kod bunday holatda o'quvchining
-        // BARCHA yozuvlarini oladi (`cls == null` shoxi), shuni saqlaymiz.
-        var ownerIds = ClassAttainment.OwnerIdsFor(cls?.Id, groups);
+        // Qamrov — o'quvchining SINFI, TARK ETGAN sinflari va (o'chirgich
+        // yoqilgan bo'lsa) guruhlari (`ClassAttainment` 5-bandi).
+        // Bo'sh ro'yxat = "ega topilmadi" — bugungi kod bunday holatda
+        // o'quvchining BARCHA yozuvlarini oladi, shuni saqlaymiz.
+        var ownerIds = attainment.OwnerIdsForStudent(st.Id, cls?.Id);
         var unscoped = ownerIds.Count == 0;
 
         var allSubjects = await db.Subjects.ToListAsync();
@@ -37,7 +45,7 @@ public static class StudentReportBuilder
         var entries = (await db.JournalEntries
                 .Where(e => e.StudentId == st.Id && (unscoped || ownerIds.Contains(e.ClassId)))
                 .ToListAsync())
-            .Where(e => attainment.CountsFor(st.Id, e.ClassId, e.OwnerKind))
+            .Where(e => attainment.CountsFor(st.Id, e.ClassId, e.OwnerKind, e.Date))
             .ToList();
         var quarterGrades = (await db.QuarterGrades
                 .Where(g => g.StudentId == st.Id && (unscoped || ownerIds.Contains(g.ClassId)))
