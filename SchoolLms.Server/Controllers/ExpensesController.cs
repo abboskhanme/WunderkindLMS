@@ -75,6 +75,12 @@ public class ExpensesController(IExpenseService expenses) : ControllerBase
         // `teacherId` so'rovda KELADI (maosh kimga berilgani), `teacherName`
         // esa serverda `teachers` jadvalidan olinadi — tanadan qabul qilinmaydi.
         "teacherName",
+        // F1.03 — naqd chiqimning smenasi SERVERDA aniqlanadi (yozuvchining
+        // yoki tasdiqlovchining ochiq smenasi). Tanadan qabul qilinsa, chiqim
+        // boshqa kassirning smenasiga osib qo'yilardi.
+        "cashShiftId",
+        // F1.08 — hujjatni kim va qachon biriktirgani.
+        "uploadedBy", "uploadedByName", "uploadedAt",
     ];
 
     /// <summary>MVC ning o'z sozlamalari bilan bir xil: camelCase, registrga befarq.</summary>
@@ -238,6 +244,48 @@ public class ExpensesController(IExpenseService expenses) : ControllerBase
             id, request.Reason ?? string.Empty, FinanceActor.RequireUserId(User), ct);
         return Ok(expense);
     }
+
+    // -----------------------------------------------------------------
+    //  Hujjatlar (F1.08) — chiqimning DALILI
+    // -----------------------------------------------------------------
+
+    /// <summary>
+    /// Chiqimga hujjat biriktiradi: chek surati, shartnoma nusxasi, skan.
+    ///
+    /// <para>
+    /// <b>Fayl BU YERGA yuklanmaydi.</b> Avval <c>POST /api/admin/uploads</c>
+    /// chaqiriladi (<c>UploadsController</c> + <c>UploadGuard</c>: tur va hajm
+    /// tekshiruvi, xavfsiz nom), u <c>{ name, url, size, contentType }</c>
+    /// qaytaradi va AYNAN o'sha qiymatlar shu yerga yuboriladi. Ikkinchi
+    /// yuklash yo'li ATAYLAB qurilmadi — tekshiruvning ikkinchi nusxasi bir
+    /// kun yumshoqroq bo'lardi va `.svg` kabi turlar shu teshikdan o'tardi.
+    /// </para>
+    /// <para>
+    /// O'CHIRISH VA ALMASHTIRISH YO'Q: <c>expense_attachments</c> ga
+    /// <c>app_rw</c> da faqat SELECT va INSERT berilgan. Noto'g'ri fayl
+    /// yuklansa — to'g'risi YANGI qator bo'lib qo'shiladi.
+    /// </para>
+    /// </summary>
+    [HttpPost("{id:guid}/attachments")]
+    [FinanceRole(FinanceAction.RecordExpense)]
+    public async Task<ActionResult<ExpenseAttachmentDto>> Attach(
+        Guid id, [FromBody] JsonElement body, CancellationToken ct)
+    {
+        if (RejectServerDerivedFields(body) is { } rejected) return rejected;
+
+        var request = Read<AttachExpenseFileRequest>(body);
+        if (request is null)
+            return BadRequest(new BillingErrorDto("invalid_body", "So'rov tanasi o'qilmadi."));
+
+        return Ok(await expenses.AttachAsync(id, request, FinanceActor.RequireUserId(User), ct));
+    }
+
+    /// <summary>Chiqimning hujjatlari (yangisidan eskisiga).</summary>
+    [HttpGet("{id:guid}/attachments")]
+    [FinanceRole(FinanceAction.ViewBillingReports)]
+    public async Task<ActionResult<IEnumerable<ExpenseAttachmentDto>>> Attachments(
+        Guid id, CancellationToken ct) =>
+        Ok(await expenses.AttachmentsAsync(id, ct));
 
     // -----------------------------------------------------------------
     //  Yordamchilar
