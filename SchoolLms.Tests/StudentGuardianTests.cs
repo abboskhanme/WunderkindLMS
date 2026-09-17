@@ -48,7 +48,7 @@ public class StudentGuardianTests(ApiFixture fixture)
         using var client = fixture.Api.AnonymousClient();
 
         Assert.Equal(HttpStatusCode.Unauthorized,
-            (await client.GetAsync($"{Students}/x/card")).StatusCode);
+            (await client.GetAsync($"{Students}/x/form-card")).StatusCode);
         Assert.Equal(HttpStatusCode.Unauthorized,
             (await client.GetAsync($"{Students}/x/guardians")).StatusCode);
         Assert.Equal(HttpStatusCode.Unauthorized,
@@ -66,7 +66,7 @@ public class StudentGuardianTests(ApiFixture fixture)
     {
         using var client = await fixture.Api.ClientAsAsync(role, "students");
 
-        Assert.Equal(HttpStatusCode.Forbidden, (await client.GetAsync($"{Students}/x/card")).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await client.GetAsync($"{Students}/x/form-card")).StatusCode);
         Assert.Equal(HttpStatusCode.Forbidden,
             (await client.PostAsJsonAsync($"{Students}/x/guardians",
                 new { fullName = "A", phone = "+998901234567" })).StatusCode);
@@ -86,7 +86,7 @@ public class StudentGuardianTests(ApiFixture fixture)
 
         using var staff = await fixture.Api.ClientAsAsync(Roles.Staff);
 
-        Assert.Equal(HttpStatusCode.OK, (await staff.GetAsync($"{Students}/{studentId}/card")).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await staff.GetAsync($"{Students}/{studentId}/form-card")).StatusCode);
         Assert.Equal(HttpStatusCode.OK, (await staff.GetAsync($"{Students}/{studentId}/guardians")).StatusCode);
 
         var body = new { fullName = $"Xodim {tag}", phone = NewPhone(), relation = "mother" };
@@ -260,7 +260,7 @@ public class StudentGuardianTests(ApiFixture fixture)
         };
         var id = await CreateAsync(admin, payload);
 
-        var card = await GetJsonAsync(admin, $"{Students}/{id}/card");
+        var card = await GetJsonAsync(admin, $"{Students}/{id}/form-card");
         var guardians = card.GetProperty("guardians").EnumerateArray().ToList();
         Assert.Equal(2, guardians.Count);
 

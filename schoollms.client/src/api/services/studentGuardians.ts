@@ -47,7 +47,7 @@ export async function getStudentCard(id: string): Promise<StudentFormCard> {
     await delay(150)
     return { ...EMPTY_CARD, studentId: id }
   }
-  const { data } = await api.get<StudentFormCard>(`/admin/students/${id}/card`)
+  const { data } = await api.get<StudentFormCard>(`/admin/students/${id}/form-card`)
   return data
 }
 

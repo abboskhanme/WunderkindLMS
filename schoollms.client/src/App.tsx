@@ -103,6 +103,7 @@ export default function App() {
           <Route path="students/baholash" element={<RequirePerm perm="students"><StudentEvaluationPage /></RequirePerm>} />
           <Route path="students/baholash-turlari" element={<RequirePerm perm="students"><EvaluationTypesPage /></RequirePerm>} />
           <Route path="students/turniket" element={<RequirePerm perm="students"><StudentTurnstilePage /></RequirePerm>} />
+          <Route path="students/arxiv" element={<RequirePerm perm="students"><StudentsPage initialTab="archived" /></RequirePerm>} />
           <Route path="students/holatlar" element={<RequirePerm perm="students"><StudentStatusesPage /></RequirePerm>} />
           <Route path="students/turniket/analitika" element={<RequirePerm perm="students"><TurnstileAnalyticsPage /></RequirePerm>} />
           <Route path="students/turniket/kirish-chiqish" element={<RequirePerm perm="students"><TurnstileFlowPage /></RequirePerm>} />

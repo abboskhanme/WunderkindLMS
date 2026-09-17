@@ -92,3 +92,28 @@ answered the second entry stays out.
 Parity is not only order. Each spec in `docs/modules/` carries the screens,
 columns, fields and rules for its module, so "ichidagi funksionallik ham" is
 tracked there rather than duplicated here.
+
+## O'quv bo'limi — the submenu, item by item (2026-09-17)
+
+The client sent EduSchool's own flyout and asked for the same sequence inside
+it, not only at the top level. Ours now reads exactly:
+
+| Group | EduSchool | Ours |
+|---|---|---|
+| O'QUV JARAYONI | Sinflar · Guruhlar · Fanlar · Xonalar | same |
+| O'QUVCHILAR | O'quvchilar · Arxiv o'quvchilar · O'quvchilar manzili · Ota onalar | same |
+| HUJJATLAR | Sertifikatlar · Shartnomalar | same |
+
+Three entries are ours alone and sit at the **end of their group**, so the
+EduSchool sequence reads unbroken: `O'quvchi holatlari` (their statuses live
+in a settings dialog), `Sertifikat turlari` (theirs is under Sozlamalar, ours
+cannot be — that route is gated on `settings` while the API is gated on
+`students`), and the `BAHOLASH` pair, which they do not have at all.
+
+**Xonalar moved here from Dars jadvali.** It was filed under the timetable's
+settings when the register was built; EduSchool keeps it in O'quv bo'limi and
+so do we now.
+
+**Arxiv o'quvchilar is a real menu entry, not a tab.** Ours was a tab inside
+the pupil list; `/admin/students/arxiv` now opens that list with the archive
+tab selected, so the menu matches without duplicating the screen.

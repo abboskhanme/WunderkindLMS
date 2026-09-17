@@ -110,17 +110,26 @@ export const navByRole: Record<Role, NavItem[]> = {
       icon: BookOpen,
       perm: 'students',
       children: [
+        // TARTIB EduSchool'ning O'quv bo'limi menyusidan AYNAN olingan
+        // (mijoz ko'rsatgan ekran, 2026-09-17): Sinflar · Guruhlar · Fanlar ·
+        // Xonalar || O'quvchilar · Arxiv o'quvchilar · O'quvchilar manzili ·
+        // Ota onalar || Sertifikatlar · Shartnomalar.
+        // Bizda bor, ularda yo'q yozuvlar (holatlar, sertifikat turlari,
+        // feedback) o'z guruhining OXIRIGA qo'yilgan — shunda EduSchool
+        // ketma-ketligi buzilmaydi.
         { label: 'Sinflar', to: '/admin/classes', end: true, group: "O'QUV JARAYONI" },
         { label: 'Guruhlar', to: '/admin/groups', group: "O'QUV JARAYONI" },
         { label: 'Fanlar', to: '/admin/subjects', group: "O'QUV JARAYONI" },
+        { label: 'Xonalar', to: '/admin/rooms', group: "O'QUV JARAYONI" },
         { label: "O'quvchilar", to: '/admin/students', end: true, group: "O'QUVCHILAR" },
-        { label: "O'quvchi holatlari", to: '/admin/students/holatlar', group: "O'QUVCHILAR" },
+        { label: "Arxiv o'quvchilar", to: '/admin/students/arxiv', group: "O'QUVCHILAR" },
         { label: "O'quvchilar manzili", to: '/admin/locations', group: "O'QUVCHILAR" },
         { label: 'Ota-onalar', to: '/admin/parents', group: "O'QUVCHILAR" },
+        { label: "O'quvchi holatlari", to: '/admin/students/holatlar', group: "O'QUVCHILAR" },
+        { label: 'Sertifikatlar', to: '/admin/certificates', end: true, group: 'HUJJATLAR' },
         { label: 'Shartnomalar', to: '/admin/contracts', perm: 'contracts', group: 'HUJJATLAR' },
         // Sertifikat turlari SOZLAMALAR ostida emas: u yerdagi marshrut `settings`
         // ruxsatiga bog'langan, API esa `students` ga — menyu va server zid bo'lardi.
-        { label: 'Sertifikatlar', to: '/admin/certificates', end: true, group: 'HUJJATLAR' },
         { label: 'Sertifikat turlari', to: '/admin/certificates/types', group: 'HUJJATLAR' },
         { label: "O'quvchilarga feedback", to: '/admin/students/baholash', group: 'BAHOLASH' },
         { label: 'Feedback nomi', to: '/admin/students/baholash-turlari', group: 'BAHOLASH' },
@@ -138,7 +147,6 @@ export const navByRole: Record<Role, NavItem[]> = {
         { label: 'Bayram kunlari', to: '/admin/schedule/holidays', group: 'SOZLAMA' },
         { label: 'Choraklar', to: '/admin/settings/quarters', group: 'SOZLAMA' },
         { label: 'Dars vaqtlari', to: '/admin/settings/lesson-times', group: 'SOZLAMA' },
-        { label: 'Xonalar', to: '/admin/rooms', group: 'SOZLAMA' },
         { label: 'Davomat sabablari', to: '/admin/settings/reasons', group: 'SOZLAMA' },
       ],
     },

@@ -53,7 +53,12 @@ public sealed class StudentGuardiansController(AppDbContext db) : ControllerBase
     /// Forma tahrirda yuklaydigan qo'shimcha ma'lumot: ro'yxat ustunlarida
     /// bo'lmagan maydonlar (telefon, til, hujjat nusxasi) va vasiylar.
     /// </summary>
-    [HttpGet("{studentId}/card")]
+    // Marshrut ATAYLAB `form-card`: `{id}/card` ni profil sahifasining
+    // kartochkasi (`StudentProfileController`) egallagan va ikkovi bitta
+    // manzilda turgani uchun ASP.NET `AmbiguousMatchException` bergan edi.
+    // Ikkisining javobi ham boshqacha: u — sarlavha faktlari, bu — formani
+    // to'ldirish uchun (vasiylar bilan).
+    [HttpGet("{studentId}/form-card")]
     public async Task<ActionResult<StudentFormCardDto>> Card(string studentId, CancellationToken ct)
     {
         var student = await db.Students.AsNoTracking()

@@ -121,11 +121,17 @@ function toStudent(row: StudentListRow): Student {
   }
 }
 
-export function StudentsPage() {
+/**
+ * Arxiv EduSchool'da alohida menyu yozuvi (`Arxiv o'quvchilar`), bizda esa
+ * o'sha ro'yxatning tabi. Ikkovini bir joyda ushlab turish uchun sahifa
+ * boshlang'ich tabni PROP orqali oladi: `/admin/students/arxiv` marshruti
+ * shu bilan ochiladi, menyu esa o'z yozuvini yo'qotmaydi.
+ */
+export function StudentsPage({ initialTab = 'active' }: { initialTab?: Tab } = {}) {
   const { user } = useAuth()
   const navigate = useNavigate()
 
-  const [tab, setTab] = useState<Tab>('active')
+  const [tab, setTab] = useState<Tab>(initialTab)
   const [filter, setFilter] = useState<StudentListFilter>({})
   const [sortBy, setSortBy] = useState<StudentSortKey | undefined>(undefined)
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc')
