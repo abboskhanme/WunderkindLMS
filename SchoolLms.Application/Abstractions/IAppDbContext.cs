@@ -122,6 +122,12 @@ public interface IAppDbContext
     DbSet<StudyGroupMember> StudyGroupMembers { get; }
     DbSet<ClassMembership> ClassMemberships { get; }
 
+    // ---------- O'quvchi kartochkasi (students-parity.md §3.2) ----------
+    DbSet<StudentStatus> StudentStatuses { get; }
+    DbSet<StudentComment> StudentComments { get; }
+    DbSet<StudentContract> StudentContracts { get; }
+    DbSet<Room> Rooms { get; }
+
     int SaveChanges();
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 

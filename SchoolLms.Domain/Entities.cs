@@ -147,6 +147,41 @@ public class Student
     /// <summary>Turniket/FaceID qurilmasidagi shaxs ID'si (personId/employeeNo). Turniket o'tish
     /// hodisalari shu ID orqali o'quvchiga bog'lanadi (kirgan/chiqqan vaqt). Bo'sh = moslanmagan.</summary>
     public string DeviceUserId { get; set; } = string.Empty;
+
+    // =======================================================================
+    //  students-parity.md §2.3 (S-5, S-8) — hammasi QO'SHIMCHA va null bo'la
+    //  oladi. Mavjud birorta ustun ko'chirilmadi va ma'nosi o'zgarmadi.
+    // =======================================================================
+
+    /// <summary>
+    /// O'quvchining O'Z telefoni (S-8). Ota-onaning raqami
+    /// <see cref="ParentPhone"/> da qoladi — bu uning o'rniga emas, yoniga.
+    /// </summary>
+    public string? Phone { get; set; }
+
+    /// <summary>
+    /// O'qish tili: <c>uz</c> | <c>ru</c> | <c>en</c> | <c>kaa</c> (S-8).
+    /// null = ko'rsatilmagan (sinf tili amal qiladi).
+    /// </summary>
+    public string? Language { get; set; }
+
+    /// <summary>
+    /// Hujjat NUSXASI — tug'ilganlik guvohnomasi yoki pasport skani (S-8).
+    ///
+    /// <para>
+    /// <b>Nega yangi ustun:</b> <see cref="BirthCertificateUrl"/> nomi
+    /// aldamchi — u amalda o'quvchining PROFIL SURATI. §2.3.2 shu ma'noni
+    /// qayd etadi va uni o'zgartirmaydi: hujjat skani shu yerga tushadi,
+    /// birorta mavjud fayl ko'chirilmaydi.
+    /// </para>
+    /// </summary>
+    public string? DocumentUrl { get; set; }
+
+    /// <summary>
+    /// Holat tagi (<see cref="StudentStatus"/>, S-5). null = holat qo'yilmagan —
+    /// migratsiyadan keyin HAMMA o'quvchi shunday.
+    /// </summary>
+    public Guid? StatusId { get; set; }
 }
 
 /// <summary>O'qituvchi.</summary>

@@ -107,6 +107,13 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<StudyGroupMember> StudyGroupMembers => Set<StudyGroupMember>();
     public DbSet<ClassMembership> ClassMemberships => Set<ClassMembership>();
 
+    // O'quvchi kartochkasining qo'shimcha qismlari (students-parity.md §3.2).
+    // Sxema oldin, ekranlar keyin — hozircha ilovadan hech kim o'qimaydi.
+    public DbSet<StudentStatus> StudentStatuses => Set<StudentStatus>();
+    public DbSet<StudentComment> StudentComments => Set<StudentComment>();
+    public DbSet<StudentContract> StudentContracts => Set<StudentContract>();
+    public DbSet<Room> Rooms => Set<Room>();
+
     /// <inheritdoc />
     public Task<Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction> BeginTransactionAsync(
         CancellationToken cancellationToken = default) =>
@@ -237,6 +244,9 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
         // Beshinchi alohida fayl. `owner_kind` (beshta dars jadvali),
         // `subjects.is_groupable` va `school_meta.group_lessons_enabled` ham shu yerda.
         StudyGroupModel.Apply(b);
+
+        // ----- O'quvchi kartochkasi: status, izoh, shartnoma, xonalar (§3.2) -----
+        StudentsParityModel.Apply(b);
 
         // ----- PostgreSQL: vaqt turi -----
         // Tizim sanalarni Toshkent "devor soati" sifatida saqlaydi (AppClock.Now — Kind=Unspecified),

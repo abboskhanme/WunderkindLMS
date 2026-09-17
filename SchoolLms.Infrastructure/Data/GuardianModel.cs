@@ -84,9 +84,15 @@ internal static class GuardianModel
             e.HasIndex(x => x.StudentId).IsUnique().HasFilter("is_primary")
                 .HasDatabaseName("ux_student_guardians_one_primary");
 
+            // students-parity.md §3.2 (S-8): ro'yxat KENGAYTIRILDI —
+            // `father`, `mother`, `other` qo'shildi. Eski uchta qiymat joyida,
+            // ya'ni birorta mavjud qator o'zgarmaydi va constraint faqat
+            // ALMASHTIRILADI (migratsiyadagi yagona `drop` — u ma'lumotga emas,
+            // check constraint'ga tegadi). Yonidagi `relation_note` "boshqa"
+            // tanlovining tafsilotini yozadi.
             e.ToTable(t => t.HasCheckConstraint(
                 "ck_student_guardians_relation",
-                "relation in ('parent','grandparent','trustee')"));
+                "relation in ('parent','father','mother','grandparent','trustee','other')"));
         });
     }
 
