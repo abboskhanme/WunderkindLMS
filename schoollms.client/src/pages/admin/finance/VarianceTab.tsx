@@ -34,6 +34,14 @@ import type { VarianceWatch } from './useVarianceWatch'
 const MIN_REASON = 10
 
 /**
+ * Beshinchi tur — buzilgan to'lov va'dasi (§3.5). U bazada SAQLANMAYDI,
+ * har so'rovda hisoblanadi, shuning uchun uni "sabab yozib yopib" bo'lmaydi
+ * (server 404 beradi). U qarz to'langanda yoki Qarzdorlar tabida yangi
+ * amal / yangi va'da yozilganda o'z-o'zidan yo'qoladi.
+ */
+const BROKEN_PROMISE = 'broken_promise'
+
+/**
  * Nom SERVERDAN keladi (`AnomalyFlagDto.KindLabel`). Bu yerda ikkinchi
  * lug'at saqlanmaydi: avvalgi nusxa allaqachon ayrilib ketgan edi —
  * unda `quick_reversal` yozilgan, server esa `fast_reversal` yuboradi,
@@ -196,10 +204,16 @@ export function VarianceTab({ watch, canResolve }: Props) {
                       {typeof f.amount === 'number' && ` · ${formatSignedMoney(f.amount)}`}
                     </p>
                   </div>
-                  {canResolve && (
-                    <Button variant="secondary" onClick={() => setResolving(f)}>
-                      <ShieldCheck className="h-4 w-4" /> Sabab yozib hal qilish
-                    </Button>
+                  {f.kind === BROKEN_PROMISE ? (
+                    <p className="max-w-56 text-xs text-slate-400">
+                      Qarzdorlar tabida yangi amal yozing — qarz to'lansa, belgi o'zi yo'qoladi.
+                    </p>
+                  ) : (
+                    canResolve && (
+                      <Button variant="secondary" onClick={() => setResolving(f)}>
+                        <ShieldCheck className="h-4 w-4" /> Sabab yozib hal qilish
+                      </Button>
+                    )
                   )}
                 </div>
               ))}

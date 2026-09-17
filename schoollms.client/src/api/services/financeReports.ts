@@ -248,11 +248,11 @@ export async function getZReport(shiftId: string): Promise<ZReport> {
  */
 export interface FinanceFlag {
   id: string
-  /** shift_variance | fast_reversal | off_hours_payment | paid_without_allocation */
+  /** shift_variance | fast_reversal | off_hours_payment | paid_without_allocation | broken_promise (hisoblanadi, saqlanmaydi) */
   kind: string
   /** O'zbekcha nom — SERVERDAN keladi, UI o'z lug'atini saqlamaydi. */
   kindLabel: string
-  /** cash_shift | payment | invoice */
+  /** cash_shift | payment | invoice | debtor_action */
   refType: string
   /** Tegishli yozuv (smena / to'lov / hisob-faktura) id'si. */
   refId: string

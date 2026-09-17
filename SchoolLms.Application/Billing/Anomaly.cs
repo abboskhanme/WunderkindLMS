@@ -75,7 +75,8 @@ public static class AnomalySettings
 /// Bayroqning tashqi ko'rinishi (direktor paneli va API).
 /// </summary>
 /// <param name="Id">Bayroq id'si — yopish endpoint'i shuni oladi.</param>
-/// <param name="Kind">To'rt shartdan biri — <see cref="AnomalyKind"/>.</param>
+/// <param name="Kind">Shartlardan biri — <see cref="AnomalyKind"/>. Beshinchisi
+/// (<c>broken_promise</c>) bazada saqlanmaydi, hisoblanadi.</param>
 /// <param name="KindLabel">O'zbekcha nom (UI shuni ko'rsatadi).</param>
 /// <param name="RefType">Manba jadval turi — <see cref="AnomalyRefType"/>.</param>
 /// <param name="RefId">Manba yozuv id'si (smena / to'lov / hisob-faktura).</param>
@@ -188,6 +189,10 @@ public static class AnomalyLabels
         AnomalyKind.FastReversal => "24 soat ichidagi storno",
         AnomalyKind.OffHoursPayment => "Ish vaqtidan tashqari to'lov",
         AnomalyKind.PaidWithoutAllocation => "Taqsimotsiz \"to'langan\" hisob-faktura",
+        // §3.5 — beshinchi shart. U bazada SAQLANMAYDI (BrokenPromiseScan),
+        // lekin nomi shu yerda: UI lug'atni serverdan oladi va turlar ro'yxati
+        // bitta joydan yozilishi kerak.
+        AnomalyKind.BrokenPromise => "Buzilgan to'lov va'dasi",
         _ => kind,
     };
 }
