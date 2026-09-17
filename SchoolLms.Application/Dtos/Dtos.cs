@@ -217,8 +217,34 @@ public record SetJournalEntryRequest(
     string ClassId, string SubjectId, int Quarter, string StudentId, string Date, int Period,
     int? Grade, string? ReasonId, int Homework = 0, int Behavior = 0, int? Mastery = null);
 public record JournalTopicDto(string Date, int Period, string Topic, string? Homework, bool Conducted, int SubGroup = 0);
-/// <summary>Berilgan sanada o'tilgan (conducted) darslar — sinf+fan+dars raqami+guruh.</summary>
-public record ConductedLessonDto(string ClassId, string SubjectId, int Period, int SubGroup = 0);
+/// <summary>Berilgan sanada o'tilgan (conducted) darslar — ega+fan+dars raqami+guruh.</summary>
+/// <param name="OwnerKind">
+/// Darsning egasi sinfmi yoki o'quv guruhimi (<c>LessonOwnerKind</c>;
+/// students-parity.md §2.1.4). Oxirida turibdi va sukuti <c>class</c> —
+/// eski mijoz kodi buzilmaydi.
+/// </param>
+public record ConductedLessonDto(
+    string ClassId, string SubjectId, int Period, int SubGroup = 0,
+    string OwnerKind = SchoolLms.Domain.LessonOwnerKind.Class);
+
+/// <summary>
+/// Jurnal tanlagichi uchun bitta EGA — sinf yoki o'quv guruhi (G-12).
+///
+/// <para>
+/// <paramref name="Id"/> jurnal endpointlarining <c>classId</c> parametriga
+/// beriladi: guruh darsi mavjud <c>class_id</c> ustunida guruh id'sini
+/// saqlaydi, shuning uchun so'rovlar bir xil qoladi. Guruhlar ro'yxatda
+/// FAQAT cut-over o'chirgichi yoqilganda paydo bo'ladi (§4.3).
+/// </para>
+/// </summary>
+/// <param name="Kind"><c>class</c> | <c>group</c>.</param>
+/// <param name="Grade">Sinf darajasi; guruh uchun 0.</param>
+/// <param name="SubjectId">Guruhning fani; sinf uchun null.</param>
+/// <param name="SubjectName">Guruhning fan nomi; sinf uchun null.</param>
+/// <param name="StudentCount">Arxivlanmagan o'quvchilar soni.</param>
+public record JournalOwnerDto(
+    string Id, string Name, string Kind, int Grade,
+    string? SubjectId, string? SubjectName, int StudentCount);
 public record SetLessonNoteRequest(
     string ClassId, string SubjectId, int Quarter, string Date, int Period, string Topic, string? Homework, bool Conducted,
     int SubGroup = 0);
@@ -723,9 +749,22 @@ public record AuditLogDto(
 public record TeacherProfileDto(
     string Id, string FullName, string Email, string HomeroomClass, List<SubjectDto> Subjects,
     List<string> Permissions, string? PhotoUrl = null);
-/// <summary>O'qituvchi dars beradigan bitta sinf (qaysi fanlarni va sinf rahbarimi).</summary>
+/// <summary>
+/// O'qituvchi yetadigan bitta EGA — sinf yoki o'quv guruhi (qaysi fanlarni
+/// o'qitadi va sinf rahbarimi / guruhga biriktirilganmi).
+/// </summary>
+/// <param name="OwnerKind">
+/// <c>class</c> | <c>group</c> (<c>LessonOwnerKind</c>; students-parity.md
+/// §2.1.4). Guruhda <paramref name="ClassId"/> guruh id'sini,
+/// <paramref name="ClassName"/> guruh nomini, <paramref name="Grade"/> esa 0 ni
+/// saqlaydi. Oxirida turibdi va sukuti <c>class</c> — eski mijoz kodi buzilmaydi.
+/// </param>
+/// <param name="IsHomeroom">
+/// Sinfda — sinf rahbari; guruhda — guruhga biriktirilgan o'qituvchi.
+/// </param>
 public record TeacherClassDto(
-    string ClassId, string ClassName, int Grade, bool IsHomeroom, List<SubjectDto> Subjects);
+    string ClassId, string ClassName, int Grade, bool IsHomeroom, List<SubjectDto> Subjects,
+    string OwnerKind = SchoolLms.Domain.LessonOwnerKind.Class);
 /// <summary>
 /// O'qituvchi jadvalidagi bitta dars (qaysi sinf, fan, kun, dars raqami, vaqt, guruh).
 ///
@@ -864,6 +903,19 @@ public record SendChatRequest(string Text);
 /// <summary>Admin uchun sinf chat/e'lon ro'yxati elementi.</summary>
 public record ChatClassDto(
     string Name, int Grade, int StudentCount, int ParentCount, string? LastMessageAt);
+
+/// <summary>
+/// Bitta chat kanali — kalit va odam ko'radigan nom (G-17).
+///
+/// <para>
+/// Sinf kanalida <paramref name="Key"/> sinf NOMI ("5-A"), ya'ni nom bilan bir
+/// xil. O'quv guruhida esa kalit <c>grp:&lt;guruh id&gt;</c> — u ekranda
+/// ko'rsatilmaydi, foydalanuvchi <paramref name="Label"/> (guruh nomi) ni
+/// ko'radi. Xodimlar kanali — <c>__xodimlar__</c>.
+/// </para>
+/// </summary>
+/// <param name="Kind"><c>class</c> | <c>group</c> | <c>staff</c>.</param>
+public record ChatChannelDto(string Key, string Label, string Kind);
 
 /// <summary>Yuborilgan e'lon (Telegram). CreatedAt — ISO 8601.</summary>
 public record BroadcastDto(

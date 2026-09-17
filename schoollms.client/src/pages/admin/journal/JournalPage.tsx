@@ -6,19 +6,18 @@ import type {
   JournalEntry,
   JournalTopic,
   QuarterGradeRow,
-  SchoolClass,
   ScheduleTemplate,
   Student,
   Subject,
 } from '@/types'
-import { getClasses } from '@/api/services/classes'
 import { getSubjects } from '@/api/services/subjects'
-import { getStudents } from '@/api/services/students'
 import { getTemplates } from '@/api/services/scheduleTemplates'
 import { getSettings } from '@/api/services/settings'
 import {
   getJournalColumns,
   getJournalEntries,
+  getJournalOwners,
+  getJournalStudents,
   setJournalEntry,
   clearJournalEntry,
   getLessonNotes,
@@ -27,6 +26,7 @@ import {
   setQuarterGrade,
   downloadTopicsTemplate,
   importTopics,
+  type JournalOwner,
   type TopicImportResult,
 } from '@/api/services/journal'
 import { quarters } from '@/config/constants'
@@ -60,8 +60,14 @@ function avgColor(g: number): string {
 }
 
 export function JournalPage() {
-  const [classes, setClasses] = useState<SchoolClass[]>([])
+  /**
+   * Jurnal EGALARI — sinflar va (cut-over o'chirgichi yoqilgan bo'lsa) o'quv
+   * guruhlari (docs/modules/students-parity.md §2.1.4, G-12). Ikkalasi ham
+   * bitta `classId` parametri orqali so'raladi.
+   */
+  const [owners, setOwners] = useState<JournalOwner[]>([])
   const [subjects, setSubjects] = useState<Subject[]>([])
+  /** Tanlangan eganing ro'yxati — SERVERDAN (brauzerda sinf nomi bo'yicha filtr yo'q). */
   const [students, setStudents] = useState<Student[]>([])
   const [templates, setTemplates] = useState<ScheduleTemplate[]>([])
   const [reasons, setReasons] = useState<AbsenceReason[]>([])
@@ -117,13 +123,12 @@ export function JournalPage() {
   }
 
   useEffect(() => {
-    Promise.all([getClasses(), getSubjects(), getStudents(), getSettings()])
-      .then(([cl, subs, st, settings]) => {
-        setClasses(cl)
+    Promise.all([getJournalOwners(), getSubjects(), getSettings()])
+      .then(([ow, subs, settings]) => {
+        setOwners(ow)
         setSubjects(subs)
-        setStudents(st)
         setReasons(settings.absenceReasons)
-        setClassId(cl[0]?.id ?? '')
+        setClassId(ow[0]?.id ?? '')
         const { quarter: q } = getCurrentQuarterAndWeek(settings.quarters)
         setQuarter(q)
       })
@@ -131,15 +136,23 @@ export function JournalPage() {
   }, [])
 
   useEffect(() => {
-    if (!classId) return
+    if (!classId) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- ega tanlanmagan: ro'yxatni tozalaymiz (maqsadli)
+      setStudents([])
+      return
+    }
+    const ownerSubjectId = owners.find((o) => o.id === classId)?.subjectId ?? ''
     getTemplates(classId).then((tpls) => {
       setTemplates(tpls)
       const ids = [...new Set(tpls.flatMap((t) => t.lessons.map((l) => l.subjectId)))]
-      setSubjectId(ids[0] ?? '')
+      // Guruhda jadval hali bo'lmasa — guruhning o'z fani tanlanadi.
+      setSubjectId(ids[0] ?? ownerSubjectId)
     })
-    // Sinf o'zgarsa guruh filtrini "Butun sinf"ga qaytaramiz.
+    // Ro'yxat serverdan: sinfda — sinf nomi bo'yicha (bugungi qoida), guruhda — faol a'zolar.
+    getJournalStudents(classId).then(setStudents)
+    // Ega o'zgarsa guruh filtrini "Butun sinf"ga qaytaramiz.
     setGroupFilter(0)
-  }, [classId])
+  }, [classId, owners])
 
   useEffect(() => {
     // Fan o'zgarsa ham guruh filtrini "Butun sinf"ga qaytaramiz.
@@ -171,13 +184,14 @@ export function JournalPage() {
       .finally(() => setDataLoading(false))
   }, [classId, subjectId, quarter])
 
-  const selectedClass = classes.find((c) => c.id === classId) ?? null
-  const allClassStudents = selectedClass
-    ? students.filter((s) => s.className === selectedClass.name)
-    : []
+  const selectedOwner = owners.find((o) => o.id === classId) ?? null
+  const isGroupOwner = selectedOwner?.kind === 'group'
+  // Ro'yxat serverdan keladi va allaqachon shu egaga tegishli.
+  const allClassStudents = students
 
   // Sinfda guruh bo'linishi bormi (kamida bir o'quvchi G1/G2 da)? — guruh filtrini ko'rsatish-yashirish.
-  const classIsGrouped = allClassStudents.some((s) => (s.subGroup ?? 0) > 0)
+  // O'quv guruhida sinf ichidagi bo'linish YO'Q (§2.1.4), shuning uchun filtr ham ko'rinmaydi.
+  const classIsGrouped = !isGroupOwner && allClassStudents.some((s) => (s.subGroup ?? 0) > 0)
 
   // Joriy guruh filtri bo'yicha tanlangan o'quvchilar.
   // Butun sinf (0) — hamma; 1/2 — faqat shu guruh.
@@ -191,10 +205,14 @@ export function JournalPage() {
 
   const classSubjects = useMemo(() => {
     const ids = [...new Set(templates.flatMap((t) => t.lessons.map((l) => l.subjectId)))]
+    // O'quv guruhida fan BITTA va u guruhning o'zida yozilgan — jadval hali
+    // tuzilmagan bo'lsa ham ro'yxat bo'sh qolmasin (§2.1.4).
+    if (isGroupOwner && selectedOwner?.subjectId && !ids.includes(selectedOwner.subjectId))
+      ids.unshift(selectedOwner.subjectId)
     return ids
       .map((id) => subjects.find((s) => s.id === id))
       .filter((s): s is Subject => Boolean(s))
-  }, [templates, subjects])
+  }, [templates, subjects, isGroupOwner, selectedOwner])
 
   const entryFor = (studentId: string, date: string, period: number) =>
     entries.find((e) => e.studentId === studentId && e.date === date && e.period === period) ?? null
@@ -404,9 +422,9 @@ export function JournalPage() {
           {/* Tanlovlar */}
           <div className="flex flex-wrap items-center gap-3">
             <select value={classId} onChange={(e) => setClassId(e.target.value)} className={control}>
-              {classes.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}-sinf
+              {owners.map((o) => (
+                <option key={o.id} value={o.id}>
+                  {o.kind === 'group' ? `Guruh: ${o.name}` : `${o.name}-sinf`}
                 </option>
               ))}
             </select>
@@ -495,7 +513,9 @@ export function JournalPage() {
           ) : classSubjects.length === 0 ? (
             <Card>
               <p className="py-8 text-center text-slate-400">
-                Bu sinfda fanlar yo'q — avval dars jadvali yarating
+                {isGroupOwner
+                  ? "Bu guruhda fanlar yo'q — avval dars jadvali yarating"
+                  : "Bu sinfda fanlar yo'q — avval dars jadvali yarating"}
               </p>
             </Card>
           ) : columns.length === 0 ? (
@@ -704,7 +724,9 @@ export function JournalPage() {
                             colSpan={visibleColumns.length + 2}
                             className="px-4 py-10 text-center text-slate-400"
                           >
-                            Bu sinfda o'quvchilar yo'q
+                            {isGroupOwner
+                              ? "Bu guruhda o'quvchilar yo'q"
+                              : "Bu sinfda o'quvchilar yo'q"}
                           </td>
                         </tr>
                       )}

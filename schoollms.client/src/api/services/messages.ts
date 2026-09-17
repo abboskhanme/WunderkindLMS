@@ -17,6 +17,30 @@ export async function getMessageClasses(): Promise<MessageClass[]> {
   return data
 }
 
+/**
+ * Chat kanali — kalit va ko'rinadigan nom (G-17,
+ * docs/modules/students-parity.md §2.1.6).
+ *
+ * Sinf kanalida `key` sinf NOMI ("5-A"), ya'ni `label` bilan bir xil. O'quv
+ * guruhida esa `key` — `grp:<guruh id>`, uni ekranda ko'rsatib bo'lmaydi.
+ * Xodimlar kanali — `__xodimlar__`.
+ */
+export interface ChatChannel {
+  key: string
+  label: string
+  kind: 'class' | 'group' | 'staff'
+}
+
+/**
+ * Barcha chat kanallari NOMI bilan. O'quv guruhlari ro'yxatda FAQAT cut-over
+ * o'chirgichi yoqilganda paydo bo'ladi (§4.3).
+ */
+export async function getMessageChannels(): Promise<ChatChannel[]> {
+  if (USE_MOCK) return []
+  const { data } = await api.get<ChatChannel[]>('/admin/messages/channels')
+  return data
+}
+
 /** Sinf guruh chati xabarlari. since berilsa — shu vaqtdan keyingilar. */
 export async function getChat(className: string, since?: string): Promise<ChatMessage[]> {
   if (USE_MOCK) return []

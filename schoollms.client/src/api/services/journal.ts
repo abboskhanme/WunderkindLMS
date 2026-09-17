@@ -1,4 +1,11 @@
-import type { JournalColumn, JournalEntry, JournalTopic, QuarterGradeRow } from '@/types'
+import type {
+  JournalColumn,
+  JournalEntry,
+  JournalTopic,
+  LessonOwnerKind,
+  QuarterGradeRow,
+  Student,
+} from '@/types'
 import { delay } from '@/lib/utils'
 import { getQuarterWeeks, addDaysISO, mondayOfISO } from '@/lib/weeks'
 import { api, USE_MOCK } from '../client'
@@ -7,6 +14,8 @@ import { weekAssignmentsMock } from '../mock/weekAssignments'
 import { settingsMock } from '../mock/settings'
 import { journalMock } from '../mock/journal'
 import { journalTopicsMock } from '../mock/journalTopics'
+import { classesMock } from '../mock/classes'
+import { studentsMock } from '../mock/students'
 
 const gkey = (classId: string, subjectId: string, quarter: number) =>
   `${classId}-${subjectId}-${quarter}`
@@ -52,12 +61,74 @@ function computeColumns(classId: string, subjectId: string, quarter: number): Jo
     )
 }
 
-/** Berilgan sanada o'tilgan darslar (sinf+fan+dars raqami+guruh) — bosh sahifada yashil/qizil ko'rsatish uchun */
+/**
+ * Jurnal tanlagichidagi bitta EGA — sinf yoki o'quv guruhi
+ * (docs/modules/students-parity.md §2.1.4, G-12).
+ *
+ * `id` — jurnal so'rovlaridagi `classId` parametri: guruh darsi mavjud
+ * `class_id` ustunida guruh id'sini saqlaydi, shuning uchun so'rovlar bir xil
+ * qoladi. Guruhlar ro'yxatda FAQAT cut-over o'chirgichi yoqilganda paydo
+ * bo'ladi.
+ */
+export interface JournalOwner {
+  id: string
+  name: string
+  kind: LessonOwnerKind
+  /** Sinf darajasi; guruh uchun 0 */
+  grade: number
+  /** Guruhning fani; sinf uchun null */
+  subjectId: string | null
+  subjectName: string | null
+  /** Arxivlanmagan o'quvchilar soni */
+  studentCount: number
+}
+
+/** Jurnal uchun egalar ro'yxati: sinflar + (yoqilgan bo'lsa) o'quv guruhlari */
+export async function getJournalOwners(): Promise<JournalOwner[]> {
+  if (USE_MOCK) {
+    await delay()
+    return classesMock.map((c) => ({
+      id: c.id,
+      name: c.name,
+      kind: 'class' as const,
+      grade: c.grade,
+      subjectId: null,
+      subjectName: null,
+      studentCount: studentsMock.filter((s) => s.className === c.name).length,
+    }))
+  }
+  const { data } = await api.get<JournalOwner[]>('/admin/journal/owners')
+  return data
+}
+
+/**
+ * Eganing jurnal ro'yxati — SERVERDAN. Ilgari brauzer butun maktab ro'yxatini
+ * sinf NOMI bo'yicha filtrlardi; o'quv guruhi bir nechta sinfdan yig'ilgani
+ * uchun bunday filtr uni umuman topa olmasdi (G-12).
+ */
+export async function getJournalStudents(classId: string, subGroup = 0): Promise<Student[]> {
+  if (USE_MOCK) {
+    await delay()
+    const cls = classesMock.find((c) => c.id === classId)
+    if (!cls) return []
+    return studentsMock
+      .filter((s) => s.className === cls.name)
+      .filter((s) => subGroup === 0 || (s.subGroup ?? 0) === subGroup)
+  }
+  const { data } = await api.get<Student[]>('/admin/journal/students', {
+    params: { classId, subGroup },
+  })
+  return data
+}
+
+/** Berilgan sanada o'tilgan darslar (ega+fan+dars raqami+guruh) — bosh sahifada yashil/qizil ko'rsatish uchun */
 export interface ConductedLesson {
   classId: string
   subjectId: string
   period: number
   subGroup: number
+  /** Egasi sinfmi yoki o'quv guruhimi (eski javoblarda bo'lmasligi mumkin) */
+  ownerKind?: LessonOwnerKind
 }
 
 export async function getConductedLessons(date: string): Promise<ConductedLesson[]> {

@@ -21,7 +21,7 @@ import { teacherApi } from '../../lib/teacherApi'
 import { todayISO } from '../../lib/weeks'
 import { fullDate, todayIndex, weekdayName } from '../../lib/format'
 import { haptic, showBackButton } from '../../lib/telegram'
-import { AsyncBlock, lessonPairs, lessonKey } from './shared'
+import { AsyncBlock, lessonKey, lessonOwnerTitle, lessonPairs } from './shared'
 
 export function AttendanceTab({ profile, meta, focusLesson, onClearFocus }) {
   const quarter = meta.currentQuarter
@@ -103,7 +103,7 @@ export function AttendanceTab({ profile, meta, focusLesson, onClearFocus }) {
                     <Row
                       key={lessonKey(l)}
                       lead={<DateChip day={l.period} month="dars" tone={done ? 'brand' : 'neutral'} />}
-                      title={`${l.className}${l.subGroup > 0 ? ` · ${l.subGroup}-guruh` : ''}`}
+                      title={lessonOwnerTitle(l)}
                       subtitle={`${l.subjectName} · ${l.startTime}–${l.endTime}`}
                       right={
                         <Badge tone={done ? 'success' : 'neutral'}>{done ? 'Olingan' : 'Olinmagan'}</Badge>
@@ -118,8 +118,8 @@ export function AttendanceTab({ profile, meta, focusLesson, onClearFocus }) {
               )}
             </Card>
             <p className="mx-6 mt-3 text-[12px] leading-relaxed text-slate-400">
-              Davomat saqlanganda dars avtomatik "o'tildi" deb belgilanadi va sinf jurnalida
-              ko'rinadi.
+              Davomat saqlanganda dars avtomatik "o'tildi" deb belgilanadi va o'sha sinf yoki
+              guruh jurnalida ko'rinadi.
             </p>
             <div className="h-4" />
           </>
@@ -133,7 +133,11 @@ export function AttendanceTab({ profile, meta, focusLesson, onClearFocus }) {
 
 function LessonAttendance({ lesson, quarter, date, reasons, onBack, onSaved }) {
   const { classId, subjectId, period } = lesson
-  const subGroup = lesson.subGroup ?? 0
+  // `classId` — darsning EGASI: sinf yoki o'quv guruhi (§2.1.4). Server ro'yxatni
+  // o'zi yechadi, shuning uchun bu yerda sinf nomi bo'yicha filtr yo'q.
+  const isGroup = lesson.ownerKind === 'group'
+  // Guruhda sinf ichidagi 1/2-bo'linish YO'Q — hamma faol a'zo qatnashadi.
+  const subGroup = isGroup ? 0 : (lesson.subGroup ?? 0)
 
   // Sababsiz kelmaslik — bir teginishda qo'yiladigan sukut sabab.
   const defaultReason = useMemo(() => {
@@ -307,9 +311,11 @@ function LessonAttendance({ lesson, quarter, date, reasons, onBack, onSaved }) {
             icon={<UserX className="h-9 w-9" />}
             title="O'quvchi yo'q"
             note={
-              subGroup > 0
-                ? `${lesson.className} sinfining ${subGroup}-guruhida o'quvchi biriktirilmagan.`
-                : `${lesson.className} sinfiga hali o'quvchi biriktirilmagan.`
+              isGroup
+                ? `${lesson.className} guruhiga hali o'quvchi biriktirilmagan.`
+                : subGroup > 0
+                  ? `${lesson.className} sinfining ${subGroup}-guruhida o'quvchi biriktirilmagan.`
+                  : `${lesson.className} sinfiga hali o'quvchi biriktirilmagan.`
             }
           />
         </Card>
@@ -387,7 +393,7 @@ function LessonAttendance({ lesson, quarter, date, reasons, onBack, onSaved }) {
 function LessonHero({ lesson, date, conducted, onBack }) {
   return (
     <Hero
-      title={`${lesson.className}${lesson.subGroup > 0 ? ` · ${lesson.subGroup}-guruh` : ''}`}
+      title={lessonOwnerTitle(lesson)}
       subtitle={`${lesson.subjectName} · ${lesson.period}-dars · ${lesson.startTime}–${lesson.endTime}`}
       right={
         <button

@@ -68,8 +68,24 @@ public class MessagesController(AppDbContext db, ChatService chat, TelegramServi
     }
 
     /// <summary>
+    /// Chat kanallari NOMI bilan (G-17, students-parity.md §2.1.6): sinflar,
+    /// o'quv guruhlari va xodimlar kanali.
+    ///
+    /// <para>
+    /// Nega alohida endpoint: <c>classes</c> sinf NOMINI kalit sifatida
+    /// qaytaradi, guruh kanalining kaliti esa <c>grp:&lt;id&gt;</c> — uni
+    /// ekranda ko'rsatib bo'lmaydi. Guruhlar FAQAT cut-over o'chirgichi
+    /// yoqilganda paydo bo'ladi (§4.3).
+    /// </para>
+    /// </summary>
+    [HttpGet("channels")]
+    public async Task<ActionResult<IEnumerable<ChatChannelDto>>> Channels() =>
+        await chat.ChannelsForUserAsync(Uid, "admin");
+
+    /// <summary>
     /// Har bir kanal uchun oxirgi xabar vaqti (ISO) — frontend o'qilmagan xabarlarni aniqlaydi.
-    /// Admin uchun barcha sinflar + xodimlar kanali qaytadi. Xabari yo'q kanal uchun null.
+    /// Admin uchun barcha sinflar + o'quv guruhlari + xodimlar kanali qaytadi.
+    /// Xabari yo'q kanal uchun null.
     /// </summary>
     [HttpGet("last-messages")]
     public async Task<ActionResult<Dictionary<string, string?>>> LastMessages()

@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Users, BookOpen, UserX, ChevronLeft, ChevronRight } from 'lucide-react'
-import type { SchoolClass } from '@/types'
-import { getClasses } from '@/api/services/classes'
+import { getJournalOwners, type JournalOwner } from '@/api/services/journal'
 import {
   getDailyAttendance,
   getSubjectAttendanceDetail,
@@ -35,7 +34,12 @@ function todayISO(): string {
 }
 
 export function AttendancePage() {
-  const [classes, setClasses] = useState<SchoolClass[]>([])
+  /**
+   * Davomat EGALARI — sinflar va (cut-over o'chirgichi yoqilgan bo'lsa) o'quv
+   * guruhlari (docs/modules/students-parity.md §2.1.4, G-13). Guruh darsi ham
+   * o'tiladi va unda ham davomat belgilanadi.
+   */
+  const [owners, setOwners] = useState<JournalOwner[]>([])
   const [classId, setClassId] = useState('')
   const [date, setDate] = useState(todayISO())
   const [data, setData] = useState<DailyAttendance | null>(null)
@@ -45,10 +49,10 @@ export function AttendancePage() {
   const [detailLoading, setDetailLoading] = useState(false)
 
   useEffect(() => {
-    getClasses()
-      .then((cl) => {
-        setClasses(cl)
-        const initial = cl.find((c) => c.name === '9-A') ?? cl[0]
+    getJournalOwners()
+      .then((ow) => {
+        setOwners(ow)
+        const initial = ow.find((o) => o.kind === 'class' && o.name === '9-A') ?? ow[0]
         setClassId(initial?.id ?? '')
       })
       .finally(() => setLoading(false))
@@ -83,7 +87,7 @@ export function AttendancePage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-xl font-semibold text-slate-800">Davomat</h1>
-        <p className="text-sm text-slate-400">Sinf bo'yicha kunlik davomat hisoboti</p>
+        <p className="text-sm text-slate-400">Sinf va guruh bo'yicha kunlik davomat hisoboti</p>
       </div>
 
       {loading ? (
@@ -93,9 +97,9 @@ export function AttendancePage() {
           {/* Tanlovlar */}
           <div className="flex flex-wrap items-center gap-3">
             <select value={classId} onChange={(e) => setClassId(e.target.value)} className={control}>
-              {classes.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}-sinf
+              {owners.map((o) => (
+                <option key={o.id} value={o.id}>
+                  {o.kind === 'group' ? `Guruh: ${o.name}` : `${o.name}-sinf`}
                 </option>
               ))}
             </select>

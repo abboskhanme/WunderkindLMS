@@ -1,7 +1,13 @@
 import { useEffect, useState } from 'react'
-import { MessageSquare, Megaphone, Users, Briefcase, Bell } from 'lucide-react'
+import { MessageSquare, Megaphone, Users, Briefcase, Bell, Users2 } from 'lucide-react'
 import type { MessageClass } from '@/types'
-import { getMessageClasses, getChat, sendChat } from '@/api/services/messages'
+import {
+  getMessageClasses,
+  getMessageChannels,
+  getChat,
+  sendChat,
+  type ChatChannel,
+} from '@/api/services/messages'
 import { STAFF_CHANNEL, STAFF_CHANNEL_LABEL } from '@/config/constants'
 import { useUnread } from '@/context/unread-context'
 import { Card } from '@/components/ui/Card'
@@ -16,18 +22,27 @@ type Tab = 'chat' | 'broadcast' | 'push'
 export function MessagesPage() {
   const { unreadChannels } = useUnread()
   const [classes, setClasses] = useState<MessageClass[]>([])
+  /**
+   * O'quv guruhi kanallari (G-17). Kalit — `grp:<id>`, ya'ni ekranda
+   * ko'rsatilmaydi: sarlavha `label` dan olinadi. Cut-over o'chirgichi o'chiq
+   * bo'lsa server bu ro'yxatni bo'sh qaytaradi va bo'lim umuman ko'rinmaydi.
+   */
+  const [groupChannels, setGroupChannels] = useState<ChatChannel[]>([])
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState<Tab>('chat')
   const [selected, setSelected] = useState<string | null>(null)
 
   useEffect(() => {
-    getMessageClasses()
-      .then((cs) => {
+    Promise.all([getMessageClasses(), getMessageChannels().catch((): ChatChannel[] => [])])
+      .then(([cs, chans]) => {
         setClasses(cs)
+        setGroupChannels(chans.filter((c) => c.kind === 'group'))
         setSelected((prev) => prev ?? cs[0]?.name ?? STAFF_CHANNEL)
       })
       .finally(() => setLoading(false))
   }, [])
+
+  const selectedGroup = groupChannels.find((g) => g.key === selected) ?? null
 
   return (
     <div className="space-y-6">
@@ -112,7 +127,37 @@ export function MessagesPage() {
                 </button>
               ))}
 
-              {classes.length === 0 && (
+              {groupChannels.length > 0 && (
+                <>
+                  <div className="my-1 border-t border-slate-100" />
+                  <p className="px-3 pb-1 pt-2 text-xs font-semibold text-slate-400">
+                    O'quv guruhlari
+                  </p>
+                  {groupChannels.map((g) => (
+                    <button
+                      key={g.key}
+                      type="button"
+                      onClick={() => setSelected(g.key)}
+                      className={cn(
+                        'flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors',
+                        selected === g.key
+                          ? 'bg-brand-50 text-brand-700'
+                          : 'text-slate-600 hover:bg-slate-50',
+                      )}
+                    >
+                      <span className="flex min-w-0 items-center gap-2">
+                        <Users2 className="h-4 w-4 shrink-0 text-violet-400" />
+                        <span className="truncate font-medium">{g.label}</span>
+                      </span>
+                      {unreadChannels.has(g.key) && (
+                        <span className="h-2 w-2 shrink-0 rounded-full bg-red-500" />
+                      )}
+                    </button>
+                  ))}
+                </>
+              )}
+
+              {classes.length === 0 && groupChannels.length === 0 && (
                 <p className="px-3 py-6 text-center text-sm text-slate-400">
                   Sinflar yo'q. Avval sinf qo'shing.
                 </p>
@@ -129,6 +174,15 @@ export function MessagesPage() {
                 sendMessage={sendChat}
                 title={`${STAFF_CHANNEL_LABEL} — guruh chati`}
                 subtitle="Barcha o'qituvchilar va adminlar"
+              />
+            ) : selectedGroup ? (
+              <ChatPanel
+                key={selectedGroup.key}
+                className={selectedGroup.key}
+                fetchMessages={getChat}
+                sendMessage={sendChat}
+                title={`${selectedGroup.label} — guruh chati`}
+                subtitle="O'quv guruhi a'zolari, uning o'qituvchilari va admin"
               />
             ) : selected ? (
               <ChatPanel

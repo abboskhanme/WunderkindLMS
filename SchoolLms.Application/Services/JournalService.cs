@@ -8,9 +8,35 @@ namespace SchoolLms.Application.Services;
 /// <summary>
 /// Jurnal o'qish/yozish mantig'i (baho, davomat, dars mavzusi/uyga vazifa). Admin jurnali ham,
 /// o'qituvchi ilovasi ham shu yagona mantiqdan foydalanadi (faqat ruxsat tekshiruvi farq qiladi).
+///
+/// <para>
+/// <b>Jurnal katagi SINFGA ham, O'QUV GURUHIGA ham tegishli bo'lishi mumkin</b>
+/// (G-12, students-parity.md §2.1.4). Ega <c>class_id</c> ustunida turadi,
+/// turi esa <c>owner_kind</c> da: <c>class</c> yoki <c>group</c>. Shu sababli
+/// bu fayldagi metodlar avvalgidek bitta id bilan chaqiriladi va o'zi egani
+/// aniqlaydi — <c>class_id</c> ni o'qiydigan ~60 joy o'zgarishsiz qoladi.
+/// </para>
+/// <para>
+/// <b>O'chirgich o'chiq ekan (<c>group_lessons_enabled</c>) hech narsa
+/// o'zgarmaydi:</b> guruh haftaga biriktirilmaydi, ustun chiqmaydi,
+/// ro'yxat so'ralmaydi — va mavjud har bir qator <c>owner_kind='class'</c>,
+/// ya'ni yangi filtrlar bugungi natijani bir bayt ham siljitmaydi.
+/// </para>
 /// </summary>
 public static class JournalService
 {
+    /// <summary>
+    /// Guruh darsi jurnalda BUTUN guruh uchun bitta ustun: sinf ichidagi
+    /// 1/2-guruhga bo'linish guruhga tegishli emas (§2.1.4).
+    /// </summary>
+    public const string SubGroupOnGroupMessage =
+        "Guruh darsida sinf ichidagi 1/2-guruhga bo'linish bo'lmaydi — "
+        + "guruhning o'zi allaqachon tanlangan o'quvchilar ro'yxati.";
+
+    /// <summary>Guruh darslari hali yoqilmagan (cut-over o'chirgichi, §4.3).</summary>
+    public const string GroupLessonsOffMessage =
+        "Guruh darslari hali yoqilmagan — guruh jurnaliga yozib bo'lmaydi.";
+
     /// <summary>Fanning chorakdagi darslari (sana + dars raqami). Bir kunda bir fan bir necha marta bo'lishi mumkin.</summary>
     public static async Task<List<JournalColumnDto>> ComputeColumnsAsync(
         IAppDbContext db, string classId, string subjectId, int quarter)
@@ -18,11 +44,20 @@ public static class JournalService
         var q = await db.Quarters.FirstOrDefaultAsync(x => x.Quarter == quarter);
         if (q is null) return [];
 
+        var owner = await LessonRoster.OwnerAsync(db, classId);
+        // O'chirgich o'chiq — guruhning darsi UMUMAN yo'q (§4.3).
+        if (owner is not null && owner.IsGroup && !await LessonRoster.GroupLessonsEnabledAsync(db)) return [];
+
         var weeks = ScheduleMath.GetQuarterWeeks(q.StartDate, q.EndDate);
-        var assignments = await db.WeekAssignments
-            .Where(a => a.ClassId == classId && a.Quarter == quarter).ToListAsync();
-        var templates = await db.ScheduleTemplates.Include(t => t.Lessons)
-            .Where(t => t.ClassId == classId).ToListAsync();
+        var assignmentQuery = db.WeekAssignments.Where(a => a.ClassId == classId && a.Quarter == quarter);
+        var templateQuery = db.ScheduleTemplates.Include(t => t.Lessons).Where(t => t.ClassId == classId);
+        if (owner is not null)
+        {
+            assignmentQuery = assignmentQuery.Where(a => a.OwnerKind == owner.Kind);
+            templateQuery = templateQuery.Where(t => t.OwnerKind == owner.Kind);
+        }
+        var assignments = await assignmentQuery.ToListAsync();
+        var templates = await templateQuery.ToListAsync();
         // Bayram kunlari — bu sanalarda dars yo'q, jurnal ustuni chiqmaydi.
         var holidays = (await db.Holidays.Select(h => h.Date).ToListAsync()).ToHashSet();
 
@@ -49,11 +84,23 @@ public static class JournalService
     }
 
     public static async Task<List<JournalEntryDto>> GetEntriesAsync(
-        IAppDbContext db, string classId, string subjectId, int quarter) =>
-        await db.JournalEntries
+        IAppDbContext db, string classId, string subjectId, int quarter)
+    {
+        var kind = await OwnerKindAsync(db, classId);
+        return await db.JournalEntries
             .Where(e => e.ClassId == classId && e.SubjectId == subjectId && e.Quarter == quarter)
+            .Where(e => kind == null || e.OwnerKind == kind)
             .Select(e => new JournalEntryDto(e.StudentId, e.Date, e.Period, e.Grade, e.ReasonId, e.Homework, e.Behavior, e.Mastery))
             .ToListAsync();
+    }
+
+    /// <summary>
+    /// Id'ning egasi qaysi turdan — <c>class</c>, <c>group</c>, yoki ega
+    /// topilmasa <c>null</c>. <c>null</c> bo'lganda chaqiruvchi tur bo'yicha
+    /// FILTRLAMAYDI: bugungi kod ham "yetim" id uchun filtrsiz ishlaydi.
+    /// </summary>
+    private static async Task<string?> OwnerKindAsync(IAppDbContext db, string ownerId) =>
+        (await LessonRoster.OwnerAsync(db, ownerId))?.Kind;
 
     /// <summary>
     /// Bitta katakni belgilash — baho yoki davomat sababi (mavjud bo'lsa ustiga yoziladi).
@@ -73,16 +120,24 @@ public static class JournalService
             && !await JournalSettingsGuard.ReasonIsUsableAsync(db, req.ReasonId))
             return JournalSettingsGuard.ReasonRequiredMessage;
 
+        var owner = await LessonRoster.OwnerAsync(db, req.ClassId);
+        // O'chirgich o'chiq ekan guruh jurnaliga yozib bo'lmaydi (§4.3).
+        if (owner is not null && owner.IsGroup && !await LessonRoster.GroupLessonsEnabledAsync(db))
+            return GroupLessonsOffMessage;
+        var ownerKind = owner?.Kind ?? LessonOwnerKind.Class;
+
         var entry = await db.JournalEntries.FirstOrDefaultAsync(e =>
             e.ClassId == req.ClassId && e.SubjectId == req.SubjectId && e.Quarter == req.Quarter &&
-            e.StudentId == req.StudentId && e.Date == req.Date && e.Period == req.Period);
+            e.StudentId == req.StudentId && e.Date == req.Date && e.Period == req.Period &&
+            e.OwnerKind == ownerKind);
         // Push uchun — yangi/o'zgargan baho yoki sababnigina xabar qilamiz.
         var oldGrade = entry?.Grade;
         var oldReason = entry?.ReasonId;
 
         // O'quvchining guruhi — yozuvga ham, mos LessonNote'ga ham SubGroup sifatida yoziladi.
+        // GURUH darsida bo'linish yo'q: qator har doim 0 bilan yoziladi (§2.1.3).
         var student = await db.Students.FindAsync(req.StudentId);
-        var subGroup = student?.SubGroup ?? 0;
+        var subGroup = owner?.IsGroup == true ? 0 : student?.SubGroup ?? 0;
 
         if (entry is null)
         {
@@ -95,6 +150,7 @@ public static class JournalService
                 Date = req.Date,
                 Period = req.Period,
                 SubGroup = subGroup,
+                OwnerKind = ownerKind,
             };
             db.JournalEntries.Add(entry);
         }
@@ -123,7 +179,7 @@ public static class JournalService
             var note = await db.LessonNotes.FirstOrDefaultAsync(n =>
                 n.ClassId == req.ClassId && n.SubjectId == req.SubjectId &&
                 n.Quarter == req.Quarter && n.Date == req.Date && n.Period == req.Period &&
-                n.SubGroup == subGroup);
+                n.SubGroup == subGroup && n.OwnerKind == ownerKind);
             if (note is null)
             {
                 db.LessonNotes.Add(new LessonNote
@@ -134,6 +190,7 @@ public static class JournalService
                     Date = req.Date,
                     Period = req.Period,
                     SubGroup = subGroup,
+                    OwnerKind = ownerKind,
                     Conducted = true,
                 });
                 await db.SaveChangesAsync();
@@ -189,9 +246,11 @@ public static class JournalService
         IAppDbContext db, string classId, string subjectId, int quarter,
         string studentId, string date, int period)
     {
+        var kind = await OwnerKindAsync(db, classId);
         var entries = db.JournalEntries.Where(e =>
             e.ClassId == classId && e.SubjectId == subjectId && e.Quarter == quarter &&
-            e.StudentId == studentId && e.Date == date && e.Period == period);
+            e.StudentId == studentId && e.Date == date && e.Period == period &&
+            (kind == null || e.OwnerKind == kind));
         db.JournalEntries.RemoveRange(entries);
         await db.SaveChangesAsync();
     }
@@ -203,12 +262,15 @@ public static class JournalService
     public static async Task<List<QuarterGradeRowDto>> GetQuarterGradesAsync(
         IAppDbContext db, string classId, string subjectId, int quarter)
     {
+        var kind = await OwnerKindAsync(db, classId);
         var explicitGrades = await db.QuarterGrades
             .Where(g => g.ClassId == classId && g.SubjectId == subjectId && g.Quarter == quarter)
+            .Where(g => kind == null || g.OwnerKind == kind)
             .ToListAsync();
         var recommended = (await db.JournalEntries
                 .Where(e => e.ClassId == classId && e.SubjectId == subjectId
-                            && e.Quarter == quarter && e.Grade != null).ToListAsync())
+                            && e.Quarter == quarter && e.Grade != null)
+                .Where(e => kind == null || e.OwnerKind == kind).ToListAsync())
             .GroupBy(e => e.StudentId)
             .ToDictionary(g => g.Key, g => Math.Round(g.Average(e => (double)e.Grade!.Value), 2));
 
@@ -223,9 +285,11 @@ public static class JournalService
     /// <summary>Chorak bahosini belgilash (upsert). Grade null bo'lsa — mavjud baho o'chiriladi.</summary>
     public static async Task SetQuarterGradeAsync(IAppDbContext db, SetQuarterGradeRequest req)
     {
+        var ownerKind = await OwnerKindAsync(db, req.ClassId) ?? LessonOwnerKind.Class;
         var existing = await db.QuarterGrades.FirstOrDefaultAsync(g =>
             g.ClassId == req.ClassId && g.SubjectId == req.SubjectId &&
-            g.Quarter == req.Quarter && g.StudentId == req.StudentId);
+            g.Quarter == req.Quarter && g.StudentId == req.StudentId &&
+            g.OwnerKind == ownerKind);
 
         if (req.Grade is null)
         {
@@ -240,6 +304,7 @@ public static class JournalService
                 Quarter = req.Quarter,
                 StudentId = req.StudentId,
                 Grade = req.Grade.Value,
+                OwnerKind = ownerKind,
             });
         }
         else
@@ -250,11 +315,15 @@ public static class JournalService
     }
 
     public static async Task<List<JournalTopicDto>> GetNotesAsync(
-        IAppDbContext db, string classId, string subjectId, int quarter) =>
-        await db.LessonNotes
+        IAppDbContext db, string classId, string subjectId, int quarter)
+    {
+        var kind = await OwnerKindAsync(db, classId);
+        return await db.LessonNotes
             .Where(n => n.ClassId == classId && n.SubjectId == subjectId && n.Quarter == quarter)
+            .Where(n => kind == null || n.OwnerKind == kind)
             .Select(n => new JournalTopicDto(n.Date, n.Period, n.Topic, n.Homework, n.Conducted, n.SubGroup))
             .ToListAsync();
+    }
 
     /// <returns>
     /// <c>null</c> — yozildi. Aks holda foydalanuvchiga ko'rsatiladigan xato matni
@@ -262,6 +331,16 @@ public static class JournalService
     /// </returns>
     public static async Task<string?> SetNoteAsync(IAppDbContext db, SetLessonNoteRequest req)
     {
+        var owner = await LessonRoster.OwnerAsync(db, req.ClassId);
+        if (owner is not null && owner.IsGroup)
+        {
+            // O'chirgich o'chiq ekan guruh jurnaliga yozib bo'lmaydi (§4.3).
+            if (!await LessonRoster.GroupLessonsEnabledAsync(db)) return GroupLessonsOffMessage;
+            // Guruhda sinf ichidagi bo'linish yo'q — server rad etadi (§2.1.4).
+            if (req.SubGroup != 0) return SubGroupOnGroupMessage;
+        }
+        var ownerKind = owner?.Kind ?? LessonOwnerKind.Class;
+
         // §5.5 — darsni ATAYLAB yopish: baholar to'liq bo'lmasa rad etiladi.
         if (req.Conducted)
         {
@@ -274,7 +353,7 @@ public static class JournalService
         var note = await db.LessonNotes.FirstOrDefaultAsync(n =>
             n.ClassId == req.ClassId && n.SubjectId == req.SubjectId &&
             n.Quarter == req.Quarter && n.Date == req.Date && n.Period == req.Period &&
-            n.SubGroup == req.SubGroup);
+            n.SubGroup == req.SubGroup && n.OwnerKind == ownerKind);
 
         // Mavzu, uyga vazifa va "dars o'tildi" — uchchovi ham bo'sh bo'lsa yozuvni o'chiramiz.
         var empty = string.IsNullOrWhiteSpace(req.Topic) && string.IsNullOrWhiteSpace(req.Homework) && !req.Conducted;
@@ -292,6 +371,7 @@ public static class JournalService
                 Date = req.Date,
                 Period = req.Period,
                 SubGroup = req.SubGroup,
+                OwnerKind = ownerKind,
                 Topic = req.Topic,
                 Homework = req.Homework,
                 Conducted = req.Conducted,
@@ -317,9 +397,11 @@ public static class JournalService
     /// "Mavzu"/"Uy vazifa" ustunlari foydalanuvchi to'ldirishi uchun (mavjudi ham ko'rsatiladi).</summary>
     public static async Task<byte[]> TopicTemplateXlsxAsync(IAppDbContext db, string classId, string subjectId, int quarter)
     {
+        var kind = await OwnerKindAsync(db, classId);
         var cols = await ComputeColumnsAsync(db, classId, subjectId, quarter);
         var notes = (await db.LessonNotes
-                .Where(n => n.ClassId == classId && n.SubjectId == subjectId && n.Quarter == quarter).ToListAsync())
+                .Where(n => n.ClassId == classId && n.SubjectId == subjectId && n.Quarter == quarter)
+                .Where(n => kind == null || n.OwnerKind == kind).ToListAsync())
             .GroupBy(n => (n.Date, n.Period, n.SubGroup)).ToDictionary(g => g.Key, g => g.First());
 
         // Har bir dars slotiga jadval tartibidagi raqam beriladi (1-asosli); sana/guruh shu raqamdan kelib chiqadi.
@@ -355,9 +437,11 @@ public static class JournalService
         IAppDbContext db, string classId, string subjectId, int quarter, List<string[]> rows)
     {
         // Tartiblangan dars ketma-ketligi — "Dars raqami" shu ro'yxatga 1-asosli indeks.
+        var ownerKind = await OwnerKindAsync(db, classId) ?? LessonOwnerKind.Class;
         var cols = await ComputeColumnsAsync(db, classId, subjectId, quarter);
         var notes = (await db.LessonNotes
-                .Where(n => n.ClassId == classId && n.SubjectId == subjectId && n.Quarter == quarter).ToListAsync())
+                .Where(n => n.ClassId == classId && n.SubjectId == subjectId && n.Quarter == quarter
+                            && n.OwnerKind == ownerKind).ToListAsync())
             .GroupBy(n => (n.Date, n.Period, n.SubGroup)).ToDictionary(g => g.Key, g => g.First());
 
         var errors = new List<TopicImportRowErrorDto>();
@@ -393,6 +477,7 @@ public static class JournalService
                 {
                     ClassId = classId, SubjectId = subjectId, Quarter = quarter,
                     Date = slot.Date, Period = slot.Period, SubGroup = slot.SubGroup,
+                    OwnerKind = ownerKind,
                     Topic = topic, Homework = homework, Conducted = false,
                 };
                 db.LessonNotes.Add(fresh);

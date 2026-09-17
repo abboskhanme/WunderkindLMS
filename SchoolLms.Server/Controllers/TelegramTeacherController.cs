@@ -122,25 +122,28 @@ public sealed class TelegramTeacherController(
         if (period <= 0) return BadRequest(new { message = "period kerak" });
         if (subGroup is < 0 or > 2) return BadRequest(new { message = "subGroup 0, 1 yoki 2 bo'lishi kerak" });
 
-        // Faqat o'zi dars beradigan sinf+fan — `TeacherPortalController.Authorized` bilan bir xil qoida.
+        // Faqat o'zi dars beradigan ega+fan — `TeacherPortalController.Authorized` bilan
+        // bir xil qoida, bitta manbadan (G-12).
         if (!await TeachesAsync(t.Id, classId, subjectId, ct)) return Forbid();
 
-        var cls = await db.Classes.AsNoTracking().FirstOrDefaultAsync(c => c.Id == classId, ct);
-        if (cls is null) return NotFound(new { message = "Sinf topilmadi" });
+        var owner = await LessonRoster.OwnerAsync(db, classId, ct);
+        if (owner is null) return NotFound(new { message = "Sinf topilmadi" });
+        // Guruh darsida sinf ichidagi bo'linish yo'q — server rad etadi (§2.1.4).
+        if (owner.IsGroup && subGroup is not null and not 0)
+            return BadRequest(new { message = JournalService.SubGroupOnGroupMessage });
         var subjectName = await db.Subjects.AsNoTracking()
             .Where(s => s.Id == subjectId).Select(s => s.Name).FirstOrDefaultAsync(ct) ?? "";
 
         var day = string.IsNullOrWhiteSpace(date) ? AppClock.Today.ToString("yyyy-MM-dd") : date;
 
-        var students = await db.Students.AsNoTracking()
-            .Where(s => s.ClassName == cls.Name && !s.IsArchived)
-            .OrderBy(s => s.FullName)
-            .Select(s => new { s.Id, s.FullName, s.SubGroup })
-            .ToListAsync(ct);
+        // Ro'yxat — egadan (G-5): sinfda bugungi so'rovning aynan o'zi, guruhda faol a'zolar.
+        var students = (await LessonRoster.ForLessonAsync(db, owner, ct: ct))
+            .Select(s => new { s.Id, s.FullName, s.SubGroup }).ToList();
 
         var entries = (await db.JournalEntries.AsNoTracking()
                 .Where(e => e.ClassId == classId && e.SubjectId == subjectId
-                            && e.Date == day && e.Period == period)
+                            && e.Date == day && e.Period == period
+                            && e.OwnerKind == owner.Kind)
                 .ToListAsync(ct))
             .ToDictionary(e => e.StudentId);
 
@@ -151,10 +154,14 @@ public sealed class TelegramTeacherController(
         // `FirstOrDefault` 2-guruh o'qituvchisiga 1-guruhning mavzusini ko'rsatishi mumkin edi.
         // Guruh: so'rovda aniq berilgan bo'lsa — o'sha; aks holda jadvaldan (o'qituvchining
         // shu kun va dars raqamidagi O'Z darsi); aniqlab bo'lmasa — butun sinf (0).
-        var sg = subGroup ?? await TeacherSubGroupAsync(t.Id, classId, subjectId, day, period, ct);
+        // Guruh darsida bo'linish yo'q, ya'ni har doim 0.
+        var sg = owner.IsGroup
+            ? 0
+            : subGroup ?? await TeacherSubGroupAsync(t.Id, owner, subjectId, day, period, ct);
         var note = (await db.LessonNotes.AsNoTracking()
                 .Where(n => n.ClassId == classId && n.SubjectId == subjectId
                             && n.Date == day && n.Period == period
+                            && n.OwnerKind == owner.Kind
                             && (n.SubGroup == 0 || n.SubGroup == sg))
                 .ToListAsync(ct))
             .OrderByDescending(n => n.SubGroup == sg)
@@ -167,16 +174,16 @@ public sealed class TelegramTeacherController(
             AbsenceReason? r = null;
             if (e?.ReasonId is not null) reasons.TryGetValue(e.ReasonId, out r);
             return new TgRosterStudentDto(
-                s.Id, s.FullName, s.SubGroup,
+                s.Id, s.FullName, owner.IsGroup ? 0 : s.SubGroup,
                 e?.ReasonId, r?.Name, r?.IsLate ?? false, e?.Grade);
         }).ToList();
 
         return new TgRosterDto(
-            cls.Id, cls.Name, subjectId, subjectName,
+            owner.Id, owner.Name, subjectId, subjectName,
             day, period, quarter,
             note?.Conducted ?? false, note?.Topic, note?.Homework,
             [.. reasonRows.Select(r => new AbsenceReasonDto(r.Id, r.Name, r.Short, r.IsLate))],
-            rows);
+            rows, owner.Kind);
     }
 
     /// <summary>O'qituvchi yaqinda kiritgan jurnal yozuvlari (baho yoki davomat sababi).</summary>
@@ -190,32 +197,30 @@ public sealed class TelegramTeacherController(
 
         var take = Math.Clamp(limit ?? RecentDefault, 1, RecentMax);
 
-        // O'qituvchi qaysi (sinf, fan) juftliklarida dars beradi — jadval shablonlaridan.
-        var pairs = (await db.ScheduleTemplates.AsNoTracking().Include(x => x.Lessons).ToListAsync(ct))
-            .SelectMany(tpl => tpl.Lessons
-                .Where(l => l.TeacherId == t.Id)
-                .Select(l => (tpl.ClassId, l.SubjectId)))
-            .Distinct()
-            .ToHashSet();
+        // O'qituvchi qaysi (ega, fan) juftliklarida dars beradi — jadval shablonlaridan.
+        // O'chirgich o'chiq bo'lsa guruh juftliklari CHIQMAYDI (G-12, §4.3).
+        var pairs = await TeacherOwnerAccess.PairsAsync(db, t.Id, ct);
         if (pairs.Count == 0) return new List<TgJournalRecentDto>();
 
-        var classIds = pairs.Select(p => p.ClassId).Distinct().ToList();
+        var ownerIds = pairs.Select(p => p.OwnerId).Distinct().ToList();
         var subjectIds = pairs.Select(p => p.SubjectId).Distinct().ToList();
 
-        // Bazadan KENGROQ to'plam olinadi (sinf × fan dekart ko'paytmasi), keyin
+        // Bazadan KENGROQ to'plam olinadi (ega × fan dekart ko'paytmasi), keyin
         // haqiqiy juftliklar bo'yicha siqiladi. Muqobil variant — har juftlik uchun
         // alohida so'rov, ya'ni o'nlab so'rov; bu esa bittasi.
         var raw = await db.JournalEntries.AsNoTracking()
-            .Where(e => classIds.Contains(e.ClassId) && subjectIds.Contains(e.SubjectId)
+            .Where(e => ownerIds.Contains(e.ClassId) && subjectIds.Contains(e.SubjectId)
                         && (e.Grade != null || e.ReasonId != null))
             .OrderByDescending(e => e.Date).ThenByDescending(e => e.Period)
             .Take(take * 4)
             .ToListAsync(ct);
 
-        var rows = raw.Where(e => pairs.Contains((e.ClassId, e.SubjectId))).Take(take).ToList();
+        var rows = raw.Where(e => pairs.Contains((e.ClassId, e.OwnerKind, e.SubjectId))).Take(take).ToList();
         if (rows.Count == 0) return new List<TgJournalRecentDto>();
 
-        var classNames = await db.Classes.AsNoTracking().ToDictionaryAsync(c => c.Id, c => c.Name, ct);
+        // Ega nomi: sinf ham, guruh ham bir xil ustunda turadi (§2.1.4).
+        var classNames = (await LessonRoster.AllOwnersAsync(db, ct))
+            .ToDictionary(kv => kv.Key, kv => kv.Value.Name, StringComparer.Ordinal);
         var subjectNames = await db.Subjects.AsNoTracking().ToDictionaryAsync(s => s.Id, s => s.Name, ct);
         var studentIds = rows.Select(e => e.StudentId).Distinct().ToList();
         var studentNames = await db.Students.AsNoTracking()
@@ -309,34 +314,24 @@ public sealed class TelegramTeacherController(
         })];
     }
 
-    /// <summary>O'qituvchi shu sinfda shu fanni o'qitadimi (jadval shablonlari bo'yicha).</summary>
     /// <summary>
-    /// O'qituvchining shu sinfdagi, shu fandan, shu hafta kuni va dars raqamidagi darsi qaysi
-    /// guruhga (0/1/2) tegishli. Manba — <see cref="TeachesAsync"/> bilan bir xil (sinfning
+    /// O'qituvchining shu egadagi, shu fandan, shu hafta kuni va dars raqamidagi darsi qaysi
+    /// guruhga (0/1/2) tegishli. Manba — <see cref="TeachesAsync"/> bilan bir xil (eganing
     /// shablonlari). Topilmasa yoki shablonlarda har xil bo'lsa — 0 (butun sinf).
     /// </summary>
-    private async Task<int> TeacherSubGroupAsync(
-        string teacherId, string classId, string subjectId, string date, int period, CancellationToken ct)
+    private Task<int> TeacherSubGroupAsync(
+        string teacherId, LessonOwner owner, string subjectId, string date, int period, CancellationToken ct)
     {
-        if (!DateOnly.TryParseExact(date, "yyyy-MM-dd", out var d)) return 0;
+        if (!DateOnly.TryParseExact(date, "yyyy-MM-dd", out var d)) return Task.FromResult(0);
         var dayIndex = ((int)d.DayOfWeek + 6) % 7; // Dushanba = 0, ScheduleLesson.Day bilan bir xil
-
-        var groups = await db.ScheduleTemplates.AsNoTracking()
-            .Where(t => t.ClassId == classId)
-            .SelectMany(t => t.Lessons)
-            .Where(l => l.TeacherId == teacherId && l.SubjectId == subjectId
-                        && l.Day == dayIndex && l.Period == period)
-            .Select(l => l.SubGroup)
-            .Distinct()
-            .ToListAsync(ct);
-        return groups.Count == 1 ? groups[0] : 0;
+        return TeacherOwnerAccess.SubGroupAsync(db, teacherId, owner, subjectId, dayIndex, period, ct);
     }
 
-    private async Task<bool> TeachesAsync(string teacherId, string classId, string subjectId, CancellationToken ct)
-    {
-        var templates = await db.ScheduleTemplates.AsNoTracking().Include(t => t.Lessons)
-            .Where(t => t.ClassId == classId).ToListAsync(ct);
-        return templates.SelectMany(t => t.Lessons)
-            .Any(l => l.TeacherId == teacherId && l.SubjectId == subjectId);
-    }
+    /// <summary>
+    /// O'qituvchi shu egada (sinf yoki o'quv guruhi) shu fanni o'qitadimi.
+    /// Qoida <see cref="TeacherOwnerAccess"/> da — o'qituvchi web portali bilan
+    /// BITTA manba (G-12).
+    /// </summary>
+    private Task<bool> TeachesAsync(string teacherId, string classId, string subjectId, CancellationToken ct) =>
+        TeacherOwnerAccess.TeachesAsync(db, teacherId, classId, subjectId, ct);
 }

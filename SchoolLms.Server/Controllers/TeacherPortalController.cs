@@ -30,25 +30,20 @@ public class TeacherPortalController(
         return uid is null ? null : await db.Teachers.FirstOrDefaultAsync(t => t.UserId == uid);
     }
 
-    /// <summary>O'qituvchi shu sinfda shu fanni o'qitadimi (jadval template'lari bo'yicha)?</summary>
-    private async Task<bool> Teaches(string teacherId, string classId, string subjectId)
-    {
-        var templates = await db.ScheduleTemplates.Include(t => t.Lessons)
-            .Where(t => t.ClassId == classId).ToListAsync();
-        return templates.SelectMany(t => t.Lessons)
-            .Any(l => l.TeacherId == teacherId && l.SubjectId == subjectId);
-    }
+    /// <summary>
+    /// O'qituvchi shu EGADA (sinf yoki o'quv guruhi) shu fanni o'qitadimi?
+    /// Qoida <see cref="TeacherOwnerAccess"/> da — uchala yuza (admin, o'qituvchi
+    /// web, Telegram Mini App) uchun bitta manba (G-12).
+    /// </summary>
+    private Task<bool> Teaches(string teacherId, string classId, string subjectId) =>
+        TeacherOwnerAccess.TeachesAsync(db, teacherId, classId, subjectId);
 
-    /// <summary>O'qituvchi shu sinfda umuman dars beradimi yoki sinf rahbarimi?</summary>
-    private async Task<bool> TeachesClass(Teacher teacher, string classId)
-    {
-        var cls = await db.Classes.FindAsync(classId);
-        if (cls is null) return false;
-        if (!string.IsNullOrEmpty(teacher.HomeroomClass) && teacher.HomeroomClass == cls.Name) return true;
-        var templates = await db.ScheduleTemplates.Include(t => t.Lessons)
-            .Where(t => t.ClassId == classId).ToListAsync();
-        return templates.SelectMany(t => t.Lessons).Any(l => l.TeacherId == teacher.Id);
-    }
+    /// <summary>
+    /// O'qituvchi shu eganing O'QUVCHILARINI ko'ra oladimi: sinfda — rahbarlik
+    /// yoki dars, guruhda — biriktirilganlik yoki dars.
+    /// </summary>
+    private Task<bool> TeachesClass(Teacher teacher, string classId) =>
+        TeacherOwnerAccess.ReachesAsync(db, teacher, classId);
 
     // ---------- Profil ----------
 
@@ -284,40 +279,44 @@ public class TeacherPortalController(
         return Ok(new { ok = true });
     }
 
-    // ---------- Dars beradigan sinflar ----------
+    // ---------- Dars beradigan sinflar va o'quv guruhlari ----------
 
+    /// <summary>
+    /// O'qituvchi yetadigan egalar: sinflar (rahbarlik yoki dars) va o'quv
+    /// guruhlari (biriktirilganlik yoki dars). Guruhlar FAQAT cut-over
+    /// o'chirgichi yoqilganda qo'shiladi — o'chiq bo'lsa ro'yxat bugungisi
+    /// (G-12, §4.3).
+    ///
+    /// <para>
+    /// Sinflar avvalgidek daraja+nom bo'yicha, guruhlar esa ularning
+    /// ORTIDAN nomi bo'yicha keladi — eski mijoz kodi birinchi elementni
+    /// olishda sinfni oladi.
+    /// </para>
+    /// </summary>
     [HttpGet("classes")]
     public async Task<ActionResult<IEnumerable<TeacherClassDto>>> Classes()
     {
         var t = await Me();
         if (t is null) return NotFound();
 
-        var templates = await db.ScheduleTemplates.Include(x => x.Lessons).ToListAsync();
         var subjectNames = await db.Subjects.ToDictionaryAsync(s => s.Id, s => s.Name);
-        var classes = await db.Classes.ToListAsync();
+        var owners = await TeacherOwnerAccess.OwnersAsync(db, t);
 
-        // O'qituvchi qaysi sinfda qaysi fanlarni o'qitishini jadval template'laridan yig'amiz.
-        var taught = new Dictionary<string, HashSet<string>>(); // classId -> subjectIds
-        foreach (var tpl in templates)
-            foreach (var l in tpl.Lessons.Where(l => l.TeacherId == t.Id))
-            {
-                if (!taught.TryGetValue(tpl.ClassId, out var set))
-                    taught[tpl.ClassId] = set = new();
-                set.Add(l.SubjectId);
-            }
+        List<TeacherClassDto> Map(IEnumerable<TeacherOwner> source) =>
+            [.. source.Select(o => new TeacherClassDto(
+                o.Owner.Id, o.Owner.Name, 0, o.IsHomeroom,
+                [.. o.SubjectIds
+                    .Select(id => new SubjectDto(id, subjectNames.GetValueOrDefault(id, "")))
+                    .OrderBy(s => s.Name, StringComparer.OrdinalIgnoreCase)],
+                o.Owner.Kind))];
 
-        var result = new List<TeacherClassDto>();
-        foreach (var cls in classes)
-        {
-            var isHomeroom = !string.IsNullOrEmpty(t.HomeroomClass) && t.HomeroomClass == cls.Name;
-            taught.TryGetValue(cls.Id, out var subjIds);
-            if (!isHomeroom && (subjIds is null || subjIds.Count == 0)) continue;
-            var subjects = (subjIds ?? new())
-                .Select(id => new SubjectDto(id, subjectNames.GetValueOrDefault(id, "")))
-                .OrderBy(s => s.Name, StringComparer.OrdinalIgnoreCase).ToList();
-            result.Add(new TeacherClassDto(cls.Id, cls.Name, cls.Grade, isHomeroom, subjects));
-        }
-        return result.OrderBy(c => c.Grade).ThenBy(c => c.ClassName).ToList();
+        var classGrades = await db.Classes.ToDictionaryAsync(c => c.Id, c => c.Grade);
+        var classes = Map(owners.Where(o => o.Owner.IsClass))
+            .Select(c => c with { Grade = classGrades.GetValueOrDefault(c.ClassId) })
+            .OrderBy(c => c.Grade).ThenBy(c => c.ClassName).ToList();
+
+        classes.AddRange(Map(owners.Where(o => o.Owner.IsGroup)));
+        return classes;
     }
 
     // ---------- Jadval ----------
@@ -349,6 +348,15 @@ public class TeacherPortalController(
 
     // ---------- Jurnal (faqat o'zi dars beradigan sinf+fan) ----------
 
+    /// <summary>
+    /// Eganing jurnal ro'yxati — <see cref="LessonRoster"/> dan (G-5/G-12).
+    ///
+    /// <para>
+    /// <b>Bugungi xatti-harakat saqlandi:</b> sinf uchun ro'yxat AYNAN eski
+    /// so'rov — <c>class_name == &lt;sinf nomi&gt;</c>, ARXIVLANGANLAR BILAN
+    /// birga (bu ekran ularni ko'rsatadi), F.I.SH bo'yicha tartiblangan.
+    /// </para>
+    /// </summary>
     [HttpGet("journal/students")]
     public async Task<ActionResult<IEnumerable<StudentDto>>> JournalStudents([FromQuery] string classId)
     {
@@ -357,20 +365,20 @@ public class TeacherPortalController(
         if (!t.Permissions.Contains(TeacherPermissions.Journal) || !await TeachesClass(t, classId))
             return Forbid();
 
-        var cls = await db.Classes.FindAsync(classId);
-        if (cls is null) return NotFound();
-        return await db.Students.Where(s => s.ClassName == cls.Name)
-            .OrderBy(s => s.FullName)
-            // O'qituvchi jurnalida pul KO'RSATILMAYDI: `Balance` null qoladi
-            // (P1-21, SPEC §4.3 — o'quvchining qarzi o'qituvchining ishi emas).
-            .Select(s => new StudentDto(
+        var owner = await LessonRoster.OwnerAsync(db, classId);
+        if (owner is null) return NotFound();
+        var students = await LessonRoster.ForLessonAsync(db, owner, includeArchived: true);
+
+        // O'qituvchi jurnalida pul KO'RSATILMAYDI: `Balance` null qoladi
+        // (P1-21, SPEC §4.3 — o'quvchining qarzi o'qituvchining ishi emas).
+        return students.Select(s => new StudentDto(
                 s.Id, s.FullName, s.BirthDate, s.Address, s.Gender,
                 s.ParentFullName, s.ParentPhone, s.ClassName, s.EnrollmentDate, null,
                 s.SubGroup,
                 s.LastName, s.FirstName, s.MiddleName, s.BirthCertificateUrl,
                 s.ParentLastName, s.ParentFirstName, s.ParentMiddleName, s.ParentPassportUrl,
                 s.IsArchived, s.ArchivedAt, s.ArchiveReason))
-            .ToListAsync();
+            .ToList();
     }
 
     [HttpGet("journal/columns")]
@@ -503,8 +511,8 @@ public class TeacherPortalController(
         var t = await Me();
         if (t is null) return NotFound();
         if (!await Teaches(t.Id, classId, subjectId)) return Forbid();
-        var cls = await db.Classes.FindAsync(classId);
-        if (cls is null) return NotFound();
+        var owner = await LessonRoster.OwnerAsync(db, classId);
+        if (owner is null) return NotFound();
 
         var current = AppClock.Now.ToString("yyyy-MM");
         var gradeMonths = await db.EvaluationGrades
@@ -517,8 +525,9 @@ public class TeacherPortalController(
 
         var types = await db.EvaluationTypes.OrderBy(x => x.CreatedAt)
             .Select(x => new EvaluationTypeDto(x.Id, x.Name, x.Description)).ToListAsync();
-        var students = await db.Students.Where(s => s.ClassName == cls.Name && !s.IsArchived)
-            .OrderBy(s => s.FullName).Select(s => new { s.Id, s.FullName, s.ClassName }).ToListAsync();
+        // Ro'yxat — egadan (G-5): sinfda bugungi so'rovning aynan o'zi, guruhda faol a'zolar.
+        var students = (await LessonRoster.ForLessonAsync(db, owner))
+            .Select(s => new { s.Id, s.FullName, s.ClassName }).ToList();
         var gradesByStudent = (await db.EvaluationGrades
                 .Where(g => g.SubjectId == subjectId && g.Month == month).ToListAsync())
             .GroupBy(g => g.StudentId).ToDictionary(g => g.Key, g => g.ToList());
@@ -551,10 +560,19 @@ public class TeacherPortalController(
             return BadRequest(new { message = "Oy tanlanmagan" });
         if (!await Teaches(t.Id, req.ClassId!, req.SubjectId!)) return Forbid();
 
-        var cls = await db.Classes.FindAsync(req.ClassId);
+        // O'quvchi shu EGAning ro'yxatida bo'lishi shart — sinfda sinf nomi bo'yicha
+        // (bugungi qoida), guruhda esa faol a'zolik bo'yicha.
+        var owner = await LessonRoster.OwnerAsync(db, req.ClassId!);
         var student = await db.Students.FindAsync(req.StudentId);
-        if (cls is null || student is null || student.ClassName != cls.Name)
-            return BadRequest(new { message = "O'quvchi bu sinfga tegishli emas" });
+        if (owner is null || student is null
+            || !(await LessonRoster.ForLessonAsync(db, owner, includeArchived: true))
+                .Any(s => s.Id == student.Id))
+            return BadRequest(new
+            {
+                message = owner?.IsGroup == true
+                    ? "O'quvchi bu guruhga tegishli emas"
+                    : "O'quvchi bu sinfga tegishli emas",
+            });
 
         var subj = req.SubjectId!;
         var existing = await db.EvaluationGrades.FirstOrDefaultAsync(g =>
@@ -630,6 +648,20 @@ public class TeacherPortalController(
         if (!await HasPerm(TeacherPermissions.Messages)) return Forbid();
         var uid = User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "";
         return await chat.ClassNamesForUserAsync(uid, "teacher");
+    }
+
+    /// <summary>
+    /// Kanallar NOMI bilan (G-17): o'quv guruhi kanalining kaliti
+    /// <c>grp:&lt;id&gt;</c> — uni ekranda ko'rsatib bo'lmaydi, shuning uchun
+    /// nomni server beradi. <c>chat/classes</c> esa faqat kalitlarni qaytaradi
+    /// va eski mijozlar uchun o'zgarishsiz qoldi.
+    /// </summary>
+    [HttpGet("chat/channels")]
+    public async Task<ActionResult<IEnumerable<ChatChannelDto>>> ChatChannels()
+    {
+        if (!await HasPerm(TeacherPermissions.Messages)) return Forbid();
+        var uid = User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "";
+        return await chat.ChannelsForUserAsync(uid, "teacher");
     }
 
     [HttpGet("chat/{className}")]

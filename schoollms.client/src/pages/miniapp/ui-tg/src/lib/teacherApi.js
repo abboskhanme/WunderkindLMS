@@ -76,8 +76,13 @@ export const teacherApi = {
 
   /* ---------- xabarlar ---------- */
 
-  /** O'qituvchi a'zo bo'lgan chat kanallari (sinflar + xodimlar guruhi). */
-  chatChannels: () => api.get(`${BASE}/chat/classes`),
+  /**
+   * O'qituvchi a'zo bo'lgan chat kanallari — `{ key, label, kind }` ro'yxati
+   * (sinflar, o'quv guruhlari va xodimlar guruhi). O'quv guruhining kaliti
+   * `grp:<id>`, ya'ni uni ekranda ko'rsatib bo'lmaydi — shuning uchun nom
+   * (`label`) serverdan keladi (G-17).
+   */
+  chatChannels: () => api.get(`${BASE}/chat/channels`),
   /** Har kanalning oxirgi xabar vaqti (ISO) yoki null. */
   chatLastMessages: () => api.get(`${BASE}/chat/last-messages`),
   /** Kanal xabarlari. `since` berilsa — faqat undan keyingilari (yangilanish/o'qilmagan). */

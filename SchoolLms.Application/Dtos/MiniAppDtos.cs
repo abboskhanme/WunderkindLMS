@@ -182,14 +182,21 @@ public record TgRosterStudentDto(
     string? ReasonId, string? ReasonName, bool IsLate, int? Grade);
 
 /// <summary>
-/// Bir dars uchun to'liq yo'qlama ekrani: sinf, fan, sana, dars raqami,
-/// ruxsat etilgan sabablar va o'quvchilar.
+/// Bir dars uchun to'liq yo'qlama ekrani: ega (sinf yoki o'quv guruhi), fan,
+/// sana, dars raqami, ruxsat etilgan sabablar va o'quvchilar.
 /// </summary>
+/// <param name="OwnerKind">
+/// <c>class</c> | <c>group</c> (<c>LessonOwnerKind</c>; students-parity.md
+/// §2.1.4). Guruh darsida <paramref name="ClassId"/> guruh id'sini,
+/// <paramref name="ClassName"/> esa guruh nomini saqlaydi. Oxirida turibdi va
+/// sukuti <c>class</c> — eski mijoz kodi buzilmaydi.
+/// </param>
 public record TgRosterDto(
     string ClassId, string ClassName, string SubjectId, string SubjectName,
     string Date, int Period, int Quarter, bool Conducted, string? Topic, string? Homework,
     List<AbsenceReasonDto> Reasons,
-    List<TgRosterStudentDto> Students);
+    List<TgRosterStudentDto> Students,
+    string OwnerKind = SchoolLms.Domain.LessonOwnerKind.Class);
 
 /// <summary>O'qituvchi yaqinda yozgan bitta jurnal yozuvi.</summary>
 public record TgJournalRecentDto(

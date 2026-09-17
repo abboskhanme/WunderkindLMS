@@ -85,27 +85,31 @@ public static class JournalSettingsGuard
     /// darsda BO'LGAN, ya'ni undan ham baho kutiladi; kelmagan o'quvchidan esa kutilmaydi —
     /// aks holda darsni umuman yopib bo'lmasdi.
     /// </para>
-    /// <para>Ro'yxat bo'sh bo'lsa (sinf topilmadi yoki o'quvchisi yo'q) — <c>true</c>:
+    /// <para>Ro'yxat bo'sh bo'lsa (ega topilmadi yoki o'quvchisi yo'q) — <c>true</c>:
     /// bo'sh sinf darsni yopishga to'sqinlik qilmasligi kerak.</para>
+    /// <para>
+    /// <b>Ro'yxat <see cref="LessonRoster"/> dan (G-5/G-12).</b> Sinf uchun u
+    /// bugungi so'rovning aynan o'zi (<c>class_name == &lt;sinf nomi&gt;</c>,
+    /// arxivlanganlarsiz, bo'linish filtri bilan); guruh uchun esa guruhning
+    /// faol a'zolari. Nusxa ko'chirilgan ro'yxat so'rovi shu bilan yo'q qilindi.
+    /// </para>
     /// </summary>
     public static async Task<bool> SlotFullyGradedAsync(
         IAppDbContext db, string classId, string subjectId, int quarter,
         string date, int period, int subGroup, CancellationToken ct = default)
     {
-        var cls = await db.Classes.AsNoTracking().FirstOrDefaultAsync(c => c.Id == classId, ct);
-        if (cls is null) return true;
+        var owner = await LessonRoster.OwnerAsync(db, classId, ct);
+        if (owner is null) return true;
 
         // Bo'lingan darsda (SubGroup != 0) faqat o'sha guruh qatnashadi; 0 — butun sinf.
-        var roster = await db.Students.AsNoTracking()
-            .Where(s => !s.IsArchived && s.ClassName == cls.Name)
-            .Where(s => subGroup == 0 || s.SubGroup == subGroup)
-            .Select(s => s.Id)
-            .ToListAsync(ct);
+        // Guruh egasida bo'linish yo'q, `LessonRoster` uni o'zi e'tiborsiz qoldiradi.
+        var roster = (await LessonRoster.ForLessonAsync(db, owner, subGroup, ct: ct))
+            .Select(s => s.Id).ToList();
         if (roster.Count == 0) return true;
 
         var entries = await db.JournalEntries.AsNoTracking()
             .Where(e => e.ClassId == classId && e.SubjectId == subjectId && e.Quarter == quarter
-                && e.Date == date && e.Period == period)
+                && e.Date == date && e.Period == period && e.OwnerKind == owner.Kind)
             .Select(e => new { e.StudentId, e.Grade, e.ReasonId })
             .ToListAsync(ct);
         var byStudent = entries
