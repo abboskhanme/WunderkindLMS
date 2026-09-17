@@ -273,24 +273,19 @@ public class TurnstileService
         return candidates.Count == 0 ? "" : candidates.Min()!;
     }
 
-    /// <summary>teacherId → int[6]: har hafta kunidagi ENG ERTA (eng kichik) dars raqami (0 = dars yo'q).</summary>
-    private static async Task<Dictionary<string, int[]>> FirstPeriodByWeekdayAsync(IAppDbContext db)
-    {
-        var classSet = (await db.Classes.Where(c => !c.IsArchived).Select(c => c.Id).ToListAsync()).ToHashSet();
-        var templates = (await db.ScheduleTemplates.Include(x => x.Lessons).ToListAsync())
-            .Where(x => classSet.Contains(x.ClassId)).ToList();
-        var main = templates.GroupBy(x => x.ClassId)
-            .Select(g => g.OrderByDescending(x => x.Lessons.Count).ThenBy(x => x.Id).First());
-
-        var res = new Dictionary<string, int[]>();
-        foreach (var tpl in main)
-            foreach (var l in tpl.Lessons.Where(l => !string.IsNullOrEmpty(l.TeacherId) && l.Day is >= 0 and < 6 && l.Period > 0))
-            {
-                if (!res.TryGetValue(l.TeacherId, out var arr)) res[l.TeacherId] = arr = new int[6];
-                if (arr[l.Day] == 0 || l.Period < arr[l.Day]) arr[l.Day] = l.Period;
-            }
-        return res;
-    }
+    /// <summary>
+    /// teacherId → int[6]: har hafta kunidagi ENG ERTA (eng kichik) dars raqami (0 = dars yo'q).
+    ///
+    /// <para>
+    /// G-14: manba endi <see cref="TeacherLessons.FirstPeriodByWeekdayAsync"/> —
+    /// sinf va GURUH shablonlarining ikkalasi. Guruhdagina dars beradigan
+    /// o'qituvchi ilgari "darsi yo'q" deb hisoblanardi va undan faqat
+    /// maktabning umumiy ish boshlanish vaqti kutilardi. O'chirgich o'chiq
+    /// bo'lsa natija bugungining aynan o'zi (guruh egalari ro'yxatga kirmaydi).
+    /// </para>
+    /// </summary>
+    private static Task<Dictionary<string, int[]>> FirstPeriodByWeekdayAsync(IAppDbContext db) =>
+        TeacherLessons.FirstPeriodByWeekdayAsync(db);
 
     private static async Task<Dictionary<int, string>> LessonStartByPeriodAsync(IAppDbContext db) =>
         (await db.LessonTimes.Where(t => t.StartTime != "").ToListAsync())

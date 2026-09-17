@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import type {
-  SchoolClass,
+  LessonOwnerKind,
   ScheduleTemplate,
   SchoolSettings,
   Subject,
@@ -9,6 +9,8 @@ import type {
   WeekAssignment,
 } from '@/types'
 import { getClasses } from '@/api/services/classes'
+import { getGroups } from '@/api/services/groups'
+import { getGroupLessonsSwitch } from '@/api/services/groupLessons'
 import { getTeachers } from '@/api/services/teachers'
 import { getSubjects } from '@/api/services/subjects'
 import { getSettings } from '@/api/services/settings'
@@ -29,8 +31,18 @@ const control =
  * biriktirilgan jadval kun×dars to'rida ko'rsatiladi. Jadval yaratish/biriktirish alohida
  * "Dars jadvali yaratish" bo'limida.
  */
+/**
+ * Jadval EGASI — sinf yoki o'quv guruhi (§2.1.4). Guruhlar ro'yxatga faqat
+ * guruh darslari o'chirgichi yoqilganda qo'shiladi.
+ */
+interface Owner {
+  id: string
+  name: string
+  kind: LessonOwnerKind
+}
+
 export function ClassScheduleViewPage() {
-  const [classes, setClasses] = useState<SchoolClass[]>([])
+  const [owners, setOwners] = useState<Owner[]>([])
   const [subjects, setSubjects] = useState<Subject[]>([])
   const [teachers, setTeachers] = useState<Teacher[]>([])
   const [settings, setSettings] = useState<SchoolSettings | null>(null)
@@ -46,13 +58,26 @@ export function ClassScheduleViewPage() {
   const [dataLoading, setDataLoading] = useState(false)
 
   useEffect(() => {
-    Promise.all([getClasses(), getSubjects(), getTeachers(), getSettings()])
-      .then(([cls, subs, tchs, st]) => {
-        setClasses(cls)
+    Promise.all([
+      getClasses(),
+      getSubjects(),
+      getTeachers(),
+      getSettings(),
+      getGroupLessonsSwitch().catch(() => null),
+    ])
+      .then(async ([cls, subs, tchs, st, flag]) => {
         setSubjects(subs)
         setTeachers(tchs)
         setSettings(st)
-        setClassId(cls[0]?.id ?? '')
+
+        const list: Owner[] = cls.map((c) => ({ id: c.id, name: c.name, kind: 'class' as const }))
+        if (flag?.enabled) {
+          const groups = await getGroups().catch(() => [])
+          list.push(...groups.map((g) => ({ id: g.id, name: g.name, kind: 'group' as const })))
+        }
+        setOwners(list)
+        setClassId(list[0]?.id ?? '')
+
         const { quarter: q, week: w } = getCurrentQuarterAndWeek(st.quarters)
         setQuarter(q)
         setWeek(w)
@@ -136,7 +161,7 @@ export function ClassScheduleViewPage() {
 
       {loading ? (
         <Loader label="Yuklanmoqda..." />
-      ) : classes.length === 0 ? (
+      ) : owners.length === 0 ? (
         <Card>
           <p className="py-8 text-center text-sm text-slate-400">Sinflar yo'q</p>
         </Card>
@@ -149,9 +174,9 @@ export function ClassScheduleViewPage() {
               onChange={(e) => setClassId(e.target.value)}
               className={cn(control, 'min-w-[160px]')}
             >
-              {classes.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
+              {owners.map((o) => (
+                <option key={o.id} value={o.id}>
+                  {o.kind === 'group' ? `Guruh: ${o.name}` : o.name}
                 </option>
               ))}
             </select>
@@ -202,7 +227,7 @@ export function ClassScheduleViewPage() {
             <Card className="p-0">
               <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 p-4">
                 <h2 className="font-semibold text-slate-800">
-                  {classes.find((c) => c.id === classId)?.name} — {week}-hafta
+                  {owners.find((o) => o.id === classId)?.name} — {week}-hafta
                 </h2>
                 {template ? (
                   <span className="rounded-md bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-700">

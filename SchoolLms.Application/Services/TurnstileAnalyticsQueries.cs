@@ -394,7 +394,10 @@ public class TurnstileAnalyticsQueries(IAppDbContext db)
         {
             // Jadvalga ko'ra bu sinfda bugun dars yo'q bo'lsa — qatorni umuman chiqarmaymiz,
             // aks holda shanba kuni "davomat olinmagan" degan soxta raqam paydo bo'lardi.
-            if (!DayExpectation(snap, group.Key, wd).SchoolDay) continue;
+            // G-14: sinfda dars bo'lmasa ham, sinfning birorta bolasi bugun GURUH darsiga
+            // kelishi kerak bo'lsa — kun baribir o'quv kuni va qator chiqadi.
+            if (!ClassDayExpectation(snap, group.Key, wd).SchoolDay
+                && !group.Any(st => GroupExpectation(snap, st, wd).HasLesson)) continue;
 
             int cExpected = 0, cLinked = 0, cTs = 0, cPresent = 0, cAbsent = 0, cUnchecked = 0,
                 cTsOnly = 0, cJOnly = 0;
@@ -479,10 +482,21 @@ public class TurnstileAnalyticsQueries(IAppDbContext db)
         public int EarlyMinutes { get; init; }
     }
 
+    /// <param name="ClassStart">Sinf nomi → hafta kuni bo'yicha birinchi dars boshlanishi.</param>
+    /// <param name="ClassEnd">Sinf nomi → hafta kuni bo'yicha oxirgi dars tugashi.</param>
+    /// <param name="GroupBounds">
+    /// G-14: o'quvchi id'si → uning GURUH darslarining hafta kuni chegaralari
+    /// (birinchi/oxirgi dars RAQAMI). O'chirgich o'chiq bo'lsa — bo'sh lug'at,
+    /// ya'ni kutilgan vaqt bugungidek faqat sinfdan kelib chiqadi.
+    /// </param>
+    /// <param name="StartClock">Dars raqami → boshlanish vaqti "HH:mm".</param>
+    /// <param name="EndClock">Dars raqami → tugash vaqti "HH:mm".</param>
     private sealed record Snapshot(
         SchoolMeta? Meta, int Grace, List<Student> Students, List<string> SchoolDays,
         Dictionary<string, string[]> ClassStart, Dictionary<string, string[]> ClassEnd,
-        Dictionary<string, List<string>> Passes, List<LessonTime> Periods, string Today);
+        Dictionary<string, List<string>> Passes, List<LessonTime> Periods, string Today,
+        Dictionary<string, (int[] First, int[] Last)> GroupBounds,
+        Dictionary<int, string> StartClock, Dictionary<int, string> EndClock);
 
     private async Task<Snapshot> LoadAsync(DateOnly from, DateOnly to, string? className, CancellationToken ct)
     {
@@ -541,9 +555,17 @@ public class TurnstileAnalyticsQueries(IAppDbContext db)
             .Where(t => t.StartTime != "").OrderBy(t => t.Period).ToListAsync(ct);
         var (start, end) = await ClassBoundsAsync(periods, ct);
 
+        var startClock = periods.GroupBy(t => t.Period)
+            .ToDictionary(g => g.Key, g => Clock(g.First().StartTime));
+        var endClock = periods.GroupBy(t => t.Period)
+            .ToDictionary(g => g.Key, g => Clock(g.First().EndTime));
+        // G-14: guruh darslari USTIGA qo'shiladi. O'chirgich o'chiq bo'lsa bo'sh.
+        var groupBounds = await PupilTimetable.GroupBoundsByStudentAsync(db, ct);
+
         return new Snapshot(
             meta, meta?.LateGraceMinutes ?? 0, students, schoolDays,
-            start, end, passes, periods, Iso(AppClock.Today));
+            start, end, passes, periods, Iso(AppClock.Today),
+            groupBounds, startClock, endClock);
     }
 
     /// <summary>
@@ -586,11 +608,43 @@ public class TurnstileAnalyticsQueries(IAppDbContext db)
     }
 
     /// <summary>
-    /// Sinf uchun o'sha hafta kunidagi kutilgan kelish va ketish vaqti.
+    /// O'QUVCHI uchun o'sha hafta kunidagi kutilgan kelish va ketish vaqti (G-14).
+    ///
+    /// <para>
+    /// Ilgari bu faqat SINF nomidan hisoblanardi. Guruh darsi qo'shilgach
+    /// bola sinfining birinchi darsidan ERTA kelishi yoki oxirgi darsidan
+    /// KEYIN ketishi mumkin — shuning uchun kutilgan vaqt endi sinf VA
+    /// guruhlarning ENG ERTA boshlanishi va ENG KECH tugashi bo'yicha olinadi.
+    /// </para>
+    /// <para>
+    /// Sinfda o'sha kuni dars yo'q, lekin guruhda bor bo'lsa — bu baribir
+    /// O'QUV KUNI (ilgari bunday kun "kelmadi" deb ham sanalmasdi).
+    /// O'chirgich o'chiq bo'lsa guruh chegaralari bo'sh va natija bugungining
+    /// aynan o'zi.
+    /// </para>
+    /// </summary>
+    private static (bool SchoolDay, string In, string Out) DayExpectation(
+        Snapshot snap, Student student, int weekday)
+    {
+        if (weekday is < 0 or > 5) return (false, "", "");
+
+        var (groupDay, groupIn, groupOut) = GroupExpectation(snap, student, weekday);
+
+        var (classDay, classIn, classOut) = ClassDayExpectation(snap, student.ClassName ?? "", weekday);
+        if (!classDay)
+            // Sinfda dars yo'q — kun faqat guruh darsi hisobiga o'quv kuni bo'ladi.
+            return groupDay ? (true, groupIn, groupOut) : (false, "", "");
+
+        return (true, Earlier(classIn, groupIn), Later(classOut, groupOut));
+    }
+
+    /// <summary>
+    /// SINF uchun kutilgan vaqt — o'zgarmagan, bugungi qoida.
     /// Jadvali bor, lekin o'sha kuni darsi yo'q sinf uchun — bu O'QUV KUNI EMAS.
     /// Jadvali umuman yo'q sinf uchun zaxira: maktabning ish boshlanish vaqti.
     /// </summary>
-    private static (bool SchoolDay, string In, string Out) DayExpectation(Snapshot snap, string className, int weekday)
+    private static (bool SchoolDay, string In, string Out) ClassDayExpectation(
+        Snapshot snap, string className, int weekday)
     {
         if (weekday is < 0 or > 5) return (false, "", "");
         if (snap.ClassStart.TryGetValue(className, out var starts))
@@ -602,6 +656,27 @@ public class TurnstileAnalyticsQueries(IAppDbContext db)
         }
         return (true, Clock(snap.Meta?.WorkStartTime ?? ""), "");
     }
+
+    /// <summary>O'quvchining GURUH darslaridan kelib chiqadigan kutilgan vaqt.</summary>
+    private static (bool HasLesson, string In, string Out) GroupExpectation(
+        Snapshot snap, Student student, int weekday)
+    {
+        if (!snap.GroupBounds.TryGetValue(student.Id, out var bounds)) return (false, "", "");
+        var first = bounds.First[weekday];
+        if (first <= 0) return (false, "", "");
+        var last = bounds.Last[weekday];
+        return (true,
+            snap.StartClock.GetValueOrDefault(first, ""),
+            last > 0 ? snap.EndClock.GetValueOrDefault(last, "") : "");
+    }
+
+    /// <summary>Ikkitasidan ERTAsi ("HH:mm"); bo'shi e'tiborga olinmaydi.</summary>
+    private static string Earlier(string a, string b) =>
+        a.Length != 5 ? b : b.Length != 5 ? a : string.CompareOrdinal(a, b) <= 0 ? a : b;
+
+    /// <summary>Ikkitasidan KECHi ("HH:mm"); bo'shi e'tiborga olinmaydi.</summary>
+    private static string Later(string a, string b) =>
+        a.Length != 5 ? b : b.Length != 5 ? a : string.CompareOrdinal(a, b) >= 0 ? a : b;
 
     /// <summary>O'quvchi-kun faktlari: kelish, ketish, kechikish va erta ketish.</summary>
     private IEnumerable<DayFact> Facts(Snapshot snap)
@@ -616,7 +691,7 @@ public class TurnstileAnalyticsQueries(IAppDbContext db)
             {
                 // Maktabga hali qabul qilinmagan kun — "kelmadi" emas.
                 if (enrolled is not null && string.CompareOrdinal(date, enrolled) < 0) continue;
-                var (schoolDay, expIn, expOut) = DayExpectation(snap, st.ClassName ?? "", Weekday(date));
+                var (schoolDay, expIn, expOut) = DayExpectation(snap, st, Weekday(date));
                 if (!schoolDay) continue;
 
                 var times = snap.Passes.GetValueOrDefault(st.Id + "|" + date) ?? [];

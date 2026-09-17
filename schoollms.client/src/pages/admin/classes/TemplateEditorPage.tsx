@@ -1,22 +1,27 @@
 import { useEffect, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { ArrowLeft } from 'lucide-react'
-import type { SchoolClass, ScheduleTemplate } from '@/types'
-import { getClasses } from '@/api/services/classes'
+import type { ScheduleTemplate } from '@/types'
 import { getTemplates } from '@/api/services/scheduleTemplates'
 import { Loader } from '@/components/ui/Loader'
 import { ScheduleBoard } from './ScheduleBoard'
+import { resolveScheduleOwner, type ScheduleOwner } from './scheduleOwner'
 
+/**
+ * Bitta jadval variantini tahrirlash. `:id` — EGAning id'si: sinf yoki
+ * o'quv guruhi (`docs/modules/students-parity.md` §2.1.4), shuning uchun
+ * sahifa ikkalasi uchun ham bitta.
+ */
 export function TemplateEditorPage() {
   const { id = '', templateId = '' } = useParams()
-  const [cls, setCls] = useState<SchoolClass | null>(null)
+  const [owner, setOwner] = useState<ScheduleOwner | null>(null)
   const [template, setTemplate] = useState<ScheduleTemplate | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    Promise.all([getClasses(), getTemplates(id)])
-      .then(([cl, tpls]) => {
-        setCls(cl.find((c) => c.id === id) ?? null)
+    Promise.all([resolveScheduleOwner(id), getTemplates(id)])
+      .then(([o, tpls]) => {
+        setOwner(o)
         setTemplate(tpls.find((t) => t.id === templateId) ?? null)
       })
       .finally(() => setLoading(false))
@@ -36,7 +41,7 @@ export function TemplateEditorPage() {
             {template ? template.name : 'Jadval'}
           </h1>
           <p className="text-sm text-slate-400">
-            {cls ? `${cls.name}-sinf · ` : ''}soatni bosing, yon paneldan fan va o'qituvchi tanlab yarating
+            {owner ? `${owner.subtitle} · ` : ''}soatni bosing, yon paneldan fan va o'qituvchi tanlab yarating
           </p>
         </div>
       </div>

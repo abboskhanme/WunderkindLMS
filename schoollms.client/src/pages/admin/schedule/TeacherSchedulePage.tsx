@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import type {
-  SchoolClass,
+  LessonOwnerKind,
   ScheduleTemplate,
   SchoolSettings,
   Subject,
@@ -9,6 +9,8 @@ import type {
   WeekAssignment,
 } from '@/types'
 import { getClasses } from '@/api/services/classes'
+import { getGroups } from '@/api/services/groups'
+import { getGroupLessonsSwitch } from '@/api/services/groupLessons'
 import { getTeachers } from '@/api/services/teachers'
 import { getSubjects } from '@/api/services/subjects'
 import { getSettings } from '@/api/services/settings'
@@ -23,11 +25,26 @@ import { Loader } from '@/components/ui/Loader'
 const control =
   'rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-brand-400'
 
-/** Bitta katakdagi dars (o'qituvchi nuqtai nazaridan: qaysi sinf, qaysi fan) */
+/** Bitta katakdagi dars (o'qituvchi nuqtai nazaridan: qaysi ega, qaysi fan) */
 interface CellLesson {
+  /** Eganing nomi — sinf nomi yoki o'quv guruhi nomi */
   className: string
   subjectName: string
   subGroup: number
+  ownerKind: LessonOwnerKind
+}
+
+/**
+ * Jadval EGASI — sinf yoki o'quv guruhi (§2.1.4).
+ *
+ * Guruhlar ro'yxatga faqat guruh darslari o'chirgichi yoqilganda qo'shiladi;
+ * o'chiq bo'lsa bu sahifa avvalgidek faqat sinflarni ko'radi va bitta ham
+ * raqami o'zgarmaydi.
+ */
+interface Owner {
+  id: string
+  name: string
+  kind: LessonOwnerKind
 }
 
 /**
@@ -37,54 +54,68 @@ interface CellLesson {
 export function TeacherSchedulePage() {
   const [teachers, setTeachers] = useState<Teacher[]>([])
   const [subjects, setSubjects] = useState<Subject[]>([])
-  const [classes, setClasses] = useState<SchoolClass[]>([])
+  const [owners, setOwners] = useState<Owner[]>([])
   const [settings, setSettings] = useState<SchoolSettings | null>(null)
-  const [templatesByClass, setTemplatesByClass] = useState<Record<string, ScheduleTemplate[]>>({})
+  const [templatesByOwner, setTemplatesByOwner] = useState<Record<string, ScheduleTemplate[]>>({})
   const [loading, setLoading] = useState(true)
 
   const [teacherId, setTeacherId] = useState('')
   const [quarter, setQuarter] = useState(1)
   const [week, setWeek] = useState(1)
 
-  const [assignmentsByClass, setAssignmentsByClass] = useState<Record<string, WeekAssignment[]>>({})
+  const [assignmentsByOwner, setAssignmentsByOwner] = useState<Record<string, WeekAssignment[]>>({})
   const [assignLoading, setAssignLoading] = useState(false)
 
-  // Boshlang'ich yuklash: o'qituvchilar, fanlar, sinflar, sozlamalar + har sinf jadvallari
+  // Boshlang'ich yuklash: o'qituvchilar, fanlar, EGALAR (sinf + guruh), sozlamalar
+  // va har eganing jadvallari.
   useEffect(() => {
-    Promise.all([getTeachers(), getSubjects(), getClasses(), getSettings()])
-      .then(async ([tchs, subs, cls, st]) => {
+    Promise.all([
+      getTeachers(),
+      getSubjects(),
+      getClasses(),
+      getSettings(),
+      getGroupLessonsSwitch().catch(() => null),
+    ])
+      .then(async ([tchs, subs, cls, st, flag]) => {
         setTeachers(tchs)
         setSubjects(subs)
-        setClasses(cls)
         setSettings(st)
         setTeacherId(tchs[0]?.id ?? '')
         const { quarter: q, week: w } = getCurrentQuarterAndWeek(st.quarters)
         setQuarter(q)
         setWeek(w)
-        const tpls = await Promise.all(cls.map((c) => getTemplates(c.id)))
+
+        const list: Owner[] = cls.map((c) => ({ id: c.id, name: c.name, kind: 'class' as const }))
+        if (flag?.enabled) {
+          const groups = await getGroups().catch(() => [])
+          list.push(...groups.map((g) => ({ id: g.id, name: g.name, kind: 'group' as const })))
+        }
+        setOwners(list)
+
+        const tpls = await Promise.all(list.map((o) => getTemplates(o.id)))
         const map: Record<string, ScheduleTemplate[]> = {}
-        cls.forEach((c, i) => {
-          map[c.id] = tpls[i]
+        list.forEach((o, i) => {
+          map[o.id] = tpls[i]
         })
-        setTemplatesByClass(map)
+        setTemplatesByOwner(map)
       })
       .finally(() => setLoading(false))
   }, [])
 
-  // Chorak o'zgarsa — barcha sinflar uchun shu chorak hafta-biriktirishlarini yuklaymiz
+  // Chorak o'zgarsa — barcha EGALAR uchun shu chorak hafta-biriktirishlarini yuklaymiz
   useEffect(() => {
-    if (classes.length === 0) return
+    if (owners.length === 0) return
     let active = true
     // eslint-disable-next-line react-hooks/set-state-in-effect -- yangi so'rovdan oldin holatni belgilash (maqsadli)
     setAssignLoading(true)
-    Promise.all(classes.map((c) => getWeekAssignments(c.id, quarter)))
+    Promise.all(owners.map((o) => getWeekAssignments(o.id, quarter)))
       .then((res) => {
         if (!active) return
         const map: Record<string, WeekAssignment[]> = {}
-        classes.forEach((c, i) => {
-          map[c.id] = res[i]
+        owners.forEach((o, i) => {
+          map[o.id] = res[i]
         })
-        setAssignmentsByClass(map)
+        setAssignmentsByOwner(map)
       })
       .finally(() => {
         if (active) setAssignLoading(false)
@@ -92,7 +123,7 @@ export function TeacherSchedulePage() {
     return () => {
       active = false
     }
-  }, [classes, quarter])
+  }, [owners, quarter])
 
   const weeks = useMemo(() => {
     if (!settings) return []
@@ -114,24 +145,25 @@ export function TeacherSchedulePage() {
   const grid = useMemo(() => {
     const g: Record<number, Record<number, CellLesson[]>> = {}
     if (!teacherId) return g
-    for (const c of classes) {
-      const tid = assignmentsByClass[c.id]?.find((a) => a.week === week)?.templateId
+    for (const o of owners) {
+      const tid = assignmentsByOwner[o.id]?.find((a) => a.week === week)?.templateId
       if (!tid) continue
-      const tpl = templatesByClass[c.id]?.find((t) => t.id === tid)
+      const tpl = templatesByOwner[o.id]?.find((t) => t.id === tid)
       if (!tpl) continue
       for (const l of tpl.lessons) {
         if (l.teacherId !== teacherId) continue
         ;(g[l.period] ??= {})
         ;(g[l.period][l.day] ??= []).push({
-          className: c.name,
+          className: o.name,
           subjectName: subjectName(l.subjectId),
           subGroup: l.subGroup ?? 0,
+          ownerKind: o.kind,
         })
       }
     }
     return g
     // eslint-disable-next-line react-hooks/exhaustive-deps -- subjectName subjects'ga bog'liq
-  }, [teacherId, classes, assignmentsByClass, templatesByClass, week, subjects])
+  }, [teacherId, owners, assignmentsByOwner, templatesByOwner, week, subjects])
 
   const lessonCount = useMemo(
     () =>
@@ -280,7 +312,16 @@ export function TeacherSchedulePage() {
                                           </span>
                                         )}
                                       </div>
-                                      <p className="mt-0.5 text-xs text-brand-700">{s.className}</p>
+                                      <p
+                                        className={cn(
+                                          'mt-0.5 text-xs',
+                                          s.ownerKind === 'group' ? 'text-violet-700' : 'text-brand-700',
+                                        )}
+                                      >
+                                        {s.ownerKind === 'group'
+                                          ? `Guruh: ${s.className}`
+                                          : s.className}
+                                      </p>
                                     </div>
                                   ))}
                                 </div>
@@ -294,7 +335,8 @@ export function TeacherSchedulePage() {
 
                   {lessonCount === 0 && (
                     <p className="pt-4 text-center text-sm text-slate-400">
-                      Bu hafta uchun dars topilmadi (sinflarga jadval biriktirilganini tekshiring)
+                      Bu hafta uchun dars topilmadi (sinf va guruhlarga jadval biriktirilganini
+                      tekshiring)
                     </p>
                   )}
                 </div>

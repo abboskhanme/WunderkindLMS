@@ -242,7 +242,14 @@ public record SaveAbsenceReasonsRequest(List<AbsenceReasonDto> AbsenceReasons);
 /* ---------- Schedule templates ---------- */
 /// <summary>Bitta dars katagi. SubGroup: 0 = butun sinf, 1 = 1-guruh, 2 = 2-guruh.</summary>
 public record ScheduleLessonDto(int Day, int Period, string SubjectId, string TeacherId, int SubGroup = 0);
-public record ScheduleTemplateDto(string Id, string ClassId, string Name, List<ScheduleLessonDto> Lessons);
+/// <summary>
+/// Jadval varianti. <paramref name="ClassId"/> — EGAning id'si: sinf yoki
+/// o'quv guruhi, <paramref name="OwnerKind"/> qaysi ekanini aytadi
+/// (students-parity.md §2.1.4).
+/// </summary>
+public record ScheduleTemplateDto(
+    string Id, string ClassId, string Name, List<ScheduleLessonDto> Lessons,
+    string OwnerKind = "class");
 public record CreateTemplateRequest(string Name);
 public record RenameTemplateRequest(string Name);
 /// <summary>
@@ -717,10 +724,21 @@ public record TeacherProfileDto(
 /// <summary>O'qituvchi dars beradigan bitta sinf (qaysi fanlarni va sinf rahbarimi).</summary>
 public record TeacherClassDto(
     string ClassId, string ClassName, int Grade, bool IsHomeroom, List<SubjectDto> Subjects);
-/// <summary>O'qituvchi jadvalidagi bitta dars (qaysi sinf, fan, kun, dars raqami, vaqt, guruh).</summary>
+/// <summary>
+/// O'qituvchi jadvalidagi bitta dars (qaysi sinf, fan, kun, dars raqami, vaqt, guruh).
+///
+/// <para>
+/// <paramref name="OwnerKind"/> — darsning EGASI sinfmi yoki o'quv guruhimi
+/// (<c>LessonOwnerKind</c>; students-parity.md §2.1.4). Guruh darsida
+/// <paramref name="ClassId"/> guruh id'sini, <paramref name="ClassName"/> esa
+/// guruh nomini saqlaydi — jadval ustunlari o'zgarmasligi uchun. Oxirida
+/// turibdi va sukut qiymati bor: eski mijoz kodini buzmaydi.
+/// </para>
+/// </summary>
 public record TeacherLessonDto(
     int Day, int Period, string? StartTime, string? EndTime,
-    string ClassId, string ClassName, string SubjectId, string SubjectName, int SubGroup = 0);
+    string ClassId, string ClassName, string SubjectId, string SubjectName, int SubGroup = 0,
+    string OwnerKind = "class");
 
 /* ---------- Student portal (ilova) ---------- */
 /// <summary>O'quvchining o'z profili (ilovada ko'rsatish uchun).</summary>
@@ -1026,7 +1044,8 @@ public record ReorderLmsTopicsRequest(List<string> TopicIds);
 /// O'qituvchining bitta band qilingan soati (boshqa template/sinf ichida).
 /// Jadval yaratishda ziddiyat (conflict) tekshiruvi uchun ishlatiladi.
 /// </summary>
-public record OccupiedSlotDto(int Day, int Period, string ClassName, string TemplateName);
+public record OccupiedSlotDto(
+    int Day, int Period, string ClassName, string TemplateName, string OwnerKind = "class");
 
 /// <summary>O'quvchi uchun LMS mavzu (ochilganmi, tugallanganmi). Endi modulga tegishli (ModuleId).</summary>
 public record StudentLmsTopicDto(
