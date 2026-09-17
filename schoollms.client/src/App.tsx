@@ -148,8 +148,8 @@ export default function App() {
           <Route path="certificates/types" element={<RequirePerm perm="students"><CertificateTypesPage /></RequirePerm>} />
           <Route path="attendance" element={<RequirePerm perm="attendance"><AttendancePage /></RequirePerm>} />
           <Route path="attendance/analytics" element={<RequirePerm perm="attendance"><AttendanceAnalyticsPage /></RequirePerm>} />
-          <Route path="locations" element={<RequirePerm perm="app"><LocationPage /></RequirePerm>} />
-          <Route path="parents" element={<RequirePerm perm="app"><ParentsPage /></RequirePerm>} />
+          <Route path="locations" element={<RequirePerm perm="students"><LocationPage /></RequirePerm>} />
+          <Route path="parents" element={<RequirePerm perm="students"><ParentsPage /></RequirePerm>} />
           <Route path="app/teachers" element={<RequirePerm perm="app"><TeacherAppPage /></RequirePerm>} />
           <Route path="canteen" element={<RequirePerm perm="app"><CanteenPage /></RequirePerm>} />
           <Route path="finance" element={<RequirePerm perm="finance"><FinancePage /></RequirePerm>} />

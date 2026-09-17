@@ -139,13 +139,12 @@ export const navByRole: Record<Role, NavItem[]> = {
         { label: 'Xonalar', to: '/admin/rooms', perm: 'students', group: "O'QUV JARAYONI" },
         { label: "O'quvchilar", to: '/admin/students', end: true, perm: 'students', group: "O'QUVCHILAR" },
         { label: "Arxiv o'quvchilar", to: '/admin/students/arxiv', perm: 'students', group: "O'QUVCHILAR" },
-        // Manzil va Ota-onalar hali `app` ("Ilova") ruxsati ostida — u mobil
-        // ilova davridan qolgan. Ular endi O'quv bo'limida turibdi, ya'ni
-        // kaliti `students` bo'lishi mantiqan to'g'ri; lekin buni SERVERDA
-        // ham ko'chirish kerak (`LocationsController`, `ParentsController`),
-        // aks holda menyu yana yolg'on gapiradi. X-2 bilan birga ko'chadi.
-        { label: "O'quvchilar manzili", to: '/admin/locations', perm: 'app', group: "O'QUVCHILAR" },
-        { label: 'Ota-onalar', to: '/admin/parents', perm: 'app', group: "O'QUVCHILAR" },
+        // Manzil va Ota-onalar `app` ("Ilova") dan `students` ga KO'CHDI —
+        // menyu, marshrut va controller bir vaqtda. `app` mobil ilova davridan
+        // qolgan kalit edi; ikkala ekran endi O'quv bo'limida turibdi, shuning
+        // uchun bo'limning kalitiga bo'ysunadi.
+        { label: "O'quvchilar manzili", to: '/admin/locations', perm: 'students', group: "O'QUVCHILAR" },
+        { label: 'Ota-onalar', to: '/admin/parents', perm: 'students', group: "O'QUVCHILAR" },
         { label: "O'quvchi holatlari", to: '/admin/students/holatlar', perm: 'students', group: "O'QUVCHILAR" },
         { label: 'Sertifikatlar', to: '/admin/certificates', end: true, perm: 'students', group: 'HUJJATLAR' },
         { label: 'Shartnomalar', to: '/admin/contracts', perm: 'contracts', group: 'HUJJATLAR' },

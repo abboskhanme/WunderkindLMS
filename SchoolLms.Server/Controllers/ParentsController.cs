@@ -16,7 +16,14 @@ namespace SchoolLms.Server.Controllers;
 /// </summary>
 [ApiController]
 [Authorize]
-[AdminPerm("app")]
+// `app` EMAS, `students`. Bu ekran endi O'quv bo'limida turibdi (menyu
+// 2026-09-17 da EduSchool tartibiga keltirildi), `app` esa mobil ilova
+// davridan qolgan kalit — CLAUDE.md bo'yicha mobil ilova umuman bo'lmaydi.
+// Kalit menyu, marshrut va controller'da BIR VAQTDA ko'chdi: aks holda
+// `students` ruxsatli xodim menyuda yozuvni ko'rmay qolardi yoki ko'rib
+// turib ocholmasdi. Bir xil yechim `SubjectsController` va
+// `RoomsController` da ham qo'llangan (F-4).
+[AdminPerm("students")]
 [Route("api/admin/parents")]
 public class ParentsController(AppDbContext db) : ControllerBase
 {
