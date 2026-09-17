@@ -36,11 +36,13 @@ namespace SchoolLms.Server.Controllers;
 /// </para>
 ///
 /// <para>
-/// <b>DIQQAT — DI hali ulanmagan.</b> <c>ISubscriptionService</c> va
-/// <c>IDiscountService</c> <c>Program.cs</c> da ro'yxatdan o'tmagan; u fayl
-/// P1-15 niki. Shu holda bu controller'ning yozish/o'qish amallari ishga
-/// tushganda <c>InvalidOperationException</c> beradi. Nima qo'shilishi kerakligi
-/// <c>docs/PENDING_WIRING.md</c> da yozilgan.
+/// <b>DIQQAT — <c>IBillingSettingsService</c> hali ulanmagan.</b> (Boshqa to'rttasi —
+/// <c>ISubscriptionService</c>, <c>IDiscountService</c>, <c>IInvoiceService</c> — P1-15
+/// tomonidan allaqachon <c>Program.cs</c> da ro'yxatdan o'tgan.) F14.01 qo'shgan
+/// <c>settings</c> bog'liqligi hozircha ulanmagan; shu holda <c>GET/PUT
+/// api/admin/billing/settings</c> so'rov vaqtida <c>InvalidOperationException</c> beradi
+/// (RBAC 401/403 baribir ishlayveradi — filtr controller quriladigandan OLDIN ishlaydi).
+/// Qo'shilishi kerak bo'lgan qator <c>docs/PENDING_WIRING.md</c> da yozilgan.
 /// </para>
 /// </summary>
 [ApiController]
@@ -52,7 +54,8 @@ public class BillingCatalogController(
     AuditService audit,
     ISubscriptionService subscriptions,
     IDiscountService discounts,
-    IInvoiceService invoices) : ControllerBase
+    IInvoiceService invoices,
+    IBillingSettingsService settings) : ControllerBase
 {
     // ==================================================================
     //  To'lov toifalari (ma'lumotnoma)
@@ -284,6 +287,36 @@ public class BillingCatalogController(
 
         return Ok(new[] { await invoices.AccrueMonthAsync(periodMonth, actor, ct) });
     }
+
+    // ==================================================================
+    //  Moliya sozlamalari (F14.01, finance-parity.md §2.14)
+    // ==================================================================
+    //
+    //  O'QISH klass darajasidagi darvozadan o'tadi (admin/direktor) — alohida
+    //  `[FinanceRole]` shart emas, negaki bu yerda "kim ko'ra oladi" bitta
+    //  javobga ega (SubscriptionsPage/DiscountsPage GET'lari kabi).
+    //
+    //  YOZISH ikki qavatli: (1) `[FinanceRole(ManageBillingSettings)]` — admin
+    //  va direktor, (2) `BillingSettingsService.UpdateAsync` ICHIDA, faqat
+    //  chegara HAQIQATAN o'zgarsa — faqat direktor (SPEC §4.5, F14.01 gap
+    //  yozuvi). Ikkinchisi FinanceMatrix'da ifodalanmaydi, chunki u maydon
+    //  darajasidagi qoida, amal darajasidagi emas.
+
+    /// <summary>Joriy moliya sozlamalari.</summary>
+    [HttpGet("settings")]
+    public async Task<ActionResult<BillingSettingsDto>> GetSettings(CancellationToken ct) =>
+        await settings.GetAsync(ct);
+
+    /// <summary>
+    /// Sozlamalarni saqlaydi. <c>expenseApprovalThreshold</c> HAQIQATAN
+    /// o'zgargan bo'lsa va so'rovchi direktor bo'lmasa — <b>403</b>
+    /// (<c>threshold_requires_director</c>).
+    /// </summary>
+    [HttpPut("settings")]
+    [FinanceRole(FinanceAction.ManageBillingSettings)]
+    public async Task<ActionResult<BillingSettingsDto>> UpdateSettings(
+        UpdateBillingSettingsRequest request, CancellationToken ct) =>
+        await settings.UpdateAsync(request, Actor(), User.IsInRole(Roles.SuperAdmin), ct);
 
     private string Actor() => FinanceActor.RequireUserId(User);
 }

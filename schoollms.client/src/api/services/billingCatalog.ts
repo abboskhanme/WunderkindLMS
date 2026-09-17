@@ -22,7 +22,7 @@
  * interfeys avtomatik ravishda ism solishtirishdan id solishtirishga o'tadi;
  * qarang `pages/admin/billing/dualControl.ts`.
  */
-import type { Discount, FeeCategory, StudentSubscription } from '@/types'
+import type { BillingSettings, Discount, FeeCategory, StudentSubscription } from '@/types'
 import { api } from '../client'
 
 const BASE = '/admin/billing'
@@ -184,5 +184,28 @@ export async function approveDiscount(id: string): Promise<DiscountRecord> {
 /** Rad etish — sabab majburiy. Qator tarix uchun qoladi. */
 export async function rejectDiscount(id: string, reason: string): Promise<DiscountRecord> {
   const { data } = await api.post<DiscountRecord>(`${BASE}/discounts/${id}/reject`, { reason })
+  return data
+}
+
+/* ---------- Moliya sozlamalari (F14.01) ---------- */
+
+export interface BillingSettingsInput {
+  paymentDueDay: number
+  overdueAfterDay: number
+  /**
+   * Forma HAR DOIM joriy qiymatni yuboradi (o'zgartirmasa ham) — server
+   * qiymat HAQIQATAN farq qilgandagina direktorlik tekshiruvini ishga
+   * tushiradi (`threshold_requires_director`, 403).
+   */
+  expenseApprovalThreshold: number
+}
+
+export async function getBillingSettings(): Promise<BillingSettings> {
+  const { data } = await api.get<BillingSettings>(`${BASE}/settings`)
+  return data
+}
+
+export async function updateBillingSettings(input: BillingSettingsInput): Promise<BillingSettings> {
+  const { data } = await api.put<BillingSettings>(`${BASE}/settings`, input)
   return data
 }
