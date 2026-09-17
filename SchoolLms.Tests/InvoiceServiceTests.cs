@@ -578,8 +578,16 @@ public class InvoiceServiceTests(ApiFixture fixture) : IAsyncLifetime
         var invoiceId = (await db.Invoices.AsNoTracking().SingleAsync()).Id;
 
         // SPEC §4.5: hisoblashni boshlagan odam uni O'ZI bekor qila olmaydi.
-        await Assert.ThrowsAsync<InvalidOperationException>(
+        //
+        // F10.02 (docs/modules/finance-parity.md §2.10): qoida o'zgarmadi,
+        // lekin endi u `BillingRuleException` bilan aytiladi. Ilgari bu yerdan
+        // oddiy `InvalidOperationException` chiqardi va `[BillingFault]` uni
+        // TANIMAY, foydalanuvchiga 500 ko'rsatardi — ya'ni ekranda "Serverda
+        // xatolik" yozilardi, nima qilish kerakligi esa aytilmasdi.
+        var refused = await Assert.ThrowsAsync<BillingRuleException>(
             () => service.VoidAsync(invoiceId, "xato narx", actorId));
+        Assert.Equal("self_reversal", refused.Code);
+        Assert.Equal(BillingFault.Forbidden, refused.Fault);
 
         var voided = await service.VoidAsync(invoiceId, "Narx xato hisoblangan", directorId);
         Assert.Equal(InvoiceStatus.Void, voided.Status);

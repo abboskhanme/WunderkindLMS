@@ -152,9 +152,22 @@ export interface InvoiceFilters {
   className?: string
 }
 
+/**
+ * ULANDI (F10.01) — lekin `api.get` bu yerda EMAS.
+ *
+ * `GET /admin/billing/invoices` endi SAHIFALANGAN javob qaytaradi
+ * (`{ rows, page, pageSize, total, totals }`, qarang
+ * `SchoolLms.Server/Controllers/InvoicesController.cs`), bu funksiyaning
+ * muzlatilgan imzosi esa `Invoice[]`. Ikkovini yarashtirishning yagona
+ * to'g'ri yo'li — bitta manzilga bitta klient: shartnoma
+ * `api/services/invoices.ts` da, bu yerda faqat eski imzoga moslash qoladi.
+ *
+ * Yangi ekranlar TO'G'RIDAN-TO'G'RI `listInvoices` ni chaqirsin: u sahifani
+ * ham, yakunni ham beradi.
+ */
 export async function getInvoices(filters: InvoiceFilters = {}): Promise<Invoice[]> {
-  // return (await api.get<Invoice[]>('/admin/billing/invoices', { params: filters })).data
-  return notImplemented('GET /admin/billing/invoices', 'P1-09', filters)
+  const { listInvoices } = await import('./invoices')
+  return (await listInvoices({ ...filters, pageSize: 200 })).rows
 }
 
 /** O'quvchining moliyaviy kartochkasi: qarz, obunalar, oylar, to'lovlar */
