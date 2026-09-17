@@ -112,6 +112,26 @@ public class FinanceReportsController(AppDbContext db) : ControllerBase
     }
 
     /// <summary>
+    /// <c>GET /api/admin/finance/pnl/expectation?month=YYYY-MM</c> — P&amp;L
+    /// 2.0 (§2.6, <c>FINANCE_ALL.PNL_EXPECTATION</c>, beta): bir oy uchun
+    /// reja (faol obunalar/hisob-fakturalardan kutilgan daromad) va fakt
+    /// (jurnaldagi haqiqiy daromad/chiqim, <see cref="ProfitLoss"/> bilan
+    /// AYNAN bir manba) — to'liq izoh <c>FinanceReportQueries
+    /// .RevenueExpectation.cs</c> da.
+    /// </summary>
+    /// <param name="month">"YYYY-MM". Sukut: joriy oy.</param>
+    [HttpGet("pnl/expectation")]
+    public async Task<ActionResult<RevenueExpectationDto>> PnlExpectation(
+        [FromQuery] string? month,
+        CancellationToken ct = default)
+    {
+        if (!TryMonth(month, DefaultToMonth(), out var parsed))
+            return InvalidMonth(nameof(month), month);
+
+        return Ok(await _reports.RevenueExpectationAsync(parsed, ct));
+    }
+
+    /// <summary>
     /// Pul oqimi (Cash Flow): <c>cash</c> va <c>bank</c> hisoblarining
     /// harakati, oylar kesimida. Davr boshidagi qoldiq ham beriladi.
     /// </summary>
