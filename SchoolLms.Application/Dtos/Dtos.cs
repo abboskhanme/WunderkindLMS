@@ -569,6 +569,15 @@ public record StudentLocationRowDto(
     string StudentId, string FullName, string ClassName,
     double Latitude, double Longitude, string? Address, string? UpdatedAt);
 
+/// <summary>
+/// Admin xarita uchun — bitta o'quvchining BITTA turdagi pin'i (§2.8, L-2).
+/// Bitta o'quvchida uchtagacha pin bo'lishi mumkin (home/school/pickup).
+/// </summary>
+public record StudentLocationPinDto(
+    string StudentId, string FullName, string ClassName, string Kind,
+    double Latitude, double Longitude, string? Name,
+    string? PickupFrom, string? PickupTo);
+
 /// <summary>Ota-ona bo'limidagi bitta farzand (qisqacha) + qurilma ma'lumoti.</summary>
 public record ParentChildDto(
     string StudentId, string FullName, string ClassName,

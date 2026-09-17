@@ -108,3 +108,36 @@ public record SaveStudentLocationRequest(
     double? Latitude,
     double? Longitude,
     string? Address);
+
+/// <summary>
+/// Bitta turdagi joylashuv — profil "Manzil" tab'i va admin xaritasi uchun
+/// (§2.8, L-2). <c>Kind</c> — <see cref="SchoolLms.Domain.StudentLocationKind"/>
+/// qiymatlaridan biri (home | school | pickup).
+/// </summary>
+/// <param name="PickupFrom">Olib ketish oynasining boshi, "HH:mm". Faqat `pickup`da majburiy.</param>
+/// <param name="PickupTo">Olib ketish oynasining oxiri, "HH:mm".</param>
+/// <param name="IsLegacy">
+/// true — bu qator <c>student_locations</c> jadvalida hali yo'q, ESKI
+/// <c>students.latitude/longitude/location_address</c> ustunlaridan sintez
+/// qilingan (faqat <c>home</c> uchun mumkin). Xodim shu turni birinchi marta
+/// yangi ekrandan saqlagach, haqiqiy qatorga aylanadi.
+/// </param>
+public record StudentLocationEntryDto(
+    string Kind,
+    string? Name,
+    double Lat,
+    double Lng,
+    string? PickupFrom,
+    string? PickupTo,
+    bool IsLegacy);
+
+/// <summary>
+/// Bitta turdagi joylashuvni saqlash so'rovi (L-2). Koordinata majburiy —
+/// geokoder yo'q (§5 Q6), xodim xaritadan nuqta bosmaguncha saqlash yo'q.
+/// </summary>
+public record SaveTypedLocationRequest(
+    double? Lat,
+    double? Lng,
+    string? Name,
+    string? PickupFrom,
+    string? PickupTo);

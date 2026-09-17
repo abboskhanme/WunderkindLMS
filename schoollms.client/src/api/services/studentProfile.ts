@@ -1,4 +1,4 @@
-import type { AttendanceReasonCount, AuditLog, Student } from '@/types'
+import type { AttendanceReasonCount, AuditLog, Student, StudentLocationEntry, StudentLocationKind } from '@/types'
 import { api } from '../client'
 
 /* =========================================================================
@@ -104,6 +104,16 @@ export interface SaveStudentLocationInput {
   address: string | null
 }
 
+/** Bitta turdagi joylashuvni saqlash so'rovi (§2.8, L-2). Koordinata majburiy. */
+export interface SaveTypedLocationInput {
+  lat: number
+  lng: number
+  name: string | null
+  /** "HH:mm" — faqat `pickup`da majburiy. */
+  pickupFrom: string | null
+  pickupTo: string | null
+}
+
 export async function getStudentCard(id: string): Promise<StudentCard> {
   const { data } = await api.get<StudentCard>(`/admin/students/${id}/card`)
   return data
@@ -151,5 +161,38 @@ export async function saveStudentLocation(
   input: SaveStudentLocationInput,
 ): Promise<StudentCard> {
   const { data } = await api.put<StudentCard>(`/admin/students/${id}/location`, input)
+  return data
+}
+
+/**
+ * O'quvchining uchtagacha turdagi joylashuvi (§2.8, L-2). ESKI (L-1) uy
+ * manzili bilan qanday sinxronligi — <c>StudentProfileController</c> dagi
+ * izohga qarang: `home` yozilganda ikkalasi ham yangilanadi, yozilmagan
+ * bo'lsa ESKI ustunlardan sintez qilib ko'rsatiladi (`isLegacy: true`).
+ */
+export async function getStudentTypedLocations(id: string): Promise<StudentLocationEntry[]> {
+  const { data } = await api.get<StudentLocationEntry[]>(`/admin/students/${id}/locations`)
+  return data
+}
+
+/** Bitta turdagi joylashuvni saqlaydi (yaratadi yoki yangilaydi). */
+export async function saveTypedLocation(
+  id: string,
+  kind: StudentLocationKind,
+  input: SaveTypedLocationInput,
+): Promise<StudentLocationEntry[]> {
+  const { data } = await api.put<StudentLocationEntry[]>(
+    `/admin/students/${id}/locations/${kind}`,
+    input,
+  )
+  return data
+}
+
+/** Bitta turdagi joylashuvni o'chiradi. `home` bo'lsa — ESKI ustunlar ham tozalanadi. */
+export async function deleteTypedLocation(
+  id: string,
+  kind: StudentLocationKind,
+): Promise<StudentLocationEntry[]> {
+  const { data } = await api.delete<StudentLocationEntry[]>(`/admin/students/${id}/locations/${kind}`)
   return data
 }

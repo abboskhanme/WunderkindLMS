@@ -46,6 +46,20 @@ public class StudentProfileController(AppDbContext db, AuditService audit) : Con
     public const string HalfCoordinateMessage =
         "Kenglik va uzunlik birga beriladi — faqat bittasi yetarli emas";
 
+    public const string MissingCoordinateMessage =
+        "Koordinata kerak — xaritadan nuqta belgilang";
+
+    public const string BadKindMessage =
+        "Joylashuv turi noto'g'ri (home | school | pickup)";
+
+    public const string BadPickupTimeMessage = "Vaqt HH:mm ko'rinishida bo'lishi kerak";
+
+    public const string PickupWindowRequiredMessage =
+        "Olib ketish nuqtasida vaqt oralig'i (boshi va oxiri) majburiy";
+
+    public const string PickupWindowOrderMessage =
+        "Vaqt oralig'ining oxiri boshidan oldin bo'la olmaydi";
+
     /// <summary>Faoliyat tarixida bir so'rovda qaytariladigan eng ko'p qator.</summary>
     private const int MaxActivity = 200;
 
@@ -397,6 +411,135 @@ public class StudentProfileController(AppDbContext db, AuditService audit) : Con
     }
 
     // =====================================================================
+    //  6. Uchta turdagi joylashuv (L-2)
+    // =====================================================================
+
+    /// <summary>
+    /// O'quvchining barcha joylashuvlari — uchtagacha, bittadan turdan
+    /// (<see cref="StudentLocationKind"/>). §2.8, L-2.
+    ///
+    /// <para>
+    /// <b>ESKI (L-1) BILAN QANDAY SINXRON.</b> <c>home</c> turi
+    /// <c>PUT {id}/locations/home</c> orqali saqlanganda ESKI
+    /// <c>students.latitude/longitude/location_address</c> ustunlariga ham
+    /// ko'chiriladi (<see cref="MirrorLegacyHome"/>) — mobil ilova va
+    /// ota-ona Mini App'i hamon o'sha ustunlarni o'qiydi va ular
+    /// o'zgarishsiz ishlayveradi. Agar xodim hali YANGI ekrandan bir marta
+    /// ham saqlamagan bo'lsa-yu, o'quvchida ESKI ustunlarda qiymat bo'lsa
+    /// (L-1 orqali yoki eski mobil ilovadan qolgan) — <c>home</c> qatori
+    /// shu yerda O'SHA ustunlardan SINTEZ qilinadi (<c>IsLegacy = true</c>),
+    /// ya'ni hech narsa yo'qolmaydi va migratsiya shart emas.
+    /// </para>
+    /// </summary>
+    [HttpGet("{id}/locations")]
+    public async Task<ActionResult<IReadOnlyList<StudentLocationEntryDto>>> Locations(
+        string id, CancellationToken ct = default)
+    {
+        var st = await db.Students.AsNoTracking().FirstOrDefaultAsync(s => s.Id == id, ct);
+        if (st is null) return NotFound();
+
+        var rows = await db.StudentLocations.AsNoTracking()
+            .Where(l => l.StudentId == id).ToListAsync(ct);
+        return BuildLocationEntries(st, rows);
+    }
+
+    /// <summary>
+    /// Bitta turdagi joylashuvni saqlaydi — xodim xaritadan nuqta bosadi,
+    /// manzilni (va `pickup` uchun vaqt oralig'ini) qo'lda yozadi.
+    /// Bir turdan bittadan qator bo'ladi (<c>ux_student_locations_student_kind</c>) —
+    /// mavjud bo'lsa yangilanadi, aks holda yaratiladi.
+    /// </summary>
+    [HttpPut("{id}/locations/{kind}")]
+    public async Task<ActionResult<IReadOnlyList<StudentLocationEntryDto>>> SaveTypedLocation(
+        string id, string kind, SaveTypedLocationRequest req, CancellationToken ct = default)
+    {
+        if (!StudentLocationKind.IsValid(kind)) return BadRequest(new { message = BadKindMessage });
+
+        var st = await db.Students.FirstOrDefaultAsync(s => s.Id == id, ct);
+        if (st is null) return NotFound();
+
+        if (req.Lat is null || req.Lng is null)
+            return BadRequest(new { message = MissingCoordinateMessage });
+        if (req.Lat is < -90 or > 90 || req.Lng is < -180 or > 180)
+            return BadRequest(new { message = BadCoordinatesMessage });
+
+        var (fromOk, pickupFrom) = ParseTime(req.PickupFrom);
+        var (toOk, pickupTo) = ParseTime(req.PickupTo);
+        if (!fromOk || !toOk) return BadRequest(new { message = BadPickupTimeMessage });
+        if (kind == StudentLocationKind.Pickup && (pickupFrom is null || pickupTo is null))
+            return BadRequest(new { message = PickupWindowRequiredMessage });
+        if (pickupFrom is { } pf && pickupTo is { } pt && pt < pf)
+            return BadRequest(new { message = PickupWindowOrderMessage });
+
+        var name = string.IsNullOrWhiteSpace(req.Name) ? null : req.Name.Trim();
+
+        var row = await db.StudentLocations
+            .FirstOrDefaultAsync(l => l.StudentId == id && l.Kind == kind, ct);
+        var before = row is null
+            ? null
+            : new { row.Name, row.Lat, row.Lng, PickupFrom = row.PickupFrom.ToString(), PickupTo = row.PickupTo.ToString() };
+        if (row is null)
+        {
+            row = new StudentLocation { StudentId = id, Kind = kind, CreatedAt = DateTimeOffset.UtcNow };
+            db.StudentLocations.Add(row);
+        }
+        row.Name = name;
+        row.Lat = (decimal)req.Lat.Value;
+        row.Lng = (decimal)req.Lng.Value;
+        row.PickupFrom = pickupFrom;
+        row.PickupTo = pickupTo;
+
+        // `home` — eski ustunlar ham OYNAdosh yoziladi (yuqoridagi izohga qarang).
+        if (kind == StudentLocationKind.Home) MirrorLegacyHome(st, req.Lat, req.Lng, name);
+
+        audit.Record(LocationEntity, st.Id, "update",
+            $"O'quvchi joylashuvi yangilandi — {kind} ({st.FullName})",
+            before: before,
+            after: new { row.Name, row.Lat, row.Lng, PickupFrom = row.PickupFrom.ToString(), PickupTo = row.PickupTo.ToString() },
+            studentId: st.Id);
+
+        await db.SaveChangesAsync(ct);
+
+        var rows = await db.StudentLocations.AsNoTracking()
+            .Where(l => l.StudentId == id).ToListAsync(ct);
+        return BuildLocationEntries(st, rows);
+    }
+
+    /// <summary>
+    /// Bitta turdagi joylashuvni o'chiradi. Qator yo'q bo'lsa ham 200 —
+    /// amal IDEMPOTENT (xodim "Tozalash"ni ikki marta bossa xatolik chiqmasin).
+    /// <c>home</c> o'chirilsa — ESKI ustunlar ham tozalanadi.
+    /// </summary>
+    [HttpDelete("{id}/locations/{kind}")]
+    public async Task<ActionResult<IReadOnlyList<StudentLocationEntryDto>>> DeleteTypedLocation(
+        string id, string kind, CancellationToken ct = default)
+    {
+        if (!StudentLocationKind.IsValid(kind)) return BadRequest(new { message = BadKindMessage });
+
+        var st = await db.Students.FirstOrDefaultAsync(s => s.Id == id, ct);
+        if (st is null) return NotFound();
+
+        var row = await db.StudentLocations
+            .FirstOrDefaultAsync(l => l.StudentId == id && l.Kind == kind, ct);
+        if (row is not null)
+        {
+            db.StudentLocations.Remove(row);
+            audit.Record(LocationEntity, st.Id, "delete",
+                $"O'quvchi joylashuvi o'chirildi — {kind} ({st.FullName})",
+                before: new { row.Name, row.Lat, row.Lng, PickupFrom = row.PickupFrom.ToString(), PickupTo = row.PickupTo.ToString() },
+                after: null, studentId: st.Id);
+        }
+
+        if (kind == StudentLocationKind.Home) MirrorLegacyHome(st, null, null, null);
+
+        await db.SaveChangesAsync(ct);
+
+        var rows = await db.StudentLocations.AsNoTracking()
+            .Where(l => l.StudentId == id).ToListAsync(ct);
+        return BuildLocationEntries(st, rows);
+    }
+
+    // =====================================================================
     //  Yordamchilar
     // =====================================================================
 
@@ -428,6 +571,52 @@ public class StudentProfileController(AppDbContext db, AuditService audit) : Con
     private static DateOnly? Parse(string? value) =>
         DateOnly.TryParseExact(value ?? "", "yyyy-MM-dd",
             CultureInfo.InvariantCulture, DateTimeStyles.None, out var d) ? d : null;
+
+    /// <summary>
+    /// `home` turini ESKI <c>students</c> ustunlariga ham ko'chiradi (L-2).
+    /// SetLocation (L-1) bilan bir xil qoida: uchala maydon ham null bo'lsa
+    /// — <c>LocationUpdatedAt</c> ham null (yozuv umuman yo'q ma'nosida).
+    /// </summary>
+    private static void MirrorLegacyHome(Student st, double? lat, double? lng, string? address)
+    {
+        st.Latitude = lat;
+        st.Longitude = lng;
+        st.LocationAddress = address;
+        st.LocationUpdatedAt = lat is null && lng is null && address is null ? null : AppClock.Iso();
+    }
+
+    /// <summary>
+    /// <c>student_locations</c> qatorlarini javobga tayyorlaydi; agar
+    /// ORASIDA <c>home</c> yo'q bo'lsa-yu ESKI ustunlarda qiymat bo'lsa —
+    /// o'shandan SINTEZ qilib qo'shadi (<c>IsLegacy = true</c>). Natija
+    /// doim <see cref="StudentLocationKind.All"/> tartibida.
+    /// </summary>
+    private static List<StudentLocationEntryDto> BuildLocationEntries(
+        Student st, List<StudentLocation> rows)
+    {
+        var result = rows.Select(r => new StudentLocationEntryDto(
+            r.Kind, r.Name, (double)r.Lat, (double)r.Lng,
+            FormatTime(r.PickupFrom), FormatTime(r.PickupTo), IsLegacy: false)).ToList();
+
+        if (!result.Exists(r => r.Kind == StudentLocationKind.Home)
+            && st.Latitude is { } lat && st.Longitude is { } lng)
+        {
+            result.Add(new StudentLocationEntryDto(
+                StudentLocationKind.Home, st.LocationAddress, lat, lng, null, null, IsLegacy: true));
+        }
+
+        return [.. result.OrderBy(r => Array.IndexOf(StudentLocationKind.All, r.Kind))];
+    }
+
+    private static string? FormatTime(TimeOnly? t) => t?.ToString("HH:mm", CultureInfo.InvariantCulture);
+
+    /// <summary>Bo'sh/`null` — ruxsat etiladi (vaqt ko'rsatilmagan). Noto'g'ri format — xato.</summary>
+    private static (bool Ok, TimeOnly? Value) ParseTime(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return (true, null);
+        return TimeOnly.TryParseExact(value.Trim(), "HH:mm", CultureInfo.InvariantCulture,
+            DateTimeStyles.None, out var t) ? (true, t) : (false, null);
+    }
 
     /// <summary>
     /// `before`/`after` JSON'idan pul maydonlarini olib tashlaydi. Yaroqsiz
