@@ -156,7 +156,7 @@ function DayCard({ iso, lessons, isToday }) {
       ) : (
         lessons.map((l) => (
           <Row
-            key={`${l.period}-${l.subjectId}`}
+            key={`${l.ownerKind ?? 'class'}-${l.period}-${l.subjectId}`}
             lead={
               <DateChip
                 day={l.period}
@@ -170,6 +170,14 @@ function DayCard({ iso, lessons, isToday }) {
                 {[l.startTime && l.endTime ? `${l.startTime}–${l.endTime}` : null, l.teacherName]
                   .filter(Boolean)
                   .join(' · ')}
+                {/* Guruh darsi — sinf jadvalidan tashqarida, shuning uchun
+                    ota-ona uni nima ekanini bilishi kerak (G-18). */}
+                {l.ownerKind === 'group' && l.ownerName && (
+                  <>
+                    <br />
+                    Guruh: {l.ownerName}
+                  </>
+                )}
                 {l.homework && (
                   <>
                     <br />

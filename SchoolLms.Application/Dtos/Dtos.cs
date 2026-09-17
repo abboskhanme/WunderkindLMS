@@ -499,7 +499,9 @@ public record TeacherReportRowDto(
 public record TeacherReportBreakdownDto(
     string ClassName, string SubjectName, int SubGroup,
     int Expected, int Conducted, int? DonePct,
-    int Grades, int? TopicPct, int? HomeworkPct);
+    int Grades, int? TopicPct, int? HomeworkPct,
+    // G-15: qator sinf darsimi yoki GURUH darsimi (LessonOwnerKind).
+    string OwnerKind = "class");
 
 /// <summary>Bitta o'qituvchining batafsil hisoboti: umumiy ko'rsatkichlar + sinf/fan yoyilmasi.</summary>
 public record TeacherReportDetailDto(
@@ -749,14 +751,20 @@ public record StudentProfileDto(
 /// <summary>O'quvchi jadvalidagi bitta dars (fan, o'qituvchi, kun, dars raqami, vaqt).</summary>
 public record StudentLessonDto(
     int Day, int Period, string? StartTime, string? EndTime,
-    string SubjectId, string SubjectName, string TeacherId, string TeacherName, int SubGroup = 0);
+    string SubjectId, string SubjectName, string TeacherId, string TeacherName, int SubGroup = 0,
+    // G-18: dars sinfniki yoki GURUHniki (LessonOwnerKind). Guruh darsida ekran
+    // guruh nomini yorliq qilib ko'rsatadi; eski mijozlar maydonni e'tiborsiz
+    // qoldiradi va bugungidek ishlaydi.
+    string OwnerKind = "class", string? OwnerName = null);
 /// <summary>O'quvchi uchun dars mavzusi va uyga vazifa (sana + fan bo'yicha).
 /// Shu o'quvchining o'sha (sana + dars raqami) jurnal yozuvi bo'lsa — Grade va Reason ham
 /// bog'lab qaytariladi (bugungi/haftalik baholarni alohida endpoint'siz ko'rsatish uchun).</summary>
 public record HomeworkItemDto(
     string Date, int Period, string SubjectId, string SubjectName,
     string Topic, string? Homework, bool Conducted,
-    int? Grade, string? ReasonId, string? ReasonName, bool IsLate);
+    int? Grade, string? ReasonId, string? ReasonName, bool IsLate,
+    // G-18: dars egasi — sinf yoki guruh.
+    string OwnerKind = "class", string? OwnerName = null);
 
 /// <summary>O'quvchi jurnali — bitta dars qatori (sana + dars raqami + fan + o'qituvchi + mavzu/uyga vazifa + baho/sabab).</summary>
 public record StudentJournalRowDto(
@@ -765,7 +773,9 @@ public record StudentJournalRowDto(
     string SubjectId, string SubjectName,
     string? TeacherId, string? TeacherName,
     string Topic, string? Homework, bool Conducted,
-    int? Grade, string? ReasonId, string? ReasonName, bool IsLate);
+    int? Grade, string? ReasonId, string? ReasonName, bool IsLate,
+    // G-18: dars egasi — sinf yoki guruh.
+    string OwnerKind = "class", string? OwnerName = null);
 
 /// <summary>O'quvchining bitta davomatsizlik (yoki kech qolish) yozuvi.</summary>
 public record StudentAbsenceRowDto(
@@ -1100,7 +1110,9 @@ public record SubjectProgressDetailDto(
 /// <summary>O'qituvchi progresi — bitta (sinf, fan, guruh) kesimi.</summary>
 public record TeacherSubjectProgressDto(
     string ClassId, string ClassName, string SubjectId, string SubjectName, int SubGroup,
-    int Planned, int Conducted, int Remaining, int Percent, int ExpectedByToday);
+    int Planned, int Conducted, int Remaining, int Percent, int ExpectedByToday,
+    // G-15: kesim sinfniki yoki GURUHniki (LessonOwnerKind).
+    string OwnerKind = "class");
 
 /// <summary>O'qituvchining umumiy o'tilgan darslar progresi + kesimlar bo'yicha yoyilma.</summary>
 public record TeacherProgressDto(

@@ -15,6 +15,11 @@ namespace SchoolLms.Application.Services;
 ///
 /// <para>O'quvchi ko'rinishida darslar uning guruhiga (SubGroup) qisiladi; o'qituvchi
 /// ko'rinishida faqat o'zi biriktirilgan (ScheduleLesson.TeacherId) darslar olinadi.</para>
+///
+/// <para><b>G-15/G-18 — guruh darslari.</b> O'quvchining progresi endi SINFI va FAOL
+/// GURUHLARINING darslaridan yig'iladi (<see cref="LessonRoster.OwnersOfAsync"/>): guruh darsi
+/// sinf darsining USTIGA qo'shiladi, o'rnini bosmaydi (<see cref="ClassAttainment"/> 2-bandi).
+/// O'chirgich o'chiq bo'lsa ega faqat sinf — bugungi raqamning aynan o'zi.</para>
 /// </summary>
 public static class SubjectProgressService
 {
@@ -29,6 +34,15 @@ public static class SubjectProgressService
         public bool Conducted { get; init; }
         public string Topic { get; init; } = "";
         public string? Homework { get; init; }
+
+        /// <summary>Darsning egasi — sinf yoki guruh (<c>class_id</c> ustunidagi qiymat).</summary>
+        public string OwnerId { get; init; } = "";
+
+        /// <summary><see cref="LessonOwnerKind"/>.</summary>
+        public string OwnerKind { get; init; } = LessonOwnerKind.Class;
+
+        /// <summary>Eganing odam ko'radigan nomi (guruh darsida guruh nomi).</summary>
+        public string OwnerName { get; init; } = "";
     }
 
     private static string Today => AppClock.Today.ToString("yyyy-MM-dd");
@@ -40,14 +54,30 @@ public static class SubjectProgressService
     /// <paramref name="studentSubGroup"/> berilsa — faqat shu o'quvchiga tegishli darslar
     /// (SubGroup=0 butun sinf yoki o'z guruhi).
     /// </summary>
-    public static async Task<List<LessonSlot>> ClassSlotsAsync(
-        IAppDbContext db, string classId, int quarter, int? studentSubGroup = null)
+    public static Task<List<LessonSlot>> ClassSlotsAsync(
+        IAppDbContext db, string classId, int quarter, int? studentSubGroup = null) =>
+        OwnerSlotsAsync(db, new LessonOwner(LessonOwnerKind.Class, classId, ""), quarter, studentSubGroup);
+
+    /// <summary>
+    /// EGAning (sinf yoki guruh) bitta chorakdagi reja dars nusxalari.
+    ///
+    /// <para>
+    /// Sinf uchun bu <see cref="ClassSlotsAsync"/> ning aynan o'zi. Guruh uchun
+    /// bo'linish (SubGroup) filtri QO'LLANMAYDI: guruh darsida uning hamma faol
+    /// a'zosi qatnashadi (§2.1.4).
+    /// </para>
+    /// </summary>
+    public static async Task<List<LessonSlot>> OwnerSlotsAsync(
+        IAppDbContext db, LessonOwner owner, int quarter, int? studentSubGroup = null)
     {
         var qp = await db.Quarters.FirstOrDefaultAsync(x => x.Quarter == quarter);
         if (qp is null) return new();
 
+        var ownerId = owner.Id;
+        var ownerKind = owner.Kind;
         var assignments = await db.WeekAssignments
-            .Where(a => a.ClassId == classId && a.Quarter == quarter && a.TemplateId != null)
+            .Where(a => a.ClassId == ownerId && a.OwnerKind == ownerKind
+                        && a.Quarter == quarter && a.TemplateId != null)
             .ToListAsync();
         if (assignments.Count == 0) return new();
 
@@ -57,7 +87,7 @@ public static class SubjectProgressService
             .ToDictionary(t => t.Id, t => t.Lessons);
 
         var notes = await db.LessonNotes
-            .Where(n => n.ClassId == classId && n.Quarter == quarter)
+            .Where(n => n.ClassId == ownerId && n.OwnerKind == ownerKind && n.Quarter == quarter)
             .ToListAsync();
         var noteMap = notes.ToDictionary(n => (n.Date, n.Period, n.SubjectId, n.SubGroup));
 
@@ -70,7 +100,8 @@ public static class SubjectProgressService
             var monday = ScheduleMath.MondayOfISO(w.StartISO);
             foreach (var l in lessons)
             {
-                if (studentSubGroup is int sg && l.SubGroup != 0 && l.SubGroup != sg) continue;
+                if (owner.IsClass && studentSubGroup is int sg && l.SubGroup != 0 && l.SubGroup != sg)
+                    continue;
                 var date = ScheduleMath.AddDaysISO(monday, l.Day);
                 // Hafta chorak chetidan oshib ketsa — chorak chegarasidan tashqaridagi kunni tashlaymiz.
                 if (string.CompareOrdinal(date, qp.StartDate) < 0 ||
@@ -86,17 +117,39 @@ public static class SubjectProgressService
                     Conducted = n?.Conducted ?? false,
                     Topic = n?.Topic ?? "",
                     Homework = n?.Homework,
+                    OwnerId = ownerId,
+                    OwnerKind = ownerKind,
+                    OwnerName = owner.Name,
                 });
             }
         }
         return slots;
     }
 
+    /// <summary>
+    /// O'quvchining chorakdagi BARCHA reja darslari — sinfi va faol guruhlari
+    /// birga (G-18). Guruh darsi sinf darsini BEKOR QILMAYDI, ustiga qo'shiladi
+    /// (<see cref="ClassAttainment"/> 2-bandi).
+    ///
+    /// <para>O'chirgich o'chiq bo'lsa ega faqat sinf — bugungi ro'yxatning o'zi.</para>
+    /// </summary>
+    public static async Task<List<LessonSlot>> StudentSlotsAsync(
+        IAppDbContext db, Student student, int quarter)
+    {
+        var owners = await LessonRoster.OwnersOfAsync(db, student);
+        if (owners.Count == 0) return new();
+
+        var slots = new List<LessonSlot>();
+        foreach (var owner in owners)
+            slots.AddRange(await OwnerSlotsAsync(db, owner, quarter, student.SubGroup));
+        return slots;
+    }
+
     /// <summary>O'quvchi/ota-ona: umumiy + har bir fan progresi (joriy guruhga qisilgan).</summary>
     public static async Task<StudentSubjectsProgressDto> ForStudentAsync(
-        IAppDbContext db, string classId, int quarter, int studentSubGroup)
+        IAppDbContext db, Student student, int quarter)
     {
-        var slots = await ClassSlotsAsync(db, classId, quarter, studentSubGroup);
+        var slots = await StudentSlotsAsync(db, student, quarter);
         var subjectNames = await db.Subjects.ToDictionaryAsync(s => s.Id, s => s.Name);
         var today = Today;
 
@@ -126,9 +179,9 @@ public static class SubjectProgressService
 
     /// <summary>O'quvchi: bitta fanga kirilganda darslar ro'yxati (yashil/qizil). Fan topilmasa null.</summary>
     public static async Task<SubjectProgressDetailDto?> ForStudentSubjectAsync(
-        IAppDbContext db, string classId, int quarter, int studentSubGroup, string subjectId)
+        IAppDbContext db, Student student, int quarter, string subjectId)
     {
-        var slots = (await ClassSlotsAsync(db, classId, quarter, studentSubGroup))
+        var slots = (await StudentSlotsAsync(db, student, quarter))
             .Where(s => s.SubjectId == subjectId)
             .OrderBy(s => s.Date, StringComparer.Ordinal).ThenBy(s => s.Period)
             .ToList();
@@ -155,15 +208,22 @@ public static class SubjectProgressService
     }
 
     /// <summary>
-    /// O'qituvchi: o'zi o'tadigan barcha (sinf, fan, guruh) bo'yicha o'tilgan darslar progresi.
-    /// Barcha kerakli ma'lumot BIR martada yuklanadi (sinflar bo'ylab takroriy so'rov yo'q).
+    /// O'qituvchi: o'zi o'tadigan barcha (sinf/guruh, fan, guruh) bo'yicha o'tilgan darslar
+    /// progresi. Barcha kerakli ma'lumot BIR martada yuklanadi (egalar bo'ylab takroriy
+    /// so'rov yo'q).
+    ///
+    /// <para>
+    /// G-15: guruh darsi ham shu ro'yxatga kiradi va kesim nomida GURUH nomi ko'rinadi —
+    /// faqat o'chirgich yoqilganda. O'chiq bo'lsa guruh biriktirishlari umuman
+    /// ko'rinmaydi (<see cref="TeacherLessons.ForWeekAsync"/> bilan bir xil qoida).
+    /// </para>
     /// </summary>
     public static async Task<TeacherProgressDto> ForTeacherAsync(IAppDbContext db, string teacherId, int quarter)
     {
         var qp = await db.Quarters.FirstOrDefaultAsync(x => x.Quarter == quarter);
         var templates = await db.ScheduleTemplates.Include(t => t.Lessons).ToListAsync();
 
-        // O'qituvchi dars beradigan sinflar (jadval template'laridan).
+        // O'qituvchi dars beradigan egalar (jadval template'laridan).
         var taughtClassIds = templates
             .Where(t => t.Lessons.Any(l => l.TeacherId == teacherId))
             .Select(t => t.ClassId).ToHashSet(StringComparer.Ordinal);
@@ -171,24 +231,32 @@ public static class SubjectProgressService
         if (qp is null || taughtClassIds.Count == 0)
             return new TeacherProgressDto(quarter, 0, 0, 0, new());
 
-        var classNames = await db.Classes.ToDictionaryAsync(c => c.Id, c => c.Name);
+        // Egalarning nomlari: sinflar har doim, guruhlar faqat o'chirgich yoqilganda.
+        var owners = await LessonRoster.AllOwnersAsync(db);
+        var groupsOn = await LessonRoster.GroupLessonsEnabledAsync(db);
+        var classNames = owners.ToDictionary(kv => kv.Key, kv => kv.Value.Name, StringComparer.Ordinal);
         var subjectNames = await db.Subjects.ToDictionaryAsync(s => s.Id, s => s.Name);
 
-        // Faqat shu sinflar + chorak uchun: hafta biriktiruvlari va jurnal yozuvlari — bir martada.
-        var assignments = await db.WeekAssignments
-            .Where(a => a.Quarter == quarter && a.TemplateId != null && taughtClassIds.Contains(a.ClassId))
-            .ToListAsync();
+        // Faqat shu egalar + chorak uchun: hafta biriktiruvlari va jurnal yozuvlari — bir martada.
+        var assignments = (await db.WeekAssignments
+                .Where(a => a.Quarter == quarter && a.TemplateId != null && taughtClassIds.Contains(a.ClassId))
+                .ToListAsync())
+            .Where(a => groupsOn || a.OwnerKind != LessonOwnerKind.Group)
+            .ToList();
         var notes = await db.LessonNotes
             .Where(n => n.Quarter == quarter && taughtClassIds.Contains(n.ClassId))
             .ToListAsync();
-        var noteMap = notes.ToDictionary(n => (n.ClassId, n.Date, n.Period, n.SubjectId, n.SubGroup));
+        var noteMap = notes.ToDictionary(
+            n => (n.ClassId, n.OwnerKind, n.Date, n.Period, n.SubjectId, n.SubGroup));
         var tplById = templates.ToDictionary(t => t.Id, t => t.Lessons);
 
         var weeks = ScheduleMath.GetQuarterWeeks(qp.StartDate, qp.EndDate);
         var today = Today;
 
-        // (sinf, fan, guruh) -> (reja, o'tilgan, bugungacha kutilgan)
-        var agg = new Dictionary<(string ClassId, string SubjectId, int SubGroup), (int Planned, int Conducted, int Expected)>();
+        // (ega, ega turi, fan, guruh) -> (reja, o'tilgan, bugungacha kutilgan)
+        var agg = new Dictionary<
+            (string ClassId, string OwnerKind, string SubjectId, int SubGroup),
+            (int Planned, int Conducted, int Expected)>();
         foreach (var w in weeks)
         {
             var monday = ScheduleMath.MondayOfISO(w.StartISO);
@@ -200,8 +268,9 @@ public static class SubjectProgressService
                     var date = ScheduleMath.AddDaysISO(monday, l.Day);
                     if (string.CompareOrdinal(date, qp.StartDate) < 0 ||
                         string.CompareOrdinal(date, qp.EndDate) > 0) continue;
-                    noteMap.TryGetValue((a.ClassId, date, l.Period, l.SubjectId, l.SubGroup), out var n);
-                    var key = (a.ClassId, l.SubjectId, l.SubGroup);
+                    noteMap.TryGetValue(
+                        (a.ClassId, a.OwnerKind, date, l.Period, l.SubjectId, l.SubGroup), out var n);
+                    var key = (a.ClassId, a.OwnerKind, l.SubjectId, l.SubGroup);
                     agg.TryGetValue(key, out var cur);
                     cur.Planned++;
                     if (n?.Conducted == true) cur.Conducted++;
@@ -217,7 +286,8 @@ public static class SubjectProgressService
                 kv.Key.SubjectId, subjectNames.GetValueOrDefault(kv.Key.SubjectId, ""),
                 kv.Key.SubGroup, kv.Value.Planned, kv.Value.Conducted,
                 Math.Max(0, kv.Value.Planned - kv.Value.Conducted),
-                Pct(kv.Value.Conducted, kv.Value.Planned), kv.Value.Expected))
+                Pct(kv.Value.Conducted, kv.Value.Planned), kv.Value.Expected,
+                kv.Key.OwnerKind))
             .OrderBy(i => i.ClassName, StringComparer.OrdinalIgnoreCase)
             .ThenBy(i => i.SubjectName, StringComparer.OrdinalIgnoreCase)
             .ThenBy(i => i.SubGroup)

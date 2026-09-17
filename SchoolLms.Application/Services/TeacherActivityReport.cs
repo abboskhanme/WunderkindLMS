@@ -13,6 +13,13 @@ namespace SchoolLms.Application.Services;
 /// jadvalidan (ScheduleLesson.TeacherId) (ClassId, SubjectId, SubGroup) kaliti orqali aniqlanadi.
 /// "Reja" (Expected) = haftalarga biriktirilgan jadvaldan kelib chiqib BUGUNGACHA bo'lishi kerak
 /// bo'lgan dars sonidir.</para>
+///
+/// <para><b>G-15 — guruh darslari.</b> Reja endi SINF va GURUH egalarining ikkalasidan ham
+/// yig'iladi (<see cref="LessonRoster.LiveOwnersAsync"/>). Guruh qatorini jadval orqali
+/// aniqlab bo'lmasa — masalan guruhning jadvali hali tuzilmagan bo'lsa — GURUHNING
+/// O'QITUVCHILARI zaxira manba bo'ladi, lekin faqat guruhda BITTA o'qituvchi bo'lganda:
+/// ikkitasi bo'lsa kimga yozishni jurnal aytmaydi va taxmin qilish hisobotni yolg'onga
+/// aylantirardi. O'chirgich o'chiq bo'lsa guruh umuman ko'rinmaydi — bugungi raqam.</para>
 /// </summary>
 public static class TeacherActivityReport
 {
@@ -24,7 +31,7 @@ public static class TeacherActivityReport
 
     private sealed class Computed
     {
-        public Dictionary<(string Teacher, string Class, string Subject, int Sub), Agg> ByKey = new();
+        public Dictionary<(string Teacher, string Class, string OwnerKind, string Subject, int Sub), Agg> ByKey = new();
         public Dictionary<string, string> LastActivity = new(); // teacherId -> ISO sana
     }
 
@@ -55,7 +62,8 @@ public static class TeacherActivityReport
                 subjectNames.GetValueOrDefault(kv.Key.Subject, kv.Key.Subject),
                 kv.Key.Sub,
                 kv.Value.Expected, kv.Value.Conducted, Pct(kv.Value.Conducted, kv.Value.Expected, cap: true),
-                kv.Value.Grades, Pct(kv.Value.Topic, kv.Value.Conducted), Pct(kv.Value.Homework, kv.Value.Conducted)))
+                kv.Value.Grades, Pct(kv.Value.Topic, kv.Value.Conducted), Pct(kv.Value.Homework, kv.Value.Conducted),
+                kv.Key.OwnerKind))
             .OrderBy(r => r.ClassName, StringComparer.OrdinalIgnoreCase)
             .ThenBy(r => r.SubjectName, StringComparer.OrdinalIgnoreCase)
             .ThenBy(r => r.SubGroup)
@@ -70,13 +78,13 @@ public static class TeacherActivityReport
 
     // ---------- Ichki hisoblash ----------
 
-    private static List<KeyValuePair<(string Teacher, string Class, string Subject, int Sub), Agg>>
+    private static List<KeyValuePair<(string Teacher, string Class, string OwnerKind, string Subject, int Sub), Agg>>
         KeysFor(Computed c, string teacherId) =>
         c.ByKey.Where(kv => kv.Key.Teacher == teacherId).ToList();
 
     private static TeacherReportRowDto Row(
         string teacherId, string fullName, bool isArchived,
-        List<KeyValuePair<(string Teacher, string Class, string Subject, int Sub), Agg>> keys,
+        List<KeyValuePair<(string Teacher, string Class, string OwnerKind, string Subject, int Sub), Agg>> keys,
         string? lastActivity)
     {
         var exp = keys.Sum(k => k.Value.Expected);
@@ -113,11 +121,31 @@ public static class TeacherActivityReport
         Dictionary<string, string> SubjectNames)> ComputeAsync(IAppDbContext db, int quarter)
     {
         var teachers = await db.Teachers.ToListAsync();
-        var classes = await db.Classes.ToListAsync();
-        var classNames = classes.ToDictionary(c => c.Id, c => c.Name);
+        // G-15: reja endi SINF va GURUH egalarining ikkalasidan yig'iladi. O'chirgich
+        // o'chiq bo'lsa `LiveOwnersAsync` faqat arxivlanmagan sinflarni qaytaradi —
+        // bugungi `db.Classes.ToListAsync()` bilan bir xil... deyarli: bugungi kod
+        // ARXIVLANGAN sinfni ham sanaydi, shuning uchun reja aylanishi uchun egalar
+        // ro'yxati arxivlanganlar bilan birga olinadi.
+        var owners = await LessonRoster.AllOwnersAsync(db);
+        var groupsOn = await LessonRoster.GroupLessonsEnabledAsync(db);
+        var lessonOwners = owners.Values
+            .Where(o => o.IsClass || groupsOn)
+            .ToList();
+        var classNames = lessonOwners.ToDictionary(o => o.Id, o => o.Name, StringComparer.Ordinal);
         var subjectNames = await db.Subjects.ToDictionaryAsync(s => s.Id, s => s.Name);
         var templates = await db.ScheduleTemplates.Include(t => t.Lessons).ToListAsync();
         var assignments = await db.WeekAssignments.ToListAsync();
+
+        // Guruh o'qituvchilari — jadval orqali aniqlab bo'lmagan guruh qatorlari uchun
+        // zaxira manba. FAQAT guruhda bitta o'qituvchi bo'lsa ishlatiladi (fayl boshidagi izoh).
+        var groupTeacher = new Dictionary<string, string>(StringComparer.Ordinal);
+        if (groupsOn)
+            foreach (var g in (await db.StudyGroupTeachers.AsNoTracking().ToListAsync())
+                         .GroupBy(x => x.GroupId))
+            {
+                var ids = g.Select(x => x.TeacherId).Distinct().ToList();
+                if (ids.Count == 1) groupTeacher[g.Key.ToString()] = ids[0];
+            }
 
         var quartersQ = db.Quarters.AsQueryable();
         if (quarter > 0) quartersQ = quartersQ.Where(q => q.Quarter == quarter);
@@ -149,13 +177,20 @@ public static class TeacherActivityReport
             if (exact.TryGetValue((classId, subjectId, sub), out var t1)) return t1;
             if (exact.TryGetValue((classId, subjectId, 0), out var t0)) return t0;
             if (bySubject.TryGetValue((classId, subjectId), out var set) && set.Count == 1) return set.First();
+            // Guruh qatori: jadval jim bo'lsa guruhning YAGONA o'qituvchisi.
+            if (groupTeacher.TryGetValue(classId, out var gt)) return gt;
             return null;
         }
 
+        // Qator qaysi egadan: `owner_kind` qatorning o'zida turadi, lekin egasi
+        // topilsa uning turi ustun — kalit hamma joyda bir xil bo'lishi uchun.
+        string OwnerKindOf(string classId, string fallback) =>
+            owners.TryGetValue(classId, out var o) ? o.Kind : fallback;
+
         var c = new Computed();
-        Agg Key(string teacher, string classId, string subjectId, int sub)
+        Agg Key(string teacher, string classId, string ownerKind, string subjectId, int sub)
         {
-            var k = (teacher, classId, subjectId, sub);
+            var k = (teacher, classId, ownerKind, subjectId, sub);
             if (!c.ByKey.TryGetValue(k, out var a)) c.ByKey[k] = a = new();
             return a;
         }
@@ -171,11 +206,12 @@ public static class TeacherActivityReport
         foreach (var q in quarters)
         {
             var weeks = ScheduleMath.GetQuarterWeeks(q.StartDate, q.EndDate);
-            foreach (var cls in classes)
+            foreach (var owner in lessonOwners)
                 foreach (var w in weeks)
                 {
                     var a = assignments.FirstOrDefault(x =>
-                        x.ClassId == cls.Id && x.Quarter == q.Quarter && x.Week == w.Week);
+                        x.ClassId == owner.Id && x.OwnerKind == owner.Kind
+                        && x.Quarter == q.Quarter && x.Week == w.Week);
                     if (a?.TemplateId is null) continue;
                     var tpl = templates.FirstOrDefault(t => t.Id == a.TemplateId);
                     if (tpl is null) continue;
@@ -187,7 +223,7 @@ public static class TeacherActivityReport
                         if (string.CompareOrdinal(date, q.StartDate) < 0 ||
                             string.CompareOrdinal(date, q.EndDate) > 0) continue;
                         if (string.CompareOrdinal(date, today) > 0) continue; // kelajak dars — hali reja emas
-                        Key(l.TeacherId, cls.Id, l.SubjectId, l.SubGroup).Expected++;
+                        Key(l.TeacherId, owner.Id, owner.Kind, l.SubjectId, l.SubGroup).Expected++;
                     }
                 }
         }
@@ -196,9 +232,10 @@ public static class TeacherActivityReport
         foreach (var n in notes)
         {
             if (!n.Conducted) continue;
+            if (!groupsOn && n.OwnerKind == LessonOwnerKind.Group) continue;
             var teacher = Attribute(n.ClassId, n.SubjectId, n.SubGroup);
             if (teacher is null) continue;
-            var agg = Key(teacher, n.ClassId, n.SubjectId, n.SubGroup);
+            var agg = Key(teacher, n.ClassId, OwnerKindOf(n.ClassId, n.OwnerKind), n.SubjectId, n.SubGroup);
             agg.Conducted++;
             if (!string.IsNullOrWhiteSpace(n.Topic)) agg.Topic++;
             if (!string.IsNullOrWhiteSpace(n.Homework)) agg.Homework++;
@@ -208,9 +245,10 @@ public static class TeacherActivityReport
         // --- Qo'yilgan baholar (JournalEntry) ---
         foreach (var e in entries)
         {
+            if (!groupsOn && e.OwnerKind == LessonOwnerKind.Group) continue;
             var teacher = Attribute(e.ClassId, e.SubjectId, e.SubGroup);
             if (teacher is null) continue;
-            Key(teacher, e.ClassId, e.SubjectId, e.SubGroup).Grades++;
+            Key(teacher, e.ClassId, OwnerKindOf(e.ClassId, e.OwnerKind), e.SubjectId, e.SubGroup).Grades++;
             Touch(teacher, e.Date);
         }
 
