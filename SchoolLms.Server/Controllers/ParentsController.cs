@@ -250,7 +250,13 @@ public class ParentsController(AppDbContext db) : ControllerBase
         var search = (f.Search ?? "").Trim();
         if (search.Length > 0)
         {
-            var key = PhoneUtil.Key(search);
+            // Telefon bo'yicha qidiruv FAQAT qidiruv satri raqamdan iborat
+            // bo'lganda ishlaydi. Ilgari har qanday matndan raqamlar sug'urib
+            // olinardi, ya'ni "Ali2ev" telefon kaliti sifatida ham "2" bo'lib
+            // ketardi va ismga qidirayotgan odam begona vasiyni ko'rardi.
+            // Ism ichidagi tasodifiy raqamlar boshqa odamning telefoniga
+            // tushishi mumkin — qidiruv natijasi tushunarsiz bo'ladi.
+            var key = search.Any(char.IsLetter) ? "" : PhoneUtil.Key(search);
             var byChild = pairs
                 .Where(p => p.FullName.Contains(search, StringComparison.OrdinalIgnoreCase))
                 .Select(p => p.GuardianId)

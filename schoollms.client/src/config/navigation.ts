@@ -95,6 +95,10 @@ export const navByRole: Record<Role, NavItem[]> = {
         // tasdiqlash chegarasi. Chegarani FAQAT direktor o'zgartira oladi —
         // buni server hal qiladi (`ManageBillingSettings`), menyu esa qo'shni
         // katalog yozuvlari bilan bir xil rol darvozasida turadi.
+        // Pul qaytarish (F1.05): so'rash va tasdiqlash AYRI huquq — so'rovni
+        // admin qo'yadi, tasdiqni faqat superadmin beradi, va o'z so'rovini
+        // o'zi tasdiqlay olmaydi (bazadagi `ck_student_refunds_approver_differs`).
+        { label: 'Qaytarimlar', to: '/admin/finance/refunds', roles: ['admin', 'superadmin'], group: 'AMALIYOT' },
         { label: 'Moliya sozlamalari', to: '/admin/billing/settings', roles: ['admin', 'superadmin'], group: 'AMALIYOT' },
         // SPEC §4.3: moliya hisobotlari faqat admin va direktorga ochiq —
         // 'finance' ruxsatli xodim (staff) ham bu yerni ko'rmaydi, chunki

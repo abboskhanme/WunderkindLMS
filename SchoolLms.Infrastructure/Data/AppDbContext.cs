@@ -100,6 +100,15 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<StudentRefund> StudentRefunds => Set<StudentRefund>();
     public DbSet<ExpenseAttachment> ExpenseAttachments => Set<ExpenseAttachment>();
 
+    // Bonus / jarima — moliya pariteti, Batch B (finance-parity.md §3.2, F11.01/F11.02).
+    // Konfiguratsiya: PayrollAdjustmentsModel.cs.
+    //
+    // DIQQAT: `PayrollAdjustments` FAQAT INSERT. `app_rw` da UPDATE/DELETE yo'q
+    // (payroll_adjustments_guards.sql) — xato yozuv `ReversalOf` bilan tuzatiladi.
+    // `AdjustmentReasons` esa oddiy katalog — to'liq CRUD.
+    public DbSet<AdjustmentReason> AdjustmentReasons => Set<AdjustmentReason>();
+    public DbSet<PayrollAdjustment> PayrollAdjustments => Set<PayrollAdjustment>();
+
     // Ikkinchi to'lqin (docs/modules/existing-module-gaps.md): qarzdorlar ish oqimi
     // (§3.5), sertifikatlar (§2.3) va arxivlash sabablari katalogi (§2.2).
     // Konfiguratsiya: ParityModel.cs. Hozircha ilovadan HECH KIM o'qimaydi —
@@ -277,6 +286,13 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
         // Oltinchi alohida fayl. `expenses.cash_shift_id` (A1) ham shu yerda —
         // o'zgarish qaysi hujjatdan kelgan bo'lsa, o'sha faylda turadi.
         FinanceParityModel.Apply(b);
+
+        // ----- Bonus / jarima: Batch B (finance-parity.md §3.2, F11.01/F11.02) -----
+        // Sakkizinchi alohida fayl — HR-01/02/03 (to'liq `hr_employees` va
+        // qolgan 22 jadval) hali qurilmagan, shuning uchun bu yerda faqat
+        // Bonus/Jarima registri va sabab katalogi (PayrollAdjustmentsModel.cs
+        // boshidagi izoh).
+        PayrollAdjustmentsModel.Apply(b);
 
         // ----- PostgreSQL: vaqt turi -----
         // Tizim sanalarni Toshkent "devor soati" sifatida saqlaydi (AppClock.Now — Kind=Unspecified),

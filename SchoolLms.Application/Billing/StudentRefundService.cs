@@ -191,7 +191,7 @@ public sealed class StudentRefundService(
     private const int MaxRows = 2000;
 
     /// <summary><c>audit_log.entity_type</c> — qaytarim yozuvlari shu bo'yicha topiladi.</summary>
-    public const string AuditEntityStudentRefund = "StudentRefund";
+    public const string AuditEntityStudentRefund = AuditService.EntityStudentRefund;
 
     /// <summary>
     /// <b>QAYTARIM BO'YICHA TASDIQ QULFI.</b> Kalit

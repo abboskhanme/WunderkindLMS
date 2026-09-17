@@ -196,7 +196,13 @@ FROM (VALUES
         -- finance-parity.md §3.1 A4 — the evidence behind an expense.
         -- Replacing or deleting it is the fraud SPEC §4 describes; a wrong
         -- upload is superseded by a new row, never edited away.
-        ('expense_attachments')
+        ('expense_attachments'),
+        -- finance-parity.md §3.2 B3 (F11.01) — a bonus/penalty entry that
+        -- reaches an employee's pay. Append-only; a wrong entry is corrected
+        -- with a `reversal_of` row, never edited. `adjustment_reasons` (B2)
+        -- is NOT in this list on purpose: it is an ordinary catalogue with
+        -- no money in it, so it keeps the full CRUD step 4 already grants.
+        ('payroll_adjustments')
      ) AS t(name)
 WHERE to_regclass('public.' || quote_ident(t.name)) IS NOT NULL
 \gexec
