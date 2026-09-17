@@ -172,6 +172,55 @@ export async function getProfitLoss(from: string, to: string): Promise<ProfitLos
 }
 
 /* =========================================================================
+   2b) P&L 2.0 (beta) — GET /api/admin/finance/pnl/expectation
+   ========================================================================= */
+
+/**
+ * Bir oy uchun "reja · fakt · farq" (§2.6, `FINANCE_ALL.PNL_EXPECTATION`,
+ * EduSchool'da beta). Backend: `FinanceReportQueries.RevenueExpectation.cs`.
+ *
+ * `revenueActual` / `expenseActual` / `profitActual` — {@link getProfitLoss}
+ * shu OYNI so'raganda qaytaradigan `revenueTotal` / `expenseTotal` / `net`
+ * bilan AYNAN bir xil (server bitta funksiyani chaqiradi — ikkinchi ta'rif
+ * yo'q, backenddagi test buni tekshiradi).
+ */
+export interface RevenueExpectation {
+  /** "YYYY-MM-DD" — oyning birinchi kuni. */
+  month: string
+  studentsActive: number
+  studentsAdmitted: number
+  studentsDeparted: number
+  studentsExpected: number
+  studentsPaid: number
+  grossExpected: number
+  discountAmount: number
+  discountRate: number | null
+  netExpected: number
+  perStudentNet: number | null
+  collectedForPeriod: number
+  collectionRateForPeriod: number | null
+  outstandingForPeriod: number
+  revenueActual: number
+  expenseActual: number
+  profitActual: number
+  margin: number | null
+  profitPerStudent: number | null
+  revenueDiff: number
+}
+
+/** P&L 2.0. `month` — "YYYY-MM". Berilmasa — server joriy oyni qaytaradi. */
+export async function getRevenueExpectation(month?: string): Promise<RevenueExpectation> {
+  try {
+    const { data } = await api.get<RevenueExpectation>('/admin/finance/pnl/expectation', {
+      params: clean({ month }),
+    })
+    return data
+  } catch (e) {
+    throw toUzbekError(e, 'P&L 2.0 hisoboti')
+  }
+}
+
+/* =========================================================================
    3) Pul oqimi — GET /api/admin/finance/cashflow
    ========================================================================= */
 
