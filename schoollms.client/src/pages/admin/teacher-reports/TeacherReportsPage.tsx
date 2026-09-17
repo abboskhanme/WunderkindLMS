@@ -177,7 +177,14 @@ export function TeacherReportsPage() {
                 <tbody className="divide-y divide-slate-100">
                   {detail.rows.map((b, i) => (
                     <tr key={i}>
-                      <td className="px-3 py-2 font-medium text-slate-700">{b.className}</td>
+                      <td className="px-3 py-2 font-medium text-slate-700">
+                        {b.className}
+                        {b.ownerKind === 'group' && (
+                          <span className="ml-1 rounded bg-amber-100 px-1 text-[10px] font-semibold text-amber-800">
+                            guruh
+                          </span>
+                        )}
+                      </td>
                       <td className="px-3 py-2 text-slate-600">
                         {b.subjectName}
                         {b.subGroup > 0 && (

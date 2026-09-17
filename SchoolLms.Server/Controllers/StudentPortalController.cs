@@ -368,8 +368,14 @@ public class StudentPortalController(
         return new StudentDisciplineDto(100 + plus - minus, plus, minus, ordered);
     }
 
-    // ---------- Jadval (o'z sinfi) ----------
+    // ---------- Jadval (o'z sinfi + guruhlari) ----------
 
+    /// <summary>
+    /// O'quvchining haftalik jadvali. G-18: manba endi <see cref="PupilTimetable"/> —
+    /// sinf darslari va FAOL GURUH darslari bitta ro'yxatda, kun va dars raqami
+    /// bo'yicha tartiblangan. O'chirgich o'chiq bo'lsa ro'yxatda faqat sinf darslari
+    /// bo'ladi, ya'ni bugungi javobning aynan o'zi.
+    /// </summary>
     [HttpGet("schedule")]
     public async Task<ActionResult<IEnumerable<StudentLessonDto>>> Schedule(
         [FromQuery] int? quarter, [FromQuery] int? week, [FromQuery] string? studentId)
@@ -377,27 +383,25 @@ public class StudentPortalController(
         if (User.IsInRole("admin") && string.IsNullOrWhiteSpace(studentId)) return NeedStudentId();
         var s = await TargetAsync(studentId);
         if (s is null) return NotFound();
-        var cls = await db.Classes.FirstOrDefaultAsync(c => c.Name == s.ClassName);
-        if (cls is null) return new List<StudentLessonDto>();
 
         var (curQ, curW) = await PortalSchedule.CurrentQuarterWeekAsync(db);
-        var lessons = await PortalSchedule.LessonsForWeekAsync(db, cls.Id, quarter ?? curQ, week ?? curW);
-        // O'quvchi guruhiga mos darslar (SubGroup=0 yoki o'z guruhi).
-        lessons = PortalSchedule.ForStudent(lessons, s.SubGroup).ToList();
+        var lessons = await PupilTimetable.ForWeekAsync(db, s, quarter ?? curQ, week ?? curW);
+        if (lessons.Count == 0) return new List<StudentLessonDto>();
 
         var subjects = await db.Subjects.ToDictionaryAsync(x => x.Id, x => x.Name);
         var teachers = await db.Teachers.ToDictionaryAsync(x => x.Id, x => x.FullName);
         var times = await db.LessonTimes.ToDictionaryAsync(x => x.Period);
 
         return lessons
-            .OrderBy(l => l.Day).ThenBy(l => l.Period)
             .Select(l =>
             {
                 times.TryGetValue(l.Period, out var lt);
                 return new StudentLessonDto(
                     l.Day, l.Period, lt?.StartTime, lt?.EndTime,
                     l.SubjectId, subjects.GetValueOrDefault(l.SubjectId, ""),
-                    l.TeacherId, teachers.GetValueOrDefault(l.TeacherId, ""));
+                    l.TeacherId, teachers.GetValueOrDefault(l.TeacherId, ""),
+                    // `subGroup` bu endpointda bugun ham 0 bo'lib qaytadi — o'zgartirmaymiz.
+                    OwnerKind: l.Owner.Kind, OwnerName: l.Owner.IsGroup ? l.Owner.Name : null);
             })
             .ToList();
     }
@@ -462,23 +466,34 @@ public class StudentPortalController(
         if (User.IsInRole("admin") && string.IsNullOrWhiteSpace(studentId)) return NeedStudentId();
         var s = await TargetAsync(studentId);
         if (s is null) return NotFound();
-        var cls = await db.Classes.FirstOrDefaultAsync(c => c.Name == s.ClassName);
-        if (cls is null) return new List<HomeworkItemDto>();
+        // G-18: uy vazifa va mavzular endi sinf darslaridan ham, FAOL GURUH
+        // darslaridan ham keladi. O'chirgich o'chiq bo'lsa ega faqat sinf.
+        var owners = await LessonRoster.OwnersOfAsync(db, s);
+        if (owners.Count == 0) return new List<HomeworkItemDto>();
+        var ownerIds = owners.Select(o => o.Id).ToList();
+        var ownerById = owners.ToDictionary(o => o.Id, StringComparer.Ordinal);
 
         var (curQ, _) = await PortalSchedule.CurrentQuarterWeekAsync(db);
         var q = quarter ?? curQ;
 
         var subjects = await db.Subjects.ToDictionaryAsync(x => x.Id, x => x.Name);
-        var notes = await db.LessonNotes
-            .Where(n => n.ClassId == cls.Id && n.Quarter == q &&
-                        (n.SubGroup == 0 || n.SubGroup == s.SubGroup))
-            .ToListAsync();
+        // Bo'linish (SubGroup) filtri faqat SINF izohlariga: guruh darsida
+        // bo'linish yo'q, u a'zolarning hammasiga tegishli.
+        var notes = (await db.LessonNotes
+                .Where(n => ownerIds.Contains(n.ClassId) && n.Quarter == q)
+                .ToListAsync())
+            .Where(n => n.OwnerKind == LessonOwnerKind.Group
+                        || n.SubGroup == 0 || n.SubGroup == s.SubGroup)
+            .ToList();
 
-        // O'quvchining shu chorakdagi jurnal yozuvlari (baho/davomat sababi) — (Date, Period, SubjectId) bo'yicha kalit.
+        // O'quvchining shu chorakdagi jurnal yozuvlari (baho/davomat sababi) —
+        // (ega, Date, Period, SubjectId) bo'yicha kalit.
         var entries = await db.JournalEntries
-            .Where(e => e.ClassId == cls.Id && e.Quarter == q && e.StudentId == s.Id)
+            .Where(e => ownerIds.Contains(e.ClassId) && e.Quarter == q && e.StudentId == s.Id)
             .ToListAsync();
-        var entryMap = entries.ToDictionary(e => (e.Date, e.Period, e.SubjectId));
+        var entryMap = entries
+            .GroupBy(e => (e.ClassId, e.Date, e.Period, e.SubjectId))
+            .ToDictionary(g => g.Key, g => g.First());
 
         var reasons = await db.AbsenceReasons.ToDictionaryAsync(r => r.Id);
 
@@ -490,13 +505,15 @@ public class StudentPortalController(
             .OrderBy(n => n.Date, StringComparer.Ordinal).ThenBy(n => n.Period)
             .Select(n =>
             {
-                entryMap.TryGetValue((n.Date, n.Period, n.SubjectId), out var en);
+                entryMap.TryGetValue((n.ClassId, n.Date, n.Period, n.SubjectId), out var en);
                 AbsenceReason? r = null;
                 if (en?.ReasonId is not null) reasons.TryGetValue(en.ReasonId, out r);
+                var owner = ownerById.GetValueOrDefault(n.ClassId);
                 return new HomeworkItemDto(
                     n.Date, n.Period, n.SubjectId, subjects.GetValueOrDefault(n.SubjectId, ""),
                     n.Topic, n.Homework, n.Conducted,
-                    hideGrades ? null : en?.Grade, en?.ReasonId, r?.Name, r?.IsLate ?? false);
+                    hideGrades ? null : en?.Grade, en?.ReasonId, r?.Name, r?.IsLate ?? false,
+                    n.OwnerKind, owner is { IsGroup: true } ? owner.Name : null);
             })
             .ToList();
     }
@@ -513,8 +530,10 @@ public class StudentPortalController(
         if (User.IsInRole("admin") && string.IsNullOrWhiteSpace(studentId)) return NeedStudentId();
         var s = await TargetAsync(studentId);
         if (s is null) return NotFound();
-        var cls = await db.Classes.FirstOrDefaultAsync(c => c.Name == s.ClassName);
-        if (cls is null) return new List<StudentJournalRowDto>();
+        // G-18: qatorlar sinf VA guruh darslaridan quriladi.
+        var owners = await LessonRoster.OwnersOfAsync(db, s);
+        if (owners.Count == 0) return new List<StudentJournalRowDto>();
+        var ownerIds = owners.Select(o => o.Id).ToList();
 
         var (curQ, curW) = await PortalSchedule.CurrentQuarterWeekAsync(db);
         var q = quarter ?? curQ;
@@ -528,22 +547,26 @@ public class StudentPortalController(
         if (wk is null) return new List<StudentJournalRowDto>();
         var monday = ScheduleMath.MondayOfISO(wk.StartISO);
 
-        var lessons = await PortalSchedule.LessonsForWeekAsync(db, cls.Id, q, w);
-        // Faqat o'quvchi guruhiga tegishli darslar (SubGroup=0 yoki o'z guruhi).
-        lessons = PortalSchedule.ForStudent(lessons, s.SubGroup).ToList();
+        // Sinf + faol guruh darslari, bo'linish filtri bilan (`PupilTimetable`).
+        var lessons = await PupilTimetable.ForWeekAsync(db, s, q, w);
         var subjects = await db.Subjects.ToDictionaryAsync(x => x.Id, x => x.Name);
         var teachers = await db.Teachers.ToDictionaryAsync(x => x.Id, x => x.FullName);
         var times = await db.LessonTimes.ToDictionaryAsync(x => x.Period);
 
+        // Izoh va yozuv kaliti EGA bilan birga: guruh darsi o'z izohini oladi.
         var notes = await db.LessonNotes
-            .Where(n => n.ClassId == cls.Id && n.Quarter == q)
+            .Where(n => ownerIds.Contains(n.ClassId) && n.Quarter == q)
             .ToListAsync();
-        var noteMap = notes.ToDictionary(n => (n.Date, n.Period, n.SubjectId, n.SubGroup));
+        var noteMap = notes
+            .GroupBy(n => (n.ClassId, n.Date, n.Period, n.SubjectId, n.SubGroup))
+            .ToDictionary(g => g.Key, g => g.First());
 
         var entries = await db.JournalEntries
-            .Where(e => e.ClassId == cls.Id && e.Quarter == q && e.StudentId == s.Id)
+            .Where(e => ownerIds.Contains(e.ClassId) && e.Quarter == q && e.StudentId == s.Id)
             .ToListAsync();
-        var entryMap = entries.ToDictionary(e => (e.Date, e.Period, e.SubjectId));
+        var entryMap = entries
+            .GroupBy(e => (e.ClassId, e.Date, e.Period, e.SubjectId))
+            .ToDictionary(g => g.Key, g => g.First());
 
         var reasons = await db.AbsenceReasons.ToDictionaryAsync(r => r.Id);
 
@@ -551,15 +574,15 @@ public class StudentPortalController(
         var hideGrades = await ProgressHiddenAsync();
 
         var rows = new List<StudentJournalRowDto>();
-        foreach (var l in lessons.OrderBy(x => x.Day).ThenBy(x => x.Period))
+        foreach (var l in lessons)
         {
             var date = ScheduleMath.AddDaysISO(monday, l.Day);
             // Hafta chorak chetiga qisilgan bo'lsa kunni tashqarida qoldiramiz.
             if (string.CompareOrdinal(date, wk.StartISO) < 0 ||
                 string.CompareOrdinal(date, wk.EndISO) > 0) continue;
 
-            noteMap.TryGetValue((date, l.Period, l.SubjectId, l.SubGroup), out var n);
-            entryMap.TryGetValue((date, l.Period, l.SubjectId), out var en);
+            noteMap.TryGetValue((l.Owner.Id, date, l.Period, l.SubjectId, l.SubGroup), out var n);
+            entryMap.TryGetValue((l.Owner.Id, date, l.Period, l.SubjectId), out var en);
             AbsenceReason? r = null;
             if (en?.ReasonId is not null) reasons.TryGetValue(en.ReasonId, out r);
             times.TryGetValue(l.Period, out var lt);
@@ -570,7 +593,8 @@ public class StudentPortalController(
                 l.SubjectId, subjects.GetValueOrDefault(l.SubjectId, ""),
                 l.TeacherId, teachers.GetValueOrDefault(l.TeacherId, ""),
                 n?.Topic ?? "", n?.Homework, n?.Conducted ?? false,
-                hideGrades ? null : en?.Grade, en?.ReasonId, r?.Name, r?.IsLate ?? false));
+                hideGrades ? null : en?.Grade, en?.ReasonId, r?.Name, r?.IsLate ?? false,
+                l.Owner.Kind, l.Owner.IsGroup ? l.Owner.Name : null));
         }
         return rows;
     }
@@ -586,10 +610,12 @@ public class StudentPortalController(
         if (User.IsInRole("admin") && string.IsNullOrWhiteSpace(studentId)) return NeedStudentId();
         var s = await TargetAsync(studentId);
         if (s is null) return NotFound();
-        var cls = await db.Classes.FirstOrDefaultAsync(c => c.Name == s.ClassName);
-        if (cls is null) return new StudentAttendanceFullDto(
+        // G-18: guruh darsidagi davomatsizlik ham shu ro'yxatda.
+        var owners = await LessonRoster.OwnersOfAsync(db, s);
+        if (owners.Count == 0) return new StudentAttendanceFullDto(
             new StudentAttendanceDto(new(), new(), new(), new(), new()),
             new List<StudentAbsenceRowDto>());
+        var ownerIds = owners.Select(o => o.Id).ToList();
 
         var report = await StudentReportBuilder.BuildAsync(db, s);
 
@@ -598,7 +624,7 @@ public class StudentPortalController(
         var reasons = reasonRows.ToDictionary(r => r.Id);
 
         var rowsQuery = db.JournalEntries
-            .Where(e => e.ClassId == cls.Id && e.StudentId == s.Id && e.ReasonId != null);
+            .Where(e => ownerIds.Contains(e.ClassId) && e.StudentId == s.Id && e.ReasonId != null);
         if (quarter.HasValue) rowsQuery = rowsQuery.Where(e => e.Quarter == quarter.Value);
 
         var rows = (await rowsQuery.ToListAsync())
@@ -636,6 +662,10 @@ public class StudentPortalController(
         var meta = await refCache.MetaAsync();
 
         var cls = await db.Classes.FirstOrDefaultAsync(c => c.Name == s.ClassName);
+        // G-18: bugungi darslar va baholar sinfdan ham, FAOL GURUHlardan ham.
+        var owners = await LessonRoster.OwnersOfAsync(db, s);
+        var ownerIds = owners.Select(o => o.Id).ToList();
+        var ownerById = owners.ToDictionary(o => o.Id, StringComparer.Ordinal);
 
         // Bugungi darslar (joriy chorak + joriy hafta, kun = today.DayOfWeek 0=Du..5=Sha).
         var today = AppClock.Today.ToString("yyyy-MM-dd");
@@ -643,11 +673,9 @@ public class StudentPortalController(
 
         var todayLessons = new List<StudentLessonDto>();
         var todayGrades = new List<HomeworkItemDto>();
-        if (cls is not null)
+        if (owners.Count > 0)
         {
-            var lessons = await PortalSchedule.LessonsForWeekAsync(db, cls.Id, meta.CurrentQuarter, meta.CurrentWeek);
-            // O'quvchi guruhi bo'yicha filtr.
-            lessons = PortalSchedule.ForStudent(lessons, s.SubGroup).ToList();
+            var lessons = await PupilTimetable.ForWeekAsync(db, s, meta.CurrentQuarter, meta.CurrentWeek);
             var subjects = await db.Subjects.ToDictionaryAsync(x => x.Id, x => x.Name);
             var teachers = await db.Teachers.ToDictionaryAsync(x => x.Id, x => x.FullName);
             var times = await db.LessonTimes.ToDictionaryAsync(x => x.Period);
@@ -661,7 +689,8 @@ public class StudentPortalController(
                     return new StudentLessonDto(
                         l.Day, l.Period, lt?.StartTime, lt?.EndTime,
                         l.SubjectId, subjects.GetValueOrDefault(l.SubjectId, ""),
-                        l.TeacherId, teachers.GetValueOrDefault(l.TeacherId, ""), l.SubGroup);
+                        l.TeacherId, teachers.GetValueOrDefault(l.TeacherId, ""), l.SubGroup,
+                        l.Owner.Kind, l.Owner.IsGroup ? l.Owner.Name : null);
                 })
                 .ToList();
 
@@ -671,18 +700,22 @@ public class StudentPortalController(
             var entries = new List<JournalEntry>();
             if (!await ProgressHiddenAsync())
                 entries = await db.JournalEntries
-                    .Where(e => e.ClassId == cls.Id && e.StudentId == s.Id && e.Date == today && e.Grade != null)
+                    .Where(e => ownerIds.Contains(e.ClassId) && e.StudentId == s.Id
+                                && e.Date == today && e.Grade != null)
                     .ToListAsync();
             // G-2: bo'lingan darsda bir (sana, dars, fan) uchun 1- va 2-guruhning ALOHIDA izohi
             // bor — ToDictionary ular bilan yiqilardi (HTTP 500). O'quvchiga faqat butun sinf
             // izohi yoki O'Z guruhiniki tegishli; ikkalasi bo'lsa o'z guruhiniki ustun.
+            // Guruh darsida bo'linish yo'q — uning izohi a'zolarning hammasiga tegishli.
             var subGroup = s.SubGroup;
-            var notes = await db.LessonNotes
-                .Where(n => n.ClassId == cls.Id && n.Date == today
-                            && (n.SubGroup == 0 || n.SubGroup == subGroup))
-                .ToListAsync();
+            var notes = (await db.LessonNotes
+                    .Where(n => ownerIds.Contains(n.ClassId) && n.Date == today)
+                    .ToListAsync())
+                .Where(n => n.OwnerKind == LessonOwnerKind.Group
+                            || n.SubGroup == 0 || n.SubGroup == subGroup)
+                .ToList();
             var noteMap = notes
-                .GroupBy(n => (n.Date, n.Period, n.SubjectId))
+                .GroupBy(n => (n.ClassId, n.Date, n.Period, n.SubjectId))
                 .ToDictionary(g => g.Key, g => g
                     .OrderByDescending(n => n.SubGroup == subGroup)
                     .ThenBy(n => n.Id, StringComparer.Ordinal)
@@ -693,13 +726,15 @@ public class StudentPortalController(
                 .OrderBy(e => e.Period)
                 .Select(e =>
                 {
-                    noteMap.TryGetValue((e.Date, e.Period, e.SubjectId), out var n);
+                    noteMap.TryGetValue((e.ClassId, e.Date, e.Period, e.SubjectId), out var n);
                     AbsenceReason? r = null;
                     if (e.ReasonId is not null) reasons.TryGetValue(e.ReasonId, out r);
+                    var owner = ownerById.GetValueOrDefault(e.ClassId);
                     return new HomeworkItemDto(
                         e.Date, e.Period, e.SubjectId, subjects.GetValueOrDefault(e.SubjectId, ""),
                         n?.Topic ?? "", n?.Homework, n?.Conducted ?? true,
-                        e.Grade, e.ReasonId, r?.Name, r?.IsLate ?? false);
+                        e.Grade, e.ReasonId, r?.Name, r?.IsLate ?? false,
+                        e.OwnerKind, owner is { IsGroup: true } ? owner.Name : null);
                 })
                 .ToList();
         }
@@ -1083,9 +1118,8 @@ public class StudentPortalController(
         if (s is null) return NotFound();
         var (curQ, _) = await PortalSchedule.CurrentQuarterWeekAsync(db);
         var q = quarter ?? curQ;
-        var cls = await db.Classes.FirstOrDefaultAsync(c => c.Name == s.ClassName);
-        if (cls is null) return new StudentSubjectsProgressDto(q, 0, 0, 0, new());
-        return await SubjectProgressService.ForStudentAsync(db, cls.Id, q, s.SubGroup);
+        // G-18: progres sinf va FAOL GURUH darslaridan yig'iladi.
+        return await SubjectProgressService.ForStudentAsync(db, s, q);
     }
 
     /// <summary>Bitta fanga kirilganda — darslar ro'yxati (yashil = o'tilgan, qizil = hali yo'q).</summary>
@@ -1096,11 +1130,9 @@ public class StudentPortalController(
         if (User.IsInRole("admin") && string.IsNullOrWhiteSpace(studentId)) return NeedStudentId();
         var s = await TargetAsync(studentId);
         if (s is null) return NotFound();
-        var cls = await db.Classes.FirstOrDefaultAsync(c => c.Name == s.ClassName);
-        if (cls is null) return NotFound();
         var (curQ, _) = await PortalSchedule.CurrentQuarterWeekAsync(db);
         var dto = await SubjectProgressService.ForStudentSubjectAsync(
-            db, cls.Id, quarter ?? curQ, s.SubGroup, subjectId);
+            db, s, quarter ?? curQ, subjectId);
         return dto is null ? NotFound() : dto;
     }
 

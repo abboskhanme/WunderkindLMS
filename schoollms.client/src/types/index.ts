@@ -593,9 +593,12 @@ export interface TeacherReportRow {
 
 /** Sinf/fan kesimida bitta qator (batafsil hisobot) */
 export interface TeacherReportBreakdown {
+  /** Sinf yoki GURUH nomi — qaysiligini `ownerKind` aytadi (G-15) */
   className: string
   subjectName: string
   subGroup: number
+  /** 'group' bo'lsa qator guruh darsiga tegishli; berilmasa 'class' */
+  ownerKind?: LessonOwnerKind
   expected: number
   conducted: number
   donePct: number | null

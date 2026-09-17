@@ -115,10 +115,11 @@ public sealed class TelegramParentController(
         // bitta bolaning qarzi har xil ko'rinmasligi uchun.
         var card = (await Access.ChildCardsAsync(uid, ct)).First(c => c.StudentId == child.Id);
 
-        var cls = await db.Classes.FirstOrDefaultAsync(c => c.Name == child.ClassName, ct);
-        var (todayLessons, todayGrades) = cls is null
+        // G-18: bugungi darslar/baholar sinfdan ham, FAOL GURUHlardan ham keladi.
+        var owners = await LessonRoster.OwnersOfAsync(db, child, ct: ct);
+        var (todayLessons, todayGrades) = owners.Count == 0
             ? (new List<StudentLessonDto>(), new List<HomeworkItemDto>())
-            : await TodayAsync(cls.Id, child, meta, ct);
+            : await TodayAsync(owners, child, meta, ct);
         // §5.5 — jadval qoladi, bugungi baholar bo'shaydi.
         if (await ProgressHiddenAsync(ct)) todayGrades = [];
 
@@ -156,14 +157,16 @@ public sealed class TelegramParentController(
 
         var report = await StudentReportBuilder.BuildAsync(db, child);
 
-        var cls = await db.Classes.FirstOrDefaultAsync(c => c.Name == child.ClassName, ct);
-        if (cls is null) return new StudentAttendanceFullDto(report.Attendance, []);
+        // G-18: guruh darsidagi davomatsizlik ham shu ro'yxatda.
+        var owners = await LessonRoster.OwnersOfAsync(db, child, ct: ct);
+        if (owners.Count == 0) return new StudentAttendanceFullDto(report.Attendance, []);
+        var ownerIds = owners.Select(o => o.Id).ToList();
 
         var subjects = await db.Subjects.ToDictionaryAsync(x => x.Id, x => x.Name, ct);
         var reasons = await db.AbsenceReasons.ToDictionaryAsync(r => r.Id, ct);
 
         var query = db.JournalEntries
-            .Where(e => e.ClassId == cls.Id && e.StudentId == child.Id && e.ReasonId != null);
+            .Where(e => ownerIds.Contains(e.ClassId) && e.StudentId == child.Id && e.ReasonId != null);
         if (quarter.HasValue) query = query.Where(e => e.Quarter == quarter.Value);
 
         var rows = (await query.ToListAsync(ct))
@@ -210,11 +213,8 @@ public sealed class TelegramParentController(
         var child = await Access.ChildAsync(uid, studentId, ct);
         if (child is null) return NotFound(new { message = "Farzand topilmadi" });
 
-        var cls = await db.Classes.FirstOrDefaultAsync(c => c.Name == child.ClassName, ct);
-        if (cls is null) return new List<StudentLessonDto>();
-
         var (curQ, curW) = await PortalSchedule.CurrentQuarterWeekAsync(db);
-        return await WeekLessonsAsync(cls.Id, child, quarter ?? curQ, week ?? curW);
+        return await WeekLessonsAsync(child, quarter ?? curQ, week ?? curW);
     }
 
     // =====================================================================
@@ -330,42 +330,52 @@ public sealed class TelegramParentController(
     //  Ichki
     // =====================================================================
 
-    /// <summary>Sinf jadvalidan o'quvchi guruhiga mos haftalik darslar.</summary>
-    private async Task<List<StudentLessonDto>> WeekLessonsAsync(
-        string classId, Student child, int quarter, int week)
+    /// <summary>
+    /// Farzandning haftalik darslari — sinfi va FAOL GURUHLARI birga (G-18,
+    /// <see cref="PupilTimetable"/>). O'chirgich o'chiq bo'lsa ro'yxat bugungi
+    /// sinf jadvalining aynan o'zi.
+    /// </summary>
+    private async Task<List<StudentLessonDto>> WeekLessonsAsync(Student child, int quarter, int week)
     {
-        var lessons = PortalSchedule.ForStudent(
-            await PortalSchedule.LessonsForWeekAsync(db, classId, quarter, week), child.SubGroup).ToList();
+        var lessons = await PupilTimetable.ForWeekAsync(db, child, quarter, week);
+        if (lessons.Count == 0) return [];
 
         var subjects = await db.Subjects.ToDictionaryAsync(x => x.Id, x => x.Name);
         var teachers = await db.Teachers.ToDictionaryAsync(x => x.Id, x => x.FullName);
         var times = await db.LessonTimes.ToDictionaryAsync(x => x.Period);
 
         return [.. lessons
-            .OrderBy(l => l.Day).ThenBy(l => l.Period)
             .Select(l =>
             {
                 times.TryGetValue(l.Period, out var lt);
                 return new StudentLessonDto(
                     l.Day, l.Period, lt?.StartTime, lt?.EndTime,
                     l.SubjectId, subjects.GetValueOrDefault(l.SubjectId, ""),
-                    l.TeacherId, teachers.GetValueOrDefault(l.TeacherId, ""), l.SubGroup);
+                    l.TeacherId, teachers.GetValueOrDefault(l.TeacherId, ""), l.SubGroup,
+                    l.Owner.Kind, l.Owner.IsGroup ? l.Owner.Name : null);
             })];
     }
 
-    /// <summary>Bugungi darslar va bugungi baholar (bosh sahifa uchun).</summary>
+    /// <summary>
+    /// Bugungi darslar va bugungi baholar (bosh sahifa uchun) — sinf va FAOL
+    /// GURUH darslari birga (G-18). O'chirgich o'chiq bo'lsa egalar ro'yxatida
+    /// faqat sinf bo'ladi, ya'ni javob bugungisining aynan o'zi.
+    /// </summary>
     private async Task<(List<StudentLessonDto> Lessons, List<HomeworkItemDto> Grades)> TodayAsync(
-        string classId, Student child, PortalMetaDto meta, CancellationToken ct)
+        IReadOnlyList<LessonOwner> owners, Student child, PortalMetaDto meta, CancellationToken ct)
     {
         // C# Sun=0..Sat=6 → Mon=0..Sun=6; yakshanba (6) jadvalda yo'q.
         var apiDay = ((int)AppClock.Now.DayOfWeek + 6) % 7;
         var today = AppClock.Today.ToString("yyyy-MM-dd");
 
-        var week = await WeekLessonsAsync(classId, child, meta.CurrentQuarter, meta.CurrentWeek);
+        var week = await WeekLessonsAsync(child, meta.CurrentQuarter, meta.CurrentWeek);
         var lessons = week.Where(l => l.Day == apiDay).OrderBy(l => l.Period).ToList();
 
+        var ownerIds = owners.Select(o => o.Id).ToList();
+        var ownerById = owners.ToDictionary(o => o.Id, StringComparer.Ordinal);
         var entries = await db.JournalEntries
-            .Where(e => e.ClassId == classId && e.StudentId == child.Id && e.Date == today && e.Grade != null)
+            .Where(e => ownerIds.Contains(e.ClassId) && e.StudentId == child.Id
+                        && e.Date == today && e.Grade != null)
             .ToListAsync(ct);
         if (entries.Count == 0) return (lessons, []);
 
@@ -373,12 +383,14 @@ public sealed class TelegramParentController(
         // G-2: bo'lingan darsda bir (sana, dars, fan) uchun 1- va 2-guruhning ALOHIDA izohi
         // bor — ToDictionary ular bilan yiqilardi (Mini App bosh sahifasi 500). Farzandga
         // faqat butun sinf izohi yoki O'Z guruhiniki tegishli; ikkalasi bo'lsa o'z guruhiniki.
+        // Guruh darsida bo'linish yo'q — uning izohi a'zolarning hammasiga tegishli.
         var subGroup = child.SubGroup;
         var notes = (await db.LessonNotes
-                .Where(n => n.ClassId == classId && n.Date == today
-                            && (n.SubGroup == 0 || n.SubGroup == subGroup))
+                .Where(n => ownerIds.Contains(n.ClassId) && n.Date == today)
                 .ToListAsync(ct))
-            .GroupBy(n => (n.Date, n.Period, n.SubjectId))
+            .Where(n => n.OwnerKind == LessonOwnerKind.Group
+                        || n.SubGroup == 0 || n.SubGroup == subGroup)
+            .GroupBy(n => (n.ClassId, n.Date, n.Period, n.SubjectId))
             .ToDictionary(g => g.Key, g => g
                 .OrderByDescending(n => n.SubGroup == subGroup)
                 .ThenBy(n => n.Id, StringComparer.Ordinal)
@@ -389,13 +401,15 @@ public sealed class TelegramParentController(
             .OrderBy(e => e.Period)
             .Select(e =>
             {
-                notes.TryGetValue((e.Date, e.Period, e.SubjectId), out var n);
+                notes.TryGetValue((e.ClassId, e.Date, e.Period, e.SubjectId), out var n);
                 AbsenceReason? r = null;
                 if (e.ReasonId is not null) reasons.TryGetValue(e.ReasonId, out r);
+                var owner = ownerById.GetValueOrDefault(e.ClassId);
                 return new HomeworkItemDto(
                     e.Date, e.Period, e.SubjectId, subjects.GetValueOrDefault(e.SubjectId, ""),
                     n?.Topic ?? "", n?.Homework, n?.Conducted ?? true,
-                    e.Grade, e.ReasonId, r?.Name, r?.IsLate ?? false);
+                    e.Grade, e.ReasonId, r?.Name, r?.IsLate ?? false,
+                    e.OwnerKind, owner is { IsGroup: true } ? owner.Name : null);
             })
             .ToList();
 
