@@ -170,7 +170,7 @@ export function FinancePage({ initialTab }: { initialTab?: Tab } = {}) {
         tugmasi yo'q, uni yashiradigan holat ham yo'q. Batafsil izoh:
         `VarianceBanner.tsx`.
       */}
-      {canSeeReports && (
+      {canSeeReports && !initialTab && (
         <VarianceBanner
           watch={variance}
           onOpen={() => setTab('variance')}
@@ -178,7 +178,15 @@ export function FinancePage({ initialTab }: { initialTab?: Tab } = {}) {
         />
       )}
 
-      {/* Bo'limlar (tablar) */}
+      {/*
+        Bo'limlar (tablar) — FAQAT sahifa o'z manzilida (`/admin/finance`)
+        ochilganda. Menyudan aniq hisobotga kirilganda (Qarzdorlar bilan
+        ishlash, P&L, Pul oqimi — har biri o'z menyu yozuvi) tab qatori
+        menyuni TAKRORLAYDI: foydalanuvchi allaqachon tanlab kelgan, ustiga
+        yana yetti tugma ko'rsatish chalkashtiradi. Mijoz 2026-09-18 da aynan
+        shuni so'radi.
+      */}
+      {!initialTab && (
       <div className="flex flex-wrap items-center gap-2">
         <button
           onClick={() => setTab('teachers')}
@@ -223,6 +231,7 @@ export function FinancePage({ initialTab }: { initialTab?: Tab } = {}) {
           </>
         )}
       </div>
+      )}
 
       {/* Davr tanlash (maosh, P&L va pul oqimi uchun) */}
       {periodTabs.includes(tab) && (
