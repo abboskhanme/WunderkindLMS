@@ -114,7 +114,7 @@ export function CertificatesTab({ student }: { student: Student }) {
                 <p className={cn('mt-0.5 text-xs', row.isExpired ? 'text-red-400' : 'text-slate-400')}>
                   {formatDate(row.issuedOn)}
                   {row.expiresOn ? ` — ${formatDate(row.expiresOn)}` : ''}
-                  {row.subjectName ? ` · ${row.subjectName}` : ''}
+                  {row.subjectNames.length > 0 ? ` · ${row.subjectNames.join(', ')}` : ''}
                   {row.teacherName ? ` · ${row.teacherName}` : ''}
                 </p>
                 {row.comment && <p className="mt-1 text-xs text-slate-500">{row.comment}</p>}

@@ -1,6 +1,8 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using DocumentFormat.OpenXml.Packaging;
+using DocumentFormat.OpenXml.Spreadsheet;
 using SchoolLms.Domain;
 using SchoolLms.Tests.Fixtures;
 
@@ -515,20 +517,241 @@ public class CertificatesTests(ApiFixture fixture)
     }
 
     // =====================================================================
+    //  7. Z-3 — BIR NECHTA FAN
+    // =====================================================================
+
+    /// <summary>
+    /// Bitta hujjat ikkita fanni qamrab olishi mumkin ("Matematika + Ingliz tili
+    /// olimpiadasi"). Birinchi tanlangan fan ASOSIY bo'lib qoladi — eski
+    /// <c>subjectId</c>/<c>subjectName</c> maydonlari shu bilan to'ldiriladi
+    /// (ro'yxatdagi "Fan" ustuni, eksport — Z-2 ular bilan ishlaydi).
+    /// </summary>
+    [Fact]
+    public async Task Sertifikatga_bir_nechta_fan_biriktiriladi()
+    {
+        var seed = await SeedAsync();
+        using var client = await fixture.Api.ClientAsAsync(Roles.Admin);
+
+        var response = await client.PostAsJsonAsync(Certificates, new
+        {
+            studentId = seed.StudentA,
+            typeId = seed.PlainTypeId,
+            issuedOn = "2026-05-01",
+            subjectIds = new[] { seed.SubjectId, seed.SubjectId2 },
+        });
+
+        Assert.True(response.IsSuccessStatusCode, await response.Content.ReadAsStringAsync());
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var row = json.RootElement;
+
+        // Asosiy (eski, birlik) maydonlar — birinchi tanlangan fan.
+        Assert.Equal(seed.SubjectId, row.GetProperty("subjectId").GetString());
+
+        var ids = row.GetProperty("subjectIds").EnumerateArray().Select(e => e.GetString()).ToList();
+        Assert.Equal(2, ids.Count);
+        Assert.Contains(seed.SubjectId, ids);
+        Assert.Contains(seed.SubjectId2, ids);
+        Assert.Equal(2, row.GetProperty("subjectNames").GetArrayLength());
+    }
+
+    /// <summary>
+    /// Eski, bitta-fanli yo'l (<c>subjectId</c>, <c>subjectIds</c>siz) ORQAGA MOSLIKDA
+    /// ishlaydi: xizmat qatlami uni bitta elementli ro'yxat sifatida oladi.
+    /// </summary>
+    [Fact]
+    public async Task Eski_subjectId_maydoni_orqaga_moslikda_ishlaydi()
+    {
+        var seed = await SeedAsync();
+        using var client = await fixture.Api.ClientAsAsync(Roles.Admin);
+
+        var response = await client.PostAsJsonAsync(Certificates, new
+        {
+            studentId = seed.StudentA,
+            typeId = seed.PlainTypeId,
+            issuedOn = "2026-05-02",
+            subjectId = seed.SubjectId,
+        });
+
+        Assert.True(response.IsSuccessStatusCode, await response.Content.ReadAsStringAsync());
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var row = json.RootElement;
+
+        Assert.Equal(seed.SubjectId, row.GetProperty("subjectId").GetString());
+        var ids = row.GetProperty("subjectIds").EnumerateArray().Select(e => e.GetString()).ToList();
+        Assert.Equal([seed.SubjectId], ids);
+    }
+
+    /// <summary>
+    /// Tahrirlashda fan ro'yxati TO'LIQ ALMASHTIRILADI (diff bilan — o'chirilgan
+    /// qatorlarga tegib, turganlariga tegmay): eski fan filtrga tushmay qoladi,
+    /// yangisi tushadi.
+    /// </summary>
+    [Fact]
+    public async Task Tahrirlashda_fanlar_royxati_almashtiriladi()
+    {
+        var seed = await SeedAsync();
+        using var client = await fixture.Api.ClientAsAsync(Roles.Admin);
+
+        var id = await CreateCertificateAsync(client, new
+        {
+            studentId = seed.StudentA,
+            typeId = seed.PlainTypeId,
+            issuedOn = "2026-05-03",
+            subjectIds = new[] { seed.SubjectId },
+        });
+
+        var updated = await client.PutAsJsonAsync($"{Certificates}/{id}", new
+        {
+            studentId = seed.StudentA,
+            typeId = seed.PlainTypeId,
+            issuedOn = "2026-05-03",
+            subjectIds = new[] { seed.SubjectId2 },
+        });
+        Assert.True(updated.IsSuccessStatusCode, await updated.Content.ReadAsStringAsync());
+        using var json = JsonDocument.Parse(await updated.Content.ReadAsStringAsync());
+        var row = json.RootElement;
+        Assert.Equal(seed.SubjectId2, row.GetProperty("subjectId").GetString());
+        var ids = row.GetProperty("subjectIds").EnumerateArray().Select(e => e.GetString()).ToList();
+        Assert.Equal([seed.SubjectId2], ids);
+    }
+
+    /// <summary>
+    /// Fan filtri hujjatning ISTALGAN fani bo'yicha ishlaydi — faqat asosiy
+    /// (birinchi) fan emas. <c>subjectId2</c> shu hujjatda IKKINCHI fan.
+    /// </summary>
+    [Fact]
+    public async Task Fan_filtri_qoshimcha_fan_boyicha_ham_ishlaydi()
+    {
+        var seed = await SeedAsync();
+        using var client = await fixture.Api.ClientAsAsync(Roles.Admin);
+
+        await CreateCertificateAsync(client, new
+        {
+            studentId = seed.StudentA,
+            typeId = seed.PlainTypeId,
+            issuedOn = "2026-05-04",
+            subjectIds = new[] { seed.SubjectId, seed.SubjectId2 },
+        });
+
+        var bySecondary = await RowsAsync(client, $"{Certificates}?subjectId={seed.SubjectId2}");
+        Assert.Contains(bySecondary, r => r.GetProperty("studentId").GetString() == seed.StudentA);
+    }
+
+    /// <summary>
+    /// <b>Fan hali "ishlatilgan" hisoblanadi</b> — hujjatda faqat QO'SHIMCHA (asosiy
+    /// emas) fan sifatida turgan bo'lsa ham. Eski tekshiruv (faqat
+    /// <c>certificates.subject_id</c>) buni ko'rmasdi; endi
+    /// <c>certificate_subjects</c> orqali ko'radi (§2.7 Z-3).
+    /// </summary>
+    [Fact]
+    public async Task Qoshimcha_fan_sifatida_ishlatilgan_fanni_ochirib_bolmaydi()
+    {
+        var seed = await SeedAsync();
+        using var client = await fixture.Api.ClientAsAsync(Roles.Admin);
+
+        await CreateCertificateAsync(client, new
+        {
+            studentId = seed.StudentA,
+            typeId = seed.PlainTypeId,
+            issuedOn = "2026-05-05",
+            // seed.SubjectId — ASOSIY, seed.SubjectId2 — QO'SHIMCHA.
+            subjectIds = new[] { seed.SubjectId, seed.SubjectId2 },
+        });
+
+        var blocked = await client.DeleteAsync($"/api/admin/subjects/{seed.SubjectId2}");
+        Assert.Equal(HttpStatusCode.Conflict, blocked.StatusCode);
+        Assert.Contains("ishlatilmoqda", await MessageAsync(blocked), StringComparison.Ordinal);
+    }
+
+    // =====================================================================
+    //  8. Z-2 — XLSX EKSPORT
+    // =====================================================================
+
+    private const string Export = "/api/admin/certificates/export";
+
+    /// <summary>Eksport ham darvozasi bir xil — <c>AdminPerm("students")</c>: 403/401.</summary>
+    [Theory]
+    [InlineData(Roles.Teacher)]
+    [InlineData(Roles.Cashier)]
+    public async Task Eksport_ruxsatsiz_rol_403(string role)
+    {
+        using var client = await fixture.Api.ClientAsAsync(role, "students");
+        Assert.Equal(HttpStatusCode.Forbidden, (await client.GetAsync(Export)).StatusCode);
+    }
+
+    [Fact]
+    public async Task Eksport_tokensiz_401()
+    {
+        using var client = fixture.Api.AnonymousClient();
+        Assert.Equal(HttpStatusCode.Unauthorized, (await client.GetAsync(Export)).StatusCode);
+    }
+
+    /// <summary>
+    /// Joriy filtr (<c>studentId</c>) bilan .xlsx qaytadi: to'g'ri MIME, sarlavha
+    /// qatori va aynan shu filtrga mos qatorlar soni — bo'sh yoki noto'g'ri fayl
+    /// ekranni "yuklab olindi" deb aldab qo'ymasin.
+    /// </summary>
+    [Fact]
+    public async Task Eksport_joriy_filtr_bilan_xlsx_qaytaradi()
+    {
+        var seed = await SeedAsync();
+        using var client = await fixture.Api.ClientAsAsync(Roles.Admin);
+
+        await CreateCertificateAsync(client, new
+        {
+            studentId = seed.StudentA,
+            typeId = seed.PlainTypeId,
+            teacherId = seed.TeacherId,
+            issuedOn = "2026-05-06",
+            subjectIds = new[] { seed.SubjectId, seed.SubjectId2 },
+            number = $"EXP-{seed.Tag}",
+        });
+        // Boshqa o'quvchi — filtr bilan chetda qolishi kerak.
+        await CreateCertificateAsync(client, new
+        { studentId = seed.StudentB, typeId = seed.PlainTypeId, issuedOn = "2026-05-06" });
+
+        var response = await client.GetAsync($"{Export}?studentId={seed.StudentA}");
+        Assert.True(response.IsSuccessStatusCode, await response.Content.ReadAsStringAsync());
+        Assert.Equal(
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            response.Content.Headers.ContentType?.MediaType);
+
+        var bytes = await response.Content.ReadAsByteArrayAsync();
+        using var stream = new MemoryStream(bytes);
+        using var doc = SpreadsheetDocument.Open(stream, isEditable: false);
+        var wbPart = doc.WorkbookPart!;
+        var sheet = Assert.Single(wbPart.Workbook.Descendants<Sheet>());
+        Assert.Equal("Sertifikatlar", sheet.Name!.Value);
+
+        var wsPart = (WorksheetPart)wbPart.GetPartById(sheet.Id!.Value!);
+        var rows = wsPart.Worksheet.Descendants<Row>().ToList();
+        // Sarlavha + faqat StudentA ning bitta hujjati (filtr StudentB ni chiqarib tashladi).
+        Assert.Equal(2, rows.Count);
+
+        var cells = rows[1].Elements<Cell>().Select(c => c.InnerText).ToList();
+        // Ustunlar: O'quvchi, Sinf, Turi, Fan(lar), O'qituvchi, Raqami, ...
+        Assert.Contains("Sertifikat A", cells[0], StringComparison.Ordinal);
+        // "Fan(lar)" ustuni — bitta katakda ikkala fan, vergul bilan (Z-3).
+        Assert.Contains($"Ingliz tili {seed.Tag}", cells[3], StringComparison.Ordinal);
+        Assert.Contains($"Matematika {seed.Tag}", cells[3], StringComparison.Ordinal);
+        Assert.Equal($"EXP-{seed.Tag}", cells[5]);
+    }
+
+    // =====================================================================
     //  Yordamchilar
     // =====================================================================
 
     private sealed record Seed(
         string Tag, string ClassName,
         string StudentA, string StudentB, string StudentC,
-        string TeacherId, string TeacherName, string SubjectId,
+        string TeacherId, string TeacherName, string SubjectId, string SubjectId2,
         Guid ScoredTypeId, Guid PlainTypeId);
 
     private static string Tag() => Guid.NewGuid().ToString("N")[..8];
 
     /// <summary>
-    /// Bitta sinf: uchta o'quvchi, bitta o'qituvchi, bitta fan va ikkita tur —
-    /// ballik ("IELTS") va oddiy ("Diplom").
+    /// Bitta sinf: uchta o'quvchi, bitta o'qituvchi, IKKITA fan (Z-3 — bir nechta fanli
+    /// hujjatlar uchun) va ikkita tur — ballik ("IELTS") va oddiy ("Diplom").
     /// </summary>
     private async Task<Seed> SeedAsync()
     {
@@ -536,6 +759,7 @@ public class CertificatesTests(ApiFixture fixture)
         var className = $"SR-{tag}";
         var teacher = new Teacher { FullName = $"Sertifikat Oqituvchi {tag}", Phone = "+998901112233" };
         var subject = new Subject { Name = $"Ingliz tili {tag}" };
+        var subject2 = new Subject { Name = $"Matematika {tag}" };
         var a = NewStudent($"Sertifikat A {tag}", className);
         var b = NewStudent($"Sertifikat B {tag}", className);
         var c = NewStudent($"Sertifikat C {tag}", className);
@@ -543,7 +767,7 @@ public class CertificatesTests(ApiFixture fixture)
         await fixture.Api.WithDbAsync(async db =>
         {
             db.Teachers.Add(teacher);
-            db.Subjects.Add(subject);
+            db.Subjects.AddRange(subject, subject2);
             db.Students.AddRange(a, b, c);
             await db.SaveChangesAsync();
         });
@@ -553,7 +777,7 @@ public class CertificatesTests(ApiFixture fixture)
         var plain = await CreateTypeAsync(client, $"Diplom {tag}", isScored: false, isActive: true);
 
         return new Seed(tag, className, a.Id, b.Id, c.Id,
-            teacher.Id, teacher.FullName, subject.Id, scored, plain);
+            teacher.Id, teacher.FullName, subject.Id, subject2.Id, scored, plain);
     }
 
     private static async Task<Guid> CreateTypeAsync(
