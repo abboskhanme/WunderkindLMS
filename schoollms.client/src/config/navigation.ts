@@ -91,6 +91,11 @@ export const navByRole: Record<Role, NavItem[]> = {
         { label: 'Chiqimlar', to: '/admin/billing/expenses', roles: ['admin', 'superadmin'], group: 'AMALIYOT' },
         { label: 'Hisob-fakturalar', to: '/admin/billing/invoices', roles: ['admin', 'superadmin'], group: 'AMALIYOT' },
         { label: 'Qarzdor holatlari', to: '/admin/finance/debtor-statuses', roles: ['admin', 'superadmin'], group: 'AMALIYOT' },
+        // Moliya sozlamalari (F14.01): to'lov muddati, kechikish kuni va chiqim
+        // tasdiqlash chegarasi. Chegarani FAQAT direktor o'zgartira oladi —
+        // buni server hal qiladi (`ManageBillingSettings`), menyu esa qo'shni
+        // katalog yozuvlari bilan bir xil rol darvozasida turadi.
+        { label: 'Moliya sozlamalari', to: '/admin/billing/settings', roles: ['admin', 'superadmin'], group: 'AMALIYOT' },
         // SPEC §4.3: moliya hisobotlari faqat admin va direktorga ochiq —
         // 'finance' ruxsatli xodim (staff) ham bu yerni ko'rmaydi, chunki
         // endpoint unga 403 qaytaradi. Menyuni ham, marshrutni ham yopamiz.
