@@ -187,6 +187,14 @@ public record TransferClassMemberRequest(
     bool KeepGroups = true,
     string? Reason = null);
 
+/// <summary>
+/// Qo'shish/o'tkazishdan keyingi sig'im ogohlantirishi (C-4, students-parity.md §2.2.3).
+/// FAQAT ogohlantirish — amal baribir bajarilgan bo'ladi. Ogohlantirish yo'q bo'lsa
+/// controller <c>204 No Content</c> qaytaradi (eski xatti-harakat, sinfda <c>Capacity</c>
+/// belgilanmagan bo'lsa — bugungi barcha sinflar shunday).
+/// </summary>
+public record ClassCapacityWarningDto(string Warning);
+
 /* ---------------------------------------------------------------------------
  *  3. O'quvchi kartochkasi — "Sinf va guruhlar" (G-10)
  * ------------------------------------------------------------------------ */

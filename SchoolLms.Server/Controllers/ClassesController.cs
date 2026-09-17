@@ -14,13 +14,68 @@ namespace SchoolLms.Server.Controllers;
 [Route("api/admin/classes")]
 public class ClassesController(AppDbContext db, AuditService audit) : ControllerBase
 {
-    /// <summary>Faol (arxivlanmagan) sinflar. <paramref name="includeArchived"/>=true bo'lsa hammasi.</summary>
+    /// <summary>
+    /// Faol (arxivlanmagan) sinflar. <paramref name="includeArchived"/>=true bo'lsa hammasi.
+    /// <paramref name="search"/> — C-3 (students-parity.md §2.2.3): nom yoki xona bo'yicha
+    /// qidiruv (EduSchool <c>/class/pagin</c> dagi qidiruv maydonining oddiy nusxasi — bizda
+    /// sinflar ro'yxati sahifalanmaydi, shuning uchun serverda filtrlab, bir martada qaytaramiz).
+    /// </summary>
     [HttpGet]
-    public async Task<ActionResult<IEnumerable<SchoolClass>>> GetAll([FromQuery] bool includeArchived = false)
+    public async Task<ActionResult<IEnumerable<SchoolClass>>> GetAll(
+        [FromQuery] bool includeArchived = false, [FromQuery] string? search = null)
     {
         var q = db.Classes.AsQueryable();
         if (!includeArchived) q = q.Where(c => !c.IsArchived);
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var term = $"%{search.Trim()}%";
+            q = q.Where(c => EF.Functions.ILike(c.Name, term)
+                || (c.Room != null && EF.Functions.ILike(c.Room, term)));
+        }
         return await q.OrderBy(c => c.Grade).ThenBy(c => c.Name).ToListAsync();
+    }
+
+    /// <summary>
+    /// Sinflar ro'yxatini Excel (.xlsx) ga eksport qiladi — C-3. Ekrandagi qidiruv bilan bir
+    /// xil filtr (<c>search</c>), ya'ni yuklangan fayl ko'rinib turgan ro'yxatga mos keladi
+    /// (<c>ExcelExport</c> idiomasi — <see cref="TeachersController.Export"/> bilan bir xil).
+    /// </summary>
+    [HttpGet("export")]
+    public async Task<IActionResult> Export(
+        [FromQuery] bool includeArchived = false, [FromQuery] string? search = null)
+    {
+        var q = db.Classes.AsNoTracking().AsQueryable();
+        if (!includeArchived) q = q.Where(c => !c.IsArchived);
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var term = $"%{search.Trim()}%";
+            q = q.Where(c => EF.Functions.ILike(c.Name, term)
+                || (c.Room != null && EF.Functions.ILike(c.Room, term)));
+        }
+        var classes = await q.OrderBy(c => c.Grade).ThenBy(c => c.Name).ToListAsync();
+
+        var studentCounts = (await db.Students.AsNoTracking()
+                .Where(s => !s.IsArchived)
+                .GroupBy(s => s.ClassName)
+                .Select(g => new { ClassName = g.Key, Count = g.Count() })
+                .ToListAsync())
+            .ToDictionary(x => x.ClassName, x => x.Count);
+
+        var headers = new[]
+        {
+            "Sinf nomi", "Daraja", "Til", "Xona", "Sig'im", "O'quvchilar soni", "Oylik to'lov", "Holat",
+        };
+        var rows = classes.Select(c => (IReadOnlyList<string>)new[]
+        {
+            c.Name, c.Grade.ToString(), c.Language, c.Room ?? "",
+            c.Capacity?.ToString() ?? "", studentCounts.GetValueOrDefault(c.Name, 0).ToString(),
+            c.MonthlyFee.ToString("0"), c.IsArchived ? "Arxivda" : "Faol",
+        });
+
+        var bytes = ExcelExport.Build("Sinflar", headers, rows);
+        return File(bytes,
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            $"sinflar_{AppClock.Now:yyyy-MM-dd}.xlsx");
     }
 
     /// <summary>Arxivlangan sinflar ro'yxati.</summary>
@@ -39,6 +94,7 @@ public class ClassesController(AppDbContext db, AuditService audit) : Controller
             Language = p.Language,
             MonthlyFee = p.MonthlyFee,
             Room = p.Room,
+            Capacity = p.Capacity,
         };
         db.Classes.Add(cls);
 
@@ -103,6 +159,7 @@ public class ClassesController(AppDbContext db, AuditService audit) : Controller
         cls.Language = p.Language;
         cls.MonthlyFee = p.MonthlyFee;
         cls.Room = p.Room;
+        cls.Capacity = p.Capacity;
 
         if (oldFee != cls.MonthlyFee)
         {
@@ -291,6 +348,65 @@ public class ClassesController(AppDbContext db, AuditService audit) : Controller
             $"Sinf arxivdan chiqarildi ({cls.Name}) — {students.Count} ta o'quvchi bilan");
         await db.SaveChangesAsync();
         return Ok(new { restoredStudents = students.Count });
+    }
+
+    /* ---------- Sinf rahbari(lari) — C-5 ---------- */
+
+    /// <summary>
+    /// Shu sinfga biriktirilgan sinf rahbari(lar)i. Haqiqat manbai
+    /// <c>teachers.homeroom_class</c> (nom bo'yicha, sinf nomi o'zgarsa
+    /// <see cref="CascadeRenameAsync"/> uni ham ko'chiradi) — bu yerda faqat O'QILADI.
+    /// </summary>
+    [HttpGet("{id}/homeroom-teachers")]
+    public async Task<ActionResult<IEnumerable<HomeroomTeacherDto>>> GetHomeroomTeachers(string id)
+    {
+        var cls = await db.Classes.AsNoTracking().FirstOrDefaultAsync(c => c.Id == id);
+        if (cls is null) return NotFound();
+
+        return await db.Teachers.AsNoTracking()
+            .Where(t => !t.IsArchived && t.HomeroomClass == cls.Name)
+            .OrderBy(t => t.FullName)
+            .Select(t => new HomeroomTeacherDto(t.Id, t.FullName))
+            .ToListAsync();
+    }
+
+    /// <summary>
+    /// Sinf rahbari(lar)ini sinf formasidan belgilaydi (C-5: "bugun faqat o'qituvchi
+    /// tarafidan sozlanadi" gapi). Ro'yxatda YO'Q, lekin hozir shu sinfga biriktirilgan
+    /// o'qituvchi bo'shatiladi; ro'yxatda bor, lekin BOSHQA sinfga biriktirilgani —
+    /// <c>HomeroomClass</c> BITTA qiymat bo'lgani uchun shu sinfga o'tkaziladi (teacher
+    /// kartochkasidan tahrirlashda ham xuddi shunday — bir o'qituvchi faqat bitta sinf
+    /// rahbari bo'la oladi).
+    /// </summary>
+    [HttpPut("{id}/homeroom-teachers")]
+    public async Task<IActionResult> SetHomeroomTeachers(string id, SetHomeroomTeachersRequest req)
+    {
+        var cls = await db.Classes.FindAsync(id);
+        if (cls is null) return NotFound();
+
+        var wantIds = (req.TeacherIds ?? new()).Where(t => !string.IsNullOrWhiteSpace(t))
+            .Distinct(StringComparer.Ordinal).ToList();
+        if (wantIds.Count > 0 && await db.Teachers.CountAsync(t => wantIds.Contains(t.Id)) != wantIds.Count)
+            return BadRequest(new { message = "Ro'yxatdagi o'qituvchilardan biri topilmadi" });
+
+        var toClear = await db.Teachers
+            .Where(t => t.HomeroomClass == cls.Name && !wantIds.Contains(t.Id)).ToListAsync();
+        foreach (var t in toClear) t.HomeroomClass = "";
+
+        var toAssign = await db.Teachers
+            .Where(t => wantIds.Contains(t.Id) && t.HomeroomClass != cls.Name).ToListAsync();
+        foreach (var t in toAssign) t.HomeroomClass = cls.Name;
+
+        if (toClear.Count > 0 || toAssign.Count > 0)
+            audit.Record(AuditService.EntityStudentClass, cls.Id, "update",
+                $"Sinf rahbari(lari) o'zgartirildi ({cls.Name}): "
+                + $"+{string.Join(", ", toAssign.Select(t => t.FullName))} "
+                + $"−{string.Join(", ", toClear.Select(t => t.FullName))}",
+                before: new { Removed = toClear.Select(t => t.FullName) },
+                after: new { Added = toAssign.Select(t => t.FullName) });
+
+        await db.SaveChangesAsync();
+        return NoContent();
     }
 
     /* ---------- Sinf ichidagi guruhlar ---------- */

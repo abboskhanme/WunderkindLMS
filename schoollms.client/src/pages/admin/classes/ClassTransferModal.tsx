@@ -66,7 +66,11 @@ export function ClassTransferModal({
     setBusy(true)
     setError(null)
     try {
-      await transferClassMember(membershipId, toClassId, keepGroups, reason.trim() || undefined)
+      const { warning } = await transferClassMember(
+        membershipId, toClassId, keepGroups, reason.trim() || undefined,
+      )
+      // C-4: sig'im OGOHLANTIRISHI — o'tkazish allaqachon bajarilgan, faqat xabar beramiz.
+      if (warning) alert(warning)
       onDone()
     } catch (e) {
       setError(

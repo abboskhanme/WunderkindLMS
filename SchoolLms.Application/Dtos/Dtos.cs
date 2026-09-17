@@ -200,7 +200,30 @@ public record SaveCameraSettingsRequest(bool Enabled);
 public record SubjectPayload(string Name, bool IsGroupable = false);
 
 /* ---------- Classes ---------- */
-public record ClassPayload(string Name, int Grade, string Language, decimal MonthlyFee, string? Room);
+/// <summary>
+/// Sinf formasi. <paramref name="Capacity"/> — C-4 (students-parity.md §2.2.3): sinfga
+/// nechta o'quvchi sig'adi. <c>null</c> = chek yo'q (sukut, migratsiyadan keyingi hamma
+/// sinf shunday). Bu OGOHLANTIRISH chegarasi — <see cref="SchoolLms.Application.Services.ClassMembershipService.CapacityWarningAsync"/>
+/// qo'shish/o'tkazishdan keyin oshib ketganini aytadi, lekin taqiqlamaydi.
+/// </summary>
+public record ClassPayload(
+    string Name, int Grade, string Language, decimal MonthlyFee, string? Room, short? Capacity = null);
+
+/* ---------- Sinf rahbarlari (C-5) ---------- */
+/// <summary>
+/// Sinfga biriktirilgan sinf rahbari — <c>teachers.homeroom_class</c> ustunidan o'qiladi
+/// (haqiqat manbai o'qituvchi tomonida qoladi; sinf formasi endi shu qiymatni O'QIYDI VA
+/// YOZADI, ilgari faqat o'qituvchi kartochkasidan yozilardi).
+/// </summary>
+public record HomeroomTeacherDto(string Id, string FullName);
+
+/// <summary>
+/// Sinf rahbari(lari)ni belgilash. Ro'yxatda YO'Q, lekin hozir shu sinfga biriktirilgan
+/// o'qituvchilar — bo'shatiladi (<c>HomeroomClass = ""</c>). Ro'yxatda bor, lekin BOSHQA
+/// sinfga biriktirilgan o'qituvchi — shu sinfga "o'g'irlanadi" (bugungi teacher-tarafdagi
+/// forma ham xuddi shunday ishlaydi: bitta o'qituvchi faqat bitta sinfning rahbari bo'la oladi).
+/// </summary>
+public record SetHomeroomTeachersRequest(List<string>? TeacherIds);
 
 /* ---------- Leads ---------- */
 public record LeadCreateRequest(
@@ -494,6 +517,15 @@ public record DisciplineScoreRowDto(
     string StudentId, string FullName, string ClassName, int Plus, int Minus, int Remaining);
 /// <summary>O'quvchiga ball kiritish so'rovi (sabab bo'yicha).</summary>
 public record AddDisciplinePointRequest(string StudentId, string ReasonId, string? Note);
+/// <summary>
+/// Butun sinfga bitta intizomiy ball kiritish (C-6, students-parity.md §2.2.3): sinfning HAR
+/// BIR faol o'quvchisiga bir xil sabab bilan alohida yozuv qo'shiladi — EduSchool'dagi
+/// <c>editBehaviorIncidents</c> / <c>POST /behavior-incidents/class</c> naqshi. Faqat mustaqil
+/// intizomiy sabab ("other") — davomat sababi jurnal orqali qo'yiladi, bu yerdan emas.
+/// </summary>
+public record AddClassDisciplinePointRequest(string ClassId, string ReasonId, string? Note);
+/// <summary>Sinf bo'ylab ball kiritish natijasi: nechta o'quvchiga yozildi, nechtasiga ota-onaga xabar ketdi.</summary>
+public record ClassDisciplinePointResultDto(int Applied, int NotifiedParents, List<DisciplinePointDto> Items);
 /// <summary>Bitta intizomiy ball yozuvi (tarix). <c>Source</c>: "manual" (qo'lda, o'chirsa bo'ladi) yoki "attendance" (jurnal davomati, faqat ko'rish).</summary>
 /// <param name="NotifiedParents">
 /// Shu ball haqida ota-onaga HAQIQATAN yuborilgan Telegram xabarlari soni (§6.3, 4-qadam).
