@@ -213,7 +213,7 @@ public class StudentProfileController(AppDbContext db, AuditService audit) : Con
         var cls = await db.Classes.AsNoTracking()
             .FirstOrDefaultAsync(c => c.Name == st.ClassName, ct);
         var attainment = await ClassAttainment.ForStudentAsync(db, st, ct);
-        var ownerIds = ClassAttainment.OwnerIdsFor(cls?.Id, attainment.GroupsOf(st.Id));
+        var ownerIds = attainment.OwnerIdsForStudent(st.Id, cls?.Id);
 
         var reasons = await db.AbsenceReasons.AsNoTracking().ToListAsync(ct);
         var reasonMap = reasons.ToDictionary(r => r.Id);
@@ -230,7 +230,7 @@ public class StudentProfileController(AppDbContext db, AuditService audit) : Con
                 .ToListAsync(ct);
 
         var conducted = notes
-            .Where(n => attainment.CountsFor(st.Id, n.ClassId, n.OwnerKind)
+            .Where(n => attainment.CountsFor(st.Id, n.ClassId, n.OwnerKind, n.Date)
                         && (n.OwnerKind == LessonOwnerKind.Group
                             || n.SubGroup == 0 || n.SubGroup == st.SubGroup))
             .Select(n => (n.SubjectId, n.Date, n.Period))

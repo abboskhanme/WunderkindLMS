@@ -185,7 +185,7 @@ public class ClassAnalyticsController(AppDbContext db) : ControllerBase
             {
                 var byQuarter = entries
                     .Where(e => e.StudentId == s.Id && e.SubjectId == subj.Id
-                                && attainment.CountsFor(s.Id, e.ClassId, e.OwnerKind))
+                                && attainment.CountsFor(s.Id, e.ClassId, e.OwnerKind, e.Date))
                     .GroupBy(e => e.Quarter)
                     .ToDictionary(g => g.Key, g => Math.Round(g.Average(e => (double)e.Grade!.Value), 2));
                 // Rasmiy chorak bahosi kunlik o'rtacha o'rnini bosadi. G-15: sinf va
