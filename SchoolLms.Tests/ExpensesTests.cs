@@ -754,12 +754,38 @@ public class ExpensesTests(ApiFixture fixture)
         typeof(ExpensesController).GetMethods(
             BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly);
 
+    /// <summary>
+    /// Rol uchun foydalanuvchi, token va — kassa stoli rollarida — OCHIQ SMENA.
+    ///
+    /// <para>
+    /// <b>Nega smena ham ochiladi.</b> F1.03 dan keyin NAQD chiqim ochiq
+    /// smenani talab qiladi (finance-parity §2.1.3): pul kassaning javonidan
+    /// chiqadi, ya'ni o'sha smenaning kutilgan naqdi kamayishi SHART. Bu
+    /// fayldagi testlar chiqimning O'Z qoidalarini tekshiradi (jurnal
+    /// satrlari, ikki qavatli nazorat, storno), smena qoidasini emas —
+    /// shuning uchun smena shu yerda, umumiy tayyorgarlik sifatida ochiladi.
+    /// </para>
+    /// <para>
+    /// Smena qoidasining O'ZI <c>CashDeskOutflowTests</c> da sinaladi:
+    /// smenasiz naqd chiqim 409 <c>no_open_shift</c> beradi va bazada iz
+    /// qoldirmaydi. Ya'ni bu yerdagi tayyorgarlik qoidani yashirmaydi.
+    /// </para>
+    /// </summary>
     private async Task<(AppUser User, HttpClient Client)> ActorAsync(string role)
     {
         var (user, _) = await fixture.Api.SeedUserAsync(role);
         var client = fixture.Api.CreateClient();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
             "Bearer", fixture.Api.TokenFor(role, user.Id, user.FullName, user.Email));
+
+        // `teacher` / `staff` kassaga umuman kira olmaydi — ularda smena yo'q.
+        if (role is Roles.Admin or Roles.SuperAdmin or Roles.Cashier)
+        {
+            var opened = await client.PostAsJsonAsync(
+                "/api/cash/shifts/open", new { openingFloat = 0m });
+            Assert.Equal(HttpStatusCode.OK, opened.StatusCode);
+        }
+
         return (user, client);
     }
 

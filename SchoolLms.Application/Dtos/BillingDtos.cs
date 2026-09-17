@@ -220,7 +220,24 @@ public record ZReportDto(
     // Oxirgi chek raqami.
     long? ReceiptTo,
     // Shu smenadagi storno'lar soni — alohida ko'rsatiladi.
-    int ReversalsCount);
+    int ReversalsCount,
+    // ---- F1.03 / F1.04: javondan CHIQQAN naqd ----
+    // Bu ikki qator `expected_cash` bilan naqd tushum orasidagi farqni
+    // tushuntiradi. Ular AYNAN `CashShiftService.CashOutflowAsync` dan
+    // keladi, ya'ni kutilgan naqd bilan bir manbadan (o'sha faylning
+    // invarianti).
+    //
+    // Sukut qiymatlari ATAYLAB: DTO pozitsion record va uning imzosi P1-06
+    // da muzlatilgan — yangi maydonlar oxiriga qo'shiladi, mavjud
+    // chaqiruvlar o'zgarishsiz qoladi.
+
+    // Shu smenadan naqd chiqim sifatida chiqqan pul (storno ayirilgan).
+    decimal CashExpensesTotal = 0m,
+    // Necha dona naqd chiqim satri (storno satrlari ham sanaladi).
+    int CashExpensesCount = 0,
+    // Bankka yoki seyfga topshirilgan naqd (storno ayirilgan).
+    decimal CashHandoversTotal = 0m,
+    int CashHandoversCount = 0);
 
 /* ---------- To'lovlar ---------- */
 

@@ -52,6 +52,32 @@ namespace SchoolLms.Application.Billing;
 //  Natija: chiqimning HOLATI `expenses` ustunida emas, jurnaldan hisoblanadi
 //  (<see cref="ExpenseStatus"/>) — pul haqidagi yagona haqiqat manbai bitta
 //  joyda qoladi (SPEC §3.7).
+//
+//  NAQD CHIQIM SMENAGA TEGISHLI (F1.03)
+//  ------------------------------------
+//  Ilgari naqd chiqim jurnalga `credit cash` bo'lib tushardi, lekin HECH BIR
+//  smenaga bog'lanmasdi. `CashShiftService.ExpectedCashAsync` esa faqat
+//  to'lovlarni sanardi, ya'ni pul javondan chiqib ketardi, "kutilgan naqd"
+//  o'zgarmasdi va smena AYNAN o'sha summaga kam pul bilan yopilardi. Har
+//  naqd chiqimda, har kuni, aybsiz kassirning ustiga `shift_variance`
+//  bayrog'i bilan.
+//
+//  Endi qoida bitta jumla: NAQD pul KIMNINGDIR ochiq smenasidan chiqadi.
+//    * darhol jurnalga tushadigan chiqim  → YOZAYOTGAN odamning smenasi;
+//    * tasdiq kutgan chiqim               → TASDIQLOVCHINING smenasi
+//                                           (usulni ham o'sha tanlaydi);
+//    * storno                             → STORNO QILUVCHINING smenasi
+//                                           (pul aynan uning javoniga qaytadi).
+//  Uchalasida ham ochiq smena bo'lmasa — 409 `no_open_shift`, to'lov
+//  stornosidagi qoidaning AYNAN o'zi (`PaymentService`). Naqd bo'lmagan
+//  chiqim (karta, o'tkazma, onlayn) bank hisobidan chiqadi va smenaga umuman
+//  tegmaydi.
+//
+//  Smenani biriktirish — TEKSHIR-VA-YOZ, shuning uchun u `CashShiftService`
+//  ning smena qulfi ostida bajariladi (`ShiftLockKey`). Qulfsiz smena
+//  yopilish bilan poyga bo'lardi: yopish `expected_cash` ni hisoblab
+//  bo'lgandan keyin chiqim unga biriktirilib qolardi va o'sha pul
+//  hisobotdan JIMGINA tushib qolardi.
 // ===========================================================================
 
 /// <summary>
@@ -82,6 +108,11 @@ public static class ExpenseStatus
 /// <param name="SettlementAccount">Pul qayerdan chiqdi: <c>cash</c> yoki
 /// <c>bank</c>. Tasdiq kutayotgan chiqimda <c>null</c> — u hali to'lanmagan.</param>
 /// <param name="PostedOn">Jurnalga qaysi buxgalteriya sanasi bilan tushgani.</param>
+/// <param name="CashShiftId">
+/// Naqd chiqim qaysi kassa smenasidan to'landi (F1.03). <c>null</c> = pul
+/// bankdan chiqqan yoki chiqim hali jurnalga tushmagan.
+/// </param>
+/// <param name="AttachmentCount">Biriktirilgan hujjatlar soni (F1.08).</param>
 public record ExpenseDto(
     Guid Id,
     DateOnly OnDate,
@@ -102,7 +133,43 @@ public record ExpenseDto(
     string? ReversedByName,
     string? ReversalReason,
     string? TeacherId = null,
-    string? TeacherName = null);
+    string? TeacherName = null,
+    Guid? CashShiftId = null,
+    int AttachmentCount = 0);
+
+/// <summary>
+/// Chiqimga biriktirilgan hujjat (F1.08) — o'qish uchun.
+///
+/// <para>
+/// Faylning O'ZI <c>POST /api/admin/uploads</c> orqali yuklanadi
+/// (<c>UploadsController</c> + <c>UploadGuard</c>), bu yerga esa FAQAT
+/// natijaviy yo'l keladi. Ikkinchi yuklash yo'li ATAYLAB qurilmadi: fayl
+/// turi va hajmi tekshiruvining ikkita nusxasi bir kun albatta bir-biridan
+/// uzoqlashardi, va ulardan biri yumshoqroq bo'lardi.
+/// </para>
+/// </summary>
+public record ExpenseAttachmentDto(
+    Guid Id,
+    Guid ExpenseId,
+    string FileUrl,
+    string FileName,
+    string ContentType,
+    long SizeBytes,
+    string UploadedBy,
+    string UploadedByName,
+    DateTimeOffset UploadedAt);
+
+/// <summary>
+/// Hujjatni chiqimga biriktirish (F1.08). <c>uploaded_by</c> tanada YO'Q —
+/// u JWT'dan olinadi (SPEC §4.4).
+/// </summary>
+/// <param name="FileUrl">
+/// <c>POST /api/admin/uploads</c> qaytargan yo'l. <c>/uploads/</c> bilan
+/// boshlanishi SHART: tashqi URL "dalil" emas — uni istalgan payt
+/// almashtirib qo'yish mumkin, biz esa uni nazorat qilmaymiz.
+/// </param>
+public record AttachExpenseFileRequest(
+    string FileUrl, string FileName, string ContentType, long SizeBytes);
 
 /// <summary>
 /// Yangi chiqim. <c>created_by</c> bu yerda YO'Q va bo'lmaydi — uni server
@@ -218,10 +285,31 @@ public interface IExpenseService
     /// </summary>
     Task<ExpenseDto> ReverseAsync(
         Guid id, string reason, string approverId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Chiqimga hujjat biriktiradi (F1.08). Fayl allaqachon
+    /// <c>POST /api/admin/uploads</c> orqali yuklangan bo'lishi kerak —
+    /// bu metod faqat yo'lni yozadi.
+    ///
+    /// <para>
+    /// <c>Detach</c> yoki <c>ReplaceAttachment</c> YO'Q va bo'lmaydi:
+    /// <c>expense_attachments</c> da <c>app_rw</c> ga faqat SELECT va INSERT
+    /// berilgan (finance-parity §3.1 A4). Noto'g'ri fayl yuklansa, to'g'risi
+    /// YANGI qator bo'lib qo'shiladi.
+    /// </para>
+    /// </summary>
+    Task<ExpenseAttachmentDto> AttachAsync(
+        Guid expenseId, AttachExpenseFileRequest request, string actorId,
+        CancellationToken ct = default);
+
+    /// <summary>Chiqimning hujjatlari (yangisidan eskisiga).</summary>
+    Task<IReadOnlyList<ExpenseAttachmentDto>> AttachmentsAsync(
+        Guid expenseId, CancellationToken ct = default);
 }
 
 /// <inheritdoc cref="IExpenseService"/>
-public sealed class ExpenseService(IAppDbContext db, ILedgerService ledger) : IExpenseService
+public sealed class ExpenseService(
+    IAppDbContext db, ILedgerService ledger, ICashShiftService shifts) : IExpenseService
 {
     /// <summary>Baza ustuni <c>numeric(14,2)</c> — arifmetika ham shu aniqlikda.</summary>
     private const int MoneyScale = 2;
@@ -413,6 +501,12 @@ public sealed class ExpenseService(IAppDbContext db, ILedgerService ledger) : IE
         var before = Snapshot(expense);
         expense.ApprovedBy = approverId;
 
+        // F1.03 — naqd tasdiq TASDIQLOVCHINING smenasidan chiqadi: usulni
+        // ham, pulni ham aynan u beradi. Smena qulfi shu tranzaksiyada
+        // olinadi (chiqim qulfi allaqachon olingan — ikkalasi har xil
+        // nomlangan kalitlar, ya'ni to'qnashmaydi).
+        await AttachCashShiftAsync(expense, settlement, approverId, ct);
+
         // Jurnal satrining muallifi — TASDIQLOVCHI: pulni haqiqatan chiqarishga
         // ruxsat bergan odam o'sha. Buning ikkinchi ta'siri ham foydali:
         // `LedgerService.ReverseAsync` partiya muallifiga storno'ni taqiqlaydi,
@@ -474,6 +568,41 @@ public sealed class ExpenseService(IAppDbContext db, ILedgerService ledger) : IE
         // kuzatuvda saqlanmagan qator osilib qolardi.
         await using var tx = await db.BeginTransactionAsync(ct);
 
+        // F1.03 — naqd chiqimning stornosi pulni JAVONGA qaytaradi, ya'ni u
+        // storno qilayotgan odamning ochiq smenasiga tushishi kerak. Pul
+        // qaysi hisobdan chiqqanini jurnalning KREDIT satri aytadi (chiqim
+        // qatorida usul ustuni yo'q).
+        //
+        // Bu yerda `expenses` ga USTUN yozilmaydi: ko'zgu satr shaxs
+        // (`created_by`) va vaqt bo'yicha smenaga biriktiriladi
+        // (`CashShiftService.CashOutflowAsync`). Bu yerdagi tekshiruvning
+        // vazifasi — o'sha biriktirish MUMKIN bo'lishini kafolatlash: ochiq
+        // smenasiz qilingan storno hech qaysi smenaga tushmasdi va pul
+        // hisobotdan jimgina yo'qolardi.
+        var settlement = await db.LedgerEntries.AsNoTracking()
+            .Where(e => e.RefType == LedgerRefType.Expense
+                        && e.RefId == id
+                        && e.ReversalOf == null
+                        && e.Direction == LedgerDirection.Credit)
+            .Select(e => e.Account)
+            .FirstOrDefaultAsync(ct);
+
+        if (string.Equals(settlement, Accounts.Cash, StringComparison.Ordinal))
+        {
+            var reverserShift = await shifts.CurrentAsync(approverId, ct) ?? throw NoOpenShift();
+
+            await ef.Database.ExecuteSqlRawAsync(
+                LockSql, [CashShiftService.ShiftLockKey(reverserShift.Id)], ct);
+
+            var status = await db.CashShifts.AsNoTracking()
+                .Where(s => s.Id == reverserShift.Id)
+                .Select(s => s.Status)
+                .FirstOrDefaultAsync(ct);
+
+            if (!string.Equals(status, CashShiftStatus.Open, StringComparison.Ordinal))
+                throw NoOpenShift();
+        }
+
         try
         {
             await ledger.ReverseAsync(anchor.Id, cleanReason, approverId, ct);
@@ -509,6 +638,103 @@ public sealed class ExpenseService(IAppDbContext db, ILedgerService ledger) : IE
         await tx.CommitAsync(ct);
 
         return (await ToDtosAsync([expense], ct))[0];
+    }
+
+    // -----------------------------------------------------------------
+    //  Hujjatlar (F1.08) — chiqimning DALILI
+    // -----------------------------------------------------------------
+
+    /// <inheritdoc />
+    public async Task<ExpenseAttachmentDto> AttachAsync(
+        Guid expenseId, AttachExpenseFileRequest request, string actorId,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        RequireActor(actorId, nameof(actorId));
+
+        if (!await db.Expenses.AsNoTracking().AnyAsync(e => e.Id == expenseId, ct))
+            throw BillingRuleException.NotFound("expense_not_found", "Chiqim topilmadi.");
+
+        var fileUrl = Trim(request.FileUrl)
+            ?? throw BillingRuleException.Invalid("invalid_file_url", "Fayl manzili bo'sh.");
+
+        // Faqat BIZ saqlagan fayl. Tashqi URL "dalil" emas: uni yuklagan odam
+        // istalgan payt almashtirib qo'yishi mumkin va chiqim tekshirib
+        // bo'lmaydigan bo'lib qolardi — jadval INSERT-only bo'lgani esa bunga
+        // hech qanday to'siq emas, chunki o'zgaradigan narsa fayl, qator emas.
+        if (!fileUrl.StartsWith(UploadsPrefix, StringComparison.Ordinal))
+            throw BillingRuleException.Invalid("invalid_file_url",
+                $"Fayl avval yuklanishi kerak (POST /api/admin/uploads) — manzil "
+                + $"'{UploadsPrefix}' bilan boshlanadi.");
+
+        var fileName = Trim(request.FileName)
+            ?? throw BillingRuleException.Invalid("invalid_file_name", "Fayl nomi bo'sh.");
+
+        // Kengaytmalar ro'yxati — YUKLASH bilan bir xil manbadan
+        // (`UploadGuard`). Ikkinchi ro'yxat bir kun yumshoqroq bo'lardi.
+        var extension = Path.GetExtension(fileName);
+        if (string.IsNullOrEmpty(extension) || !UploadGuard.AllowedExtensions.Contains(extension))
+            throw BillingRuleException.Invalid("invalid_file_type",
+                $"Ruxsat etilmagan fayl turi: '{extension}'.");
+
+        var contentType = Trim(request.ContentType)
+            ?? throw BillingRuleException.Invalid("invalid_content_type", "Fayl turi ko'rsatilmagan.");
+
+        // Nol baytli "dalil" dalil emas (bazada ham `ck_expense_attachments_size`).
+        if (request.SizeBytes <= 0 || request.SizeBytes > UploadGuard.MaxBytes)
+            throw BillingRuleException.Invalid("invalid_file_size",
+                $"Fayl hajmi 1 bayt bilan {UploadGuard.MaxBytes} bayt orasida bo'lishi kerak.");
+
+        var attachment = new ExpenseAttachment
+        {
+            ExpenseId = expenseId,
+            FileUrl = fileUrl,
+            FileName = fileName,
+            ContentType = contentType,
+            SizeBytes = request.SizeBytes,
+            UploadedBy = actorId,
+            UploadedAt = AppClock.NowInstant,
+        };
+
+        db.ExpenseAttachments.Add(attachment);
+        db.AuditLogs.Add(AuditService.Entry(
+            AuditEntityExpenseAttachment, attachment.Id.ToString("D"), "create",
+            $"Chiqimga hujjat biriktirildi: {fileName} ({request.SizeBytes} bayt).",
+            actorId: actorId,
+            actorName: await actors.OfAsync(actorId, ct),
+            after: new { attachment.ExpenseId, attachment.FileUrl, attachment.FileName }));
+
+        await db.SaveChangesAsync(ct);
+
+        return (await AttachmentDtosAsync([attachment], ct))[0];
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<ExpenseAttachmentDto>> AttachmentsAsync(
+        Guid expenseId, CancellationToken ct = default)
+    {
+        var rows = await db.ExpenseAttachments.AsNoTracking()
+            .Where(a => a.ExpenseId == expenseId)
+            .OrderByDescending(a => a.UploadedAt)
+            .ToListAsync(ct);
+
+        return await AttachmentDtosAsync(rows, ct);
+    }
+
+    private async Task<List<ExpenseAttachmentDto>> AttachmentDtosAsync(
+        IReadOnlyList<ExpenseAttachment> rows, CancellationToken ct)
+    {
+        if (rows.Count == 0) return [];
+
+        var userIds = rows.Select(a => a.UploadedBy).Distinct(StringComparer.Ordinal).ToList();
+        var names = await db.Users.AsNoTracking()
+            .Where(u => userIds.Contains(u.Id))
+            .Select(u => new { u.Id, u.FullName })
+            .ToDictionaryAsync(u => u.Id, u => u.FullName, ct);
+
+        return [.. rows.Select(a => new ExpenseAttachmentDto(
+            a.Id, a.ExpenseId, a.FileUrl, a.FileName, a.ContentType, a.SizeBytes,
+            a.UploadedBy, names.GetValueOrDefault(a.UploadedBy, "—"), a.UploadedAt))];
     }
 
     // -----------------------------------------------------------------
@@ -596,9 +822,65 @@ public sealed class ExpenseService(IAppDbContext db, ILedgerService ledger) : IE
         CancellationToken ct)
     {
         await using var tx = await db.BeginTransactionAsync(ct);
+        // Smena qulfi ham, chiqim qatori ham, jurnal ham AYNAN shu
+        // tranzaksiyada (F1.03 — fayl boshidagi izoh).
+        await AttachCashShiftAsync(expense, method, actorId, ct);
         await WriteAsync(expense, method, actorId, isNew, before, ct);
         await tx.CommitAsync(ct);
     }
+
+    /// <summary>
+    /// Naqd chiqimni <paramref name="actorId"/> ning OCHIQ smenasiga
+    /// biriktiradi (F1.03). Naqd bo'lmagan chiqimda hech narsa qilmaydi —
+    /// pul bank hisobidan chiqadi va birorta smenaning javoniga tegmaydi.
+    ///
+    /// <para>
+    /// <b>Chaqiruvchi ochiq tranzaksiya ichida bo'lishi SHART.</b> Advisory
+    /// lock tranzaksiya oxirida bo'shaydi, ya'ni tranzaksiyasiz u darhol
+    /// qo'yib yuborilardi va qulfning ma'nosi qolmasdi.
+    /// </para>
+    /// <para>
+    /// Qulf OSTIDA smena qayta o'qiladi: <see cref="ICashShiftService.CurrentAsync"/>
+    /// javobi qulfdan OLDIN olingan, ya'ni oradagi lahzada smena yopilgan
+    /// bo'lishi mumkin. Yopilgan smenaning <c>expected_cash</c> i esa
+    /// hisoblanib bo'lgan va u qayta hisoblanmaydi (SPEC §4.2) — shunday
+    /// chiqim hisobotdan butunlay tushib qolardi.
+    /// </para>
+    /// </summary>
+    private async Task AttachCashShiftAsync(
+        Expense expense, string method, string actorId, CancellationToken ct)
+    {
+        if (!PaymentMethod.CountsAsCash(method))
+        {
+            expense.CashShiftId = null;
+            return;
+        }
+
+        var current = await shifts.CurrentAsync(actorId, ct) ?? throw NoOpenShift();
+
+        await ef.Database.ExecuteSqlRawAsync(
+            LockSql, [CashShiftService.ShiftLockKey(current.Id)], ct);
+
+        var status = await db.CashShifts.AsNoTracking()
+            .Where(s => s.Id == current.Id)
+            .Select(s => s.Status)
+            .FirstOrDefaultAsync(ct);
+
+        if (!string.Equals(status, CashShiftStatus.Open, StringComparison.Ordinal))
+            throw NoOpenShift();
+
+        expense.CashShiftId = current.Id;
+    }
+
+    /// <summary>
+    /// SPEC §4.2 — naqd pul ochiq smenasiz javondan chiqmaydi. Kod
+    /// <c>PaymentService</c> dagi bilan AYNAN bir xil (<c>no_open_shift</c>):
+    /// kassa ekrani ikkalasida ham bitta xabarni ko'rsatadi.
+    /// </summary>
+    private static BillingRuleException NoOpenShift() =>
+        BillingRuleException.Conflict("no_open_shift",
+            "Ochiq kassa smenasi yo'q. Naqd pul kassadan smena ichida chiqadi — "
+            + "avval smenani oching yoki naqd bo'lmagan to'lov usulini tanlang (F1.03).");
 
     /// <summary>
     /// <see cref="PostAsync"/> ning ichki qismi — tranzaksiyaSIZ. Tasdiqlash
@@ -698,6 +980,15 @@ public sealed class ExpenseService(IAppDbContext db, ILedgerService ledger) : IE
                 .Select(t => new { t.Id, t.FullName })
                 .ToDictionaryAsync(t => t.Id, t => t.FullName, ct);
 
+        // Hujjatlar SONI (F1.08) — bitta guruhlangan so'rov, sikl ichida emas.
+        // Ro'yxatda faqat "dalil bormi?" degan savol beriladi; fayllarning
+        // o'zi alohida endpoint orqali o'qiladi.
+        var attachmentCounts = await db.ExpenseAttachments.AsNoTracking()
+            .Where(a => ids.Contains(a.ExpenseId))
+            .GroupBy(a => a.ExpenseId)
+            .Select(g => new { ExpenseId = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(g => g.ExpenseId, g => g.Count, ct);
+
         return [.. expenses.Select(e =>
         {
             var mine = entries.Where(l => l.RefId == e.Id).ToList();
@@ -736,11 +1027,32 @@ public sealed class ExpenseService(IAppDbContext db, ILedgerService ledger) : IE
                 reversal is null ? null : Name(reversal.CreatedBy),
                 reversal?.Memo,
                 e.TeacherId,
-                e.TeacherId is null ? null : teacherNames.GetValueOrDefault(e.TeacherId, "—"));
+                e.TeacherId is null ? null : teacherNames.GetValueOrDefault(e.TeacherId, "—"),
+                e.CashShiftId,
+                attachmentCounts.GetValueOrDefault(e.Id, 0));
         })];
 
         string Name(string userId) => names.GetValueOrDefault(userId, "—");
     }
+
+    /// <summary>
+    /// <c>audit_log.entity_type</c> qiymati — chiqim hujjatlari shu bo'yicha
+    /// topiladi.
+    ///
+    /// <para>
+    /// Konstanta SHU YERDA, <c>AuditService</c> da emas: u fayl bir vaqtda
+    /// ishlayotgan bir nechta slice uchun umumiy va har qo'shimcha unda
+    /// konflikt beradi. Xuddi shu naqsh <c>CashShiftService.AuditEntityCashShift</c>
+    /// da ham ishlatilgan.
+    /// </para>
+    /// </summary>
+    public const string AuditEntityExpenseAttachment = "ExpenseAttachment";
+
+    /// <summary>
+    /// <c>UploadsController</c> qaytaradigan yo'lning boshlanishi. Biriktirish
+    /// faqat shu prefiksni qabul qiladi (<see cref="AttachAsync"/>).
+    /// </summary>
+    public const string UploadsPrefix = "/uploads/";
 
     /// <summary>Audit uchun snapshot (<c>before</c>/<c>after</c>) — SPEC §4.6.</summary>
     private static object Snapshot(Expense e) => new
@@ -752,6 +1064,10 @@ public sealed class ExpenseService(IAppDbContext db, ILedgerService ledger) : IE
         e.Note,
         e.CreatedBy,
         e.ApprovedBy,
+        // F1.03 — naqd chiqim qaysi smenadan chiqqani auditda ham qolsin:
+        // "kutilgan naqd nega bunday chiqdi" degan savol aynan shu yerda
+        // tekshiriladi.
+        e.CashShiftId,
     };
 
     /// <summary>Shu chiqimning jurnal partiyasi bormi (ya'ni pul hisobotga tushganmi)?</summary>
