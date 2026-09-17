@@ -522,8 +522,25 @@ public static class AnomalyKind
     /// <summary>Hisob-faktura "to'langan", lekin unga birorta taqsimot yo'q.</summary>
     public const string PaidWithoutAllocation = "paid_without_allocation";
 
+    /// <summary>
+    /// BESHINCHI shart (docs/modules/existing-module-gaps.md §3.5): ota-ona
+    /// va'da qilgan to'lov sanasi o'tib ketdi, qarz esa hali ochiq.
+    ///
+    /// <para>
+    /// <b>Bu bayroq JADVALGA YOZILMAYDI</b> — u har so'rovda hisoblanadi
+    /// (<c>BrokenPromiseScan</c>). Ikki sabab: (1) buzilgan va'da HODISA emas,
+    /// HOLAT — ota-ona ertaga to'lasa, shart o'z-o'zidan yo'qoladi va qator
+    /// esa qolib, haqiqatdan ajralib ketardi (`students.balance`, P1-21);
+    /// (2) <c>ck_finance_anomaly_flags_kind</c> check constraint'i faqat
+    /// yuqoridagi to'rttasiga ruxsat beradi, ya'ni INSERT 23514 bilan
+    /// yiqilardi. Shu kod bilan qator yozmoqchi bo'lsangiz — avval migratsiya
+    /// kerak (constraint + <see cref="AnomalyRefType"/> ro'yxati).
+    /// </para>
+    /// </summary>
+    public const string BrokenPromise = "broken_promise";
+
     public static readonly IReadOnlyList<string> All =
-        [ShiftVariance, FastReversal, OffHoursPayment, PaidWithoutAllocation];
+        [ShiftVariance, FastReversal, OffHoursPayment, PaidWithoutAllocation, BrokenPromise];
 }
 
 /// <summary>Bayroq qaysi jadvalga ishora qilyapti (<see cref="FinanceAnomalyFlag.RefType"/>).</summary>
@@ -533,5 +550,13 @@ public static class AnomalyRefType
     public const string Payment = "payment";
     public const string Invoice = "invoice";
 
-    public static readonly IReadOnlyList<string> All = [CashShift, Payment, Invoice];
+    /// <summary>
+    /// <c>debtor_actions</c> qatori — FAQAT hisoblanadigan
+    /// <see cref="AnomalyKind.BrokenPromise"/> bayrog'ida ishlatiladi.
+    /// <c>ck_finance_anomaly_flags_ref_type</c> bu qiymatni QABUL QILMAYDI:
+    /// bunday bayroq bazaga yozilmaydi va yozilmasligi kerak.
+    /// </summary>
+    public const string DebtorAction = "debtor_action";
+
+    public static readonly IReadOnlyList<string> All = [CashShift, Payment, Invoice, DebtorAction];
 }

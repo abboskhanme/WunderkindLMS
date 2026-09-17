@@ -16,6 +16,13 @@ namespace SchoolLms.Application.Billing;
 //    3. ish vaqtidan tashqari to'lov           -> AnomalyKind.OffHoursPayment
 //    4. taqsimotsiz "to'langan" hisob-faktura  -> AnomalyKind.PaidWithoutAllocation
 //
+//  BESHINCHISI BU YERDA EMAS
+//  -------------------------
+//  `AnomalyKind.BrokenPromise` (buzilgan to'lov va'dasi, §3.5) `ScanAsync`
+//  da QATNASHMAYDI va jadvalga hech qachon yozilmaydi — u `ListAsync` da
+//  har safar hisoblanadi (`BrokenPromiseScan`). Nega aynan shunday —
+//  o'sha faylning boshida.
+//
 //  IDEMPOTENTLIK — ENG MUHIM XOSSA
 //  -------------------------------
 //  Tekshiruv har tunda BIR XIL hodisalarni qayta ko'radi (90 kunlik oyna).
@@ -42,6 +49,14 @@ public sealed class AnomalyService(IAppDbContext db) : IAnomalyService
 
     /// <summary>Audit qatoridagi <c>actor_name</c> uchun — keshlangan.</summary>
     private readonly ActorNames actors = new(db);
+
+    /// <summary>
+    /// Beshinchi shart — buzilgan to'lov va'dasi (§3.5). U
+    /// <see cref="ScanAsync"/> da QATNASHMAYDI: bayroq bazaga yozilmaydi,
+    /// <see cref="ListAsync"/> da har safar HISOBLANADI. Sabab
+    /// <see cref="BrokenPromiseScan"/> boshidagi izohda.
+    /// </summary>
+    private readonly BrokenPromiseScan promises = new(db);
 
     // =====================================================================
     //  Tekshiruv
@@ -444,11 +459,25 @@ public sealed class AnomalyService(IAppDbContext db) : IAnomalyService
             .Where(f => f.ResolvedAt == null && f.Amount != null)
             .SumAsync(f => Math.Abs(f.Amount!.Value), ct);
 
-        // Ro'yxatning shakli BARQAROR: to'rtta tur har doim bor, bo'sh bo'lsa
-        // ham. UI shunda qatorlar sakrab-sakrab paydo bo'lmaydi.
+        // ---- BESHINCHI tur: hisoblanadigan buzilgan va'dalar (§3.5) ----
+        // Ular jadvalda YO'Q, shuning uchun yuqoridagi guruhlash ularni
+        // ko'rmaydi. Hisoblagichga ham, ro'yxatga ham shu yerda qo'shiladi —
+        // direktor paneli ular uchun ALOHIDA so'rov yubormasligi kerak
+        // (§3.5: "machinery that already exists"). Tur bo'yicha filtr boshqa
+        // turni so'rasa — ortiqcha ish umuman bajarilmaydi.
+        IReadOnlyList<FinanceAnomalyFlag> computed = kind is null || kind == AnomalyKind.BrokenPromise
+            ? await promises.AsFlagsAsync(MaxListRows, ct)
+            : new List<FinanceAnomalyFlag>();
+
+        // Hisoblanadigan bayroq HAR DOIM ochiq: uni "sabab yozib yopish"
+        // mumkin emas, u qarz to'langanda yoki yangi va'da yozilganda
+        // o'z-o'zidan yo'qoladi.
         var byKind = AnomalyKind.All
             .Select(k =>
             {
+                if (k == AnomalyKind.BrokenPromise)
+                    return new AnomalyKindCountDto(k, AnomalyLabels.For(k), computed.Count, computed.Count);
+
                 var row = stats.FirstOrDefault(s => s.Kind == k);
                 return new AnomalyKindCountDto(k, AnomalyLabels.For(k), row?.Unresolved ?? 0, row?.Total ?? 0);
             })
@@ -459,17 +488,28 @@ public sealed class AnomalyService(IAppDbContext db) : IAnomalyService
         if (unresolved) q = q.Where(f => f.ResolvedAt == null);
         if (kind is not null) q = q.Where(f => f.Kind == kind);
 
+        var take = Math.Clamp(limit, 1, MaxListRows);
         var rows = await q
             .OrderByDescending(f => f.OccurredAt).ThenByDescending(f => f.DetectedAt)
-            .Take(Math.Clamp(limit, 1, MaxListRows))
+            .Take(take)
             .ToListAsync(ct);
 
+        // Chegara BIRLASHTIRILGANDAN KEYIN qo'llanadi: ikkala manba ham
+        // o'zicha eng yangi `take` qatorni bergan, demak birlashmaning eng
+        // yangi `take` qatori — to'g'ri javob. Aks holda `limit=1` bo'lgan
+        // so'rov ikkita qator qaytarardi.
+        List<FinanceAnomalyFlag> merged = computed.Count == 0
+            ? rows
+            : [.. rows.Concat(computed)
+                .OrderByDescending(f => f.OccurredAt).ThenByDescending(f => f.DetectedAt)
+                .Take(take)];
+
         return new AnomalyFlagsDto(
-            Unresolved: stats.Sum(s => s.Unresolved),
-            Total: stats.Sum(s => s.Total),
-            UnresolvedAmount: unresolvedAmount,
+            Unresolved: stats.Sum(s => s.Unresolved) + computed.Count,
+            Total: stats.Sum(s => s.Total) + computed.Count,
+            UnresolvedAmount: unresolvedAmount + computed.Sum(f => Math.Abs(f.Amount ?? 0m)),
             ByKind: byKind,
-            Items: await ToDtosAsync(rows, ct));
+            Items: await ToDtosAsync(merged, ct));
     }
 
     /// <inheritdoc />

@@ -1,5 +1,5 @@
 /**
- * Qarzdorlar — TOIFA KESIMIDA (P1-18).
+ * Qarzdorlar — TOIFA KESIMIDA (P1-18) + ULAR BILAN ISHLASH (§3.5).
  *
  * Manba: `GET /api/admin/finance/debtors`. Qarz har safar `invoices` va
  * `payment_allocations` dan hisoblanadi — o'quvchi qatoridagi saqlangan
@@ -9,11 +9,27 @@
  * ASOSIY TALAB: maktab / avtobus / yotoqxona qarzi ARALASHMAYDI. Har toifa
  * o'z ustuniga tushadi va yuqorida o'z yig'indisi bor — direktorga "avtobus
  * pulini kim to'lamadi" degan savol bitta ustunda ko'rinadi.
+ *
+ * §3.5 — QARZ HAQIDA NIMA QILINGANI. Ro'yxat endi faqat "kim qancha qarzdor"
+ * emas, "u bilan nima qilindi" ham: joriy holat, oxirgi amal sanasi va
+ * ota-ona va'da qilgan to'lov sanasi. Ular IKKINCHI so'rovdan keladi
+ * (`GET /admin/finance/debtors/workflow`) va bu yerda `studentId` bo'yicha
+ * birlashtiriladi.
+ *
+ * Nega ikkita so'rov, bitta emas: qarz arifmetikasi (`/debtors`) va ish
+ * oqimi (`/debtors/workflow`) — ikki xil vazifa va ikki xil fayl egasi.
+ * Bitta endpoint ularni birlashtirsa, bir raqam ikki joyda hisoblanishi
+ * mumkin bo'lgan joy paydo bo'lardi.
+ *
+ * "Va'da buzildi" hukmini SERVER chiqaradi (`promiseBroken`): u sanani ham,
+ * qarz hali ochiqligini ham BIRGA tekshiradi. Brauzer bu yerda faqat
+ * qizil nishon chizadi.
  */
 import { useMemo, useState } from 'react'
-import { AlertTriangle, Download, Users, Wallet } from 'lucide-react'
+import { AlertTriangle, CalendarClock, Download, MessageSquarePlus, Users, Wallet } from 'lucide-react'
 import { useAsync } from '@/hooks/useAsync'
 import { getDebtors } from '@/api/services/financeReports'
+import { getDebtorWorkflow, type DebtorWorkflowRow } from '@/api/services/debtorWorkflow'
 import type { DebtorRow } from '@/types'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
@@ -21,7 +37,8 @@ import { StatCard } from '@/components/ui/StatCard'
 import { cn, exportToCsv, formatMoney } from '@/lib/utils'
 import { ReportState } from './ReportState'
 import { CollectionRateCard } from './CollectionRateCard'
-import { formatMonthLabel } from './reportLabels'
+import { DebtorActionModal } from './DebtorActionModal'
+import { formatDateTime, formatMonthLabel } from './reportLabels'
 
 const control =
   'rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-brand-400'
@@ -67,12 +84,26 @@ export function DebtorsTab() {
   const [className, setClassName] = useState('')
   const [search, setSearch] = useState('')
 
+  const [acting, setActing] = useState<DebtorRow | null>(null)
+
   const { data, loading, error, refetch } = useAsync(
     () => getDebtors({ onlyOverdue, includeArchived }),
     [onlyOverdue, includeArchived],
   )
 
+  // Ish oqimi — ALOHIDA so'rov (§3.5). Sinf filtri serverga BERILMAYDI:
+  // qarzdorlar ro'yxati ham to'liq keladi va filtr ekranda qo'llanadi, ya'ni
+  // ikkovi har doim bir xil qatorlarni ko'rsatadi.
+  const workflow = useAsync(() => getDebtorWorkflow(), [])
+
   const rows = useMemo(() => data ?? [], [data])
+
+  /** `studentId` → ish oqimi qatori. Amali yo'q o'quvchi xaritada BO'LMAYDI. */
+  const workflowBy = useMemo(() => {
+    const map = new Map<string, DebtorWorkflowRow>()
+    for (const w of workflow.data ?? []) map.set(w.studentId, w)
+    return map
+  }, [workflow.data])
 
   const classes = useMemo(
     () => [...new Set(rows.map((r) => r.className))].sort((a, b) => a.localeCompare(b)),
@@ -96,15 +127,19 @@ export function DebtorsTab() {
     const byCategory = new Map<string, number>()
     let debt = 0
     let overdueDebt = 0
+    // "Buzilgan va'da" — SERVER hukmi (`promiseBroken`): sana ham, qarz ham
+    // u yerda tekshirilgan. Bu yerda faqat ekrandagi qatorlar sanaladi.
+    let brokenPromises = 0
     for (const r of visible) {
       debt += r.debt
       if (r.daysOverdue > 0) overdueDebt += r.debt
+      if (workflowBy.get(r.studentId)?.promiseBroken) brokenPromises += 1
       for (const c of r.byCategory) {
         byCategory.set(c.categoryCode, (byCategory.get(c.categoryCode) ?? 0) + c.debt)
       }
     }
-    return { debt, overdueDebt, byCategory, count: visible.length }
-  }, [visible])
+    return { debt, overdueDebt, byCategory, brokenPromises, count: visible.length }
+  }, [visible, workflowBy])
 
   const handleExport = () => {
     exportToCsv(
@@ -117,16 +152,25 @@ export function DebtorsTab() {
         'Jami qarz',
         'Kechikish (kun)',
         'Eng eski oy',
+        'Holat',
+        'Oxirgi amal',
+        "Va'da",
       ],
-      visible.map((r) => [
-        r.fullName,
-        r.className,
-        r.parentPhone,
-        ...columns.map((c) => String(debtOf(r, c.code))),
-        String(r.debt),
-        String(r.daysOverdue),
-        r.oldestUnpaidMonth ? formatMonthLabel(r.oldestUnpaidMonth) : '',
-      ]),
+      visible.map((r) => {
+        const w = workflowBy.get(r.studentId)
+        return [
+          r.fullName,
+          r.className,
+          r.parentPhone,
+          ...columns.map((c) => String(debtOf(r, c.code))),
+          String(r.debt),
+          String(r.daysOverdue),
+          r.oldestUnpaidMonth ? formatMonthLabel(r.oldestUnpaidMonth) : '',
+          w?.statusName ?? '',
+          w?.lastActionAt ? formatDateTime(w.lastActionAt) : '',
+          w?.promisedOn ?? '',
+        ]
+      }),
     )
   }
 
@@ -186,7 +230,7 @@ export function DebtorsTab() {
         onRetry={refetch}
       >
         <div className="space-y-6">
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <StatCard
               label="Jami qarz"
               value={formatMoney(totals.debt)}
@@ -209,6 +253,15 @@ export function DebtorsTab() {
               iconBg="bg-amber-50"
               iconColor="text-amber-600"
               hint="To'lov muddati sozlamasi bo'yicha"
+            />
+            {/* §3.5 — va'da berilgan, sana o'tgan, qarz esa hali ochiq. */}
+            <StatCard
+              label="Buzilgan va'da"
+              value={String(totals.brokenPromises)}
+              icon={CalendarClock}
+              iconBg="bg-red-50"
+              iconColor="text-red-600"
+              hint="Sanasi o'tdi, qarz yopilmadi"
             />
           </div>
 
@@ -251,59 +304,127 @@ export function DebtorsTab() {
                     <th className="px-4 py-3 text-right">Jami qarz</th>
                     <th className="px-4 py-3 text-right">Kechikish</th>
                     <th className="px-4 py-3">Eng eski oy</th>
+                    {/* §3.5 — qarz haqida NIMA QILINGANI */}
+                    <th className="px-4 py-3">Holat</th>
+                    <th className="px-4 py-3">Oxirgi amal</th>
+                    <th className="px-4 py-3">Va'da</th>
+                    <th className="px-4 py-3" />
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {visible.map((r) => (
-                    <tr
-                      key={r.studentId}
-                      className={cn(
-                        'hover:bg-slate-50/60',
-                        r.daysOverdue > 0 && 'bg-red-50/50 hover:bg-red-50',
-                      )}
-                    >
-                      <td className="px-4 py-3 font-medium text-slate-800">{r.fullName}</td>
-                      <td className="px-4 py-3">
-                        <span className="rounded-md bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
-                          {r.className}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-slate-500">{r.parentPhone || '—'}</td>
-                      {columns.map((c) => {
-                        const value = debtOf(r, c.code)
-                        return (
-                          <td
-                            key={c.code}
-                            className={cn(
-                              'px-4 py-3 text-right',
-                              value > 0
-                                ? 'text-slate-700'
-                                : value < 0
-                                  ? 'text-emerald-600'
-                                  : 'text-slate-300',
-                            )}
-                          >
-                            {value === 0 ? '—' : formatMoney(value)}
-                          </td>
-                        )
-                      })}
-                      <td className="px-4 py-3 text-right font-semibold text-red-600">
-                        {formatMoney(r.debt)}
-                      </td>
-                      <td className="px-4 py-3 text-right">
-                        {r.daysOverdue > 0 ? (
-                          <span className="rounded-md bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-700">
-                            {r.daysOverdue} kun
-                          </span>
-                        ) : (
-                          <span className="text-xs text-slate-400">Muddatida</span>
+                  {visible.map((r) => {
+                    const w = workflowBy.get(r.studentId)
+                    return (
+                      <tr
+                        key={r.studentId}
+                        className={cn(
+                          'hover:bg-slate-50/60',
+                          r.daysOverdue > 0 && 'bg-red-50/50 hover:bg-red-50',
                         )}
-                      </td>
-                      <td className="px-4 py-3 text-slate-500">
-                        {r.oldestUnpaidMonth ? formatMonthLabel(r.oldestUnpaidMonth) : '—'}
-                      </td>
-                    </tr>
-                  ))}
+                      >
+                        <td className="px-4 py-3 font-medium text-slate-800">{r.fullName}</td>
+                        <td className="px-4 py-3">
+                          <span className="rounded-md bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
+                            {r.className}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-slate-500">{r.parentPhone || '—'}</td>
+                        {columns.map((c) => {
+                          const value = debtOf(r, c.code)
+                          return (
+                            <td
+                              key={c.code}
+                              className={cn(
+                                'px-4 py-3 text-right',
+                                value > 0
+                                  ? 'text-slate-700'
+                                  : value < 0
+                                    ? 'text-emerald-600'
+                                    : 'text-slate-300',
+                              )}
+                            >
+                              {value === 0 ? '—' : formatMoney(value)}
+                            </td>
+                          )
+                        })}
+                        <td className="px-4 py-3 text-right font-semibold text-red-600">
+                          {formatMoney(r.debt)}
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          {r.daysOverdue > 0 ? (
+                            <span className="rounded-md bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-700">
+                              {r.daysOverdue} kun
+                            </span>
+                          ) : (
+                            <span className="text-xs text-slate-400">Muddatida</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-slate-500">
+                          {r.oldestUnpaidMonth ? formatMonthLabel(r.oldestUnpaidMonth) : '—'}
+                        </td>
+
+                        {/* Joriy holat — eng oxirgi amalniki (server hisoblaydi). */}
+                        <td className="px-4 py-3">
+                          {w?.statusName ? (
+                            <span
+                              className="rounded-md px-2 py-0.5 text-xs font-medium"
+                              style={
+                                w.statusColor
+                                  ? { backgroundColor: `${w.statusColor}1a`, color: w.statusColor }
+                                  : undefined
+                              }
+                              title={w.lastComment ?? undefined}
+                            >
+                              {w.statusName}
+                            </span>
+                          ) : (
+                            <span className="text-xs text-slate-300">—</span>
+                          )}
+                        </td>
+
+                        <td className="px-4 py-3 text-slate-500">
+                          {w?.lastActionAt ? (
+                            <span title={w.lastComment ?? undefined}>
+                              {formatDateTime(w.lastActionAt)}
+                            </span>
+                          ) : (
+                            <span className="text-xs text-slate-300">Ish boshlanmagan</span>
+                          )}
+                        </td>
+
+                        <td className="px-4 py-3">
+                          {w?.promisedOn ? (
+                            <span
+                              className={cn(
+                                'inline-flex items-center gap-1 text-xs font-medium',
+                                w.promiseBroken ? 'text-red-600' : 'text-amber-600',
+                              )}
+                            >
+                              {w.promiseBroken ? (
+                                <AlertTriangle className="h-3.5 w-3.5" />
+                              ) : (
+                                <CalendarClock className="h-3.5 w-3.5" />
+                              )}
+                              {w.promisedOn}
+                            </span>
+                          ) : (
+                            <span className="text-xs text-slate-300">—</span>
+                          )}
+                        </td>
+
+                        <td className="px-4 py-3 text-right">
+                          <Button
+                            variant="ghost"
+                            className="px-2 py-1"
+                            onClick={() => setActing(r)}
+                            title="Amal qo'shish"
+                          >
+                            <MessageSquarePlus className="h-4 w-4" />
+                          </Button>
+                        </td>
+                      </tr>
+                    )
+                  })}
                 </tbody>
                 <tfoot>
                   <tr className="border-t border-slate-200 bg-slate-50/60 text-sm font-semibold">
@@ -318,7 +439,8 @@ export function DebtorsTab() {
                     <td className="px-4 py-3 text-right text-red-700">
                       {formatMoney(totals.debt)}
                     </td>
-                    <td className="px-4 py-3" colSpan={2} />
+                    {/* Kechikish, eng eski oy + §3.5 ning to'rtta ustuni. */}
+                    <td className="px-4 py-3" colSpan={6} />
                   </tr>
                 </tfoot>
               </table>
@@ -326,6 +448,17 @@ export function DebtorsTab() {
           </Card>
         </div>
       </ReportState>
+
+      {acting && (
+        <DebtorActionModal
+          studentId={acting.studentId}
+          studentName={acting.fullName}
+          className={acting.className}
+          debt={acting.debt}
+          onClose={() => setActing(null)}
+          onSaved={() => workflow.refetch()}
+        />
+      )}
     </div>
   )
 }
