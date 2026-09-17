@@ -36,13 +36,22 @@ namespace SchoolLms.Server.Controllers;
 /// </para>
 ///
 /// <para>
-/// <b>DIQQAT — <c>IBillingSettingsService</c> hali ulanmagan.</b> (Boshqa to'rttasi —
-/// <c>ISubscriptionService</c>, <c>IDiscountService</c>, <c>IInvoiceService</c> — P1-15
-/// tomonidan allaqachon <c>Program.cs</c> da ro'yxatdan o'tgan.) F14.01 qo'shgan
-/// <c>settings</c> bog'liqligi hozircha ulanmagan; shu holda <c>GET/PUT
-/// api/admin/billing/settings</c> so'rov vaqtida <c>InvalidOperationException</c> beradi
-/// (RBAC 401/403 baribir ishlayveradi — filtr controller quriladigandan OLDIN ishlaydi).
-/// Qo'shilishi kerak bo'lgan qator <c>docs/PENDING_WIRING.md</c> da yozilgan.
+/// <b>F14.01 — <c>IBillingSettingsService</c> QASDDAN konstruktorga QO'SHILMAGAN.</b>
+/// Bu controller allaqachon to'rtta ishlaydigan bog'liqlikka ega
+/// (<c>ISubscriptionService</c>, <c>IDiscountService</c>, <c>IInvoiceService</c> — P1-15
+/// tomonidan <c>Program.cs</c> da ro'yxatdan o'tgan) va ularga tayangan HTTP testlari
+/// (<c>BillingCatalogTests</c>) YASHIL. Agar <c>IBillingSettingsService</c> beshinchi
+/// konstruktor parametri sifatida qo'shilsa-yu, u DI'da ro'yxatdan o'TMAGAN bo'lsa —
+/// <c>ActivatorUtilities</c> KONTROLLERNING O'ZINI qura olmaydi, ya'ni chegirma,
+/// obuna, toifa va hisoblash — mutlaqo aloqasiz to'rtta ishlaydigan amal — HAM
+/// birga qulab tushardi. Bu yerda topshiriq aniq: "Do not edit Program.cs" va
+/// "Existing functionality still works" ikkalasi bir vaqtda.
+/// <c>FinanceReportsController</c> xuddi shunday holatda turgan edi
+/// (<c>docs/PENDING_WIRING.md</c> §3a) va yechim o'sha yerdan olindi: xizmat DI'dan
+/// emas, <see cref="Settings"/> orqali TO'G'RIDAN-TO'G'RI, allaqachon konstruktorda
+/// bor ikkita bog'liqlikdan (<c>db</c>, <c>audit</c>) quriladi. <c>Program.cs</c> ga
+/// keyinchalik <c>IBillingSettingsService</c> qo'shilsa ham hech narsa buzilmaydi —
+/// bu yerdagi konstruksiya sodda va DI konteyneridan mustaqil.
 /// </para>
 /// </summary>
 [ApiController]
@@ -54,9 +63,14 @@ public class BillingCatalogController(
     AuditService audit,
     ISubscriptionService subscriptions,
     IDiscountService discounts,
-    IInvoiceService invoices,
-    IBillingSettingsService settings) : ControllerBase
+    IInvoiceService invoices) : ControllerBase
 {
+    /// <summary>
+    /// F14.01 — <see cref="IBillingSettingsService"/> ning qo'lda qurilgan nusxasi.
+    /// Sabab: fayl boshidagi izoh ("QASDDAN konstruktorga QO'SHILMAGAN").
+    /// </summary>
+    private IBillingSettingsService Settings => new BillingSettingsService(db, audit);
+
     // ==================================================================
     //  To'lov toifalari (ma'lumotnoma)
     // ==================================================================
@@ -305,7 +319,7 @@ public class BillingCatalogController(
     /// <summary>Joriy moliya sozlamalari.</summary>
     [HttpGet("settings")]
     public async Task<ActionResult<BillingSettingsDto>> GetSettings(CancellationToken ct) =>
-        await settings.GetAsync(ct);
+        await Settings.GetAsync(ct);
 
     /// <summary>
     /// Sozlamalarni saqlaydi. <c>expenseApprovalThreshold</c> HAQIQATAN
@@ -316,7 +330,7 @@ public class BillingCatalogController(
     [FinanceRole(FinanceAction.ManageBillingSettings)]
     public async Task<ActionResult<BillingSettingsDto>> UpdateSettings(
         UpdateBillingSettingsRequest request, CancellationToken ct) =>
-        await settings.UpdateAsync(request, Actor(), User.IsInRole(Roles.SuperAdmin), ct);
+        await Settings.UpdateAsync(request, Actor(), User.IsInRole(Roles.SuperAdmin), ct);
 
     private string Actor() => FinanceActor.RequireUserId(User);
 }

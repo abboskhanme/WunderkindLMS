@@ -1437,25 +1437,35 @@ and client functions added to the existing `schoollms.client/src/api/services/bi
 Touched **no** shared file except an additive change to `Dtos/BillingDtos.cs`
 (`BillingSettingsDto` and `UpdateBillingSettingsRequest` each gained one field,
 `ExpenseApprovalThreshold` — allowed by that file's own header rule) and a doc-comment
-correction at the top of `BillingCatalogController.cs` (the old "DI hali ulanmagan" note was
-stale: P1-15 already wired the other four services).
+correction at the top of `BillingCatalogController.cs`.
 
-### For P1-15 (or whoever owns `Program.cs` now) — one missing registration
+### `Program.cs` — nothing to add (corrected from an earlier, wrong note in this file)
 
-`BillingCatalogController` now also injects `IBillingSettingsService`. Add next to the other
-billing `AddScoped` calls (`Program.cs:266-279`):
+An earlier version of this entry said `BillingCatalogController` injects `IBillingSettingsService`
+via its constructor and asked P1-15 to register it, claiming "every *other*
+`/api/admin/billing/*` endpoint is unaffected" if that registration were skipped. **That claim was
+wrong, and the full test suite caught it**: `ActivatorUtilities` fails to construct the
+**controller itself** when any constructor parameter's service type is unregistered — not just
+the action that uses it. With `IBillingSettingsService` as a sixth constructor parameter and no
+registration, `BillingCatalogTests` immediately lost 9 previously-green tests (categories,
+subscriptions, discounts, accrual — all unrelated to settings) with
+`Unable to resolve service for type '...IBillingSettingsService' while attempting to activate
+'BillingCatalogController'`. Only 401/403 responses survive (the authorization filter runs before
+construction); every other action 500s.
+
+Fixed the same way `FinanceReportsController` already handles its own unregistered dependency
+(§"3a" above, this same file): `IBillingSettingsService` is **not** a constructor parameter.
+`BillingCatalogController` builds it itself, from two dependencies it already has:
 
 ```csharp
-builder.Services.AddScoped<SchoolLms.Application.Billing.IBillingSettingsService,
-                           SchoolLms.Application.Billing.BillingSettingsService>();
+private IBillingSettingsService Settings => new BillingSettingsService(db, audit);
 ```
 
-Constructor is `(IAppDbContext, AuditService)`, both already registered — nothing else needed.
-
-**If skipped:** `GET`/`PUT /api/admin/billing/settings` return 500 at request time
-(`Unable to resolve service`). 401/403 still work correctly (the authorization filter runs
-before the controller is constructed), and every *other* `/api/admin/billing/*` endpoint is
-unaffected — a broken settings registration does not take down categories/subscriptions/discounts.
+`db` (`AppDbContext`) and `audit` (`AuditService`) are both already constructor parameters used
+elsewhere in the same controller, both already registered, so this needs no DI change at all —
+now or if `IBillingSettingsService` is later added to `Program.cs` for consistency with the other
+billing services (harmless either way, since nothing depends on it being *registered*, only on it
+existing as a type). **`GET`/`PUT /api/admin/billing/settings` work today, unconditionally.**
 
 ### For P1-20 — route and navigation
 
