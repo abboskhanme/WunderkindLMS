@@ -120,9 +120,13 @@ export const navByRole: Record<Role, NavItem[]> = {
         // (mijoz ko'rsatgan ekran, 2026-09-17): Sinflar · Guruhlar · Fanlar ·
         // Xonalar || O'quvchilar · Arxiv o'quvchilar · O'quvchilar manzili ·
         // Ota onalar || Sertifikatlar · Shartnomalar.
-        // Bizda bor, ularda yo'q yozuvlar (holatlar, sertifikat turlari,
-        // feedback) o'z guruhining OXIRIGA qo'yilgan — shunda EduSchool
-        // ketma-ketligi buzilmaydi.
+        // Mijoz 2026-09-17 da: "eduschoolda bor menular bo'lsa yetadi" —
+        // BAHOLASH guruhi (ikkita feedback yozuvi) va "O'quvchi holatlari"
+        // menyudan OLIB TASHLANDI. Sahifalari va marshrutlari joyida qoldi,
+        // ya'ni funksiya o'chmadi, faqat menyuda ko'rinmaydi.
+        // `Sertifikat turlari` qoldi: u EduSchool'da BOR, faqat Sozlamalar
+        // ostida turadi — bizda esa o'sha marshrut `settings` ruxsatiga,
+        // API esa `students` ga bog'langani uchun u yerga qo'yib bo'lmaydi.
         //
         // HAR BIR YOZUVDA `perm` BOR — VA U SAHIFANI HAQIQATDA QO'RIQLAYDIGAN
         // KALIT. Bo'lim bitta (`O'quv bo'limi`), lekin ichidagi ekranlar TO'RT
@@ -145,14 +149,11 @@ export const navByRole: Record<Role, NavItem[]> = {
         // uchun bo'limning kalitiga bo'ysunadi.
         { label: "O'quvchilar manzili", to: '/admin/locations', perm: 'students', group: "O'QUVCHILAR" },
         { label: 'Ota-onalar', to: '/admin/parents', perm: 'students', group: "O'QUVCHILAR" },
-        { label: "O'quvchi holatlari", to: '/admin/students/holatlar', perm: 'students', group: "O'QUVCHILAR" },
         { label: 'Sertifikatlar', to: '/admin/certificates', end: true, perm: 'students', group: 'HUJJATLAR' },
         { label: 'Shartnomalar', to: '/admin/contracts', perm: 'contracts', group: 'HUJJATLAR' },
         // Sertifikat turlari SOZLAMALAR ostida emas: u yerdagi marshrut `settings`
         // ruxsatiga bog'langan, API esa `students` ga — menyu va server zid bo'lardi.
         { label: 'Sertifikat turlari', to: '/admin/certificates/types', perm: 'students', group: 'HUJJATLAR' },
-        { label: "O'quvchilarga feedback", to: '/admin/students/baholash', perm: 'students', group: 'BAHOLASH' },
-        { label: 'Feedback nomi', to: '/admin/students/baholash-turlari', perm: 'students', group: 'BAHOLASH' },
       ],
     },
     {

@@ -148,3 +148,27 @@ costs no navigation.
 live here, belongs on `students` — but moving it means moving
 `LocationsController` and `ParentsController` too, or the menu starts lying
 again. It travels with X-2.
+
+## Ours-only entries removed from the submenu (2026-09-17)
+
+The client, seeing the full flyout after the rebuild: *"baholash qismi sub
+menulari va o'quvchi holatlari menusi kerakmas, eduschoolda bor menular bo'lsa
+yetadi."* Removed from `O'quv bo'limi`:
+
+- the whole **BAHOLASH** group — `O'quvchilarga feedback`, `Feedback nomi`;
+- **O'quvchi holatlari**.
+
+Both were ours alone: EduSchool has no feedback section at all, and keeps pupil
+statuses in a settings dialog rather than a menu entry.
+
+**The routes and pages stay.** `/admin/students/baholash`,
+`/admin/students/baholash-turlari` and `/admin/students/holatlar` still resolve
+and still work; only the menu entries are gone. Nothing else links to
+`holatlar` or to `baholash`, so those two are now reachable by URL only
+(`baholash-turlari` is still linked from the evaluation page itself). Deleting
+the features is a separate decision and was not asked for.
+
+**`Sertifikat turlari` stays**, and is now the only ours-only entry in the
+section. EduSchool does have certificate types — under Sozlamalar, not here —
+so it is not an invention. It cannot move to our Sozlamalar because that route
+is gated on `settings` while the API is gated on `students`.
