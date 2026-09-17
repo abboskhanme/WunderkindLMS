@@ -1233,7 +1233,7 @@ pass, at the end of each batch.
 
 Each carries the decision that stands if the client says nothing.
 
-**Q1 — Do you teach cross-class groups?**
+**Q1 — Do you teach cross-class groups?** — **ANSWERED 2026-09-17: YES.** `Group ≠ Sinf` is in scope; the build order is in `docs/PLAN-STUDENTS-FINANCE.md` §4. The "decision if silent" below no longer applies.
 *"Bir nechta sinfdan yig'ilgan guruhga alohida dars o'tasizmi (masalan, kuchli ingliz tili
 guruhi 5-A va 5-B dan)? Yoki har dars faqat bitta sinf bilanmi?"*
 **Decision if silent: no.** The existing 0/1/2 subgroup split covers language and PE splits;
