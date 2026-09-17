@@ -346,6 +346,100 @@ public class StudentImportTests(ApiFixture fixture)
     }
 
     // =====================================================================
+    //  6. GURUHLAR (G-19) — "Guruhlar" ustuni: FAQAT QO'SHADI
+    // =====================================================================
+
+    /// <summary>
+    /// Guruh katagi ("Fan: Guruh") FAOL a'zolik yaratadi. Ikkinchi marta
+    /// bo'sh katak bilan yuklash mavjud a'zolikni chiqarib TASHLAMAYDI —
+    /// "faqat qo'shadi" qoidasining o'zagi.
+    /// </summary>
+    [Fact]
+    public async Task Guruh_ustuni_ochadi_va_ikkinchi_bosh_katak_chiqarmaydi()
+    {
+        using var client = await fixture.Api.ClientAsAsync(Roles.Admin);
+        var tag = Tag();
+        var cls = await SeedClassAsync(tag);
+        var (subjectName, groupName, groupId) = await SeedGroupAsync(tag, cls);
+        var cell = $"{subjectName}: {groupName}";
+
+        var first = Sheet([
+            Row($"Guruhli Aliyev {tag}", cls, "2015-03-21", "o'g'il", "", "", "", "", "", "", "", cell),
+        ]);
+        Assert.Equal(HttpStatusCode.OK, (await client.PostAsync(Commit, Upload(first))).StatusCode);
+
+        string studentId = "";
+        await fixture.Api.WithDbAsync(async db =>
+        {
+            var student = await db.Students.AsNoTracking().SingleAsync(s => s.ClassName == cls);
+            studentId = student.Id;
+            Assert.True(await db.StudyGroupMembers.AnyAsync(
+                m => m.GroupId == groupId && m.StudentId == studentId && m.LeftOn == null));
+        });
+
+        // Ikkinchi yuklash: "Guruhlar" katagi BO'SH — mavjud a'zolik tegilmasligi kerak.
+        var second = Sheet([
+            Row($"Guruhli Aliyev {tag}", cls, "2015-03-21", "o'g'il", "", "", "", "", "", "", "", ""),
+        ]);
+        Assert.Equal(HttpStatusCode.OK, (await client.PostAsync(Commit, Upload(second))).StatusCode);
+
+        await fixture.Api.WithDbAsync(async db => Assert.Equal(1, await db.StudyGroupMembers
+            .CountAsync(m => m.GroupId == groupId && m.StudentId == studentId && m.LeftOn == null)));
+    }
+
+    /// <summary>Noma'lum fan yoki guruh — "Sinf topilmadi" bilan bir xil: butun qator xato, hech narsa yozilmaydi.</summary>
+    [Theory]
+    [InlineData("Yo'q fan: Biror guruh")]
+    [InlineData("Ingliz tili: Yo'q guruh")]
+    public async Task Nomalum_fan_yoki_guruh_qatorni_rad_etadi(string cellTemplate)
+    {
+        using var client = await fixture.Api.ClientAsAsync(Roles.Admin);
+        var tag = Tag();
+        var cls = await SeedClassAsync(tag);
+        var (subjectName, groupName, _) = await SeedGroupAsync(tag, cls);
+        // "Ingliz tili" shablonini haqiqiy fan nomiga almashtiramiz (subject nomi taglangan).
+        var cell = cellTemplate
+            .Replace("Ingliz tili", subjectName, StringComparison.Ordinal)
+            .Replace("Biror guruh", groupName, StringComparison.Ordinal);
+
+        var response = await client.PostAsync(Commit, Upload(Sheet([
+            Row($"Guruhsiz {tag}", cls, "2015-03-21", "o'g'il", "", "", "", "", "", "", "", cell),
+        ])));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        await fixture.Api.WithDbAsync(async db =>
+            Assert.Equal(0, await db.Students.CountAsync(s => s.ClassName == cls)));
+    }
+
+    /// <summary>Eksport — har o'quvchining FAOL guruhlari "Fan: Guruh" formatida, import ustuni bilan bir xil.</summary>
+    [Fact]
+    public async Task Eksport_guruh_ustunini_toldiradi()
+    {
+        using var client = await fixture.Api.ClientAsAsync(Roles.Admin);
+        var tag = Tag();
+        var cls = await SeedClassAsync(tag);
+        var (subjectName, groupName, groupId) = await SeedGroupAsync(tag, cls);
+
+        await client.PostAsync(Commit, Upload(Sheet([
+            Row($"Eksport guruhli {tag}", cls, "2015-03-21", "o'g'il", "", "", "", "",
+                "", "", "", $"{subjectName}: {groupName}"),
+        ])));
+
+        var export = await client.GetAsync($"{Export}?search={tag}&pageSize=1000");
+        export.EnsureSuccessStatusCode();
+        var bytes = await export.Content.ReadAsByteArrayAsync();
+        var columnCount = StudentImportSheet.Headers.Length + StudentImportSheet.ExportExtraHeaders.Length;
+        var rows = StudentListTests.XlsxRows(bytes, columnCount);
+
+        var dataRow = rows.Single(r => r[0] == $"Eksport guruhli {tag}");
+        Assert.Equal($"{subjectName}: {groupName}", dataRow[11]);
+
+        // Guruh haqiqatan bor edi — id ham topiladi (ko'r-ko'rona matn emas).
+        await fixture.Api.WithDbAsync(async db =>
+            Assert.True(await db.StudyGroups.AnyAsync(g => g.Id == groupId)));
+    }
+
+    // =====================================================================
     //  Yordamchilar
     // =====================================================================
 
@@ -360,6 +454,44 @@ public class StudentImportTests(ApiFixture fixture)
             await db.SaveChangesAsync();
         });
         return name;
+    }
+
+    /// <summary>
+    /// G-19: groupable fan + shu fandan bitta guruh, <paramref name="feedingClassName"/>
+    /// sinfi boqadigan qilib. (SubjectName, GroupName, GroupId) qaytaradi.
+    /// </summary>
+    private async Task<(string SubjectName, string GroupName, Guid GroupId)> SeedGroupAsync(
+        string tag, string feedingClassName)
+    {
+        var subjectName = $"Fan {tag}";
+        var groupName = $"Guruh {tag}";
+        var groupId = Guid.Empty;
+
+        await fixture.Api.WithDbAsync(async db =>
+        {
+            var subject = new Subject { Name = subjectName, IsGroupable = true };
+            db.Subjects.Add(subject);
+
+            var cls = await db.Classes.SingleAsync(c => c.Name == feedingClassName);
+
+            var user = await db.Users.FirstOrDefaultAsync();
+            var createdBy = user?.Id ?? "";
+
+            var group = new StudyGroup
+            {
+                Name = groupName,
+                SubjectId = subject.Id,
+                CreatedBy = createdBy,
+                CreatedAt = AppClock.NowInstant,
+            };
+            db.StudyGroups.Add(group);
+            db.StudyGroupClasses.Add(new StudyGroupClass { GroupId = group.Id, ClassId = cls.Id });
+
+            await db.SaveChangesAsync();
+            groupId = group.Id;
+        });
+
+        return (subjectName, groupName, groupId);
     }
 
     /// <summary>Shablon ustunlari tartibida bitta qator (yetishmagan ustunlar bo'sh).</summary>
