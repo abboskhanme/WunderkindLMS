@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 import {
   AlertTriangle,
   Inbox,
+  Receipt,
   RefreshCw,
   Search,
   ShieldOff,
+  Undo2,
   UserRound,
   Wallet,
 } from 'lucide-react'
@@ -19,12 +22,22 @@ import {
   searchStudents,
   suggestAllocation,
 } from '@/api/services/cashier'
+import type { ExpenseInput } from '@/api/services/expenses'
+import {
+  attachExpenseFile,
+  createExpense,
+  getExpenseApprovalThreshold,
+  needsApproval as expenseNeedsApproval,
+} from '@/api/services/expenses'
+import { uploadAdminFile } from '@/api/services/students'
+import { billingErrorMessage, isEndpointMissing } from '@/api/services/billingError'
 import { useAuth } from '@/context/auth-context'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { Loader } from '@/components/ui/Loader'
 import { Select, Textarea } from '@/components/ui/Input'
-import { cn } from '@/lib/utils'
+import { formatMoney, cn } from '@/lib/utils'
+import { ExpenseFormModal } from '@/pages/admin/billing/ExpenseFormModal'
 import { MoneyInput } from './MoneyInput'
 import { ShiftBar } from './ShiftBar'
 import { PaymentSplitModal } from './PaymentSplitModal'
@@ -64,6 +77,39 @@ const METHODS: PaymentMethod[] = ['cash', 'card', 'transfer', 'online']
  * chizilmaydi, o'rniga "Smenani oching" turadi. Sabab — har bir chek qaysi
  * smenaga tegishli ekani bilan yoziladi va chek raqami smena ichida uzluksiz
  * bo'lishi kerak; smenasiz bu savolning javobi yo'q.
+ *
+ * CHIQIM VA QAYTARIM — SHU YERDA, FAQAT ADMIN/DIREKTORGA (2026-09-18)
+ * ---------------------------------------------------------------------
+ * `navigation.ts` Moliya menyusini EduSchool ro'yxatiga aynan moslashtirgach
+ * (commit 7270989), "Chiqimlar" va "Qaytarimlar" hech qanday menyuda
+ * qolmadi — faqat URL orqali ochiladi edi. EduSchool'da ham xuddi shunday:
+ * alohida menyu yozuvi yo'q, ikkalasi ham `/cash` ekranining o'zida —
+ * cashbox kartochkasidagi INCOME/EXPENSE tugmalari qatorida (finance-parity.md
+ * §2.1.1: "four buttons: INCOME (payIn), EXPENSE (payOut), MOVING, EXCHANGE").
+ * Bizning `/cashier` xuddi shu kartochka o'rnini bosadi (§2.1.2: "roles
+ * cashier, admin, superadmin"), shuning uchun ular shu yerga qo'shildi —
+ * yangi marshrut yo'q, `navigation.ts` ga tegilmagan.
+ *
+ * "BOSHQA HECH NARSA YO'Q" QOIDASI KASSIRGA TEGISHLI, ADMINGA EMAS. Yuqoridagi
+ * "ro'yxatlar, hisobotlar... yo'q" — kassirning pul olib, yozuvni yo'qota
+ * olmasligini ta'minlash uchun edi (SPEC §4 xavfi). Chiqim yozish va
+ * qaytarim so'rash kassirning vakolati EMAS (`access.ts`: `canRecordExpense`
+ * — admin/superadmin; `RefundsPage.tsx`: `canRequest` — admin/superadmin);
+ * pastdagi blok FAQAT shu ikki rolga ko'rinadi, oddiy kassir uni umuman
+ * ko'rmaydi — ekran unga hamon bitta ishni qiladigan tor ekran bo'lib qoladi.
+ *
+ * "Yangi chiqim" — mavjud `ExpenseFormModal`ni O'ZGARTIRMAY shu yerga ochadi
+ * (EduSchool'ning drawer'i kabi, sahifadan chiqmasdan); yozish yo'li xuddi
+ * `ExpensesPage.tsx`dagi bilan bir xil — `createExpense` → fayllar bo'lsa
+ * `attachExpenseFile`, ikkalasi ham O'ZGARTIRILMAGAN. To'liq ro'yxat, tasdiq
+ * navbati va tarix uchun "Chiqimlar ro'yxati" havolasi `ExpensesPage`ning
+ * o'ziga olib boradi — u yerda ikkinchi tasdiq ham beriladi, buni bu yerga
+ * ko'chirish shart emas.
+ *
+ * "Qaytarimlar" — faqat havola, `RefundsPage.tsx`ga. U o'zi to'liq: so'rash,
+ * tasdiqlash, rad etish, storno — hammasi bitta sahifada, alohida ulash
+ * kerak emas (u yerdagi `RequestRefundModal` sahifadan eksport qilinmagan,
+ * shuning uchun bu yerga import qilib bo'lmaydi — va shart ham emas).
  */
 export function CashierPage() {
   const { user } = useAuth()
@@ -86,10 +132,77 @@ export function CashierPage() {
   }, [])
 
   const allowed = user !== null && CASH_DESK_ROLES.includes(user.role)
+  /** Chiqim/qaytarim — kassirning vakolati emas (`access.ts`, `RefundsPage.tsx`). */
+  const isFinanceAdmin = user !== null && (user.role === 'admin' || user.role === 'superadmin')
 
   useEffect(() => {
     if (allowed) void loadShift()
   }, [allowed, loadShift])
+
+  /* ---- Chiqim (F1.11 — kassa ekranidan, EduSchool'dagi kabi) ---- */
+  const [expenseFormOpen, setExpenseFormOpen] = useState(false)
+  const [expenseBusy, setExpenseBusy] = useState(false)
+  const [expenseError, setExpenseError] = useState<string | null>(null)
+  const [expenseNotice, setExpenseNotice] = useState<string | null>(null)
+  const [expenseThreshold, setExpenseThreshold] = useState<number | null>(null)
+
+  useEffect(() => {
+    if (!isFinanceAdmin) return
+    let alive = true
+    getExpenseApprovalThreshold()
+      .then((value) => {
+        if (alive) setExpenseThreshold(value)
+      })
+      .catch(() => undefined)
+    return () => {
+      alive = false
+    }
+  }, [isFinanceAdmin])
+
+  /**
+   * `ExpensesPage.tsx`dagi `handleCreate` bilan AYNAN bir xil yo'l: chiqim
+   * yoziladi, so'ng (bo'lsa) hujjatlar biriktiriladi. `createExpense` va
+   * `attachExpenseFile` — o'sha bir xil, o'zgartirilmagan servis funksiyalari;
+   * bu yerda faqat ULARNI CHAQIRISH takrorlangan, chiqim qanday yozilishi
+   * (server so'rovi, maydonlar) emas.
+   */
+  const handleCreateExpense = async (values: ExpenseInput, files: File[]) => {
+    setExpenseBusy(true)
+    setExpenseError(null)
+    try {
+      const created = await createExpense(values)
+      let attachError: string | null = null
+      for (const file of files) {
+        try {
+          const uploaded = await uploadAdminFile(file)
+          await attachExpenseFile(created.id, {
+            fileUrl: uploaded.url,
+            fileName: uploaded.name,
+            contentType: uploaded.contentType,
+            sizeBytes: uploaded.size,
+          })
+        } catch (e: unknown) {
+          attachError = billingErrorMessage(e, `"${file.name}" biriktirilmadi`)
+          break
+        }
+      }
+      setExpenseFormOpen(false)
+      setExpenseNotice(
+        (expenseNeedsApproval(created)
+          ? `Chiqim yozildi va tasdiq navbatiga tushdi (${formatMoney(created.amount)}).`
+          : `Chiqim yozildi (${formatMoney(created.amount)}).`) +
+          (attachError === null ? '' : ` Lekin hujjat biriktirilmadi: ${attachError}`),
+      )
+    } catch (e: unknown) {
+      setExpenseError(
+        isEndpointMissing(e)
+          ? "Chiqim yozish endpoint'i hali ulanmagan."
+          : billingErrorMessage(e, "Chiqimni saqlab bo'lmadi"),
+      )
+    } finally {
+      setExpenseBusy(false)
+    }
+  }
 
   /* ---- Tanlangan o'quvchi va to'lov shakli ---- */
   const [student, setStudent] = useState<CashierStudent | null>(null)
@@ -191,6 +304,55 @@ export function CashierPage() {
           }
         }}
       />
+
+      {/*
+        Chiqim va qaytarim — faqat admin/direktorga, kassirga umuman
+        ko'rinmaydi (yuqoridagi izoh). Smena holatidan qat'i nazar
+        chiqariladi: faqat NAQD chiqim ochiq smenani talab qiladi (F1.03),
+        boshqa usullar — yo'q, `ExpenseFormModal`ning o'zi buni ogohlantiradi.
+      */}
+      {isFinanceAdmin && (
+        <Card className="flex flex-wrap items-center justify-between gap-3 border-slate-200 bg-slate-50/60">
+          <div>
+            <p className="text-sm font-medium text-slate-700">Boshqa moliya amallari</p>
+            <p className="text-xs text-slate-400">
+              EduSchool'da ham chiqim va qaytarim shu — kassa — ekranidan boshlanadi
+              (finance-parity.md §2.1).
+            </p>
+            {expenseNotice && (
+              <p className="mt-1 text-xs font-medium text-emerald-600">{expenseNotice}</p>
+            )}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="secondary" onClick={() => setExpenseFormOpen(true)}>
+              <Receipt className="h-4 w-4" /> Yangi chiqim
+            </Button>
+            <Link
+              to="/admin/billing/expenses"
+              className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50"
+            >
+              Chiqimlar ro'yxati
+            </Link>
+            <Link
+              to="/admin/finance/refunds"
+              className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50"
+            >
+              <Undo2 className="h-4 w-4" /> Qaytarimlar
+            </Link>
+          </div>
+        </Card>
+      )}
+
+      {isFinanceAdmin && (
+        <ExpenseFormModal
+          open={expenseFormOpen}
+          busy={expenseBusy}
+          error={expenseError}
+          approvalThreshold={expenseThreshold}
+          onClose={() => setExpenseFormOpen(false)}
+          onSubmit={handleCreateExpense}
+        />
+      )}
 
       {/* SMENA OCHIQ BO'LMASA — TO'LOV SHAKLI UMUMAN CHIZILMAYDI (SPEC §4.2). */}
       {shift && (

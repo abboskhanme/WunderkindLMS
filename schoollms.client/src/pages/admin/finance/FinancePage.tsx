@@ -13,6 +13,7 @@ import { TeacherSalaryDetailModal } from './TeacherSalaryDetailModal'
 import { PnlTab } from './PnlTab'
 import { CashFlowTab } from './CashFlowTab'
 import { DebtorsTab } from './DebtorsTab'
+import { CashDayPage } from './CashDayPage'
 import { ZReportTab } from './ZReportTab'
 import { VarianceTab } from './VarianceTab'
 import { VarianceBanner } from './VarianceBanner'
@@ -40,13 +41,26 @@ const control =
  *
  * "O'qituvchilar" (maosh) tabi QOLDI: uning o'rnini bosadigan yangi hisobot
  * yo'q. Manbasi almashdi — server uni endi `expenses` dan hisoblaydi.
+ *
+ * "KASSA KUNI" TABI — 2026-09-18, MENYU YOZUVSIZ QOLGANDAN KEYIN
+ * -----------------------------------------------------------------
+ * `navigation.ts` Moliya menyusi EduSchool ro'yxatiga moslashtirilgach
+ * (commit 7270989) bu ekran hech qanday menyuda qolmadi — faqat URL orqali
+ * ochilardi. EduSchool'da ham alohida menyu yozuvi yo'q: kunlik hisobot
+ * shu direktor panelining o'zida, Z-hisobot va Nomuvofiqlik bilan bir
+ * oilada (ular ham aynan shu sababdan — smena/kassa nazorati — shu yerda).
+ * `CashDayPage` O'ZGARTIRILMAY import qilingan: uning o'z sana/kalendar
+ * boshqaruvi bor (bitta kun + oy, `from`/`to` DAVRIDAN farqli), shuning
+ * uchun `periodTabs` ga QO'SHILMAGAN — pastdagi umumiy davr tanlagich bu
+ * tabda ma'nosiz bo'lardi, sahifaning o'zidagi sana maydoni ishlatiladi.
  */
-type Tab = 'teachers' | 'pnl' | 'cashflow' | 'debtors' | 'zreport' | 'variance'
+type Tab = 'teachers' | 'pnl' | 'cashflow' | 'debtors' | 'cashday' | 'zreport' | 'variance'
 
 const reportTabs: { value: Tab; label: string }[] = [
   { value: 'pnl', label: 'Foyda va zarar' },
   { value: 'cashflow', label: 'Pul oqimi' },
   { value: 'debtors', label: 'Qarzdorlar' },
+  { value: 'cashday', label: 'Kassa kuni' },
   { value: 'zreport', label: 'Z-hisobot' },
   { value: 'variance', label: 'Nomuvofiqlik' },
 ]
@@ -314,6 +328,7 @@ export function FinancePage({ initialTab }: { initialTab?: Tab } = {}) {
       {canSeeReports && tab === 'pnl' && <PnlTab from={from} to={to} />}
       {canSeeReports && tab === 'cashflow' && <CashFlowTab from={from} to={to} />}
       {canSeeReports && tab === 'debtors' && <DebtorsTab />}
+      {canSeeReports && tab === 'cashday' && <CashDayPage />}
       {canSeeReports && tab === 'zreport' && <ZReportTab />}
       {canSeeReports && tab === 'variance' && (
         <VarianceTab watch={variance} canResolve={canSeeReports} />
