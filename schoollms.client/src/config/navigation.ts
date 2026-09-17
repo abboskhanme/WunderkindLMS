@@ -100,9 +100,10 @@ export const navByRole: Record<Role, NavItem[]> = {
 
         { label: 'Moliya hisobotlari', to: '/admin/finance/reports', roles: ['admin', 'superadmin'], group: 'HISOBOTLAR' },
         { label: 'Moliya hisobotlari (P&L)', to: '/admin/finance/pnl', roles: ['admin', 'superadmin'], group: 'HISOBOTLAR' },
-        // `Moliya hisobotlari (P&L) 2.0` — ekran QURILMOQDA. Yozuv u tayyor
-        // bo'lgach qo'shiladi: bo'sh sahifaga olib boradigan menyu yozuvi
-        // yo'q yozuvdan battar (MENU-PARITY.md).
+        // P&L 2.0 (beta) — ilgari rad etilgan edi (existing-module-gaps.md
+        // §3.6), mijoz 2026-09-18 da qaytardi. Ekranda hali qurilmagan
+        // qismlari OCHIQ yozilgan, soxta tab qo'yilmagan.
+        { label: 'Moliya hisobotlari (P&L) 2.0', to: '/admin/finance/pnl-2', roles: ['admin', 'superadmin'], group: 'HISOBOTLAR' },
         { label: 'Pul oqimi', to: '/admin/finance/cashflow', roles: ['admin', 'superadmin'], group: 'HISOBOTLAR' },
         { label: 'Moliya analitikasi', to: '/admin/finance/money-flow', roles: ['admin', 'superadmin'], group: 'HISOBOTLAR' },
       ],
@@ -269,19 +270,21 @@ export const navByRole: Record<Role, NavItem[]> = {
       icon: Settings,
       perm: 'settings',
       children: [
-        { label: "Maktab ma'lumotlari", to: '/admin/settings/school', group: 'UMUMIY' },
-        { label: "Yangi o'quv yiliga o'tish", to: '/admin/academic-year', perm: 'academicYear', group: 'UMUMIY' },
-        { label: 'Arxivlash sabablari', to: '/admin/settings/archive-reasons', group: 'UMUMIY' },
-        // Moliya kataloglari (to'lov toifalari, obunalar, chegirmalar, chiqimlar,
-        // qarzdor holatlari, qaytarimlar) MOLIYA MENYUSIDA emas — EduSchool ham
-        // ularni alohida "Moliya sozlamalari" ekranidan ochadi
-        // (finance-parity.md §2.14), menyuda alohida yozuv qilmaydi.
-        { label: 'Moliya sozlamalari', to: '/admin/billing/settings', roles: ['admin', 'superadmin'], group: 'UMUMIY' },
-        { label: 'Telegram bot', to: '/admin/settings/telegram', group: 'INTEGRATSIYALAR' },
-        { label: 'Push (Firebase)', to: '/admin/settings/firebase', group: 'INTEGRATSIYALAR' },
-        { label: 'Turniket integratsiya', to: '/admin/settings/turnstile', group: 'INTEGRATSIYALAR' },
-        { label: 'GPS integratsiya', to: '/admin/settings/gps', group: 'INTEGRATSIYALAR' },
-        { label: 'Kamera integratsiya', to: '/admin/settings/cameras', group: 'INTEGRATSIYALAR' },
+        // EduSchool'ning Sozlamalar menyusi AYNAN to'rtta yozuvdan iborat
+        // (mijoz ko'rsatgan ekran, 2026-09-18). Har biri — ichida bo'limlari
+        // bor bitta sahifa, menyuda esa o'nta yassi yozuv emas.
+        // Eski manzillar (`/admin/settings/telegram` va h.k.) ishlashda
+        // qoladi — hub qo'shimcha yo'l, almashtiruvchi emas.
+        { label: 'Moliya sozlamalari', to: '/admin/billing/settings', roles: ['admin', 'superadmin'], group: 'SOZLAMALAR' },
+        { label: 'Integratsiyalar', to: '/admin/settings/integrations', group: 'SOZLAMALAR' },
+        { label: 'Umumiy sozlamalar', to: '/admin/settings/general', group: 'SOZLAMALAR' },
+        // `Sotuv va marketing` ATAYLAB yo'q: u EduSchool'ning CRM sozlamasi,
+        // bizda uning o'rni Lidlar taxtasi — CLAUDE.md uni himoyalaydi.
+        //
+        // `Yangi o'quv yiliga o'tish` ham bu yerda emas: u sozlama emas,
+        // yiliga bir marta bajariladigan va ORQAGA QAYTMAYDIGAN amal
+        // (o'quvchilarni ko'chiradi, baho va jadvalni tozalaydi).
+        { label: "Yangi o'quv yiliga o'tish", to: '/admin/academic-year', perm: 'academicYear', group: 'AMALLAR' },
       ],
     },
   ],

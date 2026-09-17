@@ -6,6 +6,9 @@ import { RequirePerm } from '@/components/auth/RequirePerm'
 import { CategoriesPage } from '@/pages/admin/billing/CategoriesPage'
 import { BillingSettingsPage } from '@/pages/admin/billing/BillingSettingsPage'
 import { RefundsPage } from '@/pages/admin/finance/RefundsPage'
+import { PnlExpectationPage } from '@/pages/admin/finance/PnlExpectationPage'
+import { IntegrationsSettingsPage } from '@/pages/admin/settings/IntegrationsSettingsPage'
+import { GeneralSettingsPage } from '@/pages/admin/settings/GeneralSettingsPage'
 import { AdjustmentsPage } from '@/pages/admin/hr/AdjustmentsPage'
 import { SubscriptionsPage } from '@/pages/admin/billing/SubscriptionsPage'
 import { DiscountsPage } from '@/pages/admin/billing/DiscountsPage'
@@ -171,7 +174,11 @@ export default function App() {
           {/* EduSchool'da alohida menyu yozuvi — bizda bitta sahifaning tablari. */}
           <Route path="finance/debtors" element={<RequirePerm perm="finance"><FinancePage initialTab="debtors" /></RequirePerm>} />
           <Route path="finance/pnl" element={<RequirePerm perm="finance"><FinancePage initialTab="pnl" /></RequirePerm>} />
+          <Route path="finance/pnl-2" element={<RequirePerm perm="finance"><PnlExpectationPage /></RequirePerm>} />
           <Route path="finance/cashflow" element={<RequirePerm perm="finance"><FinancePage initialTab="cashflow" /></RequirePerm>} />
+          {/* Sozlamalar EduSchool tuzilishida: to'rtta sahifa, har biri ichida bo'limlar. */}
+          <Route path="settings/integrations" element={<RequirePerm perm="settings"><IntegrationsSettingsPage /></RequirePerm>} />
+          <Route path="settings/general" element={<RequirePerm perm="settings"><GeneralSettingsPage /></RequirePerm>} />
           <Route path="finance/bonus" element={<RequirePerm perm="finance"><AdjustmentsPage kind="bonus" /></RequirePerm>} />
           <Route path="finance/penalty" element={<RequirePerm perm="finance"><AdjustmentsPage kind="penalty" /></RequirePerm>} />
           <Route path="billing/subscriptions" element={<RequirePerm perm="finance"><SubscriptionsPage /></RequirePerm>} />
