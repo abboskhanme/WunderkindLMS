@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using SchoolLms.Application.Billing;
 using SchoolLms.Application.Dtos.Billing;
+using SchoolLms.Application.Services;
 using SchoolLms.Domain;
 using SchoolLms.Infrastructure.Data;
 
@@ -174,6 +175,12 @@ public class FinanceReportsController(AppDbContext db) : ControllerBase
     /// bitta katakka yig'iladi.</param>
     /// <param name="debtorsOnly">true = qoldig'i bor o'quvchilargina.</param>
     /// <param name="includeArchived">false = arxivlangan o'quvchilarni yashirish.</param>
+    /// <param name="classNames">F13.01 — vergul bilan ajratilgan bir nechta
+    /// sinf, masalan <c>5-A,5-B</c>. Berilsa <paramref name="className"/> dan
+    /// USTUN turadi.</param>
+    /// <param name="groupId">F13.06 — bitta o'quv guruhi (hozirgi a'zolari).</param>
+    /// <param name="splitByCategory">F13.02 — true bo'lsa bitta o'quvchi —
+    /// bitta toifa uchun bitta qator.</param>
     [HttpGet("arrears-pivot")]
     public async Task<ActionResult<ArrearsPivotDto>> ArrearsPivot(
         [FromQuery] string? fromMonth,
@@ -182,6 +189,9 @@ public class FinanceReportsController(AppDbContext db) : ControllerBase
         [FromQuery] Guid? categoryId,
         [FromQuery] bool debtorsOnly = false,
         [FromQuery] bool includeArchived = true,
+        [FromQuery] string? classNames = null,
+        [FromQuery] Guid? groupId = null,
+        [FromQuery] bool splitByCategory = false,
         CancellationToken ct = default)
     {
         if (!TryMonth(toMonth, DefaultToMonth(), out var to))
@@ -205,7 +215,10 @@ public class FinanceReportsController(AppDbContext db) : ControllerBase
             ClassName: className,
             CategoryId: categoryId,
             DebtorsOnly: debtorsOnly,
-            IncludeArchived: includeArchived);
+            IncludeArchived: includeArchived,
+            ClassNames: SplitCsv(classNames),
+            StudyGroupId: groupId,
+            SplitByCategory: splitByCategory);
 
         try
         {
@@ -218,6 +231,103 @@ public class FinanceReportsController(AppDbContext db) : ControllerBase
             // foydalanuvchi qo'lida — sinfni tanlasin.
             return BadRequest(new { message = tooWide.Message });
         }
+    }
+
+    /// <summary>
+    /// <c>GET /api/admin/finance/arrears-pivot/export</c> — o'sha filtr bo'yicha
+    /// .xlsx (F13.05). Parametrlar <see cref="ArrearsPivot"/> bilan AYNAN bir
+    /// xil — ikkinchi ta'rif paydo bo'lmasin.
+    /// </summary>
+    [HttpGet("arrears-pivot/export")]
+    public async Task<ActionResult> ArrearsPivotExport(
+        [FromQuery] string? fromMonth,
+        [FromQuery] string? toMonth,
+        [FromQuery] string? className,
+        [FromQuery] Guid? categoryId,
+        [FromQuery] bool debtorsOnly = false,
+        [FromQuery] bool includeArchived = true,
+        [FromQuery] string? classNames = null,
+        [FromQuery] Guid? groupId = null,
+        [FromQuery] bool splitByCategory = false,
+        CancellationToken ct = default)
+    {
+        var result = await ArrearsPivot(
+            fromMonth, toMonth, className, categoryId, debtorsOnly, includeArchived,
+            classNames, groupId, splitByCategory, ct);
+
+        // `ArrearsPivot` o'zi 400/BadRequest qaytargan bo'lishi mumkin
+        // (noto'g'ri oy, juda uzun davr, 600 dan ko'p o'quvchi) — o'sha
+        // xatoni AYNAN o'zi bilan qaytaramiz, ikkinchi marta tekshirmaymiz.
+        if (result.Result is not OkObjectResult ok || ok.Value is not ArrearsPivotDto pivot)
+            return result.Result ?? StatusCode(500);
+
+        string[] headers =
+        [
+            "№", "O'quvchi", "Telefon", "Sinf", "Toifa",
+            .. pivot.Months.Select(FormatMonthHeader),
+            "Jami qoldiq",
+        ];
+
+        var rows = pivot.Rows.Select((row, i) =>
+        {
+            var cells = new List<ExcelExport.XlsxCell>
+            {
+                ExcelExport.XlsxCell.Num(i + 1),
+                ExcelExport.XlsxCell.Of(row.FullName),
+                ExcelExport.XlsxCell.Of(row.ParentPhone),
+                ExcelExport.XlsxCell.Of(row.ClassName),
+                ExcelExport.XlsxCell.Of(row.CategoryName),
+            };
+            cells.AddRange(pivot.Months.Select(m =>
+                row.Cells.TryGetValue(m, out var cell)
+                    ? ExcelExport.XlsxCell.Num(cell.ToBePaid)
+                    : ExcelExport.XlsxCell.Of(null)));
+            cells.Add(ExcelExport.XlsxCell.Num(row.Total.ToBePaid));
+            return (IReadOnlyList<ExcelExport.XlsxCell>)cells;
+        });
+
+        var totalsRow = new List<ExcelExport.XlsxCell>
+        {
+            ExcelExport.XlsxCell.Of("Jami"),
+            ExcelExport.XlsxCell.Of(null),
+            ExcelExport.XlsxCell.Of(null),
+            ExcelExport.XlsxCell.Of(null),
+            ExcelExport.XlsxCell.Of(null),
+        };
+        totalsRow.AddRange(pivot.Months.Select(m =>
+            pivot.Footer.TryGetValue(m, out var cell)
+                ? ExcelExport.XlsxCell.Num(cell.ToBePaid)
+                : ExcelExport.XlsxCell.Of(null)));
+        totalsRow.Add(ExcelExport.XlsxCell.Num(pivot.Total.ToBePaid));
+
+        var bytes = ExcelExport.BuildTable("Qarzdorlik", headers, rows, totalsRow);
+        return File(bytes, XlsxMime, $"qarzdorlik_{AppClock.Today:yyyy-MM-dd}.xlsx");
+    }
+
+    private const string XlsxMime =
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+
+    /// <summary>
+    /// Qisqa o'zbekcha oy nomlari — <c>config/constants.ts</c> dagi
+    /// <c>monthShortNames</c> bilan AYNAN bir xil (ikkinchi lug'at emas).
+    /// </summary>
+    private static readonly string[] MonthShortNames =
+        ["Yan", "Fev", "Mar", "Apr", "May", "Iyn", "Iyl", "Avg", "Sen", "Okt", "Noy", "Dek"];
+
+    /// <summary>"YYYY-MM" → "Sen 2025" — sarlavha uchun, ekrandagi
+    /// <c>formatMonth</c> bilan bir xil (madaniyatga bog'liq oy nomiga tayanmaydi).</summary>
+    private static string FormatMonthHeader(string monthKey)
+    {
+        var month = DateOnly.ParseExact(monthKey, "yyyy-MM", CultureInfo.InvariantCulture);
+        return $"{MonthShortNames[month.Month - 1]} {month.Year}";
+    }
+
+    /// <summary>Vergul bilan ajratilgan ro'yxat → tozalangan qiymatlar. Bo'sh matn = null (filtr yo'q).</summary>
+    private static IReadOnlyList<string>? SplitCsv(string? csv)
+    {
+        if (string.IsNullOrWhiteSpace(csv)) return null;
+        var values = csv.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        return values.Length == 0 ? null : values;
     }
 
 

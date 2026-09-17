@@ -501,6 +501,29 @@ public sealed class InvoiceService(IAppDbContext db, ILedgerService ledger) : II
     }
 
     /// <summary>
+    /// F10.05 — registrning BUTUN FILTR bo'yicha qatorlari, sahifasiz.
+    /// <see cref="Filtered"/> — <see cref="ListPageAsync"/> bilan BIR XIL
+    /// filtr, ya'ni eksport ekrandagi jadval bilan har doim rozi bo'ladi.
+    /// </summary>
+    public async Task<IReadOnlyList<InvoiceDto>> ExportRowsAsync(
+        InvoicePageQuery query, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(query);
+
+        var settings = await SettingsAsync(ct);
+        var q = Filtered(query.ToQuery(), query.OnlyDebtors, settings);
+
+        var rows = await q
+            .OrderByDescending(i => i.PeriodMonth)
+            .ThenByDescending(i => i.CreatedAt)
+            .ThenBy(i => i.Id)
+            .Take(MaxListRows)
+            .ToListAsync(ct);
+
+        return await ToDtosAsync(rows, settings, ct);
+    }
+
+    /// <summary>
     /// Registr va ro'yxat uchun UMUMIY filtr — ikki joyda ikki xil bo'lib
     /// ketmasin (aks holda yakun bilan qatorlar bir-biriga to'g'ri kelmasdi).
     /// </summary>
