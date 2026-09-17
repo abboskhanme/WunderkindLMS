@@ -66,8 +66,17 @@ public class StudentGuardian
     public string StudentId { get; set; } = string.Empty;
     public string GuardianId { get; set; } = string.Empty;
 
-    /// <summary>parent | grandparent | trustee</summary>
+    /// <summary>
+    /// parent | father | mother | grandparent | trustee | other —
+    /// <see cref="GuardianRelation.Stored"/> (students-parity.md §2.3 S-8).
+    /// </summary>
     public string Relation { get; set; } = GuardianRelation.Parent;
+
+    /// <summary>
+    /// <c>other</c> tanlanganda kim ekanini yozadigan matn ("amakisi",
+    /// "opasi") — S-8. Boshqa qiymatlarda odatda null.
+    /// </summary>
+    public string? RelationNote { get; set; }
 
     /// <summary>
     /// Asosiy vasiy — chek, shartnoma va rasmiy xabar shu odamga boradi.
@@ -85,8 +94,32 @@ public static class GuardianRelation
     public const string Grandparent = "grandparent";
     public const string Trustee = "trustee";
 
-    /// <summary>Baza check constraint'i bilan BIR XIL ro'yxat.</summary>
+    // ----- students-parity.md §2.3 (S-8) — kengaytirilgan ro'yxat -----
+    // EduSchool ota va onani ALOHIDA ajratadi (ota-onalar ro'yxati aynan shu
+    // bo'yicha filtrlanadi), "boshqa" tanlovi esa yonidagi matn bilan keladi.
+    public const string Father = "father";
+    public const string Mother = "mother";
+    public const string Other = "other";
+
+    /// <summary>
+    /// Ilova HOZIR qabul qiladigan qiymatlar. Ataylab kengaytirilmagan:
+    /// sxema migratsiyasi (M-slice) baza chegarasini kengaytiradi, kirishni
+    /// tekshirishni esa forma va vasiy xizmati bilan birga 3-slice
+    /// o'zgartiradi (§4.2). Bugungi <c>AdminGuardiansController</c> xatti-
+    /// harakati SHU SABABLI o'zgarmaydi.
+    /// </summary>
     public static readonly string[] All = [Parent, Grandparent, Trustee];
 
+    /// <summary>
+    /// Baza <c>ck_student_guardians_relation</c> check constraint'i bilan
+    /// BIR XIL ro'yxat: eski uchtasi O'RNIDA emas, YONIGA qo'shildi, ya'ni
+    /// birorta mavjud qator o'zgarmaydi.
+    /// </summary>
+    public static readonly string[] Stored =
+        [Parent, Father, Mother, Grandparent, Trustee, Other];
+
     public static bool IsValid(string? value) => value is not null && All.Contains(value);
+
+    /// <summary>Bazaga yozsa bo'ladimi (3-slice validatsiyasi uchun).</summary>
+    public static bool IsStorable(string? value) => value is not null && Stored.Contains(value);
 }
