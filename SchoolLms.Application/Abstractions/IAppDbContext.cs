@@ -130,6 +130,20 @@ public interface IAppDbContext
     /// </summary>
     DbSet<ExpenseAttachment> ExpenseAttachments { get; }
 
+    // ---------- Bonus / jarima (finance-parity.md §3.2, Batch B, F11.01/F11.02) ----------
+    // `hr_employees` hali yo'q (HR-01/02/03 qurilmagan) — xodim identifikatsiyasi
+    // `TeacherId`/`UserId` orqali, `hr_employees` o'zi ishlatadigan naqsh bilan
+    // bir xil (`PayrollAdjustments.cs` boshidagi izoh).
+
+    /// <summary>Sabab katalogi (F11.02) — moliyaviy emas, to'liq CRUD.</summary>
+    DbSet<AdjustmentReason> AdjustmentReasons { get; }
+
+    /// <summary>
+    /// Bonus/jarima registri (F11.01). FAQAT INSERT — `app_rw` da UPDATE/DELETE
+    /// yo'q (<c>payroll_adjustments_guards.sql</c>). Tuzatish faqat <c>ReversalOf</c> bilan.
+    /// </summary>
+    DbSet<PayrollAdjustment> PayrollAdjustments { get; }
+
     // ---------- Ikkinchi to'lqin (docs/modules/existing-module-gaps.md) ----------
     // Sxema oldin keladi, ekranlar keyin: bu to'plamni hozircha HECH BIR xizmat
     // o'qimaydi. Ular shu yerda ro'yxatda turibdi, chunki ketma-ket keladigan
