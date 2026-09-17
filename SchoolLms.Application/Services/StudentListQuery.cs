@@ -293,7 +293,8 @@ public sealed class StudentListQuery(IAppDbContext db)
                 s.ArchivedAt,
                 s.ArchiveReason,
                 s.ArchiveReasonId,
-                s.BirthCertificateUrl);
+                s.BirthCertificateUrl,
+                s.TargetGrade);
         });
 
         // Pulga oid filtrlar — qoldiq hisoblangandan KEYIN.

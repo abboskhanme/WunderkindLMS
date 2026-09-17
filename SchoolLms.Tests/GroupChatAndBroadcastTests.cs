@@ -265,6 +265,97 @@ public class GroupChatAndBroadcastTests(ApiFixture fixture)
     }
 
     // =====================================================================
+    //  3. E'lon — filtr qamrovi (S-6, students-parity.md §2.3.3)
+    // =====================================================================
+
+    /// <summary>
+    /// <c>scope: "filter"</c> — o'quvchilar ro'yxati ekranidagi JORIY filtrga
+    /// mos BARCHA o'quvchi, tanlangan qatorlardan MUSTAQIL (EduSchool'dagi
+    /// "barcha sahifalar"). Qamrov AYNAN <c>StudentListQuery</c> orqali
+    /// hisoblanadi — shu yerda sinf nomi bo'yicha filtrlanadi: mos sinfdagi
+    /// ikkita bola ota-onasi oladi, boshqa sinfdagi bola OLMAYDI.
+    /// </summary>
+    [Fact]
+    public async Task Filtr_qamrovi_joriy_filtrga_mos_barchaga_boradi()
+    {
+        var tag = Guid.NewGuid().ToString("N")[..8];
+        var className = $"7A-{tag}";
+        var inClass1 = GeneralSettingsFlagsTests.NewStudent($"Ichkari 1 {tag}", className, "+99890" + Rnd());
+        var inClass2 = GeneralSettingsFlagsTests.NewStudent($"Ichkari 2 {tag}", className, "+99890" + Rnd());
+        var outside = GeneralSettingsFlagsTests.NewStudent($"Tashqari {tag}", $"7B-{tag}", "+99890" + Rnd());
+
+        await fixture.Api.WithDbAsync(async db =>
+        {
+            db.Classes.AddRange(
+                new SchoolClass { Name = className, Grade = 7 },
+                new SchoolClass { Name = $"7B-{tag}", Grade = 7 });
+            db.Students.AddRange(inClass1, inClass2, outside);
+            foreach (var id in new[] { inClass1.Id, inClass2.Id, outside.Id })
+                db.TelegramRegistrations.Add(new TelegramRegistration
+                {
+                    StudentId = id, ChatId = Random.Shared.NextInt64(1, long.MaxValue),
+                    ParentName = "Ota-ona", Phone = "+99890" + Rnd(),
+                });
+            await db.SaveChangesAsync();
+        });
+
+        using var admin = await fixture.Api.ClientAsAsync(Roles.Admin);
+        var response = await admin.PostAsJsonAsync(Broadcast, new
+        {
+            scope = "filter",
+            onlyDebtors = false,
+            text = "Ertaga ota-onalar yig'ilishi",
+            filter = new { className },
+        });
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;
+        Assert.Equal(2, body.GetProperty("recipientCount").GetInt32());
+        Assert.Contains("Filtr bo'yicha", body.GetProperty("className").GetString());
+    }
+
+    /// <summary>Filtrga mos hech kim topilmasa — 400, hech narsa tarixga yozilmaydi.</summary>
+    [Fact]
+    public async Task Filtr_qamrovi_mos_kelmasa_400()
+    {
+        using var admin = await fixture.Api.ClientAsAsync(Roles.Admin);
+        var response = await admin.PostAsJsonAsync(Broadcast, new
+        {
+            scope = "filter",
+            onlyDebtors = false,
+            text = "Salom",
+            filter = new { className = $"yoq-sinf-{Guid.NewGuid():N}" },
+        });
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    /// <summary>
+    /// Darvoza o'zgarmadi: <c>AdminPerm("messages")</c> ruxsatisiz rol filtr
+    /// qamroviga ham e'lon yubora olmaydi (403), token'siz so'rov — 401. Bu
+    /// qamrov butun maktabga yetishi mumkin — darvozasi eng kamida boshqalar
+    /// bilan bir xil bo'lishi shart.
+    /// </summary>
+    [Theory]
+    [InlineData(Roles.Teacher)]
+    [InlineData(Roles.Cashier)]
+    public async Task Ruxsatsiz_rol_filtr_qamroviga_elon_yubora_olmaydi(string role)
+    {
+        using var client = await fixture.Api.ClientAsAsync(role, "messages");
+        var response = await client.PostAsJsonAsync(Broadcast, new
+        {
+            scope = "filter", onlyDebtors = false, text = "Salom",
+        });
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+
+        using var anonymous = fixture.Api.AnonymousClient();
+        var unauthorized = await anonymous.PostAsJsonAsync(Broadcast, new
+        {
+            scope = "filter", onlyDebtors = false, text = "Salom",
+        });
+        Assert.Equal(HttpStatusCode.Unauthorized, unauthorized.StatusCode);
+    }
+
+    // =====================================================================
     //  Yordamchilar
     // =====================================================================
 
