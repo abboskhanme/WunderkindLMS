@@ -119,7 +119,24 @@ public class StudentsController(AppDbContext db, AuditService audit) : Controlle
         s.SubGroup,
         s.LastName, s.FirstName, s.MiddleName, s.BirthCertificateUrl,
         s.ParentLastName, s.ParentFirstName, s.ParentMiddleName, s.ParentPassportUrl,
-        s.IsArchived, s.ArchivedAt, s.ArchiveReason);
+        s.IsArchived, s.ArchivedAt, s.ArchiveReason,
+        s.Phone, s.Language, s.DocumentUrl);
+
+    /// <summary>Bo'sh/probel — null; aks holda chetlari kesilgan matn.</summary>
+    private static string? Trimmed(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    /// <summary>
+    /// §2.3 (S-8) — o'qish tili <c>students.language</c> check constraint'i
+    /// bilan bir xil ro'yxatdan bo'lishi kerak. Bo'sh — to'g'ri (ko'rsatilmagan).
+    /// </summary>
+    internal static string? BadLanguage(string? language)
+    {
+        var value = (language ?? "").Trim().ToLowerInvariant();
+        if (value.Length == 0 || StudentImportService.Languages.Contains(value)) return null;
+        return $"O'qish tili noto'g'ri: \"{language!.Trim()}\" "
+               + $"({string.Join(" | ", StudentImportService.Languages)})";
+    }
 
     /// <summary>"Familiya Ism Sharifi" — parts'ni birlashtirish (bo'sh qismlar tashlanadi).</summary>
     private static string JoinName(string? last, string? first, string? middle) =>
@@ -130,14 +147,42 @@ public class StudentsController(AppDbContext db, AuditService audit) : Controlle
     [HttpPost]
     public async Task<ActionResult<StudentDto>> Create(StudentPayload p)
     {
+        if (BadRelation(p.Guardians) is { } badRelation)
+            return BadRequest(new { message = badRelation });
+        if (BadLanguage(p.Language) is { } badLanguage)
+            return BadRequest(new { message = badLanguage });
+
         var student = AddStudent(p);
+        // §2.3 (S-8): forma vasiy ro'yxati bilan kelsa, ASOSIY vasiy eski
+        // `parent_*` ustunlariga ko'chadi — shu ikkovi hech qachon
+        // ayrilmasligi kerak (ota-ona portali telefon bo'yicha topadi).
+        GuardianSync.MirrorPrimaryInput(student, p.Guardians);
         await db.SaveChangesAsync();
         // SPEC §3.2: ota-ona raqamidan vasiy qatorini va bog'lanishni chiqaramiz.
         // Busiz bugun qo'shilgan o'quvchining ota-onasi Telegram Mini App'da
         // hech narsa ko'rmasdi (migratsiyadagi backfill faqat eskilarini ko'chiradi).
         await GuardianSync.EnsureAsync(db, student);
+        // §2.3 (S-8) — ikkinchi vasiy va vasiylik turlari. Ro'yxat bo'sh
+        // bo'lsa bu qadam hech narsa qilmaydi (bugungi xatti-harakat).
+        await GuardianSync.ApplyAsync(db, student, p.Guardians);
         // Yangi o'quvchining qoldig'i 0: obuna hali ochilmagan, hisob-faktura yo'q.
         return ToDto(student, 0m);
+    }
+
+    /// <summary>
+    /// §2.3 (S-8) — vasiylik turi ro'yxatdan tashqarimi. Tashqari bo'lsa
+    /// tushunarli 400 qaytadi: bazadagi <c>ck_student_guardians_relation</c>
+    /// ga borib 23514 bilan yiqilish foydalanuvchiga hech narsa aytmasdi.
+    /// </summary>
+    internal static string? BadRelation(IReadOnlyList<StudentGuardianInput>? guardians)
+    {
+        foreach (var g in guardians ?? [])
+        {
+            var value = (g.Relation ?? "").Trim();
+            if (value.Length > 0 && !GuardianRelation.IsStorable(value.ToLowerInvariant()))
+                return $"Vasiylik turi noto'g'ri: \"{value}\" ({string.Join(" | ", GuardianRelation.Stored)})";
+        }
+        return null;
     }
 
     /// <summary>
@@ -193,6 +238,11 @@ public class StudentsController(AppDbContext db, AuditService audit) : Controlle
             ParentPassportUrl = string.IsNullOrWhiteSpace(p.ParentPassportUrl) ? null : p.ParentPassportUrl,
             ClassName = p.ClassName,
             EnrollmentDate = enrollment,
+            // §2.3 (S-8) — hammasi ixtiyoriy: yuborilmasa null bo'lib qoladi,
+            // ya'ni bugungi payload bilan yaratilgan o'quvchi bugungiday.
+            Phone = Trimmed(p.Phone),
+            Language = Trimmed(p.Language)?.ToLowerInvariant(),
+            DocumentUrl = Trimmed(p.DocumentUrl),
         };
         db.Students.Add(student);
 
@@ -218,6 +268,11 @@ public class StudentsController(AppDbContext db, AuditService audit) : Controlle
     [HttpPut("{id}")]
     public async Task<IActionResult> Update(string id, StudentPayload p)
     {
+        if (BadRelation(p.Guardians) is { } badRelation)
+            return BadRequest(new { message = badRelation });
+        if (BadLanguage(p.Language) is { } badLanguage)
+            return BadRequest(new { message = badLanguage });
+
         var student = await db.Students.FindAsync(id);
         if (student is null) return NotFound();
 
@@ -257,6 +312,16 @@ public class StudentsController(AppDbContext db, AuditService audit) : Controlle
             student.ParentPassportUrl = string.IsNullOrWhiteSpace(p.ParentPassportUrl) ? null : p.ParentPassportUrl;
         student.ClassName = p.ClassName;
         if (!string.IsNullOrWhiteSpace(p.EnrollmentDate)) student.EnrollmentDate = p.EnrollmentDate;
+
+        // §2.3 (S-8) — YANGI maydonlar. `null` = TEGMA (eski mijoz ularni
+        // umuman yubormaydi), bo'sh satr = tozala. Aynan shu qoida bilan
+        // yuqoridagi ikkita rasm maydoni ham ishlaydi.
+        if (p.Phone is not null) student.Phone = Trimmed(p.Phone);
+        if (p.Language is not null) student.Language = Trimmed(p.Language)?.ToLowerInvariant();
+        if (p.DocumentUrl is not null) student.DocumentUrl = Trimmed(p.DocumentUrl);
+
+        // Asosiy vasiy va eski `parent_*` ustunlari bir qadamda (S-8).
+        GuardianSync.MirrorPrimaryInput(student, p.Guardians);
 
         // Akkaunt nomini sinxronlaymiz va (ixtiyoriy) yangi parol o'rnatamiz.
         var user = student.UserId is null ? null : await db.Users.FindAsync(student.UserId);
@@ -315,6 +380,9 @@ public class StudentsController(AppDbContext db, AuditService audit) : Controlle
         // Ota-ona raqami/ismi o'zgargan bo'lishi mumkin — vasiy bog'lanishini tekislaymiz.
         // Bir tomonlama: o'quvchi qatoridan vasiyga (GuardianSync izohiga qarang).
         await GuardianSync.EnsureAsync(db, student);
+        // §2.3 (S-8) — ikkinchi vasiy, vasiylik turi va izohi. Ro'yxat
+        // yuborilmasa (eski mijoz) bu qadam hech narsa qilmaydi.
+        await GuardianSync.ApplyAsync(db, student, p.Guardians);
         return NoContent();
     }
 

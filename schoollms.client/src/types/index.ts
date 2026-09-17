@@ -175,6 +175,18 @@ export interface Student {
   parentPhone: string
   /** Ota-ona passport rasm/skani manzili */
   parentPassportUrl?: string | null
+  /**
+   * O'quvchining O'Z telefoni (students-parity.md §2.3, S-8). Ota-onaning
+   * raqami `parentPhone` da qoladi — bu uning o'rniga emas, yoniga.
+   */
+  phone?: string | null
+  /** O'qish tili: uz | ru | en | kaa. Bo'sh = ko'rsatilmagan (S-8). */
+  language?: string | null
+  /**
+   * Hujjat NUSXASI — metrika yoki pasport skani (S-8). Rasm emas: o'quvchi
+   * rasmi hamon `birthCertificateUrl` da (nomi aldamchi, ma'nosi o'zgarmadi).
+   */
+  documentUrl?: string | null
   /** Joylashuv kengligi (mobil ilovadan GPS) */
   latitude?: number | null
   /** Joylashuv uzunligi */
@@ -1138,6 +1150,76 @@ export interface ParentChild {
   platform?: string
   /** Push provayder app_id */
   appId?: string
+}
+
+/* ---------- Vasiylar (students-parity.md §2.3 S-8, §2.9) ---------- */
+
+/** Vasiylik turi — backend'dagi `GuardianRelation.Stored` bilan bir xil. */
+export type GuardianRelation =
+  | 'parent'
+  | 'father'
+  | 'mother'
+  | 'grandparent'
+  | 'trustee'
+  | 'other'
+
+/** Formadan yuboriladigan bitta vasiy. */
+export interface StudentGuardianInput {
+  fullName: string
+  phone: string
+  relation?: GuardianRelation
+  relationNote?: string | null
+  isPrimary?: boolean
+  passportUrl?: string | null
+}
+
+/** O'quvchi kartochkasidagi bitta vasiy qatori. */
+export interface StudentGuardian {
+  guardianId: string
+  fullName: string
+  phone: string
+  relation: GuardianRelation
+  relationNote: string | null
+  isPrimary: boolean
+  passportUrl: string | null
+  hasAccount: boolean
+  telegramLinked: boolean
+  /** Shu vasiyga biriktirilgan farzandlar soni (uzishdan oldin ko'rinadi). */
+  childrenCount: number
+}
+
+/** Forma tahrirda yuklaydigan qo'shimcha ma'lumot (ro'yxat ustunlarida yo'q). */
+export interface StudentFormCard {
+  studentId: string
+  phone: string | null
+  language: string | null
+  documentUrl: string | null
+  guardians: StudentGuardian[]
+}
+
+/** Ota-onalar ro'yxatidagi (§2.9) bitta farzand. */
+export interface GuardianChildRow {
+  studentId: string
+  fullName: string
+  className: string
+  relation: GuardianRelation
+  relationNote: string | null
+  isPrimary: boolean
+  phone: string | null
+  isArchived: boolean
+}
+
+/** Ota-onalar ro'yxatining qatori — vasiy jadvalidan (P-1). */
+export interface GuardianRow {
+  guardianId: string
+  fullName: string
+  phone: string
+  login: string | null
+  hasAccount: boolean
+  telegramLinked: boolean
+  lastSeenAt: string | null
+  childrenCount: number
+  children: GuardianChildRow[]
 }
 
 /** Ota-onalar ro'yxati qatori (telefon bo'yicha guruhlangan) */

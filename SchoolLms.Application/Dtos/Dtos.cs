@@ -24,6 +24,24 @@ public record ChangePasswordRequest(string CurrentPassword, string NewPassword);
 /// agar bo'lsa, ulardan FullName yig'iladi. Ota-ona FISH ham alohida.
 /// FullName/ParentFullName ixtiyoriy — yo'q bo'lsa parts'dan yig'iladi.
 /// </summary>
+/// <param name="Phone">
+/// §2.3 (S-8) — o'quvchining O'Z telefoni. <c>null</c> = TEGMA (tahrirda
+/// maydon yuborilmasa eskisi qoladi), bo'sh satr = tozala.
+/// </param>
+/// <param name="Language">§2.3 (S-8) — o'qish tili: uz | ru | en | kaa. <c>null</c> = tegma.</param>
+/// <param name="DocumentUrl">
+/// §2.3 (S-8) — hujjat NUSXASI (metrika/pasport skani). Rasm emas: rasm
+/// hamon <see cref="BirthCertificateUrl"/> da (nomi aldamchi, ma'nosi
+/// o'zgarmadi). <c>null</c> = tegma.
+/// </param>
+/// <param name="Guardians">
+/// §2.3 (S-8) — vasiylar (1–2 ta). <c>null</c> yoki bo'sh ro'yxat = bugungi
+/// xatti-harakat: faqat <c>ParentPhone</c> dan <c>GuardianSync</c> ishlaydi.
+/// Ro'yxat berilsa BIRINCHI (yoki <c>isPrimary</c>) yozuv ASOSIY vasiy bo'ladi
+/// va u eski <c>parent_*</c> ustunlari bilan bir qadamda ushlab turiladi.
+/// Bu yerdan vasiy O'CHIRILMAYDI — uzish alohida endpoint
+/// (<c>DELETE /api/admin/students/{id}/guardians/{guardianId}</c>).
+/// </param>
 public record StudentPayload(
     string FullName, string BirthDate, string Address, string Gender,
     string ParentFullName, string ParentPhone, string ClassName, string? EnrollmentDate,
@@ -32,7 +50,9 @@ public record StudentPayload(
     string? LastName = null, string? FirstName = null, string? MiddleName = null,
     string? BirthCertificateUrl = null,
     string? ParentLastName = null, string? ParentFirstName = null, string? ParentMiddleName = null,
-    string? ParentPassportUrl = null);
+    string? ParentPassportUrl = null,
+    string? Phone = null, string? Language = null, string? DocumentUrl = null,
+    List<StudentGuardianInput>? Guardians = null);
 public record PaymentRequest(decimal Amount, string? Month);
 
 /* ---------- Excel'dan ommaviy import ---------- */
@@ -382,7 +402,10 @@ public record StudentDto(
     string? BirthCertificateUrl = null,
     string ParentLastName = "", string ParentFirstName = "", string ParentMiddleName = "",
     string? ParentPassportUrl = null,
-    bool IsArchived = false, string? ArchivedAt = null, string? ArchiveReason = null);
+    bool IsArchived = false, string? ArchivedAt = null, string? ArchiveReason = null,
+    // §2.3 (S-8) — oxiriga QO'SHILDI: mavjud o'quvchilarda null bo'lgani uchun
+    // birorta ekran o'zgarishini sezmaydi, formaga esa ular kerak.
+    string? Phone = null, string? Language = null, string? DocumentUrl = null);
 
 /// <summary>
 /// O'quvchini arxivlash so'rovi. <c>Reason</c> — erkin matn, MAJBURIY (tafsilot);
