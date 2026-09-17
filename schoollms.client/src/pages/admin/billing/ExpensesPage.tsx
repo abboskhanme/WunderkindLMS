@@ -9,27 +9,32 @@
  * 2. IKKI QAVATLI NAZORAT (SPEC §4.5): tasdiqlash tugmasi chiqimni YOZGAN
  *    odamga ko'rsatilmaydi. Baza ham buni `ck_expenses_approver_differs`
  *    bilan rad etadi, lekin interfeys uni taklif ham qilmasligi kerak.
- * 3. 5 000 000 so'mdan yuqori chiqim ikkinchi tasdiqni talab qiladi va
- *    tepadagi navbatga tushadi. Undan pastlari darrov yozib qo'yiladi.
+ * 3. Chegaradan yuqori chiqim ikkinchi tasdiqni talab qiladi va tepadagi
+ *    navbatga tushadi. Undan pastlari darrov yozib qo'yiladi.
  *
- * BACKEND HOLATI: `/api/admin/billing/expenses` marshruti hali yozilmagan
- * (P1-13). Sahifa 404 ni "server buzildi" emas, "bu bo'lim hali ulanmagan"
- * holati sifatida ko'rsatadi — qarang `isEndpointMissing`.
+ * HOLAT VA CHEGARA — SERVERDAN (F1.02)
+ * ------------------------------------
+ * Ilgari sahifa chiqim holatini KLIENTDA, 5 000 000 so'mlik konstanta bilan
+ * hisoblardi. Chegara esa sozlama: uni bir marta o'zgartirish yetardi va
+ * tasdiq navbati jimgina bo'shab qolardi ("tasdiq kutmoqda" o'rniga "yozib
+ * olingan"). Endi holat `ExpenseRecord.status` dan, chegara esa
+ * `GET /admin/expenses/approval-policy` dan keladi va faqat forma
+ * ogohlantirishi uchun ishlatiladi.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Check, Clock, Plus, ShieldCheck, Undo2, Wallet } from 'lucide-react'
 import type { ExpenseInput, ExpenseRecord } from '@/api/services/expenses'
+import type { PaymentMethod } from '@/types'
 import {
   approveExpense,
   createExpense,
   expenseState,
+  getExpenseApprovalThreshold,
   getExpenses,
   needsApproval,
   reverseExpense,
 } from '@/api/services/expenses'
 import { billingErrorMessage, isEndpointMissing } from '@/api/services/billingError'
-import type { PaymentMethod } from '@/types'
-import { paymentMethodLabels } from '@/pages/admin/finance/reportLabels'
 import { expenseCategories, financeCategoryLabel } from '@/config/constants'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
@@ -37,6 +42,7 @@ import { Input, Select } from '@/components/ui/Input'
 import { formatMoney } from '@/lib/utils'
 import { AsyncBlock, BillingGuard, Notice, PendingQueue, StatusPill } from './BillingUi'
 import { useBillingAccess } from './access'
+import { ApproveExpenseModal } from './ApproveExpenseModal'
 import { ExpenseFormModal } from './ExpenseFormModal'
 import { ReasonModal } from './ReasonModal'
 
@@ -52,8 +58,7 @@ export function ExpensesPage() {
 }
 
 function ExpensesView() {
-  const { canRecordExpense, canApproveExpense, canReverseExpense, canApproveRecord, isOwn } =
-    useBillingAccess()
+  const { user, canRecordExpense, canApproveExpense } = useBillingAccess()
 
   const [rows, setRows] = useState<ExpenseRecord[]>([])
   const [loading, setLoading] = useState(true)
@@ -65,13 +70,14 @@ function ExpensesView() {
   const [category, setCategory] = useState('')
 
   const [formOpen, setFormOpen] = useState(false)
+  const [approving, setApproving] = useState<ExpenseRecord | null>(null)
   const [reversing, setReversing] = useState<ExpenseRecord | null>(null)
   const [busy, setBusy] = useState(false)
-  // Tasdiqlashda pul qaysi usulda chiqqani — qator bo'yicha, chunki navbatda
-  // bir nechta chiqim turishi mumkin va ular har xil usulda to'lanadi.
-  const [approveMethods, setApproveMethods] = useState<Record<string, PaymentMethod>>({})
   const [actionError, setActionError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
+
+  /** Ikkinchi tasdiq chegarasi — serverdan. Yuklanmagunicha `null`. */
+  const [threshold, setThreshold] = useState<number | null>(null)
 
   const load = useCallback(() => {
     setLoading(true)
@@ -94,15 +100,47 @@ function ExpensesView() {
   // eslint-disable-next-line react-hooks/set-state-in-effect -- filtr o'zgarganda qayta yuklash (FinancePage bilan bir xil naqsh)
   useEffect(() => load(), [load])
 
-  // Tasdiq navbati — chegaradan yuqori va hali tasdiqlanmagan chiqimlar.
+  // Chegara bir marta o'qiladi. Olinmasa sahifa ISHLAYVERADI — shunchaki
+  // formadagi ogohlantirish ko'rsatilmaydi; klientda zaxira raqam saqlash
+  // aynan tuzatilgan xatoning o'zi bo'lardi.
+  useEffect(() => {
+    let alive = true
+    getExpenseApprovalThreshold()
+      .then((value) => {
+        if (alive) setThreshold(value)
+      })
+      .catch(() => undefined)
+    return () => {
+      alive = false
+    }
+  }, [])
+
+  // Tasdiq navbati — jurnalga hali tushmagan (server: `pending`) chiqimlar.
   const pending = useMemo(
     () => rows.filter(needsApproval).sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
     [rows],
   )
 
+  /**
+   * Yozuvni JORIY foydalanuvchi yaratganmi — id bo'yicha (server `createdBy`
+   * ni id sifatida qaytaradi). Ism bo'yicha taxminiy solishtiruv endi kerak
+   * emas.
+   */
+  const isOwn = useCallback(
+    (row: ExpenseRecord) => !!user && row.createdBy === user.id,
+    [user],
+  )
+
+  /**
+   * Jurnalga KIM qo'ygan: chegaradan past chiqimni yozgan odam, tasdiqdan
+   * o'tganini esa tasdiqlovchi. Storno'ni o'sha odam qila olmaydi
+   * (`self_reversal`, SPEC §4.5) — tugma ham ko'rsatilmaydi.
+   */
+  const postedBy = (row: ExpenseRecord) => row.approvedBy ?? row.createdBy
+
   const approvableCount = useMemo(
-    () => pending.filter((e) => canApproveRecord(canApproveExpense, e)).length,
-    [pending, canApproveExpense, canApproveRecord],
+    () => pending.filter((e) => canApproveExpense && !isOwn(e)).length,
+    [pending, canApproveExpense, isOwn],
   )
 
   const handleCreate = async (values: ExpenseInput) => {
@@ -128,18 +166,16 @@ function ExpensesView() {
     }
   }
 
-  /**
-   * Tasdiqlash — pul AYNAN shu lahzada jurnalga tushadi, shuning uchun qaysi
-   * usulda chiqqani ham shu yerda tanlanadi. Ilgari bu so'rov tanasiz ketardi
-   * va tasdiqlash har safar xato bilan qaytardi.
-   */
-  const handleApprove = async (row: ExpenseRecord, method: PaymentMethod) => {
+  const handleApprove = async (method: PaymentMethod) => {
+    if (!approving) return
+    const row = approving
     setBusy(true)
     setActionError(null)
     setNotice(null)
     try {
       await approveExpense(row.id, method)
-      setNotice(`${formatMoney(row.amount)} chiqim tasdiqlandi.`)
+      setApproving(null)
+      setNotice(`${formatMoney(row.amount)} chiqim tasdiqlandi va jurnalga tushdi.`)
       load()
     } catch (e: unknown) {
       setActionError(
@@ -192,8 +228,15 @@ function ExpensesView() {
 
   const renderActions = (row: ExpenseRecord) => {
     const state = expenseState(row)
-    const showApprove = state === 'pending' && canApproveRecord(canApproveExpense, row)
-    const showReverse = state !== 'reversed' && canReverseExpense
+
+    // Tasdiqlash ham, storno ham — DIREKTORNING amali (`FinanceAction.ApproveExpense`,
+    // SPEC §4.5). Ilgari storno tugmasi adminga ham, tasdiq kutayotgan qatorga ham
+    // ko'rsatilardi: birinchisi har safar 403, ikkinchisi 409 bilan qaytardi.
+    const showApprove = state === 'pending' && canApproveExpense && !isOwn(row)
+    const showReverse =
+      (state === 'approved' || state === 'recorded') &&
+      canApproveExpense &&
+      postedBy(row) !== user?.id
 
     if (!showApprove && !showReverse) {
       if (state === 'pending' && isOwn(row)) {
@@ -209,29 +252,15 @@ function ExpensesView() {
     return (
       <span className="flex justify-end gap-2">
         {showApprove && (
-          <span className="flex items-center gap-2">
-            <select
-              aria-label="Pul qaysi usulda chiqadi"
-              value={approveMethods[row.id] ?? 'cash'}
-              disabled={busy}
-              onChange={(e) =>
-                setApproveMethods((prev) => ({ ...prev, [row.id]: e.target.value as PaymentMethod }))
-              }
-              className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-700 outline-none focus:border-brand-400"
-            >
-              {(Object.keys(paymentMethodLabels) as PaymentMethod[]).map((m) => (
-                <option key={m} value={m}>
-                  {paymentMethodLabels[m]}
-                </option>
-              ))}
-            </select>
-            <Button
-              disabled={busy}
-              onClick={() => handleApprove(row, approveMethods[row.id] ?? 'cash')}
-            >
-              <Check className="h-4 w-4" /> Tasdiqlash
-            </Button>
-          </span>
+          <Button
+            disabled={busy}
+            onClick={() => {
+              setActionError(null)
+              setApproving(row)
+            }}
+          >
+            <Check className="h-4 w-4" /> Tasdiqlash
+          </Button>
         )}
         {showReverse && (
           <Button
@@ -255,8 +284,9 @@ function ExpensesView() {
         <div>
           <h1 className="text-xl font-semibold text-slate-800">Chiqimlar</h1>
           <p className="text-sm text-slate-400">
-            Chegaradan yuqori chiqim ikkinchi tasdiqni talab qiladi. Chegara moliya
-            sozlamalarida turadi va holatni server belgilaydi.
+            {threshold === null
+              ? "Chegaradan yuqori chiqim ikkinchi tasdiqni talab qiladi."
+              : `${formatMoney(threshold)} dan yuqori chiqim ikkinchi tasdiqni talab qiladi.`}
           </p>
         </div>
         {canRecordExpense && (
@@ -272,7 +302,7 @@ function ExpensesView() {
       </div>
 
       {notice && <Notice tone="success">{notice}</Notice>}
-      {actionError && !formOpen && !reversing && <Notice>{actionError}</Notice>}
+      {actionError && !formOpen && !reversing && !approving && <Notice>{actionError}</Notice>}
 
       {/* ---- Tasdiq navbati ---- */}
       {!loading && !error && pending.length > 0 && (
@@ -428,12 +458,23 @@ function ExpensesView() {
           open={formOpen}
           busy={busy}
           error={actionError}
+          approvalThreshold={threshold}
           onClose={() => setFormOpen(false)}
           onSubmit={handleCreate}
         />
       )}
 
-      {canReverseExpense && (
+      {canApproveExpense && (
+        <ApproveExpenseModal
+          expense={approving}
+          busy={busy}
+          error={actionError}
+          onClose={() => setApproving(null)}
+          onConfirm={handleApprove}
+        />
+      )}
+
+      {canApproveExpense && (
         <ReasonModal
           open={reversing !== null}
           title="Chiqimni storno qilish"

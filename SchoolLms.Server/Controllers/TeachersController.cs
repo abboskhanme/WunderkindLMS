@@ -10,6 +10,29 @@ using SchoolLms.Application.Services;
 
 namespace SchoolLms.Server.Controllers;
 
+// ===========================================================================
+//  MAOSH AMALLARI IKKINCHI DARVOZA ORTIDA — F3.05
+//  (docs/modules/finance-parity.md §1.1, §2.3.4)
+// ===========================================================================
+//
+//  Bu controller `[AdminPerm("teachers")]` ostida: xodim (staff) "teachers"
+//  ruxsati bilan o'qituvchi kartasini boshqaradi. `AdminPermAttribute` esa
+//  HAR QANDAY xodimga O'QISHNI ochiq qoldiradi va "teachers" kaliti bo'lgan
+//  xodimga YOZISHNI ham beradi. O'qituvchi kartasi uchun bu to'g'ri, pul
+//  uchun — yo'q:
+//
+//    * `POST {id}/salary-payments` `expenses` qatori va JURNAL satrlarini
+//      yozadi, ya'ni SPEC §4.3 dagi "Record an expense" qatorining o'zi
+//      (kassir ⛔, admin ✅, direktor ✅). Xodim u yerda umuman yo'q.
+//    * maosh tarixi va maosh daftari — moliya hisoboti (§4.3: hisobotlar
+//      admin va direktorga).
+//
+//  Shuning uchun pulga tegadigan uchta amalga IKKINCHI darvoza qo'yilgan:
+//  `[Authorize(Roles = Roles.FinanceStaff)]` (admin + direktor) va amal
+//  darajasidagi `[FinanceRole(...)]` — qoida YAGONA joyda, `FinanceMatrix`
+//  da qoladi. Qolgan endpoint'lar (karta, arxiv, akkaunt) tegilmagan.
+// ===========================================================================
+
 [ApiController]
 [Authorize]
 [AdminPerm("teachers")]
@@ -298,8 +321,16 @@ public class TeachersController(AppDbContext db, AuditService audit, IExpenseSer
     /// (2) xato yozuv endi o'chirilmaydi, storno qilinadi
     ///     (<c>POST /api/admin/expenses/{{id}}/reverse</c>).
     /// </para>
+    /// <para>
+    /// <b>Ruxsat (F3.05):</b> bu chiqim yozish amali, ya'ni SPEC §4.3 dagi
+    /// "Record an expense" qatori — admin va direktor. Ilgari bu yerda faqat
+    /// <c>[AdminPerm("teachers")]</c> turardi va "teachers" kaliti bo'lgan
+    /// xodim maosh pulini jurnalga yoza olardi.
+    /// </para>
     /// </summary>
     [HttpPost("{id}/salary-payments")]
+    [Authorize(Roles = Roles.FinanceStaff)]
+    [FinanceRole(FinanceAction.RecordExpense)]
     [BillingFault]
     public async Task<ActionResult<ExpenseDto>> PaySalary(
         string id, SalaryPaymentRequest req, CancellationToken ct)
@@ -335,8 +366,13 @@ public class TeachersController(AppDbContext db, AuditService audit, IExpenseSer
         return Ok(expense);
     }
 
-    /// <summary>O'qituvchiga berilgan maoshlar tarixi (jurnalga tushgan, storno qilinmagan).</summary>
+    /// <summary>
+    /// O'qituvchiga berilgan maoshlar tarixi (jurnalga tushgan, storno qilinmagan).
+    /// Moliya hisoboti — admin va direktor (F0.02).
+    /// </summary>
     [HttpGet("{id}/salary-history")]
+    [Authorize(Roles = Roles.FinanceStaff)]
+    [FinanceRole(FinanceAction.ViewBillingReports)]
     public async Task<ActionResult<SalaryHistoryDto>> SalaryHistory(string id, CancellationToken ct)
     {
         var teacher = await db.Teachers.FindAsync([id], ct);
@@ -354,8 +390,11 @@ public class TeachersController(AppDbContext db, AuditService audit, IExpenseSer
     /// <summary>
     /// O'qituvchi maoshi bo'yicha batafsil hisob (davr bo'yicha): jami berilgan, qoldiq va
     /// har oyda qancha oylik berilgani. Oylar davr (from..to) bo'yicha, oy = to'lov sanasi oyi.
+    /// Moliya hisoboti — admin va direktor (F0.02).
     /// </summary>
     [HttpGet("{id}/salary-ledger")]
+    [Authorize(Roles = Roles.FinanceStaff)]
+    [FinanceRole(FinanceAction.ViewBillingReports)]
     public async Task<ActionResult<SalaryLedgerDto>> SalaryLedger(
         string id, [FromQuery] string? from, [FromQuery] string? to)
     {

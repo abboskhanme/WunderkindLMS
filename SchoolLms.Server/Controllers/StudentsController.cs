@@ -690,8 +690,21 @@ public class StudentsController(AppDbContext db, AuditService audit) : Controlle
             replacement = "/api/cash/payments",
         });
 
-    /// <summary>O'quvchi to'lov tarixi: oylar bo'yicha hisoblangan/to'langan holat.</summary>
+    /// <summary>
+    /// O'quvchi to'lov tarixi: oylar bo'yicha hisoblangan/to'langan holat.
+    ///
+    /// <para>
+    /// <b>Ruxsat (F0.02):</b> bu moliya hisoboti — admin va direktor (SPEC §4.3).
+    /// Ilgari <c>[AdminPerm("students")]</c> ostida edi, ya'ni HAR QANDAY xodim
+    /// (GET hammaga ochiq, <c>AdminPermAttribute:40-42</c>) istalgan o'quvchining
+    /// to'lov daftarini o'qiy olardi. Ro'yxatdagi <c>Balans</c> ustuni joyida
+    /// qoladi (Students moduli qarori) — yopilgani DAFTAR: kim qachon qancha
+    /// to'lagani.
+    /// </para>
+    /// </summary>
     [HttpGet("{id}/ledger")]
+    [Authorize(Roles = Roles.FinanceStaff)]
+    [FinanceRole(FinanceAction.ViewBillingReports)]
     public async Task<ActionResult<StudentLedgerDto>> Ledger(string id)
     {
         var student = await db.Students.FindAsync(id);
