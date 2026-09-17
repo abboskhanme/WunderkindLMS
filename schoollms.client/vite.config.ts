@@ -38,6 +38,31 @@ export default defineConfig(({ command }): UserConfig => {
     // shuning uchun bu blokni ishga tushirmaymiz (aks holda build yiqiladi).
     if (command !== 'serve') return config
 
+    // KONTEYNERDAGI DEV SERVERI (`DEV_IN_DOCKER=1`).
+    // Quyidagi blok `dotnet dev-certs` ni chaqiradi va HTTPS bilan ishlaydi —
+    // konteynerda `dotnet` YO'Q, sertifikat ham kerak emas (brauzer backendga
+    // to'g'ridan-to'g'ri emas, shu dev serveri orqali kiradi). Shuning uchun
+    // konteynerda oddiy HTTP'da turamiz va faqat proxy'ni sozlaymiz.
+    if (env.DEV_IN_DOCKER === '1') {
+        const dockerTarget = env.DEV_API_TARGET || 'http://backend:8080'
+        const proxy = Object.fromEntries(
+            ['^/api', '^/uploads', '^/weatherforecast'].map((k) => [k, { target: dockerTarget, secure: false }]),
+        )
+        return {
+            ...config,
+            server: {
+                host: true,
+                port: parseInt(env.DEV_SERVER_PORT || '5173'),
+                allowedHosts: ['.lvh.me', '.nip.io', '.localhost'],
+                // macOS + Docker: virtiofs inotify hodisalarini uzatmaydi,
+                // shuning uchun fayl kuzatuvi POLLING bilan ishlashi SHART
+                // (CLAUDE.md). Intervalni oshirish mumkin, o'chirish mumkin emas.
+                watch: { usePolling: true, interval: 300 },
+                proxy: { ...proxy, '^/hubs': { target: dockerTarget, secure: false, ws: true } },
+            },
+        }
+    }
+
     // ASP.NET Core SPA proxy uchun HTTPS sertifikat sozlamasi.
     const baseFolder =
         env.APPDATA !== undefined && env.APPDATA !== ''

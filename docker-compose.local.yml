@@ -44,3 +44,39 @@ services:
 
   backup:
     profiles: ["backup"]
+
+  # ---------------------------------------------------------------------------
+  #  Frontend dev serveri — ixtiyoriy, `--profile dev` bilan ishga tushadi.
+  #
+  #  NEGA KERAK: `backend` konteyneri ishlab chiqarish uslubida qurilgan —
+  #  Dockerfile React ilovasini `wwwroot` ga muhrlaydi, ya'ni HAR BIR frontend
+  #  o'zgarishi butun image'ni qayta qurishni talab qiladi (2-3 daqiqa). Bu
+  #  servis o'rniga manbani MOUNT qiladi va Vite dev serverini yuritadi:
+  #  o'zgarish brauzerda darrov ko'rinadi, qayta qurish kerak emas.
+  #
+  #    docker compose -f docker-compose.yml -f docker-compose.local.yml \
+  #      --profile dev up -d client-dev      → http://localhost:5173
+  #
+  #  Backend (`/api`, `/hubs`, `/uploads`) shu yerdan `backend` konteyneriga
+  #  yo'naltiriladi, ya'ni baza va API o'zgarmaydi. BACKEND kodi (.cs)
+  #  o'zgarsa — u hamon qayta qurishni talab qiladi, bu faqat frontend uchun.
+  # ---------------------------------------------------------------------------
+  client-dev:
+    profiles: ["dev"]
+    image: node:20-alpine
+    working_dir: /app
+    volumes:
+      - ./schoollms.client:/app
+      - client_dev_modules:/app/node_modules
+    environment:
+      DEV_IN_DOCKER: "1"
+      DEV_API_TARGET: "http://backend:8080"
+      DEV_SERVER_PORT: "5173"
+    ports:
+      - "5173:5173"
+    command: sh -c "npm ci --no-audit --no-fund && npm run dev -- --host 0.0.0.0"
+    depends_on:
+      - backend
+
+volumes:
+  client_dev_modules:
