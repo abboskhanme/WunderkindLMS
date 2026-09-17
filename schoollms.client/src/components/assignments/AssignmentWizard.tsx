@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/Button'
 import { Input, Select, Textarea } from '@/components/ui/Input'
 import { cn } from '@/lib/utils'
 
-/** Wizard sinf tanlovi — admin (barcha sinf) va o'qituvchi (dars beradigan sinflar) ikkalasi uchun. */
+/** Wizard sinf/guruh tanlovi — admin (barcha sinf) va o'qituvchi (dars beradigan sinflar) ikkalasi uchun. */
 export interface WizardClass {
   id: string
   name: string
@@ -24,6 +24,13 @@ interface Props {
   onClose: () => void
   onSaved: () => void
   classes: WizardClass[]
+  /**
+   * G-20: o'quv guruhlari — berilsa (bo'sh bo'lmasa) "Sinf / Guruh" tanlovi
+   * ko'rinadi. Berilmasa (sukut — bo'sh massiv) wizard AYNAN avvalgidek
+   * ishlaydi — faqat sinf tanlanadi, hech qanday yangi UI chiqmaydi
+   * (o'qituvchi portali hali bu prop'ni bermaydi).
+   */
+  groups?: WizardClass[]
   subjects: Subject[]
   initial: Assignment | null
   /** Topshiriqni saqlash — yangi (id=null) yoki tahrir (id berilgan). Admin/o'qituvchi o'z servisini beradi. */
@@ -55,6 +62,7 @@ export function AssignmentWizard({
   onClose,
   onSaved,
   classes,
+  groups = [],
   subjects,
   initial,
   onSubmit,
@@ -66,6 +74,7 @@ export function AssignmentWizard({
   const [format, setFormat] = useState<AssignmentFormat>('written')
   const [description, setDescription] = useState('')
   const [materials, setMaterials] = useState<MaterialInput[]>([])
+  const [ownerKind, setOwnerKind] = useState<'class' | 'group'>('class')
   const [classIds, setClassIds] = useState<string[]>([])
   const [startDate, setStartDate] = useState('')
   const [dueDate, setDueDate] = useState('')
@@ -87,6 +96,7 @@ export function AssignmentWizard({
     setFormat(initial?.format ?? 'written')
     setDescription(initial?.description ?? '')
     setMaterials(initial ? initial.materials.map((m) => ({ name: m.name, url: m.url, size: m.size, contentType: m.contentType })) : [])
+    setOwnerKind(initial?.ownerKind ?? 'class')
     setClassIds(initial ? [...initial.classIds] : [])
     setStartDate(initial?.startDate?.slice(0, 16) ?? '')
     setDueDate(initial?.dueDate?.slice(0, 16) ?? '')
@@ -104,6 +114,14 @@ export function AssignmentWizard({
 
   const toggleClass = (id: string) =>
     setClassIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
+
+  // G-20: "Sinf" <-> "Guruh" almashtirish — tanlov RO'YXATI tozalanadi (sinf
+  // id'lari guruh id'lariga aralashib qolmasin).
+  const switchOwnerKind = (kind: 'class' | 'group') => {
+    if (kind === ownerKind) return
+    setOwnerKind(kind)
+    setClassIds([])
+  }
 
   const onPickFiles = async (files: FileList | null) => {
     if (!files || files.length === 0) return
@@ -158,6 +176,7 @@ export function AssignmentWizard({
       description: description.trim(),
       format,
       classIds,
+      ownerKind,
       startDate: startDate || null,
       dueDate: dueDate || null,
       lateAccept,
@@ -414,14 +433,45 @@ export function AssignmentWizard({
         </div>
       )}
 
-      {/* Qadam 3: Sinflar va muddat */}
+      {/* Qadam 3: Sinflar/guruhlar va muddat */}
       {step === 2 && (
         <div className="space-y-4">
           <div>
-            <span className="mb-2 block text-sm font-medium text-slate-600">Sinflarni tanlash</span>
+            {/* G-20: "guruhlar" prop berilgandagina ko'rinadi — bo'lmasa wizard avvalgidek faqat sinf tanlaydi. */}
+            {groups.length > 0 && (
+              <div className="mb-2 flex gap-2">
+                {(
+                  [
+                    ['class', 'Sinf'],
+                    ['group', "O'quv guruhi"],
+                  ] as const
+                ).map(([kind, label]) => (
+                  <button
+                    key={kind}
+                    type="button"
+                    onClick={() => switchOwnerKind(kind)}
+                    className={cn(
+                      'rounded-full px-3 py-1 text-xs font-medium transition-colors',
+                      ownerKind === kind
+                        ? 'bg-brand-600 text-white'
+                        : 'bg-slate-100 text-slate-500 hover:bg-slate-200',
+                    )}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            )}
+            <span className="mb-2 block text-sm font-medium text-slate-600">
+              {ownerKind === 'group' ? 'Guruhlarni tanlash' : 'Sinflarni tanlash'}
+            </span>
             <div className="flex flex-wrap gap-2">
-              {classes.length === 0 && <p className="text-sm text-slate-400">Sinf yo'q</p>}
-              {classes.map((c) => {
+              {(ownerKind === 'group' ? groups : classes).length === 0 && (
+                <p className="text-sm text-slate-400">
+                  {ownerKind === 'group' ? "Guruh yo'q" : "Sinf yo'q"}
+                </p>
+              )}
+              {(ownerKind === 'group' ? groups : classes).map((c) => {
                 const active = classIds.includes(c.id)
                 return (
                   <button
@@ -502,7 +552,8 @@ export function AssignmentWizard({
           )}
           {!canSave && (
             <p className="text-sm text-amber-600">
-              Saqlash uchun: nom, fan va kamida bitta sinf tanlangan bo'lishi kerak.
+              Saqlash uchun: nom, fan va kamida bitta {ownerKind === 'group' ? 'guruh' : 'sinf'} tanlangan
+              bo'lishi kerak.
             </p>
           )}
         </div>

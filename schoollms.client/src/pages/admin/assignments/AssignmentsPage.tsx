@@ -12,6 +12,7 @@ import {
 import type { Assignment, AssignmentFormat, SchoolClass, Subject } from '@/types'
 import { getClasses } from '@/api/services/classes'
 import { getSubjects } from '@/api/services/subjects'
+import { getGroups, type StudyGroupListItem } from '@/api/services/groups'
 import {
   getAssignments,
   getAssignmentResults,
@@ -42,6 +43,11 @@ const formatLabel: Record<AssignmentFormat, string> = {
 export function AssignmentsPage() {
   const [classes, setClasses] = useState<SchoolClass[]>([])
   const [subjects, setSubjects] = useState<Subject[]>([])
+  // G-20: o'quv guruhlari — topshiriqni guruhga berish (wizard) va ro'yxatni
+  // guruh bo'yicha filtrlash uchun. `classId` filtri backendda umuman
+  // o'zgarmadi: u ClassIds ustunidan qidiradi, u sinf HAM, guruh HAM id'sini
+  // saqlaydi (AssignmentService.ListForClassAsync izohi).
+  const [groups, setGroups] = useState<StudyGroupListItem[]>([])
   const [classId, setClassId] = useState('')
   const [assignments, setAssignments] = useState<Assignment[]>([])
   const [loading, setLoading] = useState(true)
@@ -50,9 +56,10 @@ export function AssignmentsPage() {
   const [editing, setEditing] = useState<Assignment | null>(null)
 
   useEffect(() => {
-    Promise.all([getClasses(), getSubjects()]).then(([cl, sb]) => {
+    Promise.all([getClasses(), getSubjects(), getGroups()]).then(([cl, sb, gr]) => {
       setClasses(cl)
       setSubjects(sb)
+      setGroups(gr)
     })
   }, [])
 
@@ -69,6 +76,7 @@ export function AssignmentsPage() {
   }, [classId])
 
   const wizardClasses = useMemo(() => classes.map((c) => ({ id: c.id, name: c.name })), [classes])
+  const wizardGroups = useMemo(() => groups.map((g) => ({ id: g.id, name: g.name })), [groups])
 
   const openNew = () => {
     setEditing(null)
@@ -99,12 +107,23 @@ export function AssignmentsPage() {
       <Card>
         <div className="flex flex-wrap items-center gap-3">
           <select className={control} value={classId} onChange={(e) => setClassId(e.target.value)}>
-            <option value="">Barcha sinflar</option>
-            {classes.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
+            <option value="">Barcha sinf/guruhlar</option>
+            <optgroup label="Sinflar">
+              {classes.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </optgroup>
+            {groups.length > 0 && (
+              <optgroup label="O'quv guruhlari">
+                {groups.map((g) => (
+                  <option key={g.id} value={g.id}>
+                    {g.name}
+                  </option>
+                ))}
+              </optgroup>
+            )}
           </select>
         </div>
       </Card>
@@ -152,7 +171,15 @@ export function AssignmentsPage() {
                   <span className="rounded-full bg-slate-100 px-2 py-0.5 text-slate-600">{a.subjectName}</span>
                 )}
                 {a.classNames.map((n) => (
-                  <span key={n} className="rounded-full bg-slate-100 px-2 py-0.5 text-slate-600">
+                  <span
+                    key={n}
+                    className={
+                      a.ownerKind === 'group'
+                        ? 'rounded-full bg-violet-50 px-2 py-0.5 text-violet-700'
+                        : 'rounded-full bg-slate-100 px-2 py-0.5 text-slate-600'
+                    }
+                    title={a.ownerKind === 'group' ? "O'quv guruhi" : 'Sinf'}
+                  >
                     {n}
                   </span>
                 ))}
@@ -204,6 +231,7 @@ export function AssignmentsPage() {
         }}
         onSaved={reload}
         classes={wizardClasses}
+        groups={wizardGroups}
         subjects={subjects}
         initial={editing}
         onSubmit={async (input, id) => {

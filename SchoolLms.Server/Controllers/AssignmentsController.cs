@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using SchoolLms.Infrastructure.Data;
 using SchoolLms.Application.Dtos;
 using SchoolLms.Application.Services;
+using SchoolLms.Domain;
 using System.Security.Claims;
 
 namespace SchoolLms.Server.Controllers;
@@ -46,13 +47,16 @@ public class AssignmentsController(AppDbContext db, IWebHostEnvironment env) : C
         return res is null ? NotFound() : res;
     }
 
-    /// <summary>Yangi topshiriq yaratish (admin egasi bo'ladi).</summary>
+    /// <summary>Yangi topshiriq yaratish (admin egasi bo'ladi). G-20: sinfga yoki o'quv guruhiga (<c>ownerKind</c>).</summary>
     [HttpPost]
     public async Task<ActionResult<AssignmentDto>> Create(SaveAssignmentRequest req)
     {
         if (string.IsNullOrWhiteSpace(req.Title)) return BadRequest(new { message = "Topshiriq nomi kerak" });
         if (req.ClassIds is null || req.ClassIds.Count == 0)
-            return BadRequest(new { message = "Kamida bitta sinf tanlang" });
+        {
+            var noun = req.OwnerKind == LessonOwnerKind.Group ? "guruh" : "sinf";
+            return BadRequest(new { message = $"Kamida bitta {noun} tanlang" });
+        }
         return await AssignmentService.CreateAsync(db, Uid, req);
     }
 

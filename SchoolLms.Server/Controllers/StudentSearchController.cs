@@ -83,6 +83,23 @@ public class StudentSearchController(AppDbContext db, AuditService audit) : Cont
         var statusNames = await db.StudentStatuses.AsNoTracking()
             .OrderBy(s => s.Position).ThenBy(s => s.Name).Select(s => s.Name).ToListAsync(ct);
 
+        // G-19: har o'quvchining FAOL guruhlari — "Fan: Guruh" juftliklari,
+        // import ustuni bilan AYNAN bir xil formatda (round-trip).
+        var studentIds = rows.Select(r => r.Id).ToList();
+        var subjectNameById = await db.Subjects.AsNoTracking()
+            .ToDictionaryAsync(s => s.Id, s => s.Name, ct);
+        var groupsByStudent = (await db.StudyGroupMembers.AsNoTracking()
+                .Where(m => m.LeftOn == null && studentIds.Contains(m.StudentId))
+                .Join(db.StudyGroups.AsNoTracking(), m => m.GroupId, g => g.Id,
+                    (m, g) => new { m.StudentId, g.Name, g.SubjectId })
+                .ToListAsync(ct))
+            .GroupBy(x => x.StudentId, StringComparer.Ordinal)
+            .ToDictionary(
+                g => g.Key,
+                g => string.Join("; ", g.Select(x =>
+                    $"{subjectNameById.GetValueOrDefault(x.SubjectId, "?")}: {x.Name}")),
+                StringComparer.Ordinal);
+
         var data = rows.Select(r => (IReadOnlyList<string>)new[]
         {
             r.FullName,
@@ -96,11 +113,17 @@ public class StudentSearchController(AppDbContext db, AuditService audit) : Cont
             r.Phone ?? "",
             r.Language ?? "",
             r.StatusName ?? "",
+            groupsByStudent.GetValueOrDefault(r.Id, ""),
             r.Balance.ToString("0.##", CultureInfo.InvariantCulture),
             r.ContractNumber ?? "",
             r.ArchivedAt ?? "",
             r.ArchiveReason ?? "",
         });
+
+        var groupLabels = await db.StudyGroups.AsNoTracking().Where(g => !g.IsArchived)
+            .Select(g => new { g.SubjectId, g.Name })
+            .OrderBy(g => g.SubjectId).ThenBy(g => g.Name)
+            .ToListAsync(ct);
 
         var bytes = ExcelExport.Build(new[]
         {
@@ -108,6 +131,10 @@ public class StudentSearchController(AppDbContext db, AuditService audit) : Cont
             new ExcelExport.SheetSpec("Holatlar",
                 new[] { "Holat" },
                 statusNames.Select(n => (IReadOnlyList<string>)new[] { n })),
+            new ExcelExport.SheetSpec("Guruhlar",
+                new[] { "Guruh (Guruhlar katagiga shu matnni yozing)" },
+                groupLabels.Select(g => (IReadOnlyList<string>)new[]
+                    { $"{subjectNameById.GetValueOrDefault(g.SubjectId, "?")}: {g.Name}" })),
         });
 
         return File(bytes, XlsxMime, $"oquvchilar_{AppClock.Now:yyyy-MM-dd}.xlsx");

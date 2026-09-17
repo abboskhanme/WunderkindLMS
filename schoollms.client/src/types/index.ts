@@ -1135,9 +1135,9 @@ export interface Assignment {
   title: string
   description: string
   format: AssignmentFormat
-  /** Beriladigan sinflar (id'lar) */
+  /** Beriladigan sinf(lar) yoki — `ownerKind` "group" bo'lsa — o'quv GURUH(lar) id'lari (G-20) */
   classIds: string[]
-  /** Sinf nomlari (ko'rsatish uchun) */
+  /** Ko'rsatiladigan nomlar — `ownerKind`ga mos (sinf nomlari yoki guruh nomlari) */
   classNames: string[]
   /** Boshlash vaqti (ISO) yoki null */
   startDate: string | null
@@ -1150,6 +1150,8 @@ export interface Assignment {
   createdAt: string
   materials: AssignmentMaterial[]
   questions: TestQuestion[]
+  /** G-20: topshiriq sinfga beriladimi yoki o'quv guruhiga. */
+  ownerKind: 'class' | 'group'
 }
 
 /** Topshiriq turi (Sozlamalarda boshqariladi) */

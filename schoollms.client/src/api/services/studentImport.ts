@@ -26,6 +26,8 @@ export interface StudentImportPreviewRow {
   className: string
   /** `create` — yangi o'quvchi; `update` — mavjudining ustiga yoziladi. */
   action: 'create' | 'update'
+  /** G-19 — qatorda tanilgan guruhlar, vergul bilan ("" — yo'q). FAQAT qo'shiladi. */
+  groups: string
 }
 
 /** Tekshiruv natijasi. `ok = false` bo'lsa tasdiqlash hech narsa yozmaydi. */
