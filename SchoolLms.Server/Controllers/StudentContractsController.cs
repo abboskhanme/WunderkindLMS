@@ -51,7 +51,7 @@ public class StudentContractsController(
     /// yerda; wiring bosqichida u <c>AuditService</c> ga ko'chiriladi —
     /// <c>EntityCertificate</c> bilan yonma-yon.
     /// </summary>
-    public const string AuditEntity = "StudentContract";
+    public const string AuditEntity = AuditService.EntityStudentContract;
 
     public const string StudentRequiredMessage = "O'quvchini tanlang";
     public const string StudentNotFoundMessage = "O'quvchi topilmadi";

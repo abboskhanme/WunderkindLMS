@@ -135,6 +135,7 @@ export const navByRole: Record<Role, NavItem[]> = {
         { label: 'Bayram kunlari', to: '/admin/schedule/holidays', group: 'SOZLAMA' },
         { label: 'Choraklar', to: '/admin/settings/quarters', group: 'SOZLAMA' },
         { label: 'Dars vaqtlari', to: '/admin/settings/lesson-times', group: 'SOZLAMA' },
+        { label: 'Xonalar', to: '/admin/rooms', group: 'SOZLAMA' },
         { label: 'Davomat sabablari', to: '/admin/settings/reasons', group: 'SOZLAMA' },
       ],
     },

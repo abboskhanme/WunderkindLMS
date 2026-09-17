@@ -63,6 +63,7 @@ import { LeadFunnelPage } from '@/pages/admin/leads-funnel/LeadFunnelPage'
 import { AttendanceDisciplineReportPage } from '@/pages/admin/discipline/AttendanceDisciplineReportPage'
 import { CertificatesPage } from '@/pages/admin/certificates/CertificatesPage'
 import { GroupsPage } from '@/pages/admin/groups/GroupsPage'
+import { RoomsPage } from '@/pages/admin/rooms/RoomsPage'
 import { TransactionsPage } from '@/pages/admin/finance/TransactionsPage'
 import { InvoicesPage } from '@/pages/admin/billing/InvoicesPage'
 import { StudentStatusesPage } from '@/pages/admin/students/StudentStatusesPage'
@@ -129,6 +130,7 @@ export default function App() {
           <Route path="schedule/manage/:id" element={<RequirePerm perm="schedule"><ClassSchedulePage /></RequirePerm>} />
           <Route path="schedule/manage/:id/template/:templateId" element={<RequirePerm perm="schedule"><TemplateEditorPage /></RequirePerm>} />
           <Route path="subjects" element={<RequirePerm perm="schedule"><SubjectsPage /></RequirePerm>} />
+          <Route path="rooms" element={<RequirePerm perm="schedule"><RoomsPage /></RequirePerm>} />
           <Route path="journal" element={<RequirePerm perm="journal"><JournalPage /></RequirePerm>} />
           <Route path="assignments" element={<RequirePerm perm="app"><AssignmentsPage /></RequirePerm>} />
           <Route path="assignment-scores" element={<RequirePerm perm="app"><AssignmentScoresPage /></RequirePerm>} />

@@ -75,6 +75,9 @@ public class AuditService(IAppDbContext db, IHttpContextAccessor http)
     /// <summary>O'quvchini butunlay o'chirish (§2.3) — arxivlash EMAS.</summary>
     public const string EntityStudentDelete = "StudentDelete";
 
+    /// <summary>O'quvchi shartnomasi (§2.10) — raqam, sana, fayl, holat.</summary>
+    public const string EntityStudentContract = "StudentContract";
+
     /// <summary>Xulq-atvor bali (§6) — qo'lda qo'yilgan ball va uning sababi.</summary>
     public const string EntityDisciplinePoint = "DisciplinePoint";
 

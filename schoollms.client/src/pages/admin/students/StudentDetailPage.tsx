@@ -12,6 +12,8 @@ import {
 } from 'recharts'
 import { getStudentNotebook, type StudentNotebook } from '@/api/services/studentNotebook'
 import { cn, formatDate } from '@/lib/utils'
+import { MembershipsTab } from '@/pages/admin/students/profile/MembershipsTab'
+import { ContractsTab } from '@/pages/admin/students/profile/ContractsTab'
 import { Card } from '@/components/ui/Card'
 import { StatCard } from '@/components/ui/StatCard'
 import { Loader } from '@/components/ui/Loader'
@@ -636,6 +638,14 @@ export function StudentDetailPage() {
           </div>
         )}
       </Section>
+
+      {/*
+        Sinf va guruh a'zoligi (students-parity.md §2.1) hamda shartnomalar
+        (§2.10). Ikkala komponent ham o'zi yuklaydi — bu sahifa ularga faqat
+        o'quvchini beradi.
+      */}
+      <MembershipsTab studentId={data.id} />
+      <ContractsTab studentId={data.id} studentName={data.fullName} />
     </div>
   )
 }
