@@ -118,6 +118,17 @@ export const api = {
   acceptPickup: (id) => POST(`/teacher/pickups/${id}/accept`),
   handover: (studentId) => POST('/teacher/homeroom/handover', { studentId }),
 
+  // ---- O'quv guruhlari (Guruhlarim, X-3) ----
+  // Ro'yxatni ko'rish har bir guruhga yetadigan o'qituvchiga ochiq; qo'shish/chiqarish
+  // esa server tomonda FAQAT biriktirilgan ("yetakchi") o'qituvchiga ruxsat etiladi —
+  // shu bayroq har qatorda `canEditRoster` bo'lib keladi (TeacherPortalController.cs).
+  groups: () => GET('/teacher/groups'),
+  groupMembers: (id) => GET(`/teacher/groups/${id}/members`),
+  groupCandidates: (id) => GET(`/teacher/groups/${id}/candidates`),
+  addGroupMembers: (id, studentIds) => POST(`/teacher/groups/${id}/members`, { studentIds }),
+  removeGroupMember: (id, memberId, reason) =>
+    POST(`/teacher/groups/${id}/members/${memberId}/remove`, { reason: reason || null }),
+
   // ---- Jurnal ----
   journalStudents: (classId) => GET('/teacher/journal/students', { classId }),
   journalColumns: (classId, subjectId, quarter) => GET('/teacher/journal/columns', { classId, subjectId, quarter }),
