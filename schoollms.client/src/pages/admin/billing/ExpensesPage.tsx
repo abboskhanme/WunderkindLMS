@@ -22,13 +22,14 @@ import type { ExpenseInput, ExpenseRecord } from '@/api/services/expenses'
 import {
   approveExpense,
   createExpense,
-  EXPENSE_APPROVAL_THRESHOLD,
   expenseState,
   getExpenses,
   needsApproval,
   reverseExpense,
 } from '@/api/services/expenses'
 import { billingErrorMessage, isEndpointMissing } from '@/api/services/billingError'
+import type { PaymentMethod } from '@/types'
+import { paymentMethodLabels } from '@/pages/admin/finance/reportLabels'
 import { expenseCategories, financeCategoryLabel } from '@/config/constants'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
@@ -66,6 +67,9 @@ function ExpensesView() {
   const [formOpen, setFormOpen] = useState(false)
   const [reversing, setReversing] = useState<ExpenseRecord | null>(null)
   const [busy, setBusy] = useState(false)
+  // Tasdiqlashda pul qaysi usulda chiqqani — qator bo'yicha, chunki navbatda
+  // bir nechta chiqim turishi mumkin va ular har xil usulda to'lanadi.
+  const [approveMethods, setApproveMethods] = useState<Record<string, PaymentMethod>>({})
   const [actionError, setActionError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
 
@@ -124,12 +128,17 @@ function ExpensesView() {
     }
   }
 
-  const handleApprove = async (row: ExpenseRecord) => {
+  /**
+   * Tasdiqlash — pul AYNAN shu lahzada jurnalga tushadi, shuning uchun qaysi
+   * usulda chiqqani ham shu yerda tanlanadi. Ilgari bu so'rov tanasiz ketardi
+   * va tasdiqlash har safar xato bilan qaytardi.
+   */
+  const handleApprove = async (row: ExpenseRecord, method: PaymentMethod) => {
     setBusy(true)
     setActionError(null)
     setNotice(null)
     try {
-      await approveExpense(row.id)
+      await approveExpense(row.id, method)
       setNotice(`${formatMoney(row.amount)} chiqim tasdiqlandi.`)
       load()
     } catch (e: unknown) {
@@ -200,9 +209,29 @@ function ExpensesView() {
     return (
       <span className="flex justify-end gap-2">
         {showApprove && (
-          <Button disabled={busy} onClick={() => handleApprove(row)}>
-            <Check className="h-4 w-4" /> Tasdiqlash
-          </Button>
+          <span className="flex items-center gap-2">
+            <select
+              aria-label="Pul qaysi usulda chiqadi"
+              value={approveMethods[row.id] ?? 'cash'}
+              disabled={busy}
+              onChange={(e) =>
+                setApproveMethods((prev) => ({ ...prev, [row.id]: e.target.value as PaymentMethod }))
+              }
+              className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-700 outline-none focus:border-brand-400"
+            >
+              {(Object.keys(paymentMethodLabels) as PaymentMethod[]).map((m) => (
+                <option key={m} value={m}>
+                  {paymentMethodLabels[m]}
+                </option>
+              ))}
+            </select>
+            <Button
+              disabled={busy}
+              onClick={() => handleApprove(row, approveMethods[row.id] ?? 'cash')}
+            >
+              <Check className="h-4 w-4" /> Tasdiqlash
+            </Button>
+          </span>
         )}
         {showReverse && (
           <Button
@@ -226,8 +255,8 @@ function ExpensesView() {
         <div>
           <h1 className="text-xl font-semibold text-slate-800">Chiqimlar</h1>
           <p className="text-sm text-slate-400">
-            {formatMoney(EXPENSE_APPROVAL_THRESHOLD)} dan yuqori chiqim ikkinchi tasdiqni talab
-            qiladi.
+            Chegaradan yuqori chiqim ikkinchi tasdiqni talab qiladi. Chegara moliya
+            sozlamalarida turadi va holatni server belgilaydi.
           </p>
         </div>
         {canRecordExpense && (

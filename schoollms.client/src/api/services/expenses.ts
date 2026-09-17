@@ -26,21 +26,19 @@
  * bilan tuzatiladi (SPEC §4.1). Shuning uchun tasdiq navbatidagi variantlar
  * ikkita: TASDIQLASH yoki STORNO.
  */
-import type { Expense } from '@/types'
+import type { Expense, PaymentMethod } from '@/types'
 import { api } from '../client'
 
 const BASE = '/admin/expenses'
 
 /**
- * Ikkinchi tasdiq chegarasi (SPEC §4.5 — "Expense above N so'm").
+ * Ikkinchi tasdiq chegarasi BU YERDA YO'Q — va ataylab.
  *
- * Qiymat bazadagi seed bilan mos: 4 600 000 so'mlik chiqim tasdiqsiz,
- * 7 400 000 dan yuqorilari esa tasdiqlangan holda kelgan.
- *
- * DIQQAT: bu FAQAT interfeys uchun. Haqiqiy qoidani server qo'llaydi
- * (`ck_expenses_approver_differs` + `FinanceAction.ApproveExpense`).
- */
-export const EXPENSE_APPROVAL_THRESHOLD = 5_000_000
+ * Ilgari shu faylda `5_000_000` qattiq yozilgan edi va holat o'shanga qarab
+ * hisoblanardi. Chegara esa bazada (`BillingSettings.ExpenseApprovalThreshold`)
+ * va uni maktab o'zgartirishi mumkin: o'zgartirgan kuni ekran jimgina yolg'on
+ * ko'rsata boshlardi. Endi holat SERVERDAN keladi (`Expense.status`), interfeys
+ * esa raqamni takrorlamaydi.
 
 /**
  * Server javobi. `Expense` (muzlatilgan DTO) + kelajakda qo'shilishi
@@ -63,19 +61,21 @@ export type ExpenseRecord = Expense & {
 export type ExpenseState = 'approved' | 'pending' | 'recorded' | 'reversed'
 
 /**
- * Chiqim holati.
+ * Chiqim holati — SERVERNING `status` maydonidan.
  *
- * `ExpenseDto` da `status` ustuni YO'Q (muzlatilgan shartnoma) — holat uch
- * dalildan kelib chiqadi va shu yerda, BITTA joyda hisoblanadi:
- *  - storno qilingan  → `reversed`;
- *  - tasdiqlovchi bor → `approved`;
- *  - chegaradan yuqori va tasdiqlovchi yo'q → `pending` (tasdiq navbati);
- *  - chegaradan past  → `recorded` (ikkinchi tasdiq talab qilinmaydi).
+ * Server uchta holat biladi (`ExpenseStatus`): `pending` · `posted` ·
+ * `reversed`. Ekranda to'rttasi ko'rinadi, chunki jurnalga tushgan chiqim
+ * tasdiq bilan tushganmi yoki tasdiqsizmi — buni foydalanuvchi ajratishi
+ * kerak. Shuning uchun `posted` ikkiga bo'linadi: tasdiqlovchisi bor bo'lsa
+ * `approved`, bo'lmasa `recorded`.
+ *
+ * `status` bo'lmagan yagona holat — mock ma'lumot; o'shanda eski mantiq
+ * ishlaydi, lekin chegarasiz: tasdiqlovchi bor/yo'qligiga qarab.
  */
 export function expenseState(e: ExpenseRecord): ExpenseState {
-  if (e.reversedBy) return 'reversed'
-  if (e.approvedByName) return 'approved'
-  return e.amount > EXPENSE_APPROVAL_THRESHOLD ? 'pending' : 'recorded'
+  if (e.status === 'reversed' || e.reversedBy) return 'reversed'
+  if (e.status === 'pending') return 'pending'
+  return e.approvedByName ? 'approved' : 'recorded'
 }
 
 /** Shu chiqim ikkinchi tasdiqni kutyaptimi? */
@@ -95,6 +95,11 @@ export interface ExpenseInput {
   onDate: string
   category: string
   amount: number
+  /**
+   * Pul qaysi usulda chiqdi — server buni TALAB QILADI (`RequireMethod`).
+   * Shu maydon yuborilmagani uchun "Yangi chiqim" hech qachon saqlanmasdi.
+   */
+  method: PaymentMethod
   note?: string
 }
 
@@ -109,9 +114,16 @@ export async function createExpense(input: ExpenseInput): Promise<ExpenseRecord>
   return data
 }
 
-/** Tasdiqlash — faqat direktor va faqat BOSHQA shaxs (SPEC §4.5). */
-export async function approveExpense(id: string): Promise<ExpenseRecord> {
-  const { data } = await api.post<ExpenseRecord>(`${BASE}/${id}/approve`)
+/**
+ * Tasdiqlash — faqat direktor va faqat BOSHQA shaxs (SPEC §4.5).
+ *
+ * `method` MAJBURIY: tasdiq lahzasida pul jurnalga tushadi va jurnalning
+ * kredit satri qaysi hisobdan chiqishini shu belgilaydi. Ilgari bu funksiya
+ * so'rov tanasini umuman yubormasdi, shuning uchun tasdiqlash har safar
+ * xato bilan qaytardi.
+ */
+export async function approveExpense(id: string, method: PaymentMethod): Promise<ExpenseRecord> {
+  const { data } = await api.post<ExpenseRecord>(`${BASE}/${id}/approve`, { method })
   return data
 }
 

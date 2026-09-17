@@ -11,7 +11,9 @@
  */
 import { useEffect, useState } from 'react'
 import { AlertTriangle } from 'lucide-react'
-import { EXPENSE_APPROVAL_THRESHOLD, type ExpenseInput } from '@/api/services/expenses'
+import type { ExpenseInput } from '@/api/services/expenses'
+import type { PaymentMethod } from '@/types'
+import { paymentMethodLabels } from '@/pages/admin/finance/reportLabels'
 import { expenseCategories } from '@/config/constants'
 import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
@@ -34,6 +36,10 @@ export function ExpenseFormModal({ open, busy, error, onClose, onSubmit }: Props
   const [category, setCategory] = useState(expenseCategories[0]?.value ?? 'other')
   const [amount, setAmount] = useState('')
   const [note, setNote] = useState('')
+  // Server `method` ni TALAB qiladi (`RequireMethod`) — u yuborilmagani uchun
+  // "Yangi chiqim" har safar xato bilan qaytardi. Sukut — naqd: kassadan
+  // chiqadigan chiqim eng ko'p uchraydigan holat.
+  const [method, setMethod] = useState<PaymentMethod>('cash')
 
   useEffect(() => {
     if (!open) return
@@ -41,13 +47,13 @@ export function ExpenseFormModal({ open, busy, error, onClose, onSubmit }: Props
     setOnDate(today())
     setCategory(expenseCategories[0]?.value ?? 'other')
     setAmount('')
+    setMethod('cash')
     setNote('')
     /* eslint-enable react-hooks/set-state-in-effect */
   }, [open])
 
   const amountNumber = Number(amount)
   const amountValid = amount.trim() !== '' && Number.isFinite(amountNumber) && amountNumber > 0
-  const needsApproval = amountValid && amountNumber > EXPENSE_APPROVAL_THRESHOLD
   const valid = amountValid && onDate !== '' && category !== ''
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -58,6 +64,7 @@ export function ExpenseFormModal({ open, busy, error, onClose, onSubmit }: Props
       onDate,
       category,
       amount: amountNumber,
+      method,
       note: trimmedNote === '' ? undefined : trimmedNote,
     })
   }
@@ -74,7 +81,7 @@ export function ExpenseFormModal({ open, busy, error, onClose, onSubmit }: Props
             Bekor qilish
           </Button>
           <Button type="submit" form="expense-form" disabled={!valid || busy}>
-            {busy ? 'Saqlanmoqda...' : needsApproval ? 'Tasdiqqa yuborish' : 'Saqlash'}
+            {busy ? 'Saqlanmoqda...' : 'Saqlash'}
           </Button>
         </>
       }
@@ -120,16 +127,33 @@ export function ExpenseFormModal({ open, busy, error, onClose, onSubmit }: Props
           )}
         </div>
 
-        {needsApproval && (
-          <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-            <p>
-              Summa {formatMoney(EXPENSE_APPROVAL_THRESHOLD)} dan yuqori — chiqim{' '}
-              <b>ikkinchi tasdiqni</b> talab qiladi va tasdiq navbatiga tushadi. Tasdiqni siz
-              emas, boshqa mas'ul beradi.
-            </p>
-          </div>
-        )}
+        <div>
+          <label className="mb-1 block text-sm font-medium text-slate-700" htmlFor="expense-method">
+            Pul qaysi usulda chiqdi
+          </label>
+          <select
+            id="expense-method"
+            value={method}
+            onChange={(e) => setMethod(e.target.value as PaymentMethod)}
+            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-brand-400"
+          >
+            {(Object.keys(paymentMethodLabels) as PaymentMethod[]).map((m) => (
+              <option key={m} value={m}>
+                {paymentMethodLabels[m]}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+          <p>
+            Chegaradan yuqori summa <b>ikkinchi tasdiqni</b> talab qiladi va tasdiq navbatiga
+            tushadi — tasdiqni siz emas, boshqa mas'ul beradi. Chegara moliya sozlamalarida
+            turadi, shuning uchun bu oyna uni oldindan aytmaydi: qaysi holatga tushganini
+            saqlagandan keyin ro'yxatda ko'rasiz.
+          </p>
+        </div>
 
         <Textarea
           label="Izoh"
