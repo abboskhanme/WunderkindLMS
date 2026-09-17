@@ -151,7 +151,7 @@ public sealed class CashHandoverService(
     private const int MaxRows = 2000;
 
     /// <summary><c>audit_log.entity_type</c> — topshiriqlar shu bo'yicha topiladi.</summary>
-    public const string AuditEntityCashHandover = "CashHandover";
+    public const string AuditEntityCashHandover = AuditService.EntityCashHandover;
 
     /// <summary>
     /// Smena qulfi. Kalit <see cref="CashShiftService.ShiftLockKey"/> dan

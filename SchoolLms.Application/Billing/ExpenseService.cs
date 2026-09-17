@@ -1046,7 +1046,7 @@ public sealed class ExpenseService(
     /// da ham ishlatilgan.
     /// </para>
     /// </summary>
-    public const string AuditEntityExpenseAttachment = "ExpenseAttachment";
+    public const string AuditEntityExpenseAttachment = AuditService.EntityExpenseAttachment;
 
     /// <summary>
     /// <c>UploadsController</c> qaytaradigan yo'lning boshlanishi. Biriktirish
