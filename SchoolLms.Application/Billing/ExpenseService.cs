@@ -144,6 +144,20 @@ public record ApproveExpenseRequest(string Method);
 /// <summary>Storno so'rovi. Sabab majburiy: u jurnal satrining <c>memo</c> siga tushadi.</summary>
 public record ReverseExpenseRequest(string Reason);
 
+/// <summary>
+/// Ikki qavatli nazorat chegarasi (SPEC §4.5) — interfeys uchun.
+///
+/// <para>
+/// Nega endpoint kerak: chegara <c>billing_settings.expense_approval_threshold</c>
+/// da yashaydi va o'zgaradi. Klient uni O'ZIDA takrorlasa (ilgari
+/// <c>expenses.ts</c> da 5 000 000 yozilgan konstanta bor edi), sozlama
+/// o'zgargan kuni ekran "tasdiq kutmoqda" degan chiqimni "yozib olingan" deb
+/// ko'rsatishda davom etardi — ya'ni tasdiq navbati jimgina bo'shab qolardi.
+/// </para>
+/// </summary>
+/// <param name="Threshold">Shu summadan KATTA chiqim ikkinchi tasdiqni talab qiladi.</param>
+public record ExpenseApprovalPolicyDto(decimal Threshold);
+
 /// <summary>Chiqimlar ro'yxati uchun filtr (davr + toifa + holat).</summary>
 /// <param name="From">Shu sanadan boshlab (<c>on_date</c> bo'yicha).</param>
 /// <param name="To">Shu sanagacha, shu kun ham kiradi.</param>
@@ -183,8 +197,16 @@ public interface IExpenseService
     Task<ExpenseDto?> GetAsync(Guid id, CancellationToken ct = default);
 
     /// <summary>
+    /// Ikki qavatli nazorat chegarasi — sozlamadan (SPEC §4.5). Interfeys shu
+    /// raqamni SERVERDAN oladi, o'zida saqlamaydi.
+    /// </summary>
+    Task<ExpenseApprovalPolicyDto> ApprovalPolicyAsync(CancellationToken ct = default);
+
+    /// <summary>
     /// Tasdiqlaydi va AYNAN shu lahzada jurnalga qo'yadi. Tasdiqlovchi
-    /// yaratuvchidan boshqa shaxs bo'lishi SHART (SPEC §4.5).
+    /// yaratuvchidan boshqa shaxs bo'lishi SHART (SPEC §4.5). Bitta chiqim
+    /// bo'yicha tasdiqlar KETMA-KET bajariladi (advisory lock), ya'ni ikki
+    /// marta bosilgan tugma jurnalga ikkinchi partiya qo'ymaydi.
     /// </summary>
     Task<ExpenseDto> ApproveAsync(
         Guid id, string method, string approverId, CancellationToken ct = default);
@@ -221,11 +243,34 @@ public sealed class ExpenseService(IAppDbContext db, ILedgerService ledger) : IE
     private static readonly DateOnly EarliestDate = new(2000, 1, 1);
 
     /// <summary>
+    /// <b>CHIQIM BO'YICHA TASDIQ QULFI (advisory lock).</b> Kalit satr bilan
+    /// nomlangan (<c>expense_approval:{id}</c>), chunki advisory lock'ning
+    /// 64-bitli fazosi butun bazada YAGONA: xom <c>id</c> hash'i
+    /// <c>billing_guards.sql</c> dagi taqsimot qulfi yoki
+    /// <c>CashShiftService</c> ning chek qulfi bilan tasodifan to'qnashib,
+    /// bir-biriga aloqasi yo'q ikki amalni navbatga qo'yardi.
+    /// Batafsil: <see cref="ApproveAsync"/>.
+    /// </summary>
+    private const string LockSql = "SELECT pg_advisory_xact_lock(hashtextextended({0}::text, 0))";
+
+    private static string LockKey(Guid expenseId) => $"expense_approval:{expenseId:D}";
+
+    /// <summary>
     /// Audit qatoridagi <c>actor_name</c> uchun — keshlangan (P1-14).
     /// Aktyor JWT'dan emas, PARAMETR sifatida keladi (SPEC §4.4), shuning uchun
     /// <c>AuditService.Record</c> emas, <c>AuditService.Entry</c> ishlatiladi.
     /// </summary>
     private readonly ActorNames actors = new(db);
+
+    /// <summary>
+    /// Xom SQL uchun kontekstning o'zi. <see cref="IAppDbContext"/> da
+    /// <c>Database</c> yo'q (u ataylab tor interfeys), advisory lock esa EF
+    /// LINQ bilan ifodalab bo'lmaydigan yagona narsa —
+    /// <see cref="CashShiftService"/> dagi bilan bir xil yechim.
+    /// </summary>
+    private readonly DbContext ef = db as DbContext ?? throw new ArgumentException(
+        $"{nameof(ExpenseService)} EF kontekstini talab qiladi: tasdiq qulfi xom SQL orqali "
+        + "qo'yiladi. Berilgan implementatsiya DbContext emas.", nameof(db));
 
     // -----------------------------------------------------------------
     //  Yaratish
@@ -323,14 +368,26 @@ public sealed class ExpenseService(IAppDbContext db, ILedgerService ledger) : IE
         RequireActor(approverId, nameof(approverId));
         var settlement = RequireMethod(method);
 
-        // DIQQAT — QATOR QULFI YO'Q. Ikki tasdiqlovchi AYNI LAHZADA bir xil
-        // chiqimni tasdiqlasa, ikkalasi ham tekshiruvlardan o'tib, jurnalga
-        // ikkita partiya tushishi mumkin (chiqim ikki baravar ko'rinardi).
-        // `SELECT ... FOR UPDATE` uchun `app_rw` da kerakli huquq yo'q va
-        // Application qatlamida xom SQL yozilmaydi (P1-11 da ham shu tanlov).
-        // Amalda tasdiqlovchi bitta — direktor, va u bir tugmani ikki marta
-        // bosmaydi; tushib qolsa storno bilan tuzatiladi.
+        // ---- TASDIQ KETMA-KET BAJARILADI (advisory lock) ----
         //
+        // Ilgari bu yerda hech qanday qulf yo'q edi va izohda "direktor bitta
+        // tugmani ikki marta bosmaydi" deb yozilgandi. Bosadi: sekin javobda
+        // ikkinchi bosish YANGI so'rov bo'lib ketadi. Qulfsiz ikkala so'rov ham
+        // `approved_by is null` tekshiruvidan O'TARDI (READ COMMITTED birinchi
+        // so'rovning commit qilinmagan qatorini ko'rmaydi), so'ng ikkalasi ham
+        // jurnalga partiya qo'yardi — chiqim P&L da IKKI BARAVAR ko'rinardi.
+        //
+        // `SELECT ... FOR UPDATE` bu yerda ham yaramaydi (`app_rw` da
+        // `expenses` ga UPDATE bor, lekin qator qulfi butun jadval huquqiga
+        // tayanadigan usul emas) — `CashShiftService.NextReceiptNoAsync` dagi
+        // sabab bilan bir xil: advisory lock hech qanday jadval huquqini talab
+        // qilmaydi va TRANZAKSIYA oxirida o'zi bo'shaydi. Shuning uchun qulf
+        // ochiq tranzaksiya ichida olinadi va hamma tekshiruv qulf OSTIDA,
+        // qulfdan keyin o'qilgan qator ustida bajariladi.
+        await using var tx = await db.BeginTransactionAsync(ct);
+
+        await ef.Database.ExecuteSqlRawAsync(LockSql, [LockKey(id)], ct);
+
         // Kuzatiladigan holda: `approved_by` shu obyektda yangilanadi.
         var expense = await db.Expenses.FirstOrDefaultAsync(e => e.Id == id, ct)
             ?? throw BillingRuleException.NotFound("expense_not_found", "Chiqim topilmadi.");
@@ -360,7 +417,9 @@ public sealed class ExpenseService(IAppDbContext db, ILedgerService ledger) : IE
         // ruxsat bergan odam o'sha. Buning ikkinchi ta'siri ham foydali:
         // `LedgerService.ReverseAsync` partiya muallifiga storno'ni taqiqlaydi,
         // ya'ni bu chiqimni keyin UCHINCHI shaxs (yoki yaratuvchi) storno qiladi.
-        await PostAsync(expense, settlement, approverId, isNew: false, before, ct);
+        await WriteAsync(expense, settlement, approverId, isNew: false, before, ct);
+
+        await tx.CommitAsync(ct);
 
         return (await ToDtosAsync([expense], ct))[0];
     }
@@ -511,6 +570,10 @@ public sealed class ExpenseService(IAppDbContext db, ILedgerService ledger) : IE
         return await ToDtosAsync(rows, ct);
     }
 
+    /// <inheritdoc />
+    public async Task<ExpenseApprovalPolicyDto> ApprovalPolicyAsync(CancellationToken ct = default) =>
+        new(await ThresholdAsync(ct));
+
     // -----------------------------------------------------------------
     //  Ichki yordamchilar
     // -----------------------------------------------------------------
@@ -532,11 +595,24 @@ public sealed class ExpenseService(IAppDbContext db, ILedgerService ledger) : IE
         Expense expense, string method, string actorId, bool isNew, object? before,
         CancellationToken ct)
     {
+        await using var tx = await db.BeginTransactionAsync(ct);
+        await WriteAsync(expense, method, actorId, isNew, before, ct);
+        await tx.CommitAsync(ct);
+    }
+
+    /// <summary>
+    /// <see cref="PostAsync"/> ning ichki qismi — tranzaksiyaSIZ. Tasdiqlash
+    /// yo'li tranzaksiyani O'ZI ochadi (qulf tranzaksiya oxirida bo'shaydi,
+    /// ya'ni yozuv ham AYNAN o'sha tranzaksiyada bo'lishi kerak), shuning uchun
+    /// bu ikkisi ajratilgan: ichma-ich tranzaksiya EF'da xato.
+    /// </summary>
+    private async Task WriteAsync(
+        Expense expense, string method, string actorId, bool isNew, object? before,
+        CancellationToken ct)
+    {
         var memo = expense.Note is null
             ? $"Chiqim: {expense.Category}"
             : $"Chiqim: {expense.Category} — {expense.Note}";
-
-        await using var tx = await db.BeginTransactionAsync(ct);
 
         if (isNew) db.Expenses.Add(expense);
 
@@ -566,8 +642,6 @@ public sealed class ExpenseService(IAppDbContext db, ILedgerService ledger) : IE
                 Accounts.SettlementFor(method), LedgerDirection.Credit, expense.Amount,
                 LedgerRefType.Expense, expense.Id, expense.OnDate, memo),
         ], actorId, ct);
-
-        await tx.CommitAsync(ct);
     }
 
     /// <summary>
