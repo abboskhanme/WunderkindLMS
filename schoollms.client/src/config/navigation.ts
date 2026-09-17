@@ -78,44 +78,46 @@ export const navByRole: Record<Role, NavItem[]> = {
       icon: Wallet,
       perm: 'finance',
       children: [
-        { label: 'Umumiy', to: '/admin/finance', end: true, group: 'AMALIYOT' },
-        // Kassa ish joyi — admin/direktor uchun ham ochiq (F1.11). Kassirning
-        // o'z menyusi alohida va qisqa: `navByRole.cashier`.
-        { label: 'Kassa', to: '/cashier', roles: ['admin', 'superadmin'], group: 'AMALIYOT' },
-        // Billing katalogi — `perm: 'finance'` yolg'iz o'zi buni finance ruxsatli
-        // xodimga ham ko'rsatardi, server esa unga 403 beradi. Shuning uchun rol
-        // ham ko'rsatiladi: menyu va endpoint bir xil qoidaga bo'ysunsin.
-        { label: "To'lov toifalari", to: '/admin/billing/categories', roles: ['admin', 'superadmin'], group: 'AMALIYOT' },
-        { label: 'Obunalar', to: '/admin/billing/subscriptions', roles: ['admin', 'superadmin'], group: 'AMALIYOT' },
-        { label: 'Chegirmalar', to: '/admin/billing/discounts', roles: ['admin', 'superadmin'], group: 'AMALIYOT' },
-        { label: 'Chiqimlar', to: '/admin/billing/expenses', roles: ['admin', 'superadmin'], group: 'AMALIYOT' },
-        { label: 'Hisob-fakturalar', to: '/admin/billing/invoices', roles: ['admin', 'superadmin'], group: 'AMALIYOT' },
-        { label: 'Qarzdor holatlari', to: '/admin/finance/debtor-statuses', roles: ['admin', 'superadmin'], group: 'AMALIYOT' },
-        // Moliya sozlamalari (F14.01): to'lov muddati, kechikish kuni va chiqim
-        // tasdiqlash chegarasi. Chegarani FAQAT direktor o'zgartira oladi —
-        // buni server hal qiladi (`ManageBillingSettings`), menyu esa qo'shni
-        // katalog yozuvlari bilan bir xil rol darvozasida turadi.
-        // Pul qaytarish (F1.05): so'rash va tasdiqlash AYRI huquq — so'rovni
-        // admin qo'yadi, tasdiqni faqat superadmin beradi, va o'z so'rovini
-        // o'zi tasdiqlay olmaydi (bazadagi `ck_student_refunds_approver_differs`).
-        { label: 'Qaytarimlar', to: '/admin/finance/refunds', roles: ['admin', 'superadmin'], group: 'AMALIYOT' },
-        // Bonus va Jarima EduSchool'da ham Moliya ostida turadi (HR emas).
-        // Xodimning pulini o'zgartiradigan amal, shuning uchun kassir ham,
-        // oddiy xodim ham kira olmaydi — server `ManagePayrollAdjustments`
-        // bilan qo'riqlaydi.
-        { label: 'Bonus', to: '/admin/finance/bonus', roles: ['admin', 'superadmin'], group: 'AMALIYOT' },
-        { label: 'Jarima', to: '/admin/finance/penalty', roles: ['admin', 'superadmin'], group: 'AMALIYOT' },
-        { label: 'Moliya sozlamalari', to: '/admin/billing/settings', roles: ['admin', 'superadmin'], group: 'AMALIYOT' },
-        // SPEC §4.3: moliya hisobotlari faqat admin va direktorga ochiq —
-        // 'finance' ruxsatli xodim (staff) ham bu yerni ko'rmaydi, chunki
-        // endpoint unga 403 qaytaradi. Menyuni ham, marshrutni ham yopamiz.
+        // TARTIB EduSchool'ning Moliya menyusidan AYNAN olingan (mijoz
+        // ko'rsatgan ekran, 2026-09-18): AMALLAR · ISH HAQI · HISOBOTLAR.
+        // Bizda bor, ularda yo'q yozuvlar o'z guruhining OXIRIGA qo'yilgan —
+        // shunda EduSchool ketma-ketligi buzilmaydi.
+        //
+        // SMENA hisobotlari (Z-hisobot, Nomuvofiqlik, Kassa kuni) menyudan
+        // OLIB TASHLANDI — EduSchool'da bunday yozuv yo'q. Smenaning O'ZI
+        // qoladi: to'lov ochiq smenasiz qabul qilinmaydi (SPEC §4), kassir
+        // uni "Kassa" ekranidan ochadi va yopadi, tablar esa "Umumiy" ichida.
+        { label: 'Kassa', to: '/cashier', roles: ['admin', 'superadmin'], group: 'AMALLAR' },
+        { label: 'Qarzdorlar bilan ishlash', to: '/admin/finance/debtors', roles: ['admin', 'superadmin'], group: 'AMALLAR' },
+        { label: 'Tranzaksiyalar', to: '/admin/finance/transactions', roles: ['admin', 'superadmin'], group: 'AMALLAR' },
+        // EduSchool: "Abonement tranzaksiyalari". Bizda bu ekran
+        // "Hisob-fakturalar" deb ataladi va shu nomda qoladi — nomlar
+        // ekrandagi mazmundan olinadi (MENU-PARITY.md §Labels).
+        { label: 'Hisob-fakturalar', to: '/admin/billing/invoices', roles: ['admin', 'superadmin'], group: 'AMALLAR' },
+        // EduSchool: "Abonement tranzaksiyalari (Qarzdorlik oyma oy)".
+        { label: 'Oyma-oy qarzdorlik', to: '/admin/finance/arrears', roles: ['admin', 'superadmin'], group: 'AMALLAR' },
+        // Bizniki — ularda alohida yozuv yo'q, guruh oxirida.
+        { label: 'Umumiy', to: '/admin/finance', end: true, group: 'AMALLAR' },
+        { label: "To'lov toifalari", to: '/admin/billing/categories', roles: ['admin', 'superadmin'], group: 'AMALLAR' },
+        { label: 'Obunalar', to: '/admin/billing/subscriptions', roles: ['admin', 'superadmin'], group: 'AMALLAR' },
+        { label: 'Chegirmalar', to: '/admin/billing/discounts', roles: ['admin', 'superadmin'], group: 'AMALLAR' },
+        { label: 'Chiqimlar', to: '/admin/billing/expenses', roles: ['admin', 'superadmin'], group: 'AMALLAR' },
+        { label: 'Qarzdor holatlari', to: '/admin/finance/debtor-statuses', roles: ['admin', 'superadmin'], group: 'AMALLAR' },
+        { label: 'Qaytarimlar', to: '/admin/finance/refunds', roles: ['admin', 'superadmin'], group: 'AMALLAR' },
+        { label: 'Moliya sozlamalari', to: '/admin/billing/settings', roles: ['admin', 'superadmin'], group: 'AMALLAR' },
+
+        // ISH HAQI — EduSchool'da aynan Moliya ostida turadi, HR ostida emas.
+        { label: 'Ish haqi', to: '/admin/teachers/salary', roles: ['admin', 'superadmin'], group: 'ISH HAQI' },
+        { label: 'Bonus', to: '/admin/finance/bonus', roles: ['admin', 'superadmin'], group: 'ISH HAQI' },
+        { label: 'Jarima', to: '/admin/finance/penalty', roles: ['admin', 'superadmin'], group: 'ISH HAQI' },
+
+        // HISOBOTLAR. P&L 2.0 (beta) ATAYLAB yo'q — rad etilgan
+        // (existing-module-gaps.md §3.6).
         { label: 'Moliya hisobotlari', to: '/admin/finance/reports', roles: ['admin', 'superadmin'], group: 'HISOBOTLAR' },
-        { label: 'Tranzaksiyalar', to: '/admin/finance/transactions', roles: ['admin', 'superadmin'], group: 'HISOBOTLAR' },
-        // Kunlik ekran — pul aylanmasidan oldin turadi, chunki har kuni ochiladi.
-        { label: 'Kassa kuni', to: '/admin/finance/cash-day', roles: ['admin', 'superadmin'], group: 'HISOBOTLAR' },
+        { label: 'Moliya hisobotlari (P&L)', to: '/admin/finance/pnl', roles: ['admin', 'superadmin'], group: 'HISOBOTLAR' },
+        { label: 'Pul oqimi', to: '/admin/finance/cashflow', roles: ['admin', 'superadmin'], group: 'HISOBOTLAR' },
+        // EduSchool: "Moliya analitikasi" (beta).
         { label: 'Pul aylanmasi', to: '/admin/finance/money-flow', roles: ['admin', 'superadmin'], group: 'HISOBOTLAR' },
-        // EduSchool: "Abonement tranzaksiyalari (qarzdorlik oyma-oy)" — MENU-PARITY.md §Moliya.
-        { label: 'Oyma-oy qarzdorlik', to: '/admin/finance/arrears', roles: ['admin', 'superadmin'], group: 'HISOBOTLAR' },
       ],
     },
     { label: 'Jurnal', to: '/admin/journal', icon: NotebookText, perm: 'journal' },
@@ -219,7 +221,8 @@ export const navByRole: Record<Role, NavItem[]> = {
       children: [
         { label: "O'qituvchilar", to: '/admin/teachers', end: true, group: 'XODIMLAR' },
         { label: "O'qituvchilar davomati", to: '/admin/teachers/attendance', group: 'XODIMLAR' },
-        { label: 'Oylik hisoblash', to: '/admin/teachers/salary', group: 'ISH HAQI' },
+        // 'Oylik hisoblash' MOLIYA ostiga ko'chdi — EduSchool'da Ish haqi
+        // aynan o'sha yerda turadi. Ikki joyda ko'rsatish menyuni chalkashtirardi.
       ],
     },
     {

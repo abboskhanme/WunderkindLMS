@@ -168,6 +168,10 @@ export default function App() {
           <Route path="billing/categories" element={<RequirePerm perm="finance"><CategoriesPage /></RequirePerm>} />
           <Route path="billing/settings" element={<RequirePerm perm="finance"><BillingSettingsPage /></RequirePerm>} />
           <Route path="finance/refunds" element={<RequirePerm perm="finance"><RefundsPage /></RequirePerm>} />
+          {/* EduSchool'da alohida menyu yozuvi — bizda bitta sahifaning tablari. */}
+          <Route path="finance/debtors" element={<RequirePerm perm="finance"><FinancePage initialTab="debtors" /></RequirePerm>} />
+          <Route path="finance/pnl" element={<RequirePerm perm="finance"><FinancePage initialTab="pnl" /></RequirePerm>} />
+          <Route path="finance/cashflow" element={<RequirePerm perm="finance"><FinancePage initialTab="cashflow" /></RequirePerm>} />
           <Route path="finance/bonus" element={<RequirePerm perm="finance"><AdjustmentsPage kind="bonus" /></RequirePerm>} />
           <Route path="finance/penalty" element={<RequirePerm perm="finance"><AdjustmentsPage kind="penalty" /></RequirePerm>} />
           <Route path="billing/subscriptions" element={<RequirePerm perm="finance"><SubscriptionsPage /></RequirePerm>} />

@@ -358,3 +358,36 @@ Telegram instead (`POST /api/admin/messages/broadcast`, `OnlyDebtors`, cited in
 transaction-type tree, and "cancel a transaction" as a destructive PUT are declined for the
 reasons `finance-parity.md` §2.0 and §3.4 already give (storno instead of cancel — `SPEC.md` §4)
 and are not re-litigated here.
+
+## Moliya — the submenu rebuilt to EduSchool's three groups (2026-09-18)
+
+The client put the two flyouts side by side: theirs reads **AMALLAR · ISH HAQI ·
+HISOBOTLAR**, ours read AMALIYOT · HISOBOTLAR in a different order. Ours now
+follows theirs, with every entry of ours that they do not have placed at the
+**end of its group**, so their sequence reads unbroken.
+
+| Group | EduSchool | Ours |
+|---|---|---|
+| AMALLAR | Kassa · Qarzdorlar bilan ishlash · Tranzaksiyalar · Abonement tranzaksiyalari · Abonement tranzaksiyalari (Qarzdorlik oyma oy) | same order; `Abonement tranzaksiyalari` is our **Hisob-fakturalar**, then ours-only: Umumiy · To'lov toifalari · Obunalar · Chegirmalar · Chiqimlar · Qarzdor holatlari · Qaytarimlar · Moliya sozlamalari |
+| ISH HAQI | Ish haqi · Bonus · Jarima | same |
+| HISOBOTLAR | Moliya hisobotlari · (P&L) · (P&L) 2.0 · Pul oqimi · Moliya analitikasi | Moliya hisobotlari · (P&L) · Pul oqimi · Pul aylanmasi |
+
+**Three of their menu entries were tabs on our side.** `Qarzdorlar bilan ishlash`,
+`Moliya hisobotlari (P&L)` and `Pul oqimi` live as tabs inside `FinancePage`.
+Rather than split the screen, `FinancePage` now takes an `initialTab` and three
+routes open it on the right tab — the same thing `StudentsPage` does for
+`Arxiv o'quvchilar`. One screen, three ways in.
+
+**`Ish haqi` moved from HR to Moliya**, where EduSchool keeps it. It is not
+listed twice; the HR entry is gone.
+
+**Shift reports left the menu.** `Kassa kuni`, and the Z-hisobot and
+Nomuvofiqlik tabs, have no EduSchool counterpart, and the client said the shift
+does not belong in this section. **The shift mechanism itself stays** — SPEC §4
+requires an open shift before a payment is accepted and before a storno is
+approved, so removing it would stop the till working. The cashier opens and
+closes a shift on the Kassa screen, and the two reports remain reachable as tabs
+inside Umumiy.
+
+**`Moliya hisobotlari (P&L) 2.0` is not coming** — declined in
+`existing-module-gaps.md` §3.6, before this menu work.

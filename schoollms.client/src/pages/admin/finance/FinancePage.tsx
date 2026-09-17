@@ -67,12 +67,20 @@ function balanceClass(v: number): string {
   return v > 0 ? 'text-red-600' : v < 0 ? 'text-emerald-600' : 'text-slate-400'
 }
 
-export function FinancePage() {
+/**
+ * `initialTab` — menyudan TO'G'RIDAN-TO'G'RI bitta tabga kirish uchun
+ * (`Qarzdorlar bilan ishlash`, `Moliya hisobotlari (P&L)`, `Pul oqimi`
+ * EduSchool'da alohida menyu yozuvi, bizda esa shu sahifaning tablari).
+ * Ekran ikkiga bo'linmaydi — bitta sahifa, boshlang'ich tabi boshqa.
+ * Xuddi shu naqsh `StudentsPage` da `Arxiv o'quvchilar` uchun ishlatilgan.
+ */
+export function FinancePage({ initialTab }: { initialTab?: Tab } = {}) {
   const { user } = useAuth()
   const canSeeReports = !!user && reportRoles.includes(user.role)
 
   // Ruxsati yo'q xodim uchun yagona ochiq tab — maosh hisoboti.
-  const [tab, setTab] = useState<Tab>(canSeeReports ? 'pnl' : 'teachers')
+  const [tab, setTab] = useState<Tab>(
+    canSeeReports ? (initialTab ?? 'pnl') : 'teachers')
   const [from, setFrom] = useState(`${yearOf(todayStr)}-01-01`)
   const [to, setTo] = useState(todayStr)
 
