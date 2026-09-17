@@ -109,6 +109,18 @@ public interface IInvoiceService
 
     Task<IReadOnlyList<InvoiceDto>> ListAsync(InvoiceQuery query, CancellationToken ct = default);
 
+    /// <summary>
+    /// Registr uchun: server tomonda sahifalangan ro'yxat va BUTUN FILTR
+    /// bo'yicha yakun (F10.01, docs/modules/finance-parity.md §2.10).
+    ///
+    /// <para>
+    /// QO'SHIMCHA metod — <see cref="ListAsync"/> tegilmadi: uning imzosi
+    /// P1-06 da muzlatilgan va uni o'zgartirish parallel ishlayotgan kodni
+    /// buzardi (fayl boshidagi izoh).
+    /// </para>
+    /// </summary>
+    Task<InvoicePageDto> ListPageAsync(InvoicePageQuery query, CancellationToken ct = default);
+
     /// <summary>O'quvchining to'liq moliyaviy kartochkasi (qarz, obunalar, oylar, to'lovlar).</summary>
     Task<StudentBillingDto?> ForStudentAsync(string studentId, CancellationToken ct = default);
 

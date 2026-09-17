@@ -48,6 +48,75 @@ namespace SchoolLms.Application.Billing;
 /// qiymatlar (<see cref="BillingSettings"/>) ishlatiladi.
 /// </para>
 /// </summary>
+// ===========================================================================
+//  REGISTR DTO'LARI — bu yerda, `Dtos/BillingDtos.cs` da EMAS.
+// ===========================================================================
+//
+//  Sabab `ExpenseService.cs` dagi bilan bir xil: DTO xizmat bilan birga
+//  o'zgaradi, shuning uchun u xizmat faylida yashaydi. `BillingDtos.cs`
+//  dagi `InvoiceDto` / `InvoiceQuery` esa P1-06 da MUZLATILGAN shartnoma —
+//  ular TEGILMAYDI, bu yerdagilar ustiga qo'shiladi.
+
+/// <summary>
+/// Registr filtri: muzlatilgan <see cref="InvoiceQuery"/> + sahifalash va
+/// "faqat qarzdorlar" (F10.01).
+/// </summary>
+/// <param name="OnlyDebtors">true = qoldig'i bor hisob-fakturalargina
+/// (<c>open</c> yoki <c>partial</c>).</param>
+public record InvoicePageQuery(
+    string? StudentId = null,
+    Guid? CategoryId = null,
+    DateOnly? FromMonth = null,
+    DateOnly? ToMonth = null,
+    string? Status = null,
+    bool OnlyOverdue = false,
+    string? ClassName = null,
+    bool OnlyDebtors = false,
+    int Page = 1,
+    int PageSize = InvoiceService.DefaultPageSize)
+{
+    /// <summary>Muzlatilgan filtr qismiga o'girish — ta'rif ikki joyda yozilmasin.</summary>
+    public InvoiceQuery ToQuery() =>
+        new(StudentId, CategoryId, FromMonth, ToMonth, Status, OnlyOverdue, ClassName);
+}
+
+/// <summary>
+/// Registr yakuni — BUTUN FILTR bo'yicha (sahifa bo'yicha emas).
+/// </summary>
+/// <param name="Amount">Σ to'liq summa (chegirmasiz).</param>
+/// <param name="Discount">Σ chegirma.</param>
+/// <param name="Payable">Σ to'lanadigan = <paramref name="Amount"/> − <paramref name="Discount"/>.</param>
+/// <param name="Paid">Σ to'langan — faqat KUCHDAGI taqsimotlar.</param>
+/// <param name="Remaining">Σ qoldiq.</param>
+public record InvoiceTotalsDto(
+    decimal Amount, decimal Discount, decimal Payable, decimal Paid, decimal Remaining);
+
+/// <summary>Registrning bitta sahifasi.</summary>
+/// <param name="ClassNames">
+/// <c>studentId → sinf</c> — FAQAT shu sahifadagi o'quvchilar uchun.
+///
+/// <para>
+/// Nega qatorning ichida emas: <see cref="InvoiceDto"/> P1-06 da MUZLATILGAN
+/// shartnoma va unga ustun qo'shish butun frontend tipini o'zgartirardi.
+/// Registrga esa sinf KERAK (§2.10 ustunlar ro'yxati), shuning uchun u
+/// yonma-yon, qidiruv jadvali sifatida beriladi — qator tegilmaydi.
+/// </para>
+/// </param>
+public record InvoicePageDto(
+    IReadOnlyList<InvoiceDto> Rows,
+    int Page,
+    int PageSize,
+    int Total,
+    InvoiceTotalsDto Totals,
+    IReadOnlyDictionary<string, string> ClassNames);
+
+/// <summary>
+/// Hisob-fakturani bekor qilish so'rovi. Sabab MAJBURIY (SPEC §4.3) —
+/// u jurnal yozuvining <c>memo</c> siga va audit qatoriga tushadi.
+/// Bekor qiluvchi tanada YO'Q: u JWT'dan olinadi (SPEC §4.4).
+/// </summary>
+public record VoidInvoiceRequest(string Reason);
+
 public sealed class InvoiceService(IAppDbContext db, ILedgerService ledger) : IInvoiceService
 {
     /// <summary>Baza ustuni <c>numeric(14,2)</c> — hisob-kitob ham shu aniqlikda.</summary>
@@ -62,6 +131,46 @@ public sealed class InvoiceService(IAppDbContext db, ILedgerService ledger) : II
     /// (docs/PENDING_WIRING.md).
     /// </summary>
     public const int MaxListRows = 2000;
+
+    /// <summary>Registr sahifasining sukut va eng katta o'lchami (F10.01).</summary>
+    public const int DefaultPageSize = 50;
+    public const int MaxPageSize = 200;
+
+    /// <summary>
+    /// <b>Audit yorlig'i.</b> <c>AuditService</c> da <c>EntityInvoice</c>
+    /// konstantasi YO'Q, u fayl esa bu vazifada tegilmaydigan umumiy fayl
+    /// (slice egasi bitta yurishda qo'shadi). Shu sababli yorliq vaqtincha
+    /// shu yerda turadi — qiymati AYNAN "Invoice", ya'ni konstanta
+    /// <c>AuditService</c> ga ko'chganda audit tarixi uzilmaydi.
+    /// </summary>
+    public const string AuditEntity = "Invoice";
+
+    /// <summary>
+    /// <b>HISOB-FAKTURANI BEKOR QILISH QULFI (advisory lock).</b> Kalit satr
+    /// bilan nomlangan (<c>invoice_void:{id}</c>), chunki advisory lock'ning
+    /// 64-bitli fazosi butun bazada YAGONA: xom <c>id</c> hash'i
+    /// <c>billing_guards.sql</c> dagi taqsimot qulfi, <c>ExpenseService</c> ning
+    /// tasdiq qulfi yoki <c>CashShiftService</c> ning chek qulfi bilan
+    /// tasodifan to'qnashib, bir-biriga aloqasi yo'q ikki amalni navbatga
+    /// qo'yardi. Batafsil: <see cref="VoidAsync"/>.
+    /// </summary>
+    private const string VoidLockSql = "SELECT pg_advisory_xact_lock(hashtextextended({0}::text, 0))";
+
+    private static string VoidLockKey(Guid invoiceId) => $"invoice_void:{invoiceId:D}";
+
+    /// <summary>Audit qatoridagi <c>actor_name</c> uchun — keshlangan (N+1 ga qarshi).</summary>
+    private readonly ActorNames actors = new(db);
+
+    /// <summary>
+    /// Xom SQL uchun kontekstning o'zi. <see cref="IAppDbContext"/> da
+    /// <c>Database</c> yo'q (u ataylab tor interfeys), advisory lock esa EF
+    /// LINQ bilan ifodalab bo'lmaydigan yagona narsa —
+    /// <see cref="ExpenseService"/> va <see cref="CashShiftService"/> dagi
+    /// bilan bir xil yechim.
+    /// </summary>
+    private readonly DbContext ef = db as DbContext ?? throw new ArgumentException(
+        $"{nameof(InvoiceService)} EF kontekstini talab qiladi: bekor qilish qulfi xom SQL "
+        + "orqali qo'yiladi. Berilgan implementatsiya DbContext emas.", nameof(db));
 
     // =================================================================
     //  Oylik hisoblash
@@ -306,6 +415,98 @@ public sealed class InvoiceService(IAppDbContext db, ILedgerService ledger) : II
         ArgumentNullException.ThrowIfNull(query);
 
         var settings = await SettingsAsync(ct);
+
+        var invoices = await Filtered(query, onlyDebtors: false, settings)
+            .OrderByDescending(i => i.PeriodMonth)
+            .ThenBy(i => i.StudentId)
+            .ThenBy(i => i.Id)
+            .Take(MaxListRows)
+            .ToListAsync(ct);
+
+        var dtos = await ToDtosAsync(invoices, settings, ct);
+
+        // Ikkinchi qavat: SQL filtri `IsOverdue` bilan bir xil bo'lishi kerak
+        // (quyidagi izohga qarang), lekin ekranda ko'rinadigan HAQIQAT —
+        // DTO'ning o'zi. Ular ajralib qolsa bu yerda ushlanadi.
+        return query.OnlyOverdue ? [.. dtos.Where(d => d.IsOverdue)] : dtos;
+    }
+
+    /// <summary>
+    /// <b>Hisob-fakturalar registri</b> — server tomonda sahifalangan ro'yxat
+    /// va butun FILTR bo'yicha (sahifa bo'yicha emas) yakun. Vazifa: F10.01.
+    ///
+    /// <para>
+    /// Nega <see cref="ListAsync"/> yetmaydi: uning shartnomasi P1-06 da
+    /// muzlatilgan (sahifalash yo'q) va u <see cref="MaxListRows"/> da kesadi,
+    /// ya'ni yakun "kesilgunicha bo'lgan qatorlar" bo'yicha chiqardi. Bu yerda
+    /// soni ham, yakuni ham AGREGAT so'rovdan olinadi — kesish ta'sir qilmaydi.
+    /// </para>
+    /// </summary>
+    public async Task<InvoicePageDto> ListPageAsync(
+        InvoicePageQuery query, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(query);
+
+        var settings = await SettingsAsync(ct);
+        var page = Math.Max(1, query.Page);
+        var size = Math.Clamp(query.PageSize, 1, MaxPageSize);
+
+        var q = Filtered(query.ToQuery(), query.OnlyDebtors, settings);
+
+        var total = await q.CountAsync(ct);
+
+        var gross = await q.SumAsync(i => (decimal?)i.Amount, ct) ?? 0m;
+        var discount = await q.SumAsync(i => (decimal?)i.Discount, ct) ?? 0m;
+
+        // To'langan summa — KUCHDAGI taqsimotlardan (storno qilingani kirmaydi).
+        var paid = await EffectiveAllocations()
+            .Where(a => q.Select(i => i.Id).Contains(a.InvoiceId))
+            .SumAsync(a => (decimal?)a.Amount, ct) ?? 0m;
+
+        var payable = decimal.Round(gross - discount, MoneyScale);
+        paid = decimal.Round(paid, MoneyScale);
+
+        var rows = await q
+            // Eng yangi oy birinchi; oy ichida yozilish tartibida. O'quvchi
+            // ismi bo'yicha saralash JOIN talab qilardi va registrning asosiy
+            // savoli "oxirgi oy nima hisoblandi" — ism bo'yicha qidiruv esa
+            // filtrda (o'quvchi / sinf).
+            .OrderByDescending(i => i.PeriodMonth)
+            .ThenByDescending(i => i.CreatedAt)
+            .ThenBy(i => i.Id)
+            .Skip((page - 1) * size)
+            .Take(size)
+            .ToListAsync(ct);
+
+        var dtos = await ToDtosAsync(rows, settings, ct);
+
+        // Sinf — faqat SHU sahifadagi o'quvchilar uchun, bitta so'rov bilan.
+        var studentIds = rows.Select(i => i.StudentId).Distinct().ToList();
+        Dictionary<string, string> classNames = studentIds.Count == 0
+            ? []
+            : await db.Students.AsNoTracking()
+                .Where(s => studentIds.Contains(s.Id))
+                .Select(s => new { s.Id, s.ClassName })
+                .ToDictionaryAsync(s => s.Id, s => s.ClassName, StringComparer.Ordinal, ct);
+
+        return new InvoicePageDto(
+            dtos, page, size, total,
+            new InvoiceTotalsDto(
+                decimal.Round(gross, MoneyScale),
+                decimal.Round(discount, MoneyScale),
+                payable,
+                paid,
+                decimal.Round(payable - paid, MoneyScale)),
+            classNames);
+    }
+
+    /// <summary>
+    /// Registr va ro'yxat uchun UMUMIY filtr — ikki joyda ikki xil bo'lib
+    /// ketmasin (aks holda yakun bilan qatorlar bir-biriga to'g'ri kelmasdi).
+    /// </summary>
+    private IQueryable<Invoice> Filtered(
+        InvoiceQuery query, bool onlyDebtors, BillingSettings settings)
+    {
         var q = db.Invoices.AsNoTracking();
 
         if (!string.IsNullOrWhiteSpace(query.StudentId))
@@ -327,24 +528,32 @@ public sealed class InvoiceService(IAppDbContext db, ILedgerService ledger) : II
         if (!string.IsNullOrWhiteSpace(query.ClassName))
             q = q.Where(i => db.Students.Any(s => s.Id == i.StudentId && s.ClassName == query.ClassName));
 
+        // "Faqat qarzdorlar" = qoldig'i bor. Holat AYNAN shu ayirmadan
+        // hisoblanadi (`StatusFor`), shuning uchun qo'shimcha so'rov kerak emas.
+        if (onlyDebtors)
+            q = q.Where(i => i.Status == InvoiceStatus.Open || i.Status == InvoiceStatus.Partial);
+
         if (query.OnlyOverdue)
         {
-            // Qo'pol filtr BAZADA (indeks: status, due_on) — aniq javob to'langan
-            // summa ma'lum bo'lgandan keyin, DTO darajasida beriladi.
+            // <see cref="IsOverdue"/> ning SQL dagi AYNAN o'zi:
+            //     boundary = max(period_month + (overdue_after_day − 1) kun, due_on)
+            //     muddati o'tgan  ⟺  today > boundary  ∧  qoldiq > 0
+            //
+            // `period_month + n < today` ni `period_month < today − n` ga
+            // aylantiramiz: o'ng tomon C# da hisoblangan KONSTANTA bo'lib
+            // qoladi, ya'ni `DateOnly.AddDays` ni SQL ga tarjima qilish shart
+            // emas va indeks (period_month) ishlaydi.
+            //
+            // Yaxlitlash (`DayInMonth`) bu yerda ahamiyatsiz: sozlama 1..28
+            // oralig'ida (baza cheklaydi), ya'ni oy uzunligidan oshmaydi.
             var today = AppClock.Today;
+            var cutoff = today.AddDays(-(settings.OverdueAfterDay - 1));
             q = q.Where(i => (i.Status == InvoiceStatus.Open || i.Status == InvoiceStatus.Partial)
-                             && i.DueOn < today);
+                             && i.DueOn < today
+                             && i.PeriodMonth < cutoff);
         }
 
-        var invoices = await q
-            .OrderByDescending(i => i.PeriodMonth)
-            .ThenBy(i => i.StudentId)
-            .ThenBy(i => i.Id)
-            .Take(MaxListRows)
-            .ToListAsync(ct);
-
-        var dtos = await ToDtosAsync(invoices, settings, ct);
-        return query.OnlyOverdue ? [.. dtos.Where(d => d.IsOverdue)] : dtos;
+        return q;
     }
 
     /// <inheritdoc />
@@ -427,34 +636,84 @@ public sealed class InvoiceService(IAppDbContext db, ILedgerService ledger) : II
     }
 
     /// <inheritdoc />
+    ///
+    /// <remarks>
+    /// <para>
+    /// <b>Bu metod F10.02 da UCHTA nosozlikdan tozalandi</b>
+    /// (docs/modules/finance-parity.md §2.10):
+    /// </para>
+    /// <list type="number">
+    ///   <item>
+    ///     <b>Storno qilingan to'lov ham "taqsimot" deb hisoblanardi.</b> Shart
+    ///     <c>PaymentAllocations.Any(a =&gt; a.InvoiceId == id)</c> edi, ya'ni
+    ///     bir marta to'langan va keyin STORNO qilingan hisob-fakturani
+    ///     HECH QACHON bekor qilib bo'lmasdi: taqsimot qatori o'chmaydi
+    ///     (jadval o'zgarmas), storno esa uni faqat KUCHSIZ qiladi. Endi
+    ///     <see cref="EffectiveAllocationsFor"/> ishlatiladi.
+    ///   </item>
+    ///   <item>
+    ///     <b>Istisnolar <c>[BillingFault]</c> ga tanish emas edi.</b>
+    ///     <c>ArgumentException</c> / <c>InvalidOperationException</c> filtrdan
+    ///     o'tib ketib, foydalanuvchiga <b>500</b> bo'lib ko'rinardi. Endi
+    ///     hammasi <see cref="BillingRuleException"/> — 400 / 404 / 403 / 409.
+    ///   </item>
+    ///   <item>
+    ///     <b>Ikki qavatli nazorat rad etishi sababsiz 500 edi.</b>
+    ///     <c>LedgerService.ReverseAsync</c> partiyani QO'YGAN odamga storno'ni
+    ///     taqiqlaydi (SPEC §4.5), oylik hisoblashni esa fon xizmati BIRINCHI
+    ///     direktor nomidan yozadi (<c>BillingAccrualService.ResolveActorAsync</c>)
+    ///     — ya'ni o'sha direktor avtomatik hisoblangan oyni bekor qila olmasdi
+    ///     va nima uchun ekanini bilmasdi. Qoida SAQLANADI (u firibgarlikka
+    ///     qarshi), lekin endi oldindan tekshiriladi va 403 bilan AYTIB beriladi.
+    ///   </item>
+    /// </list>
+    ///
+    /// <para>
+    /// <b>QULF (advisory lock).</b> "Tekshir, keyin yoz" naqshi pul ustida
+    /// qulfsiz ishonchsiz: ikkita parallel bekor qilish READ COMMITTED da
+    /// ikkalasi ham "hali storno qilinmagan" holatini ko'radi va ikkalasi ham
+    /// jurnalga ko'zgu partiya qo'yadi — qarz ikki marta qaytariladi. AYNAN shu
+    /// xato <c>ExpenseService.ApproveAsync</c> da o'lchangan (bitta chiqim
+    /// jurnalga olti marta tushgan), yechimi ham o'sha: tranzaksiya ichida
+    /// <c>pg_advisory_xact_lock</c>, so'ng qatorni qulf OSTIDA qayta o'qish.
+    /// </para>
+    /// </remarks>
     public async Task<InvoiceDto> VoidAsync(
         Guid invoiceId, string reason, string actorId, CancellationToken ct = default)
     {
-        if (string.IsNullOrWhiteSpace(reason))
-            throw new ArgumentException("Bekor qilish sababi majburiy (SPEC §4.3).", nameof(reason));
+        var cleanReason = string.IsNullOrWhiteSpace(reason) ? null : reason.Trim();
+        if (cleanReason is null)
+            throw BillingRuleException.Invalid("reason_required",
+                "Bekor qilish sababi majburiy (SPEC §4.3) — u jurnal yozuvida qoladi.");
         if (string.IsNullOrWhiteSpace(actorId))
-            throw new ArgumentException("Bekor qiluvchi noma'lum (actorId bo'sh).", nameof(actorId));
-
-        var invoice = await db.Invoices.FirstOrDefaultAsync(i => i.Id == invoiceId, ct)
-            ?? throw new InvalidOperationException($"Hisob-faktura topilmadi: {invoiceId}.");
-
-        if (invoice.Status == InvoiceStatus.Void)
-            throw new InvalidOperationException("Bu hisob-faktura allaqachon bekor qilingan.");
-
-        // To'lov tushgan oyni bekor qilib bo'lmaydi: pul qayerga ketganini
-        // tushuntirib bo'lmay qolardi. Avval to'lovni storno qilish kerak.
-        if (await db.PaymentAllocations.AnyAsync(a => a.InvoiceId == invoiceId, ct))
-            throw new InvalidOperationException(
-                "Taqsimoti bor hisob-fakturani bekor qilib bo'lmaydi — avval to'lovni storno qiling.");
+            throw BillingRuleException.Invalid("actor_required",
+                "Bekor qiluvchi noma'lum — u JWT claim'idan olinadi (SPEC §4.4).");
 
         await using var tx = await db.BeginTransactionAsync(ct);
+
+        await ef.Database.ExecuteSqlRawAsync(VoidLockSql, [VoidLockKey(invoiceId)], ct);
+
+        // Qulfdan KEYIN o'qiladi: qulfgacha o'qilgan holat allaqachon eskirgan
+        // bo'lishi mumkin (parallel urinish o'tib ketgan bo'lardi).
+        var invoice = await db.Invoices.FirstOrDefaultAsync(i => i.Id == invoiceId, ct)
+            ?? throw BillingRuleException.NotFound("invoice_not_found", "Hisob-faktura topilmadi.");
+
+        if (invoice.Status == InvoiceStatus.Void)
+            throw BillingRuleException.Conflict("already_void",
+                "Bu hisob-faktura allaqachon bekor qilingan.");
+
+        // (1) KUCHDAGI to'lov tushgan oyni bekor qilib bo'lmaydi: pul qayerga
+        // ketganini tushuntirib bo'lmay qolardi. Storno qilingan to'lov esa
+        // to'siq EMAS — uning puli allaqachon qaytarilgan.
+        if (await EffectiveAllocationsFor(invoiceId).AnyAsync(ct))
+            throw BillingRuleException.Conflict("has_effective_allocation",
+                "Bu hisob-fakturaga to'lov taqsimlangan — avval to'lovni storno qiling, "
+                + "keyin hisob-fakturani bekor qilasiz.");
 
         // AVVAL JURNAL, keyin status — tartib muhim.
         //
         // Jurnalni qaytarmasak, qarz (receivable) bekor qilingan oy uchun osilib
-        // qolardi. `ReverseAsync` esa ikki qavatli nazoratni tekshiradi (SPEC §4.5):
-        // yozuvni qo'ygan odam uni o'zi teskari qila olmaydi, ya'ni hisoblashni
-        // boshlagan admin o'sha oyni o'zi bekor qila olmaydi.
+        // qolardi.
         //
         // Teskari tartibda (avval status, keyin jurnal) rad etilgan urinish
         // bazada orqaga qaytardi, lekin XOTIRADAGI entity "void" bo'lib qolardi
@@ -464,11 +723,59 @@ public sealed class InvoiceService(IAppDbContext db, ILedgerService ledger) : II
         var anchor = await db.LedgerEntries.AsNoTracking()
             .Where(e => e.RefType == LedgerRefType.Invoice && e.RefId == invoiceId && e.ReversalOf == null)
             .OrderBy(e => e.Id)
+            .Select(e => new { e.Id, e.CreatedBy })
             .FirstOrDefaultAsync(ct);
-        if (anchor is not null)
-            await ledger.ReverseAsync(anchor.Id, reason, actorId, ct);
 
+        if (anchor is not null)
+        {
+            // (3) SPEC §4.5 — ikki qavatli nazorat. Qoida `LedgerService` da
+            // ham bor; bu yerda OLDINDAN tekshiriladi, chunki u yerdagi xato
+            // matni "nima qilish kerak" degan savolga javob bermaydi.
+            if (string.Equals(anchor.CreatedBy, actorId, StringComparison.Ordinal))
+                throw BillingRuleException.Forbidden("self_reversal",
+                    "Jurnalga o'zingiz qo'ygan hisob-fakturani o'zingiz bekor qila olmaysiz "
+                    + "(SPEC §4.5) — buni boshqa admin yoki direktor qilishi kerak.");
+
+            try
+            {
+                await ledger.ReverseAsync(anchor.Id, cleanReason, actorId, ct);
+            }
+            // (2) `BillingRuleException` ning O'ZI `InvalidOperationException` dan
+            // meros oladi — avval tutilib, o'zgarishsiz o'tkaziladi.
+            catch (BillingRuleException)
+            {
+                throw;
+            }
+            catch (InvalidOperationException ex)
+            {
+                // Jurnal darajasidagi qoidalar yuqorida tekshirilgan; bu yerga
+                // tushish ma'lumot nomutanosibligini bildiradi. 500 o'rniga
+                // sababni ko'rsatgan 409 foydaliroq.
+                throw BillingRuleException.Conflict("ledger_reversal_refused", ex.Message);
+            }
+        }
+
+        // Audit "oldingi holat" ni YOLG'ON ko'rsatmasin: u `open` ham, `paid`
+        // ham bo'lishi mumkin (to'lanadigan summasi 0 bo'lgan qator, yoki
+        // to'lovi storno qilinib qayta hisoblangan holat).
+        var previousStatus = invoice.Status;
         invoice.Status = InvoiceStatus.Void;
+
+        // Audit (SPEC §4.6). Jurnal partiyasi qaytarilganda `LedgerService` o'z
+        // qatorini yozadi, lekin u "qaysi hisob-faktura" degan savolga javob
+        // bermaydi — va to'lanadigan summasi 0 bo'lgan (100% chegirma)
+        // hisob-fakturada jurnal partiyasi UMUMAN yo'q, ya'ni usiz bekor qilish
+        // hech qanday iz qoldirmasdi.
+        db.AuditLogs.Add(AuditService.Entry(
+            AuditEntity, invoice.Id.ToString("D"), "void",
+            $"Hisob-faktura BEKOR qilindi: {invoice.PeriodMonth:yyyy-MM}, "
+            + $"{AuditService.Money(invoice.Amount - invoice.Discount)} so'm — sabab: {cleanReason}",
+            actorId: actorId,
+            actorName: await actors.OfAsync(actorId, ct),
+            before: new { invoice.Id, invoice.PeriodMonth, invoice.Amount, invoice.Discount, Status = previousStatus },
+            after: new { invoice.Id, invoice.PeriodMonth, invoice.Amount, invoice.Discount, invoice.Status },
+            studentId: invoice.StudentId));
+
         await db.SaveChangesAsync(ct);
 
         await tx.CommitAsync(ct);
@@ -587,17 +894,39 @@ public sealed class InvoiceService(IAppDbContext db, ILedgerService ledger) : II
     private async Task<Dictionary<Guid, decimal>> PaidByInvoiceAsync(
         List<Guid> invoiceIds, CancellationToken ct)
     {
-        var rows = await db.PaymentAllocations.AsNoTracking()
+        var rows = await EffectiveAllocations()
             .Where(a => invoiceIds.Contains(a.InvoiceId))
-            .Join(db.Payments.AsNoTracking()
-                    .Where(p => p.ReversalOf == null && !db.Payments.Any(r => r.ReversalOf == p.Id)),
-                a => a.PaymentId, p => p.Id, (a, _) => a)
             .GroupBy(a => a.InvoiceId)
             .Select(g => new { InvoiceId = g.Key, Total = g.Sum(x => x.Amount) })
             .ToListAsync(ct);
 
         return rows.ToDictionary(r => r.InvoiceId, r => r.Total);
     }
+
+    /// <summary>
+    /// HAQIQATAN kuchda bo'lgan taqsimotlar: storno qatorining taqsimoti ham,
+    /// storno qilingan asl to'lovning taqsimoti ham chiqarib tashlanadi.
+    ///
+    /// <para>
+    /// <b>Bu ta'rifning ASLI</b> — <c>FinanceReportQueries.EffectiveAllocations</c>
+    /// (u yerda <c>private</c>, shuning uchun chaqirib bo'lmaydi) va
+    /// <c>PaymentService.EffectiveAllocations</c>. Uchalasi bir xil bo'lishi
+    /// SHART: agar ular ajralib ketsa, bitta hisob-faktura qarzdorlar
+    /// hisobotida "to'langan", registrda esa "ochiq" bo'lib ko'rinardi. Buni
+    /// <c>InvoiceRegisterTests.Storno_dan_keyin_registr_va_qarzdorlar_hisoboti_bir_xil_deydi</c>
+    /// har yurishda tekshiradi.
+    /// </para>
+    /// </summary>
+    private IQueryable<PaymentAllocation> EffectiveAllocations() =>
+        db.PaymentAllocations.AsNoTracking()
+            // (1) qatorning o'zi storno to'loviga tegishli;
+            .Where(a => !db.Payments.Any(p => p.Id == a.PaymentId && p.ReversalOf != null))
+            // (2) asl to'lov keyinchalik storno qilingan.
+            .Where(a => !db.Payments.Any(r => r.ReversalOf == a.PaymentId));
+
+    /// <summary>Bitta hisob-fakturaning kuchdagi taqsimotlari (<see cref="VoidAsync"/> uchun).</summary>
+    private IQueryable<PaymentAllocation> EffectiveAllocationsFor(Guid invoiceId) =>
+        EffectiveAllocations().Where(a => a.InvoiceId == invoiceId);
 
     /// <summary>O'quvchining to'lovlari, taqsimoti bilan — uchta so'rov, N+1 siz.</summary>
     private async Task<List<PaymentDto>> PaymentsForStudentAsync(

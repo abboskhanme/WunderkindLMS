@@ -13,7 +13,8 @@
  * javob yo'q, chunki backend'da bunday endpoint yozilmaydi.
  */
 import type { AllocationSuggestion, Payment, PaymentMethod } from '@/types'
-// Tayyor bo'lgach ochiladi: import { api } from '../client'
+// Qolganlari tayyor bo'lgach ochiladi; `reversePayment` ALLAQACHON ulangan.
+import { api } from '../client'
 import { notImplemented } from './notImplemented'
 
 /** To'lovning bitta hisob-fakturaga yo'naltiriladigan qismi. */
@@ -98,8 +99,11 @@ export async function getPayments(filters: PaymentFilters = {}): Promise<Payment
  * Original qator tegilmaydi; qarshi qator qo'shiladi.
  */
 export async function reversePayment(id: string, reason: string): Promise<Payment> {
-  // return (await api.post<Payment>(`/admin/billing/payments/${id}/reverse`, { reason })).data
-  return notImplemented(`POST /admin/billing/payments/${id}/reverse`, 'P1-11', { reason })
+  // ULANDI (F9.02): endpoint `PaymentsController.Reverse` da allaqachon bor
+  // edi, uni chaqiradigan ekran esa yo'q edi. Tranzaksiyalar jurnali
+  // (`pages/admin/finance/TransactionsPage.tsx`) shu funksiyani chaqiradi.
+  // Imzo O'ZGARMADI — fayl boshidagi shartnoma shart qilganidek.
+  return (await api.post<Payment>(`/admin/billing/payments/${id}/reverse`, { reason })).data
 }
 
 /** Chek PDF'i (blob). Kassir ekranida yuklab olish/chop etish uchun. */
