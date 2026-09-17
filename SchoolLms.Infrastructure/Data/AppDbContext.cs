@@ -98,6 +98,15 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<Certificate> Certificates => Set<Certificate>();
     public DbSet<StudentArchiveReason> StudentArchiveReasons => Set<StudentArchiveReason>();
 
+    // O'quv guruhlari va sinf a'zoligi (docs/modules/students-parity.md §3.1).
+    // Konfiguratsiya: StudyGroupModel.cs. Hozircha ilovadan HECH KIM o'qimaydi —
+    // `students.class_name` haqiqat manbai bo'lib qoladi (1-slice xizmati chiqmaguncha).
+    public DbSet<StudyGroup> StudyGroups => Set<StudyGroup>();
+    public DbSet<StudyGroupClass> StudyGroupClasses => Set<StudyGroupClass>();
+    public DbSet<StudyGroupTeacher> StudyGroupTeachers => Set<StudyGroupTeacher>();
+    public DbSet<StudyGroupMember> StudyGroupMembers => Set<StudyGroupMember>();
+    public DbSet<ClassMembership> ClassMemberships => Set<ClassMembership>();
+
     /// <inheritdoc />
     public Task<Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction> BeginTransactionAsync(
         CancellationToken cancellationToken = default) =>
@@ -223,6 +232,11 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
         // (§2.2), `discipline_reasons` ning yangi ustunlari (§6.3) va
         // `school_meta` ning to'rtta bayrog'i (§5.5). To'rtinchi alohida fayl.
         ParityModel.Apply(b);
+
+        // ----- O'quv guruhlari va sinf a'zoligi (students-parity.md §3.1) -----
+        // Beshinchi alohida fayl. `owner_kind` (beshta dars jadvali),
+        // `subjects.is_groupable` va `school_meta.group_lessons_enabled` ham shu yerda.
+        StudyGroupModel.Apply(b);
 
         // ----- PostgreSQL: vaqt turi -----
         // Tizim sanalarni Toshkent "devor soati" sifatida saqlaydi (AppClock.Now — Kind=Unspecified),

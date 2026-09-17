@@ -207,6 +207,14 @@ public class Subject
 {
     public string Id { get; set; } = Guid.NewGuid().ToString();
     public string Name { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Fan "guruhlarga bo'linadi" — faqat shunday fanga o'quv guruhi
+    /// (<see cref="StudyGroup"/>) ochiladi (students-parity.md §2.1.1, G-9).
+    /// Sukut bo'yicha <b>false</b>: mavjud fanlarning hech biri guruhli emas,
+    /// maktab kerakli fanni o'zi belgilaydi.
+    /// </summary>
+    public bool IsGroupable { get; set; }
 }
 
 /// <summary>Sinf.</summary>
@@ -284,6 +292,15 @@ public class JournalEntry
     public int? Mastery { get; set; }
     /// <summary>Bo'linish: 0 = butun sinf, 1 = 1-guruh, 2 = 2-guruh. ScheduleLesson.SubGroup'ga mos.</summary>
     public int SubGroup { get; set; }
+
+    /// <summary>
+    /// Qatorning egasi: <c>class</c> (<see cref="ClassId"/> — sinf id'si) yoki
+    /// <c>group</c> (<see cref="ClassId"/> — o'quv guruhi id'si). Qiymatlar:
+    /// <see cref="LessonOwnerKind"/>. Mavjud har bir qator va yangi yozilgan har
+    /// bir qator sukut bo'yicha <c>class</c> — ya'ni bugungi kod o'zgarishsiz
+    /// ishlaydi (students-parity.md §2.1.4, §3.1).
+    /// </summary>
+    public string OwnerKind { get; set; } = LessonOwnerKind.Class;
 }
 
 /// <summary>
@@ -300,6 +317,15 @@ public class QuarterGrade
     public string StudentId { get; set; } = string.Empty;
     /// <summary>Chorak bahosi (2-5).</summary>
     public int Grade { get; set; }
+
+    /// <summary>
+    /// Qatorning egasi: <c>class</c> (<see cref="ClassId"/> — sinf id'si) yoki
+    /// <c>group</c> (<see cref="ClassId"/> — o'quv guruhi id'si). Qiymatlar:
+    /// <see cref="LessonOwnerKind"/>. Mavjud har bir qator va yangi yozilgan har
+    /// bir qator sukut bo'yicha <c>class</c> — ya'ni bugungi kod o'zgarishsiz
+    /// ishlaydi (students-parity.md §2.1.4, §3.1).
+    /// </summary>
+    public string OwnerKind { get; set; } = LessonOwnerKind.Class;
 }
 
 /// <summary>Dars mavzusi va uyga vazifa (sana bo'yicha).</summary>
@@ -318,6 +344,15 @@ public class LessonNote
     public bool Conducted { get; set; }
     /// <summary>Bo'linish: 0 = butun sinf, 1 = 1-guruh, 2 = 2-guruh. ScheduleLesson.SubGroup'ga mos.</summary>
     public int SubGroup { get; set; }
+
+    /// <summary>
+    /// Qatorning egasi: <c>class</c> (<see cref="ClassId"/> — sinf id'si) yoki
+    /// <c>group</c> (<see cref="ClassId"/> — o'quv guruhi id'si). Qiymatlar:
+    /// <see cref="LessonOwnerKind"/>. Mavjud har bir qator va yangi yozilgan har
+    /// bir qator sukut bo'yicha <c>class</c> — ya'ni bugungi kod o'zgarishsiz
+    /// ishlaydi (students-parity.md §2.1.4, §3.1).
+    /// </summary>
+    public string OwnerKind { get; set; } = LessonOwnerKind.Class;
 }
 
 /// <summary>Sinf uchun nomli dars jadvali varianti.</summary>
@@ -327,6 +362,15 @@ public class ScheduleTemplate
     public string ClassId { get; set; } = string.Empty;
     public string Name { get; set; } = string.Empty;
     public List<ScheduleLesson> Lessons { get; set; } = new();
+
+    /// <summary>
+    /// Qatorning egasi: <c>class</c> (<see cref="ClassId"/> — sinf id'si) yoki
+    /// <c>group</c> (<see cref="ClassId"/> — o'quv guruhi id'si). Qiymatlar:
+    /// <see cref="LessonOwnerKind"/>. Mavjud har bir qator va yangi yozilgan har
+    /// bir qator sukut bo'yicha <c>class</c> — ya'ni bugungi kod o'zgarishsiz
+    /// ishlaydi (students-parity.md §2.1.4, §3.1).
+    /// </summary>
+    public string OwnerKind { get; set; } = LessonOwnerKind.Class;
 }
 
 /// <summary>Jadvaldagi bitta dars katagi.</summary>
@@ -356,6 +400,15 @@ public class WeekAssignment
     public int Quarter { get; set; }
     public int Week { get; set; }
     public string? TemplateId { get; set; }
+
+    /// <summary>
+    /// Qatorning egasi: <c>class</c> (<see cref="ClassId"/> — sinf id'si) yoki
+    /// <c>group</c> (<see cref="ClassId"/> — o'quv guruhi id'si). Qiymatlar:
+    /// <see cref="LessonOwnerKind"/>. Mavjud har bir qator va yangi yozilgan har
+    /// bir qator sukut bo'yicha <c>class</c> — ya'ni bugungi kod o'zgarishsiz
+    /// ishlaydi (students-parity.md §2.1.4, §3.1).
+    /// </summary>
+    public string OwnerKind { get; set; } = LessonOwnerKind.Class;
 }
 
 /// <summary>Davomat sababi (kelmaganlik turi).</summary>
@@ -741,6 +794,23 @@ public class SchoolMeta
     /// </para>
     /// </summary>
     public bool ShowLearningProgressInParentDashboard { get; set; } = true;
+
+    // =======================================================================
+    //  O'quv guruhlari — students-parity.md §2.1.4, §4.3 (cut-over).
+    // =======================================================================
+
+    /// <summary>
+    /// Guruh darslari yoqilganmi — cut-over o'chirgichi (§4.3).
+    ///
+    /// <para>
+    /// Sukut bo'yicha <b>false</b>. O'chiq paytda guruhlar va ularning ro'yxati
+    /// yaratiladi, lekin guruhga tegishli jadval haftaga biriktirilmaydi —
+    /// ya'ni birorta dars, jurnal, hisobot, maosh yoki turniket raqami
+    /// o'zgarmaydi. Uni superadmin cut-over tekshiruvidan keyin yoqadi
+    /// (audit bilan); migratsiya emas.
+    /// </para>
+    /// </summary>
+    public bool GroupLessonsEnabled { get; set; }
 }
 
 /// <summary>Yangi o'quv yiliga o'tishda saqlangan eski o'quv yili arxivi (to'liq snapshot).</summary>
