@@ -322,6 +322,95 @@ public class FinanceReportsTests(ApiFixture fixture, ITestOutputHelper output) :
         Assert.Equal(new[] { big, small }, all.Select(r => r.StudentId).ToArray());
     }
 
+    /// <summary>
+    /// <b>Oy filtri (§2.2 F2.02).</b> "Sentyabr qarzi" — sentyabr
+    /// HISOB-FAKTURALARINING qoldig'i: boshqa oyning qarzi ham, boshqa oyning
+    /// to'lovi ham unga aralashmaydi. Storno esa oy ichida ham ishlaydi —
+    /// bekor qilingan to'lov qarzni yopmaydi.
+    ///
+    /// <para>
+    /// Oylar yig'indisi jami qarzga TENG bo'lishi shart: aks holda ikki ekran
+    /// (oy tanlangan va tanlanmagan) bir savolga har xil javob berardi.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task Oy_filtri_faqat_shu_oyning_qoldigini_beradi()
+    {
+        await using var db = await NewBillingDbAsync("debtormonth");
+        var (cashierId, shiftId) = await SeedCashDeskAsync(db);
+        var tuition = await CategoryIdAsync(db, "tuition");
+        var bus = await CategoryIdAsync(db, "bus");
+
+        var september = new DateOnly(2025, 9, 1);
+        var october = new DateOnly(2025, 10, 1);
+
+        var alisher = Guid.NewGuid().ToString();
+        var nodira = Guid.NewGuid().ToString();
+        db.Students.Add(NewStudent(alisher, "Sentyabr Qarzdori", "6-A"));
+        db.Students.Add(NewStudent(nodira, "Oktyabr Qarzdori", "6-A"));
+
+        // Alisher: sentyabrda 1 000 000 (300 000 to'ladi) + avtobus 200 000,
+        // oktyabrda esa to'liq to'laydi.
+        var sepTuition = NewInvoice(alisher, tuition, september, 1_000_000m);
+        var sepBus = NewInvoice(alisher, bus, september, 200_000m);
+        var octTuition = NewInvoice(alisher, tuition, october, 1_000_000m);
+        // Nodira: sentyabrda qarzi yo'q, oktyabrda 500 000.
+        var octNodira = NewInvoice(nodira, tuition, october, 500_000m);
+        db.Invoices.AddRange(sepTuition, sepBus, octTuition, octNodira);
+        await db.SaveChangesAsync();
+
+        await PayAsync(db, alisher, cashierId, shiftId, 300_000m, [(sepTuition.Id, 300_000m)]);
+        await PayAsync(db, alisher, cashierId, shiftId, 1_000_000m, [(octTuition.Id, 1_000_000m)]);
+
+        // Avtobus uchun to'lov keyin STORNO qilindi — sentyabr qarzi qoladi.
+        var reversed = await PayAsync(db, alisher, cashierId, shiftId, 200_000m, [(sepBus.Id, 200_000m)]);
+        await PayAsync(db, alisher, cashierId, shiftId, 200_000m, [(sepBus.Id, 200_000m)],
+            reversalOf: reversed);
+
+        var queries = new FinanceReportQueries(db);
+
+        var sepRows = await queries.DebtorsAsync(new DebtorReportQuery(Month: september));
+        var sep = Assert.Single(sepRows);
+        Assert.Equal(alisher, sep.StudentId);
+        // (1 000 000 − 300 000) + 200 000 — oktyabr umuman qatnashmaydi.
+        Assert.Equal(900_000m, sep.Debt);
+        Assert.Equal(sep.Debt, sep.ByCategory.Sum(c => c.Debt));
+        Assert.Equal(700_000m, sep.ByCategory.Single(c => c.CategoryCode == "tuition").Debt);
+        Assert.Equal(200_000m, sep.ByCategory.Single(c => c.CategoryCode == "bus").Debt);
+        Assert.Equal(september, sep.OldestUnpaidMonth);
+
+        // Oktyabrda Alisher to'lagan — ro'yxatda faqat Nodira qoladi.
+        var octRows = await queries.DebtorsAsync(new DebtorReportQuery(Month: october));
+        var oct = Assert.Single(octRows);
+        Assert.Equal(nodira, oct.StudentId);
+        Assert.Equal(500_000m, oct.Debt);
+
+        // Oyning KUNI ahamiyatsiz — oyning o'rtasi ham o'sha oy.
+        var midMonth = await queries.DebtorsAsync(new DebtorReportQuery(Month: new DateOnly(2025, 9, 17)));
+        Assert.Equal(900_000m, Assert.Single(midMonth).Debt);
+
+        // Oysiz so'rov — o'sha ikki oyning yig'indisi.
+        var all = await queries.DebtorsAsync(new DebtorReportQuery());
+        Assert.Equal(
+            sepRows.Sum(r => r.Debt) + octRows.Sum(r => r.Debt),
+            all.Sum(r => r.Debt));
+    }
+
+    /// <summary>
+    /// Noto'g'ri oy formati — 400. Jimgina e'tiborsiz qoldirilsa, ekran butun
+    /// tarixning qarzini "sentyabr qarzi" deb ko'rsatib turardi.
+    /// </summary>
+    [Fact]
+    public async Task Notogri_oy_formati_400_qaytaradi()
+    {
+        using var client = await fixture.Api.ClientAsAsync(Roles.Admin);
+
+        var response = await client.GetAsync($"{Debtors}?month=sentabr");
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Contains("Oy formati", await response.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+    }
+
     // =====================================================================
     //  4. P&L — daromad − chiqim
     // =====================================================================

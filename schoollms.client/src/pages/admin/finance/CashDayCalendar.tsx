@@ -126,9 +126,12 @@ function DayCell({
     <button
       type="button"
       onClick={() => onSelect(day.date)}
-      title={`${day.date} · kun oxiridagi qoldiq: ${formatMoney(day.closing)}`}
+      title={
+        `${day.date} · kirim: ${formatMoney(day.inflow)} · chiqim: ${formatMoney(day.outflow)}`
+        + ` · kun oxiridagi qoldiq: ${formatMoney(day.closing)}`
+      }
       className={cn(
-        'flex h-16 flex-col items-start justify-between rounded-xl border p-1.5 text-left transition-colors',
+        'flex h-20 flex-col items-start justify-between rounded-xl border p-1.5 text-left transition-colors',
         isSelected
           ? 'border-brand-400 bg-brand-50'
           : day.hasMovement
@@ -145,21 +148,33 @@ function DayCell({
         {Number(day.date.slice(8, 10))}
       </span>
 
-      <span className={cn('w-full truncate text-xs font-semibold', signClass(day.net))}>
-        {day.hasMovement ? withSign(day.net) : '—'}
-      </span>
+      {/*
+        §2.8 F8.03 — katakda kirim, chiqim va kun oxiridagi qoldiq alohida.
+        Ilgari faqat SOF raqam turardi: "bugun 2 mln" degani 2 mln tushdi
+        deganmi yoki 12 tushib 10 chiqqanmi — javobsiz savol edi.
+        Uchala raqam ham serverdan keladi (`days[]`), bu yerda arifmetika yo'q.
+      */}
+      {day.hasMovement ? (
+        <span className="w-full space-y-px">
+          {day.inflow !== 0 && (
+            <span className="block truncate text-[11px] font-semibold text-emerald-600">
+              +{shortAmount(day.inflow)}
+            </span>
+          )}
+          {day.outflow !== 0 && (
+            <span className="block truncate text-[11px] font-semibold text-red-600">
+              −{shortAmount(day.outflow)}
+            </span>
+          )}
+          <span className="block truncate text-[11px] text-slate-400">
+            {shortAmount(day.closing)}
+          </span>
+        </span>
+      ) : (
+        <span className={cn('w-full truncate text-xs font-semibold', signClass(day.net))}>—</span>
+      )}
     </button>
   )
-}
-
-/**
- * Katakcha tor, shuning uchun qisqartirilgan summa: 12 500 000 → "+12.5M".
- * To'liq raqam `title` da (sichqoncha ustiga borganda) va kun tanlanganda
- * panelning o'zida ko'rinadi.
- */
-function withSign(net: number): string {
-  if (net === 0) return '0'
-  return net > 0 ? `+${shortAmount(net)}` : `−${shortAmount(Math.abs(net))}`
 }
 
 /**

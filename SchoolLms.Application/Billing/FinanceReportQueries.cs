@@ -63,11 +63,24 @@ namespace SchoolLms.Application.Billing;
 /// (<c>overdue_after_day</c> sozlamasi bo'yicha).</param>
 /// <param name="IncludeArchived">Sukut true: maktabdan ketgan o'quvchining
 /// qarzi ham qarz. UI kerak bo'lsa false bilan yashiradi.</param>
+/// <param name="Month">
+/// Bitta HISOB-FAKTURA oyi (<c>invoices.period_month</c>; kuni ahamiyatsiz).
+/// Berilsa, hisobot faqat o'sha oyning hisob-fakturalarini ko'radi va har
+/// qator o'sha oyning qoldig'ini ko'rsatadi.
+///
+/// <para>
+/// Oy — pul kelgan kun EMAS, hisob-faktura oyi. Sabab
+/// <see cref="FinanceReportQueries.CollectionRateAsync"/> da yozilgan:
+/// shundagina "sentyabr qarzi" bir ekranda ham, ikkinchisida ham bir xil
+/// raqam bo'ladi. null = butun tarix bo'yicha jami qarz (sukut).
+/// </para>
+/// </param>
 public record DebtorReportQuery(
     string? ClassName = null,
     decimal MinDebt = 0.01m,
     bool OnlyOverdue = false,
-    bool IncludeArchived = true);
+    bool IncludeArchived = true,
+    DateOnly? Month = null);
 
 /// <summary>
 /// Oyma-oy qarzdorlik jadvalining (arrears pivot) filtri.
@@ -146,8 +159,19 @@ public record CashFlowDto(
 /// saqlangan qoldiq ustuniga murojaat YO'Q, yozish YO'Q, sikl ichida
 /// so'rov YO'Q.
 /// </para>
+/// <para>
+/// <b>Klass <c>partial</c>, chunki hisobot oilasi o'sdi</b> (§2.4, §2.5,
+/// §2.7): yil × oy P&amp;L matritsasi, katakcha ortidagi jurnal satrlari,
+/// toifalar kesimidagi pul oqimi va kunlik panel —
+/// <c>FinanceReportQueries.ProfitLossMatrix.cs</c> va
+/// <c>FinanceReportQueries.CashStatements.cs</c> da. Ular ALOHIDA klass
+/// emas, chunki daromad/chiqim va qarz ta'riflari (
+/// <see cref="Lines"/>, <see cref="Net"/>, <see cref="EffectiveAllocations"/>)
+/// shu yerda turibdi: ikkinchi klass ikkinchi ta'rifni tug'dirardi — aynan
+/// fayl boshidagi ogohlantirish.
+/// </para>
 /// </summary>
-public sealed class FinanceReportQueries(IAppDbContext db)
+public sealed partial class FinanceReportQueries(IAppDbContext db)
 {
     /// <summary>Daromad hisoblari shu prefiks bilan boshlanadi (SPEC §3.7).</summary>
     public const string RevenuePrefix = "revenue:";
@@ -197,12 +221,22 @@ public sealed class FinanceReportQueries(IAppDbContext db)
             students = students.Where(s => s.ClassName == className);
         }
 
+        // Oy filtri BITTA joyda qo'llanadi va uchala so'rov ham shu tor
+        // to'plamdan foydalanadi — aks holda "hisoblangan" bir oyniki,
+        // "to'langan" esa butun tarixniki bo'lib, qarz manfiy chiqardi.
+        var billable = BillableInvoices();
+        if (query.Month is { } month)
+        {
+            var periodMonth = FirstDayOfMonth(month);
+            billable = billable.Where(i => i.PeriodMonth == periodMonth);
+        }
+
         // ---- So'rov 1: o'quvchi × toifa kesimida HISOBLANGAN summa ----
         // Guruhlash BAZADA bo'ladi: 500 o'quvchi × 10 oy × 5 toifa = 25 000
         // qator kirib, ~2 500 qator chiqadi. Xotiraga xom hisob-fakturalarni
         // tortish shart emas.
         var accrued = await (
-            from inv in BillableInvoices()
+            from inv in billable
             join s in students on inv.StudentId equals s.Id
             join c in db.FeeCategories.AsNoTracking() on inv.CategoryId equals c.Id
             group inv by new
@@ -234,7 +268,7 @@ public sealed class FinanceReportQueries(IAppDbContext db)
         // qo'shiladi va hech narsa ikki marta sanalmaydi.
         var paid = await (
             from a in EffectiveAllocations()
-            join inv in BillableInvoices() on a.InvoiceId equals inv.Id
+            join inv in billable on a.InvoiceId equals inv.Id
             join s in students on inv.StudentId equals s.Id
             group a by new { inv.StudentId, inv.CategoryId }
             into g
@@ -248,7 +282,7 @@ public sealed class FinanceReportQueries(IAppDbContext db)
         // hisob-fakturalar bo'yicha — 1-so'rovga sig'maydi.
         var effective = EffectiveAllocations();
         var unpaid = await (
-            from inv in BillableInvoices()
+            from inv in billable
             join s in students on inv.StudentId equals s.Id
             where inv.Amount - inv.Discount > effective.Where(a => a.InvoiceId == inv.Id).Sum(a => a.Amount)
             group inv by inv.StudentId

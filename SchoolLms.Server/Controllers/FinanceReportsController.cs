@@ -56,21 +56,37 @@ public class FinanceReportsController(AppDbContext db) : ControllerBase
     /// </summary>
     /// <param name="className">Sinf bo'yicha filtr (aniq moslik).</param>
     /// <param name="minDebt">Shu summadan kam qarz ko'rsatilmaydi (sukut 0.01).</param>
+    /// <param name="month">Bitta hisob-faktura oyi, "YYYY-MM". Berilsa — o'sha
+    /// oyning qoldig'i (EduSchool'dagi <c>month</c> / <c>monthlyDebt</c> filtri,
+    /// docs/modules/finance-parity.md §2.2 F2.02). Berilmasa — jami qarz.</param>
     /// <param name="onlyOverdue">true = faqat muddati o'tganlar.</param>
     /// <param name="includeArchived">false = arxivlangan o'quvchilarni yashirish.</param>
     [HttpGet("debtors")]
     public async Task<ActionResult<IEnumerable<DebtorRowDto>>> Debtors(
         [FromQuery] string? className,
         [FromQuery] decimal? minDebt,
+        [FromQuery] string? month,
         [FromQuery] bool onlyOverdue = false,
         [FromQuery] bool includeArchived = true,
         CancellationToken ct = default)
     {
+        // Oy IXTIYORIY, lekin berilgani NOTO'G'RI bo'lsa — 400. Jimgina
+        // e'tiborsiz qoldirish butun maktabning qarzini "sentyabr qarzi"
+        // deb ko'rsatardi.
+        DateOnly? selectedMonth = null;
+        if (!string.IsNullOrWhiteSpace(month))
+        {
+            if (!TryMonth(month, DefaultToMonth(), out var parsed))
+                return InvalidMonth(nameof(month), month);
+            selectedMonth = parsed;
+        }
+
         var query = new DebtorReportQuery(
             ClassName: className,
             MinDebt: minDebt ?? 0.01m,
             OnlyOverdue: onlyOverdue,
-            IncludeArchived: includeArchived);
+            IncludeArchived: includeArchived,
+            Month: selectedMonth);
 
         var rows = await _reports.DebtorsAsync(query, ct);
         return Ok(rows);
