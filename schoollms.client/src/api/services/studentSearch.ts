@@ -19,6 +19,8 @@ export interface StudentListRow {
   className: string
   /** Sinf darajasi (0–11). Sinf topilmasa 0. */
   grade: number
+  /** Sinfi hali yo'q o'quvchining mo'ljaldagi sinf darajasi (S-9). Sinfi bor bo'lsa null. */
+  targetGrade: number | null
   gender: 'male' | 'female'
   birthDate: string
   /** To'liq yosh. Sana bo'sh yoki buzuq bo'lsa null. */

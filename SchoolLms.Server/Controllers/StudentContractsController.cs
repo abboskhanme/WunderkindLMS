@@ -311,6 +311,118 @@ public class StudentContractsController(
     }
 
     // =====================================================================
+    //  2b. OMMAVIY BIRIKTIRISH (K-5)
+    // =====================================================================
+
+    /// <summary>Bir martada biriktirish mumkin bo'lgan eng katta son.</summary>
+    private const int MaxAttachBatch = 200;
+
+    public const string NumbersRequiredMessage = "Shartnoma raqami kerak";
+    public const string AlreadyNumberedMessage = "O'quvchida allaqachon raqamli shartnoma bor";
+
+    /// <summary>
+    /// K-5 — bitta shartnoma raqami va sanasini bir nechta tanlangan
+    /// o'quvchiga birdaniga biriktiradi (EduSchool'dagi
+    /// <c>PUT /student/attach-contract-many</c>).
+    ///
+    /// <para>
+    /// <b>Nega odatda faqat BITTASI muvaffaqiyatli bo'ladi.</b>
+    /// <c>ux_student_contracts_number</c> — qisman UNIKAL indeks: bitta
+    /// raqam bitta yozuvda (yuqoridagi <see cref="NextNumberAsync"/> izohiga
+    /// qarang — ikki farzandli ota-onaga bitta faylning ikkita nusxasi
+    /// ketmasin degan ATAYLAB qilingan qoida). EduSchool'da
+    /// <c>contractNumber</c> oddiy matn ustuni, ya'ni bir nechta o'quvchida
+    /// bir xil qiymat bo'lishi mumkin edi; bizda raqam reyestr yozuvining
+    /// o'zi. Shuning uchun ro'yxatdagi BIRINCHI mos o'quvchi yozuvni oladi,
+    /// qolganlari esa ANIQ sababi ("raqam band") bilan qaytadi — bu haqiqiy
+    /// "bir nechta bolaga bitta raqam" ehtiyoji bo'lsa, sxema o'zgarishi
+    /// (yangi migratsiya) kerak bo'ladi, bu to'lqinda YO'Q.
+    /// </para>
+    /// <para>
+    /// Allaqachon RAQAMLI shartnomasi bor o'quvchi ATLAB o'tiladi —
+    /// EduSchool'dagi <c>AllreadyHasContract</c> o'tkazib yuborish sababi
+    /// bilan bir xil ma'no. Raqamsiz (qoralama) yozuvi bor yoki umuman
+    /// yozuvi yo'q o'quvchi — nomzod.
+    /// </para>
+    /// </summary>
+    [HttpPost("attach-many")]
+    public async Task<ActionResult<BulkAttachContractResultDto>> AttachMany(
+        BulkAttachContractRequest req, CancellationToken ct = default)
+    {
+        var ids = (req.StudentIds ?? []).Where(x => !string.IsNullOrWhiteSpace(x)).Distinct().ToList();
+        if (ids.Count == 0) return BadRequest(new { message = StudentRequiredMessage });
+        if (ids.Count > MaxAttachBatch)
+            return BadRequest(new { message = $"Bir martada eng ko'pi {MaxAttachBatch} ta o'quvchiga biriktiriladi" });
+
+        var number = Blank(req.Number);
+        if (number is null) return BadRequest(new { message = NumbersRequiredMessage });
+
+        if (!TryDate(req.SignedOn, out var signedOn)) return BadRequest(new { message = DateFormatMessage });
+        if (!TryDate(req.EndsOn, out var endsOn)) return BadRequest(new { message = DateFormatMessage });
+        if (endsOn is { } e && signedOn is { } s && e < s) return BadRequest(new { message = PeriodMessage });
+
+        var students = await db.Students.Where(s => ids.Contains(s.Id)).ToListAsync(ct);
+        var byId = students.ToDictionary(s => s.Id);
+
+        // Allaqachon RAQAMLI shartnomasi bor o'quvchilar — bitta partiyada.
+        var alreadyNumbered = (await db.StudentContracts.AsNoTracking()
+                .Where(c => ids.Contains(c.StudentId) && c.Number != null)
+                .Select(c => c.StudentId)
+                .ToListAsync(ct))
+            .ToHashSet(StringComparer.Ordinal);
+
+        // Raqam BOSHIDANOQ band bo'lishi mumkin (boshqa o'quvchida yoki
+        // avvalgi partiyada) — shu holda hech kim yozuv olmaydi.
+        var claimed = await NumberTakenAsync(number, null, ct);
+        var comment = Blank(req.Comment);
+        var results = new List<BulkAttachContractRowDto>();
+
+        foreach (var id in ids)
+        {
+            if (!byId.TryGetValue(id, out var student))
+            {
+                results.Add(new BulkAttachContractRowDto(id, null, false, null, StudentNotFoundMessage));
+                continue;
+            }
+            if (alreadyNumbered.Contains(id))
+            {
+                results.Add(new BulkAttachContractRowDto(id, student.FullName, false, null, AlreadyNumberedMessage));
+                continue;
+            }
+            if (claimed)
+            {
+                results.Add(new BulkAttachContractRowDto(id, student.FullName, false, null, NumberTakenMessage));
+                continue;
+            }
+
+            var row = new StudentContract
+            {
+                StudentId = id,
+                Number = number,
+                SignedOn = signedOn,
+                EndsOn = endsOn,
+                // Qo'lda ommaviy biriktirish — andozadan hosil qilingani emas.
+                Source = StudentContractSource.Uploaded,
+                Comment = comment,
+                CreatedBy = CurrentUserId(),
+                CreatedAt = AppClock.NowInstant,
+            };
+            db.StudentContracts.Add(row);
+            claimed = true; // Raqam shu yozuv bilan band bo'ldi — qolganlari band deb ko'rinadi.
+
+            audit.Record(AuditEntity, row.Id.ToString(), "create",
+                $"Shartnoma ommaviy biriktirildi: № {number} ({student.FullName})",
+                after: new { row.Number, SignedOn = req.SignedOn, row.Source },
+                studentId: student.Id);
+
+            results.Add(new BulkAttachContractRowDto(id, student.FullName, true, row.Id, null));
+        }
+
+        await db.SaveChangesAsync(ct);
+        return new BulkAttachContractResultDto(results.Count(r => r.Ok), results);
+    }
+
+    // =====================================================================
     //  3. ANDOZADAN HOSIL QILISH (K-2)
     // =====================================================================
 
@@ -341,6 +453,18 @@ public class StudentContractsController(
     /// Andozani bitta o'quvchi uchun to'ldiradi, hosil bo'lgan .docx ni saqlaydi
     /// va reyestrga yozuv qo'shadi (K-2). Telegram orqali HECH NARSA
     /// yuborilmaydi — yuborish mavjud "Shartnomalar" ekranining ishi.
+    ///
+    /// <para>
+    /// <b>Raqam — K-6 qoidasi bilan (<see cref="ContractService.Resolve"/>).</b>
+    /// Bu yerda TIZIM YANGI RASMIY hujjat hosil qilib, unga raqam beryapti —
+    /// aynan shu joy sozlamaning ma'nosi bor joyi. <c>auto</c> rejimida
+    /// so'rovdagi <c>number</c> E'TIBORGA OLINMAYDI (keyingi bo'sh raqam
+    /// avtomatik olinadi); <c>manual</c> rejimida raqam MAJBURIY. Qo'lda
+    /// yozuv qo'shish (<see cref="Create"/>) esa BOSHQA narsa — u qog'ozda
+    /// allaqachon mavjud (yoki hali raqamsiz, "qoralama") shartnomani
+    /// RO'YXATGA OLADI, tizim uni raqamlamaydi, shuning uchun u rejimga
+    /// bog'liq emas va o'zgartirilmadi.
+    /// </para>
     /// </summary>
     [HttpPost("generate")]
     public async Task<ActionResult<StudentContractDto>> Generate(
@@ -366,7 +490,12 @@ public class StudentContractsController(
         var signedOn = signedOnOrNull ?? AppClock.Today;
         if (endsOn is { } e && e < signedOn) return BadRequest(new { message = PeriodMessage });
 
-        var number = Blank(req.Number) ?? await NextNumberAsync(ct);
+        // K-6 — raqamlash rejimi hal qiladi: `auto` so'ralgan qiymatni
+        // e'tiborsiz qoldirib generatsiyaga yuboradi, `manual` esa raqamni
+        // talab qiladi (bo'sh bo'lsa rad etadi).
+        var decision = ContractService.Resolve(await contracts.GetNumberModeAsync(ct), req.Number);
+        if (!decision.IsValid) return BadRequest(new { message = decision.Error });
+        var number = decision.ShouldGenerate ? await NextNumberAsync(ct) : decision.ManualNumber!;
         if (await NumberTakenAsync(number, null, ct))
             return BadRequest(new { message = NumberTakenMessage });
 

@@ -16,6 +16,7 @@ import {
   ChevronUp,
   ChevronDown,
   FileSpreadsheet,
+  FileSignature,
 } from 'lucide-react'
 import type { Student } from '@/types'
 import type { StudentPayload } from '@/api/services/students'
@@ -53,6 +54,7 @@ import { Button } from '@/components/ui/Button'
 import { Loader } from '@/components/ui/Loader'
 import { StudentFormModal } from './StudentFormModal'
 import { SmsModal } from './SmsModal'
+import { AttachContractModal } from './AttachContractModal'
 import { PaymentHistoryModal } from './PaymentHistoryModal'
 import { ArchiveStudentsModal } from './ArchiveStudentsModal'
 import { StudentListFilters } from './StudentListFilters'
@@ -113,6 +115,7 @@ function toStudent(row: StudentListRow): Student {
     parentFullName: row.parentFullName,
     parentPhone: row.parentPhone,
     className: row.className,
+    targetGrade: row.targetGrade,
     enrollmentDate: row.enrollmentDate,
     isArchived: row.isArchived,
     archivedAt: row.archivedAt,
@@ -157,7 +160,10 @@ export function StudentsPage({ initialTab = 'active' }: { initialTab?: Tab } = {
   const [formOpen, setFormOpen] = useState(false)
   const [editing, setEditing] = useState<Student | null>(null)
   const [viewing, setViewing] = useState<Student | null>(null)
-  const [smsOpen, setSmsOpen] = useState(false)
+  /** S-6 — kim yuboradi: tanlangan qatorlar YOKI joriy filtrga mos HAMMASI. `null` = oyna yopiq. */
+  const [smsMode, setSmsMode] = useState<'selected' | 'filter' | null>(null)
+  /** K-5 — tanlangan qatorlarga bitta shartnoma raqami/sanasi biriktirish. */
+  const [attachContractOpen, setAttachContractOpen] = useState(false)
   const [importOpen, setImportOpen] = useState(false)
   const [historyOf, setHistoryOf] = useState<Student | null>(null)
   const [commentsOf, setCommentsOf] = useState<StudentListRow | null>(null)
@@ -447,6 +453,11 @@ export function StudentsPage({ initialTab = 'active' }: { initialTab?: Tab } = {
             <FileSpreadsheet className="h-4 w-4" /> Eksport
           </Button>
 
+          {/* S-6 — joriy filtrga mos BARCHA o'quvchiga, tanlovdan mustaqil. */}
+          <Button variant="secondary" onClick={() => setSmsMode('filter')} disabled={page.total === 0}>
+            <Send className="h-4 w-4" /> Filtrlanganlarga xabar
+          </Button>
+
           {tab === 'active' && (
             <>
               <Button variant="secondary" onClick={() => setImportOpen(true)}>
@@ -493,16 +504,21 @@ export function StudentsPage({ initialTab = 'active' }: { initialTab?: Tab } = {
         {selected.size > 0 && (
           <div className="flex flex-wrap items-center gap-3 border-b border-slate-100 bg-brand-50/60 px-4 py-3">
             <span className="text-sm font-medium text-brand-700">{selected.size} ta tanlandi</span>
-            <Button variant="secondary" onClick={() => setSmsOpen(true)}>
+            <Button variant="secondary" onClick={() => setSmsMode('selected')}>
               <Send className="h-4 w-4" /> Xabar yuborish
             </Button>
             <Button variant="secondary" onClick={handleCsv}>
               <Download className="h-4 w-4" /> Yuklab olish (CSV)
             </Button>
             {tab === 'active' && (
-              <Button variant="secondary" onClick={() => setArchiveTargets(selectedStudents)}>
-                <Archive className="h-4 w-4" /> Arxivlash
-              </Button>
+              <>
+                <Button variant="secondary" onClick={() => setAttachContractOpen(true)}>
+                  <FileSignature className="h-4 w-4" /> Shartnoma biriktirish
+                </Button>
+                <Button variant="secondary" onClick={() => setArchiveTargets(selectedStudents)}>
+                  <Archive className="h-4 w-4" /> Arxivlash
+                </Button>
+              </>
             )}
             {tab === 'archived' && (
               <Button variant="danger" onClick={handleDeleteMany}>
@@ -725,7 +741,26 @@ export function StudentsPage({ initialTab = 'active' }: { initialTab?: Tab } = {
         initial={editing}
       />
       <StudentViewModal student={viewing} onClose={() => setViewing(null)} />
-      <SmsModal open={smsOpen} onClose={() => setSmsOpen(false)} recipients={selectedStudents} />
+      <SmsModal
+        open={smsMode !== null}
+        onClose={() => setSmsMode(null)}
+        recipients={smsMode === 'selected' ? selectedStudents : []}
+        filterScope={
+          smsMode === 'filter'
+            ? { filter: { ...effective, page: undefined, pageSize: undefined }, total: page.total }
+            : undefined
+        }
+      />
+      <AttachContractModal
+        open={attachContractOpen}
+        onClose={() => setAttachContractOpen(false)}
+        students={selectedRows}
+        onDone={() => {
+          setAttachContractOpen(false)
+          clearSelection()
+          reload()
+        }}
+      />
       <PaymentHistoryModal student={historyOf} onClose={() => setHistoryOf(null)} />
       <ArchiveStudentsModal
         students={archiveTargets}

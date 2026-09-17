@@ -201,8 +201,13 @@ export interface Student {
   archivedAt?: string | null
   /** Arxivga olish sababi */
   archiveReason?: string | null
-  /** Biriktirilgan sinf, masalan "9-A" */
+  /** Biriktirilgan sinf, masalan "9-A". Bo'sh satr = sinfi hali yo'q (S-9) — shu holda `targetGrade` bo'lishi kerak. */
   className: string
+  /**
+   * Sinfi hali yo'q o'quvchining mo'ljaldagi sinf darajasi (0-11), S-9.
+   * `className` bo'sh bo'lganda ma'noli; sinfi bor o'quvchida null.
+   */
+  targetGrade?: number | null
   /** Maktabga kelgan (qabul) sanasi (ISO) — oylik to'lov shu oydan boshlanadi */
   enrollmentDate: string
   /**

@@ -120,7 +120,30 @@ public class StudentsController(AppDbContext db, AuditService audit) : Controlle
         s.LastName, s.FirstName, s.MiddleName, s.BirthCertificateUrl,
         s.ParentLastName, s.ParentFirstName, s.ParentMiddleName, s.ParentPassportUrl,
         s.IsArchived, s.ArchivedAt, s.ArchiveReason,
-        s.Phone, s.Language, s.DocumentUrl);
+        s.Phone, s.Language, s.DocumentUrl, s.TargetGrade);
+
+    /// <summary>§3.3 (S-9) — javob xabarlari. Testlarda AYNAN shu konstantalar tekshiriladi.</summary>
+    public const string ClassOrTargetGradeMessage =
+        "Sinf yoki mo'ljaldagi sinf darajasi ko'rsatilsin";
+    public const string TargetGradeRangeMessage =
+        "Mo'ljaldagi sinf darajasi 0 dan 11 gacha bo'lsin";
+
+    /// <summary>
+    /// §3.3 (S-9) — mo'ljal sinf darajasi berilgan bo'lsa DIAPAZONI (0-11)
+    /// tekshiradi. Bazadagi <c>ck_students_target_grade</c> bilan bir xil —
+    /// aks holda foydalanuvchi tushunarsiz 500 (23514) ko'rardi.
+    /// </summary>
+    internal static string? BadTargetGradeRange(short? targetGrade) =>
+        targetGrade is { } g && (g < 0 || g > 11) ? TargetGradeRangeMessage : null;
+
+    /// <summary>
+    /// Sinf biriktirilgan bo'lsa mo'ljal sinf darajasi ENDI KERAK EMAS — u
+    /// faqat "sinfi yo'q" holat uchun (§3.3, S-9 izohi <c>Entities.cs:190</c>).
+    /// Sinf ro'yxatidan joylashtirilgan (yoki formadan sinf tanlangan)
+    /// o'quvchida eski mo'ljal osilib qolmasligi uchun avtomatik bo'shatiladi.
+    /// </summary>
+    private static short? CleanTargetGrade(string className, short? targetGrade) =>
+        string.IsNullOrWhiteSpace(className) ? targetGrade : null;
 
     /// <summary>Bo'sh/probel — null; aks holda chetlari kesilgan matn.</summary>
     private static string? Trimmed(string? value) =>
@@ -151,6 +174,12 @@ public class StudentsController(AppDbContext db, AuditService audit) : Controlle
             return BadRequest(new { message = badRelation });
         if (BadLanguage(p.Language) is { } badLanguage)
             return BadRequest(new { message = badLanguage });
+        if (BadTargetGradeRange(p.TargetGrade) is { } badRange)
+            return BadRequest(new { message = badRange });
+        // §3.3 (S-9) — yangi o'quvchida oldingi holat yo'q: sinf bo'sh bo'lsa
+        // mo'ljal MAJBURIY (aks holda sinf ro'yxatidan hech qachon topilmaydi).
+        if (string.IsNullOrWhiteSpace(p.ClassName) && p.TargetGrade is null)
+            return BadRequest(new { message = ClassOrTargetGradeMessage });
 
         var student = AddStudent(p);
         // §2.3 (S-8): forma vasiy ro'yxati bilan kelsa, ASOSIY vasiy eski
@@ -243,6 +272,8 @@ public class StudentsController(AppDbContext db, AuditService audit) : Controlle
             Phone = Trimmed(p.Phone),
             Language = Trimmed(p.Language)?.ToLowerInvariant(),
             DocumentUrl = Trimmed(p.DocumentUrl),
+            // §3.3 (S-9) — sinf berilgan bo'lsa mo'ljal darajasi kerak emas.
+            TargetGrade = CleanTargetGrade(p.ClassName, p.TargetGrade),
         };
         db.Students.Add(student);
 
@@ -272,9 +303,21 @@ public class StudentsController(AppDbContext db, AuditService audit) : Controlle
             return BadRequest(new { message = badRelation });
         if (BadLanguage(p.Language) is { } badLanguage)
             return BadRequest(new { message = badLanguage });
+        if (BadTargetGradeRange(p.TargetGrade) is { } badRange)
+            return BadRequest(new { message = badRange });
 
         var student = await db.Students.FindAsync(id);
         if (student is null) return NotFound();
+
+        // §3.3 (S-9) — "null = tegma" qoidasi (yuqoridagi Phone/Language kabi):
+        // mijoz `targetGrade` ni umuman yubormasa (masalan eski forma), sinfsiz
+        // o'quvchining mavjud mo'ljali saqlanib qoladi — har bir tahrirda uni
+        // qayta yuborish shart emas. Sinf berilsa (pastda) mo'ljal baribir
+        // bo'shaydi, shuning uchun bu yerda faqat "ikkalasi ham yo'q" holati
+        // tekshiriladi.
+        var effectiveTargetGrade = p.TargetGrade ?? student.TargetGrade;
+        if (string.IsNullOrWhiteSpace(p.ClassName) && effectiveTargetGrade is null)
+            return BadRequest(new { message = ClassOrTargetGradeMessage });
 
         var oldClassName = student.ClassName;
 
@@ -312,6 +355,11 @@ public class StudentsController(AppDbContext db, AuditService audit) : Controlle
             student.ParentPassportUrl = string.IsNullOrWhiteSpace(p.ParentPassportUrl) ? null : p.ParentPassportUrl;
         student.ClassName = p.ClassName;
         if (!string.IsNullOrWhiteSpace(p.EnrollmentDate)) student.EnrollmentDate = p.EnrollmentDate;
+        // §3.3 (S-9) — sinf berilgan bo'lsa mo'ljal darajasi ENDI KERAK EMAS:
+        // o'quvchi sinf ro'yxatidan joylashtirilgan bo'lsa eski mo'ljal
+        // osilib qolmaydi. Sinf bo'sh qolsa — yuqorida hisoblangan
+        // (yuborilgan yoki mavjud) qiymat saqlanadi.
+        student.TargetGrade = CleanTargetGrade(p.ClassName, effectiveTargetGrade);
 
         // §2.3 (S-8) — YANGI maydonlar. `null` = TEGMA (eski mijoz ularni
         // umuman yubormaydi), bo'sh satr = tozala. Aynan shu qoida bilan

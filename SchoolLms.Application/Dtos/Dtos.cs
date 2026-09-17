@@ -52,7 +52,11 @@ public record StudentPayload(
     string? ParentLastName = null, string? ParentFirstName = null, string? ParentMiddleName = null,
     string? ParentPassportUrl = null,
     string? Phone = null, string? Language = null, string? DocumentUrl = null,
-    List<StudentGuardianInput>? Guardians = null);
+    List<StudentGuardianInput>? Guardians = null,
+    // §3.3 (Batch C, S-9) — sinfi hali yo'q o'quvchining mo'ljaldagi sinf
+    // darajasi. `ClassName` bo'sh bo'lganda talab qilinadi, aks holda
+    // e'tiborsiz qoldiriladi (StudentsController tozalaydi).
+    short? TargetGrade = null);
 public record PaymentRequest(decimal Amount, string? Month);
 
 /* ---------- Excel'dan ommaviy import ---------- */
@@ -441,7 +445,10 @@ public record StudentDto(
     bool IsArchived = false, string? ArchivedAt = null, string? ArchiveReason = null,
     // §2.3 (S-8) — oxiriga QO'SHILDI: mavjud o'quvchilarda null bo'lgani uchun
     // birorta ekran o'zgarishini sezmaydi, formaga esa ular kerak.
-    string? Phone = null, string? Language = null, string? DocumentUrl = null);
+    string? Phone = null, string? Language = null, string? DocumentUrl = null,
+    // §3.3 (Batch C, S-9) — sinfi hali yo'q o'quvchining mo'ljaldagi sinf
+    // darajasi (0-11). null = sinfga biriktirilgan yoki mo'ljal ko'rsatilmagan.
+    short? TargetGrade = null);
 
 /// <summary>
 /// O'quvchini arxivlash so'rovi. <c>Reason</c> — erkin matn, MAJBURIY (tafsilot);
@@ -1019,7 +1026,8 @@ public record BroadcastDto(
 /// <summary>
 /// E'lon yuborish so'rovi. <c>Scope</c>: "class" (ClassName sinfi), "group" (GroupId o'quv
 /// guruhining FAOL a'zolari), "all" (barcha sinf), "selected" (StudentIds tanlangan
-/// o'quvchilar). <c>OnlyDebtors</c> — faqat balansi manfiylar.
+/// o'quvchilar), "filter" (Filter'ga mos BARCHA o'quvchi, S-6). <c>OnlyDebtors</c> — faqat
+/// balansi manfiylar.
 /// <c>Text</c> ichida o'rinbosarlar bo'lishi mumkin: {fish} {sinf} {qarzdorlik} {balans} {ota-ona} {telefon}.
 ///
 /// <para>
@@ -1031,7 +1039,12 @@ public record BroadcastDto(
 /// </summary>
 public record SendBroadcastRequest(
     string? Scope, string? ClassName, bool OnlyDebtors, List<string>? StudentIds, string Text,
-    string? GroupId = null);
+    string? GroupId = null,
+    // S-6 (students-parity.md §2.3.3) — scope === "filter" bo'lganda ro'yxat
+    // ekranidagi JORIY filtr shu yerdan keladi; qamrov `StudentListQuery`
+    // orqali hisoblanadi, ya'ni ekran nechta o'quvchini ko'rsatsa, xabar ham
+    // AYNAN o'shalarga boradi (tanlangan qatorlardan mustaqil).
+    StudentListFilter? Filter = null);
 
 /// <summary>
 /// Telegramda ro'yxatdan o'tgan ota-ona. ChatId string (JS aniqligi uchun).

@@ -38,6 +38,15 @@ const languageOptions: { value: string; label: string }[] = [
   { value: 'kaa', label: 'Qoraqalpoq' },
 ]
 
+/**
+ * S-9 — sinfi hali yo'q o'quvchining mo'ljaldagi sinf darajasi. `ck_students_target_grade`
+ * bilan bir xil diapazon (0-11); 0 — maktabgacha tayyorlov.
+ */
+const targetGradeOptions: { value: number; label: string }[] = [
+  { value: 0, label: 'Tayyorlov (0)' },
+  ...Array.from({ length: 11 }, (_, i) => ({ value: i + 1, label: `${i + 1}-sinf` })),
+]
+
 /** Formadagi ikkinchi vasiy — `students` qatorida ustuni yo'q, faqat vasiy jadvalida. */
 interface GuardianDraft {
   /** Mavjud vasiyni tahrirlayapmizmi (null = yangi). */
@@ -74,6 +83,7 @@ const empty: StudentPayload = {
   parentPhone: '',
   parentPassportUrl: null,
   className: '',
+  targetGrade: null,
   enrollmentDate: new Date().toISOString().slice(0, 10),
   subGroup: 0,
   phone: '',
@@ -106,6 +116,8 @@ function hasPhone(value: string | null | undefined): boolean {
 export function StudentFormModal({ open, onClose, onSubmit, initial }: Props) {
   const [form, setForm] = useState<StudentPayload>(empty)
   const [classNames, setClassNames] = useState<string[]>([])
+  /** S-9 — sinfi hali yo'q: sinf tanlovi o'rniga mo'ljaldagi sinf darajasi ko'rsatiladi. */
+  const [noClassYet, setNoClassYet] = useState(false)
   /** Fayl yuklash holatlari (har maydon uchun alohida). */
   const [uploading, setUploading] = useState<{
     birth?: boolean
@@ -224,12 +236,15 @@ export function StudentFormModal({ open, onClose, onSubmit, initial }: Props) {
         parentPhone: initial.parentPhone,
         parentPassportUrl: initial.parentPassportUrl ?? null,
         className: initial.className,
+        targetGrade: initial.targetGrade ?? null,
         enrollmentDate: initial.enrollmentDate,
         subGroup: initial.subGroup,
         phone: initial.phone ?? '',
         language: initial.language ?? '',
         documentUrl: initial.documentUrl ?? null,
       })
+      // S-9 — sinfi bo'sh o'quvchi mo'ljal rejimida ochiladi.
+      setNoClassYet(!initial.className)
       void loadCard(initial.id)
     } else {
       /* eslint-disable react-hooks/set-state-in-effect -- yangi forma boshlash (maqsadli) */
@@ -238,17 +253,34 @@ export function StudentFormModal({ open, onClose, onSubmit, initial }: Props) {
       setPrimaryRelation('parent')
       setPrimaryNote('')
       setSecond(emptyGuardian)
+      setNoClassYet(false)
       /* eslint-enable react-hooks/set-state-in-effect */
     }
   }, [open, initial, loadCard])
 
   // Yangi o'quvchida sinf tanlanmagan bo'lsa, birinchi sinfni standart qilamiz
+  // (S-9 — "sinfi hali yo'q" belgilangan bo'lsa TEGILMAYDI, u sinfsiz qoladi).
   useEffect(() => {
-    if (open && !initial && classNames.length) {
+    if (open && !initial && !noClassYet && classNames.length) {
       // eslint-disable-next-line react-hooks/set-state-in-effect -- sinflar yuklangach standart sinfni o'rnatish (maqsadli)
       setForm((f) => (f.className ? f : { ...f, className: classNames[0] }))
     }
-  }, [open, initial, classNames])
+  }, [open, initial, classNames, noClassYet])
+
+  /**
+   * S-9 — "sinfi hali yo'q" belgisi almashganda ikkala maydon ham mos
+   * holatga qaytariladi: sinf tanlansa mo'ljal bo'shaydi (server ham xuddi
+   * shunday tozalaydi — `CleanTargetGrade`), sinfsiz rejimga o'tilsa sinf
+   * bo'shaydi va mo'ljalga sukut qiymat (0) qo'yiladi.
+   */
+  const toggleNoClassYet = (value: boolean) => {
+    setNoClassYet(value)
+    setForm((f) =>
+      value
+        ? { ...f, className: '', targetGrade: f.targetGrade ?? 0 }
+        : { ...f, className: f.className || classNames[0] || '', targetGrade: null },
+    )
+  }
 
   const update = <K extends keyof StudentPayload>(key: K, value: StudentPayload[K]) =>
     setForm((f) => ({ ...f, [key]: value }))
@@ -647,17 +679,31 @@ export function StudentFormModal({ open, onClose, onSubmit, initial }: Props) {
             onChange={(e) => update('address', e.target.value)}
           />
           <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
-            <Select
-              label="Sinfga biriktirish"
-              value={form.className}
-              onChange={(e) => update('className', e.target.value)}
-            >
-              {classNames.map((c) => (
-                <option key={c} value={c}>
-                  {c}
-                </option>
-              ))}
-            </Select>
+            {noClassYet ? (
+              <Select
+                label="Mo'ljaldagi sinf darajasi"
+                value={String(form.targetGrade ?? 0)}
+                onChange={(e) => update('targetGrade', Number(e.target.value))}
+              >
+                {targetGradeOptions.map((g) => (
+                  <option key={g.value} value={g.value}>
+                    {g.label}
+                  </option>
+                ))}
+              </Select>
+            ) : (
+              <Select
+                label="Sinfga biriktirish"
+                value={form.className}
+                onChange={(e) => update('className', e.target.value)}
+              >
+                {classNames.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </Select>
+            )}
             <Input
               label="Maktabga kelgan sana"
               type="date"
@@ -665,6 +711,21 @@ export function StudentFormModal({ open, onClose, onSubmit, initial }: Props) {
               onChange={(e) => update('enrollmentDate', e.target.value)}
             />
           </div>
+          <label className="mt-3 flex items-center gap-2 text-sm text-slate-600">
+            <input
+              type="checkbox"
+              className="h-4 w-4 accent-brand-600"
+              checked={noClassYet}
+              onChange={(e) => toggleNoClassYet(e.target.checked)}
+            />
+            Sinfi hali yo'q — faqat mo'ljaldagi sinf darajasi bilan qo'shish (S-9)
+          </label>
+          {noClassYet && (
+            <p className="mt-1 text-xs text-slate-400">
+              Bu o'quvchi sinf ro'yxatida ko'rinmaydi; keyinroq sinf jadvalidan mos sinfga
+              biriktirilganda mo'ljal avtomatik bo'shaydi.
+            </p>
+          )}
         </Section>
 
         {/*
