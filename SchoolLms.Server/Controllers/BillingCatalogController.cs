@@ -36,11 +36,22 @@ namespace SchoolLms.Server.Controllers;
 /// </para>
 ///
 /// <para>
-/// <b>DIQQAT — DI hali ulanmagan.</b> <c>ISubscriptionService</c> va
-/// <c>IDiscountService</c> <c>Program.cs</c> da ro'yxatdan o'tmagan; u fayl
-/// P1-15 niki. Shu holda bu controller'ning yozish/o'qish amallari ishga
-/// tushganda <c>InvalidOperationException</c> beradi. Nima qo'shilishi kerakligi
-/// <c>docs/PENDING_WIRING.md</c> da yozilgan.
+/// <b>F14.01 — <c>IBillingSettingsService</c> QASDDAN konstruktorga QO'SHILMAGAN.</b>
+/// Bu controller allaqachon to'rtta ishlaydigan bog'liqlikka ega
+/// (<c>ISubscriptionService</c>, <c>IDiscountService</c>, <c>IInvoiceService</c> — P1-15
+/// tomonidan <c>Program.cs</c> da ro'yxatdan o'tgan) va ularga tayangan HTTP testlari
+/// (<c>BillingCatalogTests</c>) YASHIL. Agar <c>IBillingSettingsService</c> beshinchi
+/// konstruktor parametri sifatida qo'shilsa-yu, u DI'da ro'yxatdan o'TMAGAN bo'lsa —
+/// <c>ActivatorUtilities</c> KONTROLLERNING O'ZINI qura olmaydi, ya'ni chegirma,
+/// obuna, toifa va hisoblash — mutlaqo aloqasiz to'rtta ishlaydigan amal — HAM
+/// birga qulab tushardi. Bu yerda topshiriq aniq: "Do not edit Program.cs" va
+/// "Existing functionality still works" ikkalasi bir vaqtda.
+/// <c>FinanceReportsController</c> xuddi shunday holatda turgan edi
+/// (<c>docs/PENDING_WIRING.md</c> §3a) va yechim o'sha yerdan olindi: xizmat DI'dan
+/// emas, <see cref="Settings"/> orqali TO'G'RIDAN-TO'G'RI, allaqachon konstruktorda
+/// bor ikkita bog'liqlikdan (<c>db</c>, <c>audit</c>) quriladi. <c>Program.cs</c> ga
+/// keyinchalik <c>IBillingSettingsService</c> qo'shilsa ham hech narsa buzilmaydi —
+/// bu yerdagi konstruksiya sodda va DI konteyneridan mustaqil.
 /// </para>
 /// </summary>
 [ApiController]
@@ -54,6 +65,12 @@ public class BillingCatalogController(
     IDiscountService discounts,
     IInvoiceService invoices) : ControllerBase
 {
+    /// <summary>
+    /// F14.01 — <see cref="IBillingSettingsService"/> ning qo'lda qurilgan nusxasi.
+    /// Sabab: fayl boshidagi izoh ("QASDDAN konstruktorga QO'SHILMAGAN").
+    /// </summary>
+    private IBillingSettingsService Settings => new BillingSettingsService(db, audit);
+
     // ==================================================================
     //  To'lov toifalari (ma'lumotnoma)
     // ==================================================================
@@ -284,6 +301,36 @@ public class BillingCatalogController(
 
         return Ok(new[] { await invoices.AccrueMonthAsync(periodMonth, actor, ct) });
     }
+
+    // ==================================================================
+    //  Moliya sozlamalari (F14.01, finance-parity.md §2.14)
+    // ==================================================================
+    //
+    //  O'QISH klass darajasidagi darvozadan o'tadi (admin/direktor) — alohida
+    //  `[FinanceRole]` shart emas, negaki bu yerda "kim ko'ra oladi" bitta
+    //  javobga ega (SubscriptionsPage/DiscountsPage GET'lari kabi).
+    //
+    //  YOZISH ikki qavatli: (1) `[FinanceRole(ManageBillingSettings)]` — admin
+    //  va direktor, (2) `BillingSettingsService.UpdateAsync` ICHIDA, faqat
+    //  chegara HAQIQATAN o'zgarsa — faqat direktor (SPEC §4.5, F14.01 gap
+    //  yozuvi). Ikkinchisi FinanceMatrix'da ifodalanmaydi, chunki u maydon
+    //  darajasidagi qoida, amal darajasidagi emas.
+
+    /// <summary>Joriy moliya sozlamalari.</summary>
+    [HttpGet("settings")]
+    public async Task<ActionResult<BillingSettingsDto>> GetSettings(CancellationToken ct) =>
+        await Settings.GetAsync(ct);
+
+    /// <summary>
+    /// Sozlamalarni saqlaydi. <c>expenseApprovalThreshold</c> HAQIQATAN
+    /// o'zgargan bo'lsa va so'rovchi direktor bo'lmasa — <b>403</b>
+    /// (<c>threshold_requires_director</c>).
+    /// </summary>
+    [HttpPut("settings")]
+    [FinanceRole(FinanceAction.ManageBillingSettings)]
+    public async Task<ActionResult<BillingSettingsDto>> UpdateSettings(
+        UpdateBillingSettingsRequest request, CancellationToken ct) =>
+        await Settings.UpdateAsync(request, Actor(), User.IsInRole(Roles.SuperAdmin), ct);
 
     private string Actor() => FinanceActor.RequireUserId(User);
 }

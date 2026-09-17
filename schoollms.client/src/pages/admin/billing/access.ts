@@ -71,6 +71,19 @@ export interface BillingAccess {
   isCashier: boolean
   /** Toifa, obuna va narxlarni boshqarish. */
   canManageSubscriptions: boolean
+  /**
+   * Moliya sozlamalarini (to'lov muddati, chiqim tasdiq chegarasi) ochish —
+   * admin va direktor (F14.01). Chegarani TAHRIRLASH esa faqat direktorga
+   * ochiq — buni {@link isDirector} bilan alohida tekshiring, server ham
+   * shu qoidani `threshold_requires_director` bilan mustahkamlaydi.
+   */
+  canManageBillingSettings: boolean
+  /**
+   * Joriy foydalanuvchi direktormi. Ichkarida chegirma/chiqim tasdig'i uchun
+   * ishlatilgan hisob shu yerda ham ochiladi — F14.01 moliya sozlamalari
+   * sahifasi chiqim chegarasini faqat direktorga tahrirlanadigan qiladi.
+   */
+  isDirector: boolean
   /** Chegirma so'rash (natija har doim `pending`). */
   canGrantDiscount: boolean
   /** Chegirmani tasdiqlash/rad etish — faqat direktor. */
@@ -103,6 +116,8 @@ export function useBillingAccess(): BillingAccess {
     canOpen,
     isCashier: user?.role === 'cashier',
     canManageSubscriptions: canOpen,
+    canManageBillingSettings: canOpen,
+    isDirector,
     canGrantDiscount: canOpen,
     canApproveDiscount: isDirector,
     canRecordExpense: canOpen,
