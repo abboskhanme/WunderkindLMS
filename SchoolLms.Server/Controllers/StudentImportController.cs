@@ -42,7 +42,7 @@ public class StudentImportController(AppDbContext db, AuditService audit) : Cont
     /// Audit yozuvidagi entity turi (wiring bosqichida <c>AuditService</c> ga
     /// ko'chiriladi — shu to'lqinda u fayl muzlatilgan).
     /// </summary>
-    public const string AuditEntity = "StudentImport";
+    public const string AuditEntity = AuditService.EntityStudentImport;
 
     public const string NoFileMessage = "Fayl tanlanmagan";
     public const string NotXlsxMessage = "Faqat .xlsx (Excel) fayl qabul qilinadi";

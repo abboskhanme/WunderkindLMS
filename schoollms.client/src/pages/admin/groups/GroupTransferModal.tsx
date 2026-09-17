@@ -43,6 +43,7 @@ export function GroupTransferModal({
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- oyna ochilganda oldingi tanlov va xato tozalanadi (maqsadli)
     if (open && subjectId) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- ma'lumot kelganda formani to'ldiramiz (maqsadli, loyihadagi mavjud naqsh)
       setToGroupId('')
       setReason('')
       setError(null)

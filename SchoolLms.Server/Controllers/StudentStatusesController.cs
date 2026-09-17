@@ -47,7 +47,7 @@ public partial class StudentStatusesController(AppDbContext db, AuditService aud
     /// konstanta shu yerda; wiring bosqichida u <c>AuditService</c> ga
     /// ko'chiriladi — <c>EntityDebtorStatus</c> bilan yonma-yon.
     /// </summary>
-    public const string AuditEntity = "StudentStatus";
+    public const string AuditEntity = AuditService.EntityStudentStatus;
 
     public const string ColorMessage = "Rang #RRGGBB ko'rinishida bo'lsin (masalan #34C759)";
     public const string NameRequiredMessage = "Holat nomini yozing";

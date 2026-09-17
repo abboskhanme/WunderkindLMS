@@ -29,6 +29,7 @@ export function RosterMessageModal({ open, onClose, studentIds }: Props) {
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- oyna ochilganda holat tozalanadi (maqsadli)
     if (open) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- ma'lumot kelganda formani to'ldiramiz (maqsadli, loyihadagi mavjud naqsh)
       setMessage('')
       setError(null)
       setResult(null)

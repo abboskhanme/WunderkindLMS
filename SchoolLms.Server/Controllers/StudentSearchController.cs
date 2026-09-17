@@ -188,5 +188,5 @@ public class StudentSearchController(AppDbContext db, AuditService audit) : Cont
     /// bir nechta slice uchun MUZLATILGAN fayl, shuning uchun konstanta shu
     /// yerda turibdi; wiring bosqichida u <c>AuditService</c> ga ko'chiriladi.
     /// </summary>
-    public const string AuditEntityStudentDelete = "StudentDelete";
+    public const string AuditEntityStudentDelete = AuditService.EntityStudentDelete;
 }

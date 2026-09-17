@@ -109,6 +109,7 @@ export function GroupFormPage() {
   }, [subjectId, classIds, gender, id])
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- ma'lumot kelganda formani to'ldiramiz (maqsadli, loyihadagi mavjud naqsh)
     loadCandidates()
   }, [loadCandidates])
 

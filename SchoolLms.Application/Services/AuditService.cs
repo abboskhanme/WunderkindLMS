@@ -63,6 +63,18 @@ public class AuditService(IAppDbContext db, IHttpContextAccessor http)
     /// <summary>O'quv guruhi (§2.1) — yaratish, tahrir, arxiv, ro'yxat o'zgarishi.</summary>
     public const string EntityStudyGroup = "StudyGroup";
 
+    /// <summary>Hisob-faktura (§2.10) — hozircha faqat bekor qilish yoziladi.</summary>
+    public const string EntityInvoice = "Invoice";
+
+    /// <summary>O'quvchi holati katalogi va o'quvchiga holat qo'yilishi (§2.3).</summary>
+    public const string EntityStudentStatus = "StudentStatus";
+
+    /// <summary>Excel'dan o'quvchi importi (§2.3) — nechta yaratildi, nechta yangilandi.</summary>
+    public const string EntityStudentImport = "StudentImport";
+
+    /// <summary>O'quvchini butunlay o'chirish (§2.3) — arxivlash EMAS.</summary>
+    public const string EntityStudentDelete = "StudentDelete";
+
     /// <summary>Xulq-atvor bali (§6) — qo'lda qo'yilgan ball va uning sababi.</summary>
     public const string EntityDisciplinePoint = "DisciplinePoint";
 

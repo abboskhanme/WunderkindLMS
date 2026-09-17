@@ -86,11 +86,13 @@ export const navByRole: Record<Role, NavItem[]> = {
         { label: 'Obunalar', to: '/admin/billing/subscriptions', roles: ['admin', 'superadmin'], group: 'AMALIYOT' },
         { label: 'Chegirmalar', to: '/admin/billing/discounts', roles: ['admin', 'superadmin'], group: 'AMALIYOT' },
         { label: 'Chiqimlar', to: '/admin/billing/expenses', roles: ['admin', 'superadmin'], group: 'AMALIYOT' },
+        { label: 'Hisob-fakturalar', to: '/admin/billing/invoices', roles: ['admin', 'superadmin'], group: 'AMALIYOT' },
         { label: 'Qarzdor holatlari', to: '/admin/finance/debtor-statuses', roles: ['admin', 'superadmin'], group: 'AMALIYOT' },
         // SPEC §4.3: moliya hisobotlari faqat admin va direktorga ochiq —
         // 'finance' ruxsatli xodim (staff) ham bu yerni ko'rmaydi, chunki
         // endpoint unga 403 qaytaradi. Menyuni ham, marshrutni ham yopamiz.
         { label: 'Moliya hisobotlari', to: '/admin/finance/reports', roles: ['admin', 'superadmin'], group: 'HISOBOTLAR' },
+        { label: 'Tranzaksiyalar', to: '/admin/finance/transactions', roles: ['admin', 'superadmin'], group: 'HISOBOTLAR' },
         // Kunlik ekran — pul aylanmasidan oldin turadi, chunki har kuni ochiladi.
         { label: 'Kassa kuni', to: '/admin/finance/cash-day', roles: ['admin', 'superadmin'], group: 'HISOBOTLAR' },
         { label: 'Pul aylanmasi', to: '/admin/finance/money-flow', roles: ['admin', 'superadmin'], group: 'HISOBOTLAR' },
@@ -109,6 +111,7 @@ export const navByRole: Record<Role, NavItem[]> = {
         { label: 'Guruhlar', to: '/admin/groups', group: "O'QUV JARAYONI" },
         { label: 'Fanlar', to: '/admin/subjects', group: "O'QUV JARAYONI" },
         { label: "O'quvchilar", to: '/admin/students', end: true, group: "O'QUVCHILAR" },
+        { label: "O'quvchi holatlari", to: '/admin/students/holatlar', group: "O'QUVCHILAR" },
         { label: "O'quvchilar manzili", to: '/admin/locations', group: "O'QUVCHILAR" },
         { label: 'Ota-onalar', to: '/admin/parents', group: "O'QUVCHILAR" },
         { label: 'Shartnomalar', to: '/admin/contracts', perm: 'contracts', group: 'HUJJATLAR' },

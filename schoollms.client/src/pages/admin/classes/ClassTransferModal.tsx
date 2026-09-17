@@ -48,6 +48,7 @@ export function ClassTransferModal({
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- oyna ochilganda oldingi tanlov tozalanadi (maqsadli)
     if (open) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- oyna ochilganda formani to'ldiramiz (maqsadli, loyihadagi mavjud naqsh)
       setToClassId('')
       setKeepGroups(true)
       setReason('')

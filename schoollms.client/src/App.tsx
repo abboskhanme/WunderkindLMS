@@ -63,6 +63,9 @@ import { LeadFunnelPage } from '@/pages/admin/leads-funnel/LeadFunnelPage'
 import { AttendanceDisciplineReportPage } from '@/pages/admin/discipline/AttendanceDisciplineReportPage'
 import { CertificatesPage } from '@/pages/admin/certificates/CertificatesPage'
 import { GroupsPage } from '@/pages/admin/groups/GroupsPage'
+import { TransactionsPage } from '@/pages/admin/finance/TransactionsPage'
+import { InvoicesPage } from '@/pages/admin/billing/InvoicesPage'
+import { StudentStatusesPage } from '@/pages/admin/students/StudentStatusesPage'
 import { GroupFormPage } from '@/pages/admin/groups/GroupFormPage'
 import { GroupRosterPage } from '@/pages/admin/groups/GroupRosterPage'
 import { ClassRosterPage } from '@/pages/admin/classes/ClassRosterPage'
@@ -99,6 +102,7 @@ export default function App() {
           <Route path="students/baholash" element={<RequirePerm perm="students"><StudentEvaluationPage /></RequirePerm>} />
           <Route path="students/baholash-turlari" element={<RequirePerm perm="students"><EvaluationTypesPage /></RequirePerm>} />
           <Route path="students/turniket" element={<RequirePerm perm="students"><StudentTurnstilePage /></RequirePerm>} />
+          <Route path="students/holatlar" element={<RequirePerm perm="students"><StudentStatusesPage /></RequirePerm>} />
           <Route path="students/turniket/analitika" element={<RequirePerm perm="students"><TurnstileAnalyticsPage /></RequirePerm>} />
           <Route path="students/turniket/kirish-chiqish" element={<RequirePerm perm="students"><TurnstileFlowPage /></RequirePerm>} />
           <Route path="students/turniket/kunlik-davomat" element={<RequirePerm perm="students"><DailyAttendanceReportPage /></RequirePerm>} />
@@ -153,6 +157,8 @@ export default function App() {
           <Route path="finance/debtor-statuses" element={<DebtorStatusesPage />} />
           <Route path="finance/cash-day" element={<CashDayPage />} />
           <Route path="finance/reports" element={<FinancialReportsPage />} />
+          <Route path="finance/transactions" element={<RequirePerm perm="finance"><TransactionsPage /></RequirePerm>} />
+          <Route path="billing/invoices" element={<RequirePerm perm="finance"><InvoicesPage /></RequirePerm>} />
           <Route path="billing/categories" element={<RequirePerm perm="finance"><CategoriesPage /></RequirePerm>} />
           <Route path="billing/subscriptions" element={<RequirePerm perm="finance"><SubscriptionsPage /></RequirePerm>} />
           <Route path="billing/discounts" element={<RequirePerm perm="finance"><DiscountsPage /></RequirePerm>} />

@@ -143,7 +143,7 @@ public sealed class InvoiceService(IAppDbContext db, ILedgerService ledger) : II
     /// shu yerda turadi — qiymati AYNAN "Invoice", ya'ni konstanta
     /// <c>AuditService</c> ga ko'chganda audit tarixi uzilmaydi.
     /// </summary>
-    public const string AuditEntity = "Invoice";
+    public const string AuditEntity = AuditService.EntityInvoice;
 
     /// <summary>
     /// <b>HISOB-FAKTURANI BEKOR QILISH QULFI (advisory lock).</b> Kalit satr
