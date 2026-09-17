@@ -130,8 +130,8 @@ export default function App() {
           <Route path="discipline/attendance-report" element={<RequirePerm perm="discipline"><AttendanceDisciplineReportPage /></RequirePerm>} />
           <Route path="schedule/manage/:id" element={<RequirePerm perm="schedule"><ClassSchedulePage /></RequirePerm>} />
           <Route path="schedule/manage/:id/template/:templateId" element={<RequirePerm perm="schedule"><TemplateEditorPage /></RequirePerm>} />
-          <Route path="subjects" element={<RequirePerm perm="schedule"><SubjectsPage /></RequirePerm>} />
-          <Route path="rooms" element={<RequirePerm perm="schedule"><RoomsPage /></RequirePerm>} />
+          <Route path="subjects" element={<RequirePerm perm="students"><SubjectsPage /></RequirePerm>} />
+          <Route path="rooms" element={<RequirePerm perm="students"><RoomsPage /></RequirePerm>} />
           <Route path="journal" element={<RequirePerm perm="journal"><JournalPage /></RequirePerm>} />
           <Route path="assignments" element={<RequirePerm perm="app"><AssignmentsPage /></RequirePerm>} />
           <Route path="assignment-scores" element={<RequirePerm perm="app"><AssignmentScoresPage /></RequirePerm>} />

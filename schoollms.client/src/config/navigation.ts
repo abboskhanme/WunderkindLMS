@@ -135,8 +135,8 @@ export const navByRole: Record<Role, NavItem[]> = {
         // bolasi qolmagan bo'limni butunlay yashiradi.
         { label: 'Sinflar', to: '/admin/classes', end: true, perm: 'classes', group: "O'QUV JARAYONI" },
         { label: 'Guruhlar', to: '/admin/groups', perm: 'classes', group: "O'QUV JARAYONI" },
-        { label: 'Fanlar', to: '/admin/subjects', perm: 'schedule', group: "O'QUV JARAYONI" },
-        { label: 'Xonalar', to: '/admin/rooms', perm: 'schedule', group: "O'QUV JARAYONI" },
+        { label: 'Fanlar', to: '/admin/subjects', perm: 'students', group: "O'QUV JARAYONI" },
+        { label: 'Xonalar', to: '/admin/rooms', perm: 'students', group: "O'QUV JARAYONI" },
         { label: "O'quvchilar", to: '/admin/students', end: true, perm: 'students', group: "O'QUVCHILAR" },
         { label: "Arxiv o'quvchilar", to: '/admin/students/arxiv', perm: 'students', group: "O'QUVCHILAR" },
         // Manzil va Ota-onalar hali `app` ("Ilova") ruxsati ostida — u mobil
