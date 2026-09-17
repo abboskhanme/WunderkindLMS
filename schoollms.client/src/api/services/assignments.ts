@@ -22,6 +22,7 @@ export interface SaveAssignmentInput {
   title: string
   description?: string
   format: string
+  /** Sinf id'lari, yoki `ownerKind` "group" bo'lsa — o'quv guruh id'lari (G-20) */
   classIds: string[]
   startDate?: string | null
   dueDate?: string | null
@@ -31,6 +32,8 @@ export interface SaveAssignmentInput {
   autoGrade: boolean
   materials: MaterialInput[]
   questions: QuestionInput[]
+  /** G-20: "class" (sukut) | "group". Eski mijoz (bu maydonni yubormaydi) — serverda "class" deb qabul qilinadi. */
+  ownerKind?: 'class' | 'group'
 }
 
 /** Admin: barcha topshiriqlar (yoki sinf bo'yicha) — FAQAT KO'RISH */

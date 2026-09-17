@@ -124,7 +124,9 @@ export function StudentImportModal({ open, onClose, onImported }: Props) {
         <p className="rounded-lg bg-slate-50 px-3 py-2 text-slate-500">
           Fayl avval <b>tekshiriladi</b> — bazaga hech narsa yozilmaydi. Bitta xato qator bo'lsa
           ham yozish boshlanmaydi. F.I.SH, tug'ilgan sana va sinf mos kelsa mavjud o'quvchi
-          <b> yangilanadi</b>; bo'sh katak mavjud qiymatni o'chirmaydi.
+          <b> yangilanadi</b>; bo'sh katak mavjud qiymatni o'chirmaydi. "Guruhlar" ustuni
+          o'quvchini ko'rsatilgan guruhlarga <b>qo'shadi</b> — katakda yo'q guruhlardan uni
+          chiqarmaydi.
         </p>
 
         {busy && !preview && <p className="text-slate-500">Tekshirilmoqda…</p>}
@@ -188,6 +190,7 @@ export function StudentImportModal({ open, onClose, onImported }: Props) {
                       <th className="w-16 px-3 py-2">Qator</th>
                       <th className="px-3 py-2">F.I.SH</th>
                       <th className="px-3 py-2">Sinf</th>
+                      <th className="px-3 py-2">Guruhlar</th>
                       <th className="px-3 py-2">Amal</th>
                     </tr>
                   </thead>
@@ -197,6 +200,7 @@ export function StudentImportModal({ open, onClose, onImported }: Props) {
                         <td className="px-3 py-2 text-slate-400">{r.row}</td>
                         <td className="px-3 py-2 font-medium text-slate-800">{r.fullName}</td>
                         <td className="px-3 py-2 text-slate-600">{r.className}</td>
+                        <td className="px-3 py-2 text-slate-500">{r.groups || '—'}</td>
                         <td className="px-3 py-2">
                           <span
                             className={cn(
