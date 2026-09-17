@@ -335,3 +335,89 @@ export async function getTeacherLmsProgress(subjectId: string): Promise<LmsProgr
   const { data } = await api.get<LmsProgressReport>(`/teacher/lms/subjects/${subjectId}/progress`)
   return data
 }
+
+/* ---------- O'quv guruhlari — "Guruhlarim" (X-3, students-parity.md §2.11) ---------- */
+//
+// Turlar shu yerda, `@/types` emas: bu ekran faqat o'qituvchi portaliga xos —
+// admin `study-groups` ekrani (boshqa agent qurmoqda) o'z turlarini alohida qo'shadi.
+
+/** Guruhni "boqadigan" sinfning qisqa ko'rinishi. */
+export interface TeacherGroupClassRef {
+  id: string
+  name: string
+  grade: number
+}
+
+/** O'qituvchining O'Z guruhi — ro'yxat qatori. */
+export interface TeacherGroup {
+  id: string
+  name: string
+  subjectId: string
+  subjectName: string
+  gender: 'male' | 'female' | null
+  classes: TeacherGroupClassRef[]
+  memberCount: number
+  /** Ro'yxatni tahrirlash (qo'shish/chiqarish) huquqi — FAQAT guruhga biriktirilgan
+   * ("yetakchi") o'qituvchiga true. Backend qoidasi: TeacherPortalController.cs, X-3. */
+  canEditRoster: boolean
+}
+
+/** Guruhdagi bitta a'zolik yozuvi (faol). */
+export interface TeacherGroupMember {
+  id: string
+  studentId: string
+  fullName: string
+  className: string
+  gender: string
+  joinedOn: string
+  leftOn: string | null
+  leaveReason: string | null
+}
+
+/** Ro'yxatga qo'shish mumkin bo'lgan nomzod (guruh boqadigan sinflardan). */
+export interface TeacherGroupCandidate {
+  studentId: string
+  fullName: string
+  classId: string
+  className: string
+  gender: string
+  currentGroupId: string | null
+  currentGroupName: string | null
+}
+
+/** O'qituvchining o'z guruhlari (biriktirilgan yoki jadvalda darsi bor). */
+export async function getMyGroups(): Promise<TeacherGroup[]> {
+  if (USE_MOCK) return []
+  const { data } = await api.get<TeacherGroup[]>('/teacher/groups')
+  return data
+}
+
+/** Guruh ro'yxati (faol a'zolar) — guruhga yetadigan har bir o'qituvchiga ochiq. */
+export async function getTeacherGroupMembers(groupId: string): Promise<TeacherGroupMember[]> {
+  if (USE_MOCK) return []
+  const { data } = await api.get<TeacherGroupMember[]>(`/teacher/groups/${groupId}/members`)
+  return data
+}
+
+/** Qo'shish mumkin bo'lgan nomzodlar — FAQAT guruhga biriktirilgan o'qituvchiga. */
+export async function getTeacherGroupCandidates(groupId: string): Promise<TeacherGroupCandidate[]> {
+  if (USE_MOCK) return []
+  const { data } = await api.get<TeacherGroupCandidate[]>(`/teacher/groups/${groupId}/candidates`)
+  return data
+}
+
+/** Guruhga bir yoki bir nechta o'quvchi qo'shadi. */
+export async function addTeacherGroupMembers(groupId: string, studentIds: string[]): Promise<void> {
+  await api.post(`/teacher/groups/${groupId}/members`, { studentIds })
+}
+
+/** O'quvchini guruhdan chiqarish (sabab ixtiyoriy) — a'zolik yopiladi, o'chirilmaydi. */
+export async function removeTeacherGroupMember(
+  groupId: string,
+  memberId: string,
+  reason?: string,
+): Promise<void> {
+  await api.post(`/teacher/groups/${groupId}/members/${memberId}/remove`, {
+    reason: reason?.trim() || null,
+  })
+}

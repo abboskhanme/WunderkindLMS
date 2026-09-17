@@ -789,6 +789,23 @@ public record TeacherClassDto(
     string ClassId, string ClassName, int Grade, bool IsHomeroom, List<SubjectDto> Subjects,
     string OwnerKind = SchoolLms.Domain.LessonOwnerKind.Class);
 /// <summary>
+/// O'qituvchining O'Z o'quv guruhi — "Guruhlarim" sahifasi (X-3,
+/// students-parity.md §2.11). <c>/teacher/classes</c> ham guruhlarni beradi (ro'yxat
+/// uchun), bu DTO esa guruh ro'yxatini (roster) boshqarish sahifasiga xos maydonlar bilan.
+/// </summary>
+/// <param name="CanEditRoster">
+/// Ro'yxatni TAHRIRLASH (qo'shish/chiqarish) huquqi bormi. X-3 qarori: bunday alohida
+/// ruxsat kaliti (TeacherPermissions) hali yo'q, shuning uchun ENG XAVFSIZ o'qish
+/// tanlandi — FAQAT guruhga BIRIKTIRILGAN o'qituvchiga (<c>study_group_teachers</c>;
+/// <c>TeacherOwner.IsHomeroom</c> guruh uchun aynan shu ma'noni bildiradi) true.
+/// Faqat jadvalda darsi bor, biriktirilmagan o'qituvchi ro'yxatni FAQAT ko'radi — xuddi
+/// sinf rahbarligi/dars beruvchi nomutanosibligiga o'xshab (<c>TeacherOwnerAccess.cs</c>
+/// fayl boshidagi izoh).
+/// </param>
+public record TeacherGroupDto(
+    Guid Id, string Name, string SubjectId, string SubjectName, string? Gender,
+    List<StudyGroupClassRefDto> Classes, int MemberCount, bool CanEditRoster);
+/// <summary>
 /// O'qituvchi jadvalidagi bitta dars (qaysi sinf, fan, kun, dars raqami, vaqt, guruh).
 ///
 /// <para>
