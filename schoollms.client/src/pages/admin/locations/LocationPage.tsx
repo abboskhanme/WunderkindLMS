@@ -2,12 +2,24 @@ import { useEffect, useMemo, useState } from 'react'
 import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet'
 import L from 'leaflet'
 import { MapPin } from 'lucide-react'
-import type { SchoolClass, StudentLocationRow } from '@/types'
+import type { SchoolClass, StudentLocationKind, StudentLocationPin } from '@/types'
 import { getStudentLocations } from '@/api/services/locations'
 import { getClasses } from '@/api/services/classes'
 import { Card } from '@/components/ui/Card'
 import { Loader } from '@/components/ui/Loader'
-import { formatDate, cn } from '@/lib/utils'
+import { cn } from '@/lib/utils'
+
+/** Tur nomi va rangi — profil "Manzil" tab'idagi bilan bir xil (§2.8, L-2). */
+const KIND_LABEL: Record<StudentLocationKind, string> = {
+  home: 'Uy',
+  school: 'Maktab',
+  pickup: 'Olib ketish nuqtasi',
+}
+const KIND_BADGE: Record<StudentLocationKind, string> = {
+  home: 'bg-brand-50 text-brand-700 border-brand-200',
+  school: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+  pickup: 'bg-amber-50 text-amber-700 border-amber-200',
+}
 
 // Leaflet default marker ikon Vite/bundler bilan to'g'ri yuklanmaydi — qo'lda CDN ko'rsatamiz.
 // (Aks holda pin ko'rinmaydi.)
@@ -25,11 +37,12 @@ const control =
   'rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-brand-400'
 
 /**
- * Admin "Joylashuv" sahifasi — o'quvchilar mobil ilova orqali yuborgan uy joylashuvi xaritada.
- * Pin'lar bosilsa: F.I.SH, sinf, manzil, yangilangan vaqt. Sinfga ko'ra filtr.
+ * Admin "Joylashuv" sahifasi — xodim profil kartochkasidan qo'ygan uchtagacha
+ * turdagi joylashuv (uy/maktab/olib ketish nuqtasi) xaritada (§2.8, L-1, L-2).
+ * Pin'lar bosilsa: F.I.SH, sinf, TUR, manzil, `pickup`da vaqt oralig'i. Sinfga ko'ra filtr.
  */
 export function LocationPage() {
-  const [rows, setRows] = useState<StudentLocationRow[]>([])
+  const [rows, setRows] = useState<StudentLocationPin[]>([])
   const [classes, setClasses] = useState<SchoolClass[]>([])
   const [loading, setLoading] = useState(true)
   const [classFilter, setClassFilter] = useState('all')
@@ -49,16 +62,25 @@ export function LocationPage() {
     [rows, classFilter],
   )
 
+  // O'quvchilar soni (pin soni emas) — bitta o'quvchida uchtagacha pin bo'lishi mumkin.
+  const studentCount = useMemo(() => new Set(filtered.map((r) => r.studentId)).size, [filtered])
+
   // Xarita markazi — birinchi pin yoki Toshkent (fallback).
   const center: [number, number] = filtered.length > 0
     ? [filtered[0].latitude, filtered[0].longitude]
     : [41.2995, 69.2401] // Toshkent
 
-  // Sinflar bo'yicha hisob — pastdagi statistika uchun.
+  // Sinflar bo'yicha hisob — pastdagi statistika uchun (O'QUVCHI soni, pin emas).
   const byClass = useMemo(() => {
-    const map = new Map<string, number>()
-    rows.forEach((r) => map.set(r.className, (map.get(r.className) ?? 0) + 1))
-    return [...map.entries()].sort((a, b) => b[1] - a[1])
+    const map = new Map<string, Set<string>>()
+    rows.forEach((r) => {
+      const set = map.get(r.className) ?? new Set<string>()
+      set.add(r.studentId)
+      map.set(r.className, set)
+    })
+    return [...map.entries()]
+      .map(([name, set]) => [name, set.size] as const)
+      .sort((a, b) => b[1] - a[1])
   }, [rows])
 
   return (
@@ -67,8 +89,8 @@ export function LocationPage() {
         <div>
           <h1 className="text-xl font-semibold text-slate-800">Joylashuv</h1>
           <p className="text-sm text-slate-400">
-            O'quvchilar mobil ilova orqali yuborgan uy joylashuvi —{' '}
-            <b>{filtered.length}</b> ta pin
+            Xodim profil kartochkasidan qo'ygan joylashuvlar — <b>{studentCount}</b> ta
+            o'quvchi, <b>{filtered.length}</b> ta pin
           </p>
         </div>
         <select
@@ -91,9 +113,10 @@ export function LocationPage() {
         <Card>
           <div className="py-12 text-center text-sm text-slate-400">
             <MapPin className="mx-auto mb-2 h-8 w-8 text-slate-300" />
-            <p>Hozircha hech bir o'quvchi mobil ilova orqali joylashuv yubormagan.</p>
+            <p>Hozircha hech bir o'quvchida joylashuv belgilanmagan.</p>
             <p className="mt-1 text-xs">
-              O'quvchilar ilovaga kirib "Joylashuvni saqlash" bosgach, bu yerda pin ko'rinadi.
+              O'quvchi kartochkasi → "Manzil" tab'idan xodim xaritadan nuqta bossa, bu yerda
+              pin ko'rinadi.
             </p>
           </div>
         </Card>
@@ -113,7 +136,7 @@ export function LocationPage() {
                 />
                 {filtered.map((r) => (
                   <Marker
-                    key={r.studentId}
+                    key={`${r.studentId}-${r.kind}`}
                     position={[r.latitude, r.longitude]}
                     icon={defaultIcon}
                   >
@@ -121,10 +144,18 @@ export function LocationPage() {
                       <div className="text-sm">
                         <p className="font-semibold text-slate-800">{r.fullName}</p>
                         <p className="text-slate-500">{r.className}</p>
-                        {r.address && <p className="mt-1 text-xs text-slate-600">{r.address}</p>}
-                        {r.updatedAt && (
-                          <p className="mt-1 text-[11px] text-slate-400">
-                            Yangilangan: {formatDate(r.updatedAt.slice(0, 10))}
+                        <span
+                          className={cn(
+                            'mt-1 inline-block rounded-full border px-2 py-0.5 text-[11px] font-medium',
+                            KIND_BADGE[r.kind],
+                          )}
+                        >
+                          {KIND_LABEL[r.kind]}
+                        </span>
+                        {r.name && <p className="mt-1 text-xs text-slate-600">{r.name}</p>}
+                        {r.kind === 'pickup' && r.pickupFrom && r.pickupTo && (
+                          <p className="mt-1 text-[11px] text-slate-500">
+                            Vaqt: {r.pickupFrom}–{r.pickupTo}
                           </p>
                         )}
                         <a
@@ -177,29 +208,40 @@ export function LocationPage() {
                   <tr>
                     <th className="px-4 py-3">F.I.SH</th>
                     <th className="px-4 py-3">Sinf</th>
+                    <th className="px-4 py-3">Tur</th>
                     <th className="px-4 py-3">Manzil</th>
                     <th className="px-4 py-3">Koordinata</th>
-                    <th className="px-4 py-3">Yangilangan</th>
+                    <th className="px-4 py-3">Vaqt</th>
                     <th className="px-4 py-3"></th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {filtered.map((r) => (
-                    <tr key={r.studentId} className="hover:bg-slate-50/60">
+                    <tr key={`${r.studentId}-${r.kind}`} className="hover:bg-slate-50/60">
                       <td className="px-4 py-3 font-medium text-slate-800">{r.fullName}</td>
                       <td className="px-4 py-3">
                         <span className="rounded-md bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
                           {r.className}
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-slate-600 max-w-[24rem] truncate" title={r.address ?? ''}>
-                        {r.address || '—'}
+                      <td className="px-4 py-3">
+                        <span
+                          className={cn(
+                            'rounded-full border px-2 py-0.5 text-xs font-medium',
+                            KIND_BADGE[r.kind],
+                          )}
+                        >
+                          {KIND_LABEL[r.kind]}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-slate-600 max-w-[24rem] truncate" title={r.name ?? ''}>
+                        {r.name || '—'}
                       </td>
                       <td className="px-4 py-3 text-xs text-slate-500">
                         {r.latitude.toFixed(5)}, {r.longitude.toFixed(5)}
                       </td>
                       <td className="px-4 py-3 text-xs text-slate-500">
-                        {r.updatedAt ? formatDate(r.updatedAt.slice(0, 10)) : '—'}
+                        {r.pickupFrom && r.pickupTo ? `${r.pickupFrom}–${r.pickupTo}` : '—'}
                       </td>
                       <td className="px-4 py-3 text-right">
                         <a

@@ -1253,15 +1253,39 @@ export interface TeacherAppRow {
   appId: string
 }
 
-/** Admin xarita sahifasi uchun — joylashuvi bor bitta o'quvchi qatori */
-export interface StudentLocationRow {
+/** O'quvchi joylashuvi turi (§2.8, L-2) — uy / maktab / olib ketish nuqtasi. */
+export type StudentLocationKind = 'home' | 'school' | 'pickup'
+
+/**
+ * Admin xarita sahifasi uchun — bitta o'quvchining BITTA turdagi pin'i.
+ * Bitta o'quvchida uchtagacha qator bo'lishi mumkin (§2.8, L-2).
+ */
+export interface StudentLocationPin {
   studentId: string
   fullName: string
   className: string
+  kind: StudentLocationKind
   latitude: number
   longitude: number
-  address?: string | null
-  updatedAt?: string | null
+  name?: string | null
+  /** "HH:mm" — faqat `pickup` turida majburiy. */
+  pickupFrom?: string | null
+  pickupTo?: string | null
+}
+
+/**
+ * O'quvchi profilidagi "Manzil" tab'i uchun — bitta turdagi joylashuv qatori
+ * (§2.8, L-2). `isLegacy` — bu qator hali `student_locations`da yo'q, ESKI
+ * `students` ustunlaridan sintez qilingan (faqat `home` uchun bo'ladi).
+ */
+export interface StudentLocationEntry {
+  kind: StudentLocationKind
+  name: string | null
+  lat: number
+  lng: number
+  pickupFrom: string | null
+  pickupTo: string | null
+  isLegacy: boolean
 }
 
 /** O'qituvchi dars beradigan sinf (o'qituvchi paneli uchun) */

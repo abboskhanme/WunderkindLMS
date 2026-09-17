@@ -42,6 +42,11 @@ public class StudentProfileTests(ApiFixture fixture)
         Assert.Equal(HttpStatusCode.Unauthorized, (await client.GetAsync("/api/admin/students/x/activity")).StatusCode);
         Assert.Equal(HttpStatusCode.Unauthorized,
             (await client.PutAsJsonAsync("/api/admin/students/x/location", new { latitude = 41.0, longitude = 69.0 })).StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await client.GetAsync("/api/admin/students/x/locations")).StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized,
+            (await client.PutAsJsonAsync("/api/admin/students/x/locations/home", new { lat = 41.0, lng = 69.0 })).StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized,
+            (await client.DeleteAsync("/api/admin/students/x/locations/home")).StatusCode);
     }
 
     [Theory]
@@ -55,6 +60,11 @@ public class StudentProfileTests(ApiFixture fixture)
         Assert.Equal(HttpStatusCode.Forbidden, (await client.GetAsync("/api/admin/students/x/activity")).StatusCode);
         Assert.Equal(HttpStatusCode.Forbidden,
             (await client.PutAsJsonAsync("/api/admin/students/x/location", new { latitude = 41.0, longitude = 69.0 })).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await client.GetAsync("/api/admin/students/x/locations")).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden,
+            (await client.PutAsJsonAsync("/api/admin/students/x/locations/home", new { lat = 41.0, lng = 69.0 })).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden,
+            (await client.DeleteAsync("/api/admin/students/x/locations/home")).StatusCode);
     }
 
     /// <summary>Xodim kartochkani o'qiydi; "students" ruxsatisiz joylashuvni YOZA olmaydi.</summary>
@@ -68,6 +78,10 @@ public class StudentProfileTests(ApiFixture fixture)
         Assert.Equal(HttpStatusCode.Forbidden,
             (await client.PutAsJsonAsync($"/api/admin/students/{student}/location",
                 new { latitude = 41.3, longitude = 69.2, address = "Toshkent" })).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await client.GetAsync($"/api/admin/students/{student}/locations")).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden,
+            (await client.PutAsJsonAsync($"/api/admin/students/{student}/locations/home",
+                new { lat = 41.3, lng = 69.2 })).StatusCode);
     }
 
     [Fact]
@@ -80,6 +94,12 @@ public class StudentProfileTests(ApiFixture fixture)
         Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync($"/api/admin/students/{missing}/activity")).StatusCode);
         Assert.Equal(HttpStatusCode.NotFound,
             (await client.PutAsJsonAsync($"/api/admin/students/{missing}/location", new { latitude = 41.0, longitude = 69.0 })).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync($"/api/admin/students/{missing}/locations")).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound,
+            (await client.PutAsJsonAsync($"/api/admin/students/{missing}/locations/home",
+                new { lat = 41.0, lng = 69.0 })).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound,
+            (await client.DeleteAsync($"/api/admin/students/{missing}/locations/home")).StatusCode);
     }
 
     // =====================================================================
@@ -228,6 +248,162 @@ public class StudentProfileTests(ApiFixture fixture)
             new { latitude = 941.3, longitude = 69.2 });
         Assert.Equal(HttpStatusCode.BadRequest, wild.StatusCode);
         Assert.Equal(StudentProfileController.BadCoordinatesMessage, await MessageAsync(wild));
+    }
+
+    // =====================================================================
+    //  4b. Uchta turdagi joylashuv (L-2) — eski (L-1) bilan sinxronlik
+    // =====================================================================
+
+    /// <summary>
+    /// Yangi o'quvchida hech qanday joylashuv yo'q — bo'sh ro'yxat, 500 emas.
+    /// </summary>
+    [Fact]
+    public async Task Joylashuvlar_royxati_bosh_bolsa_ham_javob_beradi()
+    {
+        using var client = await fixture.Api.ClientAsAsync(Roles.Admin);
+        var student = await SeedStudentAsync();
+
+        using var json = await JsonAsync(client, $"/api/admin/students/{student}/locations");
+        Assert.Equal(0, json.RootElement.GetArrayLength());
+    }
+
+    /// <summary>
+    /// ESKI (L-1) ustunlarda qiymat bor-u, YANGI `student_locations`da hali
+    /// `home` qatori yo'q bo'lsa — u shu ustunlardan SINTEZ qilinadi
+    /// (`isLegacy = true`), ya'ni ko'rinmay qolmaydi.
+    /// </summary>
+    [Fact]
+    public async Task Eski_uy_manzili_student_locations_qatorisiz_sintez_qilinadi()
+    {
+        using var client = await fixture.Api.ClientAsAsync(Roles.Admin);
+        var student = NewStudent($"Eski {Tag()}");
+        student.Latitude = 41.31;
+        student.Longitude = 69.24;
+        student.LocationAddress = "Chilonzor";
+        await fixture.Api.WithDbAsync(async db =>
+        {
+            db.Students.Add(student);
+            await db.SaveChangesAsync();
+        });
+
+        using var json = await JsonAsync(client, $"/api/admin/students/{student.Id}/locations");
+        var row = Assert.Single(json.RootElement.EnumerateArray().ToList());
+        Assert.Equal("home", row.GetProperty("kind").GetString());
+        Assert.Equal("Chilonzor", row.GetProperty("name").GetString());
+        Assert.True(row.GetProperty("isLegacy").GetBoolean());
+    }
+
+    /// <summary>
+    /// `home` turini yangi ekrandan saqlash ESKI ustunlarni ham yangilaydi
+    /// (kartochka sarlavhasi, mobil ilova va ota-ona Mini App'i o'zgarishsiz
+    /// ishlashda davom etsin) — va endi `isLegacy = false`.
+    /// </summary>
+    [Fact]
+    public async Task Home_saqlansa_eski_ustunlar_ham_yangilanadi()
+    {
+        using var client = await fixture.Api.ClientAsAsync(Roles.Admin);
+        var student = await SeedStudentAsync();
+
+        var saved = await client.PutAsJsonAsync($"/api/admin/students/{student}/locations/home",
+            new { lat = 41.311081, lng = 69.240562, name = "Chilonzor 9-kvartal" });
+        Assert.Equal(HttpStatusCode.OK, saved.StatusCode);
+        using var body = JsonDocument.Parse(await saved.Content.ReadAsStringAsync());
+        var row = Assert.Single(body.RootElement.EnumerateArray().ToList());
+        Assert.Equal("home", row.GetProperty("kind").GetString());
+        Assert.False(row.GetProperty("isLegacy").GetBoolean());
+
+        using var card = await JsonAsync(client, $"/api/admin/students/{student}/card");
+        Assert.Equal(41.311081, card.RootElement.GetProperty("latitude").GetDouble(), 6);
+        Assert.Equal("Chilonzor 9-kvartal", card.RootElement.GetProperty("locationAddress").GetString());
+
+        // O'chirish — ESKI ustunlar ham tozalanadi.
+        var deleted = await client.DeleteAsync($"/api/admin/students/{student}/locations/home");
+        Assert.Equal(HttpStatusCode.OK, deleted.StatusCode);
+        using var afterDelete = JsonDocument.Parse(await deleted.Content.ReadAsStringAsync());
+        Assert.Equal(0, afterDelete.RootElement.GetArrayLength());
+
+        using var cardAfter = await JsonAsync(client, $"/api/admin/students/{student}/card");
+        Assert.Equal(JsonValueKind.Null, cardAfter.RootElement.GetProperty("latitude").ValueKind);
+    }
+
+    /// <summary>Uchtagacha — home/school/pickup birga yashaydi, har biridan bittadan.</summary>
+    [Fact]
+    public async Task Uchtagacha_turdagi_joylashuv_birga_saqlanadi()
+    {
+        using var client = await fixture.Api.ClientAsAsync(Roles.Admin);
+        var student = await SeedStudentAsync();
+
+        await client.PutAsJsonAsync($"/api/admin/students/{student}/locations/home",
+            new { lat = 41.30, lng = 69.24, name = "Uy" });
+        await client.PutAsJsonAsync($"/api/admin/students/{student}/locations/school",
+            new { lat = 41.32, lng = 69.20, name = "Maktab" });
+        var pickup = await client.PutAsJsonAsync($"/api/admin/students/{student}/locations/pickup",
+            new { lat = 41.28, lng = 69.22, name = "Bekat", pickupFrom = "07:30", pickupTo = "07:45" });
+        Assert.Equal(HttpStatusCode.OK, pickup.StatusCode);
+
+        using var json = JsonDocument.Parse(await pickup.Content.ReadAsStringAsync());
+        var rows = json.RootElement.EnumerateArray().ToList();
+        Assert.Equal(3, rows.Count);
+        var pickupRow = rows.Single(r => r.GetProperty("kind").GetString() == "pickup");
+        Assert.Equal("07:30", pickupRow.GetProperty("pickupFrom").GetString());
+        Assert.Equal("07:45", pickupRow.GetProperty("pickupTo").GetString());
+
+        // Qayta saqlash — yangi qator emas, mavjudi yangilanadi (hammasi uchtaligicha qoladi).
+        await client.PutAsJsonAsync($"/api/admin/students/{student}/locations/home",
+            new { lat = 41.31, lng = 69.25, name = "Yangi uy" });
+        using var afterJson = await JsonAsync(client, $"/api/admin/students/{student}/locations");
+        Assert.Equal(3, afterJson.RootElement.GetArrayLength());
+    }
+
+    /// <summary>Olib ketish nuqtasida vaqt oralig'i MAJBURIY (EduSchool §2.8.1 bilan bir xil).</summary>
+    [Fact]
+    public async Task Pickupda_vaqt_oraligi_majburiy()
+    {
+        using var client = await fixture.Api.ClientAsAsync(Roles.Admin);
+        var student = await SeedStudentAsync();
+
+        var noWindow = await client.PutAsJsonAsync($"/api/admin/students/{student}/locations/pickup",
+            new { lat = 41.28, lng = 69.22 });
+        Assert.Equal(HttpStatusCode.BadRequest, noWindow.StatusCode);
+        Assert.Equal(StudentProfileController.PickupWindowRequiredMessage, await MessageAsync(noWindow));
+
+        var badOrder = await client.PutAsJsonAsync($"/api/admin/students/{student}/locations/pickup",
+            new { lat = 41.28, lng = 69.22, pickupFrom = "08:00", pickupTo = "07:00" });
+        Assert.Equal(HttpStatusCode.BadRequest, badOrder.StatusCode);
+        Assert.Equal(StudentProfileController.PickupWindowOrderMessage, await MessageAsync(badOrder));
+
+        // `home`da vaqt majburiy emas, lekin taqiqlanmagan ham (masalan avtobus uyidan oladi).
+        var homeWithWindow = await client.PutAsJsonAsync($"/api/admin/students/{student}/locations/home",
+            new { lat = 41.30, lng = 69.24, pickupFrom = "07:15", pickupTo = "07:20" });
+        Assert.Equal(HttpStatusCode.OK, homeWithWindow.StatusCode);
+    }
+
+    [Fact]
+    public async Task Notogri_tur_va_koordinatasiz_sorov_rad_etiladi()
+    {
+        using var client = await fixture.Api.ClientAsAsync(Roles.Admin);
+        var student = await SeedStudentAsync();
+
+        var badKind = await client.PutAsJsonAsync($"/api/admin/students/{student}/locations/garage",
+            new { lat = 41.3, lng = 69.2 });
+        Assert.Equal(HttpStatusCode.BadRequest, badKind.StatusCode);
+        Assert.Equal(StudentProfileController.BadKindMessage, await MessageAsync(badKind));
+
+        var noCoord = await client.PutAsJsonAsync($"/api/admin/students/{student}/locations/school",
+            new { name = "Maktab" });
+        Assert.Equal(HttpStatusCode.BadRequest, noCoord.StatusCode);
+        Assert.Equal(StudentProfileController.MissingCoordinateMessage, await MessageAsync(noCoord));
+    }
+
+    /// <summary>Mavjud bo'lmagan turni o'chirish ham 200 — idempotent, xatolik emas.</summary>
+    [Fact]
+    public async Task Mavjud_bolmagan_turni_ochirish_idempotent()
+    {
+        using var client = await fixture.Api.ClientAsAsync(Roles.Admin);
+        var student = await SeedStudentAsync();
+
+        var deleted = await client.DeleteAsync($"/api/admin/students/{student}/locations/school");
+        Assert.Equal(HttpStatusCode.OK, deleted.StatusCode);
     }
 
     // =====================================================================
