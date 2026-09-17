@@ -1,7 +1,14 @@
-import type { ScheduleLesson, ScheduleTemplate } from '@/types'
+import type { LessonOwnerKind, ScheduleLesson, ScheduleTemplate } from '@/types'
 import { delay, uid } from '@/lib/utils'
 import { api, USE_MOCK } from '../client'
 import { templatesMock } from '../mock/scheduleTemplates'
+
+/**
+ * Yo'ldagi `classId` segmenti — EGAning id'si: sinf id'si YOKI o'quv guruhi
+ * id'si (`docs/modules/students-parity.md` §2.1.4 — guruh id'si o'sha
+ * `class_id` ustunida saqlanadi). Server egani o'zi aniqlaydi, shuning uchun
+ * jadval ekranlari ikkala ega uchun ham bitta xizmatdan foydalanadi.
+ */
 
 export async function getTemplates(classId: string): Promise<ScheduleTemplate[]> {
   if (USE_MOCK) {
@@ -92,17 +99,49 @@ export async function clearTemplateSlot(
   await api.delete(`/admin/classes/${classId}/schedule-templates/${templateId}/${day}/${period}`)
 }
 
+/** Bitta band soat — egasi sinf ham, o'quv guruhi ham bo'lishi mumkin (§2.1.4). */
+export interface OccupiedSlot {
+  day: number
+  period: number
+  /** Eganing nomi: sinf nomi yoki guruh nomi */
+  className: string
+  templateName: string
+  ownerKind?: LessonOwnerKind
+}
+
 /** O'qituvchining hozir tahrirlayotgan template'dan boshqa joylardagi band soatlari.
- *  Qaytadi: { [teacherId]: [{ day, period, className, templateName }] }
+ *  Qaytadi: { [teacherId]: [{ day, period, className, templateName, ownerKind }] }
  *  `excludeTemplateId` — hozir tahrirlanayotgan template (o'zi bilan ziddiyat ko'rsatilmasin). */
 export async function getOccupiedSlots(
   excludeTemplateId: string,
-): Promise<Record<string, { day: number; period: number; className: string; templateName: string }[]>> {
+): Promise<Record<string, OccupiedSlot[]>> {
   if (USE_MOCK) return {}
   const { data } = await api.get('/admin/schedule/occupied-slots', {
     params: { excludeTemplateId },
   })
-  return data as Record<string, { day: number; period: number; className: string; templateName: string }[]>
+  return data as Record<string, OccupiedSlot[]>
+}
+
+/**
+ * Shu eganing o'quvchilari BOSHQA egada (odatda o'quv guruhida) band
+ * bo'ladigan soatlar — jadval taxtasida faqat ko'rsatish uchun (G-11).
+ * Guruh darslari o'chirgichi o'chiq bo'lsa ro'yxat bo'sh.
+ */
+export interface PupilOverlaySlot {
+  day: number
+  period: number
+  ownerId: string
+  ownerName: string
+  ownerKind: LessonOwnerKind
+  subjectId: string
+  /** Nechta o'quvchi ikkala egada ham bor */
+  studentCount: number
+}
+
+export async function getPupilOverlay(ownerId: string): Promise<PupilOverlaySlot[]> {
+  if (USE_MOCK) return []
+  const { data } = await api.get<PupilOverlaySlot[]>(`/admin/schedule/pupil-overlay/${ownerId}`)
+  return data
 }
 
 /**

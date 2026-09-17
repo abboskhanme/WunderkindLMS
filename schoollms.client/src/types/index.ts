@@ -277,12 +277,25 @@ export interface ScheduleLesson {
   subGroup?: number
 }
 
-/** Sinf uchun nomli dars jadvali varianti */
+/**
+ * Dars jadvalining EGASI — sinf yoki o'quv guruhi
+ * (`docs/modules/students-parity.md` §2.1.4).
+ *
+ * Guruh darsi ham o'sha `classId` ustunida saqlanadi, faqat `ownerKind`
+ * bilan belgilanadi — shuning uchun jadval ekranlari ikkalasi uchun ham
+ * bitta yo'l va bitta komponent bilan ishlaydi.
+ */
+export type LessonOwnerKind = 'class' | 'group'
+
+/** Sinf yoki o'quv guruhi uchun nomli dars jadvali varianti */
 export interface ScheduleTemplate {
   id: string
+  /** Eganing id'si: sinf id'si yoki guruh id'si (`ownerKind` qaysi ekanini aytadi) */
   classId: string
   name: string
   lessons: ScheduleLesson[]
+  /** Egasi sinfmi yoki guruhmi. Eski javoblarda bo'lmasligi mumkin → 'class'. */
+  ownerKind?: LessonOwnerKind
 }
 
 /** Chorak ichidagi haftaga jadval biriktirish */
@@ -1187,12 +1200,16 @@ export interface TeacherLesson {
   period: number
   startTime?: string | null
   endTime?: string | null
+  /** Eganing id'si — sinf yoki o'quv guruhi (`ownerKind` ga qarang) */
   classId: string
+  /** Eganing nomi — sinf nomi yoki guruh nomi */
   className: string
   subjectId: string
   subjectName: string
   /** Bo'linish: 0 = butun sinf, 1 = 1-guruh, 2 = 2-guruh. Belgilanmagan = 0. */
   subGroup?: number
+  /** Dars sinfnikimi yoki o'quv guruhinikimi. Eski javoblarda yo'q → 'class'. */
+  ownerKind?: LessonOwnerKind
 }
 
 /* ─── LMS (Ta'lim) ─────────────────────────────────────────── */

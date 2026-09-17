@@ -28,12 +28,24 @@ public static class PortalSchedule
         return (1, 1);
     }
 
-    /// <summary>Sinfning (chorak, hafta) ga biriktirilgan jadval darslari. Biriktirilmagan bo'lsa — bo'sh.</summary>
+    /// <summary>
+    /// EGAning (chorak, hafta) ga biriktirilgan jadval darslari. Biriktirilmagan
+    /// bo'lsa — bo'sh.
+    ///
+    /// <para>
+    /// <paramref name="ownerKind"/> sukut bo'yicha <c>class</c>, ya'ni bugungi
+    /// har bir chaqiruv o'zgarishsiz ishlaydi. Guruh jadvalini olish uchun
+    /// guruh id'si va <c>group</c> beriladi (students-parity.md §2.1.4:
+    /// guruh id'si ham o'sha <c>class_id</c> ustunida turadi).
+    /// </para>
+    /// </summary>
     public static async Task<List<ScheduleLesson>> LessonsForWeekAsync(
-        IAppDbContext db, string classId, int quarter, int week)
+        IAppDbContext db, string classId, int quarter, int week,
+        string ownerKind = LessonOwnerKind.Class)
     {
         var a = await db.WeekAssignments.FirstOrDefaultAsync(
-            x => x.ClassId == classId && x.Quarter == quarter && x.Week == week);
+            x => x.ClassId == classId && x.Quarter == quarter && x.Week == week
+                 && x.OwnerKind == ownerKind);
         if (a?.TemplateId is null) return new();
         var tpl = await db.ScheduleTemplates.Include(t => t.Lessons)
             .FirstOrDefaultAsync(t => t.Id == a.TemplateId);
@@ -62,31 +74,24 @@ public static class PortalSchedule
     public static async Task<List<TeacherLessonDto>> TeacherWeekAsync(
         IAppDbContext db, string teacherId, int quarter, int week)
     {
-        var assignments = await db.WeekAssignments
-            .Where(x => x.Quarter == quarter && x.Week == week && x.TemplateId != null)
-            .ToListAsync();
-        if (assignments.Count == 0) return [];
+        // G-5/G-12: yig'ish endi `TeacherLessons` da — sinf VA guruh shablonlari
+        // bitta joyda birlashadi. O'chirgich o'chiq bo'lsa guruh biriktirishlari
+        // ko'rinmaydi va natija bugungi ro'yxatning aynan o'zi.
+        var lessons = await TeacherLessons.ForWeekAsync(db, teacherId, quarter, week);
+        if (lessons.Count == 0) return [];
 
-        var templateIds = assignments.Select(a => a.TemplateId!).Distinct().ToList();
-        var templates = (await db.ScheduleTemplates.Include(x => x.Lessons)
-                .Where(x => templateIds.Contains(x.Id)).ToListAsync())
-            .ToDictionary(x => x.Id);
-        var classes = await db.Classes.ToDictionaryAsync(c => c.Id, c => c.Name);
         var subjects = await db.Subjects.ToDictionaryAsync(s => s.Id, s => s.Name);
         var times = await db.LessonTimes.ToDictionaryAsync(x => x.Period);
 
         var result = new List<TeacherLessonDto>();
-        foreach (var a in assignments)
+        foreach (var l in lessons)
         {
-            if (!templates.TryGetValue(a.TemplateId!, out var tpl)) continue;
-            foreach (var l in tpl.Lessons.Where(l => l.TeacherId == teacherId))
-            {
-                times.TryGetValue(l.Period, out var lt);
-                result.Add(new TeacherLessonDto(
-                    l.Day, l.Period, lt?.StartTime, lt?.EndTime,
-                    a.ClassId, classes.GetValueOrDefault(a.ClassId, ""),
-                    l.SubjectId, subjects.GetValueOrDefault(l.SubjectId, ""), l.SubGroup));
-            }
+            times.TryGetValue(l.Period, out var lt);
+            result.Add(new TeacherLessonDto(
+                l.Day, l.Period, lt?.StartTime, lt?.EndTime,
+                l.Owner.Id, l.Owner.Name,
+                l.SubjectId, subjects.GetValueOrDefault(l.SubjectId, ""), l.SubGroup,
+                l.Owner.Kind));
         }
         return [.. result.OrderBy(r => r.Day).ThenBy(r => r.Period)];
     }

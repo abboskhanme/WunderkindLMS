@@ -75,6 +75,13 @@ public class AcademicYearController(AppDbContext db, AuditService audit) : Contr
         var reasonById = Dict(snap.AbsenceReasons, r => r.Id, r => r.Name);
         var templateById = Dict(snap.ScheduleTemplates, t => t.Id, t => t.Name);
 
+        // Jadval, jurnal va dars mavzusi qatorlarining egasi sinf ham, o'quv
+        // guruhi ham bo'lishi mumkin (§2.1.4: guruh id'si o'sha `class_id`
+        // ustunida turadi) — ikkalasining nomini bitta lug'atga yig'amiz, aks
+        // holda guruh qatorlari arxivda NOMSIZ chiqardi.
+        var ownerNameById = new Dictionary<string, string>(classById, StringComparer.Ordinal);
+        foreach (var g in snap.StudyGroups) ownerNameById[g.Id.ToString()] = g.Name;
+
         using var ms = new MemoryStream();
         using (var zip = new ZipArchive(ms, ZipArchiveMode.Create, true))
         {
@@ -105,26 +112,28 @@ public class AcademicYearController(AppDbContext db, AuditService audit) : Contr
                 snap.Subjects.OrderBy(s => s.Name).Select(s => new[] { s.Name }));
 
             AddCsv(zip, $"{folder}/Baholar/baholar.csv",
-                new[] { "O'quvchi", "Sinf", "Fan", "Chorak", "Sana", "Baho", "Sabab" },
+                new[] { "O'quvchi", "Sinf/guruh", "Fan", "Chorak", "Sana", "Baho", "Sabab" },
                 snap.Journal.Select(e => new[]
                 {
-                    Get(studentById, e.StudentId), Get(classById, e.ClassId), Get(subjectById, e.SubjectId),
+                    Get(studentById, e.StudentId), Get(ownerNameById, e.ClassId), Get(subjectById, e.SubjectId),
                     e.Quarter.ToString(), e.Date, e.Grade?.ToString() ?? "",
                     e.ReasonId is null ? "" : Get(reasonById, e.ReasonId),
                 }));
             AddCsv(zip, $"{folder}/Baholar/dars-mavzulari.csv",
-                new[] { "Sinf", "Fan", "Chorak", "Sana", "Mavzu", "Uyga vazifa" },
+                new[] { "Sinf/guruh", "Fan", "Chorak", "Sana", "Mavzu", "Uyga vazifa" },
                 snap.LessonNotes.Select(n => new[]
                 {
-                    Get(classById, n.ClassId), Get(subjectById, n.SubjectId), n.Quarter.ToString(),
+                    Get(ownerNameById, n.ClassId), Get(subjectById, n.SubjectId), n.Quarter.ToString(),
                     n.Date, n.Topic, n.Homework ?? "",
                 }));
 
             AddCsv(zip, $"{folder}/Jadval/dars-jadvali.csv",
-                new[] { "Sinf", "Chorak", "Hafta", "Jadval (shablon)" },
+                new[] { "Egasi", "Turi", "Chorak", "Hafta", "Jadval (shablon)" },
                 snap.WeekAssignments.Select(w => new[]
                 {
-                    Get(classById, w.ClassId), w.Quarter.ToString(), w.Week.ToString(),
+                    Get(ownerNameById, w.ClassId),
+                    w.OwnerKind == LessonOwnerKind.Group ? "Guruh" : "Sinf",
+                    w.Quarter.ToString(), w.Week.ToString(),
                     w.TemplateId is null ? "" : Get(templateById, w.TemplateId),
                 }));
             AddCsv(zip, $"{folder}/Jadval/choraklar.csv",
@@ -195,6 +204,8 @@ public class AcademicYearController(AppDbContext db, AuditService audit) : Contr
         public List<LessonNote> LessonNotes { get; set; } = new();
         public List<ScheduleTemplate> ScheduleTemplates { get; set; } = new();
         public List<WeekAssignment> WeekAssignments { get; set; } = new();
+        /// <summary>O'quv guruhlari — jadval qatorlarining egasi bo'lishi mumkin (§2.1.4).</summary>
+        public List<StudyGroup> StudyGroups { get; set; } = new();
         public List<QuarterPeriod> Quarters { get; set; } = new();
         public List<AbsenceReason> AbsenceReasons { get; set; } = new();
         public List<LessonTime> LessonTimes { get; set; } = new();
@@ -242,6 +253,9 @@ public class AcademicYearController(AppDbContext db, AuditService audit) : Contr
             LessonNotes = await db.LessonNotes.AsNoTracking().ToListAsync(),
             ScheduleTemplates = await db.ScheduleTemplates.Include(t => t.Lessons).AsNoTracking().ToListAsync(),
             WeekAssignments = await db.WeekAssignments.AsNoTracking().ToListAsync(),
+            // G-11: arxiv eksportida guruh qatorlari NOM bilan chiqishi kerak —
+            // `class_id` ustunida guruh id'si turadi va sinflar ro'yxatida u yo'q.
+            StudyGroups = await db.StudyGroups.AsNoTracking().ToListAsync(),
             Quarters = await db.Quarters.AsNoTracking().ToListAsync(),
             AbsenceReasons = await db.AbsenceReasons.AsNoTracking().ToListAsync(),
             LessonTimes = await db.LessonTimes.AsNoTracking().ToListAsync(),
@@ -334,9 +348,11 @@ public class AcademicYearController(AppDbContext db, AuditService audit) : Contr
                         graduated++;
                     }
                     db.ScheduleTemplates.RemoveRange(
-                        await db.ScheduleTemplates.Where(t => t.ClassId == cls.Id).ToListAsync());
+                        await db.ScheduleTemplates.Where(
+                            t => t.ClassId == cls.Id && t.OwnerKind == LessonOwnerKind.Class).ToListAsync());
                     db.WeekAssignments.RemoveRange(
-                        await db.WeekAssignments.Where(w => w.ClassId == cls.Id).ToListAsync());
+                        await db.WeekAssignments.Where(
+                            w => w.ClassId == cls.Id && w.OwnerKind == LessonOwnerKind.Class).ToListAsync());
                     db.Classes.Remove(cls);
                 }
                 else
@@ -410,12 +426,40 @@ public class AcademicYearController(AppDbContext db, AuditService audit) : Contr
             }
         }
 
+        // 3b) O'QUV GURUHLARI — students-parity.md §2.1.4 ("Year rollover").
+        //
+        // Guruh bir o'quv yiliga tegishli: uni boqadigan sinflar ko'tariladi,
+        // nomi ("5-sinf ingliz tili") ma'nosini yo'qotadi va bolalar qaytadan
+        // taqsimlanadi. Shuning uchun har FAOL guruh arxivlanadi va a'zoliklar
+        // o'tish sanasi bilan YOPILADI (o'chirilmaydi — tarix qoladi). Yangi
+        // yil guruhlarini maktab "Nusxalash" tugmasi bilan o'zi ochadi (Q8).
+        var rolloverDate = AppClock.Today;
+        var archivedGroups = 0;
+        foreach (var g in await db.StudyGroups.Where(x => !x.IsArchived).ToListAsync())
+        {
+            g.IsArchived = true;
+            g.ArchivedAt = AppClock.Now;
+            archivedGroups++;
+        }
+        var closedMemberships = 0;
+        foreach (var m in await db.StudyGroupMembers.Where(x => x.LeftOn == null).ToListAsync())
+        {
+            m.LeftOn = m.JoinedOn > rolloverDate ? m.JoinedOn : rolloverDate;
+            m.LeaveReason ??= "O'quv yili yakunlandi";
+            closedMemberships++;
+        }
+
         // 4) Joriy o'quv yilini yangilaymiz + audit.
         meta.CurrentYear = req.NewYear;
         audit.Record("AcademicYear", "current", "rollover",
             $"Yangi o'quv yiliga o'tildi: {(string.IsNullOrEmpty(oldYear) ? "—" : oldYear)} → {req.NewYear}" +
-            $" (ko'tarildi: {promoted}, bitirdi: {graduated}, yopilgan obuna: {subscriptionsClosed})",
-            after: new { req.NewYear, promoted, graduated, subscriptionsClosed });
+            $" (ko'tarildi: {promoted}, bitirdi: {graduated}, yopilgan obuna: {subscriptionsClosed}," +
+            $" arxivlangan guruh: {archivedGroups}, yopilgan guruh a'zoligi: {closedMemberships})",
+            after: new
+            {
+                req.NewYear, promoted, graduated, subscriptionsClosed,
+                archivedGroups, closedMemberships,
+            });
 
         await db.SaveChangesAsync();
         return new RolloverResultDto(oldYear, req.NewYear, promoted, graduated);

@@ -18,27 +18,24 @@ public static class TeacherSalaryCalc
     /// <summary>
     /// Har o'qituvchining hafta kuni kesimida darslar soni: teacherId → int[6]
     /// (indeks 0=Dushanba ... 5=Shanba; <see cref="ScheduleLesson.Day"/> bilan bir xil).
-    /// Har sinf uchun faqat bitta asosiy (eng ko'p darsli) shablon, faqat mavjud sinflar.
+    /// Har EGA (sinf yoki guruh) uchun faqat bitta asosiy (eng ko'p darsli) shablon.
+    ///
+    /// <para>
+    /// <b>G-16 — guruh darsi BIR MARTA sanaladi.</b> Ilgari bu yerda
+    /// <c>classSet.Contains(t.ClassId)</c> filtri turardi: egasi sinf
+    /// bo'lmagan har qanday shablon JIMGINA tushib qolardi, ya'ni guruh
+    /// darslari maoshga umuman kirmasdi (§2.1.5 — "the silent pay trap").
+    /// Endi manba <see cref="TeacherLessons.ByWeekdayAsync"/>: u sinf va guruhni
+    /// bir xil "ega" deb ko'radi, guruh esa uni nechta sinf boqishidan qat'i
+    /// nazar BITTA ega — shuning uchun darsi ikki marta hisoblanmaydi.
+    /// </para>
+    /// <para>
+    /// <c>school_meta.group_lessons_enabled</c> o'chiq ekan tirik egalar
+    /// ro'yxatida faqat sinflar bo'ladi — ya'ni raqam bugungining aynan o'zi.
+    /// </para>
     /// </summary>
-    public static async Task<Dictionary<string, int[]>> LessonsByWeekdayAsync(IAppDbContext db)
-    {
-        var classSet = (await db.Classes.Where(c => !c.IsArchived).Select(c => c.Id).ToListAsync())
-            .ToHashSet();
-        var templates = (await db.ScheduleTemplates.Include(t => t.Lessons).ToListAsync())
-            .Where(t => classSet.Contains(t.ClassId)).ToList();
-        var mainPerClass = templates
-            .GroupBy(t => t.ClassId)
-            .Select(g => g.OrderByDescending(t => t.Lessons.Count).ThenBy(t => t.Id).First());
-
-        var result = new Dictionary<string, int[]>();
-        foreach (var tpl in mainPerClass)
-            foreach (var l in tpl.Lessons.Where(l => !string.IsNullOrEmpty(l.TeacherId) && l.Day is >= 0 and < 6))
-            {
-                if (!result.TryGetValue(l.TeacherId, out var arr)) result[l.TeacherId] = arr = new int[6];
-                arr[l.Day]++;
-            }
-        return result;
-    }
+    public static Task<Dictionary<string, int[]>> LessonsByWeekdayAsync(IAppDbContext db) =>
+        TeacherLessons.ByWeekdayAsync(db);
 
     /// <summary>Har o'qituvchining haftalik darslar soni (teacherId → son).</summary>
     public static async Task<Dictionary<string, int>> WeeklyLessonsAsync(IAppDbContext db) =>

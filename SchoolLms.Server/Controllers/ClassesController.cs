@@ -205,12 +205,28 @@ public class ClassesController(AppDbContext db, AuditService audit) : Controller
                 message = $"Bu sinfda {studentCount} ta o'quvchi bor — sinfni o'chirib bo'lmaydi. " +
                           "Avval o'quvchilarni boshqa sinfga o'tkazing yoki arxivlang.",
             });
+        // G-11: sinf biror O'QUV GURUHINI boqayotgan bo'lsa — o'chirib bo'lmaydi.
+        // `study_group_classes.class_id` FK'si RESTRICT, ya'ni o'chirish baribir
+        // 23503 bilan yiqilardi; bu yerda uni O'ZBEKCHA tushuntirib rad etamiz.
+        var feeding = await db.StudyGroupClasses.Where(g => g.ClassId == cls.Id)
+            .Join(db.StudyGroups, g => g.GroupId, g => g.Id, (_, g) => g.Name)
+            .OrderBy(n => n).ToListAsync();
+        if (feeding.Count > 0)
+            return BadRequest(new
+            {
+                message = $"Bu sinf {feeding.Count} ta o'quv guruhini boqmoqda "
+                          + $"({string.Join(", ", feeding.Take(5))}) — sinfni o'chirib bo'lmaydi. "
+                          + "Avval o'sha guruhlardan sinfni chiqaring yoki guruhlarni arxivlang.",
+            });
+
         // Sinf jadval shablonlari va hafta biriktirishlarini ham o'chiramiz — "yetim" jadval
         // qolmasin (aks holda maosh/hisoblar o'chirilgan sinf darslarini sanayverardi).
         db.ScheduleTemplates.RemoveRange(
-            await db.ScheduleTemplates.Where(t => t.ClassId == cls.Id).ToListAsync());
+            await db.ScheduleTemplates.Where(
+                t => t.ClassId == cls.Id && t.OwnerKind == LessonOwnerKind.Class).ToListAsync());
         db.WeekAssignments.RemoveRange(
-            await db.WeekAssignments.Where(w => w.ClassId == cls.Id).ToListAsync());
+            await db.WeekAssignments.Where(
+                w => w.ClassId == cls.Id && w.OwnerKind == LessonOwnerKind.Class).ToListAsync());
         db.Classes.Remove(cls);
         await db.SaveChangesAsync();
         return NoContent();

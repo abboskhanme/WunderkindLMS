@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Trash2, Users, User, CalendarClock, AlertTriangle } from 'lucide-react'
-import type { ScheduleLesson, Subject, Teacher } from '@/types'
+import type { LessonOwnerKind, ScheduleLesson, Subject, Teacher } from '@/types'
 import { Button } from '@/components/ui/Button'
 import { Select } from '@/components/ui/Input'
 import { weekDays } from '@/config/constants'
@@ -16,7 +16,15 @@ export interface SlotTarget {
 /** O'qituvchi → band soatlar. ScheduleBoard tomonidan uzatiladi. */
 export type OccupiedSlots = Record<
   string,
-  { day: number; period: number; className: string; templateName: string }[]
+  {
+    day: number
+    period: number
+    /** Eganing nomi: sinf nomi yoki o'quv guruhi nomi */
+    className: string
+    templateName: string
+    /** Egasi sinfmi yoki guruhmi (eski javobda yo'q → 'class') */
+    ownerKind?: LessonOwnerKind
+  }[]
 >
 
 interface Props {
@@ -25,6 +33,13 @@ interface Props {
   teachers: Teacher[]
   /** Boshqa template'lardagi o'qituvchi band soatlari — ziddiyat aniqlash uchun. */
   occupiedSlots: OccupiedSlots
+  /**
+   * Tahrirlanayotgan jadval kimniki — sinfnikimi yoki o'quv guruhinikimi.
+   * Guruhda sinf ichidagi 1/2-guruhga bo'linish YO'Q (guruhning o'zi
+   * allaqachon tanlangan o'quvchilar ro'yxati), shuning uchun "Guruhga"
+   * tugmasi ko'rsatilmaydi — server ham uni rad etadi.
+   */
+  ownerKind?: LessonOwnerKind
   /** Yangi to'liq holatni saqlash: 1 ta = butun sinf, 2 ta (G1+G2) = bo'lingan. */
   onSave: (day: number, period: number, lessons: ScheduleLesson[]) => void
   onClear: (day: number, period: number) => void
@@ -42,7 +57,15 @@ const emptyRow: Row = { subjectId: '', teacherId: '' }
  * Fan + o'qituvchi tanlanadi. Tanlangan o'qituvchi shu soatda boshqa sinfda
  * band bo'lsa — ogohlantirish ko'rsatiladi va saqlash bloklanadi.
  */
-export function LessonEditorPanel({ slot, subjects, teachers, occupiedSlots, onSave, onClear }: Props) {
+export function LessonEditorPanel({
+  slot,
+  subjects,
+  teachers,
+  occupiedSlots,
+  ownerKind = 'class',
+  onSave,
+  onClear,
+}: Props) {
   const [mode, setMode] = useState<'whole' | 'split'>('whole')
   const [whole, setWhole] = useState<Row>(emptyRow)
   const [g1, setG1] = useState<Row>(emptyRow)
@@ -146,29 +169,31 @@ export function LessonEditorPanel({ slot, subjects, teachers, occupiedSlots, onS
       </div>
 
       <div className="space-y-4">
-        {/* Rejim tanlovi */}
-        <div className="flex gap-1 rounded-lg bg-slate-100 p-1">
-          <button
-            type="button"
-            onClick={() => setMode('whole')}
-            className={cn(
-              'flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
-              mode === 'whole' ? 'bg-white text-brand-700 shadow-sm' : 'text-slate-500',
-            )}
-          >
-            <Users className="mr-1 inline h-4 w-4" /> Butun sinf
-          </button>
-          <button
-            type="button"
-            onClick={() => setMode('split')}
-            className={cn(
-              'flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
-              mode === 'split' ? 'bg-white text-brand-700 shadow-sm' : 'text-slate-500',
-            )}
-          >
-            <User className="mr-1 inline h-4 w-4" /> Guruhga
-          </button>
-        </div>
+        {/* Rejim tanlovi — o'quv guruhi jadvalida bo'linish yo'q (Props izohiga qarang) */}
+        {ownerKind === 'class' && (
+          <div className="flex gap-1 rounded-lg bg-slate-100 p-1">
+            <button
+              type="button"
+              onClick={() => setMode('whole')}
+              className={cn(
+                'flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
+                mode === 'whole' ? 'bg-white text-brand-700 shadow-sm' : 'text-slate-500',
+              )}
+            >
+              <Users className="mr-1 inline h-4 w-4" /> Butun sinf
+            </button>
+            <button
+              type="button"
+              onClick={() => setMode('split')}
+              className={cn(
+                'flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
+                mode === 'split' ? 'bg-white text-brand-700 shadow-sm' : 'text-slate-500',
+              )}
+            >
+              <User className="mr-1 inline h-4 w-4" /> Guruhga
+            </button>
+          </div>
+        )}
 
         {mode === 'whole' ? (
           <RowFields
@@ -228,8 +253,10 @@ export function LessonEditorPanel({ slot, subjects, teachers, occupiedSlots, onS
 }
 
 interface ConflictInfo {
+  /** Eganing nomi — sinf nomi yoki o'quv guruhi nomi */
   className: string
   templateName: string
+  ownerKind?: LessonOwnerKind
 }
 
 function RowFields({
@@ -283,7 +310,11 @@ function RowFields({
             <p className="font-semibold">Ziddiyat topildi!</p>
             <p className="mt-0.5">
               Bu o'qituvchi{' '}
-              <span className="font-semibold">{conflict.className}-sinf</span>
+              <span className="font-semibold">
+                {conflict.ownerKind === 'group'
+                  ? `"${conflict.className}" guruhi`
+                  : `${conflict.className}-sinf`}
+              </span>
               {' '}da shu soatda allaqachon dars bor{' '}
               <span className="text-red-500">({conflict.templateName})</span>.
             </p>

@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using SchoolLms.Infrastructure.Data;
 using SchoolLms.Application.Dtos;
+using SchoolLms.Application.Services;
 
 namespace SchoolLms.Server.Controllers;
 
@@ -22,7 +23,15 @@ public class ScheduleUtilsController(AppDbContext db) : ControllerBase
     /// <para><c>excludeTemplateId</c> — hozir tahrirlayotgan template o'zi bilan ziddiyat
     /// ko'rsatmasligi uchun o'tkazib yuboriladi.</para>
     ///
-    /// Javob: teacherId → [{ Day, Period, ClassName, TemplateName }].
+    /// <para>
+    /// G-11: xarita endi SINF va O'QUV GURUHI shablonlarining ikkalasini ham
+    /// ko'radi — aks holda guruhda dars beradigan o'qituvchi "bo'sh" bo'lib
+    /// ko'rinar va ikki joyga birdan yozilardi. Guruh darslari o'chirgichi
+    /// o'chiq bo'lsa tirik egalar ro'yxatida guruhlar yo'q, ya'ni javob
+    /// bugungining aynan o'zi.
+    /// </para>
+    ///
+    /// Javob: teacherId → [{ Day, Period, ClassName, TemplateName, OwnerKind }].
     /// </summary>
     [HttpGet("occupied-slots")]
     public async Task<ActionResult<Dictionary<string, List<OccupiedSlotDto>>>> OccupiedSlots(
@@ -33,17 +42,16 @@ public class ScheduleUtilsController(AppDbContext db) : ControllerBase
             .Where(t => excludeTemplateId == null || t.Id != excludeTemplateId)
             .ToListAsync();
 
-        var classNames = await db.Classes
-            .Where(c => !c.IsArchived)
-            .ToDictionaryAsync(c => c.Id, c => c.Name);
+        var owners = await LessonRoster.LiveOwnersAsync(db);
 
         var result = new Dictionary<string, List<OccupiedSlotDto>>(StringComparer.Ordinal);
 
         foreach (var tpl in templates)
         {
-            // Sinfi mavjud bo'lmagan (eski o'quv yilidan/o'chirilgan sinf) "yetim" shablon —
-            // ziddiyat tekshiruviga qo'shilmaydi.
-            if (!classNames.TryGetValue(tpl.ClassId, out var className)) continue;
+            // Egasi mavjud bo'lmagan (eski o'quv yilidan/o'chirilgan sinf yoki
+            // arxivlangan guruh) "yetim" shablon — ziddiyat tekshiruviga qo'shilmaydi.
+            if (!owners.TryGetValue(tpl.ClassId, out var owner) || owner.Kind != tpl.OwnerKind) continue;
+            var className = owner.Name;
 
             // (teacherId, day, period) bo'yicha guruhlash — bir soatda ikkala guruh bo'lsa bitta yozuv.
             var slots = tpl.Lessons
@@ -56,10 +64,59 @@ public class ScheduleUtilsController(AppDbContext db) : ControllerBase
                 if (!result.TryGetValue(teacherId, out var list))
                     result[teacherId] = list = new();
 
-                list.Add(new OccupiedSlotDto(day, period, className, tpl.Name));
+                list.Add(new OccupiedSlotDto(day, period, className, tpl.Name, owner.Kind));
             }
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// Shu eganing O'QUVCHILARI boshqa egada (odatda o'quv guruhida) qatnashadigan
+    /// darslar — jadval taxtasida FAQAT KO'RSATISH uchun (G-11).
+    ///
+    /// <para>
+    /// Sinf jadvalini tuzayotgan odam bolalarning guruh darslarini ko'rmasa,
+    /// har safar 409 ga urilardi. Bu ro'yxat o'sha "band" soatlarni oldindan
+    /// ko'rsatadi; tahrirlash mumkin emas, rad etish qoidasi esa baribir
+    /// serverda (<c>ScheduleConflicts</c>).
+    /// </para>
+    /// <para>
+    /// Manba — har eganing ASOSIY (eng ko'p darsli) shabloni: maosh va
+    /// turniket ham aynan shuni ko'radi, ya'ni ekran bilan raqamlar bir xil
+    /// narsaga tayanadi. Guruh darslari o'chirgichi o'chiq bo'lsa ro'yxat
+    /// BO'SH — bugungi ekran o'zgarmaydi.
+    /// </para>
+    /// </summary>
+    [HttpGet("pupil-overlay/{ownerId}")]
+    public async Task<ActionResult<IEnumerable<PupilOverlaySlotDto>>> PupilOverlay(
+        string ownerId, CancellationToken ct = default)
+    {
+        var owner = await LessonRoster.OwnerAsync(db, ownerId, ct);
+        if (owner is null) return NotFound();
+        if (!await LessonRoster.GroupLessonsEnabledAsync(db, ct)) return new List<PupilOverlaySlotDto>();
+
+        var mine = (await LessonRoster.ForLessonAsync(db, owner, ct: ct))
+            .Select(s => s.Id).ToHashSet(StringComparer.Ordinal);
+        if (mine.Count == 0) return new List<PupilOverlaySlotDto>();
+
+        var result = new List<PupilOverlaySlotDto>();
+        foreach (var (other, tpl) in await TeacherLessons.MainTemplatesAsync(db, ct))
+        {
+            if (other.Id == owner.Id) continue;
+            var shared = (await LessonRoster.ForLessonAsync(db, other, ct: ct))
+                .Count(s => mine.Contains(s.Id));
+            if (shared == 0) continue;
+
+            foreach (var slot in tpl.Lessons
+                .Where(l => l.Day is >= 0 and < 6 && l.Period > 0)
+                .GroupBy(l => new { l.Day, l.Period }))
+            {
+                result.Add(new PupilOverlaySlotDto(
+                    slot.Key.Day, slot.Key.Period, other.Id, other.Name, other.Kind,
+                    slot.First().SubjectId, shared));
+            }
+        }
+        return result.OrderBy(r => r.Day).ThenBy(r => r.Period).ToList();
     }
 }

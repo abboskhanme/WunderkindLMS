@@ -1,15 +1,13 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Plus, Pencil, Trash2, LayoutGrid, Eye } from 'lucide-react'
+import { AlertTriangle, ArrowLeft, Plus, Pencil, Trash2, LayoutGrid, Eye } from 'lucide-react'
 import type {
-  SchoolClass,
   ScheduleTemplate,
   SchoolSettings,
   WeekAssignment,
   Subject,
   Teacher,
 } from '@/types'
-import { getClasses } from '@/api/services/classes'
 import {
   getTemplates,
   createTemplate,
@@ -28,6 +26,7 @@ import { Button } from '@/components/ui/Button'
 import { Loader } from '@/components/ui/Loader'
 import { TemplateNameModal } from './TemplateNameModal'
 import { WeekScheduleModal } from './WeekScheduleModal'
+import { resolveScheduleOwner, type ScheduleOwner } from './scheduleOwner'
 
 const control =
   'rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-brand-400'
@@ -36,7 +35,8 @@ export function ClassSchedulePage() {
   const { id = '' } = useParams()
   const navigate = useNavigate()
 
-  const [cls, setCls] = useState<SchoolClass | null>(null)
+  // `:id` — EGAning id'si: sinf yoki o'quv guruhi (§2.1.4). Sahifa ikkalasi uchun ham bitta.
+  const [owner, setOwner] = useState<ScheduleOwner | null>(null)
   const [templates, setTemplates] = useState<ScheduleTemplate[]>([])
   const [settings, setSettings] = useState<SchoolSettings | null>(null)
   const [subjects, setSubjects] = useState<Subject[]>([])
@@ -46,6 +46,8 @@ export function ClassSchedulePage() {
 
   const [quarter, setQuarter] = useState(1)
   const [assignments, setAssignments] = useState<WeekAssignment[]>([])
+  /** Server rad etgan biriktirishning sababi (o'chirgich yoki o'quvchi ziddiyati). */
+  const [assignError, setAssignError] = useState<string | null>(null)
   const [assignLoading, setAssignLoading] = useState(false)
   const [checked, setChecked] = useState<Set<number>>(new Set())
   const [selectedTemplateId, setSelectedTemplateId] = useState('')
@@ -54,9 +56,9 @@ export function ClassSchedulePage() {
   const [editingTpl, setEditingTpl] = useState<ScheduleTemplate | null>(null)
 
   useEffect(() => {
-    Promise.all([getClasses(), getTemplates(id), getSettings(), getSubjects(), getTeachers()])
-      .then(([cl, tpls, st, subs, tchs]) => {
-        setCls(cl.find((c) => c.id === id) ?? null)
+    Promise.all([resolveScheduleOwner(id), getTemplates(id), getSettings(), getSubjects(), getTeachers()])
+      .then(([own, tpls, st, subs, tchs]) => {
+        setOwner(own)
         setTemplates(tpls)
         setSettings(st)
         setSubjects(subs)
@@ -105,13 +107,32 @@ export function ClassSchedulePage() {
     setViewing({ title: `${week}-hafta — ${tpl.name}`, lessons: tpl.lessons })
   }
 
+  /**
+   * Biriktirishni saqlaydi va server RAD ETSA ekrandagi holatni qaytaradi.
+   *
+   * Server ikki sababdan rad etishi mumkin (§2.1.4, G-11):
+   * guruh darslari o'chirgichi hali yoqilmagan, yoki o'quvchi shu soatda
+   * boshqa darsda (409 + to'qnashgan bolalarning ismlari).
+   */
+  const persist = (next: WeekAssignment[], before: WeekAssignment[]) => {
+    setAssignError(null)
+    saveWeekAssignments(id, quarter, next).catch((e) => {
+      setAssignments(before)
+      setAssignError(
+        (e as { response?: { data?: { message?: string } } })?.response?.data?.message ??
+          "Jadvalni haftaga biriktirib bo'lmadi",
+      )
+    })
+  }
+
   const apply = (templateId: string | null) => {
+    const before = assignments
     const next: WeekAssignment[] = weeks.map((w) => ({
       week: w.week,
       templateId: checked.has(w.week) ? templateId : assignedId(w.week),
     }))
     setAssignments(next)
-    saveWeekAssignments(id, quarter, next)
+    persist(next, before)
     setChecked(new Set())
   }
 
@@ -138,7 +159,7 @@ export function ClassSchedulePage() {
     // shu jadval biriktirilgan haftalarni bo'shatamiz
     setAssignments((prev) => {
       const next = prev.map((a) => (a.templateId === t.id ? { ...a, templateId: null } : a))
-      saveWeekAssignments(id, quarter, next)
+      persist(next, prev)
       return next
     })
   }
@@ -155,9 +176,13 @@ export function ClassSchedulePage() {
           </Link>
           <div>
             <h1 className="text-xl font-semibold text-slate-800">
-              Dars jadvali{cls ? ` — ${cls.name}` : ''}
+              Dars jadvali{owner ? ` — ${owner.name}` : ''}
             </h1>
-            <p className="text-sm text-slate-400">Jadval yarating va haftalarga biriktiring</p>
+            <p className="text-sm text-slate-400">
+              {owner?.kind === 'group'
+                ? "O'quv guruhi jadvali — yarating va haftalarga biriktiring"
+                : 'Jadval yarating va haftalarga biriktiring'}
+            </p>
           </div>
         </div>
         <Button
@@ -169,6 +194,13 @@ export function ClassSchedulePage() {
           <Plus className="h-4 w-4" /> Yangi jadval
         </Button>
       </div>
+
+      {assignError && (
+        <div className="flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-red-500" />
+          <p className="text-sm text-red-700">{assignError}</p>
+        </div>
+      )}
 
       {loading ? (
         <Loader label="Yuklanmoqda..." />
