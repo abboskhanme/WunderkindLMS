@@ -57,6 +57,7 @@ import { CanteenPage } from '@/pages/admin/canteen/CanteenPage'
 import { FinancePage } from '@/pages/admin/finance/FinancePage'
 import { ArrearsPage } from '@/pages/admin/finance/ArrearsPage'
 import { CashDayPage } from '@/pages/admin/finance/CashDayPage'
+import { FinancialReportsPage } from '@/pages/admin/finance/FinancialReportsPage'
 import { DebtorStatusesPage } from '@/pages/admin/finance/DebtorStatusesPage'
 import { LeadFunnelPage } from '@/pages/admin/leads-funnel/LeadFunnelPage'
 import { AttendanceDisciplineReportPage } from '@/pages/admin/discipline/AttendanceDisciplineReportPage'
@@ -142,6 +143,7 @@ export default function App() {
           <Route path="finance/arrears" element={<ArrearsPage />} />
           <Route path="finance/debtor-statuses" element={<DebtorStatusesPage />} />
           <Route path="finance/cash-day" element={<CashDayPage />} />
+          <Route path="finance/reports" element={<FinancialReportsPage />} />
           <Route path="billing/categories" element={<RequirePerm perm="finance"><CategoriesPage /></RequirePerm>} />
           <Route path="billing/subscriptions" element={<RequirePerm perm="finance"><SubscriptionsPage /></RequirePerm>} />
           <Route path="billing/discounts" element={<RequirePerm perm="finance"><DiscountsPage /></RequirePerm>} />
