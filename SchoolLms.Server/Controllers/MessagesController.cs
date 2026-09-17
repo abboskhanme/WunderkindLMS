@@ -126,6 +126,23 @@ public class MessagesController(AppDbContext db, ChatService chat, TelegramServi
             b.RecipientCount, b.SentCount)).ToList();
     }
 
+    /// <summary>
+    /// E'lon — HAQIQIY ota-onalarga Telegram xabari.
+    ///
+    /// <para>
+    /// Qamrov (<c>scope</c>): <c>class</c> (sukut) · <c>group</c> (o'quv guruhining FAOL
+    /// a'zolari) · <c>all</c> · <c>selected</c>. Xabar faqat botga RO'YXATDAN O'TGAN
+    /// chatlarga boradi (<c>telegram_registrations</c>); bir bolaning bir nechta chati
+    /// bo'lsa — har biriga. Matn har bola uchun alohida moslanadi (<see cref="Personalize"/>)
+    /// va "📢 Maktab e'loni" sarlavhasi bilan ketadi.
+    /// </para>
+    /// <para>
+    /// Javobdagi <c>recipientCount</c> — mos kelgan chatlar soni, <c>sentCount</c> — Telegram
+    /// HAQIQATAN qabul qilgan xabarlar soni. Bot sozlanmagan bo'lsa (testda ham)
+    /// <c>TelegramService.IsConfigured</c> false bo'ladi, hech qayerga so'rov ketmaydi va
+    /// <c>sentCount = 0</c> qaytadi — e'lon esa tarixga baribir yoziladi.
+    /// </para>
+    /// </summary>
     [HttpPost("broadcast")]
     public async Task<ActionResult<BroadcastDto>> SendBroadcast(SendBroadcastRequest req)
     {
@@ -143,6 +160,28 @@ public class MessagesController(AppDbContext db, ChatService chat, TelegramServi
                 if (ids.Count == 0) return BadRequest(new { message = "Hech kim tanlanmadi" });
                 studentsQ = studentsQ.Where(s => ids.Contains(s.Id));
                 audience = $"Tanlangan ({ids.Count})";
+                break;
+            // O'QUV GURUHI (G-8, students-parity.md §2.1.1 "Roster page") —
+            // guruhning FAOL a'zolarining ota-onalari.
+            //
+            // Nega o'quvchining sinfi emas, guruh a'zoligi bo'yicha: guruhni bir
+            // nechta sinf boqadi, ya'ni "5-A ga e'lon" guruhning yarmiga yetmasdi.
+            //
+            // Nega `group_lessons_enabled` o'chirgichiga BOG'LIQ EMAS: o'chirgich
+            // guruh DARSLARINI (jadval, jurnal, maosh) ushlab turadi; guruhning
+            // o'zi va ro'yxati esa undan oldin ham bor va ekranda ko'rinadi.
+            // Bu yerda hech qanday ro'yxat KENGAYMAYDI — qamrov faqat chaqiruvchi
+            // guruhni ANIQ ko'rsatganda ishlaydi.
+            case "group":
+                if (!Guid.TryParse((req.GroupId ?? "").Trim(), out var groupId))
+                    return BadRequest(new { message = "Guruh tanlanmadi" });
+                var group = await db.StudyGroups.FirstOrDefaultAsync(g => g.Id == groupId);
+                if (group is null) return NotFound(new { message = "Guruh topilmadi" });
+                var memberIds = await db.StudyGroupMembers
+                    .Where(m => m.GroupId == groupId && m.LeftOn == null)
+                    .Select(m => m.StudentId).ToListAsync();
+                studentsQ = studentsQ.Where(s => memberIds.Contains(s.Id));
+                audience = $"Guruh: {group.Name}";
                 break;
             case "all":
                 audience = "Barcha sinflar";

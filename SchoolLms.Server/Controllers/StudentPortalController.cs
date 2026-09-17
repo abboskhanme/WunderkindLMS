@@ -998,30 +998,61 @@ public class StudentPortalController(
         return await StudentLedger.BuildAsync(db, s);
     }
 
-    // ---------- Guruh chati (o'z sinfi) ----------
+    // ---------- Guruh chati (o'z sinfi va o'quv guruhlari) ----------
 
-    [HttpGet("chat")]
-    public async Task<ActionResult<IEnumerable<ChatMessageDto>>> Chat(
-        [FromQuery] string? since, [FromQuery] string? studentId)
+    /// <summary>
+    /// O'quvchi ocha oladigan chat kanallari: o'z sinfi + o'quv guruhlari (G-17).
+    ///
+    /// <para>
+    /// Guruh kanalining kaliti — <c>grp:&lt;id&gt;</c>, uni ekranda ko'rsatib
+    /// bo'lmaydi, shuning uchun nomni server beradi (o'qituvchi portalidagi
+    /// <c>chat/channels</c> bilan bir xil naqsh). Guruhlar FAQAT cut-over
+    /// o'chirgichi yoqilganda paydo bo'ladi.
+    /// </para>
+    /// </summary>
+    [HttpGet("chat/channels")]
+    public async Task<ActionResult<IEnumerable<ChatChannelDto>>> ChatChannels(
+        [FromQuery] string? studentId)
     {
         if (User.IsInRole("admin") && string.IsNullOrWhiteSpace(studentId)) return NeedStudentId();
         var s = await TargetAsync(studentId);
         if (s is null) return NotFound();
-        if (string.IsNullOrEmpty(s.ClassName)) return new List<ChatMessageDto>();
-        return await chat.GetMessagesAsync(s.ClassName, ChatService.ParseSince(since));
+        return await chat.ChannelsForStudentAsync(s);
+    }
+
+    /// <summary>
+    /// Kanal xabarlari. <paramref name="channel"/> berilmasa — o'z sinfi
+    /// (bugungi xulq); berilsa — o'sha kanal, lekin FAQAT o'quvchining O'Z
+    /// kanallaridan biri bo'lsa (G-17).
+    /// </summary>
+    [HttpGet("chat")]
+    public async Task<ActionResult<IEnumerable<ChatMessageDto>>> Chat(
+        [FromQuery] string? since, [FromQuery] string? studentId, [FromQuery] string? channel)
+    {
+        if (User.IsInRole("admin") && string.IsNullOrWhiteSpace(studentId)) return NeedStudentId();
+        var s = await TargetAsync(studentId);
+        if (s is null) return NotFound();
+        var key = (channel ?? "").Trim();
+        if (key.Length == 0) key = s.ClassName;
+        if (string.IsNullOrEmpty(key)) return new List<ChatMessageDto>();
+        if (!await chat.CanStudentAccessAsync(s, key)) return Forbid();
+        return await chat.GetMessagesAsync(key, ChatService.ParseSince(since));
     }
 
     /// <summary>Chatga xabar yuborish — faqat student rolida (admin o'zining /api/admin/messages
     /// orqali yozadi; bu yerda admin impersonate qila olmaydi).</summary>
     [HttpPost("chat")]
     [Authorize(Roles = "student")]
-    public async Task<ActionResult<ChatMessageDto>> SendChat(SendChatRequest req)
+    public async Task<ActionResult<ChatMessageDto>> SendChat(SendChatRequest req, [FromQuery] string? channel)
     {
         var s = await MeAsync();
         if (s is null) return NotFound();
-        if (string.IsNullOrEmpty(s.ClassName)) return BadRequest(new { message = "Sinf biriktirilmagan" });
+        var key = (channel ?? "").Trim();
+        if (key.Length == 0) key = s.ClassName;
+        if (string.IsNullOrEmpty(key)) return BadRequest(new { message = "Sinf biriktirilmagan" });
+        if (!await chat.CanStudentAccessAsync(s, key)) return Forbid();
         var uid = User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "";
-        var dto = await chat.PostAsync(s.ClassName, uid, req.Text);
+        var dto = await chat.PostAsync(key, uid, req.Text);
         return dto is null ? BadRequest(new { message = "Xabar bo'sh" }) : dto;
     }
 

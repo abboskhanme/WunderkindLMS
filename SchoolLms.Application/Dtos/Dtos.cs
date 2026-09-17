@@ -923,12 +923,21 @@ public record BroadcastDto(
     int RecipientCount, int SentCount);
 
 /// <summary>
-/// E'lon yuborish so'rovi. <c>Scope</c>: "class" (ClassName sinfi), "all" (barcha sinf),
-/// "selected" (StudentIds tanlangan o'quvchilar). <c>OnlyDebtors</c> — faqat balansi manfiylar.
+/// E'lon yuborish so'rovi. <c>Scope</c>: "class" (ClassName sinfi), "group" (GroupId o'quv
+/// guruhining FAOL a'zolari), "all" (barcha sinf), "selected" (StudentIds tanlangan
+/// o'quvchilar). <c>OnlyDebtors</c> — faqat balansi manfiylar.
 /// <c>Text</c> ichida o'rinbosarlar bo'lishi mumkin: {fish} {sinf} {qarzdorlik} {balans} {ota-ona} {telefon}.
+///
+/// <para>
+/// <c>GroupId</c> ATAYLAB oxirgi va ixtiyoriy: e'lon HAQIQIY ota-onalarga Telegram
+/// xabari yuboradi, shuning uchun guruh qamrovi faqat chaqiruvchi uni ANIQ
+/// so'raganda (<c>scope: "group"</c> + guruh id'si) ishlaydi — sukut bo'yicha hech
+/// narsa o'zgarmaydi.
+/// </para>
 /// </summary>
 public record SendBroadcastRequest(
-    string? Scope, string? ClassName, bool OnlyDebtors, List<string>? StudentIds, string Text);
+    string? Scope, string? ClassName, bool OnlyDebtors, List<string>? StudentIds, string Text,
+    string? GroupId = null);
 
 /// <summary>Telegramda ro'yxatdan o'tgan ota-ona. ChatId string (JS aniqligi uchun). Balance — qarz aniqlash uchun.</summary>
 public record TelegramParentDto(

@@ -88,9 +88,27 @@ export async function getShowLearningProgress() {
 /** Bosh sahifa: profil, meta, bugungi darslar, bugungi baholar, qoldiq. */
 export const getDashboard = (childId) => api.get('/student/dashboard' + forChild(childId))
 
-/** Sinf e'lonlari (sinf chatidagi xabarlar) — yangisidan eskisiga. */
-export async function getAnnouncements(childId) {
-  const rows = (await api.get('/student/chat' + forChild(childId))) ?? []
+/**
+ * Farzand ocha oladigan chat kanallari: `[{ key, label, kind }]` —
+ * o'z sinfi va (cut-over o'chirgichi yoqilganda) o'quv guruhlari.
+ *
+ * Guruh kanalining kaliti — `grp:<id>`, uni ekranda ko'rsatib bo'lmaydi,
+ * shuning uchun nomni server beradi. O'chirgich o'chiq bo'lsa ro'yxatda
+ * faqat sinf turadi, ya'ni ekran bugungiday ko'rinadi.
+ */
+export const getChatChannels = (childId) =>
+  api.get('/student/chat/channels' + forChild(childId))
+
+/**
+ * E'lonlar (chatdagi xabarlar) — yangisidan eskisiga.
+ *
+ * `channel` berilmasa — o'z SINFI (bugungi xulq). Berilsa — o'sha kanal,
+ * lekin server uni faqat farzandning O'Z kanallaridan biri bo'lsa ochadi
+ * (aks holda 403).
+ */
+export async function getAnnouncements(childId, channel) {
+  const extra = channel ? 'channel=' + encodeURIComponent(channel) : ''
+  const rows = (await api.get('/student/chat' + forChild(childId, extra))) ?? []
   return [...rows].sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
 }
 
