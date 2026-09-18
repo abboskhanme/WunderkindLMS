@@ -988,3 +988,252 @@ actuals; §2.6 stays P2.
 **Q7 — Owner withdrawals / dividends in P&L?**
 *"Muassis pul oladimi va u P&L da alohida ko'rinishi kerakmi?"*
 **Decision if silent: no** — no equity account is added to the closed chart; F5.05 stays P2.
+
+---
+
+## 6. Update — 2026-09-18: menu built out, screen-level re-audit
+
+**Status:** re-audit of the code only — no new EduSchool read happened, §0–§5 above are still the
+record of *theirs*. Between 2026-09-17 (when §0–§5 were written) and today the client's own
+sprint gave every Moliya menu entry a real screen; this section re-checks each gap id in §2
+against the **current** code and marks it **built / partial / missing**, then records what this
+session built on top of it (Part 2 below). Verdicts `declined` / `refused (§4)` / `deferred` from
+§1 and §2.0 are **not repeated as gaps** here — they were settled, not left undone; they are
+named only where a row could otherwise be misread as outstanding work.
+
+### 6.0 One correction to the brief this task started from
+
+The task brief said the menu has "twelve entries plus P&L 2.0, each opening a real screen." The
+actual `schoollms.client/src/config/navigation.ts` **Moliya** children are: Umumiy, Kassa, To'lov
+toifalari, Obunalar, Chegirmalar, Chiqimlar, Hisob-fakturalar, Qarzdor holatlari, Moliya
+hisobotlari, Tranzaksiyalar, Kassa kuni, Pul aylanmasi, Oyma-oy qarzdorlik — 13 entries, all real
+routes. But three of the brief's "Our screen" cells are **tabs, not menu entries**:
+
+- **Qarzdorlar bilan ishlash** → `DebtorsTab.tsx` is a tab inside `FinancePage.tsx` ("Umumiy"),
+  not its own nav entry (this is gap **F2.07**, unbuilt — see below, and `App.tsx` /
+  `navigation.ts` are on this task's do-not-edit list, so it stays reported, not fixed).
+- **Foyda va zarar (P&L)** and **Pul oqimi** → also `FinancePage.tsx` tabs ("Foyda va zarar",
+  "Pul oqimi"), reached through "Umumiy", not separate menu rows.
+- **P&L 2.0** has **no route, no file, no nav entry anywhere** — confirmed by
+  `find schoollms.client/src -iname "*expectation*"` (empty) and grepping `App.tsx` /
+  `navigation.ts` for `pnl-expectation` (empty). This matches §2.6: still deferred by
+  `existing-module-gaps.md` §3.6, client Q6 (§5 above) unanswered. It was never built, so it isn't
+  a thirteenth entry; "twelve plus P&L 2.0" describes EduSchool's menu (§0.3 table), not ours.
+
+One more location correction: **Ish haqi**'s calculator lives at
+`schoollms.client/src/pages/admin/schedule/SalaryCalcPage.tsx` (route `/admin/teachers/salary`,
+permission `teachers`), not under `pages/admin/finance/` as the task's screen table assumed, and
+it is not reachable from the Moliya menu at all today — it hangs off "Dars jadvali" / a direct
+permission gate.
+
+### 6.1 Kassa + Chiqimlar (§2.1, `F1.xx`) — `CashierPage.tsx` (another agent's WIP, read-only here) + `ExpensesPage.tsx`
+
+| Id | Gap | Status | Evidence |
+|---|---|---|---|
+| F1.01 | "Yangi chiqim" method defect | **built** | `expenses.ts` `ExpenseInput.method` required + sent; `ExpenseService.cs:380` `RequireMethod` |
+| F1.02 | Approve-expense body + double-approval lock | **built** | `ApproveExpenseModal.tsx` method picker; `ExpenseService.cs:342,475-518` `pg_advisory_xact_lock` before the status check |
+| F1.03 | Cash expense lowers the shift's expected cash | **built** | `expenses.cash_shift_id` (migration `FinanceParityBatchA`), `ExpenseService.AttachCashShiftAsync`, `CashShiftService.ExpectedCashAsync` now subtracts `CashOutflowAsync(shift).Expenses`, Z-report has a "Chiqimlar" line |
+| F1.04 | Cash handover (bank / safe) | **built** | `CashHandoverService.cs` (562 lines), `CashHandoversController.cs`, `ShiftBar.tsx` `HandoverDialog`, table `cash_handovers` |
+| F1.05 | Refund of an advance | **partial** | Schema only — `student_refunds` table + `StudentRefund` domain type exist (Batch A migration); **no** `StudentRefundService.cs` / controller / UI. Buildable without a migration. |
+| F1.06 | Subscription end with a preview | **missing** | `SubscriptionService.cs` still only sets `EndsOn`; no `.../end/preview` endpoint |
+| F1.07 | Receipt auto-sent to Telegram after accept | **built today** (§6.6) | `PaymentsController.cs` `Accept` now calls `receipts.SendToGuardianAsync` after commit |
+| F1.08 | Expense attachments (photos) | **built** | `expense_attachments` table, `ExpenseService.AttachAsync`/`AttachmentsAsync`, `ExpensesController.cs POST/GET {id}/attachments`, thumbnails in `ExpenseFormModal.tsx` |
+| F1.09 | Salary expense → named teacher + ledger figures | **built** | `ExpenseService.cs` teacher-only-for-salary guard; `ExpenseFormModal.tsx` teacher select + Hisoblangan/Berilgan/Qoldiq |
+| F1.10 | Concurrent allocation lock | **built today** (§6.6) | `PaymentService.cs` `pg_advisory_xact_lock` per invoice id before the remaining-balance read |
+| F1.11 | "Kassa" menu entry for admin/superadmin | **built** | `navigation.ts:84` |
+| F1.12 | Receipt settings (header/footer/logo/auto-print) | **missing — needs a migration** (Batch C1: 4 columns on `billing_settings`) | grepped, no such columns anywhere |
+| F1.13 | Expense for a past month (`period_month`) | **missing — needs a migration** (Batch C2) | `period_month` exists only on `invoices`, not `expenses` |
+| F3.05 | `salary-payments` / rate-set access control | **built** | `TeachersController.cs:331-333` `[Authorize(Roles=FinanceStaff)][FinanceRole(RecordExpense)]`; `SalaryRatesController.cs:39-40` class-gated; bonus writes now audited |
+
+### 6.2 Qarzdorlar bilan ishlash (§2.2, `F2.xx`) — `DebtorsTab.tsx`
+
+| Id | Gap | Status | Evidence |
+|---|---|---|---|
+| F2.01 | Comment-only action blanks Holat | **built (fixed)** | `DebtorWorkflowService.cs:371-376` now derives status from the latest action **with** a non-null `StatusId`, separately from the latest comment |
+| F2.02 | Month filter (`monthlyDebt`) | **built** | `DebtorReportQuery.Month`, `FinanceReportsController.Debtors(month:)`, `DebtorsTab.tsx` month input |
+| F2.03 | `debtor_actions.period_month` | **missing — needs a migration** (Batch C3) | not on the `debtor_actions` table in any migration |
+| F2.04 | Group filter | **missing** (P2) | no `GroupId` on `DebtorReportQuery`; `study_group_members` now exists (`StudyGroupsAndMemberships` migration) so this no longer needs new schema, just code |
+| F2.05 | Server xlsx export | **missing** (P2) | no export action on `FinanceReportsController` for debtors |
+| F2.06 | Debt history: "debt at the time" + "promise old→new", both derived | **missing** (P2) | `DebtorActionDto` carries no derived balance or previous-promise field |
+| F2.07 | Standalone menu entry | **missing** — do-not-edit list (`App.tsx`, `navigation.ts`); reported, not built | `DebtorsTab` only renders inside `FinancePage.tsx` tab `debtors` |
+
+### 6.3 Ish haqi (§2.3, `F3.xx`)
+
+| Id | Gap | Status | Evidence |
+|---|---|---|---|
+| F3.01 | Payroll spine (`hr.md` HR-01…19, ~206 h) | **missing, zero code** | `grep -rln "hr_employees\|payroll_documents\|payroll_lines\|PayrollService" --include=*.cs .` — no matches anywhere; no `Hr` namespace |
+| F3.02 | Derived before/after on a run | **n/a** | blocked on F3.01 — no run entity to have a before/after state |
+| F3.03 | Manual bonus/fine feeds the run | **n/a** | blocked on F3.01 and F11.01 |
+| F3.04 | Run xlsx export | **n/a** | blocked on F3.01 |
+
+### 6.4 Moliya hisobotlari (§2.4, `F4.xx`) — `FinancialReportsPage.tsx`
+
+This screen **did not exist** on 2026-09-17 ("no single dashboard"). It exists now, full server dashboard.
+
+| Id | Gap | Status | Evidence |
+|---|---|---|---|
+| F4.01 | KPI Kirim/Chiqim/Qoldiq + % change + daily chart | **built** | `GET /api/admin/finance/dashboard` (`FinanceStatementsController.cs:63-80`, `FinanceReportQueries.DashboardAsync`); `FinancialReportsPage.tsx` KPI cards + `DailyCashChart` |
+| F4.02 | Breakdown by account/method + drill-down | **built** | `SectionCard`/`MethodsCard` in `FinancialReportsPage.tsx`, `LedgerDetailsModal.tsx` opens `GET cashflow/lines` |
+| F4.03 | Doughnut by account | **missing** (P2) | bar-share only, no chart library doughnut on this page |
+| F4.04 | Discount summary | **missing** (P2) | no discount section in `FinanceDashboardDto` |
+| F4.05 | xlsx export | **missing** (P2, CSV exists) | `handleExport` uses `exportToCsv`, not the xlsx writer (F0.01, which exists and is used elsewhere) |
+
+### 6.5 P&L / P&L 2.0 (§2.5–2.6, `F5.xx`/`F6.xx`) — `PnlTab.tsx`
+
+| Id | Gap | Status | Evidence |
+|---|---|---|---|
+| F5.01 | Year × month matrix | **built** | `GET pnl/matrix?year` (`FinanceStatementsController.cs:89-102`, `ProfitLossMatrixAsync`); `PnlTab.tsx` "Yil" mode |
+| F5.02 | Start/end balance rows | **built** | same query, "Yil oxiridagi pul" in `PnlTab.tsx` |
+| F5.03 | Drill-down to ledger lines | **built** | `LedgerDetailsModal.tsx` via `GET ledger/lines` |
+| F5.04 | Child rows under a category | **declined** (§2.0/§3.3) — `Accounts.cs` is closed and flat, not a gap to close | — |
+| F5.05 | Dividends row | **missing** (P2, Q7 — decision if silent is "no") | no equity account |
+| F5.06 | xlsx export | **missing** (P2, CSV only) | `PnlTab.tsx` `handleExport` → `exportToCsv` |
+| F6.01–F6.05 | P&L 2.0 (forecast, change journal, planned expenses, yearly, daily) | **deferred** — `existing-module-gaps.md` §3.6, `finance-parity.md` §5 Q6 unanswered. Not a gap; a standing decision. | confirmed zero code (§6.0 above) |
+
+### 6.6 Pul oqimi (§2.7, `F7.xx`) — `CashFlowTab.tsx`
+
+| Id | Gap | Status | Evidence |
+|---|---|---|---|
+| F7.01 | In/out by category | **built** | `GET cashflow/statement` (`FinanceStatementsController.cs:149-167`), "Toifalar bo'yicha" table in `CashFlowTab.tsx` |
+| F7.02 | Operating/investing/financing sections | **missing** (P2 — decision: a static map next to `Accounts.cs`, not built) | no such grouping in `CashFlowTab.tsx` or the query |
+| F7.03 | Drill-down | **built** | `LedgerDetailsModal.tsx` via `GET cashflow/lines` |
+| F7.04 | xlsx export | **missing** (P2, CSV only) | `CashFlowTab.tsx` `handleExport` → `exportToCsv` (two places) |
+
+### 6.7 Moliya analitikasi (§2.8, `F8.xx`) — `CashDayPage.tsx` + `MoneyFlowPage.tsx`
+
+| Id | Gap | Status | Evidence |
+|---|---|---|---|
+| F8.01 | Journal link from Kassa kuni | **built** | `CashDayPage.tsx` links into the dashboard/journal (comment cites F8.01) |
+| F8.02 | Inflow by payment method | **built** | `CashDayPage.tsx` payment-method card (comment cites F8.02) |
+| F8.03 | Calendar cell: +kirim / −chiqim / closing | **built** | `CashDayCalendar.tsx` (comment cites F8.03) |
+| F8.04 | Top-5 income/expense doughnuts for a range | **missing** (P2) | `TopFiveCard` exists only for a single day on `CashDayPage.tsx`, not on `MoneyFlowPage.tsx` for a range |
+| F8.05 | Print/PDF of a report screen | **missing** (P2) | no `@media print` / print trigger found |
+| F8.06 | Daily closing-balance bar chart | **missing** (P2) | `CashDayCalendar.tsx` has no bar-chart view |
+
+### 6.8 Tranzaksiyalar (§2.9, `F9.xx`) — `TransactionsPage.tsx`
+
+This screen **did not exist** on 2026-09-17. It exists now as a full server-paged journal.
+
+| Id | Gap | Status | Evidence |
+|---|---|---|---|
+| F9.01 | Transaction journal (all filters, footer totals over the whole filter, sort) | **built** | `TransactionJournalQuery.cs` (709 lines), `TransactionJournalController.cs` `GET /api/admin/finance/transactions`; every named filter present incl. receipt-number search and "faqat birinchi to'lov" |
+| F9.02 | Row actions: storno, **Chek (PDF)**, **Telegramga qayta yuborish** | **partial** | Storno built (`ReversePaymentModal.tsx`, reason required, 403/409 mapped). PDF and Telegram-resend row actions are **not** on this screen (they exist on `/cashier`'s `ReceiptPreview.tsx` only) |
+| F9.03 | xlsx export | **built** | `GET transactions/export` uses `ExcelExport.BuildTable` (numeric cells, totals row) |
+| F9.04 | Kirim/Chiqim buttons | **built** | link to `/cashier` and `/admin/billing/expenses` |
+| F9.05 | "First payment only" filter | **built** | `firstPaymentOnly`, server-side subquery |
+
+### 6.9 Abonement tranzaksiyalari (§2.10, `F10.xx`) — `InvoicesPage.tsx`
+
+This screen **did not exist** on 2026-09-17 ("no screen and no endpoint"). It exists now.
+
+| Id | Gap | Status | Evidence |
+|---|---|---|---|
+| F10.01 | Invoice register, paged + totals | **built** | `InvoicesController.cs GET /api/admin/billing/invoices`, `InvoiceService.ListPageAsync` |
+| F10.02 | Void with reason + all 3 named defects | **built (all fixed)** | `EffectiveAllocationsFor` (ignores reversed payments), `[BillingFault]` maps `BillingRuleException` cleanly, self-reversal 403 pre-check + UI copy explaining the director/auto-accrual case |
+| F10.03 | "Oyni hisoblash" from the register | **built** | `InvoicesPage.tsx` button → `POST accrual/run` |
+| F10.04 | `voided_by`/`voided_at`/`void_reason` columns | **missing — needs a migration** (Batch C4) | grepped every migration + snapshot, absent; void is audit-log only today |
+| F10.05 | xlsx export | **missing** (P2, no export at all — not even CSV) | no export action on `InvoicesController.cs`, no download function in `invoices.ts` |
+
+### 6.10 Bonus (§2.11) / Jarima (§2.12, `F11.xx`)
+
+Zero code, unchanged from 2026-09-17 — and correctly so: all three need a migration this task must not run.
+
+| Id | Gap | Status | Evidence |
+|---|---|---|---|
+| F11.01 | Employee bonus/fine register | **missing — needs a migration** (Batch B3, `payroll_adjustments`) and **blocked on F3.01** (`hr_employees` doesn't exist) | no page, no service, no `hr_employees` reference anywhere |
+| F11.02 | Reason catalogue | **missing — needs a migration** (Batch B2, `adjustment_reasons`) | same grep, nothing |
+| F11.03 | Student one-off fine/credit | **declined by default** (§5 Q4: "no student-side bonus/fine unless the client answers otherwise") — needs a migration if lifted (Batch C5) | `InvoiceService.cs` has no `CreateManualAsync`; `invoices.source`/`note`/`created_by` absent |
+
+### 6.11 Qarzdorlik oyma-oy (§2.13) — `ArrearsPage.tsx`
+
+Still **have**, unchanged. Route `finance/arrears` wired, nav label "Oyma-oy qarzdorlik" present
+(`navigation.ts:103`). The six P2 gaps (F13.01–F13.06) are unchanged from §2.13.3 — not re-audited
+here, none is P0/P1 and none was touched.
+
+### 6.12 Finance settings (§2.14, `F14.xx`)
+
+| Id | Gap | Status | Evidence |
+|---|---|---|---|
+| F14.01 | Billing settings screen (due day, overdue day, expense threshold) | **partial — upgraded from missing, no migration needed** | Schema, DTOs (`BillingSettingsDto`, `UpdateBillingSettingsRequest`) and the permission (`FinanceAction.ManageBillingSettings`) all exist; **no controller endpoint** (`GET`/`PUT /api/admin/billing/settings` — grepped, absent) and **no page** (`billing.ts` `getBillingSettings`/`updateBillingSettings` both call `notImplemented(...)`) |
+| F14.02 | Discount types catalogue | **missing — needs a migration** (Batch C6, `discount_types`) | grepped, nothing but this doc mentions it |
+
+### 6.13 Cross-cutting (§2.15, `F0.xx`)
+
+| Id | Gap | Status | Evidence |
+|---|---|---|---|
+| F0.01 | xlsx writer (numeric cells, bold header, totals row) | **built** | `ExcelExport.cs` `XlsxCell`/`TableSpec`/`BuildTable`/`BuildTables`, additive alongside the old string-only `Build`; used by F9.03 |
+| F0.02 | Money GETs closed to `staff` | **built** | `FinanceController.cs`, `SalaryRatesController.cs` class-gated `[Authorize(Roles=FinanceStaff)]`; `TeachersController.cs` salary actions individually gated |
+| F0.03 | `finance_anomaly_flags` in the REVOKE list | **built** | `deploy/init-roles.sql:189,225` | 
+| F0.04 | Receipt PDF ownership (a cashier can open any receipt) | **built today** (§6.14) | `ReceiptsController.cs` now restricts a cashier to their own payments' receipts; admin/superadmin unrestricted |
+
+### 6.14 What this session built (Part 2)
+
+Picked by daily use × money-safety × **zero migration needed** (the hard constraint: "No
+migration. If a gap needs a column, STOP and report it" — every gap above marked "needs a
+migration" was left alone for that reason, including some that would otherwise have been next in
+line, e.g. F1.12, F2.03, F10.04, F11.01/02, F14.02).
+
+1. **F1.10 — concurrent-allocation lock** (`SchoolLms.Application/Billing/PaymentService.cs`).
+   The code's own comment already admitted the race: two cashiers paying the same invoice at the
+   same instant could both read the stale (un-decremented) remaining balance and both post,
+   over-allocating the invoice — the exact "check-then-write without `pg_advisory_xact_lock`"
+   shape this task's binding rules name explicitly. Added a per-invoice
+   `pg_advisory_xact_lock(hashtextextended('invoice_allocation:<id>', 0))`, taken in a stable
+   (sorted) order right after `BeginTransactionAsync`, before the invoices are read — same pattern
+   already used by `ExpenseService`/`CashShiftService`. Test:
+   `Ikki_kassir_bir_vaqtda_bitta_hisob_fakturaga_tolov_yozsa_faqat_bittasi_otadi`
+   (`SchoolLms.Tests/PaymentsTests.cs`) fires two concurrent HTTP payments at one invoice whose
+   combined amount exceeds it; asserts exactly one `200` and one `400 allocation_exceeds_invoice`,
+   and that the invoice's total allocation never exceeds its amount in the database.
+
+2. **F1.07 — automatic Telegram receipt** (`SchoolLms.Server/Controllers/PaymentsController.cs`).
+   `SPEC.md` §4.7 requires every receipt to reach the guardian's Telegram automatically; until
+   today `ReceiptService.SendToGuardianAsync` was wired to the manual "Telegramga yuborish" button
+   only. `PaymentsController.Accept` now calls it right after the payment commits — the call
+   itself already never throws and never blocks the payment on delivery failure (this behaviour
+   was already tested in `ReceiptTests.cs`), so this is a one-line-of-intent, low-risk change: the
+   manual button remains for re-sends. Test:
+   `Tolov_qabul_qilingach_chek_avtomatik_yuborishga_urinadi` (`SchoolLms.Tests/PaymentsTests.cs`)
+   substitutes a spy `IReceiptService` and asserts it is invoked with the accepted payment's id.
+
+3. **F0.04 — receipt ownership** (`SchoolLms.Server/Controllers/ReceiptsController.cs`). Both the
+   PDF endpoint and the Telegram-resend endpoint now apply the same rule
+   `PaymentsController.OnlyOwnPayments` already uses elsewhere (SPEC §4.3: a cashier has no
+   "across cashiers" view): a cashier gets `404` (not `403` — a receipt's existence is itself
+   information, matching `PaymentsController.Get`'s reasoning) for another cashier's receipt;
+   admin/superadmin are unrestricted. Fixed one existing test that had accidentally been passing
+   for the wrong reason (`Kassir_chek_pdf_ini_ola_oladi` seeded a payment with a hard-coded
+   `CashierId` unrelated to the logged-in test user — now set to match, which is what made the old,
+   unrestricted endpoint's test meaningful in the first place) and added two new ones:
+   `Kassir_boshqa_kassirning_chek_pdf_ini_ola_olmaydi` (404) and
+   `Admin_istalgan_kassirning_chek_pdf_ini_ola_oladi` (200, unrestricted).
+
+**Left alone, on purpose, and why:**
+
+- **F9.02's missing half** (Chek PDF / Telegram-resend row actions on `TransactionsPage.tsx`) —
+  small, no migration, but frontend-only and this session's budget went to the three backend
+  money-safety items above; a clean next pick, the endpoints (`GET /api/receipts/{id}.pdf`,
+  `POST /api/receipts/{id}/telegram`) already exist and now have the correct RBAC (F0.04).
+- **F1.05 (refund service)** — schema is ready (Batch A), but a full service + director-approval
+  flow + UI + dual-control tests is a ~20 h slice on its own; starting it and not finishing it
+  properly would violate "stop and report rather than half-finish a second one."
+- **F14.01 (billing settings screen)** — no migration needed, DTOs/permission already exist; a
+  reasonable next pick but not daily-use, so it waited behind the three above.
+
+**Verification:** `./tools/test.sh` (full suite) — **1077 / 1077 passed, 0 failed.** Frontend
+untouched this session (no `.tsx`/`.ts` file was edited), so the existing build/lint baseline
+(clean build, 39 lint warnings) is unaffected by this change; it was not re-run because nothing
+under `schoollms.client/` changed.
+
+### 6.15 Still needs a migration owner — reported, not built (hard constraint)
+
+| Gap | Column(s) / table | Batch |
+|---|---|---|
+| F1.12 | `billing_settings.receipt_header/footer/logo_url`, `receipt_auto_print` | C1 |
+| F1.13 | `expenses.period_month` | C2 |
+| F2.03 | `debtor_actions.period_month` | C3 |
+| F10.04 | `invoices.voided_by/voided_at/void_reason` | C4 |
+| F11.03 (if the client lifts the Q4 decline) | `invoices.source/note/created_by` + unique-index swap | C5 |
+| F14.02 | `discount_types` table, `discounts.discount_type_id` | C6 |
+| F6.01 (if the client lifts the Q6 deferral) | `expense_templates` table | C7 |
+| F11.01, F11.02 | `payroll_adjustments`, `adjustment_reasons` (+ all of `hr.md`'s Batch B for `hr_employees`) | B2, B3, B1 |
