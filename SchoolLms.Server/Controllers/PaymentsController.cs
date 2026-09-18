@@ -208,7 +208,8 @@ public class PaymentsController(IPaymentService payments) : ControllerBase
         try
         {
             var storno = await payments.ReverseAsync(
-                id, request.Reason ?? string.Empty, FinanceActor.RequireUserId(User), ct);
+                id, request.Reason ?? string.Empty, FinanceActor.RequireUserId(User),
+                request.CashBoxId, ct);
             return Ok(storno);
         }
         catch (PaymentException ex)
@@ -268,7 +269,6 @@ public class PaymentsController(IPaymentService payments) : ControllerBase
         return ex.Error switch
         {
             PaymentError.NotFound => StatusCode(StatusCodes.Status404NotFound, body),
-            PaymentError.NoOpenShift => StatusCode(StatusCodes.Status409Conflict, body),
             PaymentError.Conflict => StatusCode(StatusCodes.Status409Conflict, body),
             PaymentError.DualControl => StatusCode(StatusCodes.Status403Forbidden, body),
             _ => StatusCode(StatusCodes.Status400BadRequest, body),

@@ -567,7 +567,8 @@ public class ReceiptTests(ApiFixture fixture)
             throw new NotSupportedException("Chek xizmati to'lov qabul qilmaydi.");
 
         public Task<PaymentDto> ReverseAsync(
-            Guid paymentId, string reason, string approverId, CancellationToken ct = default) =>
+            Guid paymentId, string reason, string approverId, Guid? cashBoxId = null,
+            CancellationToken ct = default) =>
             throw new NotSupportedException("Chek xizmati storno qilmaydi.");
 
         public Task<IReadOnlyList<PaymentDto>> ListAsync(PaymentQuery query, CancellationToken ct = default) =>

@@ -193,8 +193,12 @@ public interface IPaymentService
     /// Storno: qarshi <c>payments</c> qatori + ko'zgu ledger yozuvlari.
     /// Original TEGILMAYDI. Kassir chaqira olmaydi (SPEC §4.3), sabab majburiy.
     /// </summary>
+    /// <param name="cashBoxId">
+    /// Storno QAYSI kassaga qaytishi (kassalar modeli, 2026-09 — "smena"
+    /// o'rnini bosadi). <c>null</c> = SUKUT (default) kassa.
+    /// </param>
     Task<PaymentDto> ReverseAsync(
-        Guid paymentId, string reason, string approverId, CancellationToken ct = default);
+        Guid paymentId, string reason, string approverId, Guid? cashBoxId = null, CancellationToken ct = default);
 
     Task<PaymentDto?> GetAsync(Guid paymentId, CancellationToken ct = default);
 

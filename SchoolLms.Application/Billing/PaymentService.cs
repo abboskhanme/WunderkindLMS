@@ -52,10 +52,7 @@ public enum PaymentError
     /// <summary>So'ralgan to'lov yo'q. → 404.</summary>
     NotFound,
 
-    /// <summary>Ochiq smena yo'q (SPEC §4.2). → 409 <c>no_open_shift</c>.</summary>
-    NoOpenShift,
-
-    /// <summary>Holat mos kelmaydi: allaqachon storno qilingan va h.k. → 409.</summary>
+    /// <summary>Holat mos kelmaydi: allaqachon storno qilingan, kassa faol emas va h.k. → 409.</summary>
     Conflict,
 
     /// <summary>Ikki qavatli nazorat (SPEC §4.5) buzildi. → 403.</summary>
@@ -86,20 +83,22 @@ public sealed class PaymentException(PaymentError error, string code, string mes
 
     public static PaymentException DualControl(string code, string message) =>
         new(PaymentError.DualControl, code, message);
-
-    /// <summary>SPEC §4.2 — ochiq smenasiz birorta pul yozuvi yozilmaydi.</summary>
-    public static PaymentException NoOpenShift() =>
-        new(PaymentError.NoOpenShift, "no_open_shift",
-            "Ochiq kassa smenasi yo'q. Avval smenani oching — smenasiz to'lov qabul qilinmaydi.");
 }
 
 /// <summary>
 /// To'lov qabul qilish, taqsimlash va storno (P1-11). Batafsil: fayl boshidagi izoh.
 ///
 /// <para>
-/// <b>Smena</b> <see cref="ICashShiftService"/> orqali olinadi (P1-10) —
-/// bu yerda smena mantiqi TAKRORLANMAYDI: "kassirning ochiq smenasi" va
-/// "keyingi chek raqami" degan savollarning javobi bitta joyda turishi kerak.
+/// <b>"Smena" endi YO'Q (kassalar modeli, 2026-09).</b> Mijoz javobi: "smena
+/// degan tushuncha umuman bo'lmasin". Bu klass endi <c>ICashShiftService</c>
+/// ga UMUMAN bog'lanmaydi — <c>RequireOpenShiftAsync</c> va uning chaqiruvchilari
+/// olib tashlandi. O'rniga: to'lov bitta KASSAGA (<c>cash_box_id</c>) tushadi —
+/// so'rovda ko'rsatilgan, yoki ko'rsatilmasa SUKUT (default) kassaga
+/// (<see cref="CashBoxService.DefaultBoxIdAsync"/>). Chek raqami endi SMENA
+/// emas, KASSA bo'yicha uzluksiz (<see cref="CashBoxService.NextReceiptNoAsync"/>).
+/// <c>CashBoxService</c> DI orqali OLINMAYDI (u faqat <c>db</c> talab qiladi,
+/// <c>CashHandoversController</c> dagi bilan bir xil naqsh) — Program.cs ga
+/// yangi registratsiya kerak EMAS.
 /// </para>
 /// <para>
 /// <b>Jurnal</b> <see cref="ILedgerService"/> orqali yoziladi (P1-07) — bu
@@ -109,7 +108,6 @@ public sealed class PaymentException(PaymentError error, string code, string mes
 /// </summary>
 public sealed class PaymentService(
     IAppDbContext db,
-    ICashShiftService shifts,
     ILedgerService ledger) : IPaymentService
 {
     /// <summary>Baza ustuni <c>numeric(14,2)</c> — arifmetika ham shu aniqlikda.</summary>
@@ -117,6 +115,13 @@ public sealed class PaymentService(
 
     /// <summary>Audit qatoridagi <c>actor_name</c> uchun — keshlangan (P1-14).</summary>
     private readonly ActorNames actors = new(db);
+
+    /// <summary>
+    /// Kassa xizmati — DI'siz, shu yerda quriladi (<c>CashHandoversController</c>
+    /// dagi "nega DI'dan emas" izohi bilan bir xil sabab, endi servis darajasida:
+    /// yangi DI registratsiyasi kerak emas, <c>db</c> allaqachon bor).
+    /// </summary>
+    private readonly CashBoxService boxes = new(db);
 
     /// <summary>
     /// Ro'yxat so'rovining yuqori chegarasi. Kassa oynasi va o'quvchi
@@ -128,10 +133,11 @@ public sealed class PaymentService(
 
     // Baza darajasidagi qulflar. Ularni ilova YENGIB O'TMAYDI — faqat
     // TUSHUNARLI xatoga o'giradi. Matnlar `Migrations/Sql/billing_guards.sql`
-    // dan va `BillingModel.cs` dagi indeks nomlaridan aynan olingan.
+    // dan va `BillingModel.cs` / `CashBoxModel.cs` dagi indeks nomlaridan
+    // aynan olingan.
     private const string AllocationTriggerMessage = "Allocation exceeds payment amount";
     private const string ReversalUniqueIndex = "ix_payments_reversal_of";
-    private const string ReceiptUniqueIndex = "ix_payments_cash_shift_id_receipt_no";
+    private const string ReceiptUniqueIndex = "ix_payments_cash_box_id_receipt_no";
 
     /// <summary>
     /// Maktab mintaqasi ofseti (UTC+5, yozgi vaqt yo'q) — <c>received_at</c>
@@ -197,10 +203,11 @@ public sealed class PaymentService(
             ?? throw PaymentException.Invalid("student_not_found",
                 "O'quvchi topilmadi. Bitta to'lov — bitta o'quvchi (SPEC §8.1 Q14).");
 
-        // ---- 3. Ochiq smena (SPEC §4.2) ----
-        // ATAYLAB tranzaksiyadan OLDIN: smena yo'q bo'lsa 409 qaytadi va bitta
-        // ham pul qatori yozilmaydi.
-        var shift = await RequireOpenShiftAsync(cashierId, ct);
+        // ---- 3. Kassa (endi SMENA emas — mijoz javobi, 2026-09) ----
+        // So'rovda ko'rsatilgan, aks holda SUKUT (default) kassa. Bo'lmagan
+        // yoki faol bo'lmagan kassa — 404/409, va bitta ham pul qatori yozilmaydi.
+        var cashBoxId = request.CashBoxId ?? await CashBoxService.DefaultBoxIdAsync(db, ct);
+        await RequireActiveBoxAsync(cashBoxId, ct);
 
         // ---- 4. BITTA TRANZAKSIYA ----
         await using var tx = await db.BeginTransactionAsync(ct);
@@ -240,8 +247,9 @@ public sealed class PaymentService(
         }
 
         // Chek raqami ham SHU tranzaksiyada olinadi: bekor qilingan so'rov
-        // raqamda teshik qoldirmasin (SPEC §4.2, uzluksizlik).
-        var receiptNo = await shifts.NextReceiptNoAsync(shift.Id, ct);
+        // raqamda teshik qoldirmasin (SPEC §4.2, uzluksizlik — endi KASSA
+        // bo'yicha, smena bo'yicha emas).
+        var receiptNo = await boxes.NextReceiptNoAsync(cashBoxId, ct);
         var receivedAt = AppClock.NowInstant;
 
         var payment = new Payment
@@ -250,7 +258,10 @@ public sealed class PaymentService(
             StudentId = student.Id,
             Amount = amount,
             Method = request.Method,
-            CashShiftId = shift.Id,
+            // "Smena" endi YO'Q — yangi to'lovda HAR DOIM null (Domain/Billing.cs
+            // izohi). Pul endi kassaga bog'lanadi.
+            CashShiftId = null,
+            CashBoxId = cashBoxId,
             CashierId = cashierId,
             Note = Trim(request.Note),
             ReceivedAt = receivedAt,
@@ -313,7 +324,7 @@ public sealed class PaymentService(
 
     /// <inheritdoc />
     public async Task<PaymentDto> ReverseAsync(
-        Guid paymentId, string reason, string approverId, CancellationToken ct = default)
+        Guid paymentId, string reason, string approverId, Guid? cashBoxId = null, CancellationToken ct = default)
     {
         var cleanReason = Trim(reason);
         if (cleanReason is null)
@@ -361,23 +372,23 @@ public sealed class PaymentService(
                 "To'lovning jurnal yozuvi topilmadi — storno jurnalni nomutanosib "
                 + "qoldirardi. Moliya mas'uliga murojaat qiling.");
 
-        // Storno qatori TASDIQLOVCHINING O'Z ochiq smenasiga tushadi: pul
-        // bugun, uning kassasidan chiqadi. Yopilgan smenaga yangi qator
-        // qo'shish esa allaqachon imzolangan Z-hisobotni orqaga qarab
-        // o'zgartirardi (`variance` — generated column, tuzatib bo'lmaydi).
-        var shift = await RequireOpenShiftAsync(approverId, ct);
+        // Storno qatori QAYSI kassaga qaytishi — so'rovda ko'rsatilgan, aks
+        // holda SUKUT kassa ("smena" endi yo'q — mijoz javobi, 2026-09).
+        var box = cashBoxId ?? await CashBoxService.DefaultBoxIdAsync(db, ct);
+        await RequireActiveBoxAsync(box, ct);
 
         await using var tx = await db.BeginTransactionAsync(ct);
 
         var storno = new Payment
         {
-            ReceiptNo = await shifts.NextReceiptNoAsync(shift.Id, ct),
+            ReceiptNo = await boxes.NextReceiptNoAsync(box, ct),
             StudentId = original.StudentId,
             // Summa MUSBAT — qator "storno" ekanini `ReversalOf` bildiradi
             // (`ck_payments_amount: amount > 0`).
             Amount = original.Amount,
             Method = original.Method,
-            CashShiftId = shift.Id,
+            CashShiftId = null,
+            CashBoxId = box,
             CashierId = approverId,
             Note = cleanReason,
             ReceivedAt = AppClock.NowInstant,
@@ -455,7 +466,10 @@ public sealed class PaymentService(
 
         if (!string.IsNullOrWhiteSpace(query.StudentId)) q = q.Where(p => p.StudentId == query.StudentId);
         if (!string.IsNullOrWhiteSpace(query.CashierId)) q = q.Where(p => p.CashierId == query.CashierId);
+        // `CashShiftId` — faqat ESKI qatorlar uchun tarixiy filtr (SPEC izohi:
+        // "smena" endi yo'q, yangi to'lovda bu ustun har doim null).
         if (query.CashShiftId is { } shiftId) q = q.Where(p => p.CashShiftId == shiftId);
+        if (query.CashBoxId is { } boxIdFilter) q = q.Where(p => p.CashBoxId == boxIdFilter);
         if (!string.IsNullOrWhiteSpace(query.Method)) q = q.Where(p => p.Method == query.Method);
         if (query.OnlyReversals) q = q.Where(p => p.ReversalOf != null);
         if (query.From is { } from) { var lo = StartOfSchoolDay(from); q = q.Where(p => p.ReceivedAt >= lo); }
@@ -581,20 +595,29 @@ public sealed class PaymentService(
         await SaveAsync(ct);
     }
 
-    private async Task<CashShiftDto> RequireOpenShiftAsync(string userId, CancellationToken ct)
+    /// <summary>
+    /// Kassa mavjud va FAOL ekanini tekshiradi ("smena" o'rniga — kassalar
+    /// modeli, 2026-09). Bo'lmasa 404, faol bo'lmasa 409 — <c>PaymentException</c>
+    /// shaklida (bu klassning o'z xato tili, <c>BillingRuleException</c> emas).
+    /// </summary>
+    private async Task RequireActiveBoxAsync(Guid boxId, CancellationToken ct)
     {
-        var shift = await shifts.CurrentAsync(userId, ct);
-        if (shift is null || !string.Equals(shift.Status, CashShiftStatus.Open, StringComparison.Ordinal))
-            throw PaymentException.NoOpenShift();
-        return shift;
+        var box = await db.CashBoxes.AsNoTracking()
+            .Where(b => b.Id == boxId)
+            .Select(b => new { b.IsActive })
+            .FirstOrDefaultAsync(ct)
+            ?? throw PaymentException.NotFound("cash_box_not_found", "Kassa topilmadi.");
+
+        if (!box.IsActive)
+            throw PaymentException.Conflict("cash_box_inactive", "Bu kassa faol emas.");
     }
 
     /// <summary>
     /// To'lovlarni DTO'ga o'giradi. Qator soni qanday bo'lsin — HAR DOIM
-    /// beshta so'rov (taqsimot, o'quvchi, kassir, storno havolasi). Moliya
-    /// entity'larida navigatsiya xossalari YO'Q (BillingModel.cs FK'larni
-    /// navigatsiyasiz e'lon qiladi), shuning uchun "Include" o'rniga
-    /// partiyalab o'qish — N+1 ning oldini olish yo'li shu.
+    /// beshta so'rov (taqsimot, o'quvchi, kassir, storno havolasi) + kassalar
+    /// nomlari (oltinchisi). Moliya entity'larida navigatsiya xossalari YO'Q
+    /// (BillingModel.cs FK'larni navigatsiyasiz e'lon qiladi), shuning uchun
+    /// "Include" o'rniga partiyalab o'qish — N+1 ning oldini olish yo'li shu.
     /// </summary>
     private async Task<List<PaymentDto>> ToDtosAsync(
         IReadOnlyList<Payment> payments, CancellationToken ct)
@@ -637,6 +660,15 @@ public sealed class PaymentService(
             .Select(p => new { StornoId = p.Id, OriginalId = p.ReversalOf!.Value })
             .ToDictionaryAsync(x => x.OriginalId, x => x.StornoId, ct);
 
+        var boxIds = payments.Select(p => p.CashBoxId).Where(x => x is not null).Select(x => x!.Value)
+            .Distinct().ToList();
+        var boxNames = boxIds.Count == 0
+            ? []
+            : await db.CashBoxes.AsNoTracking()
+                .Where(b => boxIds.Contains(b.Id))
+                .Select(b => new { b.Id, b.Name })
+                .ToDictionaryAsync(b => b.Id, b => b.Name, ct);
+
         return [.. payments.Select(p =>
         {
             var mine = allocations
@@ -660,7 +692,9 @@ public sealed class PaymentService(
                 // o'zgaruvchan balans ustuniga yozilmaydi: u har doim
                 // shu ayirmadan hisoblanadi.
                 p.Amount - mine.Sum(a => a.Amount),
-                mine);
+                mine,
+                p.CashBoxId,
+                p.CashBoxId is null ? null : boxNames.GetValueOrDefault(p.CashBoxId.Value, "—"));
         })];
     }
 

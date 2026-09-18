@@ -117,7 +117,11 @@ public class PaymentsTests(ApiFixture fixture)
             .Where(p => p.StudentId == world.StudentId).ToListAsync());
         Assert.Equal(dto.Id, payment.Id);
         Assert.Equal(world.CashierId, payment.CashierId);        // §4.4 — JWT'dan
-        Assert.Equal(world.ShiftId, payment.CashShiftId);        // smena serverda aniqlangan
+        // "Smena" endi yo'q (kassalar modeli, 2026-09) — yangi to'lovda
+        // har doim null. Kassa esa serverda aniqlangan: cashBoxId ko'rsatilmadi,
+        // shuning uchun SUKUT (default) kassaga tushdi.
+        Assert.Null(payment.CashShiftId);
+        Assert.NotNull(payment.CashBoxId);
         Assert.Equal(TimeSpan.Zero, payment.ReceivedAt.Offset);  // timestamptz — lahza
 
         var allocations = await db.PaymentAllocations.AsNoTracking()
@@ -147,13 +151,19 @@ public class PaymentsTests(ApiFixture fixture)
     }
 
     // -----------------------------------------------------------------
-    //  SPEC §4.2 — ochiq smenasiz pul yozilmaydi
+    //  Kassalar modeli (2026-09) — "smena" ENDI TALAB QILINMAYDI
     // -----------------------------------------------------------------
+    //
+    //  Ilgari shu yerda smenasiz to'lov 409 `no_open_shift` bilan rad
+    //  etilishi tekshirilardi. Mijoz javobi: "smena degan tushuncha umuman
+    //  bo'lmasin". Endi bu QOIDA emas — aksincha, smenasiz (hech qachon
+    //  ochilmagan) holatda ham to'lov MUVAFFAQIYATLI o'tishi va pul SUKUT
+    //  (default) kassaga tushishi TEKSHIRILADI.
 
     [Fact]
-    public async Task Ochiq_smena_yoq_bolsa_409_no_open_shift_va_hech_qanday_pul_qatori_yozilmaydi()
+    public async Task Smenasiz_ham_tolov_qabul_qilinadi_va_sukut_kassaga_tushadi()
     {
-        // Smena ATAYLAB ochilmaydi.
+        // Smena ATAYLAB ochilmaydi — kassalar modelida bu endi shart emas.
         var (cashier, client) = await ActorAsync(Roles.Cashier);
         var studentId = await NewStudentAsync();
         var invoiceId = await NewInvoiceAsync(studentId, "tuition", 500_000m);
@@ -166,11 +176,58 @@ public class PaymentsTests(ApiFixture fixture)
             allocations = new[] { new { invoiceId, amount = 500_000m } },
         });
 
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var dto = await response.Content.ReadFromJsonAsync<PaymentDto>();
+        Assert.NotNull(dto);
+        Assert.Null(dto.CashShiftId);
+        Assert.NotNull(dto.CashBoxId);
+        Assert.NotNull(dto.CashBoxName);
+
+        await using var db = NewDb();
+        var payment = await db.Payments.AsNoTracking().SingleAsync(p => p.StudentId == studentId);
+        Assert.Null(payment.CashShiftId);
+        var defaultBoxId = await CashBoxService.DefaultBoxIdAsync(db);
+        Assert.Equal(defaultBoxId, payment.CashBoxId);
+        Assert.Equal(InvoiceStatus.Paid,
+            await db.Invoices.Where(i => i.Id == invoiceId).Select(i => i.Status).SingleAsync());
+    }
+
+    /// <summary>Bo'lmagan yoki faol bo'lmagan kassaga to'lov — 404/409, va bitta ham pul qatori yozilmaydi.</summary>
+    [Fact]
+    public async Task Faol_bolmagan_kassaga_tolov_409_va_hech_qanday_pul_qatori_yozilmaydi()
+    {
+        var (cashier, client) = await ActorAsync(Roles.Cashier);
+        var studentId = await NewStudentAsync();
+        var invoiceId = await NewInvoiceAsync(studentId, "tuition", 500_000m);
+
+        var inactiveBoxId = Guid.Empty;
+        await fixture.Api.WithDbAsync(async db =>
+        {
+            var box = new CashBox
+            {
+                Name = "Faol emas " + Guid.NewGuid().ToString("N")[..6],
+                IsDefault = false,
+                IsActive = false,
+                CreatedAt = AppClock.NowInstant,
+            };
+            db.CashBoxes.Add(box);
+            await db.SaveChangesAsync();
+            inactiveBoxId = box.Id;
+        });
+
+        var response = await client.PostAsJsonAsync("/api/cash/payments", new
+        {
+            studentId,
+            amount = 500_000m,
+            method = PaymentMethod.Cash,
+            allocations = new[] { new { invoiceId, amount = 500_000m } },
+            cashBoxId = inactiveBoxId,
+        });
+
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
         var error = await response.Content.ReadFromJsonAsync<PaymentErrorDto>();
-        Assert.Equal("no_open_shift", error?.Code);
+        Assert.Equal("cash_box_inactive", error?.Code);
 
-        // Eng muhimi: BIRORTA pul qatori yozilmagan.
         await using var db = NewDb();
         Assert.False(await db.Payments.AnyAsync(p => p.StudentId == studentId));
         Assert.False(await db.PaymentAllocations.AnyAsync(a => a.InvoiceId == invoiceId));
@@ -377,7 +434,7 @@ public class PaymentsTests(ApiFixture fixture)
         var tuition = await NewInvoiceAsync(world.StudentId, "tuition", 300_000m);
 
         await using var db = NewDb();
-        var service = new PaymentService(db, new ShiftDouble(db), new LedgerService(db));
+        var service = new PaymentService(db, new LedgerService(db));
 
         var dto = await service.AcceptAsync(
             new AcceptPaymentRequest(world.StudentId, 300_000m, PaymentMethod.Card, null,

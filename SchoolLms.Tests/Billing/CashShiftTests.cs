@@ -344,187 +344,64 @@ public class CashShiftTests(ApiFixture fixture)
     // =====================================================================
 
     /// <summary>
-    /// <b>Z-hisobotning usullar kesimi = SHU smena to'lovlarining usul
-    /// bo'yicha yig'indisi</b> (SPEC §4.6).
+    /// <b>Kassalar modeli (2026-09): HAQIQIY (HTTP, <c>PaymentService</c>
+    /// orqali) to'lovlar endi HECH QAYSI smenaning Z-hisobotiga tushmaydi.</b>
     ///
     /// <para>
-    /// Kutilgan qiymatlar IKKI YO'L bilan tekshiriladi: (1) testda qo'lda
-    /// yozilgan sonlar bilan — bu asosiy himoya; (2) bazadan MUSTAQIL
-    /// hisoblangan guruhlash bilan — bu esa hisobot ilova xotirasidagi
-    /// biror keshdan emas, aynan yozilgan qatorlardan yig'ilishini tasdiqlaydi.
-    /// Faqat ikkinchisi bo'lsa, ikkala tomon bir xil xatoni takrorlashi
-    /// mumkin edi.
+    /// Bu uchta eski testni ALMASHTIRADI (ular "to'lov smenaning usullar
+    /// kesimida ko'rinadi", "storno tasdiqlovchining smenasida manfiy
+    /// ko'rinadi", "Z-hisobot boshqa smenaning to'lovini qo'shmaydi" deb
+    /// tekshirardi) — bu QOIDANING O'ZI mijoz javobi bilan olib tashlandi:
+    /// "smena" endi <c>PaymentService</c>/<c>ExpenseService</c> yo'liga
+    /// UMUMAN ulanmaydi. Z-hisobotning O'ZI (agregatsiya mexanizmi) buzilmadi
+    /// va tekshirilgan bo'lib qoladi — <c>CashShiftServiceTests</c> uni
+    /// bazaga TO'G'RIDAN-TO'G'RI (xizmatni chetlab o'tib) yozilgan
+    /// <c>cash_shift_id</c>'li qatorlar bilan sinaydi. Shu yerda esa aynan
+    /// HAQIQIY yo'l (HTTP to'lov + HTTP storno) endi HECH NARSA
+    /// QOLDIRMASLIGI tekshiriladi — bu regressiya qulfi: kimdir wiring'ni
+    /// tasodifan qaytarsa, quyidagi nollar birdan sonlarga aylanadi.
     /// </para>
     /// </summary>
     [Fact]
-    public async Task Z_hisobot_usullar_kesimi_smena_tolovlari_yigindisiga_teng()
+    public async Task Http_tolovi_va_stornosi_endi_hech_qaysi_smena_Z_hisobotiga_tushmaydi()
     {
         var (cashier, client) = await ClientAsync(Roles.Cashier);
         var shift = await OpenShiftAsync(client, openingFloat: 60_000m);
-        var scene = await SceneAsync(
-            amounts: [500_000m, 250_000m, 300_000m, 150_000m, 90_000m]);
+        var scene = await SceneAsync(amounts: [500_000m, 250_000m]);
 
-        await AcceptAsync(client, scene, 0, PaymentMethod.Cash);
-        await AcceptAsync(client, scene, 1, PaymentMethod.Cash);
-        await AcceptAsync(client, scene, 2, PaymentMethod.Card);
-        await AcceptAsync(client, scene, 3, PaymentMethod.Transfer);
-        await AcceptAsync(client, scene, 4, PaymentMethod.Online);
+        var payment = await AcceptAsync(client, scene, 0, PaymentMethod.Cash);
+        Assert.Null(payment.CashShiftId);
 
-        var response = await client.GetAsync($"/api/cash/shifts/{shift.Id}/z-report");
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        var report = (await response.Content.ReadFromJsonAsync<ZReportDto>())!;
-
-        // --- Usullar: to'rttasi ham, tartibi barqaror ---
-        Assert.Equal(PaymentMethod.All.ToList(), report.ByMethod.Select(r => r.Method).ToList());
-
-        AssertMethod(report, PaymentMethod.Cash, count: 2, amount: 750_000m);
-        AssertMethod(report, PaymentMethod.Card, count: 1, amount: 300_000m);
-        AssertMethod(report, PaymentMethod.Transfer, count: 1, amount: 150_000m);
-        AssertMethod(report, PaymentMethod.Online, count: 1, amount: 90_000m);
-
-        // --- O'sha yig'indi, bazadan MUSTAQIL hisoblangan ---
-        await using var db = NewDb();
-        var grouped = await db.Payments.AsNoTracking()
-            .Where(p => p.CashShiftId == shift.Id)
-            .GroupBy(p => p.Method)
-            .Select(g => new { Method = g.Key, Count = g.Count(), Total = g.Sum(p => p.Amount) })
-            .ToListAsync();
-
-        Assert.Equal(4, grouped.Count);
-        foreach (var row in grouped)
-        {
-            var reported = report.ByMethod.Single(r => r.Method == row.Method);
-            Assert.Equal(row.Count, reported.Count);
-            Assert.Equal(row.Total, reported.Amount);
-        }
-
-        // Hech bir to'lov tushib qolmadi va ortiqchasi qo'shilmadi.
-        Assert.Equal(5, report.ByMethod.Sum(r => r.Count));
-        Assert.Equal(1_290_000m, report.ByMethod.Sum(r => r.Amount));
-        Assert.Equal(0, report.ReversalsCount);
-
-        // --- Chek oralig'i ---
-        Assert.Equal(1L, report.ReceiptFrom);
-        Assert.Equal(5L, report.ReceiptTo);
-
-        // --- Smena sarlavhasi: naqd va naqdsiz alohida ---
-        Assert.Equal(5, report.Shift.PaymentsCount);
-        Assert.Equal(750_000m, report.Shift.CashTotal);
-        Assert.Equal(540_000m, report.Shift.NonCashTotal);
-        Assert.Equal(60_000m, report.Shift.OpeningFloat);
-
-        // --- Toifalar kesimi: hamma pul `tuition` ga taqsimlangan ---
-        var tuition = Assert.Single(report.ByCategory);
-        Assert.Equal("tuition", tuition.CategoryCode);
-        Assert.Equal(1_290_000m, tuition.Amount);
-
-        // --- Yopilgandan keyin: kutilgan naqd = ochilish qoldig'i + NAQD qatori ---
-        var close = await client.PostAsJsonAsync(
-            $"/api/cash/shifts/{shift.Id}/close", new { countedCash = 810_000m });
-        Assert.Equal(HttpStatusCode.OK, close.StatusCode);
-        var closed = (await close.Content.ReadFromJsonAsync<CashShiftDto>())!;
-
-        Assert.Equal(810_000m, closed.ExpectedCash);   // 60 000 + 750 000, karta/o'tkazma/onlayn KIRMAYDI
-        Assert.Equal(0m, closed.Variance);
-    }
-
-    /// <summary>
-    /// Storno tasdiqlovchining O'Z smenasiga tushadi va o'sha smenaning
-    /// usullar kesimida MANFIY ko'rinadi (summa bazada musbat, ma'nosi —
-    /// "pul qaytdi").
-    ///
-    /// <para>
-    /// Bu qoidani belgi (ishora) bilan tekshirish shart: agar hisobot storno'ni
-    /// oddiy to'lov kabi qo'shsa, kun oxirida kassa ikki barobar ko'p pul
-    /// olgandek ko'rinardi.
-    /// </para>
-    /// </summary>
-    [Fact]
-    public async Task Storno_tasdiqlovchining_Z_hisobotida_manfiy_korinadi()
-    {
-        var (cashier, cashierClient) = await ClientAsync(Roles.Cashier);
-        var cashierShift = await OpenShiftAsync(cashierClient);
-        var scene = await SceneAsync(amounts: [500_000m]);
-        var payment = await AcceptAsync(cashierClient, scene, 0, PaymentMethod.Cash);
-
-        // Storno tasdiqlovchining O'Z ochiq smenasiga yoziladi (SPEC §4.5 —
-        // ikki qavatli nazorat: kassir o'z to'lovini o'zi storno qila olmaydi).
         var (_, adminClient) = await ClientAsync(Roles.Admin);
-        var adminShift = await OpenShiftAsync(adminClient);
-
         var reverse = await adminClient.PostAsJsonAsync(
             $"/api/admin/payments/{payment.Id}/reverse", new { reason = "kassir summani xato kiritgan" });
         Assert.Equal(HttpStatusCode.OK, reverse.StatusCode);
-
         var storno = (await reverse.Content.ReadFromJsonAsync<PaymentDto>())!;
-        Assert.Equal(payment.Id, storno.ReversalOf);
-        Assert.Equal(adminShift.Id, storno.CashShiftId);
-        Assert.Equal(500_000m, storno.Amount);
+        Assert.Null(storno.CashShiftId);
 
-        // Tasdiqlovchining Z-hisoboti: bitta naqd qator, MANFIY.
-        var response = await adminClient.GetAsync($"/api/cash/shifts/{adminShift.Id}/z-report");
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        var report = (await response.Content.ReadFromJsonAsync<ZReportDto>())!;
-
-        AssertMethod(report, PaymentMethod.Cash, count: 1, amount: -500_000m);
-        AssertMethod(report, PaymentMethod.Card, count: 0, amount: 0m);
-        Assert.Equal(1, report.ReversalsCount);
-        Assert.Equal(-500_000m, report.Shift.CashTotal);
-
-        // Kassirning smenasida esa ASL to'lov o'z o'rnida qoladi — storno uni
-        // O'CHIRMAYDI (SPEC §4.1: tuzatish faqat qarshi yozuv bilan).
-        var ownReport = (await (await cashierClient
-            .GetAsync($"/api/cash/shifts/{cashierShift.Id}/z-report"))
+        // Kassirning O'Z smenasi — to'lov shu smenani ochgan odam qabul
+        // qilgan bo'lsa ham, HECH NARSA ko'rinmaydi.
+        var report = (await (await client.GetAsync($"/api/cash/shifts/{shift.Id}/z-report"))
             .Content.ReadFromJsonAsync<ZReportDto>())!;
 
-        AssertMethod(ownReport, PaymentMethod.Cash, count: 1, amount: 500_000m);
-        Assert.Equal(0, ownReport.ReversalsCount);
-        Assert.Equal(1L, ownReport.ReceiptFrom);
-        Assert.Equal(1L, ownReport.ReceiptTo);
-    }
+        Assert.Equal(PaymentMethod.All.ToList(), report.ByMethod.Select(r => r.Method).ToList());
+        Assert.All(report.ByMethod, r => Assert.Equal(0, r.Count));
+        Assert.All(report.ByMethod, r => Assert.Equal(0m, r.Amount));
+        Assert.Empty(report.ByCategory);
+        Assert.Equal(0, report.ReversalsCount);
+        Assert.Null(report.ReceiptFrom);
+        Assert.Null(report.ReceiptTo);
+        Assert.Equal(0, report.Shift.PaymentsCount);
+        Assert.Equal(0m, report.Shift.CashTotal);
 
-    /// <summary>
-    /// Z-hisobot SMENA CHEGARASIDAN chiqmaydi: ikkinchi kassirning pullari
-    /// birinchisining hisobotiga qo'shilmaydi va aksincha.
-    ///
-    /// <para>
-    /// Chegara buzilsa har ikkala kassir ham boshqasining pulini "topshirishi"
-    /// kerak bo'lardi — nomuvofiqlik hisoboti butunlay ma'nosiz bo'lardi.
-    /// </para>
-    /// </summary>
-    [Fact]
-    public async Task Z_hisobot_boshqa_smenaning_tolovlarini_qoshmaydi()
-    {
-        var (firstCashier, firstClient) = await ClientAsync(Roles.Cashier);
-        var firstShift = await OpenShiftAsync(firstClient);
-        var firstScene = await SceneAsync(amounts: [120_000m]);
-        await AcceptAsync(firstClient, firstScene, 0, PaymentMethod.Cash);
-
-        var (secondCashier, secondClient) = await ClientAsync(Roles.Cashier);
-        var secondShift = await OpenShiftAsync(secondClient);
-        var secondScene = await SceneAsync(amounts: [77_000m, 33_000m]);
-        await AcceptAsync(secondClient, secondScene, 0, PaymentMethod.Cash);
-        await AcceptAsync(secondClient, secondScene, 1, PaymentMethod.Card);
-
-        var first = (await (await firstClient.GetAsync($"/api/cash/shifts/{firstShift.Id}/z-report"))
-            .Content.ReadFromJsonAsync<ZReportDto>())!;
-        var second = (await (await secondClient.GetAsync($"/api/cash/shifts/{secondShift.Id}/z-report"))
-            .Content.ReadFromJsonAsync<ZReportDto>())!;
-
-        AssertMethod(first, PaymentMethod.Cash, count: 1, amount: 120_000m);
-        AssertMethod(first, PaymentMethod.Card, count: 0, amount: 0m);
-        Assert.Equal(1, first.Shift.PaymentsCount);
-        Assert.Equal(firstCashier.Id, first.Shift.CashierId);
-
-        AssertMethod(second, PaymentMethod.Cash, count: 1, amount: 77_000m);
-        AssertMethod(second, PaymentMethod.Card, count: 1, amount: 33_000m);
-        Assert.Equal(2, second.Shift.PaymentsCount);
-        Assert.Equal(secondCashier.Id, second.Shift.CashierId);
-
-        // Har ikkala smenada chek raqami 1 dan boshlanadi — ular mustaqil.
-        Assert.Equal(1L, first.ReceiptFrom);
-        Assert.Equal(1L, second.ReceiptFrom);
-        Assert.Equal(2L, second.ReceiptTo);
+        // Smena yopilganda ham naqd to'lov TA'SIR QILMAYDI — faqat ochilish
+        // qoldig'i qoladi (naqd chiqim/topshiriq bo'lmagani uchun farqsiz).
+        var close = await client.PostAsJsonAsync(
+            $"/api/cash/shifts/{shift.Id}/close", new { countedCash = 60_000m });
+        Assert.Equal(HttpStatusCode.OK, close.StatusCode);
+        var closed = (await close.Content.ReadFromJsonAsync<CashShiftDto>())!;
+        Assert.Equal(60_000m, closed.ExpectedCash);
+        Assert.Equal(0m, closed.Variance);
     }
 
     /// <summary>To'lovsiz smenaning hisoboti ham to'liq jadval beradi — bo'sh javob emas.</summary>
@@ -677,7 +554,24 @@ public class CashShiftTests(ApiFixture fixture)
         var (owner, ownerClient) = await ClientAsync(Roles.Cashier);
         var shift = await OpenShiftAsync(ownerClient);
         var scene = await SceneAsync(amounts: [432_100m]);
-        await AcceptAsync(ownerClient, scene, 0, PaymentMethod.Cash);
+
+        // TO'G'RIDAN-TO'G'RI bazaga (kassalar modelida `PaymentService` endi
+        // smenaga yozmaydi — IDOR sinovi uchun shu smenada HAQIQIY ma'lumot
+        // kerak, aks holda "hech narsa sizmadi" tasdig'i ma'nosiz bo'lardi).
+        await using (var db = NewDb())
+        {
+            db.Payments.Add(new Payment
+            {
+                ReceiptNo = 1,
+                StudentId = scene.StudentIds[0],
+                Amount = 432_100m,
+                Method = PaymentMethod.Cash,
+                CashShiftId = shift.Id,
+                CashierId = owner.Id,
+                ReceivedAt = AppClock.NowInstant,
+            });
+            await db.SaveChangesAsync();
+        }
 
         // Egasi ko'radi.
         var mine = await ownerClient.GetAsync($"/api/cash/shifts/{shift.Id}/z-report");
@@ -881,11 +775,14 @@ public class CashShiftTests(ApiFixture fixture)
     }
 
     /// <summary>
-    /// Smena yopilgach unga YANGI to'lov qabul qilinmaydi (409): chek raqami
-    /// berilsa, allaqachon chop etilgan Z-hisobot orqadan yolg'on bo'lib qolardi.
+    /// Kassalar modeli (2026-09): smena yopilgach ham YANGI to'lov QABUL
+    /// QILINADI — u endi hech qaysi smenaga bog'liq emas (SUKUT kassaga
+    /// tushadi). Ilgari bu yerda "yopilgan smenaga to'lov taqiqlanadi" (409)
+    /// tekshirilardi; bu qoida "smena umuman bo'lmasin" mijoz javobi bilan
+    /// olib tashlandi.
     /// </summary>
     [Fact]
-    public async Task Yopilgan_smenaga_yangi_tolov_qabul_qilinmaydi()
+    public async Task Smena_yopilgandan_keyin_ham_tolov_qabul_qilinadi_endi_smenaga_boglanmaydi()
     {
         var (cashier, client) = await ClientAsync(Roles.Cashier);
         var shift = await OpenShiftAsync(client);
@@ -903,91 +800,31 @@ public class CashShiftTests(ApiFixture fixture)
             allocations = new[] { new { invoiceId = scene.InvoiceIds[1], amount = 50_000m } },
         });
 
-        // Ochiq smena yo'q — bitta ham pul qatori yozilmaydi.
-        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
-        Assert.Equal("no_open_shift",
-            (await response.Content.ReadFromJsonAsync<ErrorBody>())!.Code);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var dto = (await response.Content.ReadFromJsonAsync<PaymentDto>())!;
+        Assert.Null(dto.CashShiftId);
+        Assert.NotNull(dto.CashBoxId);
 
         await using var db = NewDb();
-        Assert.Equal(1, await db.Payments.AsNoTracking().CountAsync(p => p.CashShiftId == shift.Id));
+        // Yopilgan smenaga birorta ham to'lov "tegishli" emas — kassalar
+        // modelida bu bog'lanish umuman yo'q.
+        Assert.Equal(0, await db.Payments.AsNoTracking().CountAsync(p => p.CashShiftId == shift.Id));
+        Assert.Equal(2, await db.Payments.AsNoTracking().CountAsync(p => p.StudentId == scene.StudentIds[0]
+            || p.StudentId == scene.StudentIds[1]));
     }
 
     // =====================================================================
     //  Yordamchilar
     // =====================================================================
 
-    private static void AssertMethod(ZReportDto report, string method, int count, decimal amount)
-    {
-        var row = report.ByMethod.Single(r => r.Method == method);
-        Assert.Equal(count, row.Count);
-        Assert.Equal(amount, row.Amount);
-    }
-
-    /// <summary>Bitta smena uchun o'quvchilar, hisob-fakturalar va ularning summalari.</summary>
-    /// <summary>
-    /// STORNO PULI TASDIQLOVCHINING SMENASIDAN CHIQADI, KASSIRNIKIDAN EMAS.
-    ///
-    /// <para>
-    /// <c>PaymentService.ReverseAsync</c> storno <c>payments</c> qatorini
-    /// tasdiqlovchining ochiq smenasiga yozadi — "pul bugun, uning kassasidan
-    /// chiqadi". Jurnal tomoni ham SHU smenaga tushishi shart, chunki
-    /// <c>ExpectedCashAsync</c> smena satrlarini <c>ref_id ∈ (shu smenaning
-    /// to'lovlari)</c> bo'yicha topadi.
-    /// </para>
-    ///
-    /// <para>
-    /// Ilgari ko'zgu satr ORIGINALNING <c>ref_id</c> sini saqlab qolardi, ya'ni
-    /// pul qaytarilishi kassirning smenasidan yechilardi. O'lchangan natija:
-    /// kassir +500 000 ortiqcha pul bilan (aslida pul javonida turibdi),
-    /// tasdiqlovchining kassasi esa nol farq bilan yopilardi. Bu test aynan
-    /// shuni ushlab turadi.
-    /// </para>
-    /// </summary>
-    [Fact]
-    public async Task Storno_puli_kassirning_emas_tasdiqlovchining_smenasidan_yechiladi()
-    {
-        const decimal amount = 500_000m;
-        const decimal approverFloat = 500_000m;
-
-        var scene = await SceneAsync([amount]);
-        var (_, cashier) = await ClientAsync(Roles.Cashier);
-        var (_, approver) = await ClientAsync(Roles.Admin);
-
-        var cashierShift = await OpenShiftAsync(cashier);
-        var payment = await AcceptAsync(cashier, scene, 0, PaymentMethod.Cash);
-
-        // Tasdiqlovchi O'Z smenasini ochadi — pul aynan shu javondan qaytadi.
-        var approverShift = await OpenShiftAsync(approver, approverFloat);
-
-        var reversal = await approver.PostAsJsonAsync(
-            $"/api/admin/payments/{payment.Id}/reverse",
-            new { reason = "Kassir xato summa kiritdi" });
-        Assert.Equal(HttpStatusCode.OK, reversal.StatusCode);
-
-        // Kassirning javonida pul QOLDI: u hech narsa qaytargani yo'q.
-        var cashierClose = await cashier.PostAsJsonAsync(
-            $"/api/cash/shifts/{cashierShift.Id}/close",
-            new { countedCash = amount, note = (string?)null });
-        Assert.Equal(HttpStatusCode.OK, cashierClose.StatusCode);
-        var closedCashier = (await cashierClose.Content.ReadFromJsonAsync<CashShiftDto>())!;
-
-        // Tasdiqlovchining javonidan pul CHIQDI: 500 000 float − 500 000 qaytim.
-        var approverClose = await approver.PostAsJsonAsync(
-            $"/api/cash/shifts/{approverShift.Id}/close",
-            new { countedCash = 0m, note = (string?)null });
-        Assert.Equal(HttpStatusCode.OK, approverClose.StatusCode);
-        var closedApprover = (await approverClose.Content.ReadFromJsonAsync<CashShiftDto>())!;
-
-        Assert.Equal(cashierShift.Id, closedCashier.Id);
-        Assert.Equal(approverShift.Id, closedApprover.Id);
-
-        // ASOSIY TASDIQ: ikkala smena ham NOL farq bilan yopiladi.
-        Assert.Equal(amount, closedCashier.ExpectedCash);
-        Assert.Equal(0m, closedCashier.Variance);
-
-        Assert.Equal(0m, closedApprover.ExpectedCash);
-        Assert.Equal(0m, closedApprover.Variance);
-    }
+    // `Storno_puli_kassirning_emas_tasdiqlovchining_smenasidan_yechiladi`
+    // (va uning yordamchisi `AssertMethod`) shu yerda turgan — kassalar
+    // modelida (2026-09) OLIB TASHLANDI: uning butun mavzusi ("storno puli
+    // QAYSI SMENADAN yechiladi") endi mavjud emas, chunki `PaymentService`
+    // umuman smenaga yozmaydi. Bu HAQIQAT allaqachon
+    // `Http_tolovi_va_stornosi_endi_hech_qaysi_smena_Z_hisobotiga_tushmaydi`
+    // testida tekshirilgan (yuqorida) — ikkinchi marta, faqat boshqa
+    // summalar bilan takrorlash qo'shimcha qiymat bermas edi.
 
     private sealed record Scene(List<string> StudentIds, List<Guid> InvoiceIds, decimal[] Amounts);
 

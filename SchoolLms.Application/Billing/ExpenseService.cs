@@ -135,7 +135,11 @@ public record ExpenseDto(
     string? TeacherId = null,
     string? TeacherName = null,
     Guid? CashShiftId = null,
-    int AttachmentCount = 0);
+    int AttachmentCount = 0,
+    // Qaysi KASSADAN to'landi (kassalar modeli, 2026-09). `null` = bankdan
+    // yoki eski (kassa modelidan oldingi) qator.
+    Guid? CashBoxId = null,
+    string? CashBoxName = null);
 
 /// <summary>
 /// Chiqimga biriktirilgan hujjat (F1.08) — o'qish uchun.
@@ -197,16 +201,21 @@ public record AttachExpenseFileRequest(
 /// hisoboti "falonchi qancha oldi" degan savolga javob bera olmaydi;
 /// batafsil: <see cref="SalaryPaymentQuery"/>.
 /// </param>
+/// <param name="CashBoxId">
+/// Naqd chiqim QAYSI kassadan to'lanadi (kassalar modeli, 2026-09 — "smena"
+/// o'rnini bosadi). <c>null</c> = SUKUT kassa. Naqd bo'lmagan usulda e'tiborsiz.
+/// </param>
 public record CreateExpenseRequest(
     DateOnly OnDate, string Category, decimal Amount, string Method, string? Note,
-    string? TeacherId = null);
+    string? TeacherId = null, Guid? CashBoxId = null);
 
 /// <summary>
 /// Chegaradan yuqori chiqimni tasdiqlash (SPEC §4.5). <c>approved_by</c> tanada
 /// YO'Q — u JWT'dan olinadi.
 /// </summary>
 /// <param name="Method">Pul qaysi usulda chiqdi — jurnalning kredit satri shundan.</param>
-public record ApproveExpenseRequest(string Method);
+/// <param name="CashBoxId">Naqd tasdiqda QAYSI kassadan chiqadi. <c>null</c> = SUKUT kassa.</param>
+public record ApproveExpenseRequest(string Method, Guid? CashBoxId = null);
 
 /// <summary>Storno so'rovi. Sabab majburiy: u jurnal satrining <c>memo</c> siga tushadi.</summary>
 public record ReverseExpenseRequest(string Reason);
@@ -276,7 +285,7 @@ public interface IExpenseService
     /// marta bosilgan tugma jurnalga ikkinchi partiya qo'ymaydi.
     /// </summary>
     Task<ExpenseDto> ApproveAsync(
-        Guid id, string method, string approverId, CancellationToken ct = default);
+        Guid id, string method, string approverId, Guid? cashBoxId = null, CancellationToken ct = default);
 
     /// <summary>
     /// Storno: jurnalga ko'zgu satrlar qo'yiladi, original TEGILMAYDI va
@@ -308,8 +317,16 @@ public interface IExpenseService
 }
 
 /// <inheritdoc cref="IExpenseService"/>
+///
+/// <para>
+/// <b>"Smena" endi YO'Q (kassalar modeli, 2026-09).</b> Bu klass
+/// <c>ICashShiftService</c> ga UMUMAN bog'lanmaydi — naqd chiqim endi ochiq
+/// smena emas, bitta KASSAGA (<c>cash_box_id</c>) biriktiriladi: so'rovda
+/// ko'rsatilgan, aks holda SUKUT (default) kassa. Batafsil:
+/// <see cref="AttachCashBoxAsync"/>.
+/// </para>
 public sealed class ExpenseService(
-    IAppDbContext db, ILedgerService ledger, ICashShiftService shifts) : IExpenseService
+    IAppDbContext db, ILedgerService ledger) : IExpenseService
 {
     /// <summary>Baza ustuni <c>numeric(14,2)</c> — arifmetika ham shu aniqlikda.</summary>
     private const int MoneyScale = 2;
@@ -441,7 +458,7 @@ public sealed class ExpenseService(
             return (await ToDtosAsync([expense], ct))[0];
         }
 
-        await PostAsync(expense, method, actorId, isNew: true, before: null, ct);
+        await PostAsync(expense, method, actorId, isNew: true, before: null, request.CashBoxId, ct);
         return (await ToDtosAsync([expense], ct))[0];
     }
 
@@ -451,7 +468,7 @@ public sealed class ExpenseService(
 
     /// <inheritdoc />
     public async Task<ExpenseDto> ApproveAsync(
-        Guid id, string method, string approverId, CancellationToken ct = default)
+        Guid id, string method, string approverId, Guid? cashBoxId = null, CancellationToken ct = default)
     {
         RequireActor(approverId, nameof(approverId));
         var settlement = RequireMethod(method);
@@ -501,11 +518,11 @@ public sealed class ExpenseService(
         var before = Snapshot(expense);
         expense.ApprovedBy = approverId;
 
-        // F1.03 — naqd tasdiq TASDIQLOVCHINING smenasidan chiqadi: usulni
-        // ham, pulni ham aynan u beradi. Smena qulfi shu tranzaksiyada
-        // olinadi (chiqim qulfi allaqachon olingan — ikkalasi har xil
-        // nomlangan kalitlar, ya'ni to'qnashmaydi).
-        await AttachCashShiftAsync(expense, settlement, approverId, ct);
+        // F1.03 — naqd tasdiq TASDIQLOVCHI ko'rsatgan (yoki SUKUT) kassadan
+        // chiqadi: usulni ham, pulni ham aynan u beradi. Kassa qulfi shu
+        // tranzaksiyada olinadi (chiqim qulfi allaqachon olingan — ikkalasi
+        // har xil nomlangan kalitlar, ya'ni to'qnashmaydi).
+        await AttachCashBoxAsync(expense, settlement, cashBoxId, ct);
 
         // Jurnal satrining muallifi — TASDIQLOVCHI: pulni haqiqatan chiqarishga
         // ruxsat bergan odam o'sha. Buning ikkinchi ta'siri ham foydali:
@@ -568,40 +585,14 @@ public sealed class ExpenseService(
         // kuzatuvda saqlanmagan qator osilib qolardi.
         await using var tx = await db.BeginTransactionAsync(ct);
 
-        // F1.03 — naqd chiqimning stornosi pulni JAVONGA qaytaradi, ya'ni u
-        // storno qilayotgan odamning ochiq smenasiga tushishi kerak. Pul
-        // qaysi hisobdan chiqqanini jurnalning KREDIT satri aytadi (chiqim
-        // qatorida usul ustuni yo'q).
-        //
-        // Bu yerda `expenses` ga USTUN yozilmaydi: ko'zgu satr shaxs
-        // (`created_by`) va vaqt bo'yicha smenaga biriktiriladi
-        // (`CashShiftService.CashOutflowAsync`). Bu yerdagi tekshiruvning
-        // vazifasi — o'sha biriktirish MUMKIN bo'lishini kafolatlash: ochiq
-        // smenasiz qilingan storno hech qaysi smenaga tushmasdi va pul
-        // hisobotdan jimgina yo'qolardi.
-        var settlement = await db.LedgerEntries.AsNoTracking()
-            .Where(e => e.RefType == LedgerRefType.Expense
-                        && e.RefId == id
-                        && e.ReversalOf == null
-                        && e.Direction == LedgerDirection.Credit)
-            .Select(e => e.Account)
-            .FirstOrDefaultAsync(ct);
-
-        if (string.Equals(settlement, Accounts.Cash, StringComparison.Ordinal))
-        {
-            var reverserShift = await shifts.CurrentAsync(approverId, ct) ?? throw NoOpenShift();
-
-            await ef.Database.ExecuteSqlRawAsync(
-                LockSql, [CashShiftService.ShiftLockKey(reverserShift.Id)], ct);
-
-            var status = await db.CashShifts.AsNoTracking()
-                .Where(s => s.Id == reverserShift.Id)
-                .Select(s => s.Status)
-                .FirstOrDefaultAsync(ct);
-
-            if (!string.Equals(status, CashShiftStatus.Open, StringComparison.Ordinal))
-                throw NoOpenShift();
-        }
+        // "SMENA" ENDI YO'Q (kassalar modeli, 2026-09). Ilgari bu yerda naqd
+        // chiqimning stornosi storno qiluvchining OCHIQ SMENASINI talab
+        // qilardi — endi bunday talab YO'Q: `expenses` ga bu qadamda hech
+        // qanday ustun yozilmaydi (fayl boshidagi izoh — storno faqat
+        // jurnalga ko'zgu satr qo'shadi), ya'ni biriktiriladigan maydon ham
+        // yo'q. Naqd pul ledger orqali qaytadi, kassaga "qaysi" degan savol
+        // esa bu yerda ma'nosiz — u faqat YANGI amal (pay_in/pay_out/…)
+        // yaratilganda tegishli.
 
         try
         {
@@ -817,22 +808,26 @@ public sealed class ExpenseService(
     /// </summary>
     /// <param name="before">Audit uchun oldingi holat. <c>null</c> = yangi qator
     /// (<paramref name="isNew"/>), ya'ni "oldingi holat" degan narsa yo'q.</param>
+    /// <param name="cashBoxId">
+    /// Naqd chiqim QAYSI kassadan to'lanadi (kassalar modeli, 2026-09).
+    /// <c>null</c> = SUKUT kassa. Naqd bo'lmagan usulda e'tiborsiz.
+    /// </param>
     private async Task PostAsync(
         Expense expense, string method, string actorId, bool isNew, object? before,
-        CancellationToken ct)
+        Guid? cashBoxId, CancellationToken ct)
     {
         await using var tx = await db.BeginTransactionAsync(ct);
-        // Smena qulfi ham, chiqim qatori ham, jurnal ham AYNAN shu
+        // Kassa qulfi ham, chiqim qatori ham, jurnal ham AYNAN shu
         // tranzaksiyada (F1.03 — fayl boshidagi izoh).
-        await AttachCashShiftAsync(expense, method, actorId, ct);
+        await AttachCashBoxAsync(expense, method, cashBoxId, ct);
         await WriteAsync(expense, method, actorId, isNew, before, ct);
         await tx.CommitAsync(ct);
     }
 
     /// <summary>
-    /// Naqd chiqimni <paramref name="actorId"/> ning OCHIQ smenasiga
-    /// biriktiradi (F1.03). Naqd bo'lmagan chiqimda hech narsa qilmaydi —
-    /// pul bank hisobidan chiqadi va birorta smenaning javoniga tegmaydi.
+    /// Naqd chiqimni bitta KASSAGA biriktiradi (F1.03, endi "smena" o'rniga —
+    /// kassalar modeli, 2026-09). Naqd bo'lmagan chiqimda hech narsa qilmaydi —
+    /// pul bank hisobidan chiqadi va birorta kassaning javoniga tegmaydi.
     ///
     /// <para>
     /// <b>Chaqiruvchi ochiq tranzaksiya ichida bo'lishi SHART.</b> Advisory
@@ -840,47 +835,35 @@ public sealed class ExpenseService(
     /// qo'yib yuborilardi va qulfning ma'nosi qolmasdi.
     /// </para>
     /// <para>
-    /// Qulf OSTIDA smena qayta o'qiladi: <see cref="ICashShiftService.CurrentAsync"/>
-    /// javobi qulfdan OLDIN olingan, ya'ni oradagi lahzada smena yopilgan
-    /// bo'lishi mumkin. Yopilgan smenaning <c>expected_cash</c> i esa
-    /// hisoblanib bo'lgan va u qayta hisoblanmaydi (SPEC §4.2) — shunday
-    /// chiqim hisobotdan butunlay tushib qolardi.
+    /// Kassa mavjud/faolligi QULF OSTIDA tekshiriladi: oldingi o'qish qulfdan
+    /// OLDIN bo'lgan bo'lardi, ya'ni oradagi lahzada kassa deaktivatsiya
+    /// qilingan bo'lishi mumkin edi.
     /// </para>
     /// </summary>
-    private async Task AttachCashShiftAsync(
-        Expense expense, string method, string actorId, CancellationToken ct)
+    private async Task AttachCashBoxAsync(
+        Expense expense, string method, Guid? cashBoxId, CancellationToken ct)
     {
         if (!PaymentMethod.CountsAsCash(method))
         {
-            expense.CashShiftId = null;
+            expense.CashBoxId = null;
             return;
         }
 
-        var current = await shifts.CurrentAsync(actorId, ct) ?? throw NoOpenShift();
+        var boxId = cashBoxId ?? await CashBoxService.DefaultBoxIdAsync(db, ct);
 
-        await ef.Database.ExecuteSqlRawAsync(
-            LockSql, [CashShiftService.ShiftLockKey(current.Id)], ct);
+        await ef.Database.ExecuteSqlRawAsync(LockSql, [CashBoxService.BoxLockKey(boxId)], ct);
 
-        var status = await db.CashShifts.AsNoTracking()
-            .Where(s => s.Id == current.Id)
-            .Select(s => s.Status)
-            .FirstOrDefaultAsync(ct);
+        var box = await db.CashBoxes.AsNoTracking()
+            .Where(b => b.Id == boxId)
+            .Select(b => new { b.IsActive })
+            .FirstOrDefaultAsync(ct)
+            ?? throw BillingRuleException.NotFound("cash_box_not_found", "Kassa topilmadi.");
 
-        if (!string.Equals(status, CashShiftStatus.Open, StringComparison.Ordinal))
-            throw NoOpenShift();
+        if (!box.IsActive)
+            throw BillingRuleException.Conflict("cash_box_inactive", "Bu kassa faol emas.");
 
-        expense.CashShiftId = current.Id;
+        expense.CashBoxId = boxId;
     }
-
-    /// <summary>
-    /// SPEC §4.2 — naqd pul ochiq smenasiz javondan chiqmaydi. Kod
-    /// <c>PaymentService</c> dagi bilan AYNAN bir xil (<c>no_open_shift</c>):
-    /// kassa ekrani ikkalasida ham bitta xabarni ko'rsatadi.
-    /// </summary>
-    private static BillingRuleException NoOpenShift() =>
-        BillingRuleException.Conflict("no_open_shift",
-            "Ochiq kassa smenasi yo'q. Naqd pul kassadan smena ichida chiqadi — "
-            + "avval smenani oching yoki naqd bo'lmagan to'lov usulini tanlang (F1.03).");
 
     /// <summary>
     /// <see cref="PostAsync"/> ning ichki qismi — tranzaksiyaSIZ. Tasdiqlash
@@ -989,6 +972,15 @@ public sealed class ExpenseService(
             .Select(g => new { ExpenseId = g.Key, Count = g.Count() })
             .ToDictionaryAsync(g => g.ExpenseId, g => g.Count, ct);
 
+        var boxIds = expenses.Select(e => e.CashBoxId).Where(x => x is not null).Select(x => x!.Value)
+            .Distinct().ToList();
+        var boxNames = boxIds.Count == 0
+            ? []
+            : await db.CashBoxes.AsNoTracking()
+                .Where(b => boxIds.Contains(b.Id))
+                .Select(b => new { b.Id, b.Name })
+                .ToDictionaryAsync(b => b.Id, b => b.Name, ct);
+
         return [.. expenses.Select(e =>
         {
             var mine = entries.Where(l => l.RefId == e.Id).ToList();
@@ -1029,7 +1021,9 @@ public sealed class ExpenseService(
                 e.TeacherId,
                 e.TeacherId is null ? null : teacherNames.GetValueOrDefault(e.TeacherId, "—"),
                 e.CashShiftId,
-                attachmentCounts.GetValueOrDefault(e.Id, 0));
+                attachmentCounts.GetValueOrDefault(e.Id, 0),
+                e.CashBoxId,
+                e.CashBoxId is null ? null : boxNames.GetValueOrDefault(e.CashBoxId.Value, "—"));
         })];
 
         string Name(string userId) => names.GetValueOrDefault(userId, "—");

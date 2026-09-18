@@ -257,7 +257,10 @@ public record PaymentDto(
     decimal Amount,
     // cash | card | transfer | online — FAQAT YORLIQ (§8.1 Q13).
     string Method,
-    Guid CashShiftId, string CashierId, string CashierName,
+    // "Smena" tizimdan olib tashlangan (kassalar modeli, 2026-09) — YANGI
+    // to'lovda HAR DOIM `null`. Eski qatorlarda (smena orqali yozilgan)
+    // tarix sifatida qoladi.
+    Guid? CashShiftId, string CashierId, string CashierName,
     string? Note, DateTimeOffset ReceivedAt,
     // Bu qator storno bo'lsa — qaysi to'lovni bekor qilgani.
     Guid? ReversalOf,
@@ -265,7 +268,9 @@ public record PaymentDto(
     Guid? ReversedBy,
     // Taqsimlanmagan qoldiq = Amount − Σ Allocations (avans).
     decimal Unallocated,
-    List<PaymentAllocationDto> Allocations);
+    List<PaymentAllocationDto> Allocations,
+    // Qaysi KASSAGA tushdi (kassalar modeli, 2026-09). `null` = eski qator.
+    Guid? CashBoxId = null, string? CashBoxName = null);
 
 /// <summary>To'lovning bitta hisob-fakturaga yo'naltiriladigan qismi (so'rov).</summary>
 public record AllocationRequest(Guid InvoiceId, decimal Amount);
@@ -281,22 +286,29 @@ public record AllocationRequest(Guid InvoiceId, decimal Amount);
 /// Yig'indi <see cref="Amount"/> dan oshsa — baza trigger'i rad etadi.
 /// </para>
 /// </summary>
+/// <param name="CashBoxId">
+/// Pul QAYSI kassaga tushishi (kassalar modeli, 2026-09 — "smena" o'rnini
+/// bosadi). <c>null</c> = SUKUT (default) kassa.
+/// </param>
 public record AcceptPaymentRequest(
     string StudentId, decimal Amount, string Method, string? Note,
-    List<AllocationRequest> Allocations);
+    List<AllocationRequest> Allocations, Guid? CashBoxId = null);
 
 /// <summary>
 /// Storno. Sabab MAJBURIY (SPEC §4.3). Tasdiqlovchi JWT'dan; kassir bu
 /// amalni umuman chaqira olmaydi.
 /// </summary>
-public record ReversePaymentRequest(string Reason);
+/// <param name="CashBoxId">Storno QAYSI kassaga qaytishi. <c>null</c> = SUKUT kassa.</param>
+public record ReversePaymentRequest(string Reason, Guid? CashBoxId = null);
 
 /// <summary>To'lovlar ro'yxati uchun filtr.</summary>
+/// <param name="CashShiftId">Faqat ESKI (smena orqali yozilgan) qatorlar uchun tarixiy filtr.</param>
+/// <param name="CashBoxId">Bitta kassa (kassalar modeli, 2026-09); <c>null</c> — hammasi.</param>
 public record PaymentQuery(
     string? StudentId = null, string? CashierId = null, Guid? CashShiftId = null,
     DateOnly? From = null, DateOnly? To = null, string? Method = null,
     // true = faqat storno qatorlari.
-    bool OnlyReversals = false);
+    bool OnlyReversals = false, Guid? CashBoxId = null);
 
 /// <summary>
 /// Kassir ekranidagi TAKLIF: pulni qaysi hisob-fakturalarga taqsimlash

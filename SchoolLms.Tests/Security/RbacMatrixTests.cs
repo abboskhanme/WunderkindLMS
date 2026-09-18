@@ -118,7 +118,9 @@ public class RbacMatrixTests(ApiFixture fixture)
         Assert.Equal(500_000m, dto.Amount);
         // SPEC §4.4 — kassir JWT'dan, so'rovdan emas.
         Assert.Equal(actor.User.Id, dto.CashierId);
-        Assert.Equal(actor.ShiftId, dto.CashShiftId);
+        // "Smena" endi yo'q (kassalar modeli, 2026-09) — yangi to'lovda har doim null.
+        Assert.Null(dto.CashShiftId);
+        Assert.NotNull(dto.CashBoxId);
 
         await using var db = NewDb();
         Assert.Equal(actor.User.Id, await db.Payments.AsNoTracking()
@@ -160,9 +162,10 @@ public class RbacMatrixTests(ApiFixture fixture)
             Assert.NotNull(dto);
             Assert.Equal(original.PaymentId, dto.ReversalOf);
             Assert.Equal(300_000m, dto.Amount);
-            // Storno tasdiqlovchining O'Z smenasiga tushadi (SPEC §4.5, P1-11).
+            // Storno tasdiqlovchi nomidan yoziladi (SPEC §4.5, P1-11); "smena" endi yo'q.
             Assert.Equal(actor.User.Id, dto.CashierId);
-            Assert.Equal(actor.ShiftId, dto.CashShiftId);
+            Assert.Null(dto.CashShiftId);
+            Assert.NotNull(dto.CashBoxId);
             Assert.Equal("Kassir summani xato kiritdi", dto.Note);
 
             Assert.NotNull(storno);

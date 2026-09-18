@@ -15,15 +15,22 @@ namespace SchoolLms.Tests.Billing;
 /// Chek raqamining uzluksizligi — P1-24, SPEC §4.2 va §4.7.
 ///
 /// <para>
-/// <b>Nima uchun bu fayl bor.</b> <c>CashShiftServiceTests</c> chek raqamini
-/// AJRATUVCHINING o'zini (<see cref="ICashShiftService.NextReceiptNoAsync"/>)
-/// parallel sinaydi. Bu yerdagi test bir qavat yuqoridan boradi: 50 ta parallel
-/// chaqiruv AYNAN <see cref="PaymentService.AcceptAsync"/> ni ishga tushiradi,
-/// ya'ni butun pul tranzaksiyasi (to'lov + taqsimot + hisob-faktura statusi +
-/// ikkita jurnal qatori) qulf ostida yuguradi. Farq muhim: raqam ajratgichning
-/// o'zi to'g'ri bo'lib, uni chaqiruvchi tranzaksiyani noto'g'ri chegaralasa,
-/// natija baribir bo'shliq (yoki dublikat) bo'lardi — va auditor uchun
-/// chekdagi bo'shliq = O'CHIRILGAN CHEK degani.
+/// <b>"Smena" endi YO'Q (kassalar modeli, 2026-09).</b> Chek raqami ilgari
+/// SMENA ichida uzluksiz edi; endi u KASSA (<c>cash_box_id</c>) ichida
+/// uzluksiz — <see cref="CashBoxService.NextReceiptNoAsync"/>. Bu faylning
+/// vazifasi o'zgarmadi (auditor uchun bo'shliq = o'chirilgan chek), faqat
+/// qulf kaliti va qamrov doirasi smenadan kassaga ko'chdi.
+/// </para>
+///
+/// <para>
+/// <b>Nima uchun bu fayl bor.</b> <c>CashShiftServiceTests</c> (eski nom)
+/// raqam AJRATUVCHINING o'zini parallel sinardi; bu yerdagi test bir qavat
+/// yuqoridan boradi: 50 ta parallel chaqiruv AYNAN
+/// <see cref="PaymentService.AcceptAsync"/> ni ishga tushiradi, ya'ni butun
+/// pul tranzaksiyasi (to'lov + taqsimot + hisob-faktura statusi + ikkita
+/// jurnal qatori) qulf ostida yuguradi. Farq muhim: raqam ajratgichning o'zi
+/// to'g'ri bo'lib, uni chaqiruvchi tranzaksiyani noto'g'ri chegaralasa,
+/// natija baribir bo'shliq (yoki dublikat) bo'lardi.
 /// </para>
 ///
 /// <para>
@@ -63,15 +70,6 @@ public class ReceiptNumberingTests : IDisposable
     /// <c>53300: remaining connection slots are reserved…</c> bilan yiqiladi —
     /// va aybdor test allaqachon yashil bo'lib o'tib ketgan bo'ladi.
     /// </para>
-    /// <para>
-    /// Konstruktorda ham chaqiriladi: oldingi test klassi (masalan
-    /// <c>CashShiftServiceTests</c> ning o'z parallel testi) o'zidan keyin
-    /// bo'sh ulanish qoldirgan bo'lishi mumkin, bizga esa AYNAN 50 ta joy
-    /// kerak. Hamma testlar bitta xUnit kolleksiyasida — KETMA-KET — yuradi,
-    /// shuning uchun umumiy poolni bo'shatish xavfsiz: ilova keyingi so'rovda
-    /// ulanishni o'zi qayta ochadi. <c>PostgresFixture</c> ham xuddi shu
-    /// chaqiruvdan foydalanadi.
-    /// </para>
     /// </summary>
     public void Dispose()
     {
@@ -88,7 +86,7 @@ public class ReceiptNumberingTests : IDisposable
     // =====================================================================
 
     /// <summary>
-    /// <b>50 ta PARALLEL to'lov bitta smenaga → chek raqamlari AYNAN 1..50.</b>
+    /// <b>50 ta PARALLEL to'lov bitta KASSAGA → chek raqamlari AYNAN 1..50.</b>
     /// Bo'shliq ham, takror ham bo'lmasin (SPEC §4.2).
     ///
     /// <para>
@@ -100,14 +98,14 @@ public class ReceiptNumberingTests : IDisposable
     /// <para>
     /// Regressiyani qanday ushlaydi: <c>pg_advisory_xact_lock</c> olib tashlansa,
     /// ellikta tranzaksiya bir xil <c>max(receipt_no) + 1</c> ni o'qiydi;
-    /// ulardan biri o'tadi, qolganlari <c>ix_payments_cash_shift_id_receipt_no</c>
+    /// ulardan biri o'tadi, qolganlari <c>ix_payments_cash_box_id_receipt_no</c>
     /// unikal indeksida yiqiladi va <see cref="Task.WhenAll(Task[])"/> xatoni
     /// shu yerga olib chiqadi. Qulf tranzaksiyadan tashqariga chiqarilsa —
     /// aynan shu, faqat kamroq to'lov bilan. Ikkala holatda ham test QIZIL.
     /// </para>
     /// </summary>
     [Fact]
-    public async Task Ellik_parallel_tolov_bitta_smenada_1_dan_50_gacha_chek_beradi()
+    public async Task Ellik_parallel_tolov_bitta_kassada_1_dan_50_gacha_chek_beradi()
     {
         // Alohida baza: umumiy bazadagi 10 ta ulanish 50 ta yozuvchiga yetmaydi.
         var database = await fixture.Postgres.CreateDatabaseAsync("receipts50");
@@ -132,12 +130,12 @@ public class ReceiptNumberingTests : IDisposable
             try
             {
                 await using var db = PostgresFixture.NewContext(connectionString);
-                var service = new PaymentService(db, new CashShiftService(db), new LedgerService(db));
+                var service = new PaymentService(db, new LedgerService(db));
 
                 var dto = await service.AcceptAsync(
                     new AcceptPaymentRequest(
                         scene.StudentIds[index], Unit, PaymentMethod.Cash, $"parallel #{index}",
-                        [new AllocationRequest(scene.InvoiceIds[index], Unit)]),
+                        [new AllocationRequest(scene.InvoiceIds[index], Unit)], scene.BoxId),
                     scene.CashierId);
 
                 return dto.ReceiptNo;
@@ -165,7 +163,7 @@ public class ReceiptNumberingTests : IDisposable
         await using var check = PostgresFixture.NewContext(connectionString);
 
         var payments = await check.Payments.AsNoTracking()
-            .Where(p => p.CashShiftId == scene.ShiftId)
+            .Where(p => p.CashBoxId == scene.BoxId)
             .ToListAsync();
 
         Assert.Equal(Callers, payments.Count);
@@ -177,6 +175,8 @@ public class ReceiptNumberingTests : IDisposable
             Assert.Equal(Unit, p.Amount);
             Assert.Equal(PaymentMethod.Cash, p.Method);
             Assert.Null(p.ReversalOf);
+            // "Smena" endi yo'q — yangi to'lovda har doim null.
+            Assert.Null(p.CashShiftId);
         });
 
         // ---- 3. Har to'lov to'liq yozildi: taqsimot + IKKITA jurnal qatori ----
@@ -209,75 +209,76 @@ public class ReceiptNumberingTests : IDisposable
 
         // ---- 5. Keyingi chek — 51 (raqam "sakrab ketmadi") ----
         await using var tx = await check.BeginTransactionAsync();
-        Assert.Equal(Callers + 1L, await new CashShiftService(check).NextReceiptNoAsync(scene.ShiftId));
+        Assert.Equal(Callers + 1L, await new CashBoxService(check).NextReceiptNoAsync(scene.BoxId));
         await tx.RollbackAsync();
     }
 
     /// <summary>
-    /// Chek raqami SMENA ichida uzluksiz, lekin smenalar bir-birini
-    /// BLOKLAMAYDI va raqamlari ARALASHMAYDI: ikkita kassir bir vaqtda
-    /// ishlaganda ikkala smena ham 1 dan boshlab o'z ketma-ketligini oladi.
+    /// Chek raqami KASSA ichida uzluksiz, lekin kassalar bir-birini
+    /// BLOKLAMAYDI va raqamlari ARALASHMAYDI: ikkita kassir ikkita boshqa
+    /// kassada bir vaqtda ishlaganda ikkalasi ham 1 dan boshlab o'z
+    /// ketma-ketligini oladi.
     ///
     /// <para>
-    /// Nega kerak: qulf kaliti smena bo'yicha hisoblanadi
-    /// (<c>hashtextextended("cash_shift_receipt:{id}")</c>). Agar u global
+    /// Nega kerak: qulf kaliti kassa bo'yicha hisoblanadi
+    /// (<c>hashtextextended("cash_box:{id}")</c>). Agar u global
     /// konstantaga aylanib qolsa, testlar baribir yashil bo'lardi — faqat
-    /// butun kassa bitta navbatga tushardi. Agar aksincha, kalit smenani
+    /// butun kassa bitta navbatga tushardi. Agar aksincha, kalit kassani
     /// hisobga olmay qolsa (masalan kassir bo'yicha), raqamlar aralashardi.
     /// Ikkala xatoni ham shu test ko'radi: 24 ta parallel to'lov, ikkita
     /// mustaqil ketma-ketlik.
     /// </para>
     /// </summary>
     [Fact]
-    public async Task Ikki_smena_parallel_ishlaganda_chek_raqamlari_aralashmaydi()
+    public async Task Ikki_kassa_parallel_ishlaganda_chek_raqamlari_aralashmaydi()
     {
-        const int perShift = 12;
+        const int perBox = 12;
 
         var database = await fixture.Postgres.CreateDatabaseAsync("receipts2x");
-        // Ikki smena × 12 yozuvchi = 24 bir vaqtdagi tranzaksiya, + 6 zaxira.
-        var connectionString = WithPoolSize(database.OwnerConnectionString, (perShift * 2) + 6);
+        // Ikki kassa × 12 yozuvchi = 24 bir vaqtdagi tranzaksiya, + 6 zaxira.
+        var connectionString = WithPoolSize(database.OwnerConnectionString, (perBox * 2) + 6);
 
-        var first = await ArrangeAsync(connectionString, perShift);
-        var second = await ArrangeAsync(connectionString, perShift);
-        Assert.NotEqual(first.ShiftId, second.ShiftId);
+        var first = await ArrangeAsync(connectionString, perBox);
+        var second = await ArrangeAsync(connectionString, perBox);
+        Assert.NotEqual(first.BoxId, second.BoxId);
 
         var start = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
         var tasks = new[] { first, second }
-            .SelectMany(scene => Enumerable.Range(0, perShift).Select(async index =>
+            .SelectMany(scene => Enumerable.Range(0, perBox).Select(async index =>
             {
                 await start.Task;
 
                 await using var db = PostgresFixture.NewContext(connectionString);
-                var service = new PaymentService(db, new CashShiftService(db), new LedgerService(db));
+                var service = new PaymentService(db, new LedgerService(db));
 
                 var dto = await service.AcceptAsync(
                     new AcceptPaymentRequest(
                         scene.StudentIds[index], Unit, PaymentMethod.Cash, null,
-                        [new AllocationRequest(scene.InvoiceIds[index], Unit)]),
+                        [new AllocationRequest(scene.InvoiceIds[index], Unit)], scene.BoxId),
                     scene.CashierId);
 
-                return (scene.ShiftId, dto.ReceiptNo);
+                return (scene.BoxId, dto.ReceiptNo);
             }))
             .ToList();
 
         start.SetResult();
         var issued = await Task.WhenAll(tasks);
 
-        var expected = Enumerable.Range(1, perShift).Select(i => (long)i).ToList();
-        foreach (var shiftId in new[] { first.ShiftId, second.ShiftId })
+        var expected = Enumerable.Range(1, perBox).Select(i => (long)i).ToList();
+        foreach (var boxId in new[] { first.BoxId, second.BoxId })
             Assert.Equal(expected, issued
-                .Where(r => r.ShiftId == shiftId)
+                .Where(r => r.BoxId == boxId)
                 .Select(r => r.ReceiptNo)
                 .OrderBy(n => n)
                 .ToList());
 
-        // Bazada ham: har smenada 12 qator, raqamlari 1..12.
+        // Bazada ham: har kassada 12 qator, raqamlari 1..12.
         await using var check = PostgresFixture.NewContext(connectionString);
-        foreach (var shiftId in new[] { first.ShiftId, second.ShiftId })
+        foreach (var boxId in new[] { first.BoxId, second.BoxId })
         {
             var stored = await check.Payments.AsNoTracking()
-                .Where(p => p.CashShiftId == shiftId)
+                .Where(p => p.CashBoxId == boxId)
                 .Select(p => p.ReceiptNo)
                 .OrderBy(n => n)
                 .ToListAsync();
@@ -308,12 +309,12 @@ public class ReceiptNumberingTests : IDisposable
     {
         await using var db = NewDb();
         var scene = await ArrangeAsync(fixture.Database.OwnerConnectionString, invoices: 2);
-        var payments = new PaymentService(db, new CashShiftService(db), new LedgerService(db));
+        var payments = new PaymentService(db, new LedgerService(db));
 
         var first = await payments.AcceptAsync(
             new AcceptPaymentRequest(
                 scene.StudentIds[0], Unit, PaymentMethod.Cash, null,
-                [new AllocationRequest(scene.InvoiceIds[0], Unit)]),
+                [new AllocationRequest(scene.InvoiceIds[0], Unit)], scene.BoxId),
             scene.CashierId);
         Assert.Equal(1L, first.ReceiptNo);
 
@@ -323,7 +324,7 @@ public class ReceiptNumberingTests : IDisposable
         {
             await using var tx = await doomed.BeginTransactionAsync();
 
-            var wasted = await new CashShiftService(doomed).NextReceiptNoAsync(scene.ShiftId);
+            var wasted = await new CashBoxService(doomed).NextReceiptNoAsync(scene.BoxId);
             Assert.Equal(2L, wasted);
 
             doomed.Payments.Add(new Payment
@@ -332,7 +333,7 @@ public class ReceiptNumberingTests : IDisposable
                 StudentId = scene.StudentIds[1],
                 Amount = Unit,
                 Method = PaymentMethod.Cash,
-                CashShiftId = scene.ShiftId,
+                CashBoxId = scene.BoxId,
                 CashierId = scene.CashierId,
                 ReceivedAt = AppClock.NowInstant,
             });
@@ -344,7 +345,7 @@ public class ReceiptNumberingTests : IDisposable
         var second = await payments.AcceptAsync(
             new AcceptPaymentRequest(
                 scene.StudentIds[1], Unit, PaymentMethod.Cash, null,
-                [new AllocationRequest(scene.InvoiceIds[1], Unit)]),
+                [new AllocationRequest(scene.InvoiceIds[1], Unit)], scene.BoxId),
             scene.CashierId);
 
         // AYNAN 2 — 3 emas. Bo'shliq yo'q.
@@ -352,7 +353,7 @@ public class ReceiptNumberingTests : IDisposable
 
         await using var check = NewDb();
         var stored = await check.Payments.AsNoTracking()
-            .Where(p => p.CashShiftId == scene.ShiftId)
+            .Where(p => p.CashBoxId == scene.BoxId)
             .Select(p => p.ReceiptNo)
             .OrderBy(n => n)
             .ToListAsync();
@@ -361,9 +362,9 @@ public class ReceiptNumberingTests : IDisposable
     }
 
     /// <summary>
-    /// Ikkinchi qavat: ilovani butunlay chetlab o'tib, bitta smenaga bir xil
+    /// Ikkinchi qavat: ilovani butunlay chetlab o'tib, bitta kassaga bir xil
     /// chek raqamini ikki marta yozishga urinish BAZADA rad etiladi
-    /// (<c>unique (cash_shift_id, receipt_no)</c>, SPEC §4.2).
+    /// (<c>unique (cash_box_id, receipt_no)</c>, SPEC §4.2).
     ///
     /// <para>
     /// Bu qulfning zaxirasi: qulf ishlamay qolsa dublikat jimgina emas,
@@ -371,7 +372,7 @@ public class ReceiptNumberingTests : IDisposable
     /// </para>
     /// </summary>
     [Fact]
-    public async Task Bir_smenada_bir_xil_chek_raqami_ikki_marta_yozilmaydi()
+    public async Task Bir_kassada_bir_xil_chek_raqami_ikki_marta_yozilmaydi()
     {
         var scene = await ArrangeAsync(fixture.Database.OwnerConnectionString, invoices: 0);
 
@@ -385,12 +386,12 @@ public class ReceiptNumberingTests : IDisposable
         var ex = await Assert.ThrowsAsync<DbUpdateException>(() => second.SaveChangesAsync());
         var pg = Assert.IsType<PostgresException>(ex.InnerException);
         Assert.Equal("23505", pg.SqlState);
-        Assert.Equal("ix_payments_cash_shift_id_receipt_no", pg.ConstraintName);
+        Assert.Equal("ix_payments_cash_box_id_receipt_no", pg.ConstraintName);
 
         // Birinchi qator joyida — rad etish uni buzmadi.
         await using var check = NewDb();
         var stored = await check.Payments.AsNoTracking()
-            .Where(p => p.CashShiftId == scene.ShiftId)
+            .Where(p => p.CashBoxId == scene.BoxId)
             .ToListAsync();
         Assert.Equal(7L, Assert.Single(stored).ReceiptNo);
     }
@@ -414,13 +415,14 @@ public class ReceiptNumberingTests : IDisposable
     {
         var (cashier, client) = await ClientAsync(Roles.Cashier);
 
-        var open = await client.PostAsJsonAsync("/api/cash/shifts/open", new { openingFloat = 0m });
-        Assert.Equal(HttpStatusCode.OK, open.StatusCode);
-        var shift = (await open.Content.ReadFromJsonAsync<CashShiftDto>())!;
+        // Test o'z KASSASINI ochadi (default kassaga tayanmaydi) — parallel
+        // testlar bir-birining chek ketma-ketligiga aralashmasin. Kassa
+        // ochish — admin/direktor amali (`ManageCashBoxes`), kassir emas.
+        var (_, adminClient) = await ClientAsync(Roles.Admin);
+        var box = await CreateBoxAsync(adminClient);
 
         var scene = await ArrangeAsync(
-            fixture.Database.OwnerConnectionString, invoices: 3,
-            cashierId: cashier.Id, shiftId: shift.Id);
+            fixture.Database.OwnerConnectionString, invoices: 3, cashierId: cashier.Id);
 
         var receipts = new List<long>();
         for (var i = 0; i < 3; i++)
@@ -431,12 +433,13 @@ public class ReceiptNumberingTests : IDisposable
                 amount = Unit,
                 method = PaymentMethod.Cash,
                 allocations = new[] { new { invoiceId = scene.InvoiceIds[i], amount = Unit } },
+                cashBoxId = box.Id,
             });
 
             Assert.Equal(HttpStatusCode.OK, response.StatusCode);
             var dto = (await response.Content.ReadFromJsonAsync<PaymentDto>())!;
 
-            Assert.Equal(shift.Id, dto.CashShiftId);
+            Assert.Equal(box.Id, dto.CashBoxId);
             Assert.Equal(cashier.Id, dto.CashierId);
             Assert.Equal(Unit, dto.Amount);
             receipts.Add(dto.ReceiptNo);
@@ -445,32 +448,38 @@ public class ReceiptNumberingTests : IDisposable
         Assert.Equal(new List<long> { 1L, 2L, 3L }, receipts);
 
         // Ro'yxat ham xuddi shu uchtasini ko'rsatadi.
-        var list = await client.GetAsync($"/api/billing/payments?cashShiftId={shift.Id}");
+        var list = await client.GetAsync($"/api/billing/payments?cashBoxId={box.Id}");
         Assert.Equal(HttpStatusCode.OK, list.StatusCode);
         var rows = (await list.Content.ReadFromJsonAsync<List<PaymentDto>>())!;
 
         Assert.Equal(3, rows.Count);
         Assert.Equal(new List<long> { 1L, 2L, 3L }, rows.Select(r => r.ReceiptNo).OrderBy(n => n).ToList());
-        Assert.All(rows, r => Assert.Equal(shift.Id, r.CashShiftId));
+        Assert.All(rows, r => Assert.Equal(box.Id, r.CashBoxId));
     }
 
     // =====================================================================
     //  Yordamchilar
     // =====================================================================
 
-    /// <summary>Bitta test sahnasi: kassir, uning ochiq smenasi, N ta o'quvchi + hisob-faktura.</summary>
+    /// <summary>Bitta test sahnasi: kassir, uning o'z KASSASI, N ta o'quvchi + hisob-faktura.</summary>
     private sealed record Scene(
-        string CashierId, Guid ShiftId, List<string> StudentIds, List<Guid> InvoiceIds);
+        string CashierId, Guid BoxId, List<string> StudentIds, List<Guid> InvoiceIds);
 
     /// <summary>
     /// Sahnani OWNER ulanishi bilan tayyorlaydi (test ma'lumoti — <c>users</c>,
-    /// <c>students</c>, <c>invoices</c>). Har to'lov O'Z o'quvchisiga va O'Z
-    /// hisob-fakturasiga ketadi: aks holda parallel vazifalar bitta hisob-faktura
-    /// qoldig'i uchun kurashardi va test qulfni emas, taqsimot qoidasini
-    /// sinagan bo'lardi.
+    /// <c>students</c>, <c>invoices</c>, <c>cash_boxes</c>). Har to'lov O'Z
+    /// o'quvchisiga va O'Z hisob-fakturasiga ketadi: aks holda parallel
+    /// vazifalar bitta hisob-faktura qoldig'i uchun kurashardi va test qulfni
+    /// emas, taqsimot qoidasini sinagan bo'lardi.
+    ///
+    /// <para>
+    /// Har chaqiruv O'Z, YANGI kassasini oladi (SUKUT kassaga TAYANMAYDI) —
+    /// aks holda bu fayldagi parallel testlar bir-birining chek
+    /// ketma-ketligiga aralashib, "1..50" tasdig'ini buzardi.
+    /// </para>
     /// </summary>
     private static async Task<Scene> ArrangeAsync(
-        string connectionString, int invoices, string? cashierId = null, Guid? shiftId = null)
+        string connectionString, int invoices, string? cashierId = null)
     {
         await using var db = PostgresFixture.NewContext(connectionString);
 
@@ -488,18 +497,14 @@ public class ReceiptNumberingTests : IDisposable
             cashierId = cashier.Id;
         }
 
-        if (shiftId is null)
+        var box = new CashBox
         {
-            var shift = new CashShift
-            {
-                CashierId = cashierId,
-                OpenedAt = AppClock.NowInstant,
-                OpeningFloat = 0m,
-                Status = CashShiftStatus.Open,
-            };
-            db.CashShifts.Add(shift);
-            shiftId = shift.Id;
-        }
+            Name = $"Test kassa {suffix}",
+            IsDefault = false,
+            IsActive = true,
+            CreatedAt = AppClock.NowInstant,
+        };
+        db.CashBoxes.Add(box);
 
         var categoryId = await db.FeeCategories.AsNoTracking()
             .Where(c => c.Code == "tuition").Select(c => c.Id).SingleAsync();
@@ -554,7 +559,7 @@ public class ReceiptNumberingTests : IDisposable
         }
 
         await db.SaveChangesAsync();
-        return new Scene(cashierId, shiftId.Value, studentIds, invoiceIds);
+        return new Scene(cashierId, box.Id, studentIds, invoiceIds);
     }
 
     private static Payment NewPaymentRow(Scene scene, long receiptNo) => new()
@@ -563,7 +568,7 @@ public class ReceiptNumberingTests : IDisposable
         StudentId = scene.StudentIds[0],
         Amount = Unit,
         Method = PaymentMethod.Cash,
-        CashShiftId = scene.ShiftId,
+        CashBoxId = scene.BoxId,
         CashierId = scene.CashierId,
         ReceivedAt = AppClock.NowInstant,
     };
@@ -585,17 +590,26 @@ public class ReceiptNumberingTests : IDisposable
             Interlocked.CompareExchange(ref peak, candidate, seen);
     }
 
+    private static async Task<CashBoxDto> CreateBoxAsync(HttpClient client)
+    {
+        var response = await client.PostAsJsonAsync("/api/admin/cash-boxes", new
+        {
+            name = $"Chek testi kassasi {Guid.NewGuid():N}",
+        });
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        return (await response.Content.ReadFromJsonAsync<CashBoxDto>())!;
+    }
+
     // ---------------------------------------------------------------------
     //  HTTP klienti — ILOVANING O'Z DI grafi bilan
     // ---------------------------------------------------------------------
     //
-    //  Bu yerda `WithWebHostBuilder` bilan xizmat ULANMAYDI. P1-15 dan keyin
-    //  `ICashShiftService`, `IPaymentService` va `ILedgerService` `Program.cs`
-    //  da ro'yxatdan o'tgan (docs/PENDING_WIRING.md dagi bandlar yopildi),
-    //  ya'ni testda ularni qayta ro'yxatdan o'tkazish HAQIQIY simni yashirib
-    //  qo'yardi: kimdir `Program.cs` dan `AddScoped<IPaymentService, ...>`
-    //  qatorini olib tashlasa, test baribir yashil qolaverardi. Endi bunday
-    //  regressiya shu yerda 500 bo'lib chiqadi.
+    //  `ICashShiftService`, `IPaymentService`, `ILedgerService` Program.cs da
+    //  ro'yxatdan o'tgan; `ICashBoxService` esa UMUMAN DI'ga qo'shilmaydi
+    //  (`CashBoxesController` uni to'g'ridan-to'g'ri `IAppDbContext` bilan
+    //  quradi — `CashBoxService.cs` fayl boshidagi izoh). `WithWebHostBuilder`
+    //  bilan hech qanday xizmat ULANMAYDI, ya'ni bu yerdagi testlar HAQIQIY
+    //  DI simini sinaydi.
 
     private async Task<(AppUser User, HttpClient Client)> ClientAsync(string role)
     {

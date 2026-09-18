@@ -208,7 +208,7 @@ public class ExpensesController(IExpenseService expenses) : ControllerBase
             return BadRequest(new BillingErrorDto("invalid_body", "So'rov tanasi o'qilmadi."));
 
         var expense = await expenses.ApproveAsync(
-            id, request.Method ?? string.Empty, FinanceActor.RequireUserId(User), ct);
+            id, request.Method ?? string.Empty, FinanceActor.RequireUserId(User), request.CashBoxId, ct);
         return Ok(expense);
     }
 
