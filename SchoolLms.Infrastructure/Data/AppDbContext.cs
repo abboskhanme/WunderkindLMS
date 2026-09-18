@@ -148,6 +148,10 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<CashBox> CashBoxes => Set<CashBox>();
     public DbSet<CashBoxTransaction> CashBoxTransactions => Set<CashBoxTransaction>();
 
+    // Rejalashtirilgan chiqim shablonlari (F6.01, finance-parity.md §2.6).
+    // Konfiguratsiya: ExpenseTemplateModel.cs.
+    public DbSet<ExpenseTemplate> ExpenseTemplates => Set<ExpenseTemplate>();
+
     /// <inheritdoc />
     public Task<Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction> BeginTransactionAsync(
         CancellationToken cancellationToken = default) =>
@@ -306,6 +310,10 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
         // migratsiyadan kelgan bo'lsa, o'sha faylda turadi — yuqoridagi
         // FinanceParityModel izohidagi qoida).
         CashBoxModel.Apply(b);
+
+        // ----- Rejalashtirilgan chiqim shabloni (finance-parity.md §2.6, F6.01) -----
+        // To'qqizinchi alohida fayl, yuqoridagilar bilan bir xil sabab.
+        ExpenseTemplateModel.Apply(b);
 
         // ----- PostgreSQL: vaqt turi -----
         // Tizim sanalarni Toshkent "devor soati" sifatida saqlaydi (AppClock.Now — Kind=Unspecified),
