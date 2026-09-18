@@ -48,3 +48,4 @@ backups/
 
 # EduSchool frontend bundle — tahlil uchun mahalliy nusxa, repozitoriyaga kirmaydi
 .eduschool-bundle/
+.DS_Store
