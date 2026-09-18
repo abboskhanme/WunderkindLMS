@@ -670,7 +670,7 @@ export function CashierPage() {
       {boxesLoading ? (
         <Loader label="Kassalar yuklanmoqda..." />
       ) : (
-        <div className="grid gap-6 lg:grid-cols-[minmax(300px,360px)_1fr]">
+        <div className="grid gap-6 lg:grid-cols-[minmax(360px,420px)_1fr]">
           <CashBoxPanel
             boxes={boxes}
             selectedId={selectedBoxId}
@@ -697,8 +697,6 @@ export function CashierPage() {
 
           <CashLedger
             totalsByMethod={ledger?.totalsByMethod ?? {}}
-            inTotal={ledger?.inTotal ?? 0}
-            outTotal={ledger?.outTotal ?? 0}
             rows={filteredRows}
             narrowed={rowsNarrowed}
             loading={ledgerLoading}

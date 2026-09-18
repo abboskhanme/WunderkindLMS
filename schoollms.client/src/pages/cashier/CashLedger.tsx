@@ -1,7 +1,5 @@
 import {
   AlertTriangle,
-  ArrowDownCircle,
-  ArrowUpCircle,
   Ban,
   Receipt,
   RefreshCw,
@@ -21,8 +19,6 @@ interface Props {
   /** Usul kesimidagi yig'indi — QANCHA USUL BO'LSA, SHUNCHA kartochka (EduSchool skrinshotida 5 ta,
    *  qatorlar sayoz ekranga sig'may, YONGA aylanadi — sobit to'rttalik EMAS). */
   totalsByMethod: Partial<Record<PaymentMethod, number>>
-  inTotal: number
-  outTotal: number
   rows: CashBoxTransactionRow[]
   /** true — usul/turi/o'quvchi/sinf filtridan biri ishga tushgan: jadval torroq, yig'indilar EMAS. */
   narrowed?: boolean
@@ -51,8 +47,6 @@ interface Props {
  */
 export function CashLedger({
   totalsByMethod,
-  inTotal,
-  outTotal,
   rows,
   narrowed,
   loading,
@@ -89,30 +83,10 @@ export function CashLedger({
       )}
 
       {/* --- Kirim / chiqim yig'indisi --- */}
-      <div className="grid grid-cols-2 gap-3">
-        <Card className="flex items-center gap-3 p-3">
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">
-            <ArrowDownCircle className="h-5 w-5" />
-          </span>
-          <div className="min-w-0">
-            <p className="text-xs text-slate-400">Jami kirim</p>
-            <p className="truncate text-base font-semibold tabular-nums text-emerald-700">
-              {formatSum(inTotal)}
-            </p>
-          </div>
-        </Card>
-        <Card className="flex items-center gap-3 p-3">
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-red-50 text-red-600">
-            <ArrowUpCircle className="h-5 w-5" />
-          </span>
-          <div className="min-w-0">
-            <p className="text-xs text-slate-400">Jami chiqim</p>
-            <p className="truncate text-base font-semibold tabular-nums text-red-700">
-              {formatSum(outTotal)}
-            </p>
-          </div>
-        </Card>
-      </div>
+      {/* "Jami kirim" / "Jami chiqim" kartalari OLIB TASHLANDI (mijoz,
+          2026-09-18): to'lov usuli kesimidagi kartalar ustida yana ikkita
+          katta karta turardi va ekranning eni shunga ketardi. Raqamlarning
+          o'zi yo'qolmadi — `inTotal`/`outTotal` hamon serverdan keladi. */}
 
       {/* --- Chek/shartnoma raqami bo'yicha qidiruv --- */}
       <div className="relative">
