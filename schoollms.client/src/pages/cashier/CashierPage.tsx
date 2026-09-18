@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   AlertTriangle,
+  Download,
+  Filter,
   Inbox,
   RefreshCw,
   Search,
@@ -8,31 +10,46 @@ import {
   UserRound,
   Wallet,
 } from 'lucide-react'
-import type { AllocationSuggestion, CashShift, Payment, PaymentMethod, Role } from '@/types'
+import type { AllocationSuggestion, Payment, PaymentMethod, Role } from '@/types'
 import type { CashierStudent } from '@/api/services/cashier'
 import {
   MIN_SEARCH_LENGTH,
   PROBE_AMOUNT,
   financeErrorMessage,
-  getCurrentShift,
   isAborted,
   searchStudents,
   suggestAllocation,
 } from '@/api/services/cashier'
+import type { CashBox, CashBoxTransactionRow, CashBoxTransactionsResult } from '@/api/services/cashBoxes'
+import { cancelCashBoxTransaction, getCashBoxTransactions, getCashBoxes } from '@/api/services/cashBoxes'
 import { useAuth } from '@/context/auth-context'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { Loader } from '@/components/ui/Loader'
 import { Select, Textarea } from '@/components/ui/Input'
-import { cn } from '@/lib/utils'
+import { cn, exportToCsv } from '@/lib/utils'
+import { ReasonModal } from '@/pages/admin/billing/ReasonModal'
 import { MoneyInput } from './MoneyInput'
-import { ShiftBar } from './ShiftBar'
 import { PaymentSplitModal } from './PaymentSplitModal'
 import { ReceiptPreview } from './ReceiptPreview'
-import { formatPeriod, formatSum, formatSumWithUnit, methodLabels, parseSum } from './format'
+import { CashBoxPanel } from './CashBoxPanel'
+import { CashBoxFormModal } from './CashBoxFormModal'
+import { CashBoxActionModal } from './CashBoxActionModal'
+import type { CashBoxActionMode } from './CashBoxCard'
+import { CashLedger } from './CashLedger'
+import {
+  formatDateTime,
+  formatPeriod,
+  formatSum,
+  formatSumWithUnit,
+  kindLabel,
+  methodLabels,
+  parseSum,
+  statusLabel,
+} from './format'
 
 /* ==========================================================================
-   BU SAHIFADA TAHRIRLASH VA O'CHIRISH TUGMASI YO'Q — ATAYLAB.
+   BU SAHIFADA TO'LOVNI TAHRIRLASH VA O'CHIRISH TUGMASI YO'Q — ATAYLAB.
    --------------------------------------------------------------------------
    Mijoz aytgan xavf (SPEC §4 kirish qismi) aynan shu: kassir pulni oladi va
    yozuvni yo'q qiladi. Shuning uchun himoya uch qavatda, va ekran — eng
@@ -43,55 +60,193 @@ import { formatPeriod, formatSum, formatSumWithUnit, methodLabels, parseSum } fr
         `FinanceMatrix.EditOrDeletePayment` qoidasining rollar ro'yxati bo'sh;
      3) bazada `app_rw` roli `payments` jadvalini o'zgartira olmaydi — 42501.
    Xato to'lov FAQAT storno bilan tuzatiladi, storno esa admin/direktor amali
-   (SPEC §4.3), ya'ni bu ekranga umuman tegishli emas.
+   (SPEC §4.3), ya'ni bu ekranga umuman tegishli emas. Kassa tranzaksiyalari
+   (kirim/chiqim/ko'chirish/ayirboshlash) ham xuddi shunday — bekor qilinadi,
+   o'chirilmaydi (`cancelCashBoxTransaction`).
+
+   SMENA YO'Q (mijoz, 2026-09-18): "bizni tizimda smena degan tushuncha
+   umuman bo'lmasin butunlay olib tashla, shunchaki kassa degan narsa
+   bo'lsin xolos, bizda bir nechta kassa bo'lishi mumkin, ular har bir
+   alohida pul kirim chiqim qilishi va o'zaro o'tkazma qilishi mumkin."
+   Ochish/yopish, sanalgan naqd, nomuvofiqlik — hech biri yo'q. O'rniga:
+   bir nechta KASSA, har birining o'z qoldig'i va to'rtta amali (Kirim,
+   Chiqim, Ko'chirish, Ayirboshlash). Tuzilma EduSchool'nikiga o'xshaydi
+   (mijoz screenshot yubordi), ko'rinish esa o'zimiznikicha qoladi.
    ========================================================================== */
 
 /** Kassaga kira oladigan rollar (SPEC §4.3, `FinanceAction.AcceptPayment`). */
 const CASH_DESK_ROLES: Role[] = ['cashier', 'admin', 'superadmin']
 
+/**
+ * Kassa qo'shish/tahrirlash — faqat boshqaruvchi. Kirim/chiqim/ko'chirish/
+ * ayirboshlash kassirga ham ochiq: bular kassirning kundalik ishi.
+ */
+const CASH_BOX_MANAGE_ROLES: Role[] = ['admin', 'superadmin']
+
 const METHODS: PaymentMethod[] = ['cash', 'card', 'transfer', 'online']
 
+const dateInputClass =
+  'rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-brand-400'
+
+const todayStr = () => new Date().toISOString().slice(0, 10)
+
 /**
- * Kassir ish o'rni (P1-16). ATAYLAB TOR EKRAN.
+ * Kassir ish o'rni (P1-16 → kassalarga o'tish, 2026-09-18).
  *
- * Kassir shu yerda faqat bitta ishni qiladi: o'quvchini topadi, uning ochiq
- * hisob-fakturalarini ko'radi, summa kiritadi, toifalar bo'yicha taqsimlaydi
- * va chek beradi. Boshqa hech narsa yo'q — ro'yxatlar, hisobotlar, sozlamalar
- * va o'tgan to'lovlar tarixi ham.
- *
- * SMENASIZ TO'LOV SHAKLI KO'RINMAYDI (SPEC §4.2). Bu "tugma o'chiq" degani
- * emas: ochiq smena bo'lmasa qidiruv ham, summa maydoni ham umuman
- * chizilmaydi, o'rniga "Smenani oching" turadi. Sabab — har bir chek qaysi
- * smenaga tegishli ekani bilan yoziladi va chek raqami smena ichida uzluksiz
- * bo'lishi kerak; smenasiz bu savolning javobi yo'q.
+ * Ikki bo'lim bor:
+ *   1) KASSALAR — bir nechta kassa, har birining qoldig'i, kirim/chiqim/
+ *      ko'chirish/ayirboshlash va umumiy tranzaksiyalar jadvali.
+ *   2) O'QUVCHIDAN TO'LOV QABUL QILISH — eski yo'l, O'ZGARTIRILMAGAN: hisob-
+ *      fakturaga taqsimlanadigan to'lov ilgarigidek `acceptPayment`
+ *      (`/cash/payments`) orqali ketadi. Bu FIFO taqsimotni, hisob-
+ *      fakturalarni bilmagan umumiy "Kirim" amalidan TUBDAN farq qiladi —
+ *      shuning uchun ikkalasi ham bor va bir-biriga aylantirilmagan.
  */
 export function CashierPage() {
   const { user } = useAuth()
+  const allowed = user !== null && CASH_DESK_ROLES.includes(user.role)
+  const canManageBoxes = user !== null && CASH_BOX_MANAGE_ROLES.includes(user.role)
 
-  /* ---- Smena ---- */
-  const [shift, setShift] = useState<CashShift | null>(null)
-  const [shiftLoading, setShiftLoading] = useState(true)
-  const [shiftError, setShiftError] = useState<string | null>(null)
+  /* ---- Kassalar ---- */
+  const [boxes, setBoxes] = useState<CashBox[]>([])
+  const [boxesLoading, setBoxesLoading] = useState(true)
+  const [boxesError, setBoxesError] = useState<string | null>(null)
+  const [selectedBoxId, setSelectedBoxId] = useState<string | null>(null)
 
-  const loadShift = useCallback(async () => {
-    setShiftLoading(true)
-    setShiftError(null)
+  const loadBoxes = useCallback(async () => {
+    setBoxesLoading(true)
+    setBoxesError(null)
     try {
-      setShift(await getCurrentShift())
+      const rows = await getCashBoxes()
+      setBoxes(rows)
+      setSelectedBoxId((current) => {
+        if (current && rows.some((b) => b.id === current)) return current
+        return rows.find((b) => b.isDefault)?.id ?? rows[0]?.id ?? null
+      })
     } catch (err) {
-      setShiftError(financeErrorMessage(err, "Smena holatini aniqlab bo'lmadi."))
+      setBoxesError(financeErrorMessage(err, "Kassalarni yuklab bo'lmadi."))
     } finally {
-      setShiftLoading(false)
+      setBoxesLoading(false)
     }
   }, [])
 
-  const allowed = user !== null && CASH_DESK_ROLES.includes(user.role)
+  useEffect(() => {
+    if (allowed) void loadBoxes()
+  }, [allowed, loadBoxes])
+
+  const [boxFormOpen, setBoxFormOpen] = useState(false)
+  const [editingBox, setEditingBox] = useState<CashBox | null>(null)
+  const [actionState, setActionState] = useState<{ box: CashBox; mode: CashBoxActionMode } | null>(null)
+
+  /* ---- Tranzaksiyalar jadvali ---- */
+  const [from, setFrom] = useState(todayStr())
+  const [to, setTo] = useState(todayStr())
+  const [filtersOpen, setFiltersOpen] = useState(false)
+  const [boxFilter, setBoxFilter] = useState('')
+  const [q, setQ] = useState('')
+  const [ledger, setLedger] = useState<CashBoxTransactionsResult | null>(null)
+  const [ledgerLoading, setLedgerLoading] = useState(true)
+  const [ledgerError, setLedgerError] = useState<string | null>(null)
+  const [ledgerReload, setLedgerReload] = useState(0)
+  const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set())
+  const [cancelRow, setCancelRow] = useState<CashBoxTransactionRow | null>(null)
+  const [cancelBusy, setCancelBusy] = useState(false)
+  const [cancelError, setCancelError] = useState<string | null>(null)
 
   useEffect(() => {
-    if (allowed) void loadShift()
-  }, [allowed, loadShift])
+    if (!allowed) return
+    const controller = new AbortController()
+    // Har bir qidiruv/filtr o'zgarishida 300 ms kutamiz — kassir tez yozadi.
+    const timer = setTimeout(() => {
+      setLedgerLoading(true)
+      setLedgerError(null)
+      getCashBoxTransactions(
+        { from, to, boxId: boxFilter || undefined, q: q.trim() || undefined },
+        controller.signal,
+      )
+        .then((res) => {
+          setLedger(res)
+          setSelectedRows(new Set())
+          setLedgerLoading(false)
+        })
+        .catch((err: unknown) => {
+          if (isAborted(err)) return
+          setLedgerError(financeErrorMessage(err, "Tranzaksiyalarni yuklab bo'lmadi."))
+          setLedgerLoading(false)
+        })
+    }, 300)
 
-  /* ---- Tanlangan o'quvchi va to'lov shakli ---- */
+    return () => {
+      clearTimeout(timer)
+      controller.abort()
+    }
+  }, [allowed, from, to, boxFilter, q, ledgerReload])
+
+  const toggleSelectRow = (id: string) => {
+    setSelectedRows((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const toggleSelectAll = () => {
+    const rows = ledger?.rows ?? []
+    setSelectedRows((prev) => {
+      const allSelected = rows.length > 0 && rows.every((r) => prev.has(r.id))
+      return allSelected ? new Set() : new Set(rows.map((r) => r.id))
+    })
+  }
+
+  const handleActionDone = () => {
+    setActionState(null)
+    void loadBoxes()
+    setLedgerReload((n) => n + 1)
+  }
+
+  const handleBoxSaved = () => {
+    setBoxFormOpen(false)
+    setEditingBox(null)
+    void loadBoxes()
+  }
+
+  const submitCancel = async (reason: string) => {
+    if (!cancelRow || cancelBusy) return
+    setCancelBusy(true)
+    setCancelError(null)
+    try {
+      await cancelCashBoxTransaction(cancelRow.id, reason)
+      setCancelRow(null)
+      void loadBoxes()
+      setLedgerReload((n) => n + 1)
+    } catch (err) {
+      setCancelError(financeErrorMessage(err, "Bekor qilib bo'lmadi."))
+    } finally {
+      setCancelBusy(false)
+    }
+  }
+
+  const handleExport = () => {
+    const rows = ledger?.rows ?? []
+    const source = selectedRows.size > 0 ? rows.filter((r) => selectedRows.has(r.id)) : rows
+    exportToCsv(
+      `kassa-tranzaksiyalari-${from}_${to}.csv`,
+      ['№', 'Sana', 'Kim', 'Shartnoma raqami', 'Miqdor', 'Tranzaksiya', 'Usul', 'Holati'],
+      source.map((r) => [
+        String(r.no),
+        formatDateTime(r.date),
+        r.who,
+        r.contractNo ?? '',
+        String(r.amount),
+        kindLabel(r.kind),
+        methodLabels[r.method] ?? r.method,
+        statusLabel(r.status),
+      ]),
+    )
+  }
+
+  /* ---- Tanlangan o'quvchi va to'lov shakli (o'zgarmagan yo'l) ---- */
   const [student, setStudent] = useState<CashierStudent | null>(null)
   const [amountRaw, setAmountRaw] = useState('')
   const [method, setMethod] = useState<PaymentMethod>('cash')
@@ -171,29 +326,118 @@ export function CashierPage() {
 
   return (
     <div className="space-y-6">
-      <header>
-        <h1 className="text-xl font-semibold text-slate-800">Kassa</h1>
-        <p className="text-sm text-slate-400">
-          O'quvchini toping, summani kiriting va chek bering.
-        </p>
+      <header className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h1 className="text-xl font-semibold text-slate-800">Kassa</h1>
+          <p className="text-sm text-slate-400">
+            Kassalar, ularning harakati va o'quvchi to'lovlari.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <input
+            type="date"
+            value={from}
+            onChange={(e) => setFrom(e.target.value)}
+            aria-label="Davr boshi"
+            className={dateInputClass}
+          />
+          <span className="text-slate-400">—</span>
+          <input
+            type="date"
+            value={to}
+            onChange={(e) => setTo(e.target.value)}
+            aria-label="Davr oxiri"
+            className={dateInputClass}
+          />
+          <Button variant="secondary" onClick={() => setFiltersOpen((v) => !v)}>
+            <Filter className="h-4 w-4" /> Filtr
+          </Button>
+          <Button variant="secondary" onClick={handleExport} disabled={(ledger?.rows.length ?? 0) === 0}>
+            <Download className="h-4 w-4" /> Export
+          </Button>
+        </div>
       </header>
 
-      <ShiftBar
-        shift={shift}
-        loading={shiftLoading}
-        error={shiftError}
-        onRetry={() => void loadShift()}
-        onShiftChange={(next) => {
-          setShift(next)
-          if (!next) {
-            setStudent(null)
-            resetForm()
-          }
-        }}
-      />
+      {filtersOpen && (
+        <Card className="flex flex-wrap items-center gap-3 p-4">
+          <Select
+            label="Kassa bo'yicha"
+            value={boxFilter}
+            onChange={(e) => setBoxFilter(e.target.value)}
+            className="max-w-xs"
+          >
+            <option value="">Barcha kassalar</option>
+            {boxes.map((b) => (
+              <option key={b.id} value={b.id}>
+                {b.name}
+              </option>
+            ))}
+          </Select>
+        </Card>
+      )}
 
-      {/* SMENA OCHIQ BO'LMASA — TO'LOV SHAKLI UMUMAN CHIZILMAYDI (SPEC §4.2). */}
-      {shift && (
+      {/* ============ KASSALAR ============ */}
+      {boxesError && (
+        <Card className="border-red-200 bg-red-50/60">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-start gap-2 text-sm text-red-700">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+              <span>{boxesError}</span>
+            </div>
+            <Button variant="secondary" onClick={() => void loadBoxes()}>
+              <RefreshCw className="h-4 w-4" /> Qayta urinish
+            </Button>
+          </div>
+        </Card>
+      )}
+
+      {boxesLoading ? (
+        <Loader label="Kassalar yuklanmoqda..." />
+      ) : (
+        <div className="grid gap-6 lg:grid-cols-[minmax(300px,360px)_1fr]">
+          <CashBoxPanel
+            boxes={boxes}
+            selectedId={selectedBoxId}
+            canManage={canManageBoxes}
+            onSelect={setSelectedBoxId}
+            onAdd={() => {
+              setEditingBox(null)
+              setBoxFormOpen(true)
+            }}
+            onEdit={(box) => {
+              setEditingBox(box)
+              setBoxFormOpen(true)
+            }}
+            onAction={(box, mode) => setActionState({ box, mode })}
+          />
+
+          <CashLedger
+            totalsByMethod={ledger?.totalsByMethod ?? {}}
+            inTotal={ledger?.inTotal ?? 0}
+            outTotal={ledger?.outTotal ?? 0}
+            rows={ledger?.rows ?? []}
+            loading={ledgerLoading}
+            error={ledgerError}
+            onRetry={() => setLedgerReload((n) => n + 1)}
+            q={q}
+            onQChange={setQ}
+            selected={selectedRows}
+            onToggleSelect={toggleSelectRow}
+            onToggleSelectAll={toggleSelectAll}
+            onCancelRow={setCancelRow}
+          />
+        </div>
+      )}
+
+      {/* ============ O'QUVCHIDAN TO'LOV QABUL QILISH (eski yo'l) ============ */}
+      <section className="space-y-4 border-t border-slate-100 pt-6">
+        <div>
+          <h2 className="text-lg font-semibold text-slate-800">O'quvchidan to'lov qabul qilish</h2>
+          <p className="text-sm text-slate-400">
+            O'quvchini toping, summani kiriting va chek bering.
+          </p>
+        </div>
+
         <div className="grid gap-6 lg:grid-cols-[minmax(320px,380px)_1fr]">
           <StudentSearch selectedId={student?.id ?? null} onSelect={selectStudent} />
 
@@ -302,7 +546,7 @@ export function CashierPage() {
             </div>
           )}
         </div>
-      )}
+      </section>
 
       {student && splitOpen && amount !== null && amount > 0 && (
         <PaymentSplitModal
@@ -327,10 +571,48 @@ export function CashierPage() {
             setReceipt(null)
             resetForm()
             setInvoicesReload((n) => n + 1)
-            void loadShift()
           }}
         />
       )}
+
+      {boxFormOpen && (
+        <CashBoxFormModal
+          box={editingBox}
+          onClose={() => {
+            setBoxFormOpen(false)
+            setEditingBox(null)
+          }}
+          onSaved={handleBoxSaved}
+        />
+      )}
+
+      {actionState && (
+        <CashBoxActionModal
+          box={actionState.box}
+          otherBoxes={boxes.filter((b) => b.id !== actionState.box.id && b.isActive)}
+          mode={actionState.mode}
+          onClose={() => setActionState(null)}
+          onDone={handleActionDone}
+        />
+      )}
+
+      <ReasonModal
+        open={cancelRow !== null}
+        title="Tranzaksiyani bekor qilish"
+        description={
+          cancelRow
+            ? `№${cancelRow.no} — ${formatSum(cancelRow.amount)} so'm. Yozuv o'chmaydi, holati "bekor qilindi" bo'ladi.`
+            : ''
+        }
+        confirmLabel="Bekor qilish"
+        busy={cancelBusy}
+        error={cancelError}
+        onClose={() => {
+          setCancelRow(null)
+          setCancelError(null)
+        }}
+        onConfirm={submitCancel}
+      />
     </div>
   )
 }

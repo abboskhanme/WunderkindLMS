@@ -16,14 +16,11 @@
  * Tahrirlash oynasi YO'Q: yozilgan chiqim o'zgartirilmaydi (SPEC §4.1),
  * xato yozuv storno bilan tuzatiladi.
  *
- * NAQD CHIQIM OCHIQ SMENANI TALAB QILADI (F1.03)
- * ----------------------------------------------
- * Naqd pul kassaning javonidan chiqadi, ya'ni u qaysidir smenaning kutilgan
- * naqdini kamaytirishi SHART — aks holda o'sha summa smena yopilganda
- * "kamomad" bo'lib ko'rinadi. Server ochiq smena bo'lmasa 409
- * `no_open_shift` qaytaradi, forma esa buni OLDINDAN aytadi: usul "Naqd"
- * tanlanganda ogohlantirish chiqadi. `cashShiftId` so'rovda yuborilmaydi —
- * uni server o'zi aniqlaydi (SPEC §4.4).
+ * NAQD CHIQIM KASSANI KAMAYTIRADI (F1.03)
+ * ----------------------------------------
+ * Naqd pul kassaning naqd qoldig'idan chiqadi. Smena tushunchasi mijoz
+ * talabi bilan (2026-09-18) butunlay olib tashlandi — ochiq smena
+ * shart emas, forma ham buni endi talab qilmaydi.
  *
  * MAOSH — KIMGA (F1.09)
  * ---------------------
@@ -255,14 +252,12 @@ export function ExpenseFormModal({
           </div>
         </div>
 
-        {/* ---- F1.03: naqd pul ochiq smenadan chiqadi ---- */}
+        {/* ---- F1.03: naqd chiqim kassaning naqd qoldig'idan yoziladi ---- */}
         {method === 'cash' && !needsApproval && (
           <div className="flex items-start gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
             <Banknote className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
             <p>
-              Naqd chiqim <b>ochiq smenangizdan</b> yoziladi va o'sha smenaning kutilgan
-              naqdini kamaytiradi. Ochiq smena bo'lmasa server chiqimni qabul qilmaydi —
-              avval kassada smenani oching yoki boshqa to'lov usulini tanlang.
+              Naqd chiqim <b>kassaning naqd qoldig'idan</b> yoziladi va uni kamaytiradi.
             </p>
           </div>
         )}

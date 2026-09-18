@@ -13,10 +13,6 @@ import { TeacherSalaryDetailModal } from './TeacherSalaryDetailModal'
 import { PnlTab } from './PnlTab'
 import { CashFlowTab } from './CashFlowTab'
 import { DebtorsTab } from './DebtorsTab'
-import { ZReportTab } from './ZReportTab'
-import { VarianceTab } from './VarianceTab'
-import { VarianceBanner } from './VarianceBanner'
-import { useVarianceWatch } from './useVarianceWatch'
 
 const todayStr = new Date().toISOString().slice(0, 10)
 const yearOf = (d: string) => Number(d.slice(0, 4))
@@ -40,15 +36,21 @@ const control =
  *
  * "O'qituvchilar" (maosh) tabi QOLDI: uning o'rnini bosadigan yangi hisobot
  * yo'q. Manbasi almashdi — server uni endi `expenses` dan hisoblaydi.
+ *
+ * "Z-HISOBOT" VA "NOMUVOFIQLIK" OLIB TASHLANDI (mijoz, 2026-09-18): smena
+ * tushunchasi butunlay olib tashlanmoqda ("kassa" bo'ladi, smena emas), bu
+ * ikkala tab esa aynan smena yopilishi — kutilgan/sanalgan naqd farqi —
+ * haqida edi. Fayllar (`ZReportTab.tsx`, `VarianceTab.tsx`) va ular bilan
+ * bog'liq `VarianceBanner.tsx` / `useVarianceWatch.ts` O'CHIRILMADI
+ * (CLAUDE.md: so'ralmagan o'chirish yo'q) — shunchaki shu sahifadan
+ * uzildi, endi hech qayerdan chaqirilmaydi.
  */
-type Tab = 'teachers' | 'pnl' | 'cashflow' | 'debtors' | 'zreport' | 'variance'
+type Tab = 'teachers' | 'pnl' | 'cashflow' | 'debtors'
 
 const reportTabs: { value: Tab; label: string }[] = [
   { value: 'pnl', label: 'Foyda va zarar' },
   { value: 'cashflow', label: 'Pul oqimi' },
   { value: 'debtors', label: 'Qarzdorlar' },
-  { value: 'zreport', label: 'Z-hisobot' },
-  { value: 'variance', label: 'Nomuvofiqlik' },
 ]
 
 /** Yuqoridagi sana oralig'i faqat shu tablarda ma'noga ega. */
@@ -81,11 +83,6 @@ export function FinancePage() {
 
   const [audit, setAudit] = useState<{ filters: AuditFilters; title: string } | null>(null)
   const [detailTeacher, setDetailTeacher] = useState<SalaryReportRow | null>(null)
-
-  // Hal qilinmagan nomuvofiqlik hisoblagichi (SPEC §4.6). Banner ham,
-  // "Nomuvofiqlik" tabi ham SHU bitta manbadan o'qiydi — ekranda ikkita
-  // har xil raqam paydo bo'lmasligi uchun.
-  const variance = useVarianceWatch(canSeeReports)
 
   const load = useCallback(() => {
     // Boshqa tablar o'z ma'lumotini o'zi oladi.
@@ -142,20 +139,6 @@ export function FinancePage() {
         </Button>
       </div>
 
-      {/*
-        HAL QILINMAGAN NOMUVOFIQLIK HISOBLAGICHI (SPEC §4.6).
-        Sahifa ochilishi bilan ko'rinadi va YOPIB BO'LMAYDI — bannerda "x"
-        tugmasi yo'q, uni yashiradigan holat ham yo'q. Batafsil izoh:
-        `VarianceBanner.tsx`.
-      */}
-      {canSeeReports && (
-        <VarianceBanner
-          watch={variance}
-          onOpen={() => setTab('variance')}
-          hideOpenAction={tab === 'variance'}
-        />
-      )}
-
       {/* Bo'limlar (tablar) */}
       <div className="flex flex-wrap items-center gap-2">
         <button
@@ -186,16 +169,6 @@ export function FinancePage() {
                 )}
               >
                 {t.label}
-                {t.value === 'variance' && variance.count > 0 && (
-                  <span
-                    className={cn(
-                      'ml-2 rounded-full px-1.5 py-0.5 text-xs font-semibold',
-                      tab === t.value ? 'bg-white text-red-700' : 'bg-red-100 text-red-700',
-                    )}
-                  >
-                    {variance.count}
-                  </span>
-                )}
               </button>
             ))}
           </>
@@ -306,10 +279,6 @@ export function FinancePage() {
       {canSeeReports && tab === 'pnl' && <PnlTab from={from} to={to} />}
       {canSeeReports && tab === 'cashflow' && <CashFlowTab from={from} to={to} />}
       {canSeeReports && tab === 'debtors' && <DebtorsTab />}
-      {canSeeReports && tab === 'zreport' && <ZReportTab />}
-      {canSeeReports && tab === 'variance' && (
-        <VarianceTab watch={variance} canResolve={canSeeReports} />
-      )}
 
       <AuditHistoryModal
         open={!!audit}
