@@ -565,12 +565,34 @@ public sealed class PaymentService(
 
         var paid = await PaidByInvoiceAsync(rows.Select(r => r.Id).ToList(), ct);
 
+        // TAQSIMLASH TARTIBI (mijoz qoidasi, 2026-09-18)
+        // --------------------------------------------------
+        //  1. Eng ESKI oy birinchi — qarz eskirmasin.
+        //  2. Oy ICHIDA: `tuition` (o'qish to'lovi) ENG OXIRI, qolganlari
+        //     qoldig'i bo'yicha KICHIGIDAN boshlab.
+        //
+        //  Nega: o'qish to'lovi eng katta summa. Uni birinchi yopsak, mayda
+        //  qarzlar (avtobus, ovqat, yotoqxona) uzuq-yuluq bo'lib qolaveradi va
+        //  ota-ona bir nechta ochiq qator ko'radi. Aksincha qilsak — mayda
+        //  qatorlar yopiladi, ochiq qolgani BITTA katta qator bo'ladi.
+        //
+        //  Ilgari tartib `c.Code` (alifbo) edi va `tuition` tasodifan oxirida
+        //  turardi; toifa kodi o'zgarsa qoida jimgina buzilardi. Endi u aniq.
+        var ordered = rows
+            .Select(r => new { Row = r, Remaining = r.Payable - paid.GetValueOrDefault(r.Id) })
+            .Where(x => x.Remaining > 0m)
+            .OrderBy(x => x.Row.PeriodMonth)
+            .ThenBy(x => x.Row.CategoryCode == FeeCategoryCode.Tuition ? 1 : 0)
+            .ThenBy(x => x.Remaining)
+            .ThenBy(x => x.Row.CategoryCode, StringComparer.Ordinal)
+            .ToList();
+
         var left = decimal.Round(amount, MoneyScale);
-        var result = new List<AllocationSuggestionDto>(rows.Count);
-        foreach (var r in rows)
+        var result = new List<AllocationSuggestionDto>(ordered.Count);
+        foreach (var x in ordered)
         {
-            var remaining = r.Payable - paid.GetValueOrDefault(r.Id);
-            if (remaining <= 0m) continue;
+            var r = x.Row;
+            var remaining = x.Remaining;
 
             var suggested = left > 0m ? Math.Min(remaining, left) : 0m;
             left -= suggested;

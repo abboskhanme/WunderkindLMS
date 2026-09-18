@@ -878,6 +878,44 @@ public class PaymentsTests(ApiFixture fixture)
         Assert.Equal(500_000m, suggestion[1].Remaining);
     }
 
+    /// <summary>
+    /// Mijoz qoidasi (2026-09-18): bir oy ichida <b>o'qish to'lovi ENG OXIRI</b>,
+    /// qolgan toifalar qoldig'i bo'yicha kichigidan boshlab yopiladi.
+    ///
+    /// <para>
+    /// Nega test kerak: ilgari tartib toifa KODI bo'yicha alifboda edi va
+    /// <c>tuition</c> u yerda tasodifan oxirida turardi. Ya'ni to'g'ri natija
+    /// qoidadan emas, omaddan chiqardi — toifa kodi o'zgarsa jimgina buzilardi.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task Bir_oyda_oqish_tolovi_eng_oxirida_yopiladi()
+    {
+        var world = await NewWorldAsync();
+        // Ataylab shunday tanlangan: alifboda `meals` < `tuition` bo'lsa-da,
+        // hal qiluvchi narsa SUMMA emas, QOIDA — o'qish to'lovi oxirida.
+        var tuition = await NewInvoiceAsync(world.StudentId, "tuition", 1_800_000m);
+        var bus = await NewInvoiceAsync(world.StudentId, "bus", 450_000m);
+        var meals = await NewInvoiceAsync(world.StudentId, "meals", 200_000m);
+
+        var suggestion = await world.Client.GetFromJsonAsync<List<AllocationSuggestionDto>>(
+            $"/api/cash/payments/suggest-allocation?studentId={world.StudentId}&amount=700000");
+
+        Assert.NotNull(suggestion);
+        Assert.Equal(3, suggestion.Count);
+
+        // Mayda qarzlar kichigidan boshlab: ovqat (200k), keyin avtobus (450k).
+        Assert.Equal(meals, suggestion[0].InvoiceId);
+        Assert.Equal(200_000m, suggestion[0].Suggested);
+        Assert.Equal(bus, suggestion[1].InvoiceId);
+        Assert.Equal(450_000m, suggestion[1].Suggested);
+
+        // O'qish to'lovi OXIRIDA va qolgan-qutgani unga tushadi.
+        Assert.Equal(tuition, suggestion[2].InvoiceId);
+        Assert.Equal(50_000m, suggestion[2].Suggested);
+        Assert.Equal(1_800_000m, suggestion[2].Remaining);
+    }
+
     [Fact]
     public async Task Sana_filtri_bugungi_tolovni_topadi()
     {

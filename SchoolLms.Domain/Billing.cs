@@ -46,6 +46,24 @@ namespace SchoolLms.Domain;
 /// <c>meals</c> | <c>other</c>. Beshtasi migratsiyada seed qilinadi (id'lari
 /// barqaror), keyin admin yangisini qo'sha oladi.
 /// </summary>
+/// <summary>
+/// Toifa kodlari — mashina uchun barqaror kalitlar. Ular migratsiyada seed
+/// qilinadi va O'ZGARMAYDI (nom o'zgarishi mumkin, kod emas).
+/// </summary>
+public static class FeeCategoryCode
+{
+    /// <summary>
+    /// O'qish to'lovi. To'lovni taqsimlashda ATAYLAB ENG OXIRGI o'rinda turadi
+    /// (<see cref="SchoolLms.Application.Billing.PaymentService"/> dagi izoh):
+    /// u eng katta summa, shuning uchun mayda qarzlar avval yopiladi.
+    /// </summary>
+    public const string Tuition = "tuition";
+    public const string Bus = "bus";
+    public const string Dormitory = "dormitory";
+    public const string Meals = "meals";
+    public const string Other = "other";
+}
+
 public class FeeCategory
 {
     public Guid Id { get; set; } = Guid.NewGuid();
