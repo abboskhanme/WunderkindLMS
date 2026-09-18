@@ -1237,3 +1237,99 @@ under `schoollms.client/` changed.
 | F14.02 | `discount_types` table, `discounts.discount_type_id` | C6 |
 | F6.01 (if the client lifts the Q6 deferral) | `expense_templates` table | C7 |
 | F11.01, F11.02 | `payroll_adjustments`, `adjustment_reasons` (+ all of `hr.md`'s Batch B for `hr_employees`) | B2, B3, B1 |
+
+---
+
+## 7. Update — 2026-09-18 (same day, second pass): F14.01 built, one §6 correction
+
+A second pass on this same task landed while §6 above was being written elsewhere on this branch
+(commits `f1c1562`, `cb0e2b6` — the re-audit and the F1.10/F1.07/F0.04 fixes). This section does not
+repeat §6's table; it only adds what changed since.
+
+### 7.1 Correction — F8.01 was `partial`, not `built`
+
+§6.7 marked F8.01 **built** on the strength of `CashDayPage.tsx`'s own comment ("kundan hisobotga
+o'tish… §2.8 F8.01"). Reading the actual navigation target: the button went to
+`/admin/finance/reports` (`FinancialReportsPage`, the period dashboard, §2.4) — **not** to the
+transaction journal (`/admin/finance/transactions`, `TransactionsPage`, §2.9) that F9.01 built and
+that F8.01 literally asks for ("open the transaction journal pre-filtered to the day"). The two
+screens answer different questions (period trends vs. a row-level ledger with a storno action), and
+only the journal lets a director click into an individual payment from the day. **Fixed, not just
+corrected on paper:**
+
+- `TransactionsPage.tsx` now seeds its initial filter from the URL (`?from=&to=`) via
+  `useSearchParams`, the same pattern `FinancialReportsPage.tsx` already used — so a deep link
+  actually filters the journal instead of being silently ignored.
+- `CashDayPage.tsx` keeps the existing "Hisobotda ochish" button (still correct, still useful — the
+  period dashboard is not a duplicate of this) and gets a **second** button, "Jurnalda ochish",
+  linking to `/admin/finance/transactions?from=<date>&to=<date>`.
+
+F8.01 is now **built** for real: both destinations F8.01's own description names (period report,
+transaction journal) are one click away from Kassa kuni, each filtered to the selected day.
+
+### 7.2 Built — F14.01, Moliya sozlamalari (billing settings screen)
+
+§6.12 left F14.01 at **partial**: schema, DTOs and the `ManageBillingSettings` permission already
+existed (nothing here needed a migration), but there was no controller endpoint and no page —
+`api/services/billing.ts`'s `getBillingSettings`/`updateBillingSettings` both still threw
+`notImplemented(...)`. §6.14 explicitly named it "a reasonable next pick" and left it for exactly
+this reason (it isn't opened daily, but the values it edits — the payment-due day, the overdue-after
+day and the expense-approval threshold — are read on **every** invoice and **every** expense, so a
+school that wants to change any of the three could not, short of a direct `UPDATE`). Built now:
+
+- `GET`/`PUT /api/admin/billing/settings` on `BillingCatalogController.cs` (same controller, same
+  two-layer RBAC as its neighbours: class-level `[Authorize(Roles = Roles.FinanceStaff)]`, `PUT`
+  additionally gated `[FinanceRole(FinanceAction.ManageBillingSettings)]` — the rule already existed
+  in `FinanceMatrix.Rules`, unused until now). Validates `paymentDueDay` (1–28), `overdueAfterDay`
+  (≥ `paymentDueDay`, ≤ 28) and `expenseApprovalThreshold` (≥ 0); `updated_by`/`updated_at` are
+  server-set (SPEC §4.4), never from the request body; every save writes an audit row (`before`/
+  `after`, entity `"BillingSettings"`).
+- `BillingSettingsDto` and `UpdateBillingSettingsRequest` (`Dtos/BillingDtos.cs`, frozen-but-additive)
+  each gained one optional, defaulted field — `ExpenseApprovalThreshold` — which the client's own
+  earlier note (`docs/PENDING_WIRING.md` §E) predicted and explicitly allowed: "deliberately not
+  added to the frozen DTO… whoever builds the finance-settings screen should add it there."
+- `schoollms.client/src/pages/admin/billing/BillingSettingsPage.tsx` (new) — a form for the three
+  fields, admin/superadmin only (client-side gate mirrors the server), "last changed by / when" line.
+  Client functions added to `api/services/billingCatalog.ts` (the *live* client already used by every
+  other `BillingCatalogController` screen) — **not** to the frozen `billing.ts` stub file, which
+  nothing real imports.
+- **Route not registered** — `App.tsx` and `navigation.ts` are on this task's do-not-edit list. The
+  component is a plain named export that gates its own role (the established pattern for every
+  P1-17-era billing page), so mounting it is a one-line `<Route path="billing/settings" element=…>` 
+  plus a `navigation.ts` child under **Moliya**. **Reported, not built.**
+
+Tests: `SchoolLms.Tests/Billing/BillingSettingsTests.cs` (13 cases) — RBAC (cashier/teacher/staff-
+with-finance-permission all 403, admin/superadmin 200, no token 401), the full save→audit→persist
+round trip, and five validation cases each asserting the **database is unchanged** on a 400. Because
+`billing_settings` is a single row shared by the whole test database (`ExpensesTests.cs` already
+established this convention), the happy-path test restores the original values in a `finally` block.
+
+### 7.3 Verification (this pass)
+
+- `./tools/test.sh` — **1077 / 1077 passed, 0 failed** (includes both this pass's 13 new tests and
+  the previous pass's F1.10/F1.07/F0.04 tests).
+- Frontend: `npm run build` clean; `npx eslint src` — **42 errors, 7 warnings (49 total) before and
+  after this pass's changes, 0 new** (the four touched/added files —
+  `billingCatalog.ts`, `BillingSettingsPage.tsx`, `CashDayPage.tsx`, `TransactionsPage.tsx` — all
+  report 0/0). §6.14's "39 lint warnings" baseline does not match a from-scratch run against the
+  current tree (`git archive HEAD` + `npm ci` + `eslint`, done twice for reproducibility): the real,
+  current number is 42 errors + 7 warnings, all pre-existing and unrelated to Moliya (guardians/
+  students-profile modules). Reporting the measured number rather than repeating the stale one.
+
+### 7.4 Left alone, on purpose
+
+Same reasons §6.14 already gave for the schema-blocked and larger items (F1.05 refund service,
+F1.12/F2.03/F10.04/F11.01/F11.02/F14.02 all need a migration). Nothing else at P0/P1 is both
+open on this branch and free of a migration or of another in-flight branch's claim (§7.5).
+
+### 7.5 Note for whoever merges — other worktree branches carry more of this work, unmerged
+
+While auditing, several commits **not** reachable from this branch's `HEAD` were found on other
+local branches (`git log --all`), already implementing gaps this document lists as open here:
+`efe96d7` (F1.05, student refunds), `3a45722`/`3fbb3b6` (F11.01/F11.02, bonus/penalty — including
+their own migration), `6314f14`/`ac14e15` (F14.01 — a second implementation, now superseded on this
+branch by §7.2), `b8a5bdc` (F10.05, F13.01/02/03/05/06). None were merged, cherry-picked or read for
+code here — this branch's audit (§6, §7) reflects only what `HEAD` actually contains, per this
+task's instruction to compare *the code* against *the record of theirs*. Whoever integrates the
+parallel branches should expect an F14.01 merge conflict against §7.2 and should keep the more
+complete side (compare `GET/PUT /api/admin/billing/settings` in both).
