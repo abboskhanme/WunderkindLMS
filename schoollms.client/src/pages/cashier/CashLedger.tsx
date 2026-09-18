@@ -252,6 +252,13 @@ function ledgerColumns(
       cell: (row) => <span className="text-slate-600">{kindLabel(row.kind)}</span>,
     },
     {
+      id: 'transactionType',
+      header: 'Tranzaksiya turi',
+      // Hozircha faqat Kirim qatorida to'ladi (`PlainIncomeForm.tsx`,
+      // `CashBoxPayInRequest.TransactionTypeId`) — qolganlarida `—`.
+      cell: (row) => <span className="text-slate-600">{row.transactionTypeName ?? '—'}</span>,
+    },
+    {
       id: 'status',
       header: 'Holati',
       cell: (row) => (

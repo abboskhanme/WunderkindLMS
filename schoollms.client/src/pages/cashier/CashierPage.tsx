@@ -4,6 +4,7 @@ import {
   Download,
   Filter,
   Inbox,
+  Lock,
   RefreshCw,
   Search,
   ShieldOff,
@@ -22,6 +23,8 @@ import {
 } from '@/api/services/cashier'
 import type { CashBox, CashBoxTransactionRow, CashBoxTransactionsResult } from '@/api/services/cashBoxes'
 import { cancelCashBoxTransaction, cashBoxIn, getCashBoxTransactions, getCashBoxes } from '@/api/services/cashBoxes'
+import type { TransactionType } from '@/api/services/transactionTypes'
+import { getTransactionTypes } from '@/api/services/transactionTypes'
 import type { StudentContract } from '@/api/services/studentContracts'
 import { searchStudentContracts } from '@/api/services/studentContracts'
 import { getClasses } from '@/api/services/classes'
@@ -400,7 +403,10 @@ export function CashierPage() {
     const source = selectedRows.size > 0 ? rows.filter((r) => selectedRows.has(r.id)) : rows
     exportToCsv(
       `kassa-tranzaksiyalari-${from}_${to}.csv`,
-      ['№', 'Sana', 'Kim', 'Shartnoma raqami', 'Miqdor', 'Tranzaksiya', "To'lov usuli", 'Holati', 'Kassir'],
+      [
+        '№', 'Sana', 'Kim', 'Shartnoma raqami', 'Miqdor', 'Tranzaksiya',
+        'Tranzaksiya turi', "To'lov usuli", 'Holati', 'Kassir',
+      ],
       source.map((r) => [
         String(r.no),
         formatDateTime(r.date),
@@ -408,6 +414,7 @@ export function CashierPage() {
         r.contractNo ?? '',
         String(r.amount),
         kindLabel(r.kind),
+        r.transactionTypeName ?? '',
         methodLabels[r.method] ?? r.method,
         statusLabel(r.status),
         r.who,
@@ -1145,28 +1152,84 @@ interface PlainIncomeFormProps {
 }
 
 /**
- * `CashBoxActionModal`dagi "Kirim" (mode `in`) shakli bilan AYNAN BIR XIL
- * maydonlar va chaqiruv (`cashBoxIn`) — faqat `Modal` ichida emas, sahifa
- * ichidagi oddiy `Card`da, chunki bu yerda ikkinchi tab (`PaymentSplitModal`
- * ochadigan "O'quvchidan to'lov") bilan bitta panelni bo'lishadi (izoh:
- * `incomePanel` e'loni, `CashierPage` boshida).
+ * Mijoz yuborgan EduSchool kassa kirim shaklidagi tartib bilan mos:
+ * **Tranzaksiya turi (majburiy) · summa (+ to'lov usuli) · sana · izoh**.
+ *
+ * TO'LOV USULINI SAQLAB QOLDIK, ULARNING SHAKLIDA U YO'Q BO'LSA HAM:
+ * Kassa ekranining har-usul kesimi (`CashLedger.tsx`, `Naqd`/`Klik`/
+ * `Terminal`, ...) va jurnalning TO'LOV USULI ustuni shu maydondan keladi —
+ * uni olib tashlash o'sha ikkalasini buzardi. Summa bilan bitta qatorda
+ * turadi (avvalgidek): ular bir-biriga bog'liq savol ("qancha" + "qanday").
+ *
+ * SANA — TUZATILMAYDI, KO'RSATILADI: SPEC §4 orqaga sanani taqiqlaydi (bir
+ * marta yopilgan hisobot davriga to'lov tushishi). Mijoz shaklida sana
+ * TANLANADIGAN maydon, lekin backend `CreatedAt`ni har doim serverda,
+ * HOZIR bilan belgilaydi (`CashBoxService.PayInAsync` — so'rov tanasida
+ * sana maydoni UMUMAN yo'q) — shu yerda ham faqat bugungi sana O'QISH
+ * uchun ko'rsatiladi, tahrirlanmaydi. Tanlov: sanani "tuzatilmaydigan
+ * ko'rinishda ko'rsatish" (butunlay olib tashlashdan ko'ra) — mijozning
+ * shakl tartibiga to'g'ri keladi va kassirga "bugun yozilyapti" ekanini
+ * aniq ko'rsatadi, xato tushunmaslikning oldini oladi.
+ *
+ * TRANZAKSIYA TURI — MAJBURIY BU EKRANDA, BACKEND'DA IXTIYORIY: server
+ * `CashBoxPayInRequest.TransactionTypeId`ni ixtiyoriy qabul qiladi (izohi —
+ * shu yerda), chunki uni butun tizim darajasida majburiy qilish
+ * `CashBoxActionModal.tsx`ning eski "in" yo'lini va o'nlab mavjud testni
+ * (`CashBoxTests.cs`) buzardi. Bu FORMA — mijoz talab qilgan haqiqiy
+ * yuzaki (product) sirtki qatlam — uni majburiy qiladi (pastga: `canSubmit`).
  */
 function PlainIncomeForm({ box, onDone, onCancel }: PlainIncomeFormProps) {
   const [amountRaw, setAmountRaw] = useState('')
   const [method, setMethod] = useState<PaymentMethod>('cash')
   const [note, setNote] = useState('')
+  const [transactionTypeId, setTransactionTypeId] = useState('')
+  const [types, setTypes] = useState<TransactionType[]>([])
+  const [typesLoading, setTypesLoading] = useState(true)
+  const [typesError, setTypesError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  useEffect(() => {
+    let alive = true
+    setTypesLoading(true)
+    setTypesError(null)
+    getTransactionTypes('in')
+      .then((rows) => {
+        if (!alive) return
+        const active = rows.filter((t) => t.isActive)
+        setTypes(active)
+        setTransactionTypeId((current) => current || active[0]?.id || '')
+      })
+      .catch((err: unknown) => {
+        if (alive) setTypesError(financeErrorMessage(err, "Tranzaksiya turlarini yuklab bo'lmadi."))
+      })
+      .finally(() => {
+        if (alive) setTypesLoading(false)
+      })
+    return () => {
+      alive = false
+    }
+  }, [])
+
   const amount = parseSum(amountRaw)
   const amountValid = amount !== null && amount > 0
+  const canSubmit = amountValid && transactionTypeId !== ''
+  // `todayStr()` — "YYYY-MM-DD" (fayl boshida e'lon qilingan) — jadval bilan
+  // bir xil "DD.MM.YYYY" ko'rinishiga o'giradi (`formatDateTime` naqshi).
+  const [todayY, todayM, todayD] = todayStr().split('-')
+  const todayDisplay = `${todayD}.${todayM}.${todayY}`
 
   const submit = async () => {
-    if (!amountValid || amount === null || busy) return
+    if (!canSubmit || amount === null || busy) return
     setBusy(true)
     setError(null)
     try {
-      await cashBoxIn(box.id, { amount, method, note: note.trim() || undefined })
+      await cashBoxIn(box.id, {
+        amount,
+        method,
+        note: note.trim() || undefined,
+        transactionTypeId,
+      })
       onDone()
     } catch (err) {
       setError(financeErrorMessage(err, "Kirimni yozib bo'lmadi."))
@@ -1177,7 +1240,33 @@ function PlainIncomeForm({ box, onDone, onCancel }: PlainIncomeFormProps) {
 
   return (
     <Card>
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div>
+        <Select
+          label="Tranzaksiya turi"
+          required
+          autoFocus
+          value={transactionTypeId}
+          onChange={(e) => setTransactionTypeId(e.target.value)}
+          disabled={typesLoading || types.length === 0}
+        >
+          {typesLoading && <option value="">Yuklanmoqda...</option>}
+          {!typesLoading && types.length === 0 && <option value="">Turlar yo'q</option>}
+          {!typesLoading &&
+            types.length > 0 && [
+              <option key="" value="" disabled>
+                Tanlang...
+              </option>,
+              ...types.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name}
+                </option>
+              )),
+            ]}
+        </Select>
+        {typesError && <p className="mt-1 text-xs text-red-600">{typesError}</p>}
+      </div>
+
+      <div className="mt-4 grid gap-4 sm:grid-cols-2">
         <MoneyInput
           label="Summa (so'm)"
           value={amountRaw}
@@ -1185,7 +1274,6 @@ function PlainIncomeForm({ box, onDone, onCancel }: PlainIncomeFormProps) {
           placeholder="0"
           invalid={amountRaw.length > 0 && !amountValid}
           hint={amountRaw.length > 0 && !amountValid ? "Summa noldan katta bo'lishi kerak." : undefined}
-          autoFocus
         />
         <Select label="To'lov usuli" value={method} onChange={(e) => setMethod(e.target.value as PaymentMethod)}>
           {METHODS.map((m) => (
@@ -1194,6 +1282,17 @@ function PlainIncomeForm({ box, onDone, onCancel }: PlainIncomeFormProps) {
             </option>
           ))}
         </Select>
+      </div>
+
+      <div className="mt-4">
+        <span className="mb-1 block text-sm font-medium text-slate-600">Sana</span>
+        <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-500">
+          <Lock className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+          {todayDisplay}
+        </div>
+        <p className="mt-1 text-xs text-slate-400">
+          Har doim bugun — orqaga sana bilan yozib bo'lmaydi (SPEC §4).
+        </p>
       </div>
 
       <div className="mt-4">
@@ -1221,7 +1320,7 @@ function PlainIncomeForm({ box, onDone, onCancel }: PlainIncomeFormProps) {
         <Button variant="secondary" onClick={onCancel} disabled={busy}>
           Bekor qilish
         </Button>
-        <Button onClick={() => void submit()} disabled={!amountValid || busy}>
+        <Button onClick={() => void submit()} disabled={!canSubmit || busy}>
           {busy ? 'Yozilmoqda...' : 'Kirim'}
         </Button>
       </div>

@@ -90,6 +90,13 @@ export interface CashBoxInPayload {
   note?: string
   /** Ixtiyoriy — pul aynan qaysi o'quvchiga tegishli ekanini yorliqlaydi. */
   studentId?: string
+  /**
+   * Tranzaksiya turi (`api/services/transactionTypes.ts`, kind `in`).
+   * Backend darajasida ixtiyoriy (`CashBoxPayInRequest.TransactionTypeId`
+   * izohi), lekin `PlainIncomeForm` uni MAJBURIY qiladi — mijoz yuborgan
+   * EduSchool shaklidagi "Tranzaksiya turi *" talabi.
+   */
+  transactionTypeId?: string
 }
 
 export interface CashBoxOutPayload {
@@ -146,6 +153,8 @@ export interface CashBoxTransactionRow {
   kind: CashTransactionKind
   method: PaymentMethod
   status: CashTransactionStatus
+  /** Tanlangan tranzaksiya turining nomi (bo'lsa) — hozircha faqat Kirimda. */
+  transactionTypeName: string | null
 }
 
 export interface CashBoxTransactionsResult {

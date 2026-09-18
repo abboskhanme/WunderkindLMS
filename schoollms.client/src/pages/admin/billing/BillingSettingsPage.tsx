@@ -21,8 +21,9 @@
  * NEGA HAMMASI BIR XIL "№ / Nomi / Amallar" JADVALIGA SOLINMADI: EduSchool
  * ekranida har bir katalog xuddi shu jadval ko'rinishida (nomlangan
  * yozuvlar ro'yxati — qo'shish/tahrirlash/o'chirish). Bizda esa faqat
- * IKKITASI (`To'lov toifalari`, `Qarzdor holatlari`) haqiqatan ham shunday —
- * flat, nomlangan katalog. Qolgan ikkitasi boshqacha:
+ * UCHTASI (`To'lov toifalari`, `Qarzdor holatlari`, endi `Tranzaksiya turi`
+ * ham — pastga qarang) haqiqatan ham shunday — flat, nomlangan katalog.
+ * Qolgan ikkitasi boshqacha:
  *   - `Obunalar` — o'quvchi bo'yicha guruhlangan obuna YOZUVLARI, nomlangan
  *     TUR emas (finance-parity.md §2.14.3: "subscription plans... declined —
  *     a school bills per category per month").
@@ -34,17 +35,37 @@
  * qilma" qoidasiga zid. Shu sabab o'ng panel — har bir katalog o'zining
  * TABIIY ko'rinishida, faqat CHAP panel bir xil.
  *
- * XILLAR (pill-tab) — QO'LLANMAYDI: EduSchool'ning namunasida faqat
- * Tranzaksiya turi katalogi Kirim/Chiqim/Bonus/Jarima pillarini ko'rsatadi.
- * Bizda Tranzaksiya turi katalogi umuman yo'q (pastga qarang), va tanlangan
- * to'rttamizning birontasida ham "xil" tushunchasi yo'q — shuning uchun bu
- * sahifada pill-tab qatori qurilmagan.
+ * XILLAR (pill-tab) — FAQAT "TRANZAKSIYA TURI" BO'LIMIDA: EduSchool'ning
+ * namunasida faqat shu katalog Kirim/Chiqim/Bonus/Jarima pillarini
+ * ko'rsatadi; qolgan besh bo'limning birontasida ham "xil" tushunchasi
+ * yo'q, shuning uchun ular flat holicha qoladi — pill faqat o'sha bitta
+ * bo'limning O'ZIDA (`TransactionTypesPage.tsx`).
  *
- * XARITALASH — ULARNING O'N TASI, BIZNING TO'RTTAMIZ (finance-parity.md §2.14):
- *   Tranzaksiya turi     → yo'q. Tahrirlanadigan tur daraxti YOPIQ (§2.0:
- *                          "Editable transaction-type tree... declined —
- *                          closed Accounts.cs"). "To'lov toifalari" bunga
- *                          ENG YAQINI, lekin aynan o'rnini bosmaydi.
+ * "TRANZAKSIYA TURI" ENDI BOR — 2026-09-18, MIJOZ YUBORGAN KASSA KIRIM
+ * SHAKLI SABABLI, LEKIN TO'LIQ EDUSCHOOL DARAXTI EMAS
+ * -----------------------------------------------------------------------
+ * Quyidagi jadvaldagi eski yozuv ("Tranzaksiya turi → yo'q, Accounts.cs
+ * yopiq") hamon TO'G'RI — faqat TORROQ doirada: `docs/modules/
+ * existing-module-gaps.md` §3.4 "declined" qarori EduSchool'ning to'liq
+ * tahrirlanadigan daraxtiga tegishli (`parentId`, `color`, `hasImpactOn`,
+ * `isPrePayment`/`isSalary` — bularning BIRORTASI yo'q va bo'lmaydi).
+ * Mijoz keyinroq (2026-09-18) kassaning "Kirim" shaklidan aniq skrinshot
+ * yubordi: "Tranzaksiya turi *" — majburiy dropdown (Do'ppi uchun, Kitob
+ * uchun to'lov, ...). Bu — `Accounts.cs`ga BOG'LANMAGAN, faqat
+ * `cash_box_transactions` qatoriga yopishtiriladigan YORLIQ (hisobot hamon
+ * akkaunt bo'yicha yig'iladi) — shuning uchun `Accounts.cs` YOPIQ qoladi,
+ * lekin yorliq katalogi (`transaction_types`, kind: `in`/`out`) qo'shildi.
+ * Bonus/Jarima pillari BU YERDA YO'Q: ular uchun bu katalog ALLAQACHON
+ * mavjud (`adjustment_reasons`, F11.02, HR bo'limidagi `AdjustmentReasonsModal.tsx`)
+ * — ikkinchi, bog'lanmagan nusxa yaratish o'rniga o'sha joyida qoladi.
+ * Batafsil: `TransactionTypesPage.tsx` va `SchoolLms.Domain/TransactionTypes.cs`
+ * boshidagi izoh.
+ *
+ * XARITALASH — ULARNING O'N TASI, BIZNING BESHTAMIZ (finance-parity.md §2.14):
+ *   Tranzaksiya turi     → **Tranzaksiya turi** (Kirim/Chiqim, yuqoridagi
+ *                          izoh) — Bonus/Jarima QISMI hamon boshqa joyda.
+ *                          "To'lov toifalari" ENG YAQIN ikkinchi analog,
+ *                          lekin aynan o'rnini bosmaydi.
  *   To'lov usuli         → yo'q, xuddi shu sababdan YOPIQ (`PaymentMethod`).
  *   Abonement            → Obunalar (ustuvor, operatsion shaklda).
  *   Chegirma             → Chegirmalar (navbat shaklida, tur katalogisiz).
@@ -79,7 +100,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { CalendarClock, Check, Layers, Settings, ShieldCheck, Tag, Users } from 'lucide-react'
+import { ArrowLeftRight, CalendarClock, Check, Layers, Settings, ShieldCheck, Tag, Users } from 'lucide-react'
 import type { BillingSettingsInput } from '@/api/services/billingCatalog'
 import { getBillingSettings, updateBillingSettings } from '@/api/services/billingCatalog'
 import { billingErrorMessage } from '@/api/services/billingError'
@@ -94,6 +115,7 @@ import { SubscriptionsPage } from './SubscriptionsPage'
 import { DiscountsPage } from './DiscountsPage'
 import { DebtorStatusesPage } from '../finance/DebtorStatusesPage'
 import { ExpenseTemplatesPage } from './ExpenseTemplatesPage'
+import { TransactionTypesPage } from './TransactionTypesPage'
 
 type SectionKey =
   | 'settings'
@@ -102,6 +124,7 @@ type SectionKey =
   | 'discounts'
   | 'debtor-statuses'
   | 'expense-templates'
+  | 'transaction-types'
 
 /**
  * Chap ustun — tartib ataylab shunday: `settings` BIRINCHI, chunki bu
@@ -120,6 +143,7 @@ const SECTIONS: Array<{ key: SectionKey; label: string; icon: typeof Layers }> =
   { key: 'discounts', label: 'Chegirmalar', icon: ShieldCheck },
   { key: 'debtor-statuses', label: 'Qarzdor holatlari', icon: Tag },
   { key: 'expense-templates', label: 'Rejalashtirilgan chiqimlar', icon: CalendarClock },
+  { key: 'transaction-types', label: 'Tranzaksiya turi', icon: ArrowLeftRight },
 ]
 
 function isSectionKey(value: string | null): value is SectionKey {
@@ -178,6 +202,7 @@ function BillingSettingsHub() {
         {active === 'discounts' && <DiscountsPage />}
         {active === 'debtor-statuses' && <DebtorStatusesPage />}
         {active === 'expense-templates' && <ExpenseTemplatesPage />}
+        {active === 'transaction-types' && <TransactionTypesPage />}
       </div>
     </div>
   )

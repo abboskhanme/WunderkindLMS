@@ -129,6 +129,16 @@ public enum FinanceAction
     /// bu yerga umuman kirmaydi.
     /// </summary>
     ManageExpenseTemplates,
+
+    /// <summary>
+    /// Tranzaksiya turi katalogini (Kirim/Chiqim) boshqarish — mijoz yuborgan
+    /// EduSchool kassa kirim shakli va moliya sozlamalari ekrani, 2026-09-18.
+    /// Katalog moliyaviy EMAS (summa yo'q, faqat yorliq —
+    /// <c>TransactionTypes.cs</c> boshidagi izoh), lekin
+    /// <see cref="ManageExpenseTemplates"/> bilan bir xil daraja: kassir bu
+    /// yerga kirmaydi — u faqat ISHLATADI (<see cref="OperateCashBox"/>).
+    /// </summary>
+    ManageTransactionTypes,
 }
 
 /// <summary>
@@ -241,6 +251,12 @@ public static class FinanceMatrix
         // bilan bir xil daraja: sozlama, lekin summa bilan ishlaydi.
         new(FinanceAction.ManageExpenseTemplates, AdminAndDirector,
             "Rejalashtirilgan chiqim shablonlarini boshqarish (F6.01)"),
+
+        // Tranzaksiya turi katalogi (Kirim/Chiqim) — `ManageExpenseTemplates`
+        // bilan bir xil daraja: sozlama, kassir bu yerga kirmaydi (u faqat
+        // `OperateCashBox` orqali ISHLATADI).
+        new(FinanceAction.ManageTransactionTypes, AdminAndDirector,
+            "Tranzaksiya turi katalogini (Kirim/Chiqim) boshqarish"),
     ];
 
     /// <summary>

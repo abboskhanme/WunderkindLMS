@@ -141,28 +141,35 @@ public class ExpenseTemplatesMigrationTests(ApiFixture fixture) : IAsyncLifetime
     [Fact]
     public async Task Down_expense_templates_jadvalini_olib_tashlaydi_va_boshqa_narsaga_tegmaydi()
     {
-        HashSet<string> before;
-        await using (var conn = await OpenOwnerAsync()) before = await AllColumnsAsync(conn);
-
+        // `before` — AYNAN `PreviousMigration`da, `head`da EMAS (2026-09-18,
+        // `TransactionTypesMigrationTests` qo'shilgach tuzatildi). Eski shakl
+        // "before" ni fresh (head) bazadan, "after"ni esa faqat `ThisMigration`
+        // gacha (`head` gacha EMAS) qaytib olar edi — bu ishlaganida to'g'ri
+        // edi, chunki bu migratsiya o'shanda "oxirgi" edi. `TransactionTypes`
+        // undan keyin qo'shilgach, "before" (head, TransactionTypes bilan)
+        // va "after" (faqat shu migratsiyagacha, TransactionTypeSIZ) orasidagi
+        // farq soxta "yo'qotildi" xatosini berdi. Yechim —
+        // `PayrollAdjustmentsMigrationTests`/`FinanceParityBatchAMigrationTests`
+        // dagi bilan bir xil, avvaldan hujjatlashtirilgan naqsh: ikkala
+        // o'lchov ham shu migratsiyaning ikki CHEKKASIDA olinadi, `head`da
+        // emas — shuning uchun keyingi HECH QANDAY migratsiya bu testni
+        // buzolmaydi.
         await MigrateToAsync(PreviousMigration);
 
+        HashSet<string> before;
         await using (var conn = await OpenOwnerAsync())
         {
             Assert.False(await TableExistsAsync(conn, "expense_templates"),
-                "`expense_templates` `Down()` dan keyin qoldi");
+                "`expense_templates` `PreviousMigration`da hali bo'lmasligi kerak");
+            before = await AllColumnsAsync(conn);
         }
 
         await MigrateToAsync(ThisMigration);
 
         await using (var conn = await OpenOwnerAsync())
         {
-            // `expense_templates` o'zi qaytadan paydo bo'ladi (Up qayta
-            // yurdi) — uni HISOBGA OLMAYDIGAN taqqoslash: faqat undan
-            // TASHQARI hech narsa yo'qolmagan bo'lishi kerak.
             var after = await AllColumnsAsync(conn);
-            var lost = before.Except(after)
-                .Where(c => !c.StartsWith("expense_templates.", StringComparison.Ordinal))
-                .ToList();
+            var lost = before.Except(after).ToList();
             Assert.True(lost.Count == 0, "Migratsiya boshqa ustun(lar)ni yo'qotdi: " + string.Join(", ", lost));
         }
     }

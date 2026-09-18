@@ -85,6 +85,12 @@ export interface BillingAccess {
    */
   canManageExpenseTemplates: boolean
   /**
+   * Tranzaksiya turi katalogini (Kirim/Chiqim) boshqarish — admin va
+   * direktor, `canManageExpenseTemplates` bilan bir xil daraja (server:
+   * `FinanceAction.ManageTransactionTypes`).
+   */
+  canManageTransactionTypes: boolean
+  /**
    * Joriy foydalanuvchi direktormi. Ichkarida chegirma/chiqim tasdig'i uchun
    * ishlatilgan hisob shu yerda ham ochiladi — F14.01 moliya sozlamalari
    * sahifasi chiqim chegarasini faqat direktorga tahrirlanadigan qiladi.
@@ -124,6 +130,7 @@ export function useBillingAccess(): BillingAccess {
     canManageSubscriptions: canOpen,
     canManageBillingSettings: canOpen,
     canManageExpenseTemplates: canOpen,
+    canManageTransactionTypes: canOpen,
     isDirector,
     canGrantDiscount: canOpen,
     canApproveDiscount: isDirector,

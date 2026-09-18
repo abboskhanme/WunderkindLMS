@@ -55,8 +55,19 @@ public record CreateCashBoxRequest(string Name, string? ResponsibleUserId = null
 public record UpdateCashBoxRequest(
     string? Name = null, string? ResponsibleUserId = null, bool? IsDefault = null, bool? IsActive = null);
 
-/// <summary>Kirim (Kirim tugmasi). <c>studentId</c> ixtiyoriy — pul kimdan kelganini bildiradi.</summary>
-public record CashBoxPayInRequest(decimal Amount, string Method, string? Note = null, string? StudentId = null);
+/// <summary>
+/// Kirim (Kirim tugmasi). <c>studentId</c> ixtiyoriy — pul kimdan kelganini
+/// bildiradi. <c>transactionTypeId</c> ixtiyoriy (backend darajasida — mijoz
+/// yuborgan EduSchool shaklida MAJBURIY, lekin bu talab `PlainIncomeForm.tsx`
+/// darajasida: shu maydonni butun tizimda majburiy qilish o'nlab mavjud
+/// testni (`CashBoxTests.cs`) va `CashBoxActionModal.tsx` ning eski "in"
+/// yo'lini buzardi — <see cref="CashBoxService"/> boshidagi izoh).
+/// Berilsa — <see cref="TransactionType.Kind"/> <c>'in'</c> va faol bo'lishi
+/// tekshiriladi (<c>RequireTransactionTypeAsync</c>).
+/// </summary>
+public record CashBoxPayInRequest(
+    decimal Amount, string Method, string? Note = null, string? StudentId = null,
+    Guid? TransactionTypeId = null);
 
 /// <summary>Chiqim (Chiqim tugmasi).</summary>
 public record CashBoxPayOutRequest(decimal Amount, string Method, string? Note = null);
@@ -75,9 +86,15 @@ public record CancelCashBoxTransactionRequest(string Reason);
 /// <param name="Who">Kim yozgan (users.id emas, ism).</param>
 /// <param name="ContractNo">Bog'liq o'quvchining shartnoma raqami (bo'lsa) — faqat <c>pay_in</c> + <c>studentId</c>.</param>
 /// <param name="Status">posted | cancelled | reversal — <see cref="CashBoxTransactionStatus"/> dan HISOBLANGAN.</param>
+/// <param name="TransactionTypeName">
+/// Tanlangan tranzaksiya turining nomi (bo'lsa) — <see cref="CashBoxTransaction.TransactionTypeId"/>
+/// dan HAL QILINGAN, id emas: jadvaldagi boshqa "kim"/"shartnoma raqami"
+/// ustunlari kabi ko'rsatiladigan qiymat. <c>null</c> = tur ko'rsatilmagan.
+/// </param>
 public record CashBoxTransactionRowDto(
     Guid Id, int No, DateOnly Date, string Who, string? ContractNo,
-    decimal Amount, string Kind, string Method, string Status);
+    decimal Amount, string Kind, string Method, string Status,
+    string? TransactionTypeName);
 
 /// <summary>Kassa harakatlari ro'yxati uchun filtr.</summary>
 public record CashBoxTransactionsQuery(
@@ -357,6 +374,11 @@ public sealed class CashBoxService(IAppDbContext db) : ICashBoxService
             && !await db.Students.AsNoTracking().AnyAsync(s => s.Id == studentId, ct))
             throw BillingRuleException.NotFound("student_not_found", "O'quvchi topilmadi.");
 
+        // Ixtiyoriy — izoh: `CashBoxPayInRequest.TransactionTypeId` boshidagi izoh.
+        TransactionType? transactionType = request.TransactionTypeId is { } typeId
+            ? await RequireTransactionTypeAsync(typeId, TransactionTypeKind.In, ct)
+            : null;
+
         await using var tx = await db.BeginTransactionAsync(ct);
         await LockBoxAsync(boxId, ct);
         await RequireActiveBoxAsync(boxId, ct);
@@ -372,12 +394,14 @@ public sealed class CashBoxService(IAppDbContext db) : ICashBoxService
             Status = CashBoxTransactionStatus.Posted,
             CreatedBy = actorId,
             CreatedAt = AppClock.NowInstant,
+            TransactionTypeId = transactionType?.Id,
         };
         db.CashBoxTransactions.Add(row);
 
         db.AuditLogs.Add(AuditService.Entry(
             AuditEntityCashBoxTransaction, row.Id.ToString("D"), "create",
             $"Kassaga kirim: {AuditService.Money(amount)} so'm ({method})"
+            + (transactionType is null ? "" : $" — {transactionType.Name}")
             + (note is null ? "" : $" — {note}"),
             actorId: actorId, actorName: await actors.OfAsync(actorId, ct), after: Snapshot(row)));
 
@@ -385,6 +409,30 @@ public sealed class CashBoxService(IAppDbContext db) : ICashBoxService
         await tx.CommitAsync(ct);
 
         return (await ToRowDtosAsync([row], ct))[0];
+    }
+
+    /// <summary>
+    /// <paramref name="id"/> — mavjud, <paramref name="expectedKind"/> ga mos
+    /// (<see cref="TransactionTypeKind"/>) va faol ekanini tekshiradi.
+    /// Tur — YORLIQ (<c>TransactionTypes.cs</c> boshidagi izoh), shuning uchun
+    /// bu yerda qulf KERAK EMAS: parallel yaratish/tahrirlash bilan poyga
+    /// yo'q — o'qish-tekshirish, keyin FK o'zi (<c>ON DELETE RESTRICT</c>)
+    /// yakuniy himoya.
+    /// </summary>
+    private async Task<TransactionType> RequireTransactionTypeAsync(
+        Guid id, string expectedKind, CancellationToken ct)
+    {
+        var type = await db.TransactionTypes.AsNoTracking().FirstOrDefaultAsync(t => t.Id == id, ct)
+            ?? throw BillingRuleException.NotFound("transaction_type_not_found", "Tranzaksiya turi topilmadi.");
+
+        if (type.Kind != expectedKind)
+            throw BillingRuleException.Invalid("transaction_type_kind_mismatch",
+                $"Bu tranzaksiya turi '{expectedKind}' uchun emas.");
+
+        if (!type.IsActive)
+            throw BillingRuleException.Conflict("transaction_type_inactive", "Bu tranzaksiya turi faol emas.");
+
+        return type;
     }
 
     /// <inheritdoc />
@@ -588,6 +636,7 @@ public sealed class CashBoxService(IAppDbContext db) : ICashBoxService
             CreatedAt = AppClock.NowInstant,
             TransferToBoxId = original.TransferToBoxId,
             ReversalOf = original.Id,
+            TransactionTypeId = original.TransactionTypeId,
         };
         db.CashBoxTransactions.Add(mirror);
 
@@ -797,6 +846,16 @@ public sealed class CashBoxService(IAppDbContext db) : ICashBoxService
             ? new Dictionary<string, string?>(StringComparer.Ordinal)
             : await LatestContractNumbersAsync(studentIds, ct);
 
+        // Tranzaksiya turi nomi — `Who`/`ContractNo` kabi, id emas, HAL
+        // QILINGAN qiymat ko'rsatiladi (fayl boshidagi `CashBoxTransactionRowDto` izohi).
+        var typeIds = rows.Select(r => r.TransactionTypeId).Where(x => x is not null).Select(x => x!.Value)
+            .Distinct().ToList();
+        var typeNames = typeIds.Count == 0
+            ? new Dictionary<Guid, string>()
+            : await db.TransactionTypes.AsNoTracking()
+                .Where(t => typeIds.Contains(t.Id))
+                .ToDictionaryAsync(t => t.Id, t => t.Name, ct);
+
         // "Bekor qilindi" — shu qatorlardan qay biri boshqasining stornosi
         // (`reversal_of`) ekanligi.
         var reversedIds = await db.CashBoxTransactions.AsNoTracking()
@@ -813,7 +872,8 @@ public sealed class CashBoxService(IAppDbContext db) : ICashBoxService
             r.Amount,
             r.Kind,
             r.Method,
-            DisplayStatus(r, reversedIds.Contains(r.Id))))];
+            DisplayStatus(r, reversedIds.Contains(r.Id)),
+            r.TransactionTypeId is null ? null : typeNames.GetValueOrDefault(r.TransactionTypeId.Value)))];
     }
 
     /// <summary>
@@ -871,7 +931,7 @@ public sealed class CashBoxService(IAppDbContext db) : ICashBoxService
     private static object Snapshot(CashBoxTransaction t) => new
     {
         t.Id, t.CashBoxId, t.Kind, t.Amount, t.Method, t.ToMethod, t.StudentId,
-        t.Note, t.Status, t.CreatedBy, t.TransferToBoxId, t.ReversalOf,
+        t.Note, t.Status, t.CreatedBy, t.TransferToBoxId, t.ReversalOf, t.TransactionTypeId,
     };
 
     private static string RequireName(string? name)

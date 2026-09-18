@@ -152,6 +152,10 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
     // Konfiguratsiya: ExpenseTemplateModel.cs.
     public DbSet<ExpenseTemplate> ExpenseTemplates => Set<ExpenseTemplate>();
 
+    // Tranzaksiya turi katalogi (Kirim/Chiqim) — kassa kirim shakli va moliya
+    // sozlamalari ekrani. Konfiguratsiya: TransactionTypeModel.cs.
+    public DbSet<TransactionType> TransactionTypes => Set<TransactionType>();
+
     /// <inheritdoc />
     public Task<Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction> BeginTransactionAsync(
         CancellationToken cancellationToken = default) =>
@@ -314,6 +318,12 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
         // ----- Rejalashtirilgan chiqim shabloni (finance-parity.md §2.6, F6.01) -----
         // To'qqizinchi alohida fayl, yuqoridagilar bilan bir xil sabab.
         ExpenseTemplateModel.Apply(b);
+
+        // ----- Tranzaksiya turi katalogi (Kirim/Chiqim) -----
+        // O'ninchi alohida fayl. `cash_box_transactions.transaction_type_id`
+        // ham shu yerda (o'zgarish qaysi migratsiyadan kelgan bo'lsa, o'sha
+        // faylda turadi — yuqoridagi FinanceParityModel izohidagi qoida).
+        TransactionTypeModel.Apply(b);
 
         // ----- PostgreSQL: vaqt turi -----
         // Tizim sanalarni Toshkent "devor soati" sifatida saqlaydi (AppClock.Now — Kind=Unspecified),

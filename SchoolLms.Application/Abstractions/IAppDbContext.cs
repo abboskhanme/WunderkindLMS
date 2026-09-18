@@ -213,6 +213,15 @@ public interface IAppDbContext
     /// </summary>
     DbSet<ExpenseTemplate> ExpenseTemplates { get; }
 
+    /// <summary>
+    /// Tranzaksiya turi katalogi (Kirim/Chiqim) — kassa kirim shaklidagi
+    /// "Tranzaksiya turi" tanlovi va moliya sozlamalari ekranining
+    /// kataloglari. Moliyaviy EMAS — to'liq CRUD (<c>transaction_types_guards.sql</c>).
+    /// Bonus/Jarima uchun <see cref="AdjustmentReason"/> ishlatiladi —
+    /// <c>TransactionTypes.cs</c> boshidagi izoh.
+    /// </summary>
+    DbSet<TransactionType> TransactionTypes { get; }
+
     int SaveChanges();
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 

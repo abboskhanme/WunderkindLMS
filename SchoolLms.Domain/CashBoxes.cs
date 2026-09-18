@@ -152,6 +152,15 @@ public class CashBoxTransaction
 
     /// <summary>Storno: qaysi amalni bekor qilmoqda. null = oddiy amal.</summary>
     public Guid? ReversalOf { get; set; }
+
+    /// <summary>
+    /// Tranzaksiya turi (<see cref="TransactionType"/>, faqat <c>kind = 'in'</c> — hozircha
+    /// FAQAT Kirim shaklida so'raladi, `CashierPage.tsx` `PlainIncomeForm`). YORLIQ,
+    /// hech qanday hisobga (<c>Accounts.cs</c>) ta'sir qilmaydi — <c>TransactionTypes.cs</c>
+    /// boshidagi izoh. <c>null</c> = tur ko'rsatilmagan (eski qator yoki chiqim/ko'chirish/
+    /// ayirboshlash — ular hali bu maydonni so'ramaydi).
+    /// </summary>
+    public Guid? TransactionTypeId { get; set; }
 }
 
 /// <summary>Kassa amali turi (<see cref="CashBoxTransaction.Kind"/>).</summary>
