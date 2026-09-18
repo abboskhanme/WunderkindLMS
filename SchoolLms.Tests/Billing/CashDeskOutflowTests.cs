@@ -66,37 +66,39 @@ public class CashDeskOutflowTests(ApiFixture fixture)
     // =====================================================================
 
     /// <summary>
-    /// <b>Modulning asosiy natijasi.</b> Kassada 1 000 000 so'm bor, undan
-    /// 300 000 so'mlik naqd chiqim qilinadi, javonda 700 000 qoladi — va
-    /// smena AYNAN shu summa bilan NOL farq bilan yopiladi.
+    /// <b>Modulning asosiy natijasi — endi KASSA orqali (mijoz javobi,
+    /// 2026-09: "smena" tushunchasi olib tashlandi).</b> Naqd chiqim
+    /// yozuvchining SMENASIGA emas, SUKUT (yoki so'ralgan) KASSAGA
+    /// biriktiriladi — smena ochiq bo'lishi shart emas va biriktirish
+    /// ustuni endi <c>cash_box_id</c>.
     ///
     /// <para>
-    /// F1.03 dan oldin kutilgan naqd 1 000 000 bo'lib qolardi va kassir
-    /// −300 000 kamomad bilan yopilardi.
+    /// Ilgari bu yerda smena ochilib, uning "farqsiz yopilishi" tekshirilardi
+    /// — bu qoidaning o'zi olib tashlandi (<c>CashShiftService</c> endi
+    /// PaymentService/ExpenseService yo'liga umuman ulanmaydi). Endi shu
+    /// o'rinda tekshiriladigan qoida: naqd chiqim SMENASIZ ham qabul qilinadi
+    /// va kassa (<c>cash_box_id</c>) bilan belgilanadi.
     /// </para>
     /// </summary>
     [Fact]
-    public async Task Naqd_chiqim_kutilgan_naqdni_kamaytiradi_va_smena_farqsiz_yopiladi()
+    public async Task Naqd_chiqim_smenasiz_qabul_qilinadi_va_sukut_kassaga_biriktiriladi()
     {
         var (admin, client) = await ClientAsync(Roles.Admin);
-        var shift = await OpenShiftAsync(client, openingFloat: 1_000_000m);
+        // Smena ATAYLAB ochilmaydi — kassalar modelida bu endi shart emas.
 
         var expense = await CreateExpenseAsync(client, "utilities", 300_000m, PaymentMethod.Cash);
 
         Assert.Equal(ExpenseStatus.Posted, expense.Status);
         Assert.Equal(Accounts.Cash, expense.SettlementAccount);
-        // Chiqim AYNAN yozgan odamning ochiq smenasiga biriktirildi.
-        Assert.Equal(shift.Id, expense.CashShiftId);
+        // "Smena" endi yo'q — har doim null.
+        Assert.Null(expense.CashShiftId);
 
-        var closed = await CloseShiftAsync(client, shift.Id, countedCash: 700_000m);
-
-        Assert.Equal(700_000m, closed.ExpectedCash);
-        Assert.Equal(0m, closed.Variance);
-
-        // Bazada ham xuddi shunday (ustun ilovadan emas, bazadan hisoblanadi).
         await using var db = NewDb();
         var stored = await db.Expenses.AsNoTracking().FirstAsync(e => e.Id == expense.Id);
-        Assert.Equal(shift.Id, stored.CashShiftId);
+        Assert.Null(stored.CashShiftId);
+        // Kassa ko'rsatilmagan — SUKUT (default) kassaga tushdi.
+        var defaultBoxId = await CashBoxService.DefaultBoxIdAsync(db);
+        Assert.Equal(defaultBoxId, stored.CashBoxId);
         Assert.Equal(admin.Id, stored.CreatedBy);
     }
 
@@ -131,20 +133,37 @@ public class CashDeskOutflowTests(ApiFixture fixture)
     }
 
     /// <summary>
-    /// Ochiq smenasiz naqd chiqim — <b>409 <c>no_open_shift</c></b>, va
-    /// bazada HECH NARSA qolmaydi.
+    /// Kassalar modeli (2026-09): "smena" endi yo'q, shuning uchun smenasiz
+    /// naqd chiqim endi ODDIY holat (yuqoridagi test). Buning o'rniga qoladigan
+    /// qoida — FAOL BO'LMAGAN kassaga naqd chiqim — <b>409
+    /// <c>cash_box_inactive</c></b>, va bazada HECH NARSA qolmaydi.
     ///
     /// <para>
     /// Status kodining o'zi yetarli emas: agar endpoint 409 qaytarib, chiqim
     /// qatorini baribir yozib qo'ysa, faqat kodni tekshiradigan test buni
-    /// ko'rmasdi — va o'sha pul hech qaysi smenaga tushmagan holda P&L da
+    /// ko'rmasdi — va o'sha pul hech qaysi kassaga tushmagan holda P&L da
     /// paydo bo'lardi.
     /// </para>
     /// </summary>
     [Fact]
-    public async Task Ochiq_smenasiz_naqd_chiqim_409_va_bazada_iz_qoldirmaydi()
+    public async Task Faol_bolmagan_kassaga_naqd_chiqim_409_va_bazada_iz_qoldirmaydi()
     {
         var (admin, client) = await ClientAsync(Roles.Admin);
+
+        var inactiveBoxId = Guid.Empty;
+        await fixture.Api.WithDbAsync(async db =>
+        {
+            var box = new CashBox
+            {
+                Name = "Faol emas " + Guid.NewGuid().ToString("N")[..6],
+                IsDefault = false,
+                IsActive = false,
+                CreatedAt = AppClock.NowInstant,
+            };
+            db.CashBoxes.Add(box);
+            await db.SaveChangesAsync();
+            inactiveBoxId = box.Id;
+        });
 
         var response = await client.PostAsJsonAsync(Expenses, new
         {
@@ -152,29 +171,31 @@ public class CashDeskOutflowTests(ApiFixture fixture)
             category = "rent",
             amount = 400_000m,
             method = PaymentMethod.Cash,
-            note = "Smenasiz urinish",
+            note = "Faol bo'lmagan kassaga urinish",
+            cashBoxId = inactiveBoxId,
         });
 
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
         var error = (await response.Content.ReadFromJsonAsync<ErrorBody>())!;
-        Assert.Equal("no_open_shift", error.Code);
+        Assert.Equal("cash_box_inactive", error.Code);
 
         await using var db = NewDb();
         Assert.Empty(await db.Expenses.AsNoTracking().Where(e => e.CreatedBy == admin.Id).ToListAsync());
     }
 
     /// <summary>
-    /// Chegaradan yuqori chiqim TASDIQ kutadi — o'sha lahzada smena talab
-    /// qilinmaydi (jurnalga hali tushmagan, pul hali chiqmagan). Smena
-    /// TASDIQLOVCHIDAN so'raladi va chiqim AYNAN uning smenasiga biriktiriladi.
+    /// Chegaradan yuqori chiqim TASDIQ kutadi — o'sha lahzada kassa talab
+    /// qilinmaydi (jurnalga hali tushmagan, pul hali chiqmagan). Kassa
+    /// TASDIQLOVCHI so'rovida ko'rsatiladi (yoki SUKUT) va chiqim AYNAN
+    /// o'sha kassaga biriktiriladi.
     ///
     /// <para>
     /// Sabab: usulni ham, pulni ham tasdiqlovchi beradi (<c>ExpenseService</c>
-    /// fayl boshidagi izoh) — ya'ni pul aynan uning javonidan chiqadi.
+    /// fayl boshidagi izoh) — ya'ni pul aynan uning ko'rsatgan kassasidan chiqadi.
     /// </para>
     /// </summary>
     [Fact]
-    public async Task Tasdiq_kutgan_naqd_chiqim_tasdiqlovchining_smenasiga_tushadi()
+    public async Task Tasdiq_kutgan_naqd_chiqim_tasdiqlovchi_korsatgan_kassaga_tushadi()
     {
         var (_, author) = await ClientAsync(Roles.Admin);
         var (_, director) = await ClientAsync(Roles.SuperAdmin);
@@ -187,71 +208,41 @@ public class CashDeskOutflowTests(ApiFixture fixture)
         Assert.Null(created.CashShiftId);
         Assert.Null(created.SettlementAccount);
 
-        // 2) Tasdiqlovchining smenasi ochiladi va u tasdiqlaydi.
-        var directorShift = await OpenShiftAsync(director, openingFloat: amount);
+        // 2) Yangi kassa ochiladi (direktor ham ManageCashBoxes ga kira oladi —
+        // AdminAndDirector) va tasdiqlovchi shu kassani ko'rsatib tasdiqlaydi.
+        var box = await CreateBoxAsync(director);
 
         var approveResponse = await director.PostAsJsonAsync(
-            $"{Expenses}/{created.Id}/approve", new { method = PaymentMethod.Cash });
+            $"{Expenses}/{created.Id}/approve", new { method = PaymentMethod.Cash, cashBoxId = box.Id });
         Assert.Equal(HttpStatusCode.OK, approveResponse.StatusCode);
 
         var approved = (await approveResponse.Content.ReadFromJsonAsync<ExpenseDto>())!;
         Assert.Equal(ExpenseStatus.Posted, approved.Status);
-        Assert.Equal(directorShift.Id, approved.CashShiftId);
-
-        // 3) Tasdiqlovchining javoni bo'shadi: 6 000 000 kirdi, 6 000 000 chiqdi.
-        var closed = await CloseShiftAsync(director, directorShift.Id, countedCash: 0m);
-        Assert.Equal(0m, closed.ExpectedCash);
-        Assert.Equal(0m, closed.Variance);
+        Assert.Null(approved.CashShiftId);
+        Assert.Equal(box.Id, approved.CashBoxId);
     }
 
     /// <summary>
-    /// Naqd chiqimning STORNOSI pulni STORNO QILUVCHINING javoniga qaytaradi,
-    /// yozuvchinikiga emas. Ochiq smenasiz storno — <b>409</b>.
-    ///
-    /// <para>
-    /// Bu testning qiymati ikkita smenani BIR VAQTDA tekshirishida: yozuvchi
-    /// 800 000 bilan, storno qiluvchi esa 200 000 bilan NOL farq bilan
-    /// yopiladi. Agar ko'zgu satr noto'g'ri smenaga biriktirilsa, ikkalasi
-    /// ham teng va qarama-qarshi farq bilan yopilardi — aynan F1.03 tuzatgan
-    /// xatoning ko'zgusi.
-    /// </para>
+    /// Naqd chiqimning STORNOSI endi HECH QANDAY kassa/smena talab qilmaydi
+    /// (kassalar modeli, 2026-09) — <c>expenses</c> ga bu qadamda hech qanday
+    /// ustun yozilmaydi (fayl boshidagi izoh: storno faqat jurnalga ko'zgu
+    /// satr qo'shadi), ya'ni biriktiriladigan maydon ham yo'q.
     /// </summary>
     [Fact]
-    public async Task Naqd_chiqim_stornosi_storno_qiluvchining_smenasiga_qaytadi()
+    public async Task Naqd_chiqim_stornosi_smenasiz_ham_otadi()
     {
         var (_, author) = await ClientAsync(Roles.Admin);
         var (_, director) = await ClientAsync(Roles.SuperAdmin);
 
-        var authorShift = await OpenShiftAsync(author, openingFloat: 1_000_000m);
         var expense = await CreateExpenseAsync(author, "other", 200_000m, PaymentMethod.Cash);
-        Assert.Equal(authorShift.Id, expense.CashShiftId);
+        Assert.Null(expense.CashShiftId);
 
-        // 1) Direktorda ochiq smena yo'q — storno rad etiladi.
-        var refused = await director.PostAsJsonAsync(
-            $"{Expenses}/{expense.Id}/reverse", new { reason = "Xato yozuv" });
-        Assert.Equal(HttpStatusCode.Conflict, refused.StatusCode);
-        Assert.Equal("no_open_shift", (await refused.Content.ReadFromJsonAsync<ErrorBody>())!.Code);
-
-        // Rad etilgach jurnalda ko'zgu satr YO'Q — chiqim hali "posted".
-        var stillPosted = await GetExpenseAsync(author, expense.Id);
-        Assert.Equal(ExpenseStatus.Posted, stillPosted.Status);
-
-        // 2) Smena ochiladi va storno o'tadi.
-        var directorShift = await OpenShiftAsync(director, openingFloat: 0m);
+        // Direktorda ochiq smena YO'Q va u ATAYLAB ochilmaydi — storno baribir o'tadi.
         var reverseResponse = await director.PostAsJsonAsync(
             $"{Expenses}/{expense.Id}/reverse", new { reason = "Xato yozuv" });
         Assert.Equal(HttpStatusCode.OK, reverseResponse.StatusCode);
         Assert.Equal(ExpenseStatus.Reversed,
             (await reverseResponse.Content.ReadFromJsonAsync<ExpenseDto>())!.Status);
-
-        // 3) Ikkala smena ham NOL farq bilan yopiladi — pul yo'qolmadi, ko'paymadi.
-        var closedAuthor = await CloseShiftAsync(author, authorShift.Id, countedCash: 800_000m);
-        Assert.Equal(800_000m, closedAuthor.ExpectedCash);
-        Assert.Equal(0m, closedAuthor.Variance);
-
-        var closedDirector = await CloseShiftAsync(director, directorShift.Id, countedCash: 200_000m);
-        Assert.Equal(200_000m, closedDirector.ExpectedCash);
-        Assert.Equal(0m, closedDirector.Variance);
     }
 
     // =====================================================================
@@ -496,24 +487,30 @@ public class CashDeskOutflowTests(ApiFixture fixture)
     // =====================================================================
 
     /// <summary>
-    /// <b>Invariant:</b> <c>ochilish qoldig'i + naqd tushum − chiqimlar −
-    /// topshiriqlar == kutilgan naqd</c>.
+    /// Kassalar modeli (2026-09): <b>agar kimdir baribir smena ochsa</b>
+    /// (endi majburiy emas, lekin taqiqlanmagan ham — <c>CashShiftsController</c>
+    /// tegilmagan), uning <c>expected_cash</c> i endi FAQAT topshiriqlarga
+    /// (F1.04) bog'liq: naqd to'lov va naqd chiqim shu smenaga UMUMAN
+    /// TA'SIR QILMAYDI (<c>PaymentService</c>/<c>ExpenseService</c> endi
+    /// <c>ICashShiftService</c> ga bog'lanmaydi — "stop wiring into live
+    /// paths").
     ///
     /// <para>
-    /// Smena ichida hammasi bor: naqd to'lov, naqd chiqim, bank chiqimi
-    /// (u ta'sir qilmasligi kerak), bankka topshiriq, seyfga topshiriq va
-    /// bitta topshiriq stornosi. Agar Z-hisobot va <c>expected_cash</c>
-    /// alohida hisoblansa, ular AYNAN shunday aralash holatda bir-biridan
-    /// uzoqlashadi.
+    /// <b>Invariant endi:</b> <c>ochilish qoldig'i − topshiriqlar ==
+    /// kutilgan naqd</c> — to'lov va chiqim hadlari YO'QOLDI. Bu test AYNAN
+    /// shu yo'qolishni tekshiradi: agar kimdir bu wiring'ni tasodifan
+    /// qaytarib qo'ysa (regressiya), <c>expected_cash</c> naqd to'lov/chiqim
+    /// summasiga "sirg'alib" ketadi va quyidagi tenglik buziladi.
     /// </para>
     /// </summary>
     [Fact]
-    public async Task Zhisobot_va_kutilgan_naqd_bir_xil_javob_beradi()
+    public async Task Zhisobot_endi_faqat_topshiriqqa_bogliq_tolov_va_chiqim_smenaga_tegmaydi()
     {
         var (_, client) = await ClientAsync(Roles.Admin);
         var shift = await OpenShiftAsync(client, openingFloat: 1_000_000m);
 
-        // Naqd to'lov — HAQIQIY `PaymentService` orqali.
+        // Naqd to'lov — HAQIQIY `PaymentService` orqali. Endi SUKUT kassaga
+        // tushadi, shu smenaga EMAS.
         var scene = await SceneAsync(400_000m);
         var payment = await client.PostAsJsonAsync("/api/cash/payments", new
         {
@@ -523,8 +520,10 @@ public class CashDeskOutflowTests(ApiFixture fixture)
             allocations = new[] { new { invoiceId = scene.InvoiceId, amount = 400_000m } },
         });
         Assert.Equal(HttpStatusCode.OK, payment.StatusCode);
+        Assert.Null((await payment.Content.ReadFromJsonAsync<PaymentDto>())!.CashShiftId);
 
-        await CreateExpenseAsync(client, "supplies", 150_000m, PaymentMethod.Cash);
+        var expense = await CreateExpenseAsync(client, "supplies", 150_000m, PaymentMethod.Cash);
+        Assert.Null(expense.CashShiftId);
         await CreateExpenseAsync(client, "rent", 900_000m, PaymentMethod.Transfer);   // bankdan — ta'sirsiz
 
         await RecordHandoverAsync(client, 300_000m, "bank", null);
@@ -535,64 +534,31 @@ public class CashDeskOutflowTests(ApiFixture fixture)
             $"{Handovers}/{undone.Id}/reverse", new { reason = "Noto'g'ri yozildi" });
         Assert.Equal(HttpStatusCode.OK, reverse.StatusCode);
 
-        // 1 000 000 + 400 000 − 150 000 − 300 000 − 100 000 = 850 000
-        var closed = await CloseShiftAsync(client, shift.Id, countedCash: 850_000m);
-        Assert.Equal(850_000m, closed.ExpectedCash);
+        // 1 000 000 − 300 000 − 100 000 = 600 000. Naqd to'lov (+400 000) va
+        // naqd chiqim (−150 000) ENDI BU YERDA YO'Q — ular boshqa kassaga tegishli.
+        var closed = await CloseShiftAsync(client, shift.Id, countedCash: 600_000m);
+        Assert.Equal(600_000m, closed.ExpectedCash);
         Assert.Equal(0m, closed.Variance);
 
         var report = await GetZReportAsync(client, shift.Id);
 
-        Assert.Equal(150_000m, report.CashExpensesTotal);
-        Assert.Equal(1, report.CashExpensesCount);
+        // Naqd chiqim shu smenaga umuman biriktirilmadi.
+        Assert.Equal(0m, report.CashExpensesTotal);
+        Assert.Equal(0, report.CashExpensesCount);
         // 300 000 + 100 000 + 50 000 − 50 000 (storno)
         Assert.Equal(400_000m, report.CashHandoversTotal);
         Assert.Equal(4, report.CashHandoversCount);
 
+        // Z-hisobotning "naqd to'lovlar" qatori ham BO'SH — to'lov shu smenaga
+        // yozilmadi (smena hech qanday `payments.cash_shift_id` ga ega emas).
         var cashRow = Assert.Single(report.ByMethod, m => m.Method == PaymentMethod.Cash);
-        Assert.Equal(400_000m, cashRow.Amount);
+        Assert.Equal(0m, cashRow.Amount);
 
-        // ---- INVARIANT ----
-        var fromReport = report.Shift.OpeningFloat
-            + cashRow.Amount
-            - report.CashExpensesTotal
-            - report.CashHandoversTotal;
+        // ---- INVARIANT: endi FAQAT ochilish qoldig'i va topshiriqlar ----
+        var fromReport = report.Shift.OpeningFloat - report.CashHandoversTotal;
 
         Assert.Equal(fromReport, report.Shift.ExpectedCash!.Value);
-        Assert.Equal(850_000m, fromReport);
-    }
-
-    /// <summary>
-    /// Yopilgan smena QAYTA HISOBLANMAYDI: yopilgandan keyin qilingan storno
-    /// uning <c>expected_cash</c> iga ham, Z-hisobotining "Chiqimlar"
-    /// qatoriga ham tushmaydi.
-    ///
-    /// <para>
-    /// Aks holda kecha yopilgan smenaning farqi bugun o'zgarib turardi va
-    /// "o'sha oqshom kassada nima bo'lgani" degan savolga javob yo'qolardi.
-    /// </para>
-    /// </summary>
-    [Fact]
-    public async Task Yopilgan_smena_keyingi_storno_bilan_ozgarmaydi()
-    {
-        var (_, author) = await ClientAsync(Roles.Admin);
-        var (_, director) = await ClientAsync(Roles.SuperAdmin);
-
-        var authorShift = await OpenShiftAsync(author, openingFloat: 500_000m);
-        var expense = await CreateExpenseAsync(author, "other", 120_000m, PaymentMethod.Cash);
-
-        var closed = await CloseShiftAsync(author, authorShift.Id, countedCash: 380_000m);
-        Assert.Equal(380_000m, closed.ExpectedCash);
-
-        // Yopilgandan KEYIN — boshqa odam, boshqa smena.
-        await OpenShiftAsync(director, openingFloat: 0m);
-        var reverse = await director.PostAsJsonAsync(
-            $"{Expenses}/{expense.Id}/reverse", new { reason = "Keyin topilgan xato" });
-        Assert.Equal(HttpStatusCode.OK, reverse.StatusCode);
-
-        var report = await GetZReportAsync(director, authorShift.Id);
-        Assert.Equal(380_000m, report.Shift.ExpectedCash);
-        Assert.Equal(0m, report.Shift.Variance);
-        Assert.Equal(120_000m, report.CashExpensesTotal);   // storno bu smenaga tushmadi
+        Assert.Equal(600_000m, fromReport);
     }
 
     // =====================================================================
@@ -885,6 +851,15 @@ public class CashDeskOutflowTests(ApiFixture fixture)
         var response = await client.PostAsJsonAsync($"{Shifts}/open", new { openingFloat });
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         return (await response.Content.ReadFromJsonAsync<CashShiftDto>())!;
+    }
+
+    /// <summary>Yangi kassa ochadi (kassalar modeli, 2026-09) — <c>ManageCashBoxes</c> talab qiladi.</summary>
+    private static async Task<CashBoxDto> CreateBoxAsync(HttpClient client)
+    {
+        var response = await client.PostAsJsonAsync(
+            "/api/admin/cash-boxes", new { name = $"Test kassa {Guid.NewGuid():N}" });
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        return (await response.Content.ReadFromJsonAsync<CashBoxDto>())!;
     }
 
     private static async Task<CashShiftDto> CloseShiftAsync(

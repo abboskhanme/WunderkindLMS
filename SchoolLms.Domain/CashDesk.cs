@@ -150,6 +150,13 @@ public class StudentRefund
     /// </summary>
     public Guid? CashShiftId { get; set; }
 
+    /// <summary>
+    /// Naqd qaytarim qaysi KASSADAN chiqdi ("smena" o'rnini bosuvchi model,
+    /// 2026-09). Hozircha hech qaysi xizmat yozmaydi/o'qimaydi — bu ustun
+    /// faqat migratsiya bilan qo'shildi (StudentRefundService hali yozilmagan).
+    /// </summary>
+    public Guid? CashBoxId { get; set; }
+
     /// <summary>Rad etish sababi. To'lgach qator QULFLANADI (trigger).</summary>
     public string? RejectedReason { get; set; }
 

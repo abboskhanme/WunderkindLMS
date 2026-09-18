@@ -757,9 +757,12 @@ public sealed class CashShiftService(IAppDbContext db) : ICashShiftService
     {
         if (shiftIds.Count == 0) return [];
 
+        // `CashShiftId` "smena" modeli olib tashlangач `Guid?` bo'ldi (kassalar,
+        // 2026-09): yangi to'lovlarda odatda `null`. Shu yerda FAQAT haqiqatan
+        // shu smenalarga tegishli (`.Value`) qatorlar kerak — filtr shart.
         var rows = await db.Payments.AsNoTracking()
-            .Where(p => shiftIds.Contains(p.CashShiftId))
-            .GroupBy(p => new { p.CashShiftId, p.Method, IsReversal = p.ReversalOf != null })
+            .Where(p => p.CashShiftId != null && shiftIds.Contains(p.CashShiftId.Value))
+            .GroupBy(p => new { CashShiftId = p.CashShiftId!.Value, p.Method, IsReversal = p.ReversalOf != null })
             .Select(g => new MethodTotal(
                 g.Key.CashShiftId, g.Key.Method, g.Key.IsReversal, g.Count(), g.Sum(p => p.Amount)))
             .ToListAsync(ct);

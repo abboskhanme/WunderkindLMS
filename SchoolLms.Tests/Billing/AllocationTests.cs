@@ -56,7 +56,7 @@ public class AllocationTests(ApiFixture fixture) : IAsyncLifetime
     private AppDbContext NewDb() => PostgresFixture.NewContext(_database.OwnerConnectionString);
 
     private static PaymentService Payments(AppDbContext db) =>
-        new(db, new CashShiftService(db), new LedgerService(db));
+        new(db, new LedgerService(db));
 
     private static InvoiceService Invoices(AppDbContext db) => new(db, new LedgerService(db));
 

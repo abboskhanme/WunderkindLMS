@@ -69,7 +69,7 @@ public class AccrualTests(ApiFixture fixture) : IAsyncLifetime
     private static InvoiceService Invoices(AppDbContext db) => new(db, new LedgerService(db));
 
     private static PaymentService Payments(AppDbContext db) =>
-        new(db, new CashShiftService(db), new LedgerService(db));
+        new(db, new LedgerService(db));
 
     // =================================================================
     //  1. Ikki toifa → ikkita hisob-faktura

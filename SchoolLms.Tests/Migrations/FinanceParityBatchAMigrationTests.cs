@@ -743,7 +743,16 @@ public class FinanceParityBatchAMigrationTests(ApiFixture fixture) : IAsyncLifet
         await MigrateToAsync(PreviousMigration);
         var before = await AllColumnsAsync();
 
-        await MigrateToAsync(null);
+        // MUHIM: `null` (oxirigacha) emas, AYNAN `ThisMigration` — bu test
+        // FAQAT `FinanceParityBatchA` ning o'zi nimani o'zgartirishini
+        // tekshiradi (§3.4 — "bu migratsiyada"). `null` boshida to'g'ri edi,
+        // chunki o'sha payt bu migratsiya "oxirgi" edi; endi undan keyin
+        // `CashBoxes` (2026-09-18) keladi va u `payments`/`expenses`/
+        // `student_refunds` ga ATAYLAB (vazifa talabi bilan) nullable
+        // `cash_box_id` qo'shadi — bu keyingi migratsiyaning ishi, shu
+        // migratsiyaning emas, shuning uchun pastdagi "o'zgarmas uchlik"
+        // tekshiruvi aynan shu migratsiya doirasida qolishi kerak.
+        await MigrateToAsync(ThisMigration);
         var after = await AllColumnsAsync();
 
         var lost = before.Except(after).OrderBy(x => x, StringComparer.Ordinal).ToList();

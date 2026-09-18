@@ -106,6 +106,20 @@ public enum FinanceAction
     /// TAKRORLANMASLIGI kerak (SPEC §4.3).
     /// </summary>
     ManagePayrollAdjustments,
+
+    // ----- Kassalar (cash boxes) — "smena" o'rnini bosadi, 2026-09 -----
+
+    /// <summary>Kassalar ro'yxati va harakatlar jurnalini ko'rish.</summary>
+    ViewCashBoxes,
+
+    /// <summary>Kassa ochish, nomini/mas'ulini/sukut belgisini/faolligini o'zgartirish.</summary>
+    ManageCashBoxes,
+
+    /// <summary>Kunlik amal: kirim, chiqim, ko'chirish, ayirboshlash.</summary>
+    OperateCashBox,
+
+    /// <summary>Kassa amalini bekor qilish (storno).</summary>
+    CancelCashBoxTransaction,
 }
 
 /// <summary>
@@ -195,6 +209,24 @@ public static class FinanceMatrix
         // emas (F3.05 ning aynan o'zi bu yerda takrorlanmasligi kerak).
         new(FinanceAction.ManagePayrollAdjustments, AdminAndDirector,
             "Xodimga bonus/jarima yozish, bekor qilish va sabab katalogini boshqarish"),
+
+        // Kassalar (cash boxes) — "smena" o'rnini bosadi. Kunlik amal
+        // (kirim/chiqim/ko'chirish/ayirboshlash) kassaning O'Z ishi, xuddi
+        // ilgari smena ochish/yopish kabi — CashDesk. Kataloqni boshqarish
+        // (yangi kassa ochish, mas'ul/sukut belgisini o'zgartirish) va
+        // bekor qilish esa AdminAndDirector — kassir yangi kassa ocholmaydi
+        // va o'z-o'zini tekshirmasdan tarixni bekor qilolmaydi.
+        new(FinanceAction.ViewCashBoxes, CashDesk,
+            "Kassalar ro'yxati va harakatlar jurnalini ko'rish"),
+
+        new(FinanceAction.ManageCashBoxes, AdminAndDirector,
+            "Kassa ochish, nomini/mas'ulini/sukut belgisini o'zgartirish"),
+
+        new(FinanceAction.OperateCashBox, CashDesk,
+            "Kunlik amal: kirim, chiqim, ko'chirish, ayirboshlash"),
+
+        new(FinanceAction.CancelCashBoxTransaction, AdminAndDirector,
+            "Kassa amalini bekor qilish (storno)"),
     ];
 
     /// <summary>

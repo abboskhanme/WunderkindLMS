@@ -397,7 +397,8 @@ public class SubscriptionEndControllerTests(ApiFixture fixture)
         });
 
         await using var db = NewDb();
-        var payments = new PaymentService(db, new PaymentShiftStub(db), new LedgerService(db));
+        // Kassalar modelidan keyin `PaymentService` smenaga bog'liq emas.
+        var payments = new PaymentService(db, new LedgerService(db));
         await payments.AcceptAsync(
             new AcceptPaymentRequest(studentId, amount, PaymentMethod.Cash, null,
                 [new AllocationRequest(invoiceId, amount)]),

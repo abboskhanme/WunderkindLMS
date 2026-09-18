@@ -197,6 +197,14 @@ public interface IAppDbContext
     /// </summary>
     DbSet<UserTableSetting> UserTableSettings { get; }
 
+    // ---------- Kassalar (cash boxes) — "smena" o'rnini bosadi (2026-09) ----------
+    // `payments`/`ledger_entries` bilan bir xil qoida: `CashBoxTransactions` —
+    // FAQAT INSERT (`app_rw` da UPDATE/DELETE yo'q,
+    // `Migrations/Sql/cash_boxes_guards.sql`). `CashBoxes` esa oddiy kataloq —
+    // rename/deactivate uchun UPDATE bor, faqat DELETE yopiq.
+    DbSet<CashBox> CashBoxes { get; }
+    DbSet<CashBoxTransaction> CashBoxTransactions { get; }
+
     int SaveChanges();
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 

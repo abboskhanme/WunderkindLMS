@@ -346,7 +346,14 @@ public class PayrollAdjustmentsMigrationTests(ApiFixture fixture) : IAsyncLifeti
         await MigrateToAsync(PreviousMigration);
         var before = await AllColumnsAsync();
 
-        await MigrateToAsync(null);
+        // MUHIM: `null` (oxirigacha) EMAS, aynan `ThisMigration`. Test o'z
+        // nomida ham, izohida ham "BU migratsiyada" deydi — oxirigacha yurish
+        // keyin kelgan begona migratsiyalarni ham shu testga bog'lab qo'yadi.
+        // `CashBoxes` aynan shunday qildi: u `payments` ga qonuniy ravishda
+        // `cash_box_id` qo'shadi va quyidagi "pul jadvallari o'zgarmasin"
+        // tekshiruvi shundan yiqilardi. Qo'shni `FinanceParityBatchA` testida
+        // ham xuddi shu yechim.
+        await MigrateToAsync(ThisMigration);
         var after = await AllColumnsAsync();
 
         var lost = before.Except(after).OrderBy(x => x, StringComparer.Ordinal).ToList();
