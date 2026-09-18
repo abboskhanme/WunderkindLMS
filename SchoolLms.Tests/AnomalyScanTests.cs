@@ -155,7 +155,7 @@ public class AnomalyScanTests(ApiFixture fixture)
         var shift = await new CashShiftService(db).OpenAsync(cashierId, 0m);
         var invoiceId = await NewInvoiceAsync(db, studentId, 300_000m, InvoiceStatus.Open);
 
-        var payments = new PaymentService(db, new CashShiftService(db), new LedgerService(db));
+        var payments = new PaymentService(db, new LedgerService(db));
         var payment = await payments.AcceptAsync(
             new AcceptPaymentRequest(studentId, 300_000m, PaymentMethod.Cash, null,
                 [new AllocationRequest(invoiceId, 300_000m)]),
@@ -223,12 +223,9 @@ public class AnomalyScanTests(ApiFixture fixture)
         var directorId = await NewUserAsync(Roles.SuperAdmin);
 
         await using var db = NewDb();
-        // `ICashShiftService` — F1.03 dan keyingi bog'liqlik: naqd chiqim
-        // ochiq smenani talab qiladi. Bu testdagi chiqimlar BANKDAN chiqadi
-        // (`PaymentMethod.Transfer`), ya'ni smena so'ralmaydi; xizmat esa
-        // baribir haqiqiysi bo'lishi kerak — soxta nusxa "smena kerak edimi"
-        // degan savolni yashirib qo'yardi.
-        var expenses = new ExpenseService(db, new LedgerService(db), new CashShiftService(db));
+        // "Smena" endi yo'q (kassalar modeli, 2026-09) — `ExpenseService`
+        // endi `ICashShiftService` ga umuman bog'lanmaydi.
+        var expenses = new ExpenseService(db, new LedgerService(db));
 
         // (a) Chegaradan past — darhol jurnalga tushadi.
         var small = await expenses.CreateAsync(

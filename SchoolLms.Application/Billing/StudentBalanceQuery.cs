@@ -99,15 +99,43 @@ public sealed class StudentBalanceQuery(IAppDbContext db)
 
         var debts = await DebtByStudentAsync(ids, ct);
         var credits = await CreditByStudentAsync(ids, ct);
+        var refunds = await RefundsByStudentAsync(ids, ct);
 
         var result = new Dictionary<string, decimal>(StringComparer.Ordinal);
         foreach (var (id, debt) in debts) result[id] = -debt;
         foreach (var (id, credit) in credits)
             result[id] = result.GetValueOrDefault(id) + credit;
+        // F1.05 — qaytarilgan (posted, non-reversed) pul avansdan AYIRILADI:
+        // u endi o'quvchining hisobida emas, ota-onaning qo'lida.
+        foreach (var (id, refund) in refunds)
+            result[id] = result.GetValueOrDefault(id) - refund;
 
         // Nol qoldiqni ham qoldiramiz: "lug'atda bor, qiymati 0" va "umuman
         // yo'q" chaqiruvchi uchun bir xil natija beradi (`GetValueOrDefault`).
         return result;
+    }
+
+    /// <summary>
+    /// F1.05 — BITTA o'quvchining AVANSI (taqsimlanmagan pul, qaytarimlar
+    /// ayirilgan), qarzdan ALOHIDA. <c>StudentRefundService</c> "so'ralgan
+    /// summa ≤ joriy avans" qoidasini shu metoddan tekshiradi.
+    ///
+    /// <para>
+    /// <b>Nega <see cref="ForAsync"/> yetmaydi.</b> U qarz va avansni bitta
+    /// SOF qoldiqqa qo'shib beradi (eski <c>students.balance</c> bilan bir
+    /// xil belgi uchun). Qaytarim esa faqat AVANSdan chiqishi mumkin — agar
+    /// o'quvchida ham qarz, ham (boshqa toifadagi) avans bo'lsa, sof qoldiq
+    /// avansdan KICHIK ko'rinadi va direktor haqiqatda mavjud pulni
+    /// qaytarolmay qoladi.
+    /// </para>
+    /// </summary>
+    public async Task<decimal> AdvanceForAsync(string studentId, CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(studentId);
+        var credits = await CreditByStudentAsync([studentId], ct);
+        var refunds = await RefundsByStudentAsync([studentId], ct);
+        return decimal.Round(
+            credits.GetValueOrDefault(studentId) - refunds.GetValueOrDefault(studentId), MoneyScale);
     }
 
     /// <summary>
@@ -177,6 +205,37 @@ public sealed class StudentBalanceQuery(IAppDbContext db)
             .ToListAsync(ct);
 
         return rows.ToDictionary(r => r.StudentId, r => decimal.Round(r.Credit, MoneyScale), StringComparer.Ordinal);
+    }
+
+    /// <summary>
+    /// F1.05 — o'quvchiga QAYTARILGAN (jurnalga tushgan, ya'ni "posted") va
+    /// hali STORNO QILINMAGAN pul, o'quvchi kesimida yig'ilgan.
+    ///
+    /// <para>
+    /// <b>Nima kiradi, nima kirmaydi.</b> Faqat "oddiy" qaytarimlar
+    /// (<c>ReversalOf == null</c>) sanaladi — storno QATORINING o'zi bu
+    /// yerga tushmaydi (u pulni "qaytarish" emas, "qaytarimni bekor qilish").
+    /// Tasdiqlanmagan (<c>ApprovedBy == null</c>) yoki rad etilgan qaytarim
+    /// hali pul harakati EMAS, shuning uchun ham chiqarib tashlanadi. Va
+    /// nihoyat — o'zi storno qilingan (ya'ni unga ishora qiluvchi TASDIQLANGAN
+    /// storno qatori bor) qaytarim ham hisobga olinmaydi: pul javonga qaytdi.
+    /// </para>
+    /// </summary>
+    private async Task<Dictionary<string, decimal>> RefundsByStudentAsync(
+        IReadOnlyCollection<string>? ids, CancellationToken ct)
+    {
+        var refunds = db.StudentRefunds.AsNoTracking()
+            .Where(r => r.ReversalOf == null && r.ApprovedBy != null && r.RejectedReason == null);
+        if (ids is not null) refunds = refunds.Where(r => ids.Contains(r.StudentId));
+
+        var rows = await refunds
+            .Where(r => !db.StudentRefunds.Any(rev =>
+                rev.ReversalOf == r.Id && rev.ApprovedBy != null))
+            .GroupBy(r => r.StudentId)
+            .Select(g => new { StudentId = g.Key, Total = g.Sum(r => r.Amount) })
+            .ToListAsync(ct);
+
+        return rows.ToDictionary(r => r.StudentId, r => decimal.Round(r.Total, MoneyScale), StringComparer.Ordinal);
     }
 
     /// <summary>

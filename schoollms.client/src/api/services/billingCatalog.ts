@@ -22,7 +22,7 @@
  * interfeys avtomatik ravishda ism solishtirishdan id solishtirishga o'tadi;
  * qarang `pages/admin/billing/dualControl.ts`.
  */
-import type { Discount, FeeCategory, StudentSubscription } from '@/types'
+import type { BillingSettings, Discount, FeeCategory, Invoice, StudentSubscription } from '@/types'
 import { api } from '../client'
 
 const BASE = '/admin/billing'
@@ -133,6 +133,36 @@ export async function endSubscription(id: string, endsOn: string): Promise<Subsc
   return data
 }
 
+/**
+ * F1.06 (docs/modules/finance-parity.md §2.1) — obunani yopishdan OLDIN:
+ * `endsOn` oyidan KEYINGI oylarga allaqachon hisoblangan (hali bekor
+ * qilinmagan) hisob-fakturalar. Tugash oyining o'zi bu ro'yxatda YO'Q — u
+ * proratsiya qilinmay, to'liq qarz bo'lib qoladi (bizning qoidamiz).
+ *
+ * Hech narsa yozmaydi — sof o'qish. Tanlangan qatorlarni bekor qilish uchun
+ * `voidInvoice` (`@/api/services/invoices`) har biriga ALOHIDA chaqiriladi;
+ * "bekor qilish mumkinmi" degan javob esa yangi maydon emas, mavjud
+ * `canVoid(invoice)` orqali (o'sha faylda).
+ */
+export async function previewEndSubscription(
+  id: string,
+  endsOn: string,
+): Promise<EndSubscriptionPreview> {
+  const { data } = await api.post<EndSubscriptionPreview>(
+    `${BASE}/subscriptions/${id}/end/preview`,
+    { endsOn },
+  )
+  return data
+}
+
+export interface EndSubscriptionPreview {
+  subscriptionId: string
+  studentName: string
+  categoryName: string
+  endsOn: string
+  futureInvoices: Invoice[]
+}
+
 /* ---------- Chegirmalar (SPEC §8.1 Q5 — chegara YO'Q) ---------- */
 
 export interface DiscountFilters {
@@ -187,35 +217,25 @@ export async function rejectDiscount(id: string, reason: string): Promise<Discou
   return data
 }
 
-/* ---------- Moliya sozlamalari (F14.01, finance-parity.md §2.14) ---------- */
+/* ---------- Moliya sozlamalari (F14.01) ---------- */
 
-export interface BillingSettings {
-  /** Hisob-faktura to'lov muddati — oyning shu kuni (1..28). */
-  paymentDueDay: number
-  /** Shu kundan keyin qarz "muddati o'tgan" hisoblanadi (1..28). */
-  overdueAfterDay: number
-  /** Shu summadan KATTA chiqim ikkinchi shaxsning tasdig'isiz o'tmaydi (SPEC §4.5). */
-  expenseApprovalThreshold: number
-  updatedAt: string
-  updatedByName: string | null
-}
-
-export interface UpdateBillingSettingsInput {
+export interface BillingSettingsInput {
   paymentDueDay: number
   overdueAfterDay: number
+  /**
+   * Forma HAR DOIM joriy qiymatni yuboradi (o'zgartirmasa ham) — server
+   * qiymat HAQIQATAN farq qilgandagina direktorlik tekshiruvini ishga
+   * tushiradi (`threshold_requires_director`, 403).
+   */
   expenseApprovalThreshold: number
 }
 
-/** Joriy moliya sozlamalari — admin va direktor. */
 export async function getBillingSettings(): Promise<BillingSettings> {
   const { data } = await api.get<BillingSettings>(`${BASE}/settings`)
   return data
 }
 
-/** Sozlamalarni saqlaydi — `FinanceAction.ManageBillingSettings` (admin, direktor). */
-export async function updateBillingSettings(
-  input: UpdateBillingSettingsInput,
-): Promise<BillingSettings> {
+export async function updateBillingSettings(input: BillingSettingsInput): Promise<BillingSettings> {
   const { data } = await api.put<BillingSettings>(`${BASE}/settings`, input)
   return data
 }

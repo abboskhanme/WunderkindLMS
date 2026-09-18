@@ -154,7 +154,10 @@ public class ClassMembershipsController(AppDbContext db, AuditService audit) : C
             $"O'quvchi sinfga qo'shildi: {student.FullName} → {cls.Name}",
             after: new { Class = cls.Name }, studentId: student.Id);
         await db.SaveChangesAsync(ct);
-        return NoContent();
+
+        // C-4: sig'im OGOHLANTIRISHI — taqiq emas, amal baribir bajarildi.
+        var warning = await Service.CapacityWarningAsync(cls, ct);
+        return warning is null ? NoContent() : Ok(new ClassCapacityWarningDto(warning));
     }
 
     /// <summary>
@@ -222,6 +225,9 @@ public class ClassMembershipsController(AppDbContext db, AuditService audit) : C
             studentId: student.Id);
         await db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
-        return NoContent();
+
+        // C-4: sig'im OGOHLANTIRISHI — nishon (to) sinf bo'yicha, taqiq emas.
+        var warning = await Service.CapacityWarningAsync(to, ct);
+        return warning is null ? NoContent() : Ok(new ClassCapacityWarningDto(warning));
     }
 }

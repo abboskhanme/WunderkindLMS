@@ -118,7 +118,9 @@ public class RbacMatrixTests(ApiFixture fixture)
         Assert.Equal(500_000m, dto.Amount);
         // SPEC §4.4 — kassir JWT'dan, so'rovdan emas.
         Assert.Equal(actor.User.Id, dto.CashierId);
-        Assert.Equal(actor.ShiftId, dto.CashShiftId);
+        // "Smena" endi yo'q (kassalar modeli, 2026-09) — yangi to'lovda har doim null.
+        Assert.Null(dto.CashShiftId);
+        Assert.NotNull(dto.CashBoxId);
 
         await using var db = NewDb();
         Assert.Equal(actor.User.Id, await db.Payments.AsNoTracking()
@@ -160,9 +162,10 @@ public class RbacMatrixTests(ApiFixture fixture)
             Assert.NotNull(dto);
             Assert.Equal(original.PaymentId, dto.ReversalOf);
             Assert.Equal(300_000m, dto.Amount);
-            // Storno tasdiqlovchining O'Z smenasiga tushadi (SPEC §4.5, P1-11).
+            // Storno tasdiqlovchi nomidan yoziladi (SPEC §4.5, P1-11); "smena" endi yo'q.
             Assert.Equal(actor.User.Id, dto.CashierId);
-            Assert.Equal(actor.ShiftId, dto.CashShiftId);
+            Assert.Null(dto.CashShiftId);
+            Assert.NotNull(dto.CashBoxId);
             Assert.Equal("Kassir summani xato kiritdi", dto.Note);
 
             Assert.NotNull(storno);
@@ -651,6 +654,21 @@ public class RbacMatrixTests(ApiFixture fixture)
     private async Task<OtherCashier> ShiftClosedWithVarianceAsync(decimal shortfall)
     {
         var payment = await PaymentByAnotherCashierAsync(200_000m);
+
+        // Kassalar modelida (2026-09) `PaymentService` endi HECH QACHON
+        // `cash_shift_id` ni to'ldirmaydi — pul SUKUT kassaga tushadi. Bu
+        // metod esa AYNAN smena/variance arifmetikasini sinaydi, shuning
+        // uchun to'lov qatori TO'G'RIDAN-TO'G'RI (OWNER ulanishi bilan,
+        // `app_rw` uchun yopiq REVOKE'ni chetlab o'tib — bu test tayyorgarligi,
+        // ishlab turgan yo'l emas) shu smenaga qayta biriktiriladi. Jurnal
+        // yozuvlari haqiqiy `PaymentService` orqali allaqachon to'g'ri
+        // yozilgan — bu yerda faqat smena bog'lanishi qo'shiladi.
+        await using (var owner = NewDb())
+        {
+            var row = await owner.Payments.SingleAsync(p => p.Id == payment.PaymentId);
+            row.CashShiftId = payment.ShiftId;
+            await owner.SaveChangesAsync();
+        }
 
         // Smenani AYNAN o'sha kassir yopadi — chunki §4.3 ga ko'ra u buni qila oladi.
         await using var db = NewDb();

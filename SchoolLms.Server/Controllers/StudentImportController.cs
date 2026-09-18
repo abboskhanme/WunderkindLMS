@@ -60,7 +60,16 @@ public class StudentImportController(AppDbContext db, AuditService audit) : Cont
             .Where(s => s.IsActive).OrderBy(s => s.Position).ThenBy(s => s.Name)
             .Select(s => s.Name).ToListAsync(ct);
 
-        return File(StudentImportSheet.Template(classes, statuses), XlsxMime, "oquvchilar_shablon.xlsx");
+        // G-19: faol guruhlar "Fan: Guruh" ko'rinishida — aynan "Guruhlar"
+        // katagiga yoziladigan matn, izohnomada ko'chirib qo'yish uchun.
+        var groupLabels = await db.StudyGroups.AsNoTracking().Where(g => !g.IsArchived)
+            .Join(db.Subjects.AsNoTracking(), g => g.SubjectId, s => s.Id,
+                (g, s) => new { SubjectName = s.Name, GroupName = g.Name })
+            .OrderBy(x => x.SubjectName).ThenBy(x => x.GroupName)
+            .Select(x => x.SubjectName + ": " + x.GroupName)
+            .ToListAsync(ct);
+
+        return File(StudentImportSheet.Template(classes, statuses, groupLabels), XlsxMime, "oquvchilar_shablon.xlsx");
     }
 
     /// <summary>
@@ -105,6 +114,21 @@ public class StudentImportController(AppDbContext db, AuditService audit) : Cont
 
         var today = AppClock.Today.ToString("yyyy-MM-dd");
         var touched = new List<Student>(plan.Items.Count);
+
+        // G-19: mavjud o'quvchilarning bugungi FAOL a'zoliklari — bitta
+        // partiyada (qator boshiga so'rov yo'q), toki "guruhlarga qo'shish"
+        // qadami aynan shu guruhda allaqachon turgan bolani qayta qo'shib
+        // unikal indeksga urilmasin.
+        var studentIdsWithGroupCells = plan.Items
+            .Where(i => i.Groups.Count > 0 && i.Existing is not null)
+            .Select(i => i.Existing!.Id)
+            .ToList();
+        var alreadyActiveMemberships = studentIdsWithGroupCells.Count == 0
+            ? []
+            : await db.StudyGroupMembers.AsNoTracking()
+                .Where(m => m.LeftOn == null && studentIdsWithGroupCells.Contains(m.StudentId))
+                .Select(m => new { m.StudentId, m.GroupId })
+                .ToListAsync(ct);
 
         foreach (var item in plan.Items)
         {
@@ -162,6 +186,24 @@ public class StudentImportController(AppDbContext db, AuditService audit) : Cont
                 if (item.StatusId is { } statusId) student.StatusId = statusId;
             }
             touched.Add(student);
+
+            // G-19: FAQAT qo'shadi — katakda yo'q, lekin bugun a'zo bo'lgan
+            // guruhlarga tegilmaydi (fayl izohiga qarang: "faqat qo'shadi").
+            foreach (var g in item.Groups)
+            {
+                var already = alreadyActiveMemberships
+                    .Any(m => m.StudentId == student.Id && m.GroupId == g.GroupId);
+                if (already) continue;
+
+                db.StudyGroupMembers.Add(new StudyGroupMember
+                {
+                    GroupId = g.GroupId,
+                    SubjectId = g.SubjectId,
+                    StudentId = student.Id,
+                    JoinedOn = AppClock.Today,
+                    CreatedBy = CurrentUserId ?? "",
+                });
+            }
         }
 
         audit.Record(AuditEntity, file!.FileName, "create",
@@ -183,4 +225,11 @@ public class StudentImportController(AppDbContext db, AuditService audit) : Cont
         return file.FileName.EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase)
             ? null : NotXlsxMessage;
     }
+
+    /// <summary>JWT'dagi foydalanuvchi id'si — G-19 orqali ochilgan guruh
+    /// a'zoligi yozuvining muallifi (<c>StudentsController.CurrentUserId</c>
+    /// bilan bir xil naqsh).</summary>
+    private string? CurrentUserId =>
+        User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
+        ?? User.FindFirst("sub")?.Value;
 }

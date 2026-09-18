@@ -168,7 +168,7 @@ function NavGroup({ item, onNavigate }: { item: NavItem; onNavigate: () => void 
 
   const childClass = ({ isActive }: { isActive: boolean }) =>
     cn(
-      'flex items-center gap-2 rounded-lg px-3 py-2 text-sm transition-colors',
+      'flex items-center gap-2.5 rounded-lg px-3 py-2 text-[15px] transition-colors',
       isActive
         ? 'bg-brand-50 font-medium text-brand-700'
         : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800',
@@ -206,11 +206,11 @@ function NavGroup({ item, onNavigate }: { item: NavItem; onNavigate: () => void 
           style={{ top: flyoutTop }}
           onMouseEnter={openFlyout}
           onMouseLeave={scheduleClose}
-          className="fixed left-64 z-50 ml-2 hidden max-h-[80vh] overflow-y-auto rounded-2xl border border-slate-200 bg-white p-4 shadow-xl lg:block"
+          className="fixed left-64 z-50 ml-2 hidden max-h-[80vh] max-w-[calc(100vw-17.5rem)] overflow-auto rounded-2xl border border-slate-200 bg-white p-5 shadow-xl lg:block"
         >
           <div
-            className="grid gap-x-8 gap-y-1"
-            style={{ gridTemplateColumns: `repeat(${columns}, minmax(11rem, max-content))` }}
+            className="grid gap-x-10 gap-y-1"
+            style={{ gridTemplateColumns: `repeat(${columns}, max-content)` }}
           >
             {groups.map((g, gi) => (
               <div key={g.name ?? gi} className="min-w-0">
@@ -231,7 +231,7 @@ function NavGroup({ item, onNavigate }: { item: NavItem; onNavigate: () => void 
                     className={childClass}
                   >
                     <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-slate-300" />
-                    <span className="truncate">{child.label}</span>
+                    <span className="whitespace-nowrap">{child.label}</span>
                   </NavLink>
                 ))}
               </div>

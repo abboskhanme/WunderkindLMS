@@ -130,6 +130,20 @@ public interface IAppDbContext
     /// </summary>
     DbSet<ExpenseAttachment> ExpenseAttachments { get; }
 
+    // ---------- Bonus / jarima (finance-parity.md §3.2, Batch B, F11.01/F11.02) ----------
+    // `hr_employees` hali yo'q (HR-01/02/03 qurilmagan) — xodim identifikatsiyasi
+    // `TeacherId`/`UserId` orqali, `hr_employees` o'zi ishlatadigan naqsh bilan
+    // bir xil (`PayrollAdjustments.cs` boshidagi izoh).
+
+    /// <summary>Sabab katalogi (F11.02) — moliyaviy emas, to'liq CRUD.</summary>
+    DbSet<AdjustmentReason> AdjustmentReasons { get; }
+
+    /// <summary>
+    /// Bonus/jarima registri (F11.01). FAQAT INSERT — `app_rw` da UPDATE/DELETE
+    /// yo'q (<c>payroll_adjustments_guards.sql</c>). Tuzatish faqat <c>ReversalOf</c> bilan.
+    /// </summary>
+    DbSet<PayrollAdjustment> PayrollAdjustments { get; }
+
     // ---------- Ikkinchi to'lqin (docs/modules/existing-module-gaps.md) ----------
     // Sxema oldin keladi, ekranlar keyin: bu to'plamni hozircha HECH BIR xizmat
     // o'qimaydi. Ular shu yerda ro'yxatda turibdi, chunki ketma-ket keladigan
@@ -156,6 +170,40 @@ public interface IAppDbContext
     DbSet<StudentComment> StudentComments { get; }
     DbSet<StudentContract> StudentContracts { get; }
     DbSet<Room> Rooms { get; }
+
+    // ---------- O'quv bo'limi pariteti, P2 (students-parity.md §3.3) ----------
+    // Sxema oldin keladi, ekranlar keyin: bu uchtasini hozircha HECH BIR
+    // xizmat o'qimaydi. Hammasi oddiy CRUD — moliyaviy jadval emas, ya'ni
+    // `app_rw` da to'liq huquq bor (`students_parity_p2_guards.sql`).
+
+    /// <summary>
+    /// Sertifikatning QO'SHIMCHA fanlari (Z-3). `certificates.subject_id`
+    /// ("asosiy fan") JOYIDA qoladi va migratsiya shu jadvalni undan BIR
+    /// MARTA to'ldirgan — ikkalasini birga yuritish sertifikat xizmatining ishi.
+    /// </summary>
+    DbSet<CertificateSubject> CertificateSubjects { get; }
+
+    /// <summary>
+    /// O'quvchining turlangan joylashuvlari (L-2) — har turdan bittadan.
+    /// Eski `students.latitude/longitude/location_address` ustunlari
+    /// TEGILMAGAN va hali ham o'qiladi.
+    /// </summary>
+    DbSet<StudentLocation> StudentLocations { get; }
+
+    /// <summary>
+    /// Foydalanuvchi × ekran jadval ko'rinishi (X-1). Mavjud
+    /// <see cref="UserSettings"/> (foydalanuvchiga bitta qator) bilan
+    /// ALMASHTIRILMAYDI — u til/tema uchun, bu ustunlar uchun.
+    /// </summary>
+    DbSet<UserTableSetting> UserTableSettings { get; }
+
+    // ---------- Kassalar (cash boxes) — "smena" o'rnini bosadi (2026-09) ----------
+    // `payments`/`ledger_entries` bilan bir xil qoida: `CashBoxTransactions` —
+    // FAQAT INSERT (`app_rw` da UPDATE/DELETE yo'q,
+    // `Migrations/Sql/cash_boxes_guards.sql`). `CashBoxes` esa oddiy kataloq —
+    // rename/deactivate uchun UPDATE bor, faqat DELETE yopiq.
+    DbSet<CashBox> CashBoxes { get; }
+    DbSet<CashBoxTransaction> CashBoxTransactions { get; }
 
     int SaveChanges();
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);

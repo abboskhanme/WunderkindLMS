@@ -114,6 +114,10 @@ public sealed class StudentListFilter
 }
 
 /// <summary>Ro'yxatning bitta qatori — §2.3.1 dagi ustunlar.</summary>
+/// <param name="TargetGrade">
+/// §3.3 (S-9) — <paramref name="ClassName"/> bo'sh bo'lganda mo'ljaldagi sinf
+/// darajasi (0-11); sinfi bor o'quvchida har doim null.
+/// </param>
 public record StudentListRowDto(
     string Id,
     string FullName,
@@ -138,7 +142,8 @@ public record StudentListRowDto(
     string? ArchivedAt,
     string? ArchiveReason,
     Guid? ArchiveReasonId,
-    string? PhotoUrl);
+    string? PhotoUrl,
+    short? TargetGrade = null);
 
 /// <summary>
 /// Bitta sahifa. <paramref name="TotalDebt"/> va <paramref name="TotalCredit"/> —
@@ -247,11 +252,13 @@ public record StudentImportPreviewDto(
     string? Message = null);
 
 /// <summary>Ko'rib chiqish jadvalining bitta qatori.</summary>
+/// <param name="Groups">G-19 — qatorda tanilgan guruhlar, vergul bilan ("" — yo'q).</param>
 public record StudentImportPreviewRowDto(
     int Row,
     string FullName,
     string ClassName,
-    string Action);
+    string Action,
+    string Groups = "");
 
 /// <summary>Yozib bo'lingandan keyingi yakun.</summary>
 public record StudentImportCommitDto(int Created, int Updated, int Skipped);

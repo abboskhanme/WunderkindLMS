@@ -35,8 +35,7 @@ interface Props {
 /** Kodga qarab "endi nima qilish kerak" — matn emas, KOD bo'yicha. */
 function hintFor(code: string | null): string | null {
   if (code === 'no_open_shift') {
-    return "Storno qatori sizning O'Z ochiq smenangizga tushadi — pul bugun, sizning "
-      + "kassangizdan chiqadi. Avval kassada smena oching."
+    return "Storno summasi sizning bugungi kassangizdan chiqadi."
   }
   if (code === 'own_payment_reversal') {
     return "Ikki qavatli nazorat (SPEC §4.5): o'zingiz qabul qilgan to'lovni o'zingiz "

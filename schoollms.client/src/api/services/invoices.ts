@@ -83,6 +83,29 @@ export async function listInvoices(filters: InvoiceRegisterFilters = {}): Promis
 }
 
 /**
+ * O'sha filtr bo'yicha .xlsx (F10.05) — BUTUN FILTR, ko'rinib turgan
+ * sahifa emas. `transactions.ts` dagi `downloadTransactions` bilan bir xil
+ * yuklab olish naqshi.
+ */
+export async function downloadInvoices(filters: InvoiceRegisterFilters = {}): Promise<void> {
+  const res = await api.get(`${BASE}/export`, {
+    params: clean({ ...filters, page: undefined, pageSize: undefined }),
+    responseType: 'blob',
+  })
+
+  const url = URL.createObjectURL(res.data as Blob)
+  const a = document.createElement('a')
+  a.href = url
+  const cd = (res.headers['content-disposition'] as string | undefined) ?? ''
+  const m = cd.match(/filename="?([^"]+)"?/)
+  a.download = m?.[1] ?? `hisob-fakturalar_${new Date().toISOString().slice(0, 10)}.xlsx`
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  URL.revokeObjectURL(url)
+}
+
+/**
  * Xato hisoblangan oyni BEKOR qiladi. Sabab majburiy — u jurnal yozuvida
  * va audit qatorida qoladi.
  *

@@ -141,12 +141,15 @@ public class BillingSettingsTests(ApiFixture fixture)
     //  3. Tekshiruv — noto'g'ri qiymat 400, baza tegilmaydi
     // =====================================================================
 
+    // Kod nomlari `BillingSettingsService.UpdateAsync` dan (2026-09-18 birlashtirishda
+    // shu servis controllerdagi bevosita tekshiruvni almashtirdi — qarang
+    // `docs/modules/finance-parity.md` §8, F14.01 birlashtirish izohi).
     [Theory]
-    [InlineData(0, 15, 5_000_000, "invalid_payment_due_day")]     // kun < 1
-    [InlineData(29, 29, 5_000_000, "invalid_payment_due_day")]    // kun > 28
-    [InlineData(15, 10, 5_000_000, "invalid_overdue_after_day")]  // muddat < to'lov kuni
-    [InlineData(10, 29, 5_000_000, "invalid_overdue_after_day")]  // muddat > 28
-    [InlineData(10, 15, -1, "invalid_expense_threshold")]         // manfiy chegara
+    [InlineData(0, 15, 5_000_000, "due_day_range")]          // kun < 1
+    [InlineData(29, 29, 5_000_000, "due_day_range")]         // kun > 28
+    [InlineData(15, 10, 5_000_000, "overdue_before_due")]    // muddat < to'lov kuni
+    [InlineData(10, 29, 5_000_000, "overdue_day_range")]     // muddat > 28
+    [InlineData(10, 15, -1, "negative_threshold")]           // manfiy chegara
     public async Task Notogri_qiymat_400_va_bazani_ozgartirmaydi(
         int paymentDueDay, int overdueAfterDay, decimal threshold, string expectedCode)
     {

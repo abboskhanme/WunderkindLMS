@@ -458,7 +458,7 @@ public class TransactionJournalTests(ApiFixture fixture) : IAsyncLifetime
 
     /// <summary>Storno qiluvchi admin nomidan ishlaydigan to'lov xizmati.</summary>
     private static PaymentService PaymentsAs(AppDbContext db, World world) =>
-        new(db, new ShiftStub(world.AdminShiftId, world.AdminId), world.Ledger);
+        new(db, world.Ledger);
 
     private static async Task<string> SeedUserAsync(AppDbContext db, string role)
     {
@@ -539,36 +539,4 @@ public class TransactionJournalTests(ApiFixture fixture) : IAsyncLifetime
         return expense.Id;
     }
 
-    /// <summary>
-    /// <see cref="ICashShiftService"/> ning storno uchun yetadigan qismi:
-    /// tasdiqlovchining ochiq smenasi va keyingi chek raqami. Haqiqiy
-    /// <c>CashShiftService</c> bu testlarda kerak emas — storno faqat
-    /// INTERFEYSGA tayanadi.
-    /// </summary>
-    private sealed class ShiftStub(Guid shiftId, string cashierId) : ICashShiftService
-    {
-        private long _receipt = 1000;
-
-        public Task<CashShiftDto?> CurrentAsync(string userId, CancellationToken ct = default) =>
-            Task.FromResult<CashShiftDto?>(new CashShiftDto(
-                shiftId, cashierId, "Kassir", AppClock.NowInstant, null, 0m,
-                null, null, null, CashShiftStatus.Open, null, 0, 0m, 0m));
-
-        public Task<long> NextReceiptNoAsync(Guid id, CancellationToken ct = default) =>
-            Task.FromResult(Interlocked.Increment(ref _receipt));
-
-        public Task<CashShiftDto> OpenAsync(string id, decimal openingFloat, CancellationToken ct = default) =>
-            throw new NotSupportedException();
-
-        public Task<CashShiftDto> CloseAsync(
-            Guid id, string closedBy, decimal counted, string? note, CancellationToken ct = default) =>
-            throw new NotSupportedException();
-
-        public Task<ZReportDto> ZReportAsync(Guid id, CancellationToken ct = default) =>
-            throw new NotSupportedException();
-
-        public Task<IReadOnlyList<CashShiftDto>> ListAsync(
-            CashShiftQuery query, CancellationToken ct = default) =>
-            throw new NotSupportedException();
-    }
 }

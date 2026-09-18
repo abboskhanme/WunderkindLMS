@@ -38,6 +38,10 @@ public record CertificateTypePayload(string Name, bool IsScored, bool IsActive);
 /// <param name="TypeIsScored">Turning bayrog'i — forma "Ball" maydonini shu bo'yicha ochadi.</param>
 /// <param name="IsExpired">Muddati bugunga nisbatan o'tganmi. SERVERDA hisoblanadi
 /// (maktab vaqti bilan, AppClock) — brauzerning soati boshqa mintaqada bo'lishi mumkin.</param>
+/// <param name="SubjectId">ASOSIY (birinchi tanlangan) fan — eski, bitta-fanli ekranlar
+/// va eksport ustuni shu maydonni o'qiydi. <c>certificates.subject_id</c> bilan bir xil.</param>
+/// <param name="SubjectIds">Z-3 — hujjatning HAMMA fani, <c>certificate_subjects</c>
+/// dan. <see cref="SubjectId"/> shu ro'yxatning birinchi elementi (bo'sh bo'lmasa).</param>
 public record CertificateDto(
     Guid Id,
     string StudentId, string StudentName, string ClassName,
@@ -46,17 +50,26 @@ public record CertificateDto(
     string? TeacherId, string? TeacherName,
     string? Number, decimal? Score,
     string IssuedOn, string? ExpiresOn, bool IsExpired,
-    string? FileUrl, string? Comment);
+    string? FileUrl, string? Comment,
+    List<string> SubjectIds, List<string> SubjectNames);
 
 /// <summary>
 /// Sertifikat formasi. <see cref="Score"/> FAQAT turi <c>IsScored</c> bo'lganda
 /// qabul qilinadi — bazada bu bog'liqlik tekshirilmaydi (ikki jadvalga tegishli),
 /// uni <c>CertificateService</c> tekshiradi va o'qiladigan xato qaytaradi.
+///
+/// <para>
+/// <b><see cref="SubjectIds"/> — Z-3</b> (bir nechta fan). <see cref="SubjectId"/>
+/// (birlik) ESKI YO'L sifatida joyida qoladi: <c>SubjectIds</c> berilmasa/bo'sh
+/// bo'lsa, xizmat qatlami shu bitta maydonni bitta fan sifatida oladi. Ikkalasi
+/// birga kelsa — <c>SubjectIds</c> g'olib chiqadi.
+/// </para>
 /// </summary>
 public record CertificatePayload(
     string StudentId, Guid TypeId, string? SubjectId, string? TeacherId,
     string? Number, decimal? Score, string IssuedOn, string? ExpiresOn,
-    string? FileUrl, string? Comment);
+    string? FileUrl, string? Comment,
+    IReadOnlyList<string>? SubjectIds = null);
 
 /// <summary>
 /// "Natijalar" tab'ining bitta qatori — bitta o'quvchi, bitta ballik tur.

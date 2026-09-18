@@ -1,198 +1,369 @@
 /**
- * MOLIYA SOZLAMALARI — F14.01 (docs/modules/finance-parity.md §2.14).
+ * Moliya sozlamalari — endi ikki ustunli KATALOGLAR MARKAZI (2026-09-18).
  *
- * EduSchool'da `FINANCE_SETTINGS` bo'limi bitta katta forma; ozimizniki
- * hozircha faqat uchta qiymatni ochadi — to'lov muddati, muddati o'tgan deb
- * hisoblash kuni va chiqim tasdiq chegarasi. Bu uchtasi allaqachon
- * `billing_settings` jadvalida bor (`SchoolLms.Domain/Billing.cs`,
- * migratsiya YO'Q kerak); ilgari faqat qo'lda `UPDATE SQL` bilan
- * o'zgarardi — ExpenseService, InvoiceService faqat O'QIYDI
- * (docs/PENDING_WIRING.md §E). Bu ekran birinchi YOZUVCHI.
+ * IKKI USTUNLI SHAKL — MIJOZ YUBORGAN EDUSCHOOL EKRANIDAN
+ * -----------------------------------------------------------
+ * Mijoz EduSchool'ning o'z "Finance settings" ekranini yubordi: chapda
+ * kataloglar ro'yxati (tugma, tanlangani belgilangan), o'ngda tanlangan
+ * katalogning o'zi. Bu yerda o'sha TUZILMA olindi — ko'rinish EMAS (CLAUDE.md:
+ * "bizning vizual tilimiz — iOS/Apple minimalizmi — bizniki bo'lib qoladi").
+ * Ranglar, shrift, karta uslubi — hammasi `BillingUi.tsx` va shu papkadagi
+ * boshqa sahifalar bilan bir xil.
  *
- * RUXSAT (SPEC §4.3): admin va direktor (`FinanceAction.ManageBillingSettings`,
- * server darvozasi — `[FinanceRole(...)]` `BillingCatalogController` da).
- * Qolgan katalog toifalari (transaction type, payment method, currency)
- * §2.0 da DECLINED — bizda yopiq `Accounts.cs` va so'm-yagona.
+ * NEGA SAHIFALAR QAYTADAN YOZILMADI: chap ustundagi to'rtta katalog
+ * (`CategoriesPage`, `SubscriptionsPage`, `DiscountsPage`, `DebtorStatusesPage`)
+ * — MAVJUD sahifalar, shu yerga O'ZGARTIRILMAY import qilib qo'yilgan. Ular
+ * o'z marshrutlarida (`/admin/billing/categories` va h.k.) ALOHIDA ham
+ * ishlayveradi — bu yerda faqat IKKINCHI kirish nuqtasi qo'shildi, birinchisi
+ * yo'qolmadi. Vazifa navigatsiya, funksiya emas: sahifalarning ichki mantig'i,
+ * so'rovlari, formalari — bittasi ham qayta yozilmagan.
  *
- * MARSHRUT ULANMAGAN — `CLAUDE.md` qattiq qoidasi: `App.tsx` va
- * `navigation.ts` bu vazifada TAHRIRLANMAYDI. Komponent nomlangan eksport,
- * o'z rolini o'zi tekshiradi (P1-17 uslubi) — keyingi navigatsiya
- * vazifasi uni `/admin/billing/settings` ga ulashi kifoya.
+ * NEGA HAMMASI BIR XIL "№ / Nomi / Amallar" JADVALIGA SOLINMADI: EduSchool
+ * ekranida har bir katalog xuddi shu jadval ko'rinishida (nomlangan
+ * yozuvlar ro'yxati — qo'shish/tahrirlash/o'chirish). Bizda esa faqat
+ * IKKITASI (`To'lov toifalari`, `Qarzdor holatlari`) haqiqatan ham shunday —
+ * flat, nomlangan katalog. Qolgan ikkitasi boshqacha:
+ *   - `Obunalar` — o'quvchi bo'yicha guruhlangan obuna YOZUVLARI, nomlangan
+ *     TUR emas (finance-parity.md §2.14.3: "subscription plans... declined —
+ *     a school bills per category per month").
+ *   - `Chegirmalar` — chegirma SO'ROVLARI navbati (direktor tasdig'i bilan),
+ *     nomlangan chegirma TURLARI emas (`discount_types` hali qurilmagan —
+ *     §2.14.3 F14.02, P2).
+ * Ularni zo'rlab bitta jadval shakliga tiqish sahifaning haqiqiy vazifasini
+ * yashirardi va qayta yozishni talab qilardi — CLAUDE.md "additive, rebuild
+ * qilma" qoidasiga zid. Shu sabab o'ng panel — har bir katalog o'zining
+ * TABIIY ko'rinishida, faqat CHAP panel bir xil.
+ *
+ * XILLAR (pill-tab) — QO'LLANMAYDI: EduSchool'ning namunasida faqat
+ * Tranzaksiya turi katalogi Kirim/Chiqim/Bonus/Jarima pillarini ko'rsatadi.
+ * Bizda Tranzaksiya turi katalogi umuman yo'q (pastga qarang), va tanlangan
+ * to'rttamizning birontasida ham "xil" tushunchasi yo'q — shuning uchun bu
+ * sahifada pill-tab qatori qurilmagan.
+ *
+ * XARITALASH — ULARNING O'N TASI, BIZNING TO'RTTAMIZ (finance-parity.md §2.14):
+ *   Tranzaksiya turi     → yo'q. Tahrirlanadigan tur daraxti YOPIQ (§2.0:
+ *                          "Editable transaction-type tree... declined —
+ *                          closed Accounts.cs"). "To'lov toifalari" bunga
+ *                          ENG YAQINI, lekin aynan o'rnini bosmaydi.
+ *   To'lov usuli         → yo'q, xuddi shu sababdan YOPIQ (`PaymentMethod`).
+ *   Abonement            → Obunalar (ustuvor, operatsion shaklda).
+ *   Chegirma             → Chegirmalar (navbat shaklida, tur katalogisiz).
+ *   Pul birligi          → yo'q — so'm yolg'iz (§2.0: "declined — so'm only").
+ *   Coin birligi         → yo'q — gamifikatsiya, bizda mavjud emas.
+ *   Tizim obunasi        → yo'q — EduSchool o'zining SaaS to'lovi, bizga
+ *                          aloqasi yo'q ("not applicable", §2.0).
+ *   Rejali xarajat       → yo'q — F6.01 (P2), hali qurilmagan shablon
+ *                          katalogi. ("Chiqimlar" bunga TENG EMAS — u haqiqiy
+ *                          chiqim yozuvi, shablon emas, va operatsion ekran —
+ *                          pastga qarang.)
+ *   Soliq                → yo'q — soliq stavkalari `hr.md` §2.5 da, alohida.
+ *   Qarzdorlik holatlari → Qarzdor holatlari (§2.14.1'da AYNAN shu nom bilan).
+ *
+ * BU YERGA QO'SHILMAGANLAR — OPERATSION EKRANLAR, KATALOG EMAS
+ * -----------------------------------------------------------------
+ * Mijoz yuborgan EduSchool ekranida ham bularning birontasi yo'q — ular
+ * boshqa joyda: kunlik ish jarayoni yoki hisobot, "ma'lumotnoma" emas.
+ *   - Umumiy (`/admin/finance`) — direktor paneli, Moliya bo'limining o'zi.
+ *     `navigation.ts` AMALLAR guruhida hamon alohida yozuvga ega.
+ *   - Kassa kuni (`/admin/finance/cash-day`) — kunlik hisobot; mijozning
+ *     o'zi so'rab menyudan OLIB TASHLATGAN (b499848 izohi). Munosib uyi —
+ *     Umumiy panelidagi Z-hisobot/Nomuvofiqlik tablari yonida.
+ *   - Qaytarimlar (`/admin/finance/refunds`) — ikki qavatli tasdiq
+ *     jarayoni; tabiiy uyi — Tranzaksiyalar/o'quvchi balansi yonida.
+ *   - Chiqimlar (`/admin/billing/expenses`) — chiqim yozish + tasdiq
+ *     navbati, HAQIQIY operatsiya (shablon emas). Tabiiy uyi — Kassa/
+ *     Tranzaksiyalar yonida, kunlik ishlatiladigan ekranlar qatorida.
+ *   `navigation.ts` ga tegishli o'zgarish shu PR qamrovidan tashqarida
+ *   (taqiqlangan fayl) — hisobotda qanday yetib borish yozilgan.
  */
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
-import { Check, Lock, Settings2 } from 'lucide-react'
-import {
-  getBillingSettings,
-  updateBillingSettings,
-  type BillingSettings,
-} from '@/api/services/billingCatalog'
-import { useAuth } from '@/context/auth-context'
+import { useSearchParams } from 'react-router-dom'
+import { Check, Layers, Settings, ShieldCheck, Tag, Users } from 'lucide-react'
+import type { BillingSettingsInput } from '@/api/services/billingCatalog'
+import { getBillingSettings, updateBillingSettings } from '@/api/services/billingCatalog'
+import { billingErrorMessage } from '@/api/services/billingError'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
-import { Loader } from '@/components/ui/Loader'
-import { Notice } from '@/pages/admin/billing/BillingUi'
+import { cn, formatDate, formatMoney } from '@/lib/utils'
+import { AsyncBlock, BillingGuard, Notice } from './BillingUi'
+import { useBillingAccess } from './access'
+import { CategoriesPage } from './CategoriesPage'
+import { SubscriptionsPage } from './SubscriptionsPage'
+import { DiscountsPage } from './DiscountsPage'
+import { DebtorStatusesPage } from '../finance/DebtorStatusesPage'
 
-const ALLOWED_ROLES = ['admin', 'superadmin']
+type SectionKey = 'settings' | 'categories' | 'subscriptions' | 'discounts' | 'debtor-statuses'
 
-function formatMoney(v: number): string {
-  return v.toLocaleString('ru-RU').replace(/,/g, ' ')
+/**
+ * Chap ustun — tartib ataylab shunday: `settings` BIRINCHI, chunki bu
+ * sahifaning marshruti (`/admin/billing/settings`) va nomi ("Moliya
+ * sozlamalari") aynan shu forma atrofida qurilgan — kataloglar UNGA
+ * QO'SHILDI, u kataloglarga emas. Ro'yxatning "ustida" alohida bo'lim
+ * qilib chiqarish (masalan sarlavha darajasida) ortiqcha ierarxiya
+ * qo'shardi; EduSchool'ning o'zi ham bir xil darajadagi tugmalar qatorini
+ * ko'rsatadi — biz shu bir xillikni saqlaymiz, faqat birinchisini forma
+ * egallaydi.
+ */
+const SECTIONS: Array<{ key: SectionKey; label: string; icon: typeof Layers }> = [
+  { key: 'settings', label: 'Sozlamalar', icon: Settings },
+  { key: 'categories', label: "To'lov toifalari", icon: Layers },
+  { key: 'subscriptions', label: 'Obunalar', icon: Users },
+  { key: 'discounts', label: 'Chegirmalar', icon: ShieldCheck },
+  { key: 'debtor-statuses', label: 'Qarzdor holatlari', icon: Tag },
+]
+
+function isSectionKey(value: string | null): value is SectionKey {
+  return !!value && SECTIONS.some((s) => s.key === value)
 }
 
 export function BillingSettingsPage() {
-  const { user } = useAuth()
-  const allowed = user !== null && ALLOWED_ROLES.includes(user.role)
+  return (
+    <BillingGuard>
+      <BillingSettingsHub />
+    </BillingGuard>
+  )
+}
 
-  const [settings, setSettings] = useState<BillingSettings | null>(null)
-  const [form, setForm] = useState({
-    paymentDueDay: 10,
-    overdueAfterDay: 15,
-    expenseApprovalThreshold: 5_000_000,
-  })
+/**
+ * Ikki ustunli qobiq: chap — tanlov, o'ng — tanlangan bo'limning o'zi.
+ * Tanlov `?tab=` orqali URL'da saqlanadi (`FinancialReportsPage.tsx` dagi
+ * bilan bir xil naqsh) — havola ulashish yoki orqaga qaytish tanlovni
+ * yo'qotmaydi. Yangi marshrut QO'SHILMAGAN: hammasi shu bitta
+ * `/admin/billing/settings` ustida, `App.tsx` ga tegilmagan.
+ */
+function BillingSettingsHub() {
+  const [params, setParams] = useSearchParams()
+  const requested = params.get('tab')
+  const active: SectionKey = isSectionKey(requested) ? requested : 'settings'
+
+  const select = (key: SectionKey) => {
+    setParams(key === 'settings' ? {} : { tab: key }, { replace: true })
+  }
+
+  return (
+    <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
+      <nav className="flex gap-1.5 overflow-x-auto pb-1 lg:w-56 lg:shrink-0 lg:flex-col lg:overflow-visible lg:pb-0">
+        {SECTIONS.map(({ key, label, icon: Icon }) => (
+          <button
+            key={key}
+            type="button"
+            onClick={() => select(key)}
+            className={cn(
+              'flex shrink-0 items-center gap-2.5 rounded-xl px-3 py-2.5 text-left text-sm font-medium transition-colors lg:w-full',
+              active === key
+                ? 'bg-brand-50 text-brand-700'
+                : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900',
+            )}
+          >
+            <Icon className="h-4 w-4 shrink-0" />
+            <span className="whitespace-nowrap">{label}</span>
+          </button>
+        ))}
+      </nav>
+
+      <div className="min-w-0 flex-1">
+        {active === 'settings' && <BillingSettingsForm />}
+        {active === 'categories' && <CategoriesPage />}
+        {active === 'subscriptions' && <SubscriptionsPage />}
+        {active === 'discounts' && <DiscountsPage />}
+        {active === 'debtor-statuses' && <DebtorStatusesPage />}
+      </div>
+    </div>
+  )
+}
+
+function BillingSettingsForm() {
+  const { canManageBillingSettings, isDirector } = useBillingAccess()
+
+  const [updatedAt, setUpdatedAt] = useState<string | null>(null)
+  const [updatedByName, setUpdatedByName] = useState<string | null>(null)
+  const [loaded, setLoaded] = useState(false)
   const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState(false)
-  const [saved, setSaved] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  useEffect(() => {
-    // Ruxsati yo'q foydalanuvchi uchun `loading` HECH QACHON ishlatilmaydi —
-    // pastdagi render bloki `!allowed` bo'lsa Loader'gacha yetmasdan
-    // "yopiq" kartani qaytaradi (`TransactionsPage.tsx` dagi bir xil naqsh).
-    if (!allowed) return
+  const [dueDay, setDueDay] = useState(10)
+  const [overdueDay, setOverdueDay] = useState(15)
+  const [threshold, setThreshold] = useState(0)
+
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
+  const [saved, setSaved] = useState(false)
+
+  const load = useCallback(() => {
+    setLoading(true)
+    setError(null)
     getBillingSettings()
       .then((s) => {
-        setSettings(s)
-        setForm({
-          paymentDueDay: s.paymentDueDay,
-          overdueAfterDay: s.overdueAfterDay,
-          expenseApprovalThreshold: s.expenseApprovalThreshold,
-        })
+        setDueDay(s.paymentDueDay)
+        setOverdueDay(s.overdueAfterDay)
+        setThreshold(s.expenseApprovalThreshold)
+        setUpdatedAt(s.updatedAt)
+        setUpdatedByName(s.updatedByName ?? null)
+        setLoaded(true)
       })
-      .catch((e: unknown) => {
-        const message = (e as { response?: { data?: { message?: string } } })?.response?.data
-          ?.message
-        setError(message ?? "Sozlamalarni yuklab bo'lmadi")
-      })
+      .catch((e: unknown) => setError(billingErrorMessage(e, "Sozlamalarni yuklab bo'lmadi")))
       .finally(() => setLoading(false))
-  }, [allowed])
+  }, [])
 
-  const onSubmit = async (e: FormEvent) => {
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- sahifa ochilganda birinchi yuklash (loyihadagi umumiy naqsh)
+  useEffect(() => load(), [load])
+
+  const dueDayError =
+    dueDay < 1 || dueDay > 28 ? "1 dan 28 gacha bo'lishi kerak." : null
+  const overdueDayError =
+    overdueDay < 1 || overdueDay > 28
+      ? "1 dan 28 gacha bo'lishi kerak."
+      : overdueDay < dueDay
+        ? "To'lov muddati kunidan kichik bo'lishi mumkin emas."
+        : null
+  const thresholdError = threshold < 0 ? "Manfiy bo'lishi mumkin emas." : null
+
+  const valid = !dueDayError && !overdueDayError && !thresholdError
+
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
+    if (!valid || saving) return
     setSaving(true)
+    setSaveError(null)
     setSaved(false)
-    setError(null)
+    // Chegara HAR DOIM yuboriladi — o'zgartirilmagan bo'lsa ham. Server buni
+    // joriy qiymati bilan solishtiradi va faqat HAQIQIY o'zgarishda direktorlik
+    // talab qiladi (`billingCatalog.ts` — `BillingSettingsInput` izohi).
+    const input: BillingSettingsInput = {
+      paymentDueDay: dueDay,
+      overdueAfterDay: overdueDay,
+      expenseApprovalThreshold: threshold,
+    }
     try {
-      const next = await updateBillingSettings(form)
-      setSettings(next)
+      const updated = await updateBillingSettings(input)
+      setDueDay(updated.paymentDueDay)
+      setOverdueDay(updated.overdueAfterDay)
+      setThreshold(updated.expenseApprovalThreshold)
+      setUpdatedAt(updated.updatedAt)
+      setUpdatedByName(updated.updatedByName ?? null)
       setSaved(true)
       setTimeout(() => setSaved(false), 2000)
-    } catch (e: unknown) {
-      const message = (e as { response?: { data?: { message?: string } } })?.response?.data
-        ?.message
-      setError(message ?? "Saqlab bo'lmadi")
+    } catch (err) {
+      setSaveError(billingErrorMessage(err, "Saqlab bo'lmadi"))
     } finally {
       setSaving(false)
     }
   }
 
-  if (!allowed) {
-    return (
-      <Card className="mx-auto max-w-lg text-center">
-        <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-slate-100 text-slate-400">
-          <Lock className="h-6 w-6" />
-        </div>
-        <h2 className="text-base font-semibold text-slate-800">Bu bo'lim sizga yopiq</h2>
-        <p className="mt-2 text-sm text-slate-500">
-          Moliya sozlamalari — faqat administrator va direktorga ochiq (SPEC §4.3).
-        </p>
-      </Card>
-    )
-  }
-
-  if (loading) return <Loader label="Yuklanmoqda..." />
-
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="flex items-center gap-2 text-xl font-semibold text-slate-800">
-          <Settings2 className="h-5 w-5 text-slate-400" />
-          Moliya sozlamalari
-        </h1>
-        <p className="mt-0.5 text-sm text-slate-500">
-          To'lov muddati, qarzdorlik va chiqim tasdig'i chegarasi — butun maktab bo'ylab amal
+        <h1 className="text-xl font-semibold text-slate-800">Moliya sozlamalari</h1>
+        <p className="text-sm text-slate-400">
+          To'lov muddati, qarzdorlik va ikki qavatli nazorat chegarasi — butun maktab bo'ylab amal
           qiladi.
         </p>
       </div>
 
-      {error && <Notice>{error}</Notice>}
+      <Card className="p-0">
+        <AsyncBlock
+          loading={loading}
+          error={error}
+          empty={false}
+          emptyText=""
+          onRetry={load}
+        >
+          {loaded && (
+            <form onSubmit={handleSubmit} className="max-w-2xl space-y-5 p-5">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <Input
+                    label="To'lov muddati kuni"
+                    type="number"
+                    min={1}
+                    max={28}
+                    required
+                    disabled={!canManageBillingSettings}
+                    value={dueDay}
+                    onChange={(e) => setDueDay(Number(e.target.value))}
+                  />
+                  <p className="mt-1 text-xs text-slate-400">
+                    Har oyning shu kunigacha hisob-faktura to'lanishi kerak (1–28). Yangi qiymat
+                    faqat KEYINGI hisoblashga qo'llanadi — eski hisob-fakturalarning to'lov
+                    muddati o'zgarmaydi.
+                  </p>
+                  {dueDayError && <p className="mt-1 text-xs text-red-600">{dueDayError}</p>}
+                </div>
 
-      <Card>
-        <form onSubmit={onSubmit} className="max-w-xl space-y-4">
-          <Input
-            label="To'lov muddati (oyning shu kuni)"
-            type="number"
-            min={1}
-            max={28}
-            required
-            value={form.paymentDueDay}
-            onChange={(e) => setForm((f) => ({ ...f, paymentDueDay: Number(e.target.value) }))}
-          />
-          <p className="-mt-3 text-xs text-slate-400">
-            Hisob-faktura shu kungacha to'lanishi kutiladi (1–28). Oylik hisoblash shundan
-            <code className="mx-1 rounded bg-slate-100 px-1">due_on</code>
-            ni chiqaradi.
-          </p>
+                <div>
+                  <Input
+                    label="Muddati o'tgan deb hisoblash kuni"
+                    type="number"
+                    min={1}
+                    max={28}
+                    required
+                    disabled={!canManageBillingSettings}
+                    value={overdueDay}
+                    onChange={(e) => setOverdueDay(Number(e.target.value))}
+                  />
+                  <p className="mt-1 text-xs text-slate-400">
+                    Shu kundan keyin to'lanmagan hisob-faktura qarzdorlar ro'yxatiga tushadi
+                    (to'lov muddati kunidan kichik bo'lmasligi kerak).
+                  </p>
+                  {overdueDayError && (
+                    <p className="mt-1 text-xs text-red-600">{overdueDayError}</p>
+                  )}
+                </div>
+              </div>
 
-          <Input
-            label="Muddati o'tgan deb hisoblash kuni"
-            type="number"
-            min={form.paymentDueDay}
-            max={28}
-            required
-            value={form.overdueAfterDay}
-            onChange={(e) => setForm((f) => ({ ...f, overdueAfterDay: Number(e.target.value) }))}
-          />
-          <p className="-mt-3 text-xs text-slate-400">
-            To'lov muddati kunidan kichik bo'lmasligi kerak (1–28). Qarzdorlar ro'yxati va
-            "muddati o'tgan" belgisi shu kundan keyin yoqiladi.
-          </p>
+              <div className="rounded-xl border border-slate-200 p-4">
+                <div className="mb-2 flex items-center gap-2">
+                  <ShieldCheck className="h-4 w-4 text-brand-600" />
+                  <span className="text-sm font-medium text-slate-700">
+                    Chiqim tasdiq chegarasi (ikki qavatli nazorat)
+                  </span>
+                </div>
+                <Input
+                  type="number"
+                  min={0}
+                  step={1000}
+                  required
+                  disabled={!isDirector}
+                  value={threshold}
+                  onChange={(e) => setThreshold(Number(e.target.value))}
+                />
+                <p className="mt-1 text-xs text-slate-400">
+                  {formatMoney(threshold)} dan yuqori chiqim ikkinchi, boshqa shaxsning
+                  tasdig'isiz jurnalga tushmaydi. Tasdiq kutayotgan eski chiqimlarning holati
+                  o'zgarmaydi — chegara faqat yangi chiqimga qo'llanadi.{' '}
+                  {!isDirector &&
+                    "Faqat direktor o'zgartira oladi — bu ikki qavatli nazorat parametri."}
+                </p>
+                {thresholdError && (
+                  <p className="mt-1 text-xs text-red-600">{thresholdError}</p>
+                )}
+              </div>
 
-          <Input
-            label="Chiqim tasdiq chegarasi (so'm)"
-            type="number"
-            min={0}
-            step={1000}
-            required
-            value={form.expenseApprovalThreshold}
-            onChange={(e) =>
-              setForm((f) => ({ ...f, expenseApprovalThreshold: Number(e.target.value) }))
-            }
-          />
-          <p className="-mt-3 text-xs text-slate-400">
-            Shu summadan katta chiqim direktorning (yaratuvchidan boshqa shaxsning) tasdig'isiz
-            jurnalga tushmaydi (SPEC §4.5). Hozir: {formatMoney(form.expenseApprovalThreshold)}{' '}
-            so'm.
-          </p>
+              {saveError && <Notice>{saveError}</Notice>}
 
-          <div className="flex items-center gap-3 pt-2">
-            <Button type="submit" disabled={saving}>
-              {saving ? 'Saqlanmoqda...' : 'Saqlash'}
-            </Button>
-            {saved && (
-              <span className="inline-flex items-center gap-1 text-sm font-medium text-emerald-600">
-                <Check className="h-4 w-4" /> Saqlandi
-              </span>
-            )}
-          </div>
+              {updatedByName && updatedAt && (
+                <p className="text-xs text-slate-400">
+                  Oxirgi o'zgartirdi: {updatedByName}, {formatDate(updatedAt)}
+                </p>
+              )}
 
-          {settings?.updatedByName && (
-            <p className="pt-1 text-xs text-slate-400">
-              Oxirgi o'zgartirish: {settings.updatedByName},{' '}
-              {new Date(settings.updatedAt).toLocaleString('uz-UZ')}
-            </p>
+              {canManageBillingSettings && (
+                <div className="flex items-center gap-3">
+                  <Button type="submit" disabled={!valid || saving}>
+                    {saving ? 'Saqlanmoqda...' : 'Saqlash'}
+                  </Button>
+                  {saved && (
+                    <span className="inline-flex items-center gap-1 text-sm font-medium text-emerald-600">
+                      <Check className="h-4 w-4" /> Saqlandi
+                    </span>
+                  )}
+                </div>
+              )}
+            </form>
           )}
-        </form>
+        </AsyncBlock>
       </Card>
     </div>
   )

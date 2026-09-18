@@ -244,13 +244,26 @@ public sealed class TransactionJournalQuery(IAppDbContext db)
     /// tekshiradi: jurnalning kun chegarasi to'lovlar ro'yxatinikidan
     /// farq qilsa, bitta to'lov ikki ekranda ikki xil kunga tushib qolardi.
     /// </para>
+    /// <para>
+    /// <b>DEFEKT (topilgan va tuzatilgan): ofset endi HOZIRGI lahzadan
+    /// hisoblanadi, <c>DateTimeOffset.UnixEpoch</c> (1970) dan EMAS.</b>
+    /// <c>Asia/Tashkent</c> tzdata'sida 1970-yilgi rasmiy siljish +06:00 edi
+    /// (Sovet davri), hozirgisi esa +05:00 — eski kod shu farq tufayli
+    /// "bugungi kun"ni haqiqiydan 1 soat erta yopardi (Toshkentda soat
+    /// 23:00–24:00 orasidagi to'lov kunlik filtrdan tushib qolardi). To'liq
+    /// izoh: <c>PaymentService.SchoolOffset</c>.
+    /// </para>
     /// </summary>
-    private static readonly TimeSpan SchoolOffset =
-        AppClock.ToLocal(DateTimeOffset.UnixEpoch) - DateTimeOffset.UnixEpoch.UtcDateTime;
+    private static TimeSpan SchoolOffset()
+    {
+        var instant = AppClock.NowInstant;
+        var minutes = Math.Round((AppClock.ToLocal(instant) - instant.UtcDateTime).TotalMinutes);
+        return TimeSpan.FromMinutes(minutes);
+    }
 
     /// <summary>Maktab kunining boshlanish lahzasi.</summary>
     public static DateTimeOffset StartOfSchoolDay(DateOnly day) =>
-        new DateTimeOffset(day.ToDateTime(TimeOnly.MinValue), SchoolOffset).ToUniversalTime();
+        new DateTimeOffset(day.ToDateTime(TimeOnly.MinValue), SchoolOffset()).ToUniversalTime();
 
     // =================================================================
     //  Ommaviy yuza

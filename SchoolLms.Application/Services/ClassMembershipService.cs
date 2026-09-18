@@ -74,6 +74,28 @@ public sealed class ClassMembershipService(IAppDbContext db)
         db.ClassMemberships.FirstOrDefaultAsync(m => m.StudentId == studentId && m.LeftOn == null, ct);
 
     /* -------------------------------------------------------------------
+     *  Sig'im ogohlantirishi (C-4, students-parity.md §2.2.3)
+     * ---------------------------------------------------------------- */
+
+    /// <summary>
+    /// Qo'shish/o'tkazishdan KEYIN chaqiriladi — sinf hozir haqiqatan to'lib ketganmi,
+    /// tekshiradi. <c>cls.Capacity == null</c> — chek yo'q, hech qachon ogohlantirmaydi
+    /// (migratsiyadan keyingi HAMMA sinf shunday). <c>students.class_name</c> haqiqat
+    /// manbai bo'lgani uchun sanoq ham o'shandan — a'zolik xizmati uni caller SaveChanges
+    /// ichida allaqachon yangilagan bo'ladi.
+    /// </summary>
+    public async Task<string?> CapacityWarningAsync(SchoolClass cls, CancellationToken ct = default)
+    {
+        if (cls.Capacity is not { } capacity) return null;
+
+        var count = await db.Students.CountAsync(s => !s.IsArchived && s.ClassName == cls.Name, ct);
+        if (count <= capacity) return null;
+
+        return $"Diqqat: \"{cls.Name}\" sinfida hozir {count} o'quvchi bor, sig'imi esa {capacity} — "
+            + "sig'im oshib ketdi.";
+    }
+
+    /* -------------------------------------------------------------------
      *  Qo'shish
      * ---------------------------------------------------------------- */
 

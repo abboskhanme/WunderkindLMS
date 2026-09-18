@@ -97,3 +97,31 @@ export const methodLabels: Record<PaymentMethod, string> = {
   transfer: "Bank o'tkazmasi",
   online: 'Onlayn (Payme/Click/Uzum)',
 }
+
+/**
+ * Kassa tranzaksiyasi turining o'zbekcha nomi (`CashLedger`, eksport).
+ *
+ * `CashLedger.tsx` (komponent fayli) ichida emas, ATAYLAB shu yerda:
+ * ESLint `react-refresh/only-export-components` komponent bo'lmagan
+ * eksportni komponent faylida xato deb hisoblaydi (Fast Refresh buziladi).
+ * Backend hali to'liq ulanmagan — noma'lum tur ham o'ziga o'zi ko'rinadi.
+ */
+const kindLabels: Record<string, string> = {
+  in: 'Kirim',
+  out: 'Chiqim',
+  transfer: "Ko'chirish",
+  exchange: 'Ayirboshlash',
+}
+
+export function kindLabel(kind: string): string {
+  return kindLabels[kind] ?? kind
+}
+
+const statusLabels: Record<string, string> = {
+  completed: 'Bajarildi',
+  cancelled: 'Bekor qilindi',
+}
+
+export function statusLabel(status: string): string {
+  return statusLabels[status] ?? status
+}

@@ -1,15 +1,22 @@
-import { useEffect, useMemo, useState } from 'react'
-import { Search, Smartphone, CheckCircle2, Circle, ChevronDown } from 'lucide-react'
-import type { ParentRow } from '@/types'
-import { getParents } from '@/api/services/parents'
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
+import { Search, Users, CheckCircle2, Circle, ChevronDown, Download, Pencil } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import type { GuardianRelation, GuardianRow, SchoolClass } from '@/types'
+import type { GuardianListFilter } from '@/api/services/parents'
+import { exportGuardianRows, getGuardianRows } from '@/api/services/parents'
+import { guardianRelations, relationLabel } from '@/api/services/studentGuardians'
+import { getClasses } from '@/api/services/classes'
+import { getGroups, type StudyGroupListItem } from '@/api/services/groups'
 import { Card } from '@/components/ui/Card'
+import { Button } from '@/components/ui/Button'
 import { Loader } from '@/components/ui/Loader'
 import { cn } from '@/lib/utils'
+import { GuardianEditModal } from './GuardianEditModal'
 
 const control =
   'rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-brand-400'
 
-type ActivationFilter = 'all' | 'activated' | 'inactive'
+type ConnectionFilter = 'all' | 'connected' | 'offline'
 
 /** "YYYY-MM-DDThh:mm:ss" ni o'qiladigan ko'rinishga keltirish. */
 function formatDateTime(iso: string | null): string {
@@ -40,41 +47,69 @@ function timeAgo(iso: string | null): string {
 }
 
 /**
- * Admin "Ilova → Ota-onalar" sahifasi. Telefon bo'yicha guruhlangan ota-onalar:
- * ilova aktivlashtirilganmi, oxirgi marta qachon kirgan, farzandlari ro'yxati.
+ * Admin "Ilova → Ota-onalar" sahifasi (docs/modules/students-parity.md §2.9).
+ *
+ * Qator = ODAM: ro'yxat `guardians` + `student_guardians` jadvalidan quriladi,
+ * telefon raqamini guruhlashdan emas (P-1). Shu sababli bir ota-onaning
+ * raqami bir farzandida yangilanib ikkinchisida eski qolsa ham u BITTA qator
+ * bo'lib ko'rinadi, raqamsiz vasiy esa umuman yo'qolmaydi.
+ *
+ * "Ilova o'rnatilgan" o'rnini Telegram bog'lanishi egallaydi: bizda yagona
+ * kanal — Telegram (CLAUDE.md).
  */
 export function ParentsPage() {
-  const [rows, setRows] = useState<ParentRow[]>([])
+  const [rows, setRows] = useState<GuardianRow[]>([])
   const [loading, setLoading] = useState(true)
-  const [search, setSearch] = useState('')
-  const [filter, setFilter] = useState<ActivationFilter>('all')
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  const [editing, setEditing] = useState<GuardianRow | null>(null)
+
+  /* ---- Filtrlar (§2.9.1) ---- */
+  const [search, setSearch] = useState('')
+  const [className, setClassName] = useState('')
+  const [groupId, setGroupId] = useState('')
+  const [relation, setRelation] = useState<'' | GuardianRelation>('')
+  const [connection, setConnection] = useState<ConnectionFilter>('all')
+  const [state, setState] = useState<'active' | 'archived' | 'all'>('active')
+
+  /* ---- Ma'lumotnomalar ---- */
+  const [classes, setClasses] = useState<SchoolClass[]>([])
+  const [groups, setGroups] = useState<StudyGroupListItem[]>([])
 
   useEffect(() => {
-    getParents()
-      .then(setRows)
-      .finally(() => setLoading(false))
+    getClasses().then(setClasses).catch(() => { /* ma'lumotnoma yuklanmadi */ })
+    getGroups().then(setGroups).catch(() => { /* ma'lumotnoma yuklanmadi */ })
   }, [])
 
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase()
-    return rows.filter((r) => {
-      const matchSearch =
-        !q ||
-        r.fullName.toLowerCase().includes(q) ||
-        r.phone.toLowerCase().includes(q) ||
-        r.children.some((c) => c.fullName.toLowerCase().includes(q))
-      const matchActivation =
-        filter === 'all' ||
-        (filter === 'activated' ? r.isActivated : !r.isActivated)
-      return matchSearch && matchActivation
-    })
-  }, [rows, search, filter])
+  const filter = useMemo<GuardianListFilter>(
+    () => ({
+      search: search.trim() || undefined,
+      className: className || undefined,
+      groupId: groupId || undefined,
+      relation: relation || undefined,
+      connected: connection === 'all' ? undefined : connection === 'connected',
+      state,
+    }),
+    [search, className, groupId, relation, connection, state],
+  )
 
-  // Statistika: jami / aktivlashtirilgan / aktivlashtirilmagan
+  const reload = useCallback(() => {
+    setLoading(true)
+    return getGuardianRows(filter)
+      .then(setRows)
+      .catch(() => setRows([]))
+      .finally(() => setLoading(false))
+  }, [filter])
+
+  useEffect(() => {
+    // Qidiruv har bosishda so'rov yubormasin.
+    const timer = setTimeout(() => { void reload() }, 250)
+    return () => clearTimeout(timer)
+  }, [reload])
+
+  // Statistika: jami / Telegram bog'langan / bog'lanmagan
   const stats = useMemo(() => {
-    const activated = rows.filter((r) => r.isActivated).length
-    return { total: rows.length, activated, inactive: rows.length - activated }
+    const connected = rows.filter((r) => r.telegramLinked).length
+    return { total: rows.length, connected, offline: rows.length - connected }
   }, [rows])
 
   const toggleExpand = (key: string) =>
@@ -85,27 +120,36 @@ export function ParentsPage() {
       return next
     })
 
+  const handleExport = () => {
+    exportGuardianRows(filter).catch(() => alert("Eksportni yuklab bo'lmadi"))
+  }
+
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-xl font-semibold text-slate-800">Ota-onalar</h1>
-        <p className="text-sm text-slate-400">
-          Ilova foydalanuvchilari (ota-onalar) — telefon raqami bo'yicha guruhlangan
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-semibold text-slate-800">Ota-onalar</h1>
+          <p className="text-sm text-slate-400">
+            Vasiylar ro'yxati — farzandlari, vasiylik turi va Telegram holati
+          </p>
+        </div>
+        <Button variant="secondary" onClick={handleExport}>
+          <Download className="h-4 w-4" /> Excel
+        </Button>
       </div>
 
       {/* Statistik kartochkalar */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <StatCard label="Jami ota-onalar" value={stats.total} icon={Smartphone} color="slate" />
+        <StatCard label="Jami vasiylar" value={stats.total} icon={Users} color="slate" />
         <StatCard
-          label="Ilovani aktivlashtirgan"
-          value={stats.activated}
+          label="Telegram bog'langan"
+          value={stats.connected}
           icon={CheckCircle2}
           color="emerald"
         />
         <StatCard
-          label="Hali aktivlashtirmagan"
-          value={stats.inactive}
+          label="Hali bog'lanmagan"
+          value={stats.offline}
           icon={Circle}
           color="amber"
         />
@@ -119,24 +163,65 @@ export function ParentsPage() {
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Ota-ona, telefon yoki farzand nomi..."
+              placeholder="Vasiy, telefon yoki farzand nomi..."
               className={cn(control, 'w-full pl-9')}
             />
           </div>
+          <select
+            value={className}
+            onChange={(e) => setClassName(e.target.value)}
+            className={control}
+          >
+            <option value="">Barcha sinflar</option>
+            {classes.map((c) => (
+              <option key={c.id} value={c.name}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+          <select value={groupId} onChange={(e) => setGroupId(e.target.value)} className={control}>
+            <option value="">Barcha guruhlar</option>
+            {groups.map((g) => (
+              <option key={g.id} value={g.id}>
+                {g.name}
+              </option>
+            ))}
+          </select>
+          <select
+            value={relation}
+            onChange={(e) => setRelation(e.target.value as '' | GuardianRelation)}
+            className={control}
+          >
+            <option value="">Barcha turlar</option>
+            {guardianRelations.map((r) => (
+              <option key={r.value} value={r.value}>
+                {r.label}
+              </option>
+            ))}
+          </select>
+          <select
+            value={state}
+            onChange={(e) => setState(e.target.value as 'active' | 'archived' | 'all')}
+            className={control}
+          >
+            <option value="active">Faol o'quvchilar</option>
+            <option value="archived">Arxivdagilar</option>
+            <option value="all">Hammasi</option>
+          </select>
           <div className="flex gap-1 rounded-lg bg-slate-100 p-1">
-            {(['all', 'activated', 'inactive'] as ActivationFilter[]).map((f) => (
+            {(['all', 'connected', 'offline'] as ConnectionFilter[]).map((f) => (
               <button
                 key={f}
                 type="button"
-                onClick={() => setFilter(f)}
+                onClick={() => setConnection(f)}
                 className={cn(
                   'rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
-                  f === filter
+                  f === connection
                     ? 'bg-white text-brand-700 shadow-sm'
                     : 'text-slate-500 hover:text-slate-700',
                 )}
               >
-                {f === 'all' ? 'Hammasi' : f === 'activated' ? 'Aktiv' : 'Aktiv emas'}
+                {f === 'all' ? 'Hammasi' : f === 'connected' ? 'Telegram' : 'Bog\'lanmagan'}
               </button>
             ))}
           </div>
@@ -145,9 +230,9 @@ export function ParentsPage() {
         {/* Jadval */}
         {loading ? (
           <Loader label="Yuklanmoqda..." />
-        ) : filtered.length === 0 ? (
+        ) : rows.length === 0 ? (
           <p className="py-12 text-center text-sm text-slate-400">
-            {rows.length === 0 ? "Ota-onalar topilmadi (o'quvchilar hali kiritilmagan)" : 'Filtrga mos natija yo\'q'}
+            Filtrga mos vasiy topilmadi
           </p>
         ) : (
           <div className="overflow-x-auto">
@@ -155,25 +240,26 @@ export function ParentsPage() {
               <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
                 <tr>
                   <th className="w-8 px-2 py-3"></th>
-                  <th className="px-4 py-3">Ota-ona F.I.SH</th>
+                  <th className="px-4 py-3">Vasiy F.I.SH</th>
                   <th className="px-4 py-3">Telefon</th>
                   <th className="px-4 py-3">Farzandlar</th>
-                  <th className="px-4 py-3">Holat</th>
-                  <th className="px-4 py-3">Qurilma</th>
-                  <th className="px-4 py-3">Aktivlashtirilgan</th>
+                  <th className="px-4 py-3">Vasiylik turi</th>
+                  <th className="px-4 py-3">Telegram</th>
                   <th className="px-4 py-3">Oxirgi kirish</th>
+                  <th className="w-10 px-2 py-3"></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {filtered.map((r, i) => {
-                  const key = `${r.phone}-${i}`
-                  const isOpen = expanded.has(key)
+                {rows.map((r) => {
+                  const isOpen = expanded.has(r.guardianId)
+                  const kinds = [
+                    ...new Set(r.children.map((c) => relationLabel(c.relation, c.relationNote))),
+                  ]
                   return (
-                    <>
+                    <Fragment key={r.guardianId}>
                       <tr
-                        key={key}
                         className="cursor-pointer hover:bg-slate-50/60"
-                        onClick={() => toggleExpand(key)}
+                        onClick={() => toggleExpand(r.guardianId)}
                       >
                         <td className="px-2 py-3 text-slate-400">
                           <ChevronDown
@@ -189,36 +275,20 @@ export function ParentsPage() {
                         <td className="px-4 py-3 text-slate-600">{r.phone || '—'}</td>
                         <td className="px-4 py-3">
                           <span className="rounded-md bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
-                            {r.childrenCount}{' '}
-                            {r.childrenCount === 1 ? 'farzand' : 'farzand'}
+                            {r.childrenCount} farzand
                           </span>
                         </td>
+                        <td className="px-4 py-3 text-slate-600">{kinds.join(', ') || '—'}</td>
                         <td className="px-4 py-3">
-                          {r.isActivated ? (
+                          {r.telegramLinked ? (
                             <span className="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">
-                              <CheckCircle2 className="h-3.5 w-3.5" /> Aktiv
+                              <CheckCircle2 className="h-3.5 w-3.5" /> Bog'langan
                             </span>
                           ) : (
                             <span className="inline-flex items-center gap-1 rounded-md bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700">
-                              <Circle className="h-3.5 w-3.5" /> Kirmagan
+                              <Circle className="h-3.5 w-3.5" /> Yo'q
                             </span>
                           )}
-                        </td>
-                        <td className="px-4 py-3 text-sm text-slate-600">
-                          {r.deviceName ? (
-                            <span className="inline-flex items-center gap-1">
-                              <Smartphone className="h-3.5 w-3.5 text-slate-400" />
-                              {r.deviceName}
-                              {r.platform && (
-                                <span className="text-[11px] text-slate-400">({r.platform})</span>
-                              )}
-                            </span>
-                          ) : (
-                            '—'
-                          )}
-                        </td>
-                        <td className="px-4 py-3 text-sm text-slate-600">
-                          {formatDateTime(r.activatedAt)}
                         </td>
                         <td className="px-4 py-3">
                           <div className="text-sm text-slate-700">{formatDateTime(r.lastSeenAt)}</div>
@@ -226,9 +296,22 @@ export function ParentsPage() {
                             <div className="text-[11px] text-slate-400">{timeAgo(r.lastSeenAt)}</div>
                           )}
                         </td>
+                        <td className="px-2 py-3">
+                          <button
+                            type="button"
+                            title="Tahrirlash"
+                            className="rounded-md p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setEditing(r)
+                            }}
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </button>
+                        </td>
                       </tr>
                       {isOpen && (
-                        <tr key={`${key}-detail`} className="bg-slate-50/40">
+                        <tr className="bg-slate-50/40">
                           <td colSpan={8} className="px-4 py-3">
                             <div className="rounded-lg border border-slate-200 bg-white">
                               <table className="w-full text-sm">
@@ -236,25 +319,34 @@ export function ParentsPage() {
                                   <tr>
                                     <th className="px-3 py-2 text-left">Farzand</th>
                                     <th className="px-3 py-2 text-left">Sinf</th>
-                                    <th className="px-3 py-2 text-left">Birinchi kirish</th>
-                                    <th className="px-3 py-2 text-left">Oxirgi kirish</th>
-                                    <th className="px-3 py-2 text-left">Qurilma</th>
-                                    <th className="px-3 py-2 text-left">App ID</th>
+                                    <th className="px-3 py-2 text-left">Vasiylik turi</th>
+                                    <th className="px-3 py-2 text-left">O'quvchi telefoni</th>
+                                    <th className="px-3 py-2 text-left">Holat</th>
                                   </tr>
                                 </thead>
                                 <tbody>
                                   {r.children.map((c) => (
                                     <tr key={c.studentId} className="border-t border-slate-100">
-                                      <td className="px-3 py-2 font-medium text-slate-700">{c.fullName}</td>
-                                      <td className="px-3 py-2 text-slate-600">{c.className}</td>
-                                      <td className="px-3 py-2 text-slate-600">{formatDateTime(c.firstLoginAt)}</td>
-                                      <td className="px-3 py-2 text-slate-600">{formatDateTime(c.lastLoginAt)}</td>
-                                      <td className="px-3 py-2 text-slate-600">
-                                        {c.deviceName || '—'}
-                                        {c.platform ? ` (${c.platform})` : ''}
+                                      <td className="px-3 py-2 font-medium text-slate-700">
+                                        <Link
+                                          to={`/admin/students/${c.studentId}`}
+                                          className="hover:text-brand-600 hover:underline"
+                                        >
+                                          {c.fullName}
+                                        </Link>
                                       </td>
+                                      <td className="px-3 py-2 text-slate-600">{c.className}</td>
+                                      <td className="px-3 py-2 text-slate-600">
+                                        {relationLabel(c.relation, c.relationNote)}
+                                        {c.isPrimary && (
+                                          <span className="ml-1 text-[11px] text-amber-600">
+                                            (asosiy)
+                                          </span>
+                                        )}
+                                      </td>
+                                      <td className="px-3 py-2 text-slate-600">{c.phone || '—'}</td>
                                       <td className="px-3 py-2 text-slate-500">
-                                        <code className="text-xs">{c.appId || '—'}</code>
+                                        {c.isArchived ? 'Arxivda' : 'Faol'}
                                       </td>
                                     </tr>
                                   ))}
@@ -264,7 +356,7 @@ export function ParentsPage() {
                           </td>
                         </tr>
                       )}
-                    </>
+                    </Fragment>
                   )
                 })}
               </tbody>
@@ -272,6 +364,16 @@ export function ParentsPage() {
           </div>
         )}
       </Card>
+
+      <GuardianEditModal
+        open={editing !== null}
+        guardian={editing}
+        onClose={() => setEditing(null)}
+        onSaved={() => {
+          setEditing(null)
+          void reload()
+        }}
+      />
     </div>
   )
 }
@@ -284,7 +386,7 @@ function StatCard({
 }: {
   label: string
   value: number
-  icon: typeof Smartphone
+  icon: typeof Users
   color: 'slate' | 'emerald' | 'amber'
 }) {
   const colors = {

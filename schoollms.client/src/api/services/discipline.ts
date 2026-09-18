@@ -72,6 +72,30 @@ export async function addDisciplinePoint(
   return data
 }
 
+/** Butun sinfga bitta natijasi (C-6) — nechta o'quvchiga yozildi, nechtasiga ota-onaga xabar ketdi. */
+export interface ClassDisciplinePointResult {
+  applied: number
+  notifiedParents: number
+  items: DisciplinePoint[]
+}
+
+/**
+ * C-6: sinfning HAR BIR faol o'quvchisiga bitta sabab bilan alohida ball yozadi —
+ * `ClassesPage` dagi qator amalidan chaqiriladi (students-parity.md §2.2.3).
+ */
+export async function addClassDisciplinePoint(
+  classId: string,
+  reasonId: string,
+  note?: string,
+): Promise<ClassDisciplinePointResult> {
+  const { data } = await api.post<ClassDisciplinePointResult>('/admin/discipline/points/class', {
+    classId,
+    reasonId,
+    note,
+  })
+  return data
+}
+
 /** Bitta o'quvchining ball tarixi. */
 export async function getStudentDisciplinePoints(studentId: string): Promise<DisciplinePoint[]> {
   if (USE_MOCK) return []

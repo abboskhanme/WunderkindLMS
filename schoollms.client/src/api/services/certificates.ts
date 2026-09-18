@@ -34,6 +34,7 @@ export interface Certificate {
   typeId: string
   typeName: string
   typeIsScored: boolean
+  /** ASOSIY (birinchi tanlangan) fan — eski, bitta-fanli ustun/eksport shu maydonni o'qiydi. */
   subjectId: string | null
   subjectName: string | null
   teacherId: string | null
@@ -46,12 +47,14 @@ export interface Certificate {
   isExpired: boolean
   fileUrl: string | null
   comment: string | null
+  /** Z-3 — hujjatning HAMMA fani. `subjectId` shu ro'yxatning birinchi elementi. */
+  subjectIds: string[]
+  subjectNames: string[]
 }
 
 export interface CertificatePayload {
   studentId: string
   typeId: string
-  subjectId: string | null
   teacherId: string | null
   number: string | null
   /** FAQAT `isScored` turda yuboriladi — aks holda server o'qiladigan xato qaytaradi. */
@@ -60,6 +63,8 @@ export interface CertificatePayload {
   expiresOn: string | null
   fileUrl: string | null
   comment: string | null
+  /** Z-3 — bir nechta fan; bo'sh massiv = fansiz. */
+  subjectIds: string[]
 }
 
 /** "Natijalar" tab'ining bitta qatori. */
@@ -206,6 +211,32 @@ export async function getIssuingTeachers(): Promise<IssuingTeacher[]> {
   }
   const { data } = await api.get<IssuingTeacher[]>('/admin/certificates/teachers')
   return data
+}
+
+/**
+ * Z-2 — joriy filtrlar bilan RO'YXATNING .xlsx eksporti (`studentSearch.ts`
+ * dagi `exportStudents` bilan bir xil naqsh: blob, fayl nomi
+ * `Content-Disposition`dan, brauzerda "yuklab olish" hodisasi qo'lda).
+ */
+export async function exportCertificates(filters: CertificateFilters = {}): Promise<void> {
+  if (USE_MOCK) {
+    await delay()
+    alert('Eksport faqat real serverda ishlaydi (VITE_USE_MOCK=false).')
+    return
+  }
+  const res = await api.get(`/admin/certificates/export${query({ ...filters })}`, {
+    responseType: 'blob',
+  })
+  const url = URL.createObjectURL(res.data as Blob)
+  const a = document.createElement('a')
+  a.href = url
+  const cd = (res.headers['content-disposition'] as string | undefined) ?? ''
+  const m = cd.match(/filename="?([^"]+)"?/)
+  a.download = m?.[1] ?? `sertifikatlar_${new Date().toISOString().slice(0, 10)}.xlsx`
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  URL.revokeObjectURL(url)
 }
 
 /** Server qaytargan o'qiladigan xato matni (400 javobidagi `message`). */

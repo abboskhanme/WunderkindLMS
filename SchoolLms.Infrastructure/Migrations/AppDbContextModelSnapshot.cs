@@ -53,6 +53,52 @@ namespace SchoolLms.Infrastructure.Migrations
                     b.ToTable("absence_reasons", (string)null);
                 });
 
+            modelBuilder.Entity("SchoolLms.Domain.AdjustmentReason", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<bool>("IsActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("is_active");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("kind");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("name");
+
+                    b.Property<int>("Position")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("position");
+
+                    b.HasKey("Id")
+                        .HasName("pk_adjustment_reasons");
+
+                    b.HasAlternateKey("Id", "Kind")
+                        .HasName("ak_adjustment_reasons_id_kind");
+
+                    b.HasIndex("Kind", "Name")
+                        .IsUnique()
+                        .HasDatabaseName("ix_adjustment_reasons_kind_name");
+
+                    b.ToTable("adjustment_reasons", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_adjustment_reasons_kind", "kind in ('bonus','penalty')");
+                        });
+                });
+
             modelBuilder.Entity("SchoolLms.Domain.AppUser", b =>
                 {
                     b.Property<string>("Id")
@@ -174,6 +220,13 @@ namespace SchoolLms.Infrastructure.Migrations
                         .HasColumnType("integer")
                         .HasColumnName("max_score");
 
+                    b.Property<string>("OwnerKind")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("text")
+                        .HasDefaultValue("class")
+                        .HasColumnName("owner_kind");
+
                     b.Property<int?>("Period")
                         .HasColumnType("integer")
                         .HasColumnName("period");
@@ -209,7 +262,10 @@ namespace SchoolLms.Infrastructure.Migrations
                     b.HasIndex("ClassId", "SubjectId", "Quarter")
                         .HasDatabaseName("ix_assignments_class_id_subject_id_quarter");
 
-                    b.ToTable("assignments", (string)null);
+                    b.ToTable("assignments", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_assignments_owner_kind", "owner_kind in ('class','group')");
+                        });
                 });
 
             modelBuilder.Entity("SchoolLms.Domain.AssignmentMaterial", b =>
@@ -658,6 +714,170 @@ namespace SchoolLms.Infrastructure.Migrations
                     b.ToTable("cameras", (string)null);
                 });
 
+            modelBuilder.Entity("SchoolLms.Domain.CashBox", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<bool>("IsActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("is_active");
+
+                    b.Property<bool>("IsDefault")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("is_default");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("name");
+
+                    b.Property<string>("ResponsibleUserId")
+                        .HasColumnType("text")
+                        .HasColumnName("responsible_user_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_cash_boxes");
+
+                    b.HasIndex("IsActive")
+                        .HasDatabaseName("ix_cash_boxes_is_active");
+
+                    b.HasIndex("IsDefault")
+                        .IsUnique()
+                        .HasDatabaseName("ux_cash_boxes_one_default")
+                        .HasFilter("is_default");
+
+                    b.HasIndex("ResponsibleUserId")
+                        .HasDatabaseName("ix_cash_boxes_responsible_user_id");
+
+                    b.ToTable("cash_boxes", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_cash_boxes_name", "btrim(name) <> ''");
+                        });
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.CashBoxTransaction", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<decimal>("Amount")
+                        .HasPrecision(14, 2)
+                        .HasColumnType("numeric(14,2)")
+                        .HasColumnName("amount");
+
+                    b.Property<Guid>("CashBoxId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("cash_box_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("created_by");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("kind");
+
+                    b.Property<string>("Method")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("method");
+
+                    b.Property<string>("Note")
+                        .HasColumnType("text")
+                        .HasColumnName("note");
+
+                    b.Property<Guid?>("ReversalOf")
+                        .HasColumnType("uuid")
+                        .HasColumnName("reversal_of");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("status");
+
+                    b.Property<string>("StudentId")
+                        .HasColumnType("text")
+                        .HasColumnName("student_id");
+
+                    b.Property<string>("ToMethod")
+                        .HasColumnType("text")
+                        .HasColumnName("to_method");
+
+                    b.Property<Guid?>("TransferToBoxId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("transfer_to_box_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_cash_box_transactions");
+
+                    b.HasIndex("CashBoxId")
+                        .HasDatabaseName("ix_cash_box_transactions_cash_box_id");
+
+                    b.HasIndex("CreatedAt")
+                        .HasDatabaseName("ix_cash_box_transactions_created_at");
+
+                    b.HasIndex("CreatedBy")
+                        .HasDatabaseName("ix_cash_box_transactions_created_by");
+
+                    b.HasIndex("ReversalOf")
+                        .IsUnique()
+                        .HasDatabaseName("ix_cash_box_transactions_reversal_of");
+
+                    b.HasIndex("StudentId")
+                        .HasDatabaseName("ix_cash_box_transactions_student_id");
+
+                    b.HasIndex("TransferToBoxId")
+                        .HasDatabaseName("ix_cash_box_transactions_transfer_to_box_id");
+
+                    b.ToTable("cash_box_transactions", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_cash_box_transactions_amount", "amount > 0");
+
+                            t.HasCheckConstraint("ck_cash_box_transactions_exchange_methods_differ", "to_method is null or to_method <> method");
+
+                            t.HasCheckConstraint("ck_cash_box_transactions_exchange_shape", "(kind = 'exchange') = (to_method is not null)");
+
+                            t.HasCheckConstraint("ck_cash_box_transactions_kind", "kind in ('pay_in','pay_out','transfer','exchange')");
+
+                            t.HasCheckConstraint("ck_cash_box_transactions_method", "method in ('cash','card','transfer','online')");
+
+                            t.HasCheckConstraint("ck_cash_box_transactions_reversal_not_self", "reversal_of is null or reversal_of <> id");
+
+                            t.HasCheckConstraint("ck_cash_box_transactions_status", "status in ('posted','reversal')");
+
+                            t.HasCheckConstraint("ck_cash_box_transactions_to_method", "to_method is null or to_method in ('cash','card','transfer','online')");
+
+                            t.HasCheckConstraint("ck_cash_box_transactions_transfer_not_self", "transfer_to_box_id is null or transfer_to_box_id <> cash_box_id");
+
+                            t.HasCheckConstraint("ck_cash_box_transactions_transfer_shape", "(kind = 'transfer') = (transfer_to_box_id is not null)");
+                        });
+                });
+
             modelBuilder.Entity("SchoolLms.Domain.CashHandover", b =>
                 {
                     b.Property<Guid>("Id")
@@ -883,6 +1103,25 @@ namespace SchoolLms.Infrastructure.Migrations
 
                             t.HasCheckConstraint("ck_certificates_score", "score is null or score >= 0");
                         });
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.CertificateSubject", b =>
+                {
+                    b.Property<Guid>("CertificateId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("certificate_id");
+
+                    b.Property<string>("SubjectId")
+                        .HasColumnType("text")
+                        .HasColumnName("subject_id");
+
+                    b.HasKey("CertificateId", "SubjectId")
+                        .HasName("pk_certificate_subjects");
+
+                    b.HasIndex("SubjectId")
+                        .HasDatabaseName("ix_certificate_subjects_subject");
+
+                    b.ToTable("certificate_subjects", (string)null);
                 });
 
             modelBuilder.Entity("SchoolLms.Domain.CertificateType", b =>
@@ -1611,6 +1850,10 @@ namespace SchoolLms.Infrastructure.Migrations
                         .HasColumnType("text")
                         .HasColumnName("approved_by");
 
+                    b.Property<Guid?>("CashBoxId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("cash_box_id");
+
                     b.Property<Guid?>("CashShiftId")
                         .HasColumnType("uuid")
                         .HasColumnName("cash_shift_id");
@@ -1646,6 +1889,9 @@ namespace SchoolLms.Infrastructure.Migrations
 
                     b.HasIndex("ApprovedBy")
                         .HasDatabaseName("ix_expenses_approved_by");
+
+                    b.HasIndex("CashBoxId")
+                        .HasDatabaseName("ix_expenses_cash_box_id");
 
                     b.HasIndex("CashShiftId")
                         .HasDatabaseName("ix_expenses_cash_shift_id");
@@ -2583,7 +2829,11 @@ namespace SchoolLms.Infrastructure.Migrations
                         .HasColumnType("numeric(14,2)")
                         .HasColumnName("amount");
 
-                    b.Property<Guid>("CashShiftId")
+                    b.Property<Guid?>("CashBoxId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("cash_box_id");
+
+                    b.Property<Guid?>("CashShiftId")
                         .HasColumnType("uuid")
                         .HasColumnName("cash_shift_id");
 
@@ -2625,6 +2875,10 @@ namespace SchoolLms.Infrastructure.Migrations
                         .IsUnique()
                         .HasDatabaseName("ix_payments_reversal_of")
                         .HasFilter("reversal_of is not null");
+
+                    b.HasIndex("CashBoxId", "ReceiptNo")
+                        .IsUnique()
+                        .HasDatabaseName("ix_payments_cash_box_id_receipt_no");
 
                     b.HasIndex("CashShiftId", "ReceiptNo")
                         .IsUnique()
@@ -2680,6 +2934,108 @@ namespace SchoolLms.Infrastructure.Migrations
                     b.ToTable("payment_allocations", null, t =>
                         {
                             t.HasCheckConstraint("ck_payment_allocations_amount", "amount > 0");
+                        });
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.PayrollAdjustment", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<decimal>("Amount")
+                        .HasPrecision(14, 2)
+                        .HasColumnType("numeric(14,2)")
+                        .HasColumnName("amount");
+
+                    b.Property<string>("Comment")
+                        .HasColumnType("text")
+                        .HasColumnName("comment");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("created_by");
+
+                    b.Property<string>("ImageUrl")
+                        .HasColumnType("text")
+                        .HasColumnName("image_url");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("kind");
+
+                    b.Property<short>("PeriodMonth")
+                        .HasColumnType("smallint")
+                        .HasColumnName("period_month");
+
+                    b.Property<short>("PeriodYear")
+                        .HasColumnType("smallint")
+                        .HasColumnName("period_year");
+
+                    b.Property<Guid>("ReasonId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("reason_id");
+
+                    b.Property<Guid?>("ReversalOf")
+                        .HasColumnType("uuid")
+                        .HasColumnName("reversal_of");
+
+                    b.Property<string>("ReversalReason")
+                        .HasColumnType("text")
+                        .HasColumnName("reversal_reason");
+
+                    b.Property<string>("TeacherId")
+                        .HasColumnType("text")
+                        .HasColumnName("teacher_id");
+
+                    b.Property<string>("UserId")
+                        .HasColumnType("text")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_payroll_adjustments");
+
+                    b.HasIndex("CreatedBy")
+                        .HasDatabaseName("ix_payroll_adjustments_created_by");
+
+                    b.HasIndex("ReversalOf")
+                        .IsUnique()
+                        .HasDatabaseName("ix_payroll_adjustments_reversal_of");
+
+                    b.HasIndex("ReasonId", "Kind")
+                        .HasDatabaseName("ix_payroll_adjustments_reason_id_kind");
+
+                    b.HasIndex("TeacherId", "PeriodYear", "PeriodMonth")
+                        .HasDatabaseName("ix_payroll_adjustments_teacher_id_period_year_period_month");
+
+                    b.HasIndex("UserId", "PeriodYear", "PeriodMonth")
+                        .HasDatabaseName("ix_payroll_adjustments_user_id_period_year_period_month");
+
+                    b.ToTable("payroll_adjustments", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_payroll_adjustments_amount", "amount > 0");
+
+                            t.HasCheckConstraint("ck_payroll_adjustments_identity", "num_nonnulls(teacher_id, user_id) = 1");
+
+                            t.HasCheckConstraint("ck_payroll_adjustments_kind", "kind in ('bonus','penalty')");
+
+                            t.HasCheckConstraint("ck_payroll_adjustments_period_month", "period_month between 1 and 12");
+
+                            t.HasCheckConstraint("ck_payroll_adjustments_period_year", "period_year between 2000 and 2100");
+
+                            t.HasCheckConstraint("ck_payroll_adjustments_reversal", "(reversal_of is null) = (reversal_reason is null)");
+
+                            t.HasCheckConstraint("ck_payroll_adjustments_reversal_not_self", "reversal_of is null or reversal_of <> id");
                         });
                 });
 
@@ -2887,6 +3243,12 @@ namespace SchoolLms.Infrastructure.Migrations
                         .HasColumnType("smallint")
                         .HasColumnName("floor");
 
+                    b.Property<bool>("IsActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("is_active");
+
                     b.Property<string>("Kind")
                         .IsRequired()
                         .ValueGeneratedOnAdd()
@@ -2999,6 +3361,10 @@ namespace SchoolLms.Infrastructure.Migrations
                         .HasColumnType("text")
                         .HasColumnName("archived_at");
 
+                    b.Property<short?>("Capacity")
+                        .HasColumnType("smallint")
+                        .HasColumnName("capacity");
+
                     b.Property<int>("Grade")
                         .HasColumnType("integer")
                         .HasColumnName("grade");
@@ -3029,7 +3395,10 @@ namespace SchoolLms.Infrastructure.Migrations
                     b.HasKey("Id")
                         .HasName("pk_classes");
 
-                    b.ToTable("classes", (string)null);
+                    b.ToTable("classes", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_classes_capacity", "capacity is null or capacity > 0");
+                        });
                 });
 
             modelBuilder.Entity("SchoolLms.Domain.SchoolMeta", b =>
@@ -3052,6 +3421,13 @@ namespace SchoolLms.Infrastructure.Migrations
                     b.Property<bool>("CameraEnabled")
                         .HasColumnType("boolean")
                         .HasColumnName("camera_enabled");
+
+                    b.Property<string>("ContractNumberMode")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("text")
+                        .HasDefaultValue("auto")
+                        .HasColumnName("contract_number_mode");
 
                     b.Property<string>("CurrentYear")
                         .IsRequired()
@@ -3224,7 +3600,10 @@ namespace SchoolLms.Infrastructure.Migrations
                     b.HasKey("Id")
                         .HasName("pk_school_meta");
 
-                    b.ToTable("school_meta", (string)null);
+                    b.ToTable("school_meta", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_school_meta_contract_number_mode", "contract_number_mode in ('auto','manual')");
+                        });
                 });
 
             modelBuilder.Entity("SchoolLms.Domain.SchoolYearArchive", b =>
@@ -3415,6 +3794,10 @@ namespace SchoolLms.Infrastructure.Migrations
                         .HasColumnType("integer")
                         .HasColumnName("sub_group");
 
+                    b.Property<short?>("TargetGrade")
+                        .HasColumnType("smallint")
+                        .HasColumnName("target_grade");
+
                     b.Property<string>("UserId")
                         .HasColumnType("text")
                         .HasColumnName("user_id");
@@ -3431,6 +3814,8 @@ namespace SchoolLms.Infrastructure.Migrations
                     b.ToTable("students", null, t =>
                         {
                             t.HasCheckConstraint("ck_students_language", "language in ('uz','ru','en','kaa')");
+
+                            t.HasCheckConstraint("ck_students_target_grade", "target_grade between 0 and 11");
                         });
                 });
 
@@ -3660,6 +4045,71 @@ namespace SchoolLms.Infrastructure.Migrations
                         });
                 });
 
+            modelBuilder.Entity("SchoolLms.Domain.StudentLocation", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("kind");
+
+                    b.Property<decimal>("Lat")
+                        .HasPrecision(9, 6)
+                        .HasColumnType("numeric(9,6)")
+                        .HasColumnName("lat");
+
+                    b.Property<decimal>("Lng")
+                        .HasPrecision(9, 6)
+                        .HasColumnType("numeric(9,6)")
+                        .HasColumnName("lng");
+
+                    b.Property<string>("Name")
+                        .HasColumnType("text")
+                        .HasColumnName("name");
+
+                    b.Property<TimeOnly?>("PickupFrom")
+                        .HasColumnType("time without time zone")
+                        .HasColumnName("pickup_from");
+
+                    b.Property<TimeOnly?>("PickupTo")
+                        .HasColumnType("time without time zone")
+                        .HasColumnName("pickup_to");
+
+                    b.Property<string>("StudentId")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("student_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_student_locations");
+
+                    b.HasIndex("StudentId", "Kind")
+                        .IsUnique()
+                        .HasDatabaseName("ux_student_locations_student_kind");
+
+                    b.ToTable("student_locations", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_student_locations_kind", "kind in ('home','school','pickup')");
+
+                            t.HasCheckConstraint("ck_student_locations_lat", "lat between -90 and 90");
+
+                            t.HasCheckConstraint("ck_student_locations_lng", "lng between -180 and 180");
+
+                            t.HasCheckConstraint("ck_student_locations_pickup_window", "pickup_from is null or pickup_to is null or pickup_to >= pickup_from");
+                        });
+                });
+
             modelBuilder.Entity("SchoolLms.Domain.StudentRefund", b =>
                 {
                     b.Property<Guid>("Id")
@@ -3680,6 +4130,10 @@ namespace SchoolLms.Infrastructure.Migrations
                     b.Property<string>("ApprovedBy")
                         .HasColumnType("text")
                         .HasColumnName("approved_by");
+
+                    b.Property<Guid?>("CashBoxId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("cash_box_id");
 
                     b.Property<Guid?>("CashShiftId")
                         .HasColumnType("uuid")
@@ -3724,6 +4178,9 @@ namespace SchoolLms.Infrastructure.Migrations
 
                     b.HasIndex("ApprovedBy")
                         .HasDatabaseName("ix_student_refunds_approved_by");
+
+                    b.HasIndex("CashBoxId")
+                        .HasDatabaseName("ix_student_refunds_cash_box_id");
 
                     b.HasIndex("CashShiftId")
                         .HasDatabaseName("ix_student_refunds_cash_shift_id");
@@ -4052,6 +4509,16 @@ namespace SchoolLms.Infrastructure.Migrations
                         .HasColumnType("text")
                         .HasColumnName("id");
 
+                    b.Property<string>("Color")
+                        .HasColumnType("text")
+                        .HasColumnName("color");
+
+                    b.Property<bool>("IsActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("is_active");
+
                     b.Property<bool>("IsGroupable")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("boolean")
@@ -4066,7 +4533,10 @@ namespace SchoolLms.Infrastructure.Migrations
                     b.HasKey("Id")
                         .HasName("pk_subjects");
 
-                    b.ToTable("subjects", (string)null);
+                    b.ToTable("subjects", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_subjects_color", "color is null or color ~ '^#[0-9a-fA-F]{6}$'");
+                        });
                 });
 
             modelBuilder.Entity("SchoolLms.Domain.Teacher", b =>
@@ -4494,6 +4964,38 @@ namespace SchoolLms.Infrastructure.Migrations
                     b.ToTable("user_settings", (string)null);
                 });
 
+            modelBuilder.Entity("SchoolLms.Domain.UserTableSetting", b =>
+                {
+                    b.Property<string>("UserId")
+                        .HasColumnType("text")
+                        .HasColumnName("user_id");
+
+                    b.Property<string>("Page")
+                        .HasColumnType("text")
+                        .HasColumnName("page");
+
+                    b.Property<string>("Settings")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("settings")
+                        .HasDefaultValueSql("'{}'::jsonb");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.HasKey("UserId", "Page")
+                        .HasName("pk_user_table_settings");
+
+                    b.ToTable("user_table_settings", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_user_table_settings_page", "btrim(page) <> ''");
+                        });
+                });
+
             modelBuilder.Entity("SchoolLms.Domain.WeekAssignment", b =>
                 {
                     b.Property<string>("Id")
@@ -4553,6 +5055,50 @@ namespace SchoolLms.Infrastructure.Migrations
                         .HasForeignKey("UpdatedBy")
                         .OnDelete(DeleteBehavior.Restrict)
                         .HasConstraintName("fk_billing_settings_users_updated_by");
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.CashBox", b =>
+                {
+                    b.HasOne("SchoolLms.Domain.AppUser", null)
+                        .WithMany()
+                        .HasForeignKey("ResponsibleUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_cash_boxes_users_responsible_user_id");
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.CashBoxTransaction", b =>
+                {
+                    b.HasOne("SchoolLms.Domain.CashBox", null)
+                        .WithMany()
+                        .HasForeignKey("CashBoxId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_cash_box_transactions_cash_boxes_cash_box_id");
+
+                    b.HasOne("SchoolLms.Domain.AppUser", null)
+                        .WithMany()
+                        .HasForeignKey("CreatedBy")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_cash_box_transactions_users_created_by");
+
+                    b.HasOne("SchoolLms.Domain.CashBoxTransaction", null)
+                        .WithMany()
+                        .HasForeignKey("ReversalOf")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_cash_box_transactions_cash_box_transactions_reversal_of");
+
+                    b.HasOne("SchoolLms.Domain.Student", null)
+                        .WithMany()
+                        .HasForeignKey("StudentId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_cash_box_transactions_students_student_id");
+
+                    b.HasOne("SchoolLms.Domain.CashBox", null)
+                        .WithMany()
+                        .HasForeignKey("TransferToBoxId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_cash_box_transactions_cash_boxes_transfer_to_box_id");
                 });
 
             modelBuilder.Entity("SchoolLms.Domain.CashHandover", b =>
@@ -4628,6 +5174,23 @@ namespace SchoolLms.Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_certificates_certificate_types_type_id");
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.CertificateSubject", b =>
+                {
+                    b.HasOne("SchoolLms.Domain.Certificate", null)
+                        .WithMany()
+                        .HasForeignKey("CertificateId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_certificate_subjects_certificates_certificate_id");
+
+                    b.HasOne("SchoolLms.Domain.Subject", null)
+                        .WithMany()
+                        .HasForeignKey("SubjectId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_certificate_subjects_subjects_subject_id");
                 });
 
             modelBuilder.Entity("SchoolLms.Domain.ChatRead", b =>
@@ -4722,6 +5285,12 @@ namespace SchoolLms.Infrastructure.Migrations
                         .HasForeignKey("ApprovedBy")
                         .OnDelete(DeleteBehavior.Restrict)
                         .HasConstraintName("fk_expenses_users_approved_by");
+
+                    b.HasOne("SchoolLms.Domain.CashBox", null)
+                        .WithMany()
+                        .HasForeignKey("CashBoxId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_expenses_cash_boxes_cash_box_id");
 
                     b.HasOne("SchoolLms.Domain.CashShift", null)
                         .WithMany()
@@ -4861,11 +5430,16 @@ namespace SchoolLms.Infrastructure.Migrations
 
             modelBuilder.Entity("SchoolLms.Domain.Payment", b =>
                 {
+                    b.HasOne("SchoolLms.Domain.CashBox", null)
+                        .WithMany()
+                        .HasForeignKey("CashBoxId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_payments_cash_boxes_cash_box_id");
+
                     b.HasOne("SchoolLms.Domain.CashShift", null)
                         .WithMany()
                         .HasForeignKey("CashShiftId")
                         .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired()
                         .HasConstraintName("fk_payments_cash_shifts_cash_shift_id");
 
                     b.HasOne("SchoolLms.Domain.AppUser", null)
@@ -4904,6 +5478,42 @@ namespace SchoolLms.Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_payment_allocations_payments_payment_id");
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.PayrollAdjustment", b =>
+                {
+                    b.HasOne("SchoolLms.Domain.AppUser", null)
+                        .WithMany()
+                        .HasForeignKey("CreatedBy")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_payroll_adjustments_users_created_by");
+
+                    b.HasOne("SchoolLms.Domain.PayrollAdjustment", null)
+                        .WithMany()
+                        .HasForeignKey("ReversalOf")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_payroll_adjustments_payroll_adjustments_reversal_of");
+
+                    b.HasOne("SchoolLms.Domain.Teacher", null)
+                        .WithMany()
+                        .HasForeignKey("TeacherId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_payroll_adjustments_teachers_teacher_id");
+
+                    b.HasOne("SchoolLms.Domain.AppUser", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_payroll_adjustments_users_user_id");
+
+                    b.HasOne("SchoolLms.Domain.AdjustmentReason", null)
+                        .WithMany()
+                        .HasForeignKey("ReasonId", "Kind")
+                        .HasPrincipalKey("Id", "Kind")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_payroll_adjustments_adjustment_reasons_reason_id_kind");
                 });
 
             modelBuilder.Entity("SchoolLms.Domain.ScheduleLesson", b =>
@@ -4988,6 +5598,16 @@ namespace SchoolLms.Infrastructure.Migrations
                         .HasConstraintName("fk_student_guardians_students_student_id");
                 });
 
+            modelBuilder.Entity("SchoolLms.Domain.StudentLocation", b =>
+                {
+                    b.HasOne("SchoolLms.Domain.Student", null)
+                        .WithMany()
+                        .HasForeignKey("StudentId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_student_locations_students_student_id");
+                });
+
             modelBuilder.Entity("SchoolLms.Domain.StudentRefund", b =>
                 {
                     b.HasOne("SchoolLms.Domain.AppUser", null)
@@ -4995,6 +5615,12 @@ namespace SchoolLms.Infrastructure.Migrations
                         .HasForeignKey("ApprovedBy")
                         .OnDelete(DeleteBehavior.Restrict)
                         .HasConstraintName("fk_student_refunds_users_approved_by");
+
+                    b.HasOne("SchoolLms.Domain.CashBox", null)
+                        .WithMany()
+                        .HasForeignKey("CashBoxId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_student_refunds_cash_boxes_cash_box_id");
 
                     b.HasOne("SchoolLms.Domain.CashShift", null)
                         .WithMany()
@@ -5164,6 +5790,16 @@ namespace SchoolLms.Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("fk_test_questions_assignments_assignment_id");
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.UserTableSetting", b =>
+                {
+                    b.HasOne("SchoolLms.Domain.AppUser", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_user_table_settings_users_user_id");
                 });
 
             modelBuilder.Entity("SchoolLms.Domain.Assignment", b =>

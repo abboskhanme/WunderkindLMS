@@ -237,7 +237,12 @@ public record ZReportDto(
     int CashExpensesCount = 0,
     // Bankka yoki seyfga topshirilgan naqd (storno ayirilgan).
     decimal CashHandoversTotal = 0m,
-    int CashHandoversCount = 0);
+    int CashHandoversCount = 0,
+    // F1.05 — shu smenadan o'quvchilarga QAYTARILGAN naqd (storno qilingan
+    // qaytarimlar ayirilgan). AYNAN `CashShiftService.CashOutflowAsync` dan —
+    // yuqoridagi ikkitasi bilan bir manbadan (fayl boshidagi invariant).
+    decimal CashRefundsTotal = 0m,
+    int CashRefundsCount = 0);
 
 /* ---------- To'lovlar ---------- */
 
@@ -257,7 +262,10 @@ public record PaymentDto(
     decimal Amount,
     // cash | card | transfer | online — FAQAT YORLIQ (§8.1 Q13).
     string Method,
-    Guid CashShiftId, string CashierId, string CashierName,
+    // "Smena" tizimdan olib tashlangan (kassalar modeli, 2026-09) — YANGI
+    // to'lovda HAR DOIM `null`. Eski qatorlarda (smena orqali yozilgan)
+    // tarix sifatida qoladi.
+    Guid? CashShiftId, string CashierId, string CashierName,
     string? Note, DateTimeOffset ReceivedAt,
     // Bu qator storno bo'lsa — qaysi to'lovni bekor qilgani.
     Guid? ReversalOf,
@@ -265,7 +273,9 @@ public record PaymentDto(
     Guid? ReversedBy,
     // Taqsimlanmagan qoldiq = Amount − Σ Allocations (avans).
     decimal Unallocated,
-    List<PaymentAllocationDto> Allocations);
+    List<PaymentAllocationDto> Allocations,
+    // Qaysi KASSAGA tushdi (kassalar modeli, 2026-09). `null` = eski qator.
+    Guid? CashBoxId = null, string? CashBoxName = null);
 
 /// <summary>To'lovning bitta hisob-fakturaga yo'naltiriladigan qismi (so'rov).</summary>
 public record AllocationRequest(Guid InvoiceId, decimal Amount);
@@ -281,22 +291,29 @@ public record AllocationRequest(Guid InvoiceId, decimal Amount);
 /// Yig'indi <see cref="Amount"/> dan oshsa — baza trigger'i rad etadi.
 /// </para>
 /// </summary>
+/// <param name="CashBoxId">
+/// Pul QAYSI kassaga tushishi (kassalar modeli, 2026-09 — "smena" o'rnini
+/// bosadi). <c>null</c> = SUKUT (default) kassa.
+/// </param>
 public record AcceptPaymentRequest(
     string StudentId, decimal Amount, string Method, string? Note,
-    List<AllocationRequest> Allocations);
+    List<AllocationRequest> Allocations, Guid? CashBoxId = null);
 
 /// <summary>
 /// Storno. Sabab MAJBURIY (SPEC §4.3). Tasdiqlovchi JWT'dan; kassir bu
 /// amalni umuman chaqira olmaydi.
 /// </summary>
-public record ReversePaymentRequest(string Reason);
+/// <param name="CashBoxId">Storno QAYSI kassaga qaytishi. <c>null</c> = SUKUT kassa.</param>
+public record ReversePaymentRequest(string Reason, Guid? CashBoxId = null);
 
 /// <summary>To'lovlar ro'yxati uchun filtr.</summary>
+/// <param name="CashShiftId">Faqat ESKI (smena orqali yozilgan) qatorlar uchun tarixiy filtr.</param>
+/// <param name="CashBoxId">Bitta kassa (kassalar modeli, 2026-09); <c>null</c> — hammasi.</param>
 public record PaymentQuery(
     string? StudentId = null, string? CashierId = null, Guid? CashShiftId = null,
     DateOnly? From = null, DateOnly? To = null, string? Method = null,
     // true = faqat storno qatorlari.
-    bool OnlyReversals = false);
+    bool OnlyReversals = false, Guid? CashBoxId = null);
 
 /// <summary>
 /// Kassir ekranidagi TAKLIF: pulni qaysi hisob-fakturalarga taqsimlash
@@ -388,7 +405,19 @@ public record ArrearsRowDto(
     // Arxivdagi (maktabdan ketgan) o'quvchi — qarzi qoladi, ekranda belgilanadi.
     bool IsArchived,
     IReadOnlyDictionary<string, ArrearsCellDto> Cells,
-    ArrearsCellDto Total);
+    ArrearsCellDto Total,
+    // ---- finance-parity.md §2.13 gaplari — YANGI MAYDONLAR OXIRIDA ----
+    // (ArrearsRowDto pozitsion record: mavjud chaqiruvlar o'zgarishsiz qolishi
+    // uchun qo'shimcha maydon HAR DOIM oxiriga, sukut qiymati bilan qo'shiladi —
+    // xuddi `ZReportDto` dagi kabi.)
+
+    // F13.03 — ota-ona telefoni (qarzdorlar hisobotidagi `DebtorRowDto.ParentPhone`
+    // bilan bir xil manba: `students.parent_phone`).
+    string ParentPhone = "",
+    // F13.02 — "toifalar bo'yicha ajratish" YOQILGANDA shu qatorning toifasi;
+    // O'CHIQ bo'lsa ikkovi ham null (qator — butun o'quvchi, barcha toifa yig'indisi).
+    string? CategoryCode = null,
+    string? CategoryName = null);
 
 /// <summary>
 /// Oyma-oy qarzdorlik jadvali: o'quvchi × oy.
@@ -411,15 +440,19 @@ public record BillingSettingsDto(
     int PaymentDueDay,
     // Shu kundan keyin qarz "muddati o'tgan" hisoblanadi (1..28).
     int OverdueAfterDay,
-    DateTimeOffset UpdatedAt, string? UpdatedByName,
-    // F14.01 — chiqim tasdiq chegarasi (SPEC §4.5). Qo'shimcha maydon —
-    // bu yozuvni birinchi qurgan agent uni ataylab tashlab ketgan edi
-    // (docs/PENDING_WIRING.md §E), shu ekran uni yopadi. Muzlatilgan faylning
-    // boshidagi qoida: yangi, sukut qiymatli maydon qo'shish buzmaydigan
-    // o'zgarish — oxiriga qo'shilgan, mavjud pozitsion chaqiruvni buzmaydi.
-    decimal ExpenseApprovalThreshold = 5_000_000m);
+    // F14.01 (finance-parity.md §2.14.3): ikki qavatli nazorat chegarasi (SPEC §4.5) —
+    // shu summadan KATTA chiqim ikkinchi shaxsning tasdig'isiz jurnalga tushmaydi.
+    // Faqat direktor o'zgartira oladi (BillingSettingsService.UpdateAsync). Bu maydon
+    // PENDING_WIRING.md "E" bandida "frozen DTO ga qo'shilmagan" deb qayd etilgan edi —
+    // shu yerda qo'shildi, chunki fayl boshidagi qoidaga ko'ra yangi maydon buzmaydigan
+    // o'zgarish.
+    decimal ExpenseApprovalThreshold,
+    DateTimeOffset UpdatedAt, string? UpdatedByName);
 
-/// <summary>Sozlamalarni saqlash. `updated_by` JWT'dan (§4.4).</summary>
+/// <summary>
+/// Sozlamalarni saqlash. `updated_by` JWT'dan (§4.4). `ExpenseApprovalThreshold` —
+/// forma HAR DOIM joriy qiymatni yuboradi; u haqiqatan o'zgarganda xizmat direktor
+/// ekanini talab qiladi (F14.01).
+/// </summary>
 public record UpdateBillingSettingsRequest(
-    int PaymentDueDay, int OverdueAfterDay,
-    decimal ExpenseApprovalThreshold = 5_000_000m);
+    int PaymentDueDay, int OverdueAfterDay, decimal ExpenseApprovalThreshold);

@@ -15,6 +15,8 @@ import ChatConversationScreen from './screens/ChatConversationScreen'
 import SalaryScreen from './screens/SalaryScreen'
 import ProfileScreen from './screens/ProfileScreen'
 import HomeroomScreen from './screens/HomeroomScreen'
+import GroupsScreen from './screens/GroupsScreen'
+import GroupRosterScreen from './screens/GroupRosterScreen'
 import FeedbackScreen from './screens/FeedbackScreen'
 import NotificationsScreen from './screens/NotificationsScreen'
 import ProgressScreen from './screens/ProgressScreen'
@@ -37,6 +39,8 @@ const SCREENS = {
   assignmentResults: { Comp: AssignmentResultsScreen },
   chatConversation: { Comp: ChatConversationScreen },
   homeroom: { Comp: HomeroomScreen },
+  groups: { Comp: GroupsScreen },
+  groupRoster: { Comp: GroupRosterScreen },
   notifications: { Comp: NotificationsScreen },
   salary: { Comp: SalaryScreen },
   progress: { Comp: ProgressScreen },

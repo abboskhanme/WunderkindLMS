@@ -21,7 +21,8 @@ import {
 import { getSubjects } from '@/api/services/subjects'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
-import { Loader } from '@/components/ui/Loader'
+import { DataTable } from '@/components/table/DataTable'
+import type { DataTableColumn } from '@/components/table/DataTable'
 import { cn } from '@/lib/utils'
 
 /** Sinf darajalari — filtr uchun (0 = maktabgacha tayyorlov). */
@@ -196,101 +197,114 @@ export function GroupsPage() {
       </Card>
 
       <Card className="p-0">
-        {loading ? (
-          <Loader label="Yuklanmoqda..." />
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
-                <tr>
-                  <th className="w-10 px-4 py-3">#</th>
-                  <th className="px-4 py-3">Guruh</th>
-                  <th className="px-4 py-3">Fan</th>
-                  <th className="px-4 py-3">Sinflar</th>
-                  <th className="px-4 py-3">O'qituvchilar</th>
-                  <th className="px-4 py-3">O'quvchilar</th>
-                  <th className="px-4 py-3 text-right">Amallar</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {groups.map((g, i) => (
-                  <tr
-                    key={g.id}
-                    onClick={() => navigate(`/admin/groups/${g.id}`)}
-                    className="cursor-pointer hover:bg-slate-50/60"
-                  >
-                    <td className="px-4 py-3 text-slate-400">{i + 1}</td>
-                    <td className="px-4 py-3">
-                      <span className="font-medium text-slate-800">{g.name}</span>
-                      {g.gender && (
-                        <span className="ml-2 rounded-md bg-slate-100 px-1.5 py-0.5 text-[11px] text-slate-500">
-                          {g.gender === 'male' ? "O'g'il bolalar" : 'Qizlar'}
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 text-slate-600">{g.subjectName}</td>
-                    <td className="px-4 py-3 text-slate-600">
-                      {g.classes.map((c) => c.name).join(', ') || '—'}
-                    </td>
-                    <td className="px-4 py-3 text-slate-600">
-                      {g.teachers.map((t) => t.fullName).join(', ') || '—'}
-                    </td>
-                    <td className="px-4 py-3 text-slate-600">{g.memberCount} ta</td>
-                    <td className="px-4 py-3">
-                      <div
-                        className="flex items-center justify-end gap-0.5"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <IconBtn
-                          icon={Eye}
-                          title="Ko'rish (ro'yxat)"
-                          onClick={() => navigate(`/admin/groups/${g.id}/students`)}
-                        />
-                        <IconBtn
-                          icon={Copy}
-                          title="Nusxalash"
-                          onClick={() => handleDuplicate(g)}
-                        />
-                        {!g.isArchived && (
-                          <IconBtn
-                            icon={Pencil}
-                            title="Tahrirlash"
-                            onClick={() => navigate(`/admin/groups/${g.id}`)}
-                          />
-                        )}
-                        {g.isArchived ? (
-                          <IconBtn
-                            icon={ArchiveRestore}
-                            title="Arxivdan chiqarish"
-                            onClick={() => handleUnarchive(g)}
-                          />
-                        ) : (
-                          <IconBtn
-                            icon={Archive}
-                            title="Arxivlash"
-                            onClick={() => handleArchive(g)}
-                          />
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-                {groups.length === 0 && (
-                  <tr>
-                    <td colSpan={7} className="px-4 py-12 text-center text-slate-400">
-                      {showArchived
-                        ? "Arxivlangan guruh yo'q"
-                        : "Guruh yo'q. Guruh ochish uchun avval \"Fanlar\" bo'limida fanni \"guruhlarga bo'linadi\" deb belgilang."}
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        )}
+        <DataTable
+          pageKey="admin.groups"
+          columns={groupColumns(navigate, handleDuplicate, handleArchive, handleUnarchive)}
+          rows={groups}
+          getRowId={(g) => g.id}
+          onRowClick={(g) => navigate(`/admin/groups/${g.id}`)}
+          loading={loading}
+          emptyMessage={
+            showArchived
+              ? "Arxivlangan guruh yo'q"
+              : "Guruh yo'q. Guruh ochish uchun avval \"Fanlar\" bo'limida fanni \"guruhlarga bo'linadi\" deb belgilang."
+          }
+        />
       </Card>
     </div>
   )
+}
+
+/**
+ * Ustunlar ta'rifi — X-1: `DataTable` ularni yashirish/tartiblash/qadash
+ * imkonini beradi. "#" va "Amallar" doim ko'rinadi (`alwaysVisible`).
+ */
+function groupColumns(
+  navigate: ReturnType<typeof useNavigate>,
+  onDuplicate: (g: StudyGroupListItem) => void,
+  onArchive: (g: StudyGroupListItem) => void,
+  onUnarchive: (g: StudyGroupListItem) => void,
+): DataTableColumn<StudyGroupListItem>[] {
+  return [
+    {
+      id: 'index',
+      header: '#',
+      headerClassName: 'w-10',
+      alwaysVisible: true,
+      cell: (_g, i) => <span className="text-slate-400">{i + 1}</span>,
+    },
+    {
+      id: 'name',
+      header: 'Guruh',
+      alwaysVisible: true,
+      cell: (g) => (
+        <>
+          <span className="font-medium text-slate-800">{g.name}</span>
+          {g.gender && (
+            <span className="ml-2 rounded-md bg-slate-100 px-1.5 py-0.5 text-[11px] text-slate-500">
+              {g.gender === 'male' ? "O'g'il bolalar" : 'Qizlar'}
+            </span>
+          )}
+        </>
+      ),
+    },
+    {
+      id: 'subject',
+      header: 'Fan',
+      cell: (g) => <span className="text-slate-600">{g.subjectName}</span>,
+    },
+    {
+      id: 'classes',
+      header: 'Sinflar',
+      cell: (g) => (
+        <span className="text-slate-600">{g.classes.map((c) => c.name).join(', ') || '—'}</span>
+      ),
+    },
+    {
+      id: 'teachers',
+      header: "O'qituvchilar",
+      cell: (g) => (
+        <span className="text-slate-600">{g.teachers.map((t) => t.fullName).join(', ') || '—'}</span>
+      ),
+    },
+    {
+      id: 'members',
+      header: "O'quvchilar",
+      cell: (g) => <span className="text-slate-600">{g.memberCount} ta</span>,
+    },
+    {
+      id: 'actions',
+      header: 'Amallar',
+      headerClassName: 'text-right',
+      alwaysVisible: true,
+      cell: (g) => (
+        <div className="flex items-center justify-end gap-0.5" onClick={(e) => e.stopPropagation()}>
+          <IconBtn
+            icon={Eye}
+            title="Ko'rish (ro'yxat)"
+            onClick={() => navigate(`/admin/groups/${g.id}/students`)}
+          />
+          <IconBtn icon={Copy} title="Nusxalash" onClick={() => onDuplicate(g)} />
+          {!g.isArchived && (
+            <IconBtn
+              icon={Pencil}
+              title="Tahrirlash"
+              onClick={() => navigate(`/admin/groups/${g.id}`)}
+            />
+          )}
+          {g.isArchived ? (
+            <IconBtn
+              icon={ArchiveRestore}
+              title="Arxivdan chiqarish"
+              onClick={() => onUnarchive(g)}
+            />
+          ) : (
+            <IconBtn icon={Archive} title="Arxivlash" onClick={() => onArchive(g)} />
+          )}
+        </div>
+      ),
+    },
+  ]
 }
 
 interface IconBtnProps {

@@ -8,9 +8,9 @@
  * qo'lda qo'shish kerak edi.
  *
  * RUXSAT (SPEC §4.3): admin va direktor. Kassir bu ro'yxatni ko'rmaydi —
- * u kassirlar KESIMIDAGI ko'rinish, ustiga chiqimlarni ham qo'shadi. Kassir
- * o'z smenasini Z-hisobotdan ko'radi. Sahifa darvozasi shu yerda; haqiqiy
- * darvoza serverda (`[FinanceRole(ViewBillingReports)]`).
+ * u kassirlar KESIMIDAGI ko'rinish, ustiga chiqimlarni ham qo'shadi. Sahifa
+ * darvozasi shu yerda; haqiqiy darvoza serverda
+ * (`[FinanceRole(ViewBillingReports)]`).
  *
  * PUL ARIFMETIKASI BU YERDA YO'Q. Qator summasi ham, pastdagi yakun ham
  * serverdan keladi; yakun BUTUN FILTR bo'yicha, ko'rinib turgan sahifa
@@ -339,7 +339,7 @@ export function TransactionsPage() {
         <h2 className="text-base font-semibold text-slate-800">Bu bo'lim sizga yopiq</h2>
         <p className="mt-2 text-sm text-slate-500">
           Tranzaksiyalar jurnali — kassirlar kesimidagi hisobot, u faqat administrator va
-          direktorga ochiq (SPEC §4.3). Kassir o'z smenasini Z-hisobotdan ko'radi.
+          direktorga ochiq (SPEC §4.3).
         </p>
       </Card>
     )

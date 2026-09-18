@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.DependencyInjection;
 using SchoolLms.Application.Billing;
 using SchoolLms.Application.Dtos.Billing;
 using SchoolLms.Domain;
@@ -38,8 +39,9 @@ namespace SchoolLms.Server.Controllers;
 
 /// <summary>
 /// Moliya xatosining javob shakli. <c>code</c> — MASHINA uchun barqaror kalit
-/// (<c>no_open_shift</c>, <c>already_reversed</c>, ...), <c>message</c> — ekranga
-/// chiqadigan o'zbekcha matn. Klient matnga emas, kodga qarab qaror qabul qiladi.
+/// (<c>cash_box_inactive</c>, <c>already_reversed</c>, ...), <c>message</c> —
+/// ekranga chiqadigan o'zbekcha matn. Klient matnga emas, kodga qarab qaror
+/// qabul qiladi. <c>no_open_shift</c> ENDI YO'Q — kassalar modeli (2026-09).
 /// </summary>
 public sealed record PaymentErrorDto(string Code, string Message);
 
@@ -50,7 +52,15 @@ public sealed record PaymentErrorDto(string Code, string Message);
 [ApiController]
 [Authorize]
 [Produces("application/json")]
-public class PaymentsController(IPaymentService payments, IReceiptService receipts) : ControllerBase
+public class PaymentsController(
+    IPaymentService payments,
+    // F1.07 (SPEC §4.7) — chekni fon vazifasida Telegramga yuborish uchun.
+    // IReceiptService BEVOSITA emas: u IPaymentService ga bog'liq (ReceiptService
+    // konstruktori), ya'ni PaymentService o'zi IReceiptService'ga bog'lansa DOIRAVIY
+    // bog'liqlik (circular DI) hosil bo'lardi. Shu sabab yuborish PaymentService.cs
+    // emas, shu yerda — controller ikkalasiga ham bog'lanishi mumkin.
+    IServiceScopeFactory scopeFactory,
+    ILogger<PaymentsController> logger) : ControllerBase
 {
     /// <summary>
     /// SPEC §4.4 — SERVER ANIQLAYDIGAN SHAXS. Bu nomlar so'rov tanasida
@@ -89,10 +99,11 @@ public class PaymentsController(IPaymentService payments, IReceiptService receip
     /// bir necha TOIFAGA taqsimlanadi: o'qish + avtobus + yotoqxona bitta chekda.
     /// </para>
     /// <para>
-    /// Kassir (<c>cashier_id</c>) JWT'dan, smena esa uning ochiq smenasidan
-    /// olinadi. So'rov tanasida shu maydonlar bo'lsa — <b>400</b> (SPEC §4.4).
-    /// Ochiq smena bo'lmasa — <b>409 <c>no_open_shift</c></b> va bitta ham pul
-    /// qatori yozilmaydi.
+    /// Kassir (<c>cashier_id</c>) JWT'dan olinadi. So'rov tanasida shu maydon
+    /// bo'lsa — <b>400</b> (SPEC §4.4). "Smena" ENDI TALAB QILINMAYDI (mijoz
+    /// javobi, 2026-09): pul <c>cashBoxId</c> ko'rsatilgan (yoki SUKUT)
+    /// kassaga tushadi. Bo'lmagan yoki faol bo'lmagan kassa — <b>404</b>/
+    /// <b>409</b> va bitta ham pul qatori yozilmaydi.
     /// </para>
     /// </summary>
     [HttpPost("/api/cash/payments")]
@@ -112,14 +123,7 @@ public class PaymentsController(IPaymentService payments, IReceiptService receip
             var payment = await payments.AcceptAsync(
                 request, FinanceActor.RequireUserId(User), ct);
 
-            // finance-parity.md F1.07 / SPEC §4.7 — chek AVTOMATIK ota-onaning
-            // Telegramiga yuboriladi, tugmani bosishni kutmaydi. To'lov
-            // ALLAQACHON qabul qilingan (yuqoridagi qator commit bo'lgan);
-            // `SendToGuardianAsync` HECH QACHON istisno tashlamaydi va
-            // natijasini bu yerda e'tiborsiz qoldiramiz — yetkazilmaslik
-            // (ota-ona botga ulanmagan, Telegram javob bermadi) to'lovni
-            // bekor qilmaydi. "Qayta yuborish" tugmasi ekranda qoladi.
-            _ = await receipts.SendToGuardianAsync(payment.Id, ct);
+            SendReceiptInBackground(payment.Id);
 
             return Ok(payment);
         }
@@ -127,6 +131,47 @@ public class PaymentsController(IPaymentService payments, IReceiptService receip
         {
             return Fail(ex);
         }
+    }
+
+    /// <summary>
+    /// F1.07 (SPEC §4.7) — "receipts … are also sent to the guardian's Telegram
+    /// account" avtomatik, qo'lda bosilmasdan. <b>Fire-and-forget:</b> to'lov
+    /// ALLAQACHON qabul qilingan (yuqorida, commit qilingan) — Telegram
+    /// sekin bo'lsa ham (ikki urinish, orasida 2 soniya, qarang
+    /// <see cref="ReceiptService"/>) kassir shuncha kutib turmasin. Qo'lda
+    /// "qayta yuborish" tugmasi (<see cref="ReceiptsController"/>) o'zgarishsiz
+    /// qoladi — bu shunchaki BIRINCHI urinishni avtomatlashtiradi.
+    ///
+    /// <para>
+    /// <b>ALOHIDA DI skopi ataylab.</b> Bu so'rov skopi (demak — shu
+    /// <c>IAppDbContext</c>) javob qaytgach yopiladi, fon vazifasi esa undan
+    /// KEYIN ham ishlashi kerak — shuning uchun <see cref="IServiceScopeFactory"/>
+    /// bilan MUSTAQIL skop ochiladi va <see cref="CancellationToken.None"/>
+    /// ishlatiladi (so'rovning o'z <c>ct</c>'si javob yuborilgach bekor
+    /// bo'ladi). <c>ReceiptService.SendToGuardianAsync</c> ning o'zi HECH
+    /// QACHON istisno tashlamaydi (fayl boshidagi izoh), lekin skop yoki DI
+    /// yechimining o'zi yiqilib qolsa ham to'lov natijasiga (allaqachon
+    /// <c>Ok(payment)</c> qaytgan) ta'sir qilmasin deb baribir tashqi
+    /// <c>try/catch</c> bilan o'raladi — faqat jurnalga yoziladi.
+    /// </para>
+    /// </summary>
+    private void SendReceiptInBackground(Guid paymentId)
+    {
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await using var scope = scopeFactory.CreateAsyncScope();
+                var receipts = scope.ServiceProvider.GetRequiredService<IReceiptService>();
+                await receipts.SendToGuardianAsync(paymentId, CancellationToken.None);
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex,
+                    "Chek {PaymentId}: avtomatik yuborish fon vazifasi yiqildi. "
+                    + "To'lov kuchda — qo'lda qayta yuborish mumkin.", paymentId);
+            }
+        });
     }
 
     /// <summary>
@@ -173,10 +218,11 @@ public class PaymentsController(IPaymentService payments, IReceiptService receip
     public async Task<ActionResult<IEnumerable<PaymentDto>>> List(
         [FromQuery] string? studentId, [FromQuery] string? cashierId,
         [FromQuery] Guid? cashShiftId, [FromQuery] DateOnly? from, [FromQuery] DateOnly? to,
-        [FromQuery] string? method, [FromQuery] bool onlyReversals,
+        [FromQuery] string? method, [FromQuery] bool onlyReversals, [FromQuery] Guid? cashBoxId,
         CancellationToken ct)
     {
-        var query = new PaymentQuery(studentId, cashierId, cashShiftId, from, to, method, onlyReversals);
+        var query = new PaymentQuery(
+            studentId, cashierId, cashShiftId, from, to, method, onlyReversals, cashBoxId);
         if (OnlyOwnPayments) query = query with { CashierId = FinanceActor.RequireUserId(User) };
 
         var list = await payments.ListAsync(query, ct);
@@ -198,9 +244,9 @@ public class PaymentsController(IPaymentService payments, IReceiptService receip
     /// urinish — <b>403</b> (SPEC §4.5, ikki qavatli nazorat).
     /// </para>
     /// <para>
-    /// Storno qatori tasdiqlovchining O'Z ochiq smenasiga yoziladi (pul bugun,
-    /// uning kassasidan chiqadi), shuning uchun ochiq smena bo'lmasa —
-    /// <b>409 <c>no_open_shift</c></b>.
+    /// Storno qatori tasdiqlovchi ko'rsatgan (yoki SUKUT) kassaga yoziladi —
+    /// pul bugun, o'sha kassadan chiqadi. "Smena" ENDI TALAB QILINMAYDI
+    /// (mijoz javobi, 2026-09).
     /// </para>
     /// </summary>
     [HttpPost("/api/admin/payments/{id:guid}/reverse")]
@@ -218,7 +264,8 @@ public class PaymentsController(IPaymentService payments, IReceiptService receip
         try
         {
             var storno = await payments.ReverseAsync(
-                id, request.Reason ?? string.Empty, FinanceActor.RequireUserId(User), ct);
+                id, request.Reason ?? string.Empty, FinanceActor.RequireUserId(User),
+                request.CashBoxId, ct);
             return Ok(storno);
         }
         catch (PaymentException ex)
@@ -278,7 +325,6 @@ public class PaymentsController(IPaymentService payments, IReceiptService receip
         return ex.Error switch
         {
             PaymentError.NotFound => StatusCode(StatusCodes.Status404NotFound, body),
-            PaymentError.NoOpenShift => StatusCode(StatusCodes.Status409Conflict, body),
             PaymentError.Conflict => StatusCode(StatusCodes.Status409Conflict, body),
             PaymentError.DualControl => StatusCode(StatusCodes.Status403Forbidden, body),
             _ => StatusCode(StatusCodes.Status400BadRequest, body),

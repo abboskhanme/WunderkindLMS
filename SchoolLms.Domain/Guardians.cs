@@ -102,21 +102,28 @@ public static class GuardianRelation
     public const string Other = "other";
 
     /// <summary>
-    /// Ilova HOZIR qabul qiladigan qiymatlar. Ataylab kengaytirilmagan:
-    /// sxema migratsiyasi (M-slice) baza chegarasini kengaytiradi, kirishni
-    /// tekshirishni esa forma va vasiy xizmati bilan birga 3-slice
-    /// o'zgartiradi (§4.2). Bugungi <c>AdminGuardiansController</c> xatti-
-    /// harakati SHU SABABLI o'zgarmaydi.
-    /// </summary>
-    public static readonly string[] All = [Parent, Grandparent, Trustee];
-
-    /// <summary>
     /// Baza <c>ck_student_guardians_relation</c> check constraint'i bilan
     /// BIR XIL ro'yxat: eski uchtasi O'RNIDA emas, YONIGA qo'shildi, ya'ni
     /// birorta mavjud qator o'zgarmaydi.
     /// </summary>
     public static readonly string[] Stored =
         [Parent, Father, Mother, Grandparent, Trustee, Other];
+
+    /// <summary>
+    /// Ilova qabul qiladigan qiymatlar — endi <see cref="Stored"/> bilan
+    /// AYNAN bir xil (S-8, 3-slice).
+    ///
+    /// <para>
+    /// Ilgari bu ro'yxat uchtagina edi: sxema migratsiyasi baza chegarasini
+    /// kengaytirgan, kirish tekshiruvi esa forma bilan birga kengayishi kerak
+    /// edi (§4.2). Shu qadam bajarildi — forma endi "ota" va "ona" ni alohida
+    /// yozadi, ya'ni tekshiruv ularni rad etsa forma umuman saqlanmasdi.
+    /// Ro'yxatda YO'Q qiymat esa hamon rad etiladi: bazadagi
+    /// <c>ck_student_guardians_relation</c> ga borib 23514 bilan yiqilishdan
+    /// ko'ra, tushunarli 400 qaytgani ma'qul.
+    /// </para>
+    /// </summary>
+    public static readonly string[] All = Stored;
 
     public static bool IsValid(string? value) => value is not null && All.Contains(value);
 

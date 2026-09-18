@@ -8,11 +8,78 @@ namespace SchoolLms.Application.Services;
 /// <summary>
 /// Topshiriq/test (boy model) o'qish/yozish mantig'i. O'qituvchi yaratadi (format, ko'p sinf,
 /// materiallar, muddat, baholash, test savollari); admin va o'quvchi ko'radi.
+///
+/// <para>
+/// <b>G-20 — guruhga qaratilgan topshiriq</b> (docs/modules/students-parity.md §2.1.6).
+/// <c>Assignment.OwnerKind</c> — §2.1.4 dagi bilan AYNAN bir xil naqsh: guruhga
+/// berilganda guruh id'si xuddi <see cref="Assignment.ClassIds"/> ustunida
+/// (eskisi kabi) saqlanadi, alohida nullable ustun YO'Q. Rostser/ko'rinish
+/// <see cref="LessonRoster"/> orqali hal qilinadi — <c>JournalService</c> va
+/// jadval controllerlari ishlatgan RESOLVER shu, ikkinchisi ixtiro qilinmadi.
+/// </para>
+/// <para>
+/// <b>Cut-over o'chirgichiga BOG'LIQ EMAS.</b> <c>school_meta.group_lessons_enabled</c>
+/// faqat DARS JADVALINI (shablon/hafta/jurnal) boshqaradi (§2.1.4). Topshiriq
+/// biror rejalashtirilgan darsga bog'lanmaydi — o'qituvchi guruhni to'g'ridan-to'g'ri
+/// tanlaydi, shuning uchun bu yerda o'chirgich TEKSHIRILMAYDI.
+/// </para>
 /// </summary>
 public static class AssignmentService
 {
     private static IQueryable<Assignment> Query(IAppDbContext db) =>
         db.Assignments.Include(a => a.Materials).Include(a => a.Questions);
+
+    /// <summary>So'rovdagi qiymatni tekshiradi; noma'lum/bo'sh — "class" (bugungi xatti-harakat).</summary>
+    private static string ValidOwnerKind(string? kind) =>
+        LessonOwnerKind.IsValid(kind) ? kind! : LessonOwnerKind.Class;
+
+    /// <summary>
+    /// Topshiriqning nishon o'quvchilari — <see cref="Assignment.OwnerKind"/> ga qarab
+    /// sinf(lar) yoki guruh(lar). Guruh yo'li <see cref="LessonRoster"/> dan foydalanadi
+    /// (bir nechta guruh bo'lsa — birlashma, takror o'quvchi bitta marta).
+    /// </summary>
+    private static async Task<List<Student>> RosterAsync(
+        IAppDbContext db, Assignment a, bool includeArchived)
+    {
+        if (a.OwnerKind != LessonOwnerKind.Group)
+        {
+            var classNames = await db.Classes.Where(c => a.ClassIds.Contains(c.Id))
+                .Select(c => c.Name).ToListAsync();
+            var q = db.Students.Where(s => classNames.Contains(s.ClassName));
+            if (!includeArchived) q = q.Where(s => !s.IsArchived);
+            return await q.ToListAsync();
+        }
+
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var result = new List<Student>();
+        foreach (var ownerId in a.ClassIds.Distinct(StringComparer.Ordinal))
+        {
+            var owner = await LessonRoster.OwnerAsync(db, ownerId);
+            if (owner is null || !owner.IsGroup) continue;
+            var gq = LessonRoster.Query(db, owner);
+            if (!includeArchived) gq = gq.Where(s => !s.IsArchived);
+            foreach (var s in await gq.ToListAsync())
+                if (seen.Add(s.Id)) result.Add(s);
+        }
+        return result;
+    }
+
+    /// <summary>O'quvchining bugun FAOL bo'lgan guruhlarining id'lari (matn, StudyGroups.Id.ToString()).</summary>
+    private static async Task<List<string>> ActiveGroupIdsAsync(IAppDbContext db, string studentId) =>
+        [.. (await db.StudyGroupMembers.AsNoTracking()
+                .Where(m => m.StudentId == studentId && m.LeftOn == null)
+                .Select(m => m.GroupId).ToListAsync())
+            .Select(g => g.ToString())];
+
+    /// <summary>
+    /// Topshiriq shu o'quvchiga ko'rinadimi: sinfga berilgan bo'lsa — o'quvchining
+    /// (bugungi) sinf id'si mos kelishi kerak; guruhga berilgan bo'lsa — o'quvchi
+    /// shu guruhlardan BIRIDA faol a'zo bo'lishi kerak.
+    /// </summary>
+    private static bool VisibleTo(Assignment a, string classId, IReadOnlyCollection<string> activeGroupIds) =>
+        a.OwnerKind == LessonOwnerKind.Group
+            ? a.ClassIds.Any(activeGroupIds.Contains)
+            : a.ClassIds.Contains(classId);
 
     /// <summary>O'qituvchining o'zi yaratgan topshiriqlari (yangidan eskiga).</summary>
     public static async Task<List<AssignmentDto>> ListForTeacherAsync(IAppDbContext db, string userId)
@@ -29,7 +96,12 @@ public static class AssignmentService
         return await ToDtosAsync(db, list);
     }
 
-    /// <summary>Berilgan sinfga tegishli topshiriqlar (o'quvchi ko'radi).</summary>
+    /// <summary>
+    /// Berilgan EGAga (sinf yoki guruh, G-20) tegishli topshiriqlar — admin ro'yxat filtri.
+    /// <paramref name="classId"/> — nomiga qaramay, sinf id'si HAM, guruh id'si HAM bo'lishi
+    /// mumkin: filtr shunchaki <c>ClassIds</c> ustunidan qidiradi, u ikkalasini ham saqlaydi
+    /// (§2.1.4). Chaqiruvchi (admin FE) guruhni tanlasa — aynan shu metodning o'zi ishlaydi.
+    /// </summary>
     public static async Task<List<AssignmentDto>> ListForClassAsync(IAppDbContext db, string classId)
     {
         var all = await Query(db).ToListAsync();
@@ -58,6 +130,7 @@ public static class AssignmentService
             MaxScore = req.MaxScore > 0 ? req.MaxScore : 100,
             AutoGrade = req.AutoGrade,
             CreatedAt = AppClock.Now,
+            OwnerKind = ValidOwnerKind(req.OwnerKind),
         };
         Apply(a, req);
         db.Assignments.Add(a);
@@ -81,6 +154,7 @@ public static class AssignmentService
         a.LatePenaltyPct = req.LatePenaltyPct;
         a.MaxScore = req.MaxScore > 0 ? req.MaxScore : 100;
         a.AutoGrade = req.AutoGrade;
+        a.OwnerKind = ValidOwnerKind(req.OwnerKind);
 
         // Materiallar va savollarni qaytadan yozamiz (eskini o'chirib, yangisini qo'shamiz).
         db.AssignmentMaterials.RemoveRange(a.Materials);
@@ -104,16 +178,17 @@ public static class AssignmentService
         return true;
     }
 
-    /// <summary>Topshiriq natijalari: maqsadli sinflar o'quvchilari + har birining holati (bajardi/yo'q).</summary>
+    /// <summary>Topshiriq natijalari: maqsadli sinf(lar)/guruh(lar) o'quvchilari + har birining holati (bajardi/yo'q).</summary>
     public static async Task<AssignmentResultDto?> GetResultsAsync(IAppDbContext db, string assignmentId)
     {
         var a = await db.Assignments.FindAsync(assignmentId);
         if (a is null) return null;
 
-        var classNames = await db.Classes.Where(c => a.ClassIds.Contains(c.Id))
-            .Select(c => c.Name).ToListAsync();
-        var students = await db.Students.Where(s => classNames.Contains(s.ClassName))
-            .OrderBy(s => s.ClassName).ThenBy(s => s.FullName).ToListAsync();
+        // includeArchived:true — bugungi (sinf yo'li) xatti-harakat: natija
+        // ro'yxati arxivlangan o'quvchini ham ko'rsatardi, agar class_name
+        // hamon mos kelsa.
+        var students = (await RosterAsync(db, a, includeArchived: true))
+            .OrderBy(s => s.ClassName).ThenBy(s => s.FullName).ToList();
         var byStudent = (await db.AssignmentSubmissions.Where(x => x.AssignmentId == assignmentId).ToListAsync())
             .ToDictionary(x => x.StudentId);
 
@@ -130,22 +205,22 @@ public static class AssignmentService
     }
 
     /// <summary>
-    /// Admin "Topshiriqlar bali" — bitta sinf bo'yicha ball jadvali: ustunlar = shu sinfga berilgan
-    /// topshiriqlar, qatorlar = sinf o'quvchilari, kataklar = har bir o'quvchining bali/holati.
+    /// Admin "Topshiriqlar bali" — bitta EGA (sinf YOKI guruh, G-20) bo'yicha ball jadvali: ustunlar =
+    /// shu egaga berilgan topshiriqlar, qatorlar = uning o'quvchilari, kataklar = har bir o'quvchining
+    /// bali/holati. <paramref name="ownerId"/> — sinf yoki guruh id'si, <see cref="LessonRoster"/> ikkalasini
+    /// ham taniydi (schedule/journal bilan bir xil resolver).
     /// </summary>
-    public static async Task<AssignmentScoreboardDto?> GetScoreboardAsync(IAppDbContext db, string classId)
+    public static async Task<AssignmentScoreboardDto?> GetScoreboardAsync(IAppDbContext db, string ownerId)
     {
-        var cls = await db.Classes.FindAsync(classId);
-        if (cls is null) return null;
+        var owner = await LessonRoster.OwnerAsync(db, ownerId);
+        if (owner is null) return null;
 
         var subjects = await db.Subjects.ToDictionaryAsync(s => s.Id, s => s.Name);
         var assignments = (await Query(db).OrderBy(a => a.CreatedAt).ToListAsync())
-            .Where(a => a.ClassIds.Contains(classId))
+            .Where(a => a.OwnerKind == owner.Kind && a.ClassIds.Contains(ownerId))
             .ToList();
 
-        var students = await db.Students
-            .Where(s => s.ClassName == cls.Name && !s.IsArchived)
-            .OrderBy(s => s.FullName).ToListAsync();
+        var students = await LessonRoster.ForLessonAsync(db, owner, includeArchived: false);
 
         var assignmentIds = assignments.Select(a => a.Id).ToHashSet();
         var studentIds = students.Select(s => s.Id).ToList();
@@ -175,15 +250,16 @@ public static class AssignmentService
             return new AssignmentScoreRowDto(s.Id, s.FullName, s.ClassName, cells, totalScore, totalMax, graded);
         }).ToList();
 
-        return new AssignmentScoreboardDto(cls.Id, cls.Name, columns, rows);
+        return new AssignmentScoreboardDto(owner.Id, owner.Name, columns, rows);
     }
 
-    /// <summary>O'quvchi/ota-ona "Topshiriq ballari" — o'quvchiga berilgan topshiriqlar + uning bali.</summary>
+    /// <summary>O'quvchi/ota-ona "Topshiriq ballari" — o'quvchiga berilgan topshiriqlar (sinf VA guruh) + uning bali.</summary>
     public static async Task<StudentAssignmentScoresDto> ScoresForStudentAsync(
         IAppDbContext db, string classId, string studentId)
     {
         var all = await Query(db).ToListAsync();
-        var mine = all.Where(a => a.ClassIds.Contains(classId))
+        var groupIds = await ActiveGroupIdsAsync(db, studentId);
+        var mine = all.Where(a => VisibleTo(a, classId, groupIds))
             .OrderByDescending(a => a.CreatedAt).ToList();
         var subjects = await db.Subjects.ToDictionaryAsync(s => s.Id, s => s.Name);
         var subs = (await db.AssignmentSubmissions.Where(x => x.StudentId == studentId).ToListAsync())
@@ -228,7 +304,8 @@ public static class AssignmentService
         IAppDbContext db, string classId, string studentId)
     {
         var all = await Query(db).ToListAsync();
-        var mine = all.Where(a => a.ClassIds.Contains(classId))
+        var groupIds = await ActiveGroupIdsAsync(db, studentId);
+        var mine = all.Where(a => VisibleTo(a, classId, groupIds))
             .OrderByDescending(a => a.CreatedAt).ToList();
         var subjects = await db.Subjects.ToDictionaryAsync(s => s.Id, s => s.Name);
         var subs = (await db.AssignmentSubmissions.Where(x => x.StudentId == studentId).ToListAsync())
@@ -249,7 +326,9 @@ public static class AssignmentService
         IAppDbContext db, string assignmentId, string classId, string studentId)
     {
         var a = await Query(db).FirstOrDefaultAsync(x => x.Id == assignmentId);
-        if (a is null || !a.ClassIds.Contains(classId)) return null;
+        if (a is null) return null;
+        var groupIds = await ActiveGroupIdsAsync(db, studentId);
+        if (!VisibleTo(a, classId, groupIds)) return null;
         var subjectName = (await db.Subjects.FindAsync(a.SubjectId))?.Name ?? "";
         var sub = await db.AssignmentSubmissions
             .FirstOrDefaultAsync(x => x.AssignmentId == assignmentId && x.StudentId == studentId);
@@ -266,7 +345,9 @@ public static class AssignmentService
         IAppDbContext db, string assignmentId, string classId, string studentId, SubmitAssignmentRequest req)
     {
         var a = await Query(db).FirstOrDefaultAsync(x => x.Id == assignmentId);
-        if (a is null || !a.ClassIds.Contains(classId)) return null;
+        if (a is null) return null;
+        var groupIds = await ActiveGroupIdsAsync(db, studentId);
+        if (!VisibleTo(a, classId, groupIds)) return null;
 
         var sub = await db.AssignmentSubmissions
             .FirstOrDefaultAsync(x => x.AssignmentId == assignmentId && x.StudentId == studentId);
@@ -337,24 +418,36 @@ public static class AssignmentService
     {
         var subjects = await db.Subjects.ToDictionaryAsync(s => s.Id, s => s.Name);
         var classes = await db.Classes.ToDictionaryAsync(c => c.Id, c => c.Name);
-        return list.Select(a => ToDto(a, subjects, classes)).ToList();
+        var groups = await GroupNamesByIdAsync(db);
+        return list.Select(a => ToDto(a, subjects, classes, groups)).ToList();
     }
 
     private static async Task<AssignmentDto> ToDtoAsync(IAppDbContext db, Assignment a)
     {
         var subjects = await db.Subjects.ToDictionaryAsync(s => s.Id, s => s.Name);
         var classes = await db.Classes.ToDictionaryAsync(c => c.Id, c => c.Name);
-        return ToDto(a, subjects, classes);
+        var groups = await GroupNamesByIdAsync(db);
+        return ToDto(a, subjects, classes, groups);
     }
 
+    /// <summary>G-20: guruh id (matn) → guruh nomi — <see cref="AssignmentDto.ClassNames"/> uchun.</summary>
+    private static Task<Dictionary<string, string>> GroupNamesByIdAsync(IAppDbContext db) =>
+        db.StudyGroups.ToDictionaryAsync(g => g.Id.ToString(), g => g.Name);
+
     private static AssignmentDto ToDto(
-        Assignment a, Dictionary<string, string> subjects, Dictionary<string, string> classes) => new(
+        Assignment a, Dictionary<string, string> subjects, Dictionary<string, string> classes,
+        Dictionary<string, string> groups) => new(
         a.Id, a.CreatedByUserId, a.SubjectId, subjects.GetValueOrDefault(a.SubjectId, ""), a.Title,
         a.Description, a.Format, a.ClassIds,
-        a.ClassIds.Select(id => classes.GetValueOrDefault(id, "")).Where(n => n.Length > 0).ToList(),
+        // G-20: ega turi qaysi bo'lsa, o'sha lug'atdan nom qidiriladi — sinfda
+        // sinf nomi, guruhda guruh nomi (§2.1.4 naqshi: id bitta ustunda).
+        a.ClassIds
+            .Select(id => (a.OwnerKind == LessonOwnerKind.Group ? groups : classes).GetValueOrDefault(id, ""))
+            .Where(n => n.Length > 0).ToList(),
         a.StartDate, a.DueDate, a.LateAccept, a.LatePenaltyPct, a.MaxScore, a.AutoGrade,
         a.CreatedAt.ToString("o"),
         a.Materials.Select(m => new AssignmentMaterialDto(m.Id, m.Name, m.Url, m.Size, m.ContentType)).ToList(),
         a.Questions.OrderBy(q => q.Order)
-            .Select(q => new TestQuestionDto(q.Id, q.Text, q.Options, q.CorrectIndex, q.Order)).ToList());
+            .Select(q => new TestQuestionDto(q.Id, q.Text, q.Options, q.CorrectIndex, q.Order)).ToList(),
+        a.OwnerKind);
 }

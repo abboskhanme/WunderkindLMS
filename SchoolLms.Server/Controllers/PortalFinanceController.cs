@@ -372,6 +372,6 @@ public sealed class PortalFinanceController(
     private IInvoiceService Invoices => new InvoiceService(db, new LedgerService(db));
 
     private IReceiptService Receipts => new ReceiptService(
-        new PaymentService(db, new CashShiftService(db), new LedgerService(db)),
+        new PaymentService(db, new LedgerService(db)),
         db, telegram, receiptLogger);
 }

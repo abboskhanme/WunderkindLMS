@@ -92,8 +92,17 @@ export async function getClassCandidates(
   return data
 }
 
-export async function addClassMember(classId: string, studentId: string): Promise<void> {
-  await api.post(`${base}/${classId}/members`, { studentId })
+/**
+ * C-4: sig'im OGOHLANTIRISHI. Server amalni baribir bajaradi (bu yer taqiq emas) — sig'im
+ * oshib ketgan bo'lsa javobda `warning` matni keladi (204 o'rniga 200), aks holda `null`.
+ */
+export interface CapacityWarning {
+  warning: string | null
+}
+
+export async function addClassMember(classId: string, studentId: string): Promise<CapacityWarning> {
+  const res = await api.post<{ warning?: string } | null>(`${base}/${classId}/members`, { studentId })
+  return { warning: res.data?.warning ?? null }
 }
 
 /** Sinfdan chiqarish. Sabab MAJBURIY — a'zolik tarixi shu savolga javob beradi. */
@@ -111,12 +120,13 @@ export async function transferClassMember(
   toClassId: string,
   keepGroups = true,
   reason?: string,
-): Promise<void> {
-  await api.post(`${base}/members/${membershipId}/transfer`, {
+): Promise<CapacityWarning> {
+  const res = await api.post<{ warning?: string } | null>(`${base}/members/${membershipId}/transfer`, {
     toClassId,
     keepGroups,
     reason: reason || null,
   })
+  return { warning: res.data?.warning ?? null }
 }
 
 /** O'quvchi kartochkasi — "Sinf va guruhlar" tab'i (G-10). */

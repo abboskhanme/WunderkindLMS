@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -32,6 +33,9 @@ namespace SchoolLms.Server.Controllers;
 [Route("api/admin/certificates")]
 public class CertificatesController(AppDbContext db, AuditService audit) : ControllerBase
 {
+    private const string XlsxMime =
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+
     /// <summary>Joriy foydalanuvchi (JWT'dan) — <c>Certificate.CreatedBy</c> uchun.</summary>
     private string Uid => User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "";
 
@@ -65,6 +69,51 @@ public class CertificatesController(AppDbContext db, AuditService audit) : Contr
         var result = await CertificateService.ResultsAsync(db, typeId, className, ct);
         if (result is null) return NotFound(new { message = "Sertifikat turi topilmadi" });
         return result;
+    }
+
+    /// <summary>
+    /// Z-2 — joriy filtrlar bilan RO'YXATNING .xlsx eksporti. O'quvchilar ro'yxati
+    /// eksportidan (<c>StudentSearchController.Export</c>) mustaqil: bu registr, import
+    /// shabloni bilan bog'liq emas, shuning uchun ustunlar ham import bilan mos EMAS —
+    /// ular ekrandagi jadval ustunlarining o'zi.
+    /// </summary>
+    [HttpGet("export")]
+    public async Task<IActionResult> Export(
+        [FromQuery] string? studentId, [FromQuery] Guid? typeId, [FromQuery] string? teacherId,
+        [FromQuery] string? subjectId, [FromQuery] string? className,
+        [FromQuery] string? from, [FromQuery] string? to, [FromQuery] int? expiringInDays,
+        [FromQuery] string? search,
+        CancellationToken ct = default)
+    {
+        var rows = await CertificateService.ListAsync(
+            db, studentId, typeId, teacherId, subjectId, className,
+            CertificateService.Parse(from), CertificateService.Parse(to),
+            expiringInDays, search, ct);
+
+        var headers = new[]
+        {
+            "O'quvchi", "Sinf", "Turi", "Fan(lar)", "O'qituvchi", "Raqami",
+            "Ball", "Berilgan", "Muddati", "Fayl", "Izoh",
+        };
+
+        var data = rows.Select(r => (IReadOnlyList<string>)new[]
+        {
+            r.StudentName,
+            r.ClassName,
+            r.TypeName,
+            // Z-3 — bitta hujjatda bir nechta fan bo'lishi mumkin, vergul bilan.
+            r.SubjectNames.Count > 0 ? string.Join(", ", r.SubjectNames) : "",
+            r.TeacherName ?? "",
+            r.Number ?? "",
+            r.Score?.ToString("0.##", CultureInfo.InvariantCulture) ?? "",
+            r.IssuedOn,
+            r.ExpiresOn ?? "",
+            r.FileUrl ?? "",
+            r.Comment ?? "",
+        });
+
+        var bytes = ExcelExport.Build("Sertifikatlar", headers, data);
+        return File(bytes, XlsxMime, $"sertifikatlar_{AppClock.Now:yyyy-MM-dd}.xlsx");
     }
 
     /// <summary>

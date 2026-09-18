@@ -480,7 +480,9 @@ public sealed class CashShiftService(IAppDbContext db) : ICashShiftService
             CashExpensesTotal: outflow.Expenses,
             CashExpensesCount: outflow.ExpensesCount,
             CashHandoversTotal: outflow.Handovers,
-            CashHandoversCount: outflow.HandoversCount);
+            CashHandoversCount: outflow.HandoversCount,
+            CashRefundsTotal: outflow.Refunds,
+            CashRefundsCount: outflow.RefundsCount);
     }
 
     /// <inheritdoc />
@@ -613,7 +615,7 @@ public sealed class CashShiftService(IAppDbContext db) : ICashShiftService
         var outflow = await CashOutflowAsync(shift, ct);
 
         return decimal.Round(
-            shift.OpeningFloat + debit - credit - outflow.Expenses - outflow.Handovers,
+            shift.OpeningFloat + debit - credit - outflow.Expenses - outflow.Handovers - outflow.Refunds,
             MoneyScale);
     }
 
@@ -698,7 +700,7 @@ public sealed class CashShiftService(IAppDbContext db) : ICashShiftService
 
         // Kredit — pul javondan chiqdi, debet — storno uni qaytardi.
         var spent = expenseRows.FirstOrDefault(r => r.Direction == LedgerDirection.Credit);
-        var refunded = expenseRows.FirstOrDefault(r => r.Direction == LedgerDirection.Debit);
+        var expenseRefunded = expenseRows.FirstOrDefault(r => r.Direction == LedgerDirection.Debit);
 
         // ---- 2. Topshiriqlar (F1.04) ----
         var handoverRows = await db.CashHandovers.AsNoTracking()
@@ -710,19 +712,40 @@ public sealed class CashShiftService(IAppDbContext db) : ICashShiftService
         var handedOver = handoverRows.FirstOrDefault(r => !r.IsReversal);
         var returned = handoverRows.FirstOrDefault(r => r.IsReversal);
 
+        // ---- 3. O'quvchilarga naqd qaytarimlar (F1.05) ----
+        //
+        // `student_refunds.cash_shift_id` — AYNAN shu smena qatori kabi
+        // `cash_handovers.cash_shift_id`: tasdiqlangan paytda TASDIQLOVCHINING
+        // ochiq smenasiga yoziladi (oddiy qaytarimda — pul chiqadi; storno
+        // qatorida — pul qaytadi) va trigger bilan qulflanadi, ya'ni bu yerda
+        // ledger `created_by` + vaqt oralig'i bilan "taxmin qilish" shart emas
+        // — `CashHandover` da ishlatilgan sodda naqsh to'g'ridan-to'g'ri ishlaydi.
+        var refundRows = await db.StudentRefunds.AsNoTracking()
+            .Where(r => r.CashShiftId == shift.Id && r.ApprovedBy != null && r.RejectedReason == null)
+            .GroupBy(r => r.ReversalOf != null)
+            .Select(g => new { IsReversal = g.Key, Total = g.Sum(x => x.Amount), Count = g.Count() })
+            .ToListAsync(ct);
+
+        var refundedOut = refundRows.FirstOrDefault(r => !r.IsReversal);
+        var refundReturned = refundRows.FirstOrDefault(r => r.IsReversal);
+
         return new CashOutflow(
-            Expenses: decimal.Round((spent?.Total ?? 0m) - (refunded?.Total ?? 0m), MoneyScale),
-            ExpensesCount: (spent?.Count ?? 0) + (refunded?.Count ?? 0),
+            Expenses: decimal.Round((spent?.Total ?? 0m) - (expenseRefunded?.Total ?? 0m), MoneyScale),
+            ExpensesCount: (spent?.Count ?? 0) + (expenseRefunded?.Count ?? 0),
             Handovers: decimal.Round((handedOver?.Total ?? 0m) - (returned?.Total ?? 0m), MoneyScale),
-            HandoversCount: (handedOver?.Count ?? 0) + (returned?.Count ?? 0));
+            HandoversCount: (handedOver?.Count ?? 0) + (returned?.Count ?? 0),
+            Refunds: decimal.Round((refundedOut?.Total ?? 0m) - (refundReturned?.Total ?? 0m), MoneyScale),
+            RefundsCount: (refundedOut?.Count ?? 0) + (refundReturned?.Count ?? 0));
     }
 
     /// <summary>
-    /// Javondan chiqqan naqd, ikki sabab bo'yicha. Musbat = kassadan chiqdi,
+    /// Javondan chiqqan naqd, uch sabab bo'yicha. Musbat = kassadan chiqdi,
     /// manfiy = storno chiqqandan ko'proq qaytargan (nazariy holat).
     /// </summary>
     private sealed record CashOutflow(
-        decimal Expenses, int ExpensesCount, decimal Handovers, int HandoversCount);
+        decimal Expenses, int ExpensesCount,
+        decimal Handovers, int HandoversCount,
+        decimal Refunds, int RefundsCount);
 
     /// <summary>
     /// Smena × usul × (storno mi) kesimidagi yig'indilar — BITTA so'rov.
@@ -734,9 +757,12 @@ public sealed class CashShiftService(IAppDbContext db) : ICashShiftService
     {
         if (shiftIds.Count == 0) return [];
 
+        // `CashShiftId` "smena" modeli olib tashlangач `Guid?` bo'ldi (kassalar,
+        // 2026-09): yangi to'lovlarda odatda `null`. Shu yerda FAQAT haqiqatan
+        // shu smenalarga tegishli (`.Value`) qatorlar kerak — filtr shart.
         var rows = await db.Payments.AsNoTracking()
-            .Where(p => shiftIds.Contains(p.CashShiftId))
-            .GroupBy(p => new { p.CashShiftId, p.Method, IsReversal = p.ReversalOf != null })
+            .Where(p => p.CashShiftId != null && shiftIds.Contains(p.CashShiftId.Value))
+            .GroupBy(p => new { CashShiftId = p.CashShiftId!.Value, p.Method, IsReversal = p.ReversalOf != null })
             .Select(g => new MethodTotal(
                 g.Key.CashShiftId, g.Key.Method, g.Key.IsReversal, g.Count(), g.Sum(p => p.Amount)))
             .ToListAsync(ct);

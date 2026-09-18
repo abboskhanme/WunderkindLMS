@@ -21,6 +21,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Coins,
+  Download,
   FileText,
   Play,
   RotateCcw,
@@ -30,6 +31,7 @@ import type { FeeCategory, Invoice, InvoiceStatus, SchoolClass } from '@/types'
 import type { InvoicePage } from '@/api/services/invoices'
 import {
   canVoid,
+  downloadInvoices,
   invoiceStatusLabels,
   invoiceStatusTone,
   listInvoices,
@@ -114,6 +116,7 @@ function InvoicesView() {
   const [actionError, setActionError] = useState<string | null>(null)
   const [actionCode, setActionCode] = useState<string | null>(null)
   const [accruing, setAccruing] = useState(false)
+  const [exporting, setExporting] = useState(false)
   const [reloadToken, setReloadToken] = useState(0)
 
   useEffect(() => {
@@ -210,6 +213,19 @@ function InvoicesView() {
     }
   }
 
+  /** F10.05 — BUTUN filtr bo'yicha .xlsx, ko'rinib turgan sahifa emas. */
+  const handleDownload = async () => {
+    setExporting(true)
+    setError(null)
+    try {
+      await downloadInvoices(query)
+    } catch (e: unknown) {
+      setError(billingErrorMessage(e, "Eksport qilib bo'lmadi"))
+    } finally {
+      setExporting(false)
+    }
+  }
+
   const first = data.total === 0 ? 0 : (data.page - 1) * data.pageSize + 1
   const last = Math.min(data.page * data.pageSize, data.total)
   const lastPage = Math.max(1, Math.ceil(data.total / data.pageSize))
@@ -224,17 +240,28 @@ function InvoicesView() {
             turgan sahifa bo'yicha emas.
           </p>
         </div>
-        {canManageSubscriptions && (
+        <div className="flex items-center gap-2">
           <button
             type="button"
-            onClick={handleAccrual}
-            disabled={accruing || loading}
+            onClick={handleDownload}
+            disabled={exporting || loading || data.total === 0}
             className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            <Play className="h-4 w-4" />
-            {accruing ? 'Hisoblanmoqda...' : `Oyni hisoblash (${formatMonth(filters.toMonth)})`}
+            <Download className="h-4 w-4" />
+            {exporting ? 'Tayyorlanmoqda...' : 'Excel'}
           </button>
-        )}
+          {canManageSubscriptions && (
+            <button
+              type="button"
+              onClick={handleAccrual}
+              disabled={accruing || loading}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Play className="h-4 w-4" />
+              {accruing ? 'Hisoblanmoqda...' : `Oyni hisoblash (${formatMonth(filters.toMonth)})`}
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">

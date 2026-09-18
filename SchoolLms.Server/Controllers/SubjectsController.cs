@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -8,39 +9,78 @@ using SchoolLms.Domain;
 namespace SchoolLms.Server.Controllers;
 
 /// <summary>
-/// Fanlar — <c>docs/modules/students-parity.md</c> §2.5 (G-9, F-1).
+/// Fanlar — <c>docs/modules/students-parity.md</c> §2.5 (G-9, F-1, F-3, F-4).
 ///
 /// <para>
-/// <b>Ruxsat <c>schedule</c> bo'lib qoladi</b> — menyu esa "O'quv bo'limi"
-/// ostida turibdi. Nomuvofiqlik bor va u F-4 sifatida alohida yozilgan (P2);
-/// bu yerda darvozani o'zgartirish bugun ishlayotgan ekranni buzardi.
+/// <b>Ruxsat — <c>students</c> (F-4 tuzatuvi).</b> Ilgari bu yerda <c>schedule</c>
+/// turardi, menyu esa "O'quv bo'limi" (<c>students</c>) ostida — uch tomonlama
+/// nomuvofiqlik (<c>App.tsx</c> marshrut darvozasi ham <c>schedule</c> so'ragan).
+/// Natija: <c>students</c> ruxsatli-lekin-<c>schedule</c>siz xodim menyuda
+/// "Fanlar"ni ko'radi (nav bolasi alohida <c>perm</c>siz — ota elementning
+/// <c>students</c> darvozasidan o'tadi), bosganda esa "ruxsatingiz yo'q" oladi.
+/// <b>To'g'ri tomon — <c>students</c>:</b> mijoz 2026-09-17 da Fanlar/Xonalar
+/// tartibini AYNAN EduSchool'ning "O'quv bo'limi" menyusidan olishni so'radi
+/// (<c>navigation.ts</c> izohi) — bu joylashuv qaror, tasodif emas. Va bu
+/// fayldagi naqsh allaqachon bor: <c>StudentStatusesController</c> va
+/// <c>CertificateTypesController</c> xuddi shu sababdan <c>students</c>ni
+/// tanlagan ("menyu O'quv bo'limi ostida, darvoza ham shunga mos bo'lsin").
+/// Fanlar katalogi ham xuddi shunday — dars jadvali UNI ISHLATADI, lekin
+/// egasi emas.
 /// </para>
 /// </summary>
 [ApiController]
 [Authorize]
-[AdminPerm("schedule")]
+[AdminPerm("students")]
 [Route("api/admin/subjects")]
-public class SubjectsController(AppDbContext db) : ControllerBase
+public partial class SubjectsController(AppDbContext db) : ControllerBase
 {
+    public const string ColorMessage = "Rang #RRGGBB ko'rinishida bo'lsin (masalan #34C759)";
+
+    /// <summary>Baza CHECK constraint'i bilan AYNAN bir xil shakl (`ck_subjects_color`).</summary>
+    [GeneratedRegex("^#[0-9a-fA-F]{6}$")]
+    private static partial Regex ColorPattern();
+
     /// <summary>
     /// Fanlar ro'yxati. <paramref name="groupable"/>=true bo'lsa faqat
     /// "guruhlarga bo'linadi" deb belgilanganlari — guruh formasining fan
     /// tanlovi aynan shu ro'yxatni so'raydi (§2.1.1:
     /// <c>subjects/all?isGroupsSubject=true</c>).
+    ///
+    /// <para>
+    /// <paramref name="isActive"/> berilmasa — HAMMASI qaytadi (faol ham,
+    /// faolsiz ham). Bu ATAYLAB: jadval, jurnal, chorak bahosi va sertifikat
+    /// kabi ko'plab o'qiydigan ekranlar fan nomini ID bo'yicha shu ro'yxatdan
+    /// qidiradi — faolsizlantirilgan fan filtrlanib ketsa, o'sha ESKI
+    /// yozuvlar "fansiz" ko'rinib qolardi (F-3 talabi: "must not break
+    /// existing... rows"). Faqat FAOLLARNI so'raydigan YANGI tanlov —
+    /// <c>isActive=true</c> bilan ochiq qoldirilgan.
+    /// </para>
     /// </summary>
     [HttpGet]
     public async Task<ActionResult<IEnumerable<Subject>>> GetAll(
-        [FromQuery] bool? groupable = null, CancellationToken ct = default)
+        [FromQuery] bool? groupable = null, [FromQuery] bool? isActive = null,
+        CancellationToken ct = default)
     {
         var q = db.Subjects.AsNoTracking().AsQueryable();
         if (groupable is true) q = q.Where(s => s.IsGroupable);
+        if (isActive is { } active) q = q.Where(s => s.IsActive == active);
         return await q.OrderBy(s => s.Name).ToListAsync(ct);
     }
 
     [HttpPost]
     public async Task<ActionResult<Subject>> Create(SubjectPayload payload)
     {
-        var subject = new Subject { Name = payload.Name, IsGroupable = payload.IsGroupable };
+        var color = NormalizeColor(payload.Color);
+        if (color is null && !string.IsNullOrWhiteSpace(payload.Color))
+            return BadRequest(new { message = ColorMessage });
+
+        var subject = new Subject
+        {
+            Name = payload.Name,
+            IsGroupable = payload.IsGroupable,
+            Color = color,
+            IsActive = payload.IsActive,
+        };
         db.Subjects.Add(subject);
         await db.SaveChangesAsync();
         return subject;
@@ -55,6 +95,14 @@ public class SubjectsController(AppDbContext db) : ControllerBase
     /// fanni ko'rsatmay qo'yadi va mavjud guruh tahrirlab bo'lmaydigan
     /// "yetim" bo'lib qolardi. Guruh o'zi arxivlangach bayroqni o'chirish
     /// mumkin.
+    /// </para>
+    /// <para>
+    /// <b><c>IsActive</c> — bunday qulf YO'Q (F-3).</b> Fanni faolsizlantirish
+    /// undan foydalanayotgan hech narsani buzmaydi: jadval katagi, jurnal
+    /// qatori, chorak bahosi va sertifikat JOYIDA qoladi, faqat YANGI
+    /// tanlovda (jadval yaratish, yangi guruh) ko'rinmay qoladi. Shuning
+    /// uchun bu yerda "faol guruhi bor" tekshiruvi YO'Q — u faqat
+    /// <c>IsGroupable</c> bayrog'iga tegishli.
     /// </para>
     /// </summary>
     [HttpPut("{id}")]
@@ -75,8 +123,14 @@ public class SubjectsController(AppDbContext db) : ControllerBase
                 });
         }
 
+        var color = NormalizeColor(payload.Color);
+        if (color is null && !string.IsNullOrWhiteSpace(payload.Color))
+            return BadRequest(new { message = ColorMessage });
+
         subject.Name = payload.Name;
         subject.IsGroupable = payload.IsGroupable;
+        subject.Color = color;
+        subject.IsActive = payload.IsActive;
         await db.SaveChangesAsync();
         return subject;
     }
@@ -93,7 +147,9 @@ public class SubjectsController(AppDbContext db) : ControllerBase
     /// </para>
     /// <para>
     /// Endi ishlatilayotgan fan o'chirilmaydi va javob QAYERDA ishlatilganini
-    /// aytadi — administrator nima qilishini bilsin.
+    /// aytadi — administrator nima qilishini bilsin. <b>F-3</b>dan keyin
+    /// tavsiya endi aniq: o'chirish o'rniga faolsizlantirish (tarixiy
+    /// yozuvlar buzilmaydi, yangi tanlovda ko'rinmay qoladi).
     /// </para>
     /// </summary>
     [HttpDelete("{id}")]
@@ -109,7 +165,11 @@ public class SubjectsController(AppDbContext db) : ControllerBase
         await CountAsync(used, "jurnal yozuvi", db.JournalEntries.Where(e => e.SubjectId == id), ct);
         await CountAsync(used, "chorak bahosi", db.QuarterGrades.Where(g => g.SubjectId == id), ct);
         await CountAsync(used, "dars mavzusi", db.LessonNotes.Where(n => n.SubjectId == id), ct);
-        await CountAsync(used, "sertifikat", db.Certificates.Where(c => c.SubjectId == id), ct);
+        // Z-3: bitta sertifikat bir nechta fanni qamrab olishi mumkin —
+        // `certificate_subjects` endi HAR bir fan (asosiysi ham) uchun qator saqlaydi,
+        // shuning uchun eski `certificates.subject_id` tekshiruvi shu bilan almashtirildi
+        // (docs/modules/students-parity.md §2.7 Z-3; eski ustunning o'zi tegilmagan).
+        await CountAsync(used, "sertifikat", db.CertificateSubjects.Where(cs => cs.SubjectId == id), ct);
         await CountAsync(used, "topshiriq", db.Assignments.Where(a => a.SubjectId == id), ct);
 
         if (used.Count > 0)
@@ -117,7 +177,8 @@ public class SubjectsController(AppDbContext db) : ControllerBase
             {
                 message = $"\"{subject.Name}\" fani ishlatilmoqda ({string.Join(", ", used)}) — "
                           + "uni o'chirib bo'lmaydi. Fan tarixiy yozuvlarning nomi; o'chirilsa "
-                          + "ular qaysi fandan ekani noma'lum bo'lib qoladi.",
+                          + "ular qaysi fandan ekani noma'lum bo'lib qoladi. Buning o'rniga fanni "
+                          + "faolsizlantiring — u yangi tanlovda ko'rinmay qoladi.",
             });
 
         db.Subjects.Remove(subject);
@@ -131,5 +192,18 @@ public class SubjectsController(AppDbContext db) : ControllerBase
     {
         var count = await q.CountAsync(ct);
         if (count > 0) used.Add($"{count} ta {label}");
+    }
+
+    /// <summary>
+    /// <c>#RRGGBB</c> ga keltiradi (katta harfda). Bo'sh — null (rang yo'q,
+    /// neytral); shakli noto'g'ri — null va chaqiruvchi 400 qaytaradi
+    /// (<see cref="StudentStatusesController"/> dagi bir xil naqsh).
+    /// </summary>
+    private static string? NormalizeColor(string? raw)
+    {
+        var v = (raw ?? "").Trim();
+        if (v.Length == 0) return null;
+        if (!v.StartsWith('#')) v = "#" + v;
+        return ColorPattern().IsMatch(v) ? "#" + v[1..].ToUpperInvariant() : null;
     }
 }

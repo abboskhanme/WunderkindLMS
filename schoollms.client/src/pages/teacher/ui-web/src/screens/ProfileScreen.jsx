@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import {
-  GraduationCap, Wallet, BookOpen, Badge, LineChart,
+  GraduationCap, Wallet, BookOpen, Badge, LineChart, Users2,
   MessageSquareWarning, Moon, Lock, LogOut, ChevronRight, Download, Bell,
 } from 'lucide-react'
 import Avatar from '../components/Avatar'

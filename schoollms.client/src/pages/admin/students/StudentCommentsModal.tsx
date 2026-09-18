@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Paperclip, Pencil, Plus, Trash2 } from 'lucide-react'
+import { AlertTriangle, Paperclip, Pencil, Plus, Trash2 } from 'lucide-react'
 import {
   createStudentComment,
   deleteStudentComment,
@@ -44,6 +44,12 @@ export function StudentCommentsModal({ studentId, studentName, onClose }: Props)
   const [rows, setRows] = useState<StudentComment[]>([])
   const [loading, setLoading] = useState(false)
   const [filter, setFilter] = useState<'all' | StudentCommentKind>('all')
+  /**
+   * Ro'yxatni yuklashdagi xato. Ilgari bu chaqiruv xatoni UMUMAN ushlamasdi
+   * va har qanday nosozlik (403, tarmoq) "Hali izoh yozilmagan" bo'lib
+   * ko'rinardi — ya'ni ekran YOLG'ON gapirardi.
+   */
+  const [listError, setListError] = useState<string | null>(null)
 
   const [editing, setEditing] = useState<StudentComment | null>(null)
   const [formOpen, setFormOpen] = useState(false)
@@ -58,8 +64,10 @@ export function StudentCommentsModal({ studentId, studentName, onClose }: Props)
     // eslint-disable-next-line react-hooks/set-state-in-effect -- oyna ochilganda izohlarni yuklaymiz (maqsadli)
     setLoading(true)
     setRows([])
+    setListError(null)
     getStudentComments(studentId, filter === 'all' ? undefined : filter)
       .then(setRows)
+      .catch((err) => setListError(errorText(err, "Izohlarni olib bo'lmadi")))
       .finally(() => setLoading(false))
   }, [studentId, filter])
 
@@ -163,7 +171,12 @@ export function StudentCommentsModal({ studentId, studentName, onClose }: Props)
             </Button>
           </div>
 
-          {loading ? (
+          {listError ? (
+            <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+              <span>{listError}</span>
+            </div>
+          ) : loading ? (
             <Loader label="Yuklanmoqda..." />
           ) : rows.length === 0 ? (
             <p className="py-8 text-center text-sm text-slate-400">Hali izoh yozilmagan</p>

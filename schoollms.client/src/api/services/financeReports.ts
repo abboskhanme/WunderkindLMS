@@ -172,6 +172,55 @@ export async function getProfitLoss(from: string, to: string): Promise<ProfitLos
 }
 
 /* =========================================================================
+   2b) P&L 2.0 (beta) — GET /api/admin/finance/pnl/expectation
+   ========================================================================= */
+
+/**
+ * Bir oy uchun "reja · fakt · farq" (§2.6, `FINANCE_ALL.PNL_EXPECTATION`,
+ * EduSchool'da beta). Backend: `FinanceReportQueries.RevenueExpectation.cs`.
+ *
+ * `revenueActual` / `expenseActual` / `profitActual` — {@link getProfitLoss}
+ * shu OYNI so'raganda qaytaradigan `revenueTotal` / `expenseTotal` / `net`
+ * bilan AYNAN bir xil (server bitta funksiyani chaqiradi — ikkinchi ta'rif
+ * yo'q, backenddagi test buni tekshiradi).
+ */
+export interface RevenueExpectation {
+  /** "YYYY-MM-DD" — oyning birinchi kuni. */
+  month: string
+  studentsActive: number
+  studentsAdmitted: number
+  studentsDeparted: number
+  studentsExpected: number
+  studentsPaid: number
+  grossExpected: number
+  discountAmount: number
+  discountRate: number | null
+  netExpected: number
+  perStudentNet: number | null
+  collectedForPeriod: number
+  collectionRateForPeriod: number | null
+  outstandingForPeriod: number
+  revenueActual: number
+  expenseActual: number
+  profitActual: number
+  margin: number | null
+  profitPerStudent: number | null
+  revenueDiff: number
+}
+
+/** P&L 2.0. `month` — "YYYY-MM". Berilmasa — server joriy oyni qaytaradi. */
+export async function getRevenueExpectation(month?: string): Promise<RevenueExpectation> {
+  try {
+    const { data } = await api.get<RevenueExpectation>('/admin/finance/pnl/expectation', {
+      params: clean({ month }),
+    })
+    return data
+  } catch (e) {
+    throw toUzbekError(e, 'P&L 2.0 hisoboti')
+  }
+}
+
+/* =========================================================================
    3) Pul oqimi — GET /api/admin/finance/cashflow
    ========================================================================= */
 
@@ -376,7 +425,7 @@ export interface ArrearsCell {
   toBePaid: number
 }
 
-/** Jadvalning bitta qatori — bitta o'quvchi. */
+/** Jadvalning bitta qatori — bitta o'quvchi (F13.02 yoqilganda — bitta o'quvchi × toifa). */
 export interface ArrearsRow {
   studentId: string
   fullName: string
@@ -391,6 +440,11 @@ export interface ArrearsRow {
   cells: Record<string, ArrearsCell>
   /** Qator yakuni — kataklar yig'indisi (server hisoblaydi). */
   total: ArrearsCell
+  /** F13.03 — ota-ona telefoni (`students.parent_phone`). */
+  parentPhone: string
+  /** F13.02 — "toifalar bo'yicha ajratish" yoqilgandagina to'ldiriladi. */
+  categoryCode?: string | null
+  categoryName?: string | null
 }
 
 /** Oyma-oy qarzdorlik jadvali. */
@@ -409,7 +463,7 @@ export interface ArrearsFilters {
   fromMonth?: string
   /** Oxirgi oy, "YYYY-MM". Sukut: joriy oy. */
   toMonth?: string
-  /** Sinf (aniq moslik). */
+  /** Sinf (aniq moslik). `classNames` berilsa e'tiborsiz qoldiriladi. */
   className?: string
   /** Bitta to'lov toifasi. Berilmasa — hammasi bitta katakka yig'iladi. */
   categoryId?: string
@@ -417,6 +471,18 @@ export interface ArrearsFilters {
   debtorsOnly?: boolean
   /** false = arxivlangan o'quvchilarni yashirish. */
   includeArchived?: boolean
+  /** F13.01 — bir nechta sinf birdaniga (`className` dan USTUN turadi). */
+  classNames?: string[]
+  /** F13.06 — bitta o'quv guruhi (hozirgi a'zolari). */
+  groupId?: string
+  /** F13.02 — true bo'lsa bitta o'quvchi — bitta toifa uchun bitta qator. */
+  splitByCategory?: boolean
+}
+
+/** `classNames` massivini serverning kutgan "vergul bilan ajratilgan" shakliga o'giradi. */
+function withCsvClassNames(filters: ArrearsFilters): Record<string, string | number | boolean | undefined> {
+  const { classNames, ...rest } = filters
+  return { ...rest, classNames: classNames && classNames.length > 0 ? classNames.join(',') : undefined }
 }
 
 /**
@@ -430,10 +496,33 @@ export interface ArrearsFilters {
 export async function getArrearsPivot(filters: ArrearsFilters = {}): Promise<ArrearsPivot> {
   try {
     const { data } = await api.get<ArrearsPivot>('/admin/finance/arrears-pivot', {
-      params: clean({ ...filters }),
+      params: clean(withCsvClassNames(filters)),
     })
     return data
   } catch (e) {
     throw toUzbekError(e, 'Oyma-oy qarzdorlik hisoboti')
   }
+}
+
+/**
+ * O'sha filtr bo'yicha .xlsx (F13.05) — BUTUN jadval, faqat sahifada ko'rinib
+ * turgan qatorlar emas. `api/services/transactions.ts` dagi
+ * `downloadTransactions` bilan bir xil yuklab olish naqshi.
+ */
+export async function downloadArrearsPivot(filters: ArrearsFilters = {}): Promise<void> {
+  const res = await api.get('/admin/finance/arrears-pivot/export', {
+    params: clean(withCsvClassNames(filters)),
+    responseType: 'blob',
+  })
+
+  const url = URL.createObjectURL(res.data as Blob)
+  const a = document.createElement('a')
+  a.href = url
+  const cd = (res.headers['content-disposition'] as string | undefined) ?? ''
+  const m = cd.match(/filename="?([^"]+)"?/)
+  a.download = m?.[1] ?? `qarzdorlik_${new Date().toISOString().slice(0, 10)}.xlsx`
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  URL.revokeObjectURL(url)
 }

@@ -1,4 +1,10 @@
-import type { Credentials, MonthStatus, Student, StudentLedger } from '@/types'
+import type {
+  Credentials,
+  MonthStatus,
+  Student,
+  StudentGuardianInput,
+  StudentLedger,
+} from '@/types'
 import { delay, uid } from '@/lib/utils'
 import { api, USE_MOCK } from '../client'
 import { studentsMock } from '../mock/students'
@@ -95,8 +101,14 @@ export async function uploadAdminFile(file: File): Promise<UploadedFile> {
 
 /** Forma maydonlari. Balans bu yerda YO'Q — u hisoblanadi (P1-21), chegirma ham
  *  yo'q: u "Moliya → Chegirmalar" da, direktor tasdig'i bilan beriladi (SPEC §8.1 Q5).
- *  newPassword — ixtiyoriy: tahrirda kiritilsa o'quvchi akkaunti paroli almashtiriladi. */
-export type StudentPayload = Omit<Student, 'id' | 'balance'> & { newPassword?: string }
+ *  newPassword — ixtiyoriy: tahrirda kiritilsa o'quvchi akkaunti paroli almashtiriladi.
+ *
+ *  §2.3 (S-8) — `guardians` faqat FORMA yuboradigan ro'yxat (1–2 ta vasiy).
+ *  Berilmasa server vasiy jadvaliga tegmaydi, ya'ni saqlash bugungiday. */
+export type StudentPayload = Omit<Student, 'id' | 'balance'> & {
+  newPassword?: string
+  guardians?: StudentGuardianInput[]
+}
 
 /**
  * §2.3 — o'quvchilar ro'yxatining sertifikat filtrlari. QO'SHIMCHA: berilmasa

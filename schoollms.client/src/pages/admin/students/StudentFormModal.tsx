@@ -1,8 +1,16 @@
-import { useEffect, useRef, useState } from 'react'
-import { Upload, X, FileText, Loader2 } from 'lucide-react'
-import type { Student } from '@/types'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { Upload, X, FileText, Loader2, Star, Link2Off, Send } from 'lucide-react'
+import type { GuardianRelation, Student, StudentGuardian, StudentGuardianInput } from '@/types'
 import type { StudentPayload } from '@/api/services/students'
 import { uploadAdminFile, getStudentCredentials } from '@/api/services/students'
+import {
+  detachGuardian,
+  getStudentCard,
+  guardianRelations,
+  makeGuardianPrimary,
+  relationLabel,
+  updateStudentGuardian,
+} from '@/api/services/studentGuardians'
 import { getClasses } from '@/api/services/classes'
 import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
@@ -16,6 +24,47 @@ interface Props {
   onSubmit: (values: StudentPayload) => void
   /** Tahrirlash uchun mavjud o'quvchi, qo'shish uchun null */
   initial?: Student | null
+}
+
+/**
+ * O'qish tili (students-parity.md §2.3, S-8). Ro'yxat bazadagi
+ * `ck_students_language` bilan AYNAN bir xil — undan boshqasi 400 qaytadi.
+ */
+const languageOptions: { value: string; label: string }[] = [
+  { value: '', label: "Ko'rsatilmagan" },
+  { value: 'uz', label: "O'zbek" },
+  { value: 'ru', label: 'Rus' },
+  { value: 'en', label: 'Ingliz' },
+  { value: 'kaa', label: 'Qoraqalpoq' },
+]
+
+/**
+ * S-9 — sinfi hali yo'q o'quvchining mo'ljaldagi sinf darajasi. `ck_students_target_grade`
+ * bilan bir xil diapazon (0-11); 0 — maktabgacha tayyorlov.
+ */
+const targetGradeOptions: { value: number; label: string }[] = [
+  { value: 0, label: 'Tayyorlov (0)' },
+  ...Array.from({ length: 11 }, (_, i) => ({ value: i + 1, label: `${i + 1}-sinf` })),
+]
+
+/** Formadagi ikkinchi vasiy — `students` qatorida ustuni yo'q, faqat vasiy jadvalida. */
+interface GuardianDraft {
+  /** Mavjud vasiyni tahrirlayapmizmi (null = yangi). */
+  guardianId: string | null
+  fullName: string
+  phone: string
+  relation: GuardianRelation
+  relationNote: string
+  passportUrl: string | null
+}
+
+const emptyGuardian: GuardianDraft = {
+  guardianId: null,
+  fullName: '',
+  phone: '',
+  relation: 'father',
+  relationNote: '',
+  passportUrl: null,
 }
 
 const empty: StudentPayload = {
@@ -34,8 +83,12 @@ const empty: StudentPayload = {
   parentPhone: '',
   parentPassportUrl: null,
   className: '',
+  targetGrade: null,
   enrollmentDate: new Date().toISOString().slice(0, 10),
   subGroup: 0,
+  phone: '',
+  language: '',
+  documentUrl: null,
 }
 
 /** "Familiya Ism Sharifi" stringidan parts. Eski yozuvlarni tahrirda taqsimlaymiz. */
@@ -55,13 +108,36 @@ function joinName(last?: string, first?: string, middle?: string): string {
     .join(' ')
 }
 
+/** Raqamlari 7 tadan kam bo'lsa telefon deb qabul qilinmaydi (server ham shunday). */
+function hasPhone(value: string | null | undefined): boolean {
+  return (value ?? '').replace(/\D/g, '').length >= 7
+}
+
 export function StudentFormModal({ open, onClose, onSubmit, initial }: Props) {
   const [form, setForm] = useState<StudentPayload>(empty)
   const [classNames, setClassNames] = useState<string[]>([])
+  /** S-9 — sinfi hali yo'q: sinf tanlovi o'rniga mo'ljaldagi sinf darajasi ko'rsatiladi. */
+  const [noClassYet, setNoClassYet] = useState(false)
   /** Fayl yuklash holatlari (har maydon uchun alohida). */
-  const [uploading, setUploading] = useState<{ birth?: boolean; passport?: boolean }>({})
+  const [uploading, setUploading] = useState<{
+    birth?: boolean
+    passport?: boolean
+    document?: boolean
+    guardian?: boolean
+  }>({})
   /** Tahrirlanayotgan o'quvchining login (username)i — backend'dan olinadi, faqat ko'rsatish uchun. */
   const [login, setLogin] = useState('')
+
+  /* ---- §2.3 (S-8) vasiylar ---- */
+  /** Asosiy vasiyning turi (eski "Ota-ona" maydonlari aynan shu odam). */
+  const [primaryRelation, setPrimaryRelation] = useState<GuardianRelation>('parent')
+  const [primaryNote, setPrimaryNote] = useState('')
+  const [second, setSecond] = useState<GuardianDraft>(emptyGuardian)
+  /** Saqlangan vasiylar — faqat tahrirda; ro'yxat serverdan keladi. */
+  const [saved, setSaved] = useState<StudentGuardian[]>([])
+  const [busy, setBusy] = useState(false)
+
+  const today = new Date().toISOString().slice(0, 10)
 
   useEffect(() => {
     if (open) getClasses().then((cs) => setClassNames(cs.map((c) => c.name)))
@@ -78,6 +154,60 @@ export function StudentFormModal({ open, onClose, onSubmit, initial }: Props) {
       .catch(() => { /* tarmoq/mok xatosi — login ko'rsatilmaydi */ })
     return () => { active = false }
   }, [open, initial])
+
+  /**
+   * Vasiylar va ro'yxat ustunlarida BO'LMAGAN maydonlar (telefon, til, hujjat)
+   * alohida so'rov bilan keladi. Ularsiz forma ochilsa, saqlashda ular
+   * jimgina tozalanib ketardi.
+   */
+  const loadCard = useCallback((studentId: string, syncParent = false) => {
+    // `setBusy(true)` ATAYLAB bu yerda emas — uni chaqiruvchi (tugma bosilishi)
+    // qo'yadi. Shunda effekt ichida to'g'ridan-to'g'ri holat yozilmaydi.
+    return getStudentCard(studentId)
+      .then((card) => {
+        setSaved(card.guardians)
+        const extra = card.guardians.find((g) => !g.isPrimary)
+        const primary = card.guardians.find((g) => g.isPrimary)
+        setForm((f) => {
+          const next = {
+            ...f,
+            phone: card.phone ?? '',
+            language: card.language ?? '',
+            documentUrl: card.documentUrl ?? null,
+          }
+          // Asosiy vasiy almashgan bo'lsa server `parent_*` ustunlarini ham
+          // yangilagan — formadagi eski qiymat saqlanishda uni qaytarib
+          // yozib yuborardi.
+          if (!syncParent || !primary) return next
+          const parts = splitFullName(primary.fullName)
+          return {
+            ...next,
+            parentFullName: primary.fullName,
+            parentLastName: parts.last,
+            parentFirstName: parts.first,
+            parentMiddleName: parts.middle,
+            parentPhone: primary.phone,
+            parentPassportUrl: primary.passportUrl,
+          }
+        })
+        setPrimaryRelation(primary?.relation ?? 'parent')
+        setPrimaryNote(primary?.relationNote ?? '')
+        setSecond(
+          extra
+            ? {
+                guardianId: extra.guardianId,
+                fullName: extra.fullName,
+                phone: extra.phone,
+                relation: extra.relation,
+                relationNote: extra.relationNote ?? '',
+                passportUrl: extra.passportUrl,
+              }
+            : emptyGuardian,
+        )
+      })
+      .catch(() => { /* mok yoki tarmoq xatosi — vasiylar bo'limi bo'sh qoladi */ })
+      .finally(() => setBusy(false))
+  }, [])
 
   useEffect(() => {
     if (!open) return
@@ -106,29 +236,61 @@ export function StudentFormModal({ open, onClose, onSubmit, initial }: Props) {
         parentPhone: initial.parentPhone,
         parentPassportUrl: initial.parentPassportUrl ?? null,
         className: initial.className,
+        targetGrade: initial.targetGrade ?? null,
         enrollmentDate: initial.enrollmentDate,
         subGroup: initial.subGroup,
+        phone: initial.phone ?? '',
+        language: initial.language ?? '',
+        documentUrl: initial.documentUrl ?? null,
       })
+      // S-9 — sinfi bo'sh o'quvchi mo'ljal rejimida ochiladi.
+      setNoClassYet(!initial.className)
+      void loadCard(initial.id)
     } else {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- yangi forma boshlash (maqsadli)
+      /* eslint-disable react-hooks/set-state-in-effect -- yangi forma boshlash (maqsadli) */
       setForm(empty)
+      setSaved([])
+      setPrimaryRelation('parent')
+      setPrimaryNote('')
+      setSecond(emptyGuardian)
+      setNoClassYet(false)
+      /* eslint-enable react-hooks/set-state-in-effect */
     }
-  }, [open, initial])
+  }, [open, initial, loadCard])
 
   // Yangi o'quvchida sinf tanlanmagan bo'lsa, birinchi sinfni standart qilamiz
+  // (S-9 — "sinfi hali yo'q" belgilangan bo'lsa TEGILMAYDI, u sinfsiz qoladi).
   useEffect(() => {
-    if (open && !initial && classNames.length) {
+    if (open && !initial && !noClassYet && classNames.length) {
       // eslint-disable-next-line react-hooks/set-state-in-effect -- sinflar yuklangach standart sinfni o'rnatish (maqsadli)
       setForm((f) => (f.className ? f : { ...f, className: classNames[0] }))
     }
-  }, [open, initial, classNames])
+  }, [open, initial, classNames, noClassYet])
+
+  /**
+   * S-9 — "sinfi hali yo'q" belgisi almashganda ikkala maydon ham mos
+   * holatga qaytariladi: sinf tanlansa mo'ljal bo'shaydi (server ham xuddi
+   * shunday tozalaydi — `CleanTargetGrade`), sinfsiz rejimga o'tilsa sinf
+   * bo'shaydi va mo'ljalga sukut qiymat (0) qo'yiladi.
+   */
+  const toggleNoClassYet = (value: boolean) => {
+    setNoClassYet(value)
+    setForm((f) =>
+      value
+        ? { ...f, className: '', targetGrade: f.targetGrade ?? 0 }
+        : { ...f, className: f.className || classNames[0] || '', targetGrade: null },
+    )
+  }
 
   const update = <K extends keyof StudentPayload>(key: K, value: StudentPayload[K]) =>
     setForm((f) => ({ ...f, [key]: value }))
 
   /** Fayl yuklash — admin uploads endpoint'iga uzatib, qaytgan URL'ni formaga yozadi. */
-  const handleUpload = async (key: 'birthCertificateUrl' | 'parentPassportUrl', file: File) => {
-    const flag = key === 'birthCertificateUrl' ? 'birth' : 'passport'
+  const handleUpload = async (
+    key: 'birthCertificateUrl' | 'parentPassportUrl' | 'documentUrl',
+    file: File,
+  ) => {
+    const flag = key === 'birthCertificateUrl' ? 'birth' : key === 'documentUrl' ? 'document' : 'passport'
     setUploading((u) => ({ ...u, [flag]: true }))
     try {
       const res = await uploadAdminFile(file)
@@ -140,7 +302,46 @@ export function StudentFormModal({ open, onClose, onSubmit, initial }: Props) {
     }
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleGuardianUpload = async (file: File) => {
+    setUploading((u) => ({ ...u, guardian: true }))
+    try {
+      const res = await uploadAdminFile(file)
+      setSecond((g) => ({ ...g, passportUrl: res.url }))
+    } catch {
+      // mok yoki tarmoq xatosi
+    } finally {
+      setUploading((u) => ({ ...u, guardian: false }))
+    }
+  }
+
+  /** Asosiy vasiyni almashtirish — eski `parent_phone` ustuni ham shunga tenglashadi. */
+  const handleMakePrimary = async (guardianId: string) => {
+    if (!initial) return
+    setBusy(true)
+    try {
+      await makeGuardianPrimary(initial.id, guardianId)
+      await loadCard(initial.id, true)
+    } catch {
+      alert("Asosiy vasiyni almashtirib bo'lmadi")
+      setBusy(false)
+    }
+  }
+
+  /** Vasiyni uzish. Vasiy qatori o'chmaydi — uning boshqa farzandi bo'lishi mumkin. */
+  const handleDetach = async (g: StudentGuardian) => {
+    if (!initial) return
+    if (!confirm(`${g.fullName} shu o'quvchidan uzilsinmi?`)) return
+    setBusy(true)
+    try {
+      await detachGuardian(initial.id, g.guardianId)
+      await loadCard(initial.id, true)
+    } catch {
+      alert("Vasiyni uzib bo'lmadi (yagona vasiy bo'lishi mumkin)")
+      setBusy(false)
+    }
+  }
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     const last = (form.lastName ?? '').trim()
     const first = (form.firstName ?? '').trim()
@@ -153,7 +354,54 @@ export function StudentFormModal({ open, onClose, onSubmit, initial }: Props) {
     }
     const fullName = joinName(last, first, middle)
     const parentFullName = joinName(form.parentLastName, form.parentFirstName, form.parentMiddleName)
-    onSubmit({ ...form, fullName, parentFullName })
+
+    // §2.3 (S-8) — vasiylar. Birinchi yozuv ATAYLAB eski "Ota-ona"
+    // maydonlarining o'zi: shunda `parent_full_name` / `parent_phone` va
+    // vasiy qatori hech qachon ayrilmaydi.
+    const guardians: StudentGuardianInput[] = []
+    if (hasPhone(form.parentPhone)) {
+      guardians.push({
+        fullName: parentFullName,
+        phone: form.parentPhone,
+        relation: primaryRelation,
+        relationNote: primaryRelation === 'other' ? primaryNote.trim() : null,
+        isPrimary: true,
+        passportUrl: form.parentPassportUrl ?? null,
+      })
+    }
+
+    const secondInput: StudentGuardianInput = {
+      fullName: second.fullName.trim(),
+      phone: second.phone.trim(),
+      relation: second.relation,
+      relationNote: second.relation === 'other' ? second.relationNote.trim() : null,
+      isPrimary: false,
+      passportUrl: second.passportUrl,
+    }
+    const secondFilled = hasPhone(second.phone) && secondInput.fullName.length > 0
+
+    if (secondFilled) {
+      if (initial && second.guardianId) {
+        // MAVJUD vasiy: telefon ham o'zgargan bo'lishi mumkin, shuning uchun
+        // uni payload orqali emas, o'z endpointi orqali yangilaymiz —
+        // aks holda yangi raqam YANGI vasiy yasab, eskisi osilib qolardi.
+        try {
+          await updateStudentGuardian(initial.id, second.guardianId, secondInput)
+        } catch {
+          alert("Ikkinchi vasiyni saqlab bo'lmadi — telefon raqamini tekshiring")
+          return
+        }
+      } else {
+        guardians.push(secondInput)
+      }
+    }
+
+    onSubmit({
+      ...form,
+      fullName,
+      parentFullName,
+      guardians: guardians.length > 0 ? guardians : undefined,
+    })
   }
 
   return (
@@ -199,6 +447,7 @@ export function StudentFormModal({ open, onClose, onSubmit, initial }: Props) {
             <Input
               label="Tug'ilgan kun"
               type="date"
+              max={today}
               value={form.birthDate}
               onChange={(e) => update('birthDate', e.target.value)}
             />
@@ -214,7 +463,26 @@ export function StudentFormModal({ open, onClose, onSubmit, initial }: Props) {
               ))}
             </Select>
           </div>
-          <div className="mt-3">
+          <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+            <Input
+              label="O'quvchi telefoni"
+              placeholder="+998 90 123 45 67"
+              value={form.phone ?? ''}
+              onChange={(e) => update('phone', e.target.value)}
+            />
+            <Select
+              label="O'qish tili"
+              value={form.language ?? ''}
+              onChange={(e) => update('language', e.target.value)}
+            >
+              {languageOptions.map((l) => (
+                <option key={l.value} value={l.value}>
+                  {l.label}
+                </option>
+              ))}
+            </Select>
+          </div>
+          <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
             <FileField
               label="O'quvchi rasmi"
               url={form.birthCertificateUrl ?? null}
@@ -222,11 +490,19 @@ export function StudentFormModal({ open, onClose, onSubmit, initial }: Props) {
               onUpload={(f) => handleUpload('birthCertificateUrl', f)}
               onClear={() => update('birthCertificateUrl', null)}
             />
+            <FileField
+              label="Hujjat nusxasi (metrika / pasport)"
+              accept="image/*,application/pdf"
+              url={form.documentUrl ?? null}
+              uploading={uploading.document}
+              onUpload={(f) => handleUpload('documentUrl', f)}
+              onClear={() => update('documentUrl', null)}
+            />
           </div>
         </Section>
 
-        {/* ---------- Ota-ona ---------- */}
-        <Section title="Ota-ona">
+        {/* ---------- Ota-ona (asosiy vasiy) ---------- */}
+        <Section title="Ota-ona (asosiy vasiy)">
           <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
             <Input
               label="Familiya"
@@ -244,13 +520,32 @@ export function StudentFormModal({ open, onClose, onSubmit, initial }: Props) {
               onChange={(e) => update('parentMiddleName', e.target.value)}
             />
           </div>
-          <div className="mt-3">
+          <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-3">
             <Input
               label="Telefon raqami"
               placeholder="+998 90 123 45 67"
               value={form.parentPhone}
               onChange={(e) => update('parentPhone', e.target.value)}
             />
+            <Select
+              label="Kimi bo'ladi"
+              value={primaryRelation}
+              onChange={(e) => setPrimaryRelation(e.target.value as GuardianRelation)}
+            >
+              {guardianRelations.map((r) => (
+                <option key={r.value} value={r.value}>
+                  {r.label}
+                </option>
+              ))}
+            </Select>
+            {primaryRelation === 'other' && (
+              <Input
+                label="Kim ekani"
+                placeholder="amakisi, opasi..."
+                value={primaryNote}
+                onChange={(e) => setPrimaryNote(e.target.value)}
+              />
+            )}
           </div>
           <div className="mt-3">
             <FileField
@@ -261,7 +556,120 @@ export function StudentFormModal({ open, onClose, onSubmit, initial }: Props) {
               onClear={() => update('parentPassportUrl', null)}
             />
           </div>
+          <p className="mt-2 text-xs text-slate-400">
+            Telegram xabarlari va chek shu odamga boradi. Raqam vasiylar ro'yxatiga ham
+            avtomatik tushadi.
+          </p>
         </Section>
+
+        {/* ---------- Ikkinchi vasiy ---------- */}
+        <Section title="Ikkinchi vasiy">
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+            <Input
+              label="F.I.SH"
+              placeholder="Karimova Dilnoza"
+              value={second.fullName}
+              onChange={(e) => setSecond((g) => ({ ...g, fullName: e.target.value }))}
+            />
+            <Input
+              label="Telefon raqami"
+              placeholder="+998 90 123 45 67"
+              value={second.phone}
+              onChange={(e) => setSecond((g) => ({ ...g, phone: e.target.value }))}
+            />
+          </div>
+          <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+            <Select
+              label="Kimi bo'ladi"
+              value={second.relation}
+              onChange={(e) =>
+                setSecond((g) => ({ ...g, relation: e.target.value as GuardianRelation }))
+              }
+            >
+              {guardianRelations.map((r) => (
+                <option key={r.value} value={r.value}>
+                  {r.label}
+                </option>
+              ))}
+            </Select>
+            {second.relation === 'other' && (
+              <Input
+                label="Kim ekani"
+                placeholder="amakisi, opasi..."
+                value={second.relationNote}
+                onChange={(e) => setSecond((g) => ({ ...g, relationNote: e.target.value }))}
+              />
+            )}
+          </div>
+          <div className="mt-3">
+            <FileField
+              label="Hujjat nusxasi"
+              accept="image/*,application/pdf"
+              url={second.passportUrl}
+              uploading={uploading.guardian}
+              onUpload={handleGuardianUpload}
+              onClear={() => setSecond((g) => ({ ...g, passportUrl: null }))}
+            />
+          </div>
+          <p className="mt-2 text-xs text-slate-400">
+            Ixtiyoriy. F.I.SH va telefon to'ldirilsa saqlanadi; bo'sh qolsa hech narsa
+            o'zgarmaydi.
+          </p>
+        </Section>
+
+        {/* ---------- Saqlangan vasiylar (faqat tahrirda) ---------- */}
+        {initial && saved.length > 0 && (
+          <Section title="Vasiylar ro'yxati">
+            <ul className="space-y-2">
+              {saved.map((g) => (
+                <li
+                  key={g.guardianId}
+                  className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2"
+                >
+                  <div className="min-w-[160px] flex-1">
+                    <div className="flex items-center gap-1.5 text-sm font-medium text-slate-800">
+                      {g.isPrimary && <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />}
+                      {g.fullName}
+                    </div>
+                    <div className="text-xs text-slate-500">
+                      {g.phone} · {relationLabel(g.relation, g.relationNote)}
+                      {g.childrenCount > 1 && ` · ${g.childrenCount} farzand`}
+                    </div>
+                  </div>
+                  {g.telegramLinked && (
+                    <span className="inline-flex items-center gap-1 rounded-md bg-sky-50 px-2 py-0.5 text-xs font-medium text-sky-700">
+                      <Send className="h-3 w-3" /> Telegram
+                    </span>
+                  )}
+                  {!g.isPrimary && (
+                    <>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        disabled={busy}
+                        onClick={() => handleMakePrimary(g.guardianId)}
+                      >
+                        <Star className="h-4 w-4" /> Asosiy qilish
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="danger"
+                        disabled={busy}
+                        onClick={() => handleDetach(g)}
+                      >
+                        <Link2Off className="h-4 w-4" /> Uzish
+                      </Button>
+                    </>
+                  )}
+                </li>
+              ))}
+            </ul>
+            <p className="mt-2 text-xs text-slate-400">
+              Asosiy vasiy yulduzcha bilan belgilangan — chek, shartnoma va xabarlar unga
+              boradi. Uzilgan vasiy tizimdan o'chmaydi: uning boshqa farzandi bo'lishi mumkin.
+            </p>
+          </Section>
+        )}
 
         {/* ---------- Boshqa ma'lumotlar ---------- */}
         <Section title="Boshqa ma'lumotlar">
@@ -271,17 +679,31 @@ export function StudentFormModal({ open, onClose, onSubmit, initial }: Props) {
             onChange={(e) => update('address', e.target.value)}
           />
           <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
-            <Select
-              label="Sinfga biriktirish"
-              value={form.className}
-              onChange={(e) => update('className', e.target.value)}
-            >
-              {classNames.map((c) => (
-                <option key={c} value={c}>
-                  {c}
-                </option>
-              ))}
-            </Select>
+            {noClassYet ? (
+              <Select
+                label="Mo'ljaldagi sinf darajasi"
+                value={String(form.targetGrade ?? 0)}
+                onChange={(e) => update('targetGrade', Number(e.target.value))}
+              >
+                {targetGradeOptions.map((g) => (
+                  <option key={g.value} value={g.value}>
+                    {g.label}
+                  </option>
+                ))}
+              </Select>
+            ) : (
+              <Select
+                label="Sinfga biriktirish"
+                value={form.className}
+                onChange={(e) => update('className', e.target.value)}
+              >
+                {classNames.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </Select>
+            )}
             <Input
               label="Maktabga kelgan sana"
               type="date"
@@ -289,6 +711,21 @@ export function StudentFormModal({ open, onClose, onSubmit, initial }: Props) {
               onChange={(e) => update('enrollmentDate', e.target.value)}
             />
           </div>
+          <label className="mt-3 flex items-center gap-2 text-sm text-slate-600">
+            <input
+              type="checkbox"
+              className="h-4 w-4 accent-brand-600"
+              checked={noClassYet}
+              onChange={(e) => toggleNoClassYet(e.target.checked)}
+            />
+            Sinfi hali yo'q — faqat mo'ljaldagi sinf darajasi bilan qo'shish (S-9)
+          </label>
+          {noClassYet && (
+            <p className="mt-1 text-xs text-slate-400">
+              Bu o'quvchi sinf ro'yxatida ko'rinmaydi; keyinroq sinf jadvalidan mos sinfga
+              biriktirilganda mo'ljal avtomatik bo'shaydi.
+            </p>
+          )}
         </Section>
 
         {/*
@@ -299,6 +736,9 @@ export function StudentFormModal({ open, onClose, onSubmit, initial }: Props) {
           chegirma `pending` bo'lib tug'iladi va tasdiqlangunicha hisob-kitobga
           ta'sir qilmaydi. Oylik summa ham bu yerda emas — u obunada
           ("Moliya → Obunalar", toifa bo'yicha).
+
+          Ota-onaning EMAIL va PAROLI ham ataylab yo'q (§2.3.3 "declined
+          outright"): ota-ona tizimga Telegram orqali kiradi.
         */}
 
         {/* ---------- Login va parol (faqat tahrirda) ---------- */}
@@ -354,12 +794,14 @@ function FileField({
   label,
   url,
   uploading,
+  accept,
   onUpload,
   onClear,
 }: {
   label: string
   url: string | null
   uploading: boolean | undefined
+  accept?: string
   onUpload: (file: File) => void
   onClear: () => void
 }) {
@@ -389,7 +831,7 @@ function FileField({
           <input
             ref={ref}
             type="file"
-            accept="image/*"
+            accept={accept ?? 'image/*'}
             className="hidden"
             onChange={(e) => {
               const f = e.target.files?.[0]

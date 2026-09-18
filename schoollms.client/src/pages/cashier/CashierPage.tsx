@@ -1,38 +1,62 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   AlertTriangle,
+  Download,
+  Filter,
   Inbox,
   RefreshCw,
   Search,
   ShieldOff,
   UserRound,
   Wallet,
+  X,
 } from 'lucide-react'
-import type { AllocationSuggestion, CashShift, Payment, PaymentMethod, Role } from '@/types'
+import type { AllocationSuggestion, Payment, PaymentMethod, Role, SchoolClass } from '@/types'
 import type { CashierStudent } from '@/api/services/cashier'
 import {
   MIN_SEARCH_LENGTH,
   PROBE_AMOUNT,
   financeErrorMessage,
-  getCurrentShift,
   isAborted,
   searchStudents,
   suggestAllocation,
 } from '@/api/services/cashier'
+import type { CashBox, CashBoxTransactionRow, CashBoxTransactionsResult } from '@/api/services/cashBoxes'
+import { cancelCashBoxTransaction, cashBoxIn, getCashBoxTransactions, getCashBoxes } from '@/api/services/cashBoxes'
+import type { StudentContract } from '@/api/services/studentContracts'
+import { searchStudentContracts } from '@/api/services/studentContracts'
+import { getClasses } from '@/api/services/classes'
 import { useAuth } from '@/context/auth-context'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { Loader } from '@/components/ui/Loader'
 import { Select, Textarea } from '@/components/ui/Input'
-import { cn } from '@/lib/utils'
+import { cn, exportToCsv } from '@/lib/utils'
+import { ReasonModal } from '@/pages/admin/billing/ReasonModal'
 import { MoneyInput } from './MoneyInput'
-import { ShiftBar } from './ShiftBar'
 import { PaymentSplitModal } from './PaymentSplitModal'
 import { ReceiptPreview } from './ReceiptPreview'
-import { formatPeriod, formatSum, formatSumWithUnit, methodLabels, parseSum } from './format'
+import { CashBoxPanel } from './CashBoxPanel'
+import { CashBoxFormModal } from './CashBoxFormModal'
+import { CashBoxActionModal } from './CashBoxActionModal'
+import type { CashBoxActionMode } from './CashBoxCard'
+import { CashLedger } from './CashLedger'
+import {
+  formatDateTime,
+  formatPeriod,
+  formatSum,
+  formatSumWithUnit,
+  kindLabel,
+  methodLabels,
+  parseSum,
+  statusLabel,
+} from './format'
+
+/** Kassa harakati turlari — "Tranzaksiya turi" filtri shu ro'yxatdan (format.ts dagi kindLabel bilan bir xil to'rttasi). */
+const TRANSACTION_KINDS: CashBoxTransactionRow['kind'][] = ['in', 'out', 'transfer', 'exchange']
 
 /* ==========================================================================
-   BU SAHIFADA TAHRIRLASH VA O'CHIRISH TUGMASI YO'Q — ATAYLAB.
+   BU SAHIFADA TO'LOVNI TAHRIRLASH VA O'CHIRISH TUGMASI YO'Q — ATAYLAB.
    --------------------------------------------------------------------------
    Mijoz aytgan xavf (SPEC §4 kirish qismi) aynan shu: kassir pulni oladi va
    yozuvni yo'q qiladi. Shuning uchun himoya uch qavatda, va ekran — eng
@@ -43,55 +67,355 @@ import { formatPeriod, formatSum, formatSumWithUnit, methodLabels, parseSum } fr
         `FinanceMatrix.EditOrDeletePayment` qoidasining rollar ro'yxati bo'sh;
      3) bazada `app_rw` roli `payments` jadvalini o'zgartira olmaydi — 42501.
    Xato to'lov FAQAT storno bilan tuzatiladi, storno esa admin/direktor amali
-   (SPEC §4.3), ya'ni bu ekranga umuman tegishli emas.
+   (SPEC §4.3), ya'ni bu ekranga umuman tegishli emas. Kassa tranzaksiyalari
+   (kirim/chiqim/ko'chirish/ayirboshlash) ham xuddi shunday — bekor qilinadi,
+   o'chirilmaydi (`cancelCashBoxTransaction`).
+
+   SMENA YO'Q (mijoz, 2026-09-18): "bizni tizimda smena degan tushuncha
+   umuman bo'lmasin butunlay olib tashla, shunchaki kassa degan narsa
+   bo'lsin xolos, bizda bir nechta kassa bo'lishi mumkin, ular har bir
+   alohida pul kirim chiqim qilishi va o'zaro o'tkazma qilishi mumkin."
+   Ochish/yopish, sanalgan naqd, nomuvofiqlik — hech biri yo'q. O'rniga:
+   bir nechta KASSA, har birining o'z qoldig'i va to'rtta amali (Kirim,
+   Chiqim, Ko'chirish, Ayirboshlash). Tuzilma EduSchool'nikiga o'xshaydi
+   (mijoz screenshot yubordi), ko'rinish esa o'zimiznikicha qoladi.
    ========================================================================== */
 
 /** Kassaga kira oladigan rollar (SPEC §4.3, `FinanceAction.AcceptPayment`). */
 const CASH_DESK_ROLES: Role[] = ['cashier', 'admin', 'superadmin']
 
+/**
+ * Kassa qo'shish/tahrirlash — faqat boshqaruvchi. Kirim/chiqim/ko'chirish/
+ * ayirboshlash kassirga ham ochiq: bular kassirning kundalik ishi.
+ */
+const CASH_BOX_MANAGE_ROLES: Role[] = ['admin', 'superadmin']
+
 const METHODS: PaymentMethod[] = ['cash', 'card', 'transfer', 'online']
 
+const dateInputClass =
+  'rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-brand-400'
+
+const todayStr = () => new Date().toISOString().slice(0, 10)
+
 /**
- * Kassir ish o'rni (P1-16). ATAYLAB TOR EKRAN.
+ * Kassir ish o'rni (P1-16 → kassalarga o'tish, 2026-09-18; EduSchool
+ * skrinshotiga moslash va Kirim panelining ikkinchi tabi, 2026-09-18 kech).
  *
- * Kassir shu yerda faqat bitta ishni qiladi: o'quvchini topadi, uning ochiq
- * hisob-fakturalarini ko'radi, summa kiritadi, toifalar bo'yicha taqsimlaydi
- * va chek beradi. Boshqa hech narsa yo'q — ro'yxatlar, hisobotlar, sozlamalar
- * va o'tgan to'lovlar tarixi ham.
- *
- * SMENASIZ TO'LOV SHAKLI KO'RINMAYDI (SPEC §4.2). Bu "tugma o'chiq" degani
- * emas: ochiq smena bo'lmasa qidiruv ham, summa maydoni ham umuman
- * chizilmaydi, o'rniga "Smenani oching" turadi. Sabab — har bir chek qaysi
- * smenaga tegishli ekani bilan yoziladi va chek raqami smena ichida uzluksiz
- * bo'lishi kerak; smenasiz bu savolning javobi yo'q.
+ * Ikki bo'lim bor:
+ *   1) KASSALAR — bir nechta kassa, har birining qoldig'i, kirim/chiqim/
+ *      ko'chirish/ayirboshlash va umumiy tranzaksiyalar jadvali (filtr
+ *      qatori + ustunlar sozlamasi bilan).
+ *   2) KIRIM PANELI — tanlangan kassaning "Kirim" tugmasi ochadi, ikki tabi
+ *      bor: "Oddiy kirim" (`cashBoxIn`) va "O'quvchidan to'lov" — eski yo'l,
+ *      O'ZGARTIRILMAGAN: hisob-fakturaga taqsimlanadigan to'lov ilgarigidek
+ *      `acceptPayment` (`/cash/payments`) orqali ketadi. Bu FIFO taqsimotni,
+ *      hisob-fakturalarni bilmagan umumiy "Kirim" amalidan TUBDAN farq
+ *      qiladi — shuning uchun ikkalasi ham bor va bir-biriga
+ *      aylantirilmagan. Sarlavhadagi alohida tugma OLIB TASHLANDI (mijoz,
+ *      2026-09-18): "o'quvchidan to'lov degan button ham bu yerda kerak
+ *      emas" — lekin OQIM o'zi Kirim panelining tabi sifatida qolmoqda.
  */
 export function CashierPage() {
   const { user } = useAuth()
+  const allowed = user !== null && CASH_DESK_ROLES.includes(user.role)
+  const canManageBoxes = user !== null && CASH_BOX_MANAGE_ROLES.includes(user.role)
 
-  /* ---- Smena ---- */
-  const [shift, setShift] = useState<CashShift | null>(null)
-  const [shiftLoading, setShiftLoading] = useState(true)
-  const [shiftError, setShiftError] = useState<string | null>(null)
+  /* ---- Kassalar ---- */
+  const [boxes, setBoxes] = useState<CashBox[]>([])
+  const [boxesLoading, setBoxesLoading] = useState(true)
+  const [boxesError, setBoxesError] = useState<string | null>(null)
+  const [selectedBoxId, setSelectedBoxId] = useState<string | null>(null)
 
-  const loadShift = useCallback(async () => {
-    setShiftLoading(true)
-    setShiftError(null)
+  const loadBoxes = useCallback(async () => {
+    setBoxesLoading(true)
+    setBoxesError(null)
     try {
-      setShift(await getCurrentShift())
+      const rows = await getCashBoxes()
+      setBoxes(rows)
+      setSelectedBoxId((current) => {
+        if (current && rows.some((b) => b.id === current)) return current
+        return rows.find((b) => b.isDefault)?.id ?? rows[0]?.id ?? null
+      })
     } catch (err) {
-      setShiftError(financeErrorMessage(err, "Smena holatini aniqlab bo'lmadi."))
+      setBoxesError(financeErrorMessage(err, "Kassalarni yuklab bo'lmadi."))
     } finally {
-      setShiftLoading(false)
+      setBoxesLoading(false)
     }
   }, [])
 
-  const allowed = user !== null && CASH_DESK_ROLES.includes(user.role)
+  useEffect(() => {
+    if (allowed) void loadBoxes()
+  }, [allowed, loadBoxes])
+
+  const [boxFormOpen, setBoxFormOpen] = useState(false)
+  const [editingBox, setEditingBox] = useState<CashBox | null>(null)
+  // `CashBoxActionModal` endi FAQAT chiqim/ko'chirish/ayirboshlash uchun —
+  // Kirim pastdagi `incomePanel` orqali ochiladi (izoh: fayl oxiridagi tab bo'limi).
+  const [actionState, setActionState] = useState<{ box: CashBox; mode: Exclude<CashBoxActionMode, 'in'> } | null>(
+    null,
+  )
+
+  /* ==========================================================================
+     KIRIM PANELI — mijoz "O'quvchidan to'lov" tugmasini bosh sahifadan olib
+     tashlashni so'radi (2026-09-18, ikkinchi xat): "o'quvchidan to'lov degan
+     button ham bu yerda kerak emas". Lekin IMKONIYAT qolishi kerak — bugun
+     sinaladigan yagona oqim shu. EduSchool'da o'quvchi to'lovi ham kassaning
+     o'z Kirim amali orqali kiritiladi (`finance-parity.md` §2.1), shuning
+     uchun bu yerda ham Kirim ikki rejimli: "Oddiy kirim" (mavjud
+     `cashBoxIn`) va "O'quvchidan to'lov" (eski yo'l — StudentSearch →
+     hisob-fakturalar → PaymentSplitModal → ReceiptPreview — TEGILMAGAN).
+
+     MODAL EMAS, PANEL: agar Kirim ham `CashBoxActionModal` (Modal) bo'lib
+     qolsa, "O'quvchidan to'lov" rejimida `PaymentSplitModal` uning USTIGA
+     ochilib, ikki oyna bir-birining ustiga chiqadi — bunga yo'l qo'ymaslik
+     so'ralgan edi. Shuning uchun Kirim sahifa ichidagi ODDIY BO'LIM
+     (avvalgi "O'QUVCHIDAN TO'LOV" bo'limi bilan bir xil joyda), va
+     `PaymentSplitModal` sahifa ustiga ochiladi — hech qachon ikkinchi oyna
+     ustiga emas. */
+  const [incomePanel, setIncomePanel] = useState<CashBox | null>(null)
+  const [incomeTab, setIncomeTab] = useState<'plain' | 'student'>('plain')
+
+  /* ---- Tranzaksiyalar jadvali ---- */
+  const [from, setFrom] = useState(todayStr())
+  const [to, setTo] = useState(todayStr())
+  // Filtr qatori — EduSchool skrinshotida doim ko'rinadi, lekin mijoz keyin
+  // (2026-09-18, soatlar farqi bilan) fikrini o'zgartirdi: "filter buttoni
+  // bosilsa filterlar tushib chiqadi, yani bekinadi yoki ko'rinadi" — demak
+  // tugma bilan YOPIQ/OCHIQ bo'lishi kerak, oldingi "Filtr" tugmasi kabi.
+  const [filtersOpen, setFiltersOpen] = useState(false)
+  const [boxFilter, setBoxFilter] = useState('')
+  const [q, setQ] = useState('')
+
+  /* ---- Qo'shimcha filtrlar (EduSchool skrinshoti): To'lov usuli, Tranzaksiya
+     turi, O'quvchi, Sinf. Backend `/cash-boxes/transactions` faqat
+     `from/to/boxId/q` qabul qiladi (CashBoxesController.cs), shuning uchun
+     bu to'rttasi JADVAL QATORLARI ustida MIJOZ TOMONDA filtrlanadi —
+     `filteredRows` pastda. Yig'indi kartochkalari esa serverdan kelgan
+     davr/kassa yig'indisi bo'lib qoladi (`CashLedger`: "Pulni bu yerda
+     HECH KIM hisoblamaydi" qoidasi) — shu to'rttasi ishga tushganda
+     kartochkalar ostida ogohlantiruvchi izoh chiqadi. */
+  const [methodFilter, setMethodFilter] = useState<PaymentMethod | ''>('')
+  const [kindFilter, setKindFilter] = useState<CashBoxTransactionRow['kind'] | ''>('')
+
+  // "O'quvchi" filtri — jadval qatorida faqat `contractNo` bor (o'quvchining
+  // ismi YO'Q, faqat shartnoma raqami). Shuning uchun o'quvchi tanlanganda
+  // uning shartnoma raqami(lari) `/admin/student-contracts` orqali olinadi
+  // va qatorlar shu raqamlarga qarab filtrlanadi.
+  const [studentQuery, setStudentQuery] = useState('')
+  const [studentResults, setStudentResults] = useState<StudentContract[]>([])
+  const [studentSearchOpen, setStudentSearchOpen] = useState(false)
+  const [studentFilter, setStudentFilter] = useState<{ label: string; numbers: Set<string> } | null>(null)
+
+  // "Sinf" filtri — xuddi shu naqsh: sinf tanlanganda o'sha sinfdagi barcha
+  // o'quvchilarning shartnoma raqamlari yig'ib olinadi.
+  const [classList, setClassList] = useState<SchoolClass[]>([])
+  const [classFilter, setClassFilter] = useState('')
+  const [classFilterNumbers, setClassFilterNumbers] = useState<Set<string> | null>(null)
+  const [classFilterLoading, setClassFilterLoading] = useState(false)
+
+  const [ledger, setLedger] = useState<CashBoxTransactionsResult | null>(null)
+  const [ledgerLoading, setLedgerLoading] = useState(true)
+  const [ledgerError, setLedgerError] = useState<string | null>(null)
+  const [ledgerReload, setLedgerReload] = useState(0)
+  const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set())
+  const [cancelRow, setCancelRow] = useState<CashBoxTransactionRow | null>(null)
+  const [cancelBusy, setCancelBusy] = useState(false)
+  const [cancelError, setCancelError] = useState<string | null>(null)
 
   useEffect(() => {
-    if (allowed) void loadShift()
-  }, [allowed, loadShift])
+    if (!allowed) return
+    const controller = new AbortController()
+    // Har bir qidiruv/filtr o'zgarishida 300 ms kutamiz — kassir tez yozadi.
+    const timer = setTimeout(() => {
+      setLedgerLoading(true)
+      setLedgerError(null)
+      getCashBoxTransactions(
+        { from, to, boxId: boxFilter || undefined, q: q.trim() || undefined },
+        controller.signal,
+      )
+        .then((res) => {
+          setLedger(res)
+          setSelectedRows(new Set())
+          setLedgerLoading(false)
+        })
+        .catch((err: unknown) => {
+          if (isAborted(err)) return
+          setLedgerError(financeErrorMessage(err, "Tranzaksiyalarni yuklab bo'lmadi."))
+          setLedgerLoading(false)
+        })
+    }, 300)
 
-  /* ---- Tanlangan o'quvchi va to'lov shakli ---- */
+    return () => {
+      clearTimeout(timer)
+      controller.abort()
+    }
+  }, [allowed, from, to, boxFilter, q, ledgerReload])
+
+  /* ---- Sinflar ro'yxati — "Sinf" filtri uchun, bir marta yuklanadi ---- */
+  useEffect(() => {
+    if (!allowed) return
+    let alive = true
+    getClasses()
+      .then((rows) => {
+        if (alive) setClassList(rows)
+      })
+      .catch(() => undefined)
+    return () => {
+      alive = false
+    }
+  }, [allowed])
+
+  /* ---- "O'quvchi" filtri — nom bo'yicha qidiruv, natijada shartnoma
+     raqami(lari) keladi (`searchStudentContracts`, mavjud endpoint). ---- */
+  useEffect(() => {
+    const term = studentQuery.trim()
+    if (term.length < MIN_SEARCH_LENGTH) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- qidiruv so'zi qisqarganda natijalar ro'yxatini darrov tozalash (StudentSearch'dagi bilan bir xil naqsh)
+      setStudentResults([])
+      return
+    }
+    const controller = new AbortController()
+    const timer = setTimeout(() => {
+      searchStudentContracts({ search: term, pageSize: 20 })
+        .then((page) => {
+          setStudentResults(page.items)
+        })
+        .catch(() => undefined)
+    }, 300)
+    return () => {
+      clearTimeout(timer)
+      controller.abort()
+    }
+  }, [studentQuery])
+
+  /* ---- "Sinf" filtri — tanlangan sinfdagi barcha o'quvchilarning shartnoma
+     raqamlarini yig'ib oladi (jadval qatorida sinf nomi YO'Q — faqat shu
+     yo'l bilan bog'lanadi). ---- */
+  useEffect(() => {
+    if (!classFilter) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- sinf filtri tozalanganda shartnoma raqamlari to'plamini darrov bo'shatish
+      setClassFilterNumbers(null)
+      return
+    }
+    let alive = true
+    setClassFilterLoading(true)
+    searchStudentContracts({ className: classFilter, pageSize: 1000 })
+      .then((page) => {
+        if (!alive) return
+        setClassFilterNumbers(new Set(page.items.map((c) => c.number).filter((n): n is string => !!n)))
+      })
+      .catch(() => {
+        if (alive) setClassFilterNumbers(new Set())
+      })
+      .finally(() => {
+        if (alive) setClassFilterLoading(false)
+      })
+    return () => {
+      alive = false
+    }
+  }, [classFilter])
+
+  /**
+   * Ko'rsatilayotgan qatorlar — server javobi (`ledger.rows`, davr/kassa/`q`
+   * bo'yicha) ustiga TO'RTTA qo'shimcha filtrni (usul, turi, o'quvchi, sinf)
+   * MIJOZ TOMONDA qo'llaydi (sabab — fayl boshidagi izoh).
+   */
+  const filteredRows = useMemo(() => {
+    const rows = ledger?.rows ?? []
+    return rows.filter((r) => {
+      if (methodFilter && r.method !== methodFilter) return false
+      if (kindFilter && r.kind !== kindFilter) return false
+      if (studentFilter && !(r.contractNo && studentFilter.numbers.has(r.contractNo))) return false
+      if (classFilter && !(r.contractNo && classFilterNumbers?.has(r.contractNo))) return false
+      return true
+    })
+  }, [ledger, methodFilter, kindFilter, studentFilter, classFilter, classFilterNumbers])
+
+  /** Kartochkalardagi yig'indi davr/kassa bo'yicha — shu to'rttasi ishga tushsa, izoh ko'rsatiladi. */
+  const rowsNarrowed = methodFilter !== '' || kindFilter !== '' || studentFilter !== null || classFilter !== ''
+
+  const resetExtraFilters = () => {
+    setMethodFilter('')
+    setKindFilter('')
+    setStudentFilter(null)
+    setStudentQuery('')
+    setClassFilter('')
+  }
+
+  const toggleSelectRow = (id: string) => {
+    setSelectedRows((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const toggleSelectAll = () => {
+    const rows = filteredRows
+    setSelectedRows((prev) => {
+      const allSelected = rows.length > 0 && rows.every((r) => prev.has(r.id))
+      return allSelected ? new Set() : new Set(rows.map((r) => r.id))
+    })
+  }
+
+  const handleActionDone = () => {
+    setActionState(null)
+    void loadBoxes()
+    setLedgerReload((n) => n + 1)
+  }
+
+  /** Oddiy kirim (Kirim panelining "Oddiy kirim" tabi) yozilgach. */
+  const handleIncomeDone = () => {
+    setIncomePanel(null)
+    void loadBoxes()
+    setLedgerReload((n) => n + 1)
+  }
+
+  const handleBoxSaved = () => {
+    setBoxFormOpen(false)
+    setEditingBox(null)
+    void loadBoxes()
+  }
+
+  const submitCancel = async (reason: string) => {
+    if (!cancelRow || cancelBusy) return
+    setCancelBusy(true)
+    setCancelError(null)
+    try {
+      await cancelCashBoxTransaction(cancelRow.id, reason)
+      setCancelRow(null)
+      void loadBoxes()
+      setLedgerReload((n) => n + 1)
+    } catch (err) {
+      setCancelError(financeErrorMessage(err, "Bekor qilib bo'lmadi."))
+    } finally {
+      setCancelBusy(false)
+    }
+  }
+
+  const handleExport = () => {
+    // Ekranda TURGAN qatorlar eksport qilinadi — filtrlangan ro'yxat, ekrandagi bilan bir xil.
+    const rows = filteredRows
+    const source = selectedRows.size > 0 ? rows.filter((r) => selectedRows.has(r.id)) : rows
+    exportToCsv(
+      `kassa-tranzaksiyalari-${from}_${to}.csv`,
+      ['№', 'Sana', 'Kim', 'Shartnoma raqami', 'Miqdor', 'Tranzaksiya', "To'lov usuli", 'Holati', 'Kassir'],
+      source.map((r) => [
+        String(r.no),
+        formatDateTime(r.date),
+        r.who,
+        r.contractNo ?? '',
+        String(r.amount),
+        kindLabel(r.kind),
+        methodLabels[r.method] ?? r.method,
+        statusLabel(r.status),
+        r.who,
+      ]),
+    )
+  }
+
+  /* ---- Tanlangan o'quvchi va to'lov shakli (o'zgarmagan yo'l) ---- */
   const [student, setStudent] = useState<CashierStudent | null>(null)
   const [amountRaw, setAmountRaw] = useState('')
   const [method, setMethod] = useState<PaymentMethod>('cash')
@@ -171,29 +495,269 @@ export function CashierPage() {
 
   return (
     <div className="space-y-6">
-      <header>
-        <h1 className="text-xl font-semibold text-slate-800">Kassa</h1>
-        <p className="text-sm text-slate-400">
-          O'quvchini toping, summani kiriting va chek bering.
-        </p>
+      <header className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h1 className="text-xl font-semibold text-slate-800">Kassa</h1>
+          <p className="text-sm text-slate-400">
+            Kassalar, ularning harakati va o'quvchi to'lovlari.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <input
+            type="date"
+            value={from}
+            onChange={(e) => setFrom(e.target.value)}
+            aria-label="Davr boshi"
+            className={dateInputClass}
+          />
+          <span className="text-slate-400">—</span>
+          <input
+            type="date"
+            value={to}
+            onChange={(e) => setTo(e.target.value)}
+            aria-label="Davr oxiri"
+            className={dateInputClass}
+          />
+          <Button variant="secondary" onClick={() => setFiltersOpen((v) => !v)}>
+            <Filter className="h-4 w-4" /> Filtr
+          </Button>
+          <Button variant="secondary" onClick={handleExport} disabled={filteredRows.length === 0}>
+            <Download className="h-4 w-4" /> Export
+          </Button>
+        </div>
       </header>
 
-      <ShiftBar
-        shift={shift}
-        loading={shiftLoading}
-        error={shiftError}
-        onRetry={() => void loadShift()}
-        onShiftChange={(next) => {
-          setShift(next)
-          if (!next) {
-            setStudent(null)
-            resetForm()
-          }
-        }}
-      />
+      {filtersOpen && (
+        <Card className="flex flex-col gap-3 p-4">
+          <div className="flex flex-wrap items-end gap-3">
+            <Select
+              label="Kassa bo'yicha"
+              value={boxFilter}
+              onChange={(e) => setBoxFilter(e.target.value)}
+              className="max-w-xs"
+            >
+              <option value="">Barcha kassalar</option>
+              {boxes.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.name}
+                </option>
+              ))}
+            </Select>
 
-      {/* SMENA OCHIQ BO'LMASA — TO'LOV SHAKLI UMUMAN CHIZILMAYDI (SPEC §4.2). */}
-      {shift && (
+            {/* O'quvchi — nomi bo'yicha qidiruv, tanlansa shartnoma raqami(lari) bilan filtrlaydi. */}
+            <div className="relative w-48">
+              <label className="mb-1 block text-sm font-medium text-slate-600">O'quvchi</label>
+              <input
+                value={studentFilter ? studentFilter.label : studentQuery}
+                onChange={(e) => {
+                  setStudentFilter(null)
+                  setStudentQuery(e.target.value)
+                  setStudentSearchOpen(true)
+                }}
+                onFocus={() => setStudentSearchOpen(true)}
+                onBlur={() => setTimeout(() => setStudentSearchOpen(false), 150)}
+                placeholder="Ism bo'yicha qidirish"
+                autoComplete="off"
+                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-brand-400"
+              />
+              {studentSearchOpen && studentQuery.trim().length >= MIN_SEARCH_LENGTH && !studentFilter && (
+                <ul className="absolute z-20 mt-1 max-h-64 w-72 overflow-y-auto rounded-lg border border-slate-200 bg-white p-1 shadow-lg">
+                  {studentResults.length === 0 && (
+                    <li className="px-3 py-2 text-sm text-slate-400">Topilmadi</li>
+                  )}
+                  {studentResults.map((c) => (
+                    <li key={c.id}>
+                      <button
+                        type="button"
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => {
+                          setStudentFilter({ label: c.studentName, numbers: new Set(c.number ? [c.number] : []) })
+                          setStudentSearchOpen(false)
+                        }}
+                        className="w-full rounded-lg px-3 py-1.5 text-left text-sm hover:bg-slate-50"
+                      >
+                        <span className="block font-medium text-slate-800">{c.studentName}</span>
+                        <span className="block text-xs text-slate-400">
+                          {c.className}
+                          {c.number ? ` · ${c.number}` : ' · shartnomasiz'}
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+
+            <Select
+              label="Sinf"
+              value={classFilter}
+              onChange={(e) => setClassFilter(e.target.value)}
+              className="max-w-[10rem]"
+            >
+              <option value="">Barcha sinflar</option>
+              {classList.map((c) => (
+                <option key={c.id} value={c.name}>
+                  {c.name}
+                </option>
+              ))}
+            </Select>
+
+            <Select
+              label="To'lov usuli"
+              value={methodFilter}
+              onChange={(e) => setMethodFilter(e.target.value as PaymentMethod | '')}
+              className="max-w-[10rem]"
+            >
+              <option value="">Barchasi</option>
+              {METHODS.map((m) => (
+                <option key={m} value={m}>
+                  {methodLabels[m]}
+                </option>
+              ))}
+            </Select>
+
+            <Select
+              label="Tranzaksiya turi"
+              value={kindFilter}
+              onChange={(e) => setKindFilter(e.target.value as CashBoxTransactionRow['kind'] | '')}
+              className="max-w-[10rem]"
+            >
+              <option value="">Barchasi</option>
+              {TRANSACTION_KINDS.map((k) => (
+                <option key={k} value={k}>
+                  {kindLabel(k)}
+                </option>
+              ))}
+            </Select>
+
+            {(methodFilter || kindFilter || studentFilter || classFilter) && (
+              <button
+                type="button"
+                onClick={resetExtraFilters}
+                className="mb-0.5 text-sm font-medium text-brand-600 hover:underline"
+              >
+                Filtrni tozalash
+              </button>
+            )}
+          </div>
+
+          {classFilterLoading && <p className="text-xs text-slate-400">Sinf bo'yicha yuklanmoqda...</p>}
+        </Card>
+      )}
+
+      {/* ============ KASSALAR ============ */}
+      {boxesError && (
+        <Card className="border-red-200 bg-red-50/60">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-start gap-2 text-sm text-red-700">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+              <span>{boxesError}</span>
+            </div>
+            <Button variant="secondary" onClick={() => void loadBoxes()}>
+              <RefreshCw className="h-4 w-4" /> Qayta urinish
+            </Button>
+          </div>
+        </Card>
+      )}
+
+      {boxesLoading ? (
+        <Loader label="Kassalar yuklanmoqda..." />
+      ) : (
+        <div className="grid gap-6 lg:grid-cols-[minmax(300px,360px)_1fr]">
+          <CashBoxPanel
+            boxes={boxes}
+            selectedId={selectedBoxId}
+            canManage={canManageBoxes}
+            onSelect={setSelectedBoxId}
+            onAdd={() => {
+              setEditingBox(null)
+              setBoxFormOpen(true)
+            }}
+            onEdit={(box) => {
+              setEditingBox(box)
+              setBoxFormOpen(true)
+            }}
+            onAction={(box, mode) => {
+              if (mode === 'in') {
+                // Kirim — modal emas, pastdagi panel (izoh: `incomePanel` e'loni).
+                setIncomePanel(box)
+                setIncomeTab('plain')
+              } else {
+                setActionState({ box, mode })
+              }
+            }}
+          />
+
+          <CashLedger
+            totalsByMethod={ledger?.totalsByMethod ?? {}}
+            inTotal={ledger?.inTotal ?? 0}
+            outTotal={ledger?.outTotal ?? 0}
+            rows={filteredRows}
+            narrowed={rowsNarrowed}
+            loading={ledgerLoading}
+            error={ledgerError}
+            onRetry={() => setLedgerReload((n) => n + 1)}
+            q={q}
+            onQChange={setQ}
+            selected={selectedRows}
+            onToggleSelect={toggleSelectRow}
+            onToggleSelectAll={toggleSelectAll}
+            onCancelRow={setCancelRow}
+          />
+        </div>
+      )}
+
+      {/* ============ KIRIM PANELI ============
+          Ikki tab: "Oddiy kirim" (cashBoxIn) va "O'quvchidan to'lov" (eski
+          yo'l, TEGILMAGAN — quyidagi bo'lim ilgarigi "O'QUVCHIDAN TO'LOV"
+          bo'limi bilan AYNAN bir xil, faqat shart o'zgargan). */}
+      {incomePanel && (
+      <section className="space-y-4">
+        <Card>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 className="font-semibold text-slate-800">Kirim — {incomePanel.name}</h2>
+              <p className="text-sm text-slate-400">Oddiy kirim yozing yoki o'quvchidan to'lov qabul qiling.</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setIncomePanel(null)}
+              title="Yopish"
+              aria-label="Kirim panelini yopish"
+              className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+          <div className="mt-4 inline-flex rounded-lg border border-slate-200 p-1">
+            <button
+              type="button"
+              onClick={() => setIncomeTab('plain')}
+              className={cn(
+                'rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
+                incomeTab === 'plain' ? 'bg-brand-600 text-white' : 'text-slate-500 hover:text-slate-700',
+              )}
+            >
+              Oddiy kirim
+            </button>
+            <button
+              type="button"
+              onClick={() => setIncomeTab('student')}
+              className={cn(
+                'rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
+                incomeTab === 'student' ? 'bg-brand-600 text-white' : 'text-slate-500 hover:text-slate-700',
+              )}
+            >
+              O'quvchidan to'lov
+            </button>
+          </div>
+        </Card>
+
+        {incomeTab === 'plain' && (
+          <PlainIncomeForm box={incomePanel} onDone={handleIncomeDone} onCancel={() => setIncomePanel(null)} />
+        )}
+
+        {incomeTab === 'student' && (
         <div className="grid gap-6 lg:grid-cols-[minmax(320px,380px)_1fr]">
           <StudentSearch selectedId={student?.id ?? null} onSelect={selectStudent} />
 
@@ -302,6 +866,8 @@ export function CashierPage() {
             </div>
           )}
         </div>
+        )}
+      </section>
       )}
 
       {student && splitOpen && amount !== null && amount > 0 && (
@@ -327,10 +893,48 @@ export function CashierPage() {
             setReceipt(null)
             resetForm()
             setInvoicesReload((n) => n + 1)
-            void loadShift()
           }}
         />
       )}
+
+      {boxFormOpen && (
+        <CashBoxFormModal
+          box={editingBox}
+          onClose={() => {
+            setBoxFormOpen(false)
+            setEditingBox(null)
+          }}
+          onSaved={handleBoxSaved}
+        />
+      )}
+
+      {actionState && (
+        <CashBoxActionModal
+          box={actionState.box}
+          otherBoxes={boxes.filter((b) => b.id !== actionState.box.id && b.isActive)}
+          mode={actionState.mode}
+          onClose={() => setActionState(null)}
+          onDone={handleActionDone}
+        />
+      )}
+
+      <ReasonModal
+        open={cancelRow !== null}
+        title="Tranzaksiyani bekor qilish"
+        description={
+          cancelRow
+            ? `№${cancelRow.no} — ${formatSum(cancelRow.amount)} so'm. Yozuv o'chmaydi, holati "bekor qilindi" bo'ladi.`
+            : ''
+        }
+        confirmLabel="Bekor qilish"
+        busy={cancelBusy}
+        error={cancelError}
+        onClose={() => {
+          setCancelRow(null)
+          setCancelError(null)
+        }}
+        onConfirm={submitCancel}
+      />
     </div>
   )
 }
@@ -529,6 +1133,101 @@ function InvoiceList({ invoices, loading, error, onRetry }: InvoiceListProps) {
           ))}
         </ul>
       )}
+    </Card>
+  )
+}
+
+/* ==========================================================================
+   Kirim panelining "Oddiy kirim" tabi
+   ========================================================================== */
+
+interface PlainIncomeFormProps {
+  box: CashBox
+  onDone: () => void
+  onCancel: () => void
+}
+
+/**
+ * `CashBoxActionModal`dagi "Kirim" (mode `in`) shakli bilan AYNAN BIR XIL
+ * maydonlar va chaqiruv (`cashBoxIn`) — faqat `Modal` ichida emas, sahifa
+ * ichidagi oddiy `Card`da, chunki bu yerda ikkinchi tab (`PaymentSplitModal`
+ * ochadigan "O'quvchidan to'lov") bilan bitta panelni bo'lishadi (izoh:
+ * `incomePanel` e'loni, `CashierPage` boshida).
+ */
+function PlainIncomeForm({ box, onDone, onCancel }: PlainIncomeFormProps) {
+  const [amountRaw, setAmountRaw] = useState('')
+  const [method, setMethod] = useState<PaymentMethod>('cash')
+  const [note, setNote] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const amount = parseSum(amountRaw)
+  const amountValid = amount !== null && amount > 0
+
+  const submit = async () => {
+    if (!amountValid || amount === null || busy) return
+    setBusy(true)
+    setError(null)
+    try {
+      await cashBoxIn(box.id, { amount, method, note: note.trim() || undefined })
+      onDone()
+    } catch (err) {
+      setError(financeErrorMessage(err, "Kirimni yozib bo'lmadi."))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Card>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <MoneyInput
+          label="Summa (so'm)"
+          value={amountRaw}
+          onValueChange={setAmountRaw}
+          placeholder="0"
+          invalid={amountRaw.length > 0 && !amountValid}
+          hint={amountRaw.length > 0 && !amountValid ? "Summa noldan katta bo'lishi kerak." : undefined}
+          autoFocus
+        />
+        <Select label="To'lov usuli" value={method} onChange={(e) => setMethod(e.target.value as PaymentMethod)}>
+          {METHODS.map((m) => (
+            <option key={m} value={m}>
+              {methodLabels[m]}
+            </option>
+          ))}
+        </Select>
+      </div>
+
+      <div className="mt-4">
+        <Textarea
+          label="Izoh (ixtiyoriy)"
+          rows={2}
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          placeholder="Masalan: boshlang'ich mablag'"
+        />
+      </div>
+
+      <p className="mt-3 text-xs text-slate-400">Joriy qoldiq: {formatSum(box.balance)} so'm</p>
+
+      {error && (
+        <div className="mt-3 rounded-xl border border-red-200 bg-red-50/70 px-3 py-3">
+          <div className="flex items-start gap-2 text-sm text-red-700">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>{error}</span>
+          </div>
+        </div>
+      )}
+
+      <div className="mt-4 flex items-center justify-end gap-2">
+        <Button variant="secondary" onClick={onCancel} disabled={busy}>
+          Bekor qilish
+        </Button>
+        <Button onClick={() => void submit()} disabled={!amountValid || busy}>
+          {busy ? 'Yozilmoqda...' : 'Kirim'}
+        </Button>
+      </div>
     </Card>
   )
 }

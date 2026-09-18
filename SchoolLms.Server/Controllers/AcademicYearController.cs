@@ -62,6 +62,13 @@ public class AcademicYearController(AppDbContext db, AuditService audit) : Contr
     [HttpGet("archives/{id}/download")]
     public async Task<IActionResult> DownloadZip(string id)
     {
+        // Arxivni MOLIYADAN ajratib bo'lmaydi: `Moliya/` papkasida hisob-faktura,
+        // to'lov va chiqim, `oquvchilar.csv` da har bolaning qoldig'i,
+        // `malumotlar.json` da esa ikkalasi ham to'liq yotadi. Shuning uchun bu
+        // yuklab olish moliya ruxsatini talab qiladi — faqat `Moliya/` papkasini
+        // olib qo'yish soxta himoya bo'lardi, JSON baribir hammasini berardi.
+        if (!User.HasPerm(PermissionCheck.Finance)) return Forbid();
+
         var a = await db.SchoolYearArchives.FindAsync(id);
         if (a is null) return NotFound();
 
@@ -353,6 +360,14 @@ public class AcademicYearController(AppDbContext db, AuditService audit) : Contr
                     db.WeekAssignments.RemoveRange(
                         await db.WeekAssignments.Where(
                             w => w.ClassId == cls.Id && w.OwnerKind == LessonOwnerKind.Class).ToListAsync());
+                    // `study_group_classes.class_id` FK'si RESTRICT (StudyGroupModel.cs).
+                    // Bitiruvchi sinf biror o'quv guruhini boqayotgan bo'lsa (11-sinflardan
+                    // yig'ilgan ingliz tili guruhi — odatiy holat) `Classes.Remove` BUTUN
+                    // rollover'ni 23503 bilan qaytarib yuborardi. Guruhning o'zi 3b-qadamda
+                    // arxivlanadi va a'zoliklari sana bilan yopiladi, ya'ni tarix joyida
+                    // qoladi — bu yerda faqat "shu sinf boqadi" bog'lanishi uziladi.
+                    db.StudyGroupClasses.RemoveRange(
+                        await db.StudyGroupClasses.Where(g => g.ClassId == cls.Id).ToListAsync());
                     db.Classes.Remove(cls);
                 }
                 else

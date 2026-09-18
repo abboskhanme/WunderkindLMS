@@ -188,7 +188,21 @@ public class Payment
     public decimal Amount { get; set; }
     /// <summary>cash | card | transfer | online — <see cref="PaymentMethod"/>.</summary>
     public string Method { get; set; } = PaymentMethod.Cash;
-    public Guid CashShiftId { get; set; }
+    /// <summary>
+    /// Eski smena havolasi. <b>"Smena" tizimdan olib tashlangan (kassalar
+    /// modeli, 2026-09) — endi <c>null</c> bo'la oladi.</b> Yangi to'lovlar
+    /// buni hech qachon to'ldirmaydi (<see cref="CashBoxId"/> o'rnini bosadi);
+    /// eski qatorlarda esa tarix sifatida qoladi (SPEC §4.1 — pul yozuvi
+    /// o'chirilmaydi ham, "taxmin" ham qilinmaydi).
+    /// </summary>
+    public Guid? CashShiftId { get; set; }
+    /// <summary>
+    /// Qaysi kassaga tushdi (<c>cash_boxes</c>, "smena" o'rnini bosuvchi
+    /// model, 2026-09). <c>null</c> = eski qator (kassa modelidan oldin
+    /// yozilgan) — TAXMIN QILINMAYDI. Yangi to'lov har doim bitta kassaga
+    /// (ko'rsatilmasa — sukut kassaga) tushadi.
+    /// </summary>
+    public Guid? CashBoxId { get; set; }
     /// <summary>Kassir (users.id) — JWT'dan, so'rov tanasidan EMAS (SPEC §4.4).</summary>
     public string CashierId { get; set; } = string.Empty;
     public string? Note { get; set; }
@@ -331,6 +345,13 @@ public class Expense
     /// </para>
     /// </summary>
     public Guid? CashShiftId { get; set; }
+
+    /// <summary>
+    /// Naqd chiqim qaysi KASSADAN to'landi ("smena" o'rnini bosuvchi model,
+    /// 2026-09). <c>null</c> = bankdan chiqqan yoki eski (kassa modelidan
+    /// oldingi) qator — TAXMIN QILINMAYDI.
+    /// </summary>
+    public Guid? CashBoxId { get; set; }
 
     public string CreatedBy { get; set; } = string.Empty;
     public string? ApprovedBy { get; set; }

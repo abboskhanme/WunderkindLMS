@@ -80,6 +80,8 @@ public class AuditService(IAppDbContext db, IHttpContextAccessor http)
 
     /// <summary>Kassadan pul topshirish (bank yoki seyf) — §2.1.</summary>
     public const string EntityCashHandover = "CashHandover";
+    /// <summary>O'quvchiga pul qaytarish (F1.05) — so'rov, tasdiq, rad, storno.</summary>
+    public const string EntityStudentRefund = "StudentRefund";
 
     /// <summary>Chiqimga biriktirilgan hujjat — §2.1.</summary>
     public const string EntityExpenseAttachment = "ExpenseAttachment";

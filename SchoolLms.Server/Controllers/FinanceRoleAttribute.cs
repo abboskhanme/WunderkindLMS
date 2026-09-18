@@ -82,6 +82,44 @@ public enum FinanceAction
 
     /// <summary>Moliya sozlamalari (`payment_due_day`, `overdue_after_day`).</summary>
     ManageBillingSettings,
+
+    /// <summary>
+    /// O'quvchiga pul qaytarishni SO'RASH (F1.05, finance-parity §2.1). Har
+    /// doim <c>pending</c> holatda tug'iladi — <see cref="ApproveRefund"/>
+    /// alohida, ikkinchi shaxsning amali.
+    /// </summary>
+    RequestRefund,
+
+    /// <summary>
+    /// Qaytarimni TASDIQLASH (yoki rad etish). Mijoz javobi F1.05 bilan bir
+    /// xil: chegirma tasdig'i kabi — chegara yo'q, faqat direktor.
+    /// </summary>
+    ApproveRefund,
+
+    /// <summary>
+    /// Xodimga bonus/jarima yozish, bekor qilish va sabab katalogini
+    /// boshqarish (F11.01, F11.02; hr.md §5.4 — "Manage penalty/bonus rules"
+    /// bilan bir xil ruxsat darajasi, lekin ATAYLAB alohida nom: bu yerdagi
+    /// qo'lda kiritiladigan bir martalik yozuv, `hr_rules` qoidalar
+    /// dvigateli emas — hr.md §2.7). Xodimning pulini o'zgartiradigan amal,
+    /// shuning uchun kassir va oddiy xodim YO'Q — F3.05 xatosi bu yerda
+    /// TAKRORLANMASLIGI kerak (SPEC §4.3).
+    /// </summary>
+    ManagePayrollAdjustments,
+
+    // ----- Kassalar (cash boxes) — "smena" o'rnini bosadi, 2026-09 -----
+
+    /// <summary>Kassalar ro'yxati va harakatlar jurnalini ko'rish.</summary>
+    ViewCashBoxes,
+
+    /// <summary>Kassa ochish, nomini/mas'ulini/sukut belgisini/faolligini o'zgartirish.</summary>
+    ManageCashBoxes,
+
+    /// <summary>Kunlik amal: kirim, chiqim, ko'chirish, ayirboshlash.</summary>
+    OperateCashBox,
+
+    /// <summary>Kassa amalini bekor qilish (storno).</summary>
+    CancelCashBoxTransaction,
 }
 
 /// <summary>
@@ -153,6 +191,42 @@ public static class FinanceMatrix
 
         new(FinanceAction.ManageBillingSettings, AdminAndDirector,
             "To'lov muddati sozlamalari (payment_due_day, overdue_after_day)"),
+
+        // F1.05 — admin so'raydi, direktor tasdiqlaydi. Kassir bu yerda YO'Q:
+        // qaytarim so'rovi kassa amali emas, ma'muriy qaror.
+        new(FinanceAction.RequestRefund, AdminAndDirector,
+            "O'quvchiga pul qaytarishni so'rash (F1.05)"),
+
+        // Mijoz javobi (finance-parity §2.1, F1.05): faqat direktor —
+        // chegara yo'q, admin ham tasdiqlay olmaydi (chegirma tasdig'i bilan
+        // bir xil naqsh, SPEC §8.1 Q5).
+        new(FinanceAction.ApproveRefund, Director,
+            "Qaytarimni tasdiqlash yoki rad etish — faqat direktor"),
+
+        // F11.01/F11.02 — xodimga bonus/jarima. Kassir ham, oddiy xodim ham
+        // YO'Q (hr.md §5.4 ning "Manage penalty/bonus rules" qatori bilan
+        // bir xil daraja) — bu pulga tegishli amal, AdminPerm("teachers")
+        // emas (F3.05 ning aynan o'zi bu yerda takrorlanmasligi kerak).
+        new(FinanceAction.ManagePayrollAdjustments, AdminAndDirector,
+            "Xodimga bonus/jarima yozish, bekor qilish va sabab katalogini boshqarish"),
+
+        // Kassalar (cash boxes) — "smena" o'rnini bosadi. Kunlik amal
+        // (kirim/chiqim/ko'chirish/ayirboshlash) kassaning O'Z ishi, xuddi
+        // ilgari smena ochish/yopish kabi — CashDesk. Kataloqni boshqarish
+        // (yangi kassa ochish, mas'ul/sukut belgisini o'zgartirish) va
+        // bekor qilish esa AdminAndDirector — kassir yangi kassa ocholmaydi
+        // va o'z-o'zini tekshirmasdan tarixni bekor qilolmaydi.
+        new(FinanceAction.ViewCashBoxes, CashDesk,
+            "Kassalar ro'yxati va harakatlar jurnalini ko'rish"),
+
+        new(FinanceAction.ManageCashBoxes, AdminAndDirector,
+            "Kassa ochish, nomini/mas'ulini/sukut belgisini o'zgartirish"),
+
+        new(FinanceAction.OperateCashBox, CashDesk,
+            "Kunlik amal: kirim, chiqim, ko'chirish, ayirboshlash"),
+
+        new(FinanceAction.CancelCashBoxTransaction, AdminAndDirector,
+            "Kassa amalini bekor qilish (storno)"),
     ];
 
     /// <summary>

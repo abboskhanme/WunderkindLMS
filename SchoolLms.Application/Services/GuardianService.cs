@@ -231,4 +231,210 @@ public static class GuardianSync
         var name = (student.ParentFullName ?? "").Trim();
         return name.Length > 0 ? name : $"{student.FullName} ning ota-onasi";
     }
+
+    // =======================================================================
+    //  students-parity.md §2.3 (S-8) — FORMADAN kelgan vasiylar.
+    // =======================================================================
+    //
+    //  YUQORIDAGI YO'NALISH O'ZGARMADI. `EnsureManyAsync` hamon
+    //  `students.parent_phone` dan vasiy chiqaradi va uni hech kim
+    //  almashtirmadi: import ham, eski forma ham, bugungi POST/PUT ham
+    //  o'sha yo'ldan yuradi.
+    //
+    //  QUYIDAGILAR QO'SHIMCHA. Forma endi IKKI vasiy yubora oladi
+    //  (EduSchool ham ikkitagacha, §2.3.1). Ikkinchi vasiyning telefoni
+    //  `students` qatorida saqlanadigan joy YO'Q — u faqat `guardians` da
+    //  yashaydi. Shuning uchun:
+    //
+    //    · ASOSIY vasiy = eski `parent_full_name` / `parent_phone`. Ikkovi
+    //      bir qadamda yuradi (`MirrorPrimaryInput`), ya'ni ota-ona portali,
+    //      shartnoma matni va eksport bugungiday ishlaydi;
+    //    · QOLGAN vasiylar faqat `guardians` + `student_guardians` da.
+    //
+    //  BU YERDA HECH NARSA O'CHIRILMAYDI. Formadan tushib qolgan vasiy
+    //  jimgina uzilmaydi — uzish alohida, ataylab qilinadigan amal
+    //  (`StudentGuardiansController.Detach`). Aks holda eski formadan
+    //  kelgan har saqlash ikkinchi vasiyni yo'q qilardi.
+    // =======================================================================
+
+    /// <summary>
+    /// ASOSIY vasiy yozuvini o'quvchi qatoriga ko'chiradi (saqlamaydi —
+    /// chaqiruvchi allaqachon <c>SaveChanges</c> qiladi).
+    ///
+    /// <para>
+    /// Ro'yxat bo'sh yoki telefonsiz bo'lsa — HECH NARSA o'zgarmaydi, ya'ni
+    /// bugungi payload (vasiylarsiz) bilan saqlash natijasi bir xil qoladi.
+    /// </para>
+    /// </summary>
+    public static void MirrorPrimaryInput(Student student, IReadOnlyList<StudentGuardianInput>? inputs)
+    {
+        // ATAYLAB faqat ANIQ belgilangan asosiy vasiy: ro'yxatda birinchi
+        // turgani "asosiy" degani emas. Aks holda faqat ikkinchi vasiyni
+        // yuborgan chaqiruv eski `parent_*` ustunlarini bosib ketardi.
+        var primary = Usable(inputs).FirstOrDefault(i => i.IsPrimary);
+        if (primary is null) return;
+
+        student.ParentPhone = (primary.Phone ?? "").Trim();
+
+        var name = (primary.FullName ?? "").Trim();
+        if (name.Length > 0)
+        {
+            var (last, first, middle) = StudentImportService.SplitName(name);
+            student.ParentFullName = name;
+            student.ParentLastName = last;
+            student.ParentFirstName = first;
+            student.ParentMiddleName = middle;
+        }
+
+        if (primary.PassportUrl is not null)
+            student.ParentPassportUrl = string.IsNullOrWhiteSpace(primary.PassportUrl)
+                ? null
+                : primary.PassportUrl.Trim();
+    }
+
+    /// <summary>
+    /// Formadagi vasiylarni yozadi: yo'qini yaratadi, borini yangilaydi,
+    /// bog'lanish turini va asosiysini qo'yadi. O'CHIRMAYDI.
+    /// </summary>
+    public static async Task ApplyAsync(
+        IAppDbContext db, Student student, IReadOnlyList<StudentGuardianInput>? inputs,
+        CancellationToken ct = default)
+    {
+        var wanted = Usable(inputs);
+        if (wanted.Count == 0) return;
+
+        var keys = wanted.Select(x => PhoneUtil.Key(x.Phone)).Distinct().ToList();
+        var byKey = await db.Guardians.Where(g => keys.Contains(g.PhoneKey))
+            .ToDictionaryAsync(g => g.PhoneKey, ct);
+        var links = await db.StudentGuardians.Where(l => l.StudentId == student.Id).ToListAsync(ct);
+
+        // Asosiy vasiy FAQAT aniq belgilanganda almashadi. Belgilanmagan
+        // bo'lsa va o'quvchida asosiysi umuman yo'q bo'lsa — birinchisi
+        // olinadi (o'quvchi asosiy vasiysiz qolmasin).
+        var primary = wanted.FirstOrDefault(i => i.IsPrimary)
+                      ?? (links.Any(l => l.IsPrimary) ? null : wanted.FirstOrDefault());
+        string? primaryGuardianId = null;
+
+        foreach (var input in wanted)
+        {
+            var key = PhoneUtil.Key(input.Phone);
+            var name = (input.FullName ?? "").Trim();
+
+            if (!byKey.TryGetValue(key, out var guardian))
+            {
+                guardian = new Guardian
+                {
+                    FullName = name.Length > 0 ? name : DisplayName(student),
+                    Phone = (input.Phone ?? "").Trim(),
+                    PassportUrl = Clean(input.PassportUrl),
+                    // PhoneKey YOZILMAYDI — u generated stored column.
+                };
+                db.Guardians.Add(guardian);
+                byKey[key] = guardian;
+            }
+            else
+            {
+                // Mavjud vasiy: nom va hujjat YANGILANADI, telefon esa
+                // TEGILMAYDI — u bu yerda IDENTIFIKATOR (oxirgi 9 raqami
+                // bo'yicha topildi), uni yozish `phone_key` ni siljitardi.
+                if (name.Length > 0) guardian.FullName = name;
+                if (input.PassportUrl is not null) guardian.PassportUrl = Clean(input.PassportUrl);
+            }
+
+            var link = links.FirstOrDefault(l => l.GuardianId == guardian.Id);
+            if (link is null)
+            {
+                link = new StudentGuardian { StudentId = student.Id, GuardianId = guardian.Id };
+                db.StudentGuardians.Add(link);
+                links.Add(link);
+            }
+
+            link.Relation = NormalizeRelation(input.Relation);
+            link.RelationNote = link.Relation == GuardianRelation.Other ? Clean(input.RelationNote) : null;
+
+            if (ReferenceEquals(input, primary)) primaryGuardianId = guardian.Id;
+        }
+
+        await db.SaveChangesAsync(ct);
+
+        if (primaryGuardianId is not null)
+            await SetPrimaryAsync(db, student.Id, primaryGuardianId, ct);
+    }
+
+    /// <summary>
+    /// Asosiy vasiyni belgilaydi — o'quvchida ko'pi bilan bittasi bo'ladi
+    /// (<c>ux_student_guardians_one_primary</c>).
+    ///
+    /// <para>
+    /// IKKI SAQLASH: avval eskisi bo'shatiladi, keyin yangisi qo'yiladi.
+    /// Bitta <c>SaveChanges</c> da EF ikkita UPDATE ni qaysi tartibda
+    /// yuborishini kafolatlamaydi, qisman unikal indeks esa har qatorda
+    /// darrov tekshiriladi — ya'ni "yangisini qo'yib, keyin eskisini
+    /// bo'shatish" tartibida 23505 bilan yiqilish EHTIMOLI bor.
+    /// </para>
+    /// </summary>
+    public static async Task SetPrimaryAsync(
+        IAppDbContext db, string studentId, string guardianId, CancellationToken ct = default)
+    {
+        var links = await db.StudentGuardians.Where(l => l.StudentId == studentId).ToListAsync(ct);
+        var target = links.FirstOrDefault(l => l.GuardianId == guardianId);
+        if (target is null) return;
+
+        var cleared = false;
+        foreach (var other in links.Where(l => l.GuardianId != guardianId && l.IsPrimary))
+        {
+            other.IsPrimary = false;
+            cleared = true;
+        }
+        if (cleared) await db.SaveChangesAsync(ct);
+
+        if (target.IsPrimary) return;
+        target.IsPrimary = true;
+        await db.SaveChangesAsync(ct);
+    }
+
+    /// <summary>
+    /// Bazadagi ASOSIY vasiydan o'quvchi qatorini tekislaydi (saqlamaydi).
+    ///
+    /// <para>
+    /// Bu <b>yagona</b> teskari yo'nalish va u ataylab tor: vasiy tahrirlanganda
+    /// yoki asosiysi almashtirilganda <c>parent_phone</c> eskirib qolsa,
+    /// ota-ona portali (telefon bo'yicha topadi) o'sha oilani YO'QOTARDI.
+    /// Asosiy vasiy bo'lmasa ustunlar TEGILMAYDI — bo'shatish ma'lumot
+    /// yo'qotish bo'lardi.
+    /// </para>
+    /// </summary>
+    public static async Task MirrorPrimaryFromDbAsync(
+        IAppDbContext db, Student student, CancellationToken ct = default)
+    {
+        var primary = await (from l in db.StudentGuardians.AsNoTracking()
+                             join g in db.Guardians.AsNoTracking() on l.GuardianId equals g.Id
+                             where l.StudentId == student.Id && l.IsPrimary
+                             select g)
+            .FirstOrDefaultAsync(ct);
+        if (primary is null) return;
+
+        var name = primary.FullName.Trim();
+        var (last, first, middle) = StudentImportService.SplitName(name);
+        student.ParentFullName = name;
+        student.ParentLastName = last;
+        student.ParentFirstName = first;
+        student.ParentMiddleName = middle;
+        student.ParentPhone = primary.Phone.Trim();
+        student.ParentPassportUrl = primary.PassportUrl;
+    }
+
+    /// <summary>Tanish qiymatmi; bo'sh yoki notanish bo'lsa — <c>parent</c>.</summary>
+    public static string NormalizeRelation(string? value)
+    {
+        var v = (value ?? "").Trim().ToLowerInvariant();
+        return GuardianRelation.IsStorable(v) ? v : GuardianRelation.Parent;
+    }
+
+    /// <summary>Telefoni yaroqli bo'lgan yozuvlar — qolganlari jimgina tashlanadi.</summary>
+    private static List<StudentGuardianInput> Usable(IReadOnlyList<StudentGuardianInput>? inputs) =>
+        [.. (inputs ?? []).Where(i => PhoneUtil.Key(i.Phone ?? "").Length >= MinPhoneDigits)];
+
+    private static string? Clean(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 }

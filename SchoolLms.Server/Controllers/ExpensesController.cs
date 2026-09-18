@@ -75,9 +75,10 @@ public class ExpensesController(IExpenseService expenses) : ControllerBase
         // `teacherId` so'rovda KELADI (maosh kimga berilgani), `teacherName`
         // esa serverda `teachers` jadvalidan olinadi — tanadan qabul qilinmaydi.
         "teacherName",
-        // F1.03 — naqd chiqimning smenasi SERVERDA aniqlanadi (yozuvchining
-        // yoki tasdiqlovchining ochiq smenasi). Tanadan qabul qilinsa, chiqim
-        // boshqa kassirning smenasiga osib qo'yilardi.
+        // "Smena" endi yo'q (kassalar modeli, 2026-09) — bu maydon faqat
+        // ESKI qatorlar uchun tarixiy ustun, klient uni HECH QACHON
+        // to'ldirmasligi kerak. `cashBoxId` esa ATAYLAB bu ro'yxatda YO'Q:
+        // u endi haqiqiy, klient tanlaydigan maydon (`CreateExpenseRequest`).
         "cashShiftId",
         // F1.08 — hujjatni kim va qachon biriktirgani.
         "uploadedBy", "uploadedByName", "uploadedAt",
@@ -208,7 +209,7 @@ public class ExpensesController(IExpenseService expenses) : ControllerBase
             return BadRequest(new BillingErrorDto("invalid_body", "So'rov tanasi o'qilmadi."));
 
         var expense = await expenses.ApproveAsync(
-            id, request.Method ?? string.Empty, FinanceActor.RequireUserId(User), ct);
+            id, request.Method ?? string.Empty, FinanceActor.RequireUserId(User), request.CashBoxId, ct);
         return Ok(expense);
     }
 

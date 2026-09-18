@@ -24,6 +24,24 @@ public record ChangePasswordRequest(string CurrentPassword, string NewPassword);
 /// agar bo'lsa, ulardan FullName yig'iladi. Ota-ona FISH ham alohida.
 /// FullName/ParentFullName ixtiyoriy — yo'q bo'lsa parts'dan yig'iladi.
 /// </summary>
+/// <param name="Phone">
+/// §2.3 (S-8) — o'quvchining O'Z telefoni. <c>null</c> = TEGMA (tahrirda
+/// maydon yuborilmasa eskisi qoladi), bo'sh satr = tozala.
+/// </param>
+/// <param name="Language">§2.3 (S-8) — o'qish tili: uz | ru | en | kaa. <c>null</c> = tegma.</param>
+/// <param name="DocumentUrl">
+/// §2.3 (S-8) — hujjat NUSXASI (metrika/pasport skani). Rasm emas: rasm
+/// hamon <see cref="BirthCertificateUrl"/> da (nomi aldamchi, ma'nosi
+/// o'zgarmadi). <c>null</c> = tegma.
+/// </param>
+/// <param name="Guardians">
+/// §2.3 (S-8) — vasiylar (1–2 ta). <c>null</c> yoki bo'sh ro'yxat = bugungi
+/// xatti-harakat: faqat <c>ParentPhone</c> dan <c>GuardianSync</c> ishlaydi.
+/// Ro'yxat berilsa BIRINCHI (yoki <c>isPrimary</c>) yozuv ASOSIY vasiy bo'ladi
+/// va u eski <c>parent_*</c> ustunlari bilan bir qadamda ushlab turiladi.
+/// Bu yerdan vasiy O'CHIRILMAYDI — uzish alohida endpoint
+/// (<c>DELETE /api/admin/students/{id}/guardians/{guardianId}</c>).
+/// </param>
 public record StudentPayload(
     string FullName, string BirthDate, string Address, string Gender,
     string ParentFullName, string ParentPhone, string ClassName, string? EnrollmentDate,
@@ -32,7 +50,13 @@ public record StudentPayload(
     string? LastName = null, string? FirstName = null, string? MiddleName = null,
     string? BirthCertificateUrl = null,
     string? ParentLastName = null, string? ParentFirstName = null, string? ParentMiddleName = null,
-    string? ParentPassportUrl = null);
+    string? ParentPassportUrl = null,
+    string? Phone = null, string? Language = null, string? DocumentUrl = null,
+    List<StudentGuardianInput>? Guardians = null,
+    // §3.3 (Batch C, S-9) — sinfi hali yo'q o'quvchining mo'ljaldagi sinf
+    // darajasi. `ClassName` bo'sh bo'lganda talab qilinadi, aks holda
+    // e'tiborsiz qoldiriladi (StudentsController tozalaydi).
+    short? TargetGrade = null);
 public record PaymentRequest(decimal Amount, string? Month);
 
 /* ---------- Excel'dan ommaviy import ---------- */
@@ -176,11 +200,47 @@ public record SaveCameraSettingsRequest(bool Enabled);
 /// (students-parity.md §2.5, G-9): faqat shunday fanga o'quv guruhi ochiladi.
 /// Sukut qiymati <c>false</c> ataylab: eski chaqiruvchi bayroqni yubormasa
 /// fan guruhli BO'LIB QOLMAYDI.
+///
+/// <para>
+/// <paramref name="Color"/> va <paramref name="IsActive"/> — F-3
+/// (students-parity.md §2.5.3): jadval katakchasini bo'yaydigan rang va
+/// o'chirish o'rniga arxivlash bayrog'i. Forma <c>IsGroupable</c> bilan bir
+/// xil naqshda HAR DOIM to'liq obyekt yuboradi — shuning uchun bu yerda ham
+/// qisman ("berilmasa tegilmaydi") yangilash yo'q, Update() hammasini
+/// almashtiradi.
+/// </para>
 /// </summary>
-public record SubjectPayload(string Name, bool IsGroupable = false);
+public record SubjectPayload(
+    string Name,
+    bool IsGroupable = false,
+    string? Color = null,
+    bool IsActive = true);
 
 /* ---------- Classes ---------- */
-public record ClassPayload(string Name, int Grade, string Language, decimal MonthlyFee, string? Room);
+/// <summary>
+/// Sinf formasi. <paramref name="Capacity"/> — C-4 (students-parity.md §2.2.3): sinfga
+/// nechta o'quvchi sig'adi. <c>null</c> = chek yo'q (sukut, migratsiyadan keyingi hamma
+/// sinf shunday). Bu OGOHLANTIRISH chegarasi — <see cref="SchoolLms.Application.Services.ClassMembershipService.CapacityWarningAsync"/>
+/// qo'shish/o'tkazishdan keyin oshib ketganini aytadi, lekin taqiqlamaydi.
+/// </summary>
+public record ClassPayload(
+    string Name, int Grade, string Language, decimal MonthlyFee, string? Room, short? Capacity = null);
+
+/* ---------- Sinf rahbarlari (C-5) ---------- */
+/// <summary>
+/// Sinfga biriktirilgan sinf rahbari — <c>teachers.homeroom_class</c> ustunidan o'qiladi
+/// (haqiqat manbai o'qituvchi tomonida qoladi; sinf formasi endi shu qiymatni O'QIYDI VA
+/// YOZADI, ilgari faqat o'qituvchi kartochkasidan yozilardi).
+/// </summary>
+public record HomeroomTeacherDto(string Id, string FullName);
+
+/// <summary>
+/// Sinf rahbari(lari)ni belgilash. Ro'yxatda YO'Q, lekin hozir shu sinfga biriktirilgan
+/// o'qituvchilar — bo'shatiladi (<c>HomeroomClass = ""</c>). Ro'yxatda bor, lekin BOSHQA
+/// sinfga biriktirilgan o'qituvchi — shu sinfga "o'g'irlanadi" (bugungi teacher-tarafdagi
+/// forma ham xuddi shunday ishlaydi: bitta o'qituvchi faqat bitta sinfning rahbari bo'la oladi).
+/// </summary>
+public record SetHomeroomTeachersRequest(List<string>? TeacherIds);
 
 /* ---------- Leads ---------- */
 public record LeadCreateRequest(
@@ -382,7 +442,13 @@ public record StudentDto(
     string? BirthCertificateUrl = null,
     string ParentLastName = "", string ParentFirstName = "", string ParentMiddleName = "",
     string? ParentPassportUrl = null,
-    bool IsArchived = false, string? ArchivedAt = null, string? ArchiveReason = null);
+    bool IsArchived = false, string? ArchivedAt = null, string? ArchiveReason = null,
+    // §2.3 (S-8) — oxiriga QO'SHILDI: mavjud o'quvchilarda null bo'lgani uchun
+    // birorta ekran o'zgarishini sezmaydi, formaga esa ular kerak.
+    string? Phone = null, string? Language = null, string? DocumentUrl = null,
+    // §3.3 (Batch C, S-9) — sinfi hali yo'q o'quvchining mo'ljaldagi sinf
+    // darajasi (0-11). null = sinfga biriktirilgan yoki mo'ljal ko'rsatilmagan.
+    short? TargetGrade = null);
 
 /// <summary>
 /// O'quvchini arxivlash so'rovi. <c>Reason</c> — erkin matn, MAJBURIY (tafsilot);
@@ -471,6 +537,15 @@ public record DisciplineScoreRowDto(
     string StudentId, string FullName, string ClassName, int Plus, int Minus, int Remaining);
 /// <summary>O'quvchiga ball kiritish so'rovi (sabab bo'yicha).</summary>
 public record AddDisciplinePointRequest(string StudentId, string ReasonId, string? Note);
+/// <summary>
+/// Butun sinfga bitta intizomiy ball kiritish (C-6, students-parity.md §2.2.3): sinfning HAR
+/// BIR faol o'quvchisiga bir xil sabab bilan alohida yozuv qo'shiladi — EduSchool'dagi
+/// <c>editBehaviorIncidents</c> / <c>POST /behavior-incidents/class</c> naqshi. Faqat mustaqil
+/// intizomiy sabab ("other") — davomat sababi jurnal orqali qo'yiladi, bu yerdan emas.
+/// </summary>
+public record AddClassDisciplinePointRequest(string ClassId, string ReasonId, string? Note);
+/// <summary>Sinf bo'ylab ball kiritish natijasi: nechta o'quvchiga yozildi, nechtasiga ota-onaga xabar ketdi.</summary>
+public record ClassDisciplinePointResultDto(int Applied, int NotifiedParents, List<DisciplinePointDto> Items);
 /// <summary>Bitta intizomiy ball yozuvi (tarix). <c>Source</c>: "manual" (qo'lda, o'chirsa bo'ladi) yoki "attendance" (jurnal davomati, faqat ko'rish).</summary>
 /// <param name="NotifiedParents">
 /// Shu ball haqida ota-onaga HAQIQATAN yuborilgan Telegram xabarlari soni (§6.3, 4-qadam).
@@ -545,6 +620,15 @@ public record StudentLocationDto(double? Latitude, double? Longitude, string? Ad
 public record StudentLocationRowDto(
     string StudentId, string FullName, string ClassName,
     double Latitude, double Longitude, string? Address, string? UpdatedAt);
+
+/// <summary>
+/// Admin xarita uchun — bitta o'quvchining BITTA turdagi pin'i (§2.8, L-2).
+/// Bitta o'quvchida uchtagacha pin bo'lishi mumkin (home/school/pickup).
+/// </summary>
+public record StudentLocationPinDto(
+    string StudentId, string FullName, string ClassName, string Kind,
+    double Latitude, double Longitude, string? Name,
+    string? PickupFrom, string? PickupTo);
 
 /// <summary>Ota-ona bo'limidagi bitta farzand (qisqacha) + qurilma ma'lumoti.</summary>
 public record ParentChildDto(
@@ -766,6 +850,23 @@ public record TeacherClassDto(
     string ClassId, string ClassName, int Grade, bool IsHomeroom, List<SubjectDto> Subjects,
     string OwnerKind = SchoolLms.Domain.LessonOwnerKind.Class);
 /// <summary>
+/// O'qituvchining O'Z o'quv guruhi — "Guruhlarim" sahifasi (X-3,
+/// students-parity.md §2.11). <c>/teacher/classes</c> ham guruhlarni beradi (ro'yxat
+/// uchun), bu DTO esa guruh ro'yxatini (roster) boshqarish sahifasiga xos maydonlar bilan.
+/// </summary>
+/// <param name="CanEditRoster">
+/// Ro'yxatni TAHRIRLASH (qo'shish/chiqarish) huquqi bormi. X-3 qarori: bunday alohida
+/// ruxsat kaliti (TeacherPermissions) hali yo'q, shuning uchun ENG XAVFSIZ o'qish
+/// tanlandi — FAQAT guruhga BIRIKTIRILGAN o'qituvchiga (<c>study_group_teachers</c>;
+/// <c>TeacherOwner.IsHomeroom</c> guruh uchun aynan shu ma'noni bildiradi) true.
+/// Faqat jadvalda darsi bor, biriktirilmagan o'qituvchi ro'yxatni FAQAT ko'radi — xuddi
+/// sinf rahbarligi/dars beruvchi nomutanosibligiga o'xshab (<c>TeacherOwnerAccess.cs</c>
+/// fayl boshidagi izoh).
+/// </param>
+public record TeacherGroupDto(
+    Guid Id, string Name, string SubjectId, string SubjectName, string? Gender,
+    List<StudyGroupClassRefDto> Classes, int MemberCount, bool CanEditRoster);
+/// <summary>
 /// O'qituvchi jadvalidagi bitta dars (qaysi sinf, fan, kun, dars raqami, vaqt, guruh).
 ///
 /// <para>
@@ -923,16 +1024,35 @@ public record BroadcastDto(
     int RecipientCount, int SentCount);
 
 /// <summary>
-/// E'lon yuborish so'rovi. <c>Scope</c>: "class" (ClassName sinfi), "all" (barcha sinf),
-/// "selected" (StudentIds tanlangan o'quvchilar). <c>OnlyDebtors</c> — faqat balansi manfiylar.
+/// E'lon yuborish so'rovi. <c>Scope</c>: "class" (ClassName sinfi), "group" (GroupId o'quv
+/// guruhining FAOL a'zolari), "all" (barcha sinf), "selected" (StudentIds tanlangan
+/// o'quvchilar), "filter" (Filter'ga mos BARCHA o'quvchi, S-6). <c>OnlyDebtors</c> — faqat
+/// balansi manfiylar.
 /// <c>Text</c> ichida o'rinbosarlar bo'lishi mumkin: {fish} {sinf} {qarzdorlik} {balans} {ota-ona} {telefon}.
+///
+/// <para>
+/// <c>GroupId</c> ATAYLAB oxirgi va ixtiyoriy: e'lon HAQIQIY ota-onalarga Telegram
+/// xabari yuboradi, shuning uchun guruh qamrovi faqat chaqiruvchi uni ANIQ
+/// so'raganda (<c>scope: "group"</c> + guruh id'si) ishlaydi — sukut bo'yicha hech
+/// narsa o'zgarmaydi.
+/// </para>
 /// </summary>
 public record SendBroadcastRequest(
-    string? Scope, string? ClassName, bool OnlyDebtors, List<string>? StudentIds, string Text);
+    string? Scope, string? ClassName, bool OnlyDebtors, List<string>? StudentIds, string Text,
+    string? GroupId = null,
+    // S-6 (students-parity.md §2.3.3) — scope === "filter" bo'lganda ro'yxat
+    // ekranidagi JORIY filtr shu yerdan keladi; qamrov `StudentListQuery`
+    // orqali hisoblanadi, ya'ni ekran nechta o'quvchini ko'rsatsa, xabar ham
+    // AYNAN o'shalarga boradi (tanlangan qatorlardan mustaqil).
+    StudentListFilter? Filter = null);
 
-/// <summary>Telegramda ro'yxatdan o'tgan ota-ona. ChatId string (JS aniqligi uchun). Balance — qarz aniqlash uchun.</summary>
+/// <summary>
+/// Telegramda ro'yxatdan o'tgan ota-ona. ChatId string (JS aniqligi uchun).
+/// Balance — qarz aniqlash uchun; moliya ruxsati bo'lmagan chaqiruvchi uchun
+/// <c>null</c> (nol emas — nol "qarzi yo'q" degan yolg'on ma'no berardi).
+/// </summary>
 public record TelegramParentDto(
-    string StudentId, string StudentName, string ClassName, decimal Balance,
+    string StudentId, string StudentName, string ClassName, decimal? Balance,
     string ParentName, string Phone, string ChatId, string CreatedAt);
 
 /// <summary>
@@ -953,20 +1073,42 @@ public record PushMessageDto(
 public record AssignmentMaterialDto(string Id, string Name, string Url, long Size, string ContentType);
 /// <summary>Test savoli (format=test).</summary>
 public record TestQuestionDto(string Id, string Text, List<string> Options, int CorrectIndex, int Order);
-/// <summary>Topshiriq/test (to'liq). Format: written|file|test|video. CreatedAt/Start/Due — ISO.</summary>
+/// <summary>
+/// Topshiriq/test (to'liq). Format: written|file|test|video. CreatedAt/Start/Due — ISO.
+/// </summary>
+/// <param name="ClassIds">
+/// G-20: <see cref="OwnerKind"/>="group" bo'lsa — o'quv GURUH id'lari (§2.1.4
+/// naqshi: guruh id'si xuddi shu ustunda saqlanadi, alohida ustun yo'q).
+/// </param>
+/// <param name="ClassNames">
+/// Ko'rsatiladigan nomlar — <see cref="OwnerKind"/> qaysi bo'lsa, o'sha
+/// turdagi (sinf yoki guruh) nomlar. Chaqiruvchi tomonda ikkalasi ham bir xil
+/// "yorliqlar ro'yxati" sifatida chiziladi.
+/// </param>
+/// <param name="OwnerKind"><see cref="SchoolLms.Domain.LessonOwnerKind"/> — "class" | "group".</param>
 public record AssignmentDto(
     string Id, string CreatedByUserId, string SubjectId, string SubjectName, string Title,
     string Description, string Format, List<string> ClassIds, List<string> ClassNames,
     string? StartDate, string? DueDate, bool LateAccept, int LatePenaltyPct, int MaxScore,
     bool AutoGrade, string CreatedAt,
-    List<AssignmentMaterialDto> Materials, List<TestQuestionDto> Questions);
+    List<AssignmentMaterialDto> Materials, List<TestQuestionDto> Questions,
+    string OwnerKind = "class");
 public record MaterialInput(string Name, string Url, long Size, string ContentType);
 public record QuestionInput(string Text, List<string> Options, int CorrectIndex);
-/// <summary>Topshiriq yaratish/tahrirlash so'rovi (ham create, ham update).</summary>
+/// <summary>
+/// Topshiriq yaratish/tahrirlash so'rovi (ham create, ham update).
+/// </summary>
+/// <param name="OwnerKind">
+/// G-20: topshiriq SINFGA beriladimi yoki o'quv GURUHIGA —
+/// <see cref="SchoolLms.Domain.LessonOwnerKind"/> ("class" | "group").
+/// null/bo'sh/noma'lum qiymat — "class" (bugungi xatti-harakat, eski
+/// mijoz — o'qituvchi portali — bu maydonni umuman yubormaydi).
+/// </param>
 public record SaveAssignmentRequest(
     string SubjectId, string Title, string? Description, string Format, List<string> ClassIds,
     string? StartDate, string? DueDate, bool LateAccept, int LatePenaltyPct, int MaxScore,
-    bool AutoGrade, List<MaterialInput>? Materials, List<QuestionInput>? Questions);
+    bool AutoGrade, List<MaterialInput>? Materials, List<QuestionInput>? Questions,
+    string? OwnerKind = null);
 /// <summary>Yuklangan fayl haqida ma'lumot (upload javobida).</summary>
 public record UploadedFileDto(string Name, string Url, long Size, string ContentType);
 
@@ -1041,7 +1183,12 @@ public record AssignmentScoreCellDto(string AssignmentId, bool Completed, int? S
 public record AssignmentScoreRowDto(
     string StudentId, string FullName, string ClassName,
     List<AssignmentScoreCellDto> Cells, int TotalScore, int TotalMax, int GradedCount);
-/// <summary>Sinf bo'yicha topshiriqlar ball jadvali (ustunlar = topshiriqlar, qatorlar = o'quvchilar).</summary>
+/// <summary>
+/// Ega (sinf yoki guruh, G-20) bo'yicha topshiriqlar ball jadvali (ustunlar = topshiriqlar,
+/// qatorlar = o'quvchilar). <paramref name="ClassId"/>/<paramref name="ClassName"/> nomiga
+/// qaramay — <c>AssignmentService.GetScoreboardAsync</c> guruh id berilsa guruhning
+/// id'si/nomini qaytaradi (ustun nomlari o'zgartirilmadi — FE hech narsa buzmasin).
+/// </summary>
 public record AssignmentScoreboardDto(
     string ClassId, string ClassName,
     List<AssignmentScoreColumnDto> Assignments, List<AssignmentScoreRowDto> Students);

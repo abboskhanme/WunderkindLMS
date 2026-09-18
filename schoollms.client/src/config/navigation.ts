@@ -1,17 +1,17 @@
 import type { LucideIcon } from 'lucide-react'
 import {
+  CalendarCheck,
+  FlaskConical,
   LayoutDashboard,
   UserPlus,
   GraduationCap,
   NotebookText,
   CalendarRange,
   ClipboardList,
-  CalendarCheck,
   Wallet,
   MessageSquare,
   ClipboardCheck,
   Settings,
-  Smartphone,
   BarChart3,
   Building2,
   BookOpen,
@@ -59,7 +59,17 @@ export const navByRole: Record<Role, NavItem[]> = {
   //  qo'shiladi; o'rni MENU-PARITY.md da belgilangan.
   // ==========================================================================
   admin: [
-    { label: 'Bosh sahifa', to: '/admin', icon: LayoutDashboard },
+    // TARTIB EduSchool'ning yon menyusidan olingan (mijoz ko'rsatgan ekran,
+    // 2026-09-18): Dashboard · Lidlar · Moliya · Jurnal · O'quv bo'limi ·
+    // Dars jadvali · Chat · HR · Analitika · Boshqaruv · Xulq-atvor ·
+    // Sozlamalar. Ularda bor-u bizda hali qurilmagan bo'limlar (Topshiriqlar,
+    // Gamifikatsiya, Qabul, Imtihonlar, Blok Test) menyuda YO'Q — bo'sh
+    // sahifaga olib boradigan yozuv yo'q yozuvdan battar (MENU-PARITY.md).
+    //
+    // Bizda bor-u ularda yo'q uchtasi (Davomat, Keldi-ketdi, Ilova) OXIRIGA,
+    // Sozlamalardan oldin qo'yilgan — shunda EduSchool ketma-ketligi
+    // boshidan Xulq-atvorgacha uzilmay o'qiladi.
+        { label: 'Bosh sahifa', to: '/admin', icon: LayoutDashboard },
     {
       label: 'Lidlar',
       to: '/admin/leads',
@@ -78,29 +88,34 @@ export const navByRole: Record<Role, NavItem[]> = {
       icon: Wallet,
       perm: 'finance',
       children: [
-        { label: 'Umumiy', to: '/admin/finance', end: true, group: 'AMALIYOT' },
-        // Kassa ish joyi — admin/direktor uchun ham ochiq (F1.11). Kassirning
-        // o'z menyusi alohida va qisqa: `navByRole.cashier`.
-        { label: 'Kassa', to: '/cashier', roles: ['admin', 'superadmin'], group: 'AMALIYOT' },
-        // Billing katalogi — `perm: 'finance'` yolg'iz o'zi buni finance ruxsatli
-        // xodimga ham ko'rsatardi, server esa unga 403 beradi. Shuning uchun rol
-        // ham ko'rsatiladi: menyu va endpoint bir xil qoidaga bo'ysunsin.
-        { label: "To'lov toifalari", to: '/admin/billing/categories', roles: ['admin', 'superadmin'], group: 'AMALIYOT' },
-        { label: 'Obunalar', to: '/admin/billing/subscriptions', roles: ['admin', 'superadmin'], group: 'AMALIYOT' },
-        { label: 'Chegirmalar', to: '/admin/billing/discounts', roles: ['admin', 'superadmin'], group: 'AMALIYOT' },
-        { label: 'Chiqimlar', to: '/admin/billing/expenses', roles: ['admin', 'superadmin'], group: 'AMALIYOT' },
-        { label: 'Hisob-fakturalar', to: '/admin/billing/invoices', roles: ['admin', 'superadmin'], group: 'AMALIYOT' },
-        { label: 'Qarzdor holatlari', to: '/admin/finance/debtor-statuses', roles: ['admin', 'superadmin'], group: 'AMALIYOT' },
-        // SPEC §4.3: moliya hisobotlari faqat admin va direktorga ochiq —
-        // 'finance' ruxsatli xodim (staff) ham bu yerni ko'rmaydi, chunki
-        // endpoint unga 403 qaytaradi. Menyuni ham, marshrutni ham yopamiz.
+        // BU RO'YXAT EduSchool'ning Moliya menyusining AYNAN O'ZI — mijoz
+        // 2026-09-18 da: "eduschool bilan bir xil bo'lsin". O'zimiz qo'shgan
+        // yozuvlar (Umumiy, To'lov toifalari, Obunalar, Chegirmalar,
+        // Chiqimlar, Qarzdor holatlari, Qaytarimlar, Moliya sozlamalari,
+        // Kassa kuni) menyudan OLIB TASHLANDI. Ekranlarning o'zi va
+        // marshrutlari joyida — EduSchool ham ularni katalog sifatida
+        // "Moliya sozlamalari" ichidan ochadi (finance-parity.md §2.14),
+        // menyuda alohida yozuv qilmaydi.
+        //
+        // YANGI YOZUV QO'SHMANG. Bu ro'yxat EduSchool ekranidan nusxa.
+        { label: 'Kassa', to: '/cashier', roles: ['admin', 'superadmin'], group: 'AMALLAR' },
+        { label: 'Qarzdorlar bilan ishlash', to: '/admin/finance/debtors', roles: ['admin', 'superadmin'], group: 'AMALLAR' },
+        { label: 'Tranzaksiyalar', to: '/admin/finance/transactions', roles: ['admin', 'superadmin'], group: 'AMALLAR' },
+        { label: 'Abonement tranzaksiyalari', to: '/admin/billing/invoices', roles: ['admin', 'superadmin'], group: 'AMALLAR' },
+        { label: 'Abonement tranzaksiyalari (Qarzdorlik oyma oy)', to: '/admin/finance/arrears', roles: ['admin', 'superadmin'], group: 'AMALLAR' },
+
+        { label: 'Ish haqi', to: '/admin/teachers/salary', roles: ['admin', 'superadmin'], group: 'ISH HAQI' },
+        { label: 'Bonus', to: '/admin/finance/bonus', roles: ['admin', 'superadmin'], group: 'ISH HAQI' },
+        { label: 'Jarima', to: '/admin/finance/penalty', roles: ['admin', 'superadmin'], group: 'ISH HAQI' },
+
         { label: 'Moliya hisobotlari', to: '/admin/finance/reports', roles: ['admin', 'superadmin'], group: 'HISOBOTLAR' },
-        { label: 'Tranzaksiyalar', to: '/admin/finance/transactions', roles: ['admin', 'superadmin'], group: 'HISOBOTLAR' },
-        // Kunlik ekran — pul aylanmasidan oldin turadi, chunki har kuni ochiladi.
-        { label: 'Kassa kuni', to: '/admin/finance/cash-day', roles: ['admin', 'superadmin'], group: 'HISOBOTLAR' },
-        { label: 'Pul aylanmasi', to: '/admin/finance/money-flow', roles: ['admin', 'superadmin'], group: 'HISOBOTLAR' },
-        // EduSchool: "Abonement tranzaksiyalari (qarzdorlik oyma-oy)" — MENU-PARITY.md §Moliya.
-        { label: 'Oyma-oy qarzdorlik', to: '/admin/finance/arrears', roles: ['admin', 'superadmin'], group: 'HISOBOTLAR' },
+        { label: 'Moliya hisobotlari (P&L)', to: '/admin/finance/pnl', roles: ['admin', 'superadmin'], group: 'HISOBOTLAR' },
+        // P&L 2.0 (beta) — ilgari rad etilgan edi (existing-module-gaps.md
+        // §3.6), mijoz 2026-09-18 da qaytardi. Ekranda hali qurilmagan
+        // qismlari OCHIQ yozilgan, soxta tab qo'yilmagan.
+        { label: 'Moliya hisobotlari (P&L) 2.0', to: '/admin/finance/pnl-2', roles: ['admin', 'superadmin'], group: 'HISOBOTLAR' },
+        { label: 'Pul oqimi', to: '/admin/finance/cashflow', roles: ['admin', 'superadmin'], group: 'HISOBOTLAR' },
+        { label: 'Moliya analitikasi', to: '/admin/finance/money-flow', roles: ['admin', 'superadmin'], group: 'HISOBOTLAR' },
       ],
     },
     { label: 'Jurnal', to: '/admin/journal', icon: NotebookText, perm: 'journal' },
@@ -108,22 +123,52 @@ export const navByRole: Record<Role, NavItem[]> = {
       label: "O'quv bo'limi",
       to: '/admin/students',
       icon: BookOpen,
-      perm: 'students',
+      // Bo'limning O'ZIDA `perm` YO'Q — ataylab. Ilgari u `students` edi va
+      // faqat `classes` ruxsatli xodim (Sinflar va Guruhlar aynan uniki)
+      // bo'limni UMUMAN ko'rmasdi. Endi ko'rinishni bolalar hal qiladi:
+      // Sidebar bolalarni filtrlaydi va bolasi qolmagan bo'limni yashiradi,
+      // ya'ni hech bir ekraniga ruxsati yo'q xodimga bo'lim baribir chiqmaydi.
+      // Ota-satr — tugma, u hech qayerga o'tkazmaydi (faqat panelni ochadi),
+      // shuning uchun `to` ning ruxsati bu yerda ahamiyatsiz.
       children: [
-        { label: 'Sinflar', to: '/admin/classes', end: true, group: "O'QUV JARAYONI" },
-        { label: 'Guruhlar', to: '/admin/groups', group: "O'QUV JARAYONI" },
-        { label: 'Fanlar', to: '/admin/subjects', group: "O'QUV JARAYONI" },
-        { label: "O'quvchilar", to: '/admin/students', end: true, group: "O'QUVCHILAR" },
-        { label: "O'quvchi holatlari", to: '/admin/students/holatlar', group: "O'QUVCHILAR" },
-        { label: "O'quvchilar manzili", to: '/admin/locations', group: "O'QUVCHILAR" },
-        { label: 'Ota-onalar', to: '/admin/parents', group: "O'QUVCHILAR" },
+        // TARTIB EduSchool'ning O'quv bo'limi menyusidan AYNAN olingan
+        // (mijoz ko'rsatgan ekran, 2026-09-17): Sinflar · Guruhlar · Fanlar ·
+        // Xonalar || O'quvchilar · Arxiv o'quvchilar · O'quvchilar manzili ·
+        // Ota onalar || Sertifikatlar · Shartnomalar.
+        // Mijoz 2026-09-17 da: "eduschoolda bor menular bo'lsa yetadi" —
+        // BAHOLASH guruhi (ikkita feedback yozuvi) va "O'quvchi holatlari"
+        // menyudan OLIB TASHLANDI. Sahifalari va marshrutlari joyida qoldi,
+        // ya'ni funksiya o'chmadi, faqat menyuda ko'rinmaydi.
+        // `Sertifikat turlari` qoldi: u EduSchool'da BOR, faqat Sozlamalar
+        // ostida turadi — bizda esa o'sha marshrut `settings` ruxsatiga,
+        // API esa `students` ga bog'langani uchun u yerga qo'yib bo'lmaydi.
+        //
+        // HAR BIR YOZUVDA `perm` BOR — VA U SAHIFANI HAQIQATDA QO'RIQLAYDIGAN
+        // KALIT. Bo'lim bitta (`O'quv bo'limi`), lekin ichidagi ekranlar TO'RT
+        // xil ruxsat ostida turadi: sinf va guruh `classes`, fan va xona
+        // `schedule`, manzil va ota-ona `app`, qolgani `students`.
+        // Avval bolalarda `perm` yo'q edi va Sidebar ularni HAMMAGA ko'rsatardi:
+        // `students` ruxsatli xodim to'liq menyuni ko'rib, Fanlar yoki Xonalarni
+        // bosganda "ruxsat yo'q" sahifasiga tushardi. Menyu ocholmaydigan
+        // yozuvni ko'rsatmasligi kerak — Sidebar bolalarni ham filtrlaydi va
+        // bolasi qolmagan bo'limni butunlay yashiradi.
+        { label: 'Sinflar', to: '/admin/classes', end: true, perm: 'classes', group: "O'QUV JARAYONI" },
+        { label: 'Guruhlar', to: '/admin/groups', perm: 'classes', group: "O'QUV JARAYONI" },
+        { label: 'Fanlar', to: '/admin/subjects', perm: 'students', group: "O'QUV JARAYONI" },
+        { label: 'Xonalar', to: '/admin/rooms', perm: 'students', group: "O'QUV JARAYONI" },
+        { label: "O'quvchilar", to: '/admin/students', end: true, perm: 'students', group: "O'QUVCHILAR" },
+        { label: "Arxiv o'quvchilar", to: '/admin/students/arxiv', perm: 'students', group: "O'QUVCHILAR" },
+        // Manzil va Ota-onalar `app` ("Ilova") dan `students` ga KO'CHDI —
+        // menyu, marshrut va controller bir vaqtda. `app` mobil ilova davridan
+        // qolgan kalit edi; ikkala ekran endi O'quv bo'limida turibdi, shuning
+        // uchun bo'limning kalitiga bo'ysunadi.
+        { label: "O'quvchilar manzili", to: '/admin/locations', perm: 'students', group: "O'QUVCHILAR" },
+        { label: 'Ota-onalar', to: '/admin/parents', perm: 'students', group: "O'QUVCHILAR" },
+        { label: 'Sertifikatlar', to: '/admin/certificates', end: true, perm: 'students', group: 'HUJJATLAR' },
         { label: 'Shartnomalar', to: '/admin/contracts', perm: 'contracts', group: 'HUJJATLAR' },
         // Sertifikat turlari SOZLAMALAR ostida emas: u yerdagi marshrut `settings`
         // ruxsatiga bog'langan, API esa `students` ga — menyu va server zid bo'lardi.
-        { label: 'Sertifikatlar', to: '/admin/certificates', end: true, group: 'HUJJATLAR' },
-        { label: 'Sertifikat turlari', to: '/admin/certificates/types', group: 'HUJJATLAR' },
-        { label: "O'quvchilarga feedback", to: '/admin/students/baholash', group: 'BAHOLASH' },
-        { label: 'Feedback nomi', to: '/admin/students/baholash-turlari', group: 'BAHOLASH' },
+        { label: 'Sertifikat turlari', to: '/admin/certificates/types', perm: 'students', group: 'HUJJATLAR' },
       ],
     },
     {
@@ -132,18 +177,21 @@ export const navByRole: Record<Role, NavItem[]> = {
       icon: CalendarRange,
       perm: 'schedule',
       children: [
+        // FAQAT JADVAL. Choraklar, Dars vaqtlari, Davomat sabablari va
+        // Bayram kunlari SOZLAMALAR bo'limiga ("Umumiy sozlamalar") ko'chdi —
+        // mijoz qoidasi: ishchi bo'limlar ichida sozlama turmaydi.
+        // Eski manzillar (`/admin/settings/quarters` va h.k.) ishlashda qoladi.
         { label: 'Sinf jadvali', to: '/admin/schedule', end: true, group: 'JADVAL' },
         { label: "O'qituvchi jadvali", to: '/admin/schedule/teachers', group: 'JADVAL' },
         { label: 'Dars jadvali yaratish', to: '/admin/schedule/manage', group: 'JADVAL' },
-        { label: 'Bayram kunlari', to: '/admin/schedule/holidays', group: 'SOZLAMA' },
-        { label: 'Choraklar', to: '/admin/settings/quarters', group: 'SOZLAMA' },
-        { label: 'Dars vaqtlari', to: '/admin/settings/lesson-times', group: 'SOZLAMA' },
-        { label: 'Xonalar', to: '/admin/rooms', group: 'SOZLAMA' },
-        { label: 'Davomat sabablari', to: '/admin/settings/reasons', group: 'SOZLAMA' },
       ],
     },
     { label: 'Xabarlar', to: '/admin/messages', icon: MessageSquare, perm: 'messages' },
     {
+      // Davomat EduSchool'da yo'q, lekin mijoz uni yuqorida qoldirishni
+      // so'radi (2026-09-18) — kundalik ishlatiladigan bo'lim, `Future`
+      // ichiga tiqib qo'yish uni uzoqlashtirardi. Shu bois EduSchool
+      // ketma-ketligi aynan shu bitta yozuvda uziladi, ataylab.
       label: 'Davomat',
       to: '/admin/attendance',
       icon: CalendarCheck,
@@ -154,20 +202,6 @@ export const navByRole: Record<Role, NavItem[]> = {
       ],
     },
     {
-      label: 'Keldi-ketdi',
-      to: '/admin/students/turniket',
-      icon: ClipboardCheck,
-      perm: 'students',
-      children: [
-        { label: 'Jonli turniket', to: '/admin/students/turniket', end: true, group: 'TURNIKET' },
-        { label: 'Turniket analitikasi', to: '/admin/students/turniket/analitika', group: 'HISOBOTLAR' },
-        { label: 'Kirib-chiqish statistikasi', to: '/admin/students/turniket/kirish-chiqish', group: 'HISOBOTLAR' },
-        // Ruxsat kaliti `students` — endpoint ham shunday. `attendance` ostiga
-        // qo'yilsa menyu bilan server bir xodim uchun ZID javob berardi.
-        { label: 'Kunlik davomat hisoboti', to: '/admin/students/turniket/kunlik-davomat', group: 'HISOBOTLAR' },
-      ],
-    },
-    {
       label: 'HR',
       to: '/admin/teachers',
       icon: GraduationCap,
@@ -175,7 +209,8 @@ export const navByRole: Record<Role, NavItem[]> = {
       children: [
         { label: "O'qituvchilar", to: '/admin/teachers', end: true, group: 'XODIMLAR' },
         { label: "O'qituvchilar davomati", to: '/admin/teachers/attendance', group: 'XODIMLAR' },
-        { label: 'Oylik hisoblash', to: '/admin/teachers/salary', group: 'ISH HAQI' },
+        // 'Oylik hisoblash' MOLIYA ostiga ko'chdi — EduSchool'da Ish haqi
+        // aynan o'sha yerda turadi. Ikki joyda ko'rsatish menyuni chalkashtirardi.
       ],
     },
     {
@@ -190,19 +225,6 @@ export const navByRole: Record<Role, NavItem[]> = {
         { label: "Fanlar bo'yicha baholar", to: '/admin/grades-report/subjects', group: "O'QUV" },
         { label: 'Sinflar reytingi', to: '/admin/classes/rating', group: "O'QUV" },
         { label: "O'qituvchilar hisoboti", to: '/admin/teacher-reports', perm: 'teacherReports', group: 'XODIMLAR' },
-      ],
-    },
-    {
-      label: 'Ilova',
-      to: '/admin/assignments',
-      icon: Smartphone,
-      perm: 'app',
-      children: [
-        { label: 'Topshiriqlar', to: '/admin/assignments', group: "TA'LIM" },
-        { label: 'Topshiriqlar bali', to: '/admin/assignment-scores', group: "TA'LIM" },
-        { label: "Ta'lim (LMS)", to: '/admin/lms', group: "TA'LIM" },
-        { label: 'Oshxona', to: '/admin/canteen', group: 'BOSHQA' },
-        { label: "O'qituvchilar", to: '/admin/app/teachers', group: 'BOSHQA' },
       ],
     },
     {
@@ -235,14 +257,49 @@ export const navByRole: Record<Role, NavItem[]> = {
       icon: Settings,
       perm: 'settings',
       children: [
-        { label: "Maktab ma'lumotlari", to: '/admin/settings/school', group: 'UMUMIY' },
-        { label: "Yangi o'quv yiliga o'tish", to: '/admin/academic-year', perm: 'academicYear', group: 'UMUMIY' },
-        { label: 'Arxivlash sabablari', to: '/admin/settings/archive-reasons', group: 'UMUMIY' },
-        { label: 'Telegram bot', to: '/admin/settings/telegram', group: 'INTEGRATSIYALAR' },
-        { label: 'Push (Firebase)', to: '/admin/settings/firebase', group: 'INTEGRATSIYALAR' },
-        { label: 'Turniket integratsiya', to: '/admin/settings/turnstile', group: 'INTEGRATSIYALAR' },
-        { label: 'GPS integratsiya', to: '/admin/settings/gps', group: 'INTEGRATSIYALAR' },
-        { label: 'Kamera integratsiya', to: '/admin/settings/cameras', group: 'INTEGRATSIYALAR' },
+        // EduSchool'ning Sozlamalar menyusi AYNAN to'rtta yozuvdan iborat
+        // (mijoz ko'rsatgan ekran, 2026-09-18). Har biri — ichida bo'limlari
+        // bor bitta sahifa, menyuda esa o'nta yassi yozuv emas.
+        // Eski manzillar (`/admin/settings/telegram` va h.k.) ishlashda
+        // qoladi — hub qo'shimcha yo'l, almashtiruvchi emas.
+        { label: 'Moliya sozlamalari', to: '/admin/billing/settings', roles: ['admin', 'superadmin'], group: 'SOZLAMALAR' },
+        { label: 'Integratsiyalar', to: '/admin/settings/integrations', group: 'SOZLAMALAR' },
+        { label: 'Umumiy sozlamalar', to: '/admin/settings/general', group: 'SOZLAMALAR' },
+        // `Sotuv va marketing` ATAYLAB yo'q: u EduSchool'ning CRM sozlamasi,
+        // bizda uning o'rni Lidlar taxtasi — CLAUDE.md uni himoyalaydi.
+        //
+        // `Yangi o'quv yiliga o'tish` ham bu yerda emas: u sozlama emas,
+        // yiliga bir marta bajariladigan va ORQAGA QAYTMAYDIGAN amal
+        // (o'quvchilarni ko'chiradi, baho va jadvalni tozalaydi).
+        { label: "Yangi o'quv yiliga o'tish", to: '/admin/academic-year', perm: 'academicYear', group: 'AMALLAR' },
+      ],
+    },
+    {
+      // ---------------------------------------------------------------------
+      //  FUTURE — bizda bor, EduSchool'da yo'q bo'limlar vaqtincha shu yerda.
+      //
+      //  Mijoz taklifi (2026-09-18): asosiy menyu EduSchool bilan bir xil
+      //  bo'lib tursin, o'zimiz qo'shgan qismlar esa eng pastda bitta joyda
+      //  yig'ilsin — keyinchalik yo asosiy menyuga qaytariladi, yo o'chiriladi.
+      //
+      //  Ekranlar va marshrutlar TEGILMAGAN — bu faqat menyudagi joylashuv.
+      //  Qaytarish kerak bo'lsa: bu blokni o'chirib, uchta bo'limni
+      //  (Davomat / Keldi-ketdi / Ilova) o'z holida qaytarish kifoya —
+      //  git tarixida ular shu ko'rinishda turibdi.
+      // ---------------------------------------------------------------------
+      label: 'Future',
+      to: '/admin/attendance',
+      icon: FlaskConical,
+      children: [
+        { label: 'Jonli turniket', to: '/admin/students/turniket', end: true, perm: 'students', group: 'KELDI-KETDI' },
+        { label: 'Turniket analitikasi', to: '/admin/students/turniket/analitika', perm: 'students', group: 'KELDI-KETDI' },
+        { label: 'Kirib-chiqish statistikasi', to: '/admin/students/turniket/kirish-chiqish', perm: 'students', group: 'KELDI-KETDI' },
+        { label: 'Kunlik davomat hisoboti', to: '/admin/students/turniket/kunlik-davomat', perm: 'students', group: 'KELDI-KETDI' },
+        { label: 'Topshiriqlar', to: '/admin/assignments', perm: 'app', group: 'ILOVA' },
+        { label: 'Topshiriqlar bali', to: '/admin/assignment-scores', perm: 'app', group: 'ILOVA' },
+        { label: "Ta'lim (LMS)", to: '/admin/lms', perm: 'app', group: 'ILOVA' },
+        { label: 'Oshxona', to: '/admin/canteen', perm: 'app', group: 'ILOVA' },
+        { label: "O'qituvchilar", to: '/admin/app/teachers', perm: 'app', group: 'ILOVA' },
       ],
     },
   ],

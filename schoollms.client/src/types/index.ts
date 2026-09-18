@@ -175,6 +175,18 @@ export interface Student {
   parentPhone: string
   /** Ota-ona passport rasm/skani manzili */
   parentPassportUrl?: string | null
+  /**
+   * O'quvchining O'Z telefoni (students-parity.md §2.3, S-8). Ota-onaning
+   * raqami `parentPhone` da qoladi — bu uning o'rniga emas, yoniga.
+   */
+  phone?: string | null
+  /** O'qish tili: uz | ru | en | kaa. Bo'sh = ko'rsatilmagan (S-8). */
+  language?: string | null
+  /**
+   * Hujjat NUSXASI — metrika yoki pasport skani (S-8). Rasm emas: o'quvchi
+   * rasmi hamon `birthCertificateUrl` da (nomi aldamchi, ma'nosi o'zgarmadi).
+   */
+  documentUrl?: string | null
   /** Joylashuv kengligi (mobil ilovadan GPS) */
   latitude?: number | null
   /** Joylashuv uzunligi */
@@ -189,8 +201,13 @@ export interface Student {
   archivedAt?: string | null
   /** Arxivga olish sababi */
   archiveReason?: string | null
-  /** Biriktirilgan sinf, masalan "9-A" */
+  /** Biriktirilgan sinf, masalan "9-A". Bo'sh satr = sinfi hali yo'q (S-9) — shu holda `targetGrade` bo'lishi kerak. */
   className: string
+  /**
+   * Sinfi hali yo'q o'quvchining mo'ljaldagi sinf darajasi (0-11), S-9.
+   * `className` bo'sh bo'lganda ma'noli; sinfi bor o'quvchida null.
+   */
+  targetGrade?: number | null
   /** Maktabga kelgan (qabul) sanasi (ISO) — oylik to'lov shu oydan boshlanadi */
   enrollmentDate: string
   /**
@@ -239,6 +256,14 @@ export interface Subject {
    * mumkin, shuning uchun ixtiyoriy.
    */
   isGroupable?: boolean
+  /** Jadval katakchasini bo'yaydigan rang `#RRGGBB` (F-3). null/yo'q — neytral. */
+  color?: string | null
+  /**
+   * Fan faolmi (F-3). `false` — o'chirish o'rniga arxivlash: yangi jadval va
+   * tanlovda ko'rinmaydi, lekin unga bog'langan eski yozuvlar joyida qoladi.
+   * Eski javoblarda bo'lmasligi mumkin — shu holatda "faol" deb o'qiladi.
+   */
+  isActive?: boolean
 }
 
 /* ---------- Sinflar ---------- */
@@ -261,6 +286,14 @@ export interface SchoolClass {
   isArchived?: boolean
   /** Arxivga olingan sana (ISO) */
   archivedAt?: string | null
+  /** Sinfga nechta o'quvchi sig'adi (C-4). null/undefined = chek yo'q — ekran faqat OGOHLANTIRADI, taqiqlamaydi */
+  capacity?: number | null
+}
+
+/** Sinfga biriktirilgan sinf rahbari (C-5) — `teachers.homeroom_class` dan. */
+export interface HomeroomTeacher {
+  id: string
+  fullName: string
 }
 
 /* ---------- Dars jadvali ---------- */
@@ -819,8 +852,12 @@ export interface TelegramParent {
   studentName: string
   /** O'quvchi sinfi */
   className: string
-  /** O'quvchi balansi (manfiy = qarz) — qarzdorlar filtri uchun */
-  balance: number
+  /**
+   * O'quvchi balansi (manfiy = qarz) — qarzdorlar filtri uchun.
+   * Moliya ruxsati bo'lmagan xodim uchun `null`: balans ustuni ham,
+   * qarzdorlar filtri ham ko'rsatilmaydi.
+   */
+  balance: number | null
   parentName: string
   phone: string
   chatId: string
@@ -1103,9 +1140,9 @@ export interface Assignment {
   title: string
   description: string
   format: AssignmentFormat
-  /** Beriladigan sinflar (id'lar) */
+  /** Beriladigan sinf(lar) yoki — `ownerKind` "group" bo'lsa — o'quv GURUH(lar) id'lari (G-20) */
   classIds: string[]
-  /** Sinf nomlari (ko'rsatish uchun) */
+  /** Ko'rsatiladigan nomlar — `ownerKind`ga mos (sinf nomlari yoki guruh nomlari) */
   classNames: string[]
   /** Boshlash vaqti (ISO) yoki null */
   startDate: string | null
@@ -1118,6 +1155,8 @@ export interface Assignment {
   createdAt: string
   materials: AssignmentMaterial[]
   questions: TestQuestion[]
+  /** G-20: topshiriq sinfga beriladimi yoki o'quv guruhiga. */
+  ownerKind: 'class' | 'group'
 }
 
 /** Topshiriq turi (Sozlamalarda boshqariladi) */
@@ -1138,6 +1177,76 @@ export interface ParentChild {
   platform?: string
   /** Push provayder app_id */
   appId?: string
+}
+
+/* ---------- Vasiylar (students-parity.md §2.3 S-8, §2.9) ---------- */
+
+/** Vasiylik turi — backend'dagi `GuardianRelation.Stored` bilan bir xil. */
+export type GuardianRelation =
+  | 'parent'
+  | 'father'
+  | 'mother'
+  | 'grandparent'
+  | 'trustee'
+  | 'other'
+
+/** Formadan yuboriladigan bitta vasiy. */
+export interface StudentGuardianInput {
+  fullName: string
+  phone: string
+  relation?: GuardianRelation
+  relationNote?: string | null
+  isPrimary?: boolean
+  passportUrl?: string | null
+}
+
+/** O'quvchi kartochkasidagi bitta vasiy qatori. */
+export interface StudentGuardian {
+  guardianId: string
+  fullName: string
+  phone: string
+  relation: GuardianRelation
+  relationNote: string | null
+  isPrimary: boolean
+  passportUrl: string | null
+  hasAccount: boolean
+  telegramLinked: boolean
+  /** Shu vasiyga biriktirilgan farzandlar soni (uzishdan oldin ko'rinadi). */
+  childrenCount: number
+}
+
+/** Forma tahrirda yuklaydigan qo'shimcha ma'lumot (ro'yxat ustunlarida yo'q). */
+export interface StudentFormCard {
+  studentId: string
+  phone: string | null
+  language: string | null
+  documentUrl: string | null
+  guardians: StudentGuardian[]
+}
+
+/** Ota-onalar ro'yxatidagi (§2.9) bitta farzand. */
+export interface GuardianChildRow {
+  studentId: string
+  fullName: string
+  className: string
+  relation: GuardianRelation
+  relationNote: string | null
+  isPrimary: boolean
+  phone: string | null
+  isArchived: boolean
+}
+
+/** Ota-onalar ro'yxatining qatori — vasiy jadvalidan (P-1). */
+export interface GuardianRow {
+  guardianId: string
+  fullName: string
+  phone: string
+  login: string | null
+  hasAccount: boolean
+  telegramLinked: boolean
+  lastSeenAt: string | null
+  childrenCount: number
+  children: GuardianChildRow[]
 }
 
 /** Ota-onalar ro'yxati qatori (telefon bo'yicha guruhlangan) */
@@ -1167,15 +1276,39 @@ export interface TeacherAppRow {
   appId: string
 }
 
-/** Admin xarita sahifasi uchun — joylashuvi bor bitta o'quvchi qatori */
-export interface StudentLocationRow {
+/** O'quvchi joylashuvi turi (§2.8, L-2) — uy / maktab / olib ketish nuqtasi. */
+export type StudentLocationKind = 'home' | 'school' | 'pickup'
+
+/**
+ * Admin xarita sahifasi uchun — bitta o'quvchining BITTA turdagi pin'i.
+ * Bitta o'quvchida uchtagacha qator bo'lishi mumkin (§2.8, L-2).
+ */
+export interface StudentLocationPin {
   studentId: string
   fullName: string
   className: string
+  kind: StudentLocationKind
   latitude: number
   longitude: number
-  address?: string | null
-  updatedAt?: string | null
+  name?: string | null
+  /** "HH:mm" — faqat `pickup` turida majburiy. */
+  pickupFrom?: string | null
+  pickupTo?: string | null
+}
+
+/**
+ * O'quvchi profilidagi "Manzil" tab'i uchun — bitta turdagi joylashuv qatori
+ * (§2.8, L-2). `isLegacy` — bu qator hali `student_locations`da yo'q, ESKI
+ * `students` ustunlaridan sintez qilingan (faqat `home` uchun bo'ladi).
+ */
+export interface StudentLocationEntry {
+  kind: StudentLocationKind
+  name: string | null
+  lat: number
+  lng: number
+  pickupFrom: string | null
+  pickupTo: string | null
+  isLegacy: boolean
 }
 
 /** O'qituvchi dars beradigan sinf (o'qituvchi paneli uchun) */
@@ -1412,6 +1545,20 @@ export interface Discount {
   approvedByName?: string
   decidedAt?: string
   createdAt: string
+}
+
+/* ---------- Moliya sozlamalari (F14.01, mijoz javobi SPEC §8.1 Q6) ---------- */
+
+export interface BillingSettings {
+  /** Hisob-faktura to'lov muddati — oyning shu kuni (1..28). */
+  paymentDueDay: number
+  /** Shu kundan keyin qarz "muddati o'tgan" hisoblanadi (1..28, >= paymentDueDay). */
+  overdueAfterDay: number
+  /** Ikki qavatli nazorat chegarasi (so'm) — shu summadan katta chiqim ikkinchi tasdiq talab qiladi. */
+  expenseApprovalThreshold: number
+  /** ISO sana-vaqt (ofset bilan) */
+  updatedAt: string
+  updatedByName?: string
 }
 
 /* ---------- Hisob-fakturalar ---------- */

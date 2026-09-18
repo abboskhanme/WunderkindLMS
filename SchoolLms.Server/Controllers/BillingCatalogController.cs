@@ -36,11 +36,22 @@ namespace SchoolLms.Server.Controllers;
 /// </para>
 ///
 /// <para>
-/// <b>DIQQAT — DI hali ulanmagan.</b> <c>ISubscriptionService</c> va
-/// <c>IDiscountService</c> <c>Program.cs</c> da ro'yxatdan o'tmagan; u fayl
-/// P1-15 niki. Shu holda bu controller'ning yozish/o'qish amallari ishga
-/// tushganda <c>InvalidOperationException</c> beradi. Nima qo'shilishi kerakligi
-/// <c>docs/PENDING_WIRING.md</c> da yozilgan.
+/// <b>F14.01 — <c>IBillingSettingsService</c> QASDDAN konstruktorga QO'SHILMAGAN.</b>
+/// Bu controller allaqachon to'rtta ishlaydigan bog'liqlikka ega
+/// (<c>ISubscriptionService</c>, <c>IDiscountService</c>, <c>IInvoiceService</c> — P1-15
+/// tomonidan <c>Program.cs</c> da ro'yxatdan o'tgan) va ularga tayangan HTTP testlari
+/// (<c>BillingCatalogTests</c>) YASHIL. Agar <c>IBillingSettingsService</c> beshinchi
+/// konstruktor parametri sifatida qo'shilsa-yu, u DI'da ro'yxatdan o'TMAGAN bo'lsa —
+/// <c>ActivatorUtilities</c> KONTROLLERNING O'ZINI qura olmaydi, ya'ni chegirma,
+/// obuna, toifa va hisoblash — mutlaqo aloqasiz to'rtta ishlaydigan amal — HAM
+/// birga qulab tushardi. Bu yerda topshiriq aniq: "Do not edit Program.cs" va
+/// "Existing functionality still works" ikkalasi bir vaqtda.
+/// <c>FinanceReportsController</c> xuddi shunday holatda turgan edi
+/// (<c>docs/PENDING_WIRING.md</c> §3a) va yechim o'sha yerdan olindi: xizmat DI'dan
+/// emas, <see cref="Settings"/> orqali TO'G'RIDAN-TO'G'RI, allaqachon konstruktorda
+/// bor ikkita bog'liqlikdan (<c>db</c>, <c>audit</c>) quriladi. <c>Program.cs</c> ga
+/// keyinchalik <c>IBillingSettingsService</c> qo'shilsa ham hech narsa buzilmaydi —
+/// bu yerdagi konstruksiya sodda va DI konteyneridan mustaqil.
 /// </para>
 /// </summary>
 [ApiController]
@@ -54,6 +65,12 @@ public class BillingCatalogController(
     IDiscountService discounts,
     IInvoiceService invoices) : ControllerBase
 {
+    /// <summary>
+    /// F14.01 — <see cref="IBillingSettingsService"/> ning qo'lda qurilgan nusxasi.
+    /// Sabab: fayl boshidagi izoh ("QASDDAN konstruktorga QO'SHILMAGAN").
+    /// </summary>
+    private IBillingSettingsService Settings => new BillingSettingsService(db, audit);
+
     // ==================================================================
     //  To'lov toifalari (ma'lumotnoma)
     // ==================================================================
@@ -289,106 +306,31 @@ public class BillingCatalogController(
     //  Moliya sozlamalari (F14.01, finance-parity.md §2.14)
     // ==================================================================
     //
-    //  BITTA QATOR, MIGRATSIYA YO'Q. `billing_settings` va uning uchta
-    //  ustuni (`payment_due_day`, `overdue_after_day`,
-    //  `expense_approval_threshold`) allaqachon bor — P1-04 va
-    //  20260911095512_ExpenseApprovalThreshold. Ilgari ular faqat qo'lda
-    //  `UPDATE` bilan o'zgarardi (`ExpenseService`, `InvoiceService` va h.k.
-    //  faqat O'QIYDI); bu ekran birinchi YOZUVCHI.
+    //  O'QISH klass darajasidagi darvozadan o'tadi (admin/direktor) — alohida
+    //  `[FinanceRole]` shart emas, negaki bu yerda "kim ko'ra oladi" bitta
+    //  javobga ega (SubscriptionsPage/DiscountsPage GET'lari kabi).
     //
-    //  Nega alohida servis emas: qolgan "ma'lumotnoma" turdagi yozuvlar
-    //  (toifalar) kabi bu ham LEDGER YOZMAYDI — faqat bitta qatorni
-    //  UPDATE qiladi, shuning uchun to'g'ridan-to'g'ri kontekst orqali.
+    //  YOZISH ikki qavatli: (1) `[FinanceRole(ManageBillingSettings)]` — admin
+    //  va direktor, (2) `BillingSettingsService.UpdateAsync` ICHIDA, faqat
+    //  chegara HAQIQATAN o'zgarsa — faqat direktor (SPEC §4.5, F14.01 gap
+    //  yozuvi). Ikkinchisi FinanceMatrix'da ifodalanmaydi, chunki u maydon
+    //  darajasidagi qoida, amal darajasidagi emas.
 
-    private const string EntityBillingSettings = "BillingSettings";
-
-    /// <summary>Joriy moliya sozlamalari. Qator hali bo'lmasa — sukut qiymatlar.</summary>
+    /// <summary>Joriy moliya sozlamalari.</summary>
     [HttpGet("settings")]
-    public async Task<ActionResult<BillingSettingsDto>> GetBillingSettings(CancellationToken ct)
-    {
-        var settings = await db.BillingSettings.AsNoTracking()
-            .FirstOrDefaultAsync(s => s.Id == SchoolLms.Domain.BillingSettings.SingletonId, ct)
-            ?? new SchoolLms.Domain.BillingSettings();
-
-        return await ToDtoAsync(settings, ct);
-    }
+    public async Task<ActionResult<BillingSettingsDto>> GetSettings(CancellationToken ct) =>
+        await Settings.GetAsync(ct);
 
     /// <summary>
-    /// Sozlamalarni saqlaydi (F14.01). <c>updated_by</c> HAR DOIM JWT'dan —
-    /// so'rov tanasida bunday maydon yo'q (SPEC §4.4).
+    /// Sozlamalarni saqlaydi. <c>expenseApprovalThreshold</c> HAQIQATAN
+    /// o'zgargan bo'lsa va so'rovchi direktor bo'lmasa — <b>403</b>
+    /// (<c>threshold_requires_director</c>).
     /// </summary>
     [HttpPut("settings")]
     [FinanceRole(FinanceAction.ManageBillingSettings)]
-    public async Task<ActionResult<BillingSettingsDto>> UpdateBillingSettings(
-        UpdateBillingSettingsRequest request, CancellationToken ct)
-    {
-        if (request.PaymentDueDay is < 1 or > 28)
-            throw BillingRuleException.Invalid(
-                "invalid_payment_due_day", "To'lov muddati kuni 1 dan 28 gacha bo'lishi kerak.");
-        if (request.OverdueAfterDay < request.PaymentDueDay || request.OverdueAfterDay > 28)
-            throw BillingRuleException.Invalid(
-                "invalid_overdue_after_day",
-                "Muddati o'tgan deb hisoblash kuni to'lov muddatidan kichik bo'lmasligi va "
-                + "28 dan oshmasligi kerak.");
-        if (request.ExpenseApprovalThreshold < 0)
-            throw BillingRuleException.Invalid(
-                "invalid_expense_threshold", "Chiqim tasdiq chegarasi manfiy bo'lishi mumkin emas.");
-
-        var settings = await db.BillingSettings
-            .FirstOrDefaultAsync(s => s.Id == SchoolLms.Domain.BillingSettings.SingletonId, ct);
-        var before = settings is null
-            ? new SchoolLms.Domain.BillingSettings()
-            : new SchoolLms.Domain.BillingSettings
-            {
-                PaymentDueDay = settings.PaymentDueDay,
-                OverdueAfterDay = settings.OverdueAfterDay,
-                ExpenseApprovalThreshold = settings.ExpenseApprovalThreshold,
-            };
-
-        if (settings is null)
-        {
-            settings = new SchoolLms.Domain.BillingSettings
-            { Id = SchoolLms.Domain.BillingSettings.SingletonId };
-            db.BillingSettings.Add(settings);
-        }
-
-        settings.PaymentDueDay = request.PaymentDueDay;
-        settings.OverdueAfterDay = request.OverdueAfterDay;
-        settings.ExpenseApprovalThreshold = request.ExpenseApprovalThreshold;
-        settings.UpdatedAt = AppClock.NowInstant;
-        settings.UpdatedBy = Actor();
-
-        audit.Record(EntityBillingSettings, settings.Id.ToString(), "update",
-            $"Moliya sozlamalari o'zgardi: to'lov muddati {before.PaymentDueDay} → "
-            + $"{settings.PaymentDueDay}, muddati o'tgan kun {before.OverdueAfterDay} → "
-            + $"{settings.OverdueAfterDay}, chiqim tasdiq chegarasi "
-            + $"{AuditService.Money(before.ExpenseApprovalThreshold)} → "
-            + $"{AuditService.Money(settings.ExpenseApprovalThreshold)}",
-            before: new { before.PaymentDueDay, before.OverdueAfterDay, before.ExpenseApprovalThreshold },
-            after: new
-            {
-                settings.PaymentDueDay, settings.OverdueAfterDay, settings.ExpenseApprovalThreshold,
-            });
-
-        await db.SaveChangesAsync(ct);
-        return await ToDtoAsync(settings, ct);
-    }
-
-    private async Task<BillingSettingsDto> ToDtoAsync(
-        SchoolLms.Domain.BillingSettings settings, CancellationToken ct)
-    {
-        var updatedByName = settings.UpdatedBy is null
-            ? null
-            : await db.Users.AsNoTracking()
-                .Where(u => u.Id == settings.UpdatedBy)
-                .Select(u => u.FullName)
-                .FirstOrDefaultAsync(ct);
-
-        return new BillingSettingsDto(
-            settings.PaymentDueDay, settings.OverdueAfterDay,
-            settings.UpdatedAt, updatedByName,
-            settings.ExpenseApprovalThreshold);
-    }
+    public async Task<ActionResult<BillingSettingsDto>> UpdateSettings(
+        UpdateBillingSettingsRequest request, CancellationToken ct) =>
+        await Settings.UpdateAsync(request, Actor(), User.IsInRole(Roles.SuperAdmin), ct);
 
     private string Actor() => FinanceActor.RequireUserId(User);
 }

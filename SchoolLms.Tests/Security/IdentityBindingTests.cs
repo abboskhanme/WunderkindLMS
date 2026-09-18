@@ -176,12 +176,13 @@ public class IdentityBindingTests(ApiFixture fixture)
 
         var firstRow = await db.Payments.AsNoTracking().SingleAsync(p => p.Id == firstPayment.Id);
         Assert.Equal(first.User.Id, firstRow.CashierId);
-        Assert.Equal(first.ShiftId, firstRow.CashShiftId);
+        // "Smena" endi yo'q (kassalar modeli, 2026-09) — yangi to'lovda har doim null.
+        Assert.Null(firstRow.CashShiftId);
         Assert.Equal(111_000m, firstRow.Amount);
 
         var secondRow = await db.Payments.AsNoTracking().SingleAsync(p => p.Id == secondPayment.Id);
         Assert.Equal(second.User.Id, secondRow.CashierId);
-        Assert.Equal(second.ShiftId, secondRow.CashShiftId);
+        Assert.Null(secondRow.CashShiftId);
         Assert.Equal(222_000m, secondRow.Amount);
 
         // Jurnalda ham AYNAN o'sha shaxs.
@@ -215,7 +216,7 @@ public class IdentityBindingTests(ApiFixture fixture)
         await using var db = NewDb();
         var storno = await db.Payments.AsNoTracking().SingleAsync(p => p.ReversalOf == original.PaymentId);
         Assert.Equal(admin.User.Id, storno.CashierId);
-        Assert.Equal(admin.ShiftId, storno.CashShiftId);
+        Assert.Null(storno.CashShiftId);
 
         // Original TEGILMAGAN (SPEC §4.1).
         var untouched = await db.Payments.AsNoTracking().SingleAsync(p => p.Id == original.PaymentId);
@@ -479,17 +480,20 @@ public class IdentityBindingTests(ApiFixture fixture)
     }
 
     /// <summary>
-    /// Boshqa kassirning smenasiga to'lov yozib bo'lmaydi: smena so'rovdan
-    /// EMAS, chaqiruvchining o'z ochiq smenasidan olinadi. Kassirda ochiq
-    /// smena bo'lmasa — <b>409 <c>no_open_shift</c></b>, va u boshqa
-    /// birovning ochiq smenasidan foydalana olmaydi.
+    /// Kassalar modeli (2026-09): smena so'rovdan qabul qilinmaydi (SPEC
+    /// §4.4 — server aniqlaydi) qoidasi o'zgarmadi, lekin endi to'lov
+    /// UMUMAN smenaga bog'liq emas — "boshqaning ochiq smenasidan
+    /// foydalanish" degan xavf ham YO'QOLDI, chunki bunday bog'lanishning
+    /// o'zi yo'q. Kassirda ochiq smena bo'lmasa ham to'lov MUVAFFAQIYATLI
+    /// o'tadi va boshqa hech kimning (jumladan "qurbon" kassirning)
+    /// smenasiga UMUMAN tegmaydi.
     /// </summary>
     [Fact]
-    public async Task Ochiq_smenasi_yoq_kassir_boshqaning_smenasiga_yoza_olmaydi_409()
+    public async Task Ochiq_smenasi_yoq_kassir_ham_tolov_yoza_oladi_va_boshqaning_smenasiga_tegmaydi()
     {
         var victim = await CashierWithOpenShiftAsync();
 
-        // Bu kassir ATAYLAB smena ochmaydi.
+        // Bu kassir ATAYLAB smena ochmaydi — kassalar modelida bu endi shart emas.
         var (attacker, _) = await fixture.Api.SeedUserAsync(Roles.Cashier);
         using var client = ClientFor(attacker);
         var studentId = await NewStudentAsync();
@@ -503,14 +507,17 @@ public class IdentityBindingTests(ApiFixture fixture)
             allocations = new[] { new { invoiceId, amount = 100_000m } },
         });
 
-        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
-        var error = await response.Content.ReadFromJsonAsync<PaymentErrorDto>();
-        Assert.Equal("no_open_shift", error?.Code);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var dto = await response.Content.ReadFromJsonAsync<PaymentDto>();
+        Assert.Null(dto?.CashShiftId);
 
         await using var db = NewDb();
+        // "Qurbon" kassirning smenasiga BU to'lov UMUMAN tegmadi.
         Assert.False(await db.Payments.AsNoTracking().AnyAsync(p => p.CashShiftId == victim.ShiftId
                                                                     && p.CashierId == attacker.Id));
-        Assert.False(await db.Payments.AsNoTracking().AnyAsync(p => p.StudentId == studentId));
+        Assert.True(await db.Payments.AsNoTracking().AnyAsync(p => p.StudentId == studentId
+                                                                    && p.CashierId == attacker.Id
+                                                                    && p.CashShiftId == null));
     }
 
     /// <summary>

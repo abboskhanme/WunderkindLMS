@@ -56,8 +56,12 @@ public class FinanceReportsTests(ApiFixture fixture, ITestOutputHelper output) :
     private const string CashFlow = "/api/admin/finance/cashflow";
     private const string CollectionRate = "/api/admin/finance/collection-rate";
     private const string ArrearsPivot = "/api/admin/finance/arrears-pivot";
+    // F13.05 — o'sha ruxsat darvozasidan o'tadi (`ArrearsPivot` ni ichkaridan
+    // chaqiradi), shuning uchun RUXSAT testlarida ham `AllReports` qatorida.
+    private const string ArrearsPivotExport = "/api/admin/finance/arrears-pivot/export";
 
-    private static readonly string[] AllReports = [Debtors, Pnl, CashFlow, CollectionRate, ArrearsPivot];
+    private static readonly string[] AllReports =
+        [Debtors, Pnl, CashFlow, CollectionRate, ArrearsPivot, ArrearsPivotExport];
 
     // =====================================================================
     //  1. RUXSAT — SPEC §4.3
@@ -843,6 +847,202 @@ public class FinanceReportsTests(ApiFixture fixture, ITestOutputHelper output) :
 
         var reversed = await client.GetAsync($"{ArrearsPivot}?fromMonth=2025-10&toMonth=2025-09");
         Assert.Equal(HttpStatusCode.BadRequest, reversed.StatusCode);
+    }
+
+    // =====================================================================
+    //  9. Oyma-oy qarzdorlik — finance-parity.md §2.13 gaplari
+    //     (F13.01, F13.02, F13.03, F13.05, F13.06)
+    // =====================================================================
+
+    /// <summary>F13.03 — ota-ona telefoni qator bilan birga qaytadi.</summary>
+    [Fact]
+    public async Task Arrears_ota_ona_telefonini_qaytaradi()
+    {
+        await using var db = await NewBillingDbAsync("arrearsphone");
+        var tuition = await CategoryIdAsync(db, "tuition");
+
+        var studentId = Guid.NewGuid().ToString();
+        db.Students.Add(NewStudent(studentId, "Telefonli O'quvchi", "5-A"));
+        db.Invoices.Add(NewInvoice(studentId, tuition, new DateOnly(2025, 9, 1), 500_000m));
+        await db.SaveChangesAsync();
+
+        var pivot = await new FinanceReportQueries(db).ArrearsPivotAsync(new ArrearsPivotQuery(
+            new DateOnly(2025, 9, 1), new DateOnly(2025, 9, 1)));
+
+        // `NewStudent` sukut telefoni — pastdagi Yordamchi qism.
+        Assert.Equal("+998901112233", Assert.Single(pivot.Rows).ParentPhone);
+    }
+
+    /// <summary>
+    /// F13.01 — bir nechta sinf birdaniga. <c>ClassNames</c> berilsa yagona
+    /// <c>ClassName</c> dan USTUN turadi (eski chaqiruvlar buzilmasin).
+    /// </summary>
+    [Fact]
+    public async Task Arrears_kop_tanlovli_sinf_filtri_yagona_sinfdan_ustun_turadi()
+    {
+        await using var db = await NewBillingDbAsync("arrearsclasses");
+        var tuition = await CategoryIdAsync(db, "tuition");
+
+        var a = Guid.NewGuid().ToString();
+        var b = Guid.NewGuid().ToString();
+        var c = Guid.NewGuid().ToString();
+        db.Students.Add(NewStudent(a, "Besh A", "5-A"));
+        db.Students.Add(NewStudent(b, "Besh B", "5-B"));
+        db.Students.Add(NewStudent(c, "Olti A", "6-A"));
+
+        var month = new DateOnly(2025, 9, 1);
+        db.Invoices.Add(NewInvoice(a, tuition, month, 100_000m));
+        db.Invoices.Add(NewInvoice(b, tuition, month, 200_000m));
+        db.Invoices.Add(NewInvoice(c, tuition, month, 300_000m));
+        await db.SaveChangesAsync();
+
+        var queries = new FinanceReportQueries(db);
+
+        // `ClassNames` ikkita sinfni oladi — 6-A tashqarida qoladi.
+        var multi = await queries.ArrearsPivotAsync(new ArrearsPivotQuery(
+            month, month, ClassNames: ["5-A", "5-B"]));
+        Assert.Equal(
+            new[] { a, b }.OrderBy(x => x, StringComparer.Ordinal),
+            multi.Rows.Select(r => r.StudentId).OrderBy(x => x, StringComparer.Ordinal));
+
+        // Ikkovi BIRGA berilsa — `ClassNames` g'olib: yagona `ClassName` (6-A)
+        // e'tiborga olinmaydi.
+        var both = await queries.ArrearsPivotAsync(new ArrearsPivotQuery(
+            month, month, ClassName: "6-A", ClassNames: ["5-A", "5-B"]));
+        Assert.DoesNotContain(both.Rows, r => r.StudentId == c);
+    }
+
+    /// <summary>
+    /// F13.02 — "toifalar bo'yicha ajratish". <b>Asosiy invariant:</b>
+    /// bo'lingan qatorlar yig'indisi bo'linmagan qatorga TENG — ajratish
+    /// yangi pul yaratmaydi, faqat bitta qatorni ikkiga bo'lib ko'rsatadi.
+    /// </summary>
+    [Fact]
+    public async Task Arrears_toifalar_boyicha_ajratish_yigindisi_bolinmagan_qatorga_teng()
+    {
+        await using var db = await NewBillingDbAsync("arrearssplit");
+        var (cashierId, shiftId) = await SeedCashDeskAsync(db);
+        var tuition = await CategoryIdAsync(db, "tuition");
+        var bus = await CategoryIdAsync(db, "bus");
+
+        var studentId = Guid.NewGuid().ToString();
+        db.Students.Add(NewStudent(studentId, "Ikki Toifali", "5-A"));
+        var month = new DateOnly(2025, 9, 1);
+        var tuitionInv = NewInvoice(studentId, tuition, month, 1_000_000m);
+        var busInv = NewInvoice(studentId, bus, month, 300_000m);
+        db.Invoices.AddRange(tuitionInv, busInv);
+        await db.SaveChangesAsync();
+
+        await PayAsync(db, studentId, cashierId, shiftId, 400_000m, [(tuitionInv.Id, 400_000m)]);
+
+        var queries = new FinanceReportQueries(db);
+
+        var merged = await queries.ArrearsPivotAsync(new ArrearsPivotQuery(month, month));
+        var mergedRow = Assert.Single(merged.Rows);
+        // Sukut bo'yicha "ajratish" o'chiq — toifa maydonlari bo'sh.
+        Assert.Null(mergedRow.CategoryCode);
+        Assert.Equal(1_300_000m, mergedRow.Total.Amount);
+        Assert.Equal(400_000m, mergedRow.Total.Paid);
+
+        var split = await queries.ArrearsPivotAsync(new ArrearsPivotQuery(
+            month, month, SplitByCategory: true));
+
+        Assert.Equal(2, split.Rows.Count);
+        Assert.All(split.Rows, r => Assert.Equal(studentId, r.StudentId));
+        Assert.Equal(
+            new[] { "bus", "tuition" },
+            split.Rows.Select(r => r.CategoryCode).OrderBy(x => x, StringComparer.Ordinal));
+
+        // Invariant: bo'lingan qatorlar yig'indisi — bo'linmagan qatorga TENG.
+        Assert.Equal(mergedRow.Total.Amount, split.Rows.Sum(r => r.Total.Amount));
+        Assert.Equal(mergedRow.Total.Paid, split.Rows.Sum(r => r.Total.Paid));
+        Assert.Equal(mergedRow.Total.ToBePaid, split.Rows.Sum(r => r.Total.ToBePaid));
+
+        // Yakun (footer/jami) — "ajratish" QATOR shaklini o'zgartiradi, pulni
+        // emas: ikkala so'rov ham BIR XIL jami bilan javob berishi shart.
+        Assert.Equal(merged.Total, split.Total);
+    }
+
+    /// <summary>
+    /// F13.06 — bitta o'quv guruhi. Faqat HOZIRGI a'zolar (<c>left_on is
+    /// null</c>) qoladi; guruhdan chiqqan va guruhga umuman kirmagan
+    /// o'quvchi ikkovi ham tashqarida.
+    /// </summary>
+    [Fact]
+    public async Task Arrears_guruh_filtri_faqat_hozirgi_azolarni_qaytaradi()
+    {
+        await using var db = await NewBillingDbAsync("arrearsgroup");
+        var tuition = await CategoryIdAsync(db, "tuition");
+        // `study_groups.created_by` — real `users.id` ga FK; kim ekani bu
+        // testga ahamiyatsiz, shuning uchun tayyor yordamchidan olinadi.
+        var (actorId, _) = await SeedCashDeskAsync(db);
+
+        var active = Guid.NewGuid().ToString();
+        var left = Guid.NewGuid().ToString();
+        var outsider = Guid.NewGuid().ToString();
+        db.Students.Add(NewStudent(active, "Faol Azo", "5-A"));
+        db.Students.Add(NewStudent(left, "Chiqqan Azo", "5-A"));
+        db.Students.Add(NewStudent(outsider, "Guruhsiz", "5-A"));
+
+        var subject = new Subject { Name = "Ingliz tili" };
+        db.Subjects.Add(subject);
+        var group = new StudyGroup
+        {
+            Name = "Kuchli guruh",
+            SubjectId = subject.Id,
+            CreatedBy = actorId,
+            CreatedAt = AppClock.NowInstant,
+        };
+        db.StudyGroups.Add(group);
+        await db.SaveChangesAsync();
+
+        db.StudyGroupMembers.AddRange(
+            new StudyGroupMember
+            {
+                GroupId = group.Id, SubjectId = subject.Id, StudentId = active,
+                JoinedOn = new DateOnly(2025, 9, 1), CreatedBy = actorId, CreatedAt = AppClock.NowInstant,
+            },
+            new StudyGroupMember
+            {
+                GroupId = group.Id, SubjectId = subject.Id, StudentId = left,
+                JoinedOn = new DateOnly(2025, 9, 1), LeftOn = new DateOnly(2025, 9, 10),
+                CreatedBy = actorId, CreatedAt = AppClock.NowInstant,
+            });
+        await db.SaveChangesAsync();
+
+        var month = new DateOnly(2025, 9, 1);
+        db.Invoices.Add(NewInvoice(active, tuition, month, 100_000m));
+        db.Invoices.Add(NewInvoice(left, tuition, month, 200_000m));
+        db.Invoices.Add(NewInvoice(outsider, tuition, month, 300_000m));
+        await db.SaveChangesAsync();
+
+        var pivot = await new FinanceReportQueries(db).ArrearsPivotAsync(new ArrearsPivotQuery(
+            month, month, StudyGroupId: group.Id));
+
+        Assert.Equal(active, Assert.Single(pivot.Rows).StudentId);
+    }
+
+    /// <summary>
+    /// F13.05 — xlsx eksport. To'g'ri content-type va bo'sh bo'lmagan tana;
+    /// xato holatlar <c>arrears-pivot</c> bilan bir xil (400, 500 emas).
+    /// </summary>
+    [Fact]
+    public async Task Arrears_export_xlsx_qaytaradi()
+    {
+        using var client = await fixture.Api.ClientAsAsync(Roles.Admin);
+
+        var response = await client.GetAsync(
+            $"{ArrearsPivotExport}?fromMonth=2025-09&toMonth=2025-10");
+        Assert.True(response.IsSuccessStatusCode, $"{(int)response.StatusCode} {response.StatusCode}");
+        Assert.Equal(
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            response.Content.Headers.ContentType?.MediaType);
+
+        var bytes = await response.Content.ReadAsByteArrayAsync();
+        Assert.True(bytes.Length > 0);
+
+        var badMonth = await client.GetAsync($"{ArrearsPivotExport}?fromMonth=sentabr");
+        Assert.Equal(HttpStatusCode.BadRequest, badMonth.StatusCode);
     }
 
     // =====================================================================

@@ -181,7 +181,7 @@ public class InvoiceRegisterTests(ApiFixture fixture) : IAsyncLifetime
         Assert.Equal(BillingFault.Conflict, refused.Fault);
 
         // 2. To'lovni storno qilamiz.
-        await new PaymentService(db, new ShiftStub(world.AdminShiftId, world.AdminId), world.Ledger)
+        await new PaymentService(db, world.Ledger)
             .ReverseAsync(payment.Id, "Noto'g'ri o'quvchiga yozilgan", world.AdminId);
 
         // 3. Endi bekor qilish O'TADI — taqsimot qatori joyida, lekin kuchsiz.
@@ -383,7 +383,7 @@ public class InvoiceRegisterTests(ApiFixture fixture) : IAsyncLifetime
             d => d.StudentId == world.StudentId);
 
         // Storno: ikkala ekran ham qarzni QAYTA ko'rsatadi.
-        await new PaymentService(db, new ShiftStub(world.AdminShiftId, world.AdminId), world.Ledger)
+        await new PaymentService(db, world.Ledger)
             .ReverseAsync(payment.Id, "Boshqa o'quvchiniki edi", world.AdminId);
 
         var afterStorno = await invoices.ListPageAsync(query);
@@ -435,6 +435,57 @@ public class InvoiceRegisterTests(ApiFixture fixture) : IAsyncLifetime
         Assert.Equal(overdue.Id, Assert.Single(overdueOnly.Rows).Id);
         Assert.All(overdueOnly.Rows, r => Assert.True(r.IsOverdue));
         Assert.Equal(300_000m, overdueOnly.Totals.Remaining);
+    }
+
+    // =====================================================================
+    //  6. F10.05 — eksport
+    // =====================================================================
+
+    /// <summary>
+    /// <c>ExportRowsAsync</c> BUTUN filtr bo'yicha (sahifasiz) — qatorlar soni
+    /// va yig'indisi <c>ListPageAsync</c> ning yakuni bilan AYNAN bir xil
+    /// bo'lishi shart, chunki ikkovi ham <c>Filtered</c> dan o'qiydi.
+    /// </summary>
+    [Fact]
+    public async Task Eksport_qatorlari_registr_yakuniga_mos_keladi()
+    {
+        await using var db = await NewDbAsync("export");
+        var world = await SeedAsync(db);
+        var invoices = new InvoiceService(db, world.Ledger);
+
+        for (var i = 1; i <= 3; i++)
+            await AccrueAsync(db, world, 100_000m * i, ThisMonth.AddMonths(1 - i));
+
+        var query = new InvoicePageQuery(FromMonth: ThisMonth.AddMonths(-2), ToMonth: ThisMonth);
+
+        var exported = await invoices.ExportRowsAsync(query);
+        var paged = await invoices.ListPageAsync(query);
+
+        Assert.Equal(paged.Total, exported.Count);
+        Assert.Equal(paged.Totals.Payable, exported.Sum(r => r.Payable));
+        Assert.Equal(paged.Totals.Paid, exported.Sum(r => r.Paid));
+        Assert.Equal(paged.Totals.Remaining, exported.Sum(r => r.Remaining));
+    }
+
+    /// <summary>
+    /// HTTP yuzasi: kassir/xodim/o'qituvchi 403 (§4.3), admin — to'g'ri
+    /// content-type va bo'sh bo'lmagan tana.
+    /// </summary>
+    [Fact]
+    public async Task Eksport_HTTP_ruxsat_va_content_type()
+    {
+        using var cashier = await fixture.Api.ClientAsAsync(Roles.Cashier);
+        Assert.Equal(HttpStatusCode.Forbidden, (await cashier.GetAsync($"{Register}/export")).StatusCode);
+
+        using var admin = await fixture.Api.ClientAsAsync(Roles.Admin);
+        var response = await admin.GetAsync($"{Register}/export");
+        Assert.True(response.IsSuccessStatusCode, $"{(int)response.StatusCode} {response.StatusCode}");
+        Assert.Equal(
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            response.Content.Headers.ContentType?.MediaType);
+
+        var bytes = await response.Content.ReadAsByteArrayAsync();
+        Assert.True(bytes.Length > 0);
     }
 
     // =====================================================================
@@ -602,36 +653,5 @@ public class InvoiceRegisterTests(ApiFixture fixture) : IAsyncLifetime
         ], world.CashierId);
 
         return payment;
-    }
-
-    /// <summary>
-    /// <see cref="ICashShiftService"/> ning storno uchun yetadigan qismi —
-    /// <c>TransactionJournalTests.ShiftStub</c> bilan bir xil sabab bo'yicha.
-    /// </summary>
-    private sealed class ShiftStub(Guid shiftId, string cashierId) : ICashShiftService
-    {
-        private long _receipt = 5000;
-
-        public Task<CashShiftDto?> CurrentAsync(string userId, CancellationToken ct = default) =>
-            Task.FromResult<CashShiftDto?>(new CashShiftDto(
-                shiftId, cashierId, "Admin", AppClock.NowInstant, null, 0m,
-                null, null, null, CashShiftStatus.Open, null, 0, 0m, 0m));
-
-        public Task<long> NextReceiptNoAsync(Guid id, CancellationToken ct = default) =>
-            Task.FromResult(Interlocked.Increment(ref _receipt));
-
-        public Task<CashShiftDto> OpenAsync(string id, decimal openingFloat, CancellationToken ct = default) =>
-            throw new NotSupportedException();
-
-        public Task<CashShiftDto> CloseAsync(
-            Guid id, string closedBy, decimal counted, string? note, CancellationToken ct = default) =>
-            throw new NotSupportedException();
-
-        public Task<ZReportDto> ZReportAsync(Guid id, CancellationToken ct = default) =>
-            throw new NotSupportedException();
-
-        public Task<IReadOnlyList<CashShiftDto>> ListAsync(
-            CashShiftQuery query, CancellationToken ct = default) =>
-            throw new NotSupportedException();
     }
 }

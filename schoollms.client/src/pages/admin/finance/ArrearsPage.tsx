@@ -18,9 +18,11 @@
  * ko'rsatardi.
  */
 import { useCallback, useMemo, useState } from 'react'
-import { Download, Users, Wallet, CalendarRange, AlertTriangle } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import { Download, FileSpreadsheet, Users, Wallet, CalendarRange, AlertTriangle } from 'lucide-react'
 import { useAsync } from '@/hooks/useAsync'
 import {
+  downloadArrearsPivot,
   getArrearsPivot,
   type ArrearsCell,
   type ArrearsPivot,
@@ -28,6 +30,7 @@ import {
 } from '@/api/services/financeReports'
 import { getFeeCategories } from '@/api/services/billingCatalog'
 import { getClasses } from '@/api/services/classes'
+import { api } from '@/api/client'
 import { useAuth } from '@/context/auth-context'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
@@ -76,26 +79,34 @@ export function ArrearsPage() {
 
   const [fromMonth, setFromMonth] = useState(academicYearStart)
   const [toMonth, setToMonth] = useState(currentMonth)
-  const [className, setClassName] = useState('')
+  // F13.01 — ko'p tanlovli sinf (yagona `className` o'rniga).
+  const [classNames, setClassNames] = useState<string[]>([])
   const [categoryId, setCategoryId] = useState('')
+  // F13.06 — bitta o'quv guruhi (hozirgi a'zolari).
+  const [groupId, setGroupId] = useState('')
+  // F13.02 — bitta o'quvchi — bitta toifa uchun bitta qator.
+  const [splitByCategory, setSplitByCategory] = useState(false)
   const [debtorsOnly, setDebtorsOnly] = useState(false)
   // Sukut bo'yicha YOQIQ: maktabdan ketgan o'quvchining qarzi ham qarz
   // (DebtorsTab bilan bir xil qoida — ikki ekran bir xil javob bersin).
   const [includeArchived, setIncludeArchived] = useState(true)
   const [search, setSearch] = useState('')
   const [sortBy, setSortBy] = useState<SortBy>('class')
+  const [exporting, setExporting] = useState(false)
 
   const { data, loading, error, refetch } = useAsync<ArrearsPivot>(
     () =>
       getArrearsPivot({
         fromMonth,
         toMonth,
-        className: className || undefined,
+        classNames: classNames.length > 0 ? classNames : undefined,
         categoryId: categoryId || undefined,
+        groupId: groupId || undefined,
+        splitByCategory,
         debtorsOnly,
         includeArchived,
       }),
-    [fromMonth, toMonth, className, categoryId, debtorsOnly, includeArchived],
+    [fromMonth, toMonth, classNames, categoryId, groupId, splitByCategory, debtorsOnly, includeArchived],
   )
 
   // Sinf va toifa ro'yxati jadvaldan EMAS, o'z manbasidan olinadi: chegaraga
@@ -103,6 +114,38 @@ export function ArrearsPage() {
   // holda foydalanuvchi chegaradan chiqa olmay qolardi.
   const { data: classes } = useAsync(getClasses, [])
   const { data: categories } = useAsync(() => getFeeCategories(true), [])
+  // F13.06 — guruh ro'yxati shu ekranga xos, kichik so'rov: alohida servis
+  // fayl yaratish o'rniga (bo'lajak "guruhlar" mijozi bilan to'qnashmasin
+  // deb) to'g'ridan-to'g'ri shu yerda o'qiladi.
+  const { data: groups } = useAsync<{ id: string; name: string }[]>(async () => {
+    const { data: rows } = await api.get<{ id: string; name: string; isArchived: boolean }[]>(
+      '/admin/study-groups',
+    )
+    return rows.filter((g) => !g.isArchived)
+  }, [])
+
+  const exportFilters = useMemo(
+    () => ({
+      fromMonth,
+      toMonth,
+      classNames: classNames.length > 0 ? classNames : undefined,
+      categoryId: categoryId || undefined,
+      groupId: groupId || undefined,
+      splitByCategory,
+      debtorsOnly,
+      includeArchived,
+    }),
+    [fromMonth, toMonth, classNames, categoryId, groupId, splitByCategory, debtorsOnly, includeArchived],
+  )
+
+  const handleDownload = useCallback(async () => {
+    setExporting(true)
+    try {
+      await downloadArrearsPivot(exportFilters)
+    } finally {
+      setExporting(false)
+    }
+  }, [exportFilters])
 
   const months = useMemo(() => data?.months ?? [], [data])
   const rows = useMemo(() => data?.rows ?? [], [data])
@@ -149,15 +192,26 @@ export function ArrearsPage() {
   const handleExport = useCallback(() => {
     exportToCsv(
       `qarzdorlik-${fromMonth}_${toMonth}.csv`,
-      ["O'quvchi", 'Sinf', ...months.map((m) => formatMonth(m)), 'Jami qoldiq'],
-      visible.map((row) => [
+      [
+        '№',
+        "O'quvchi",
+        'Telefon',
+        'Sinf',
+        ...(splitByCategory ? ['Toifa'] : []),
+        ...months.map((m) => formatMonth(m)),
+        'Jami qoldiq',
+      ],
+      visible.map((row, i) => [
+        String(i + 1),
         row.fullName,
+        row.parentPhone,
         row.className,
+        ...(splitByCategory ? [row.categoryName ?? ''] : []),
         ...months.map((m) => (row.cells[m] === undefined ? '' : String(row.cells[m].toBePaid))),
         String(row.total.toBePaid),
       ]),
     )
-  }, [visible, months, fromMonth, toMonth])
+  }, [visible, months, fromMonth, toMonth, splitByCategory])
 
   if (!allowed) {
     return (
@@ -196,13 +250,18 @@ export function ArrearsPage() {
           className={control}
         />
 
+        {/* F13.01 — ko'p tanlovli sinf: ctrl/cmd+bosish bilan bir nechtasi. */}
         <select
-          value={className}
-          onChange={(e) => setClassName(e.target.value)}
-          aria-label="Sinf"
-          className={control}
+          multiple
+          value={classNames}
+          onChange={(e) =>
+            setClassNames([...e.target.selectedOptions].map((o) => o.value))
+          }
+          aria-label="Sinf (bir nechtasini tanlash mumkin)"
+          title="Bir nechtasini tanlash uchun Ctrl (Cmd) bosib turing"
+          className={cn(control, 'h-9 min-w-[140px] py-1')}
+          size={1}
         >
-          <option value="">Barcha sinflar</option>
           {(classes ?? []).map((c) => (
             <option key={c.id} value={c.name}>
               {c.name}
@@ -220,6 +279,21 @@ export function ArrearsPage() {
           {(categories ?? []).map((c) => (
             <option key={c.id} value={c.id}>
               {c.name}
+            </option>
+          ))}
+        </select>
+
+        {/* F13.06 — bitta o'quv guruhi (hozirgi a'zolari). */}
+        <select
+          value={groupId}
+          onChange={(e) => setGroupId(e.target.value)}
+          aria-label="O'quv guruhi"
+          className={control}
+        >
+          <option value="">Barcha guruhlar</option>
+          {(groups ?? []).map((g) => (
+            <option key={g.id} value={g.id}>
+              {g.name}
             </option>
           ))}
         </select>
@@ -253,8 +327,22 @@ export function ArrearsPage() {
           Arxivdagilar
         </label>
 
+        {/* F13.02 — bitta o'quvchi — bitta toifa uchun bitta qator. */}
+        <label className="flex items-center gap-2 text-sm text-slate-600">
+          <input
+            type="checkbox"
+            checked={splitByCategory}
+            onChange={(e) => setSplitByCategory(e.target.checked)}
+            className="h-4 w-4 rounded border-slate-300"
+          />
+          Toifalar bo'yicha ajratish
+        </label>
+
         <Button variant="secondary" onClick={handleExport} disabled={visible.length === 0}>
           <Download className="h-4 w-4" /> CSV
+        </Button>
+        <Button variant="secondary" onClick={handleDownload} disabled={exporting || rows.length === 0}>
+          <FileSpreadsheet className="h-4 w-4" /> {exporting ? 'Tayyorlanmoqda...' : 'Excel'}
         </Button>
       </Card>
 
@@ -328,7 +416,13 @@ export function ArrearsPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-slate-100 text-left text-xs uppercase tracking-wide text-slate-400">
-                  <th className="sticky left-0 z-10 bg-white px-4 py-2 font-medium">O'quvchi</th>
+                  <th className="sticky left-0 z-10 bg-white px-4 py-2 font-medium">
+                    № · O'quvchi
+                  </th>
+                  <th className="whitespace-nowrap px-3 py-2 font-medium">Telefon</th>
+                  {splitByCategory && (
+                    <th className="whitespace-nowrap px-3 py-2 font-medium">Toifa</th>
+                  )}
                   {months.map((m) => (
                     <th key={m} className="whitespace-nowrap px-3 py-2 text-right font-medium">
                       {formatMonth(m)}
@@ -338,13 +432,21 @@ export function ArrearsPage() {
                 </tr>
               </thead>
               <tbody>
-                {visible.map((row) => (
-                  <StudentRow key={row.studentId} row={row} months={months} />
+                {visible.map((row, i) => (
+                  <StudentRow
+                    key={`${row.studentId}-${row.categoryCode ?? ''}`}
+                    row={row}
+                    index={i}
+                    months={months}
+                    showCategory={splitByCategory}
+                  />
                 ))}
               </tbody>
               <tfoot>
                 <tr className="border-t border-slate-200 bg-slate-50/70 font-medium text-slate-700">
                   <td className="sticky left-0 z-10 bg-slate-50 px-4 py-2.5">Jami</td>
+                  <td className="px-3 py-2.5" />
+                  {splitByCategory && <td className="px-3 py-2.5" />}
                   {months.map((m) => {
                     const cell = footer.byMonth[m]
                     return (
@@ -387,21 +489,48 @@ export function ArrearsPage() {
   )
 }
 
-/** Bitta o'quvchi qatori. */
-function StudentRow({ row, months }: { row: ArrearsRow; months: string[] }) {
+/** Bitta o'quvchi qatori (F13.02 yoqilganda — bitta o'quvchi × toifa). */
+function StudentRow({
+  row,
+  index,
+  months,
+  showCategory,
+}: {
+  row: ArrearsRow
+  /** Filtrlangan/saralangan ro'yxatdagi o'rni — "№" ustuni (F13.03). */
+  index: number
+  months: string[]
+  showCategory: boolean
+}) {
   return (
     <tr className="border-b border-slate-50 last:border-0 hover:bg-slate-50/60">
       <td className="sticky left-0 z-10 bg-white px-4 py-2">
         <div className="flex items-center gap-2">
-          <span className="font-medium text-slate-700">{row.fullName}</span>
+          <span className="w-6 shrink-0 text-right text-xs text-slate-400 tabular-nums">
+            {index + 1}
+          </span>
+          {/* F13.03 — o'quvchi kartochkasiga havola. */}
+          <Link
+            to={`/admin/students/${row.studentId}`}
+            className="font-medium text-slate-700 hover:text-brand-600 hover:underline"
+          >
+            {row.fullName}
+          </Link>
           {row.isArchived && (
             <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[11px] text-slate-500">
               arxiv
             </span>
           )}
         </div>
-        <p className="text-xs text-slate-400">{row.className}</p>
+        <p className="pl-8 text-xs text-slate-400">{row.className}</p>
       </td>
+
+      {/* F13.03 — ota-ona telefoni. */}
+      <td className="whitespace-nowrap px-3 py-2 text-slate-500">{row.parentPhone || '—'}</td>
+
+      {showCategory && (
+        <td className="whitespace-nowrap px-3 py-2 text-slate-500">{row.categoryName ?? '—'}</td>
+      )}
 
       {months.map((m) => (
         <MonthCell key={m} cell={row.cells[m]} month={m} />

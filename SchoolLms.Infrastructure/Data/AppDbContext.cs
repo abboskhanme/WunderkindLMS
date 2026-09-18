@@ -100,6 +100,15 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<StudentRefund> StudentRefunds => Set<StudentRefund>();
     public DbSet<ExpenseAttachment> ExpenseAttachments => Set<ExpenseAttachment>();
 
+    // Bonus / jarima — moliya pariteti, Batch B (finance-parity.md §3.2, F11.01/F11.02).
+    // Konfiguratsiya: PayrollAdjustmentsModel.cs.
+    //
+    // DIQQAT: `PayrollAdjustments` FAQAT INSERT. `app_rw` da UPDATE/DELETE yo'q
+    // (payroll_adjustments_guards.sql) — xato yozuv `ReversalOf` bilan tuzatiladi.
+    // `AdjustmentReasons` esa oddiy katalog — to'liq CRUD.
+    public DbSet<AdjustmentReason> AdjustmentReasons => Set<AdjustmentReason>();
+    public DbSet<PayrollAdjustment> PayrollAdjustments => Set<PayrollAdjustment>();
+
     // Ikkinchi to'lqin (docs/modules/existing-module-gaps.md): qarzdorlar ish oqimi
     // (§3.5), sertifikatlar (§2.3) va arxivlash sabablari katalogi (§2.2).
     // Konfiguratsiya: ParityModel.cs. Hozircha ilovadan HECH KIM o'qimaydi —
@@ -125,6 +134,19 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<StudentComment> StudentComments => Set<StudentComment>();
     public DbSet<StudentContract> StudentContracts => Set<StudentContract>();
     public DbSet<Room> Rooms => Set<Room>();
+
+    // O'quv bo'limi pariteti, P2 (students-parity.md §3.3). Konfiguratsiya:
+    // StudentsParityP2Model.cs. Sxema oldin, ekranlar keyin — hozircha
+    // ilovadan hech kim o'qimaydi (§4.4 dagi kichik slice'lar o'qiydi).
+    public DbSet<CertificateSubject> CertificateSubjects => Set<CertificateSubject>();
+    public DbSet<StudentLocation> StudentLocations => Set<StudentLocation>();
+    public DbSet<UserTableSetting> UserTableSettings => Set<UserTableSetting>();
+
+    // Kassalar (cash boxes) — "smena" o'rnini bosadi (2026-09). Konfiguratsiya:
+    // CashBoxModel.cs. `CashBoxTransactions` FAQAT INSERT (finance-parity
+    // naqshi), `CashBoxes` — oddiy kataloq (DELETE yopiq, UPDATE ochiq).
+    public DbSet<CashBox> CashBoxes => Set<CashBox>();
+    public DbSet<CashBoxTransaction> CashBoxTransactions => Set<CashBoxTransaction>();
 
     /// <inheritdoc />
     public Task<Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction> BeginTransactionAsync(
@@ -260,10 +282,30 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
         // ----- O'quvchi kartochkasi: status, izoh, shartnoma, xonalar (§3.2) -----
         StudentsParityModel.Apply(b);
 
+        // ----- O'quv bo'limi pariteti, P2 (§3.3) -----
+        // Yettinchi alohida fayl. Sinf sig'imi, fan rangi/faolligi, mo'ljaldagi
+        // sinf, sertifikat fanlari, joylashuvlar, jadval sozlamalari, shartnoma
+        // raqamlash rejimi, topshiriq egasi va `rooms.is_active`.
+        StudentsParityP2Model.Apply(b);
+
         // ----- Kassa stoli: A to'plami (finance-parity.md §3.1) -----
         // Oltinchi alohida fayl. `expenses.cash_shift_id` (A1) ham shu yerda —
         // o'zgarish qaysi hujjatdan kelgan bo'lsa, o'sha faylda turadi.
         FinanceParityModel.Apply(b);
+
+        // ----- Bonus / jarima: Batch B (finance-parity.md §3.2, F11.01/F11.02) -----
+        // Sakkizinchi alohida fayl — HR-01/02/03 (to'liq `hr_employees` va
+        // qolgan 22 jadval) hali qurilmagan, shuning uchun bu yerda faqat
+        // Bonus/Jarima registri va sabab katalogi (PayrollAdjustmentsModel.cs
+        // boshidagi izoh).
+        PayrollAdjustmentsModel.Apply(b);
+
+        // ----- Kassalar (cash boxes): "smena" o'rnini bosadi (2026-09) -----
+        // Ettinchi alohida fayl. `payments`/`expenses`/`student_refunds` ning
+        // yangi `cash_box_id` ustuni ham shu yerda (o'zgarish qaysi
+        // migratsiyadan kelgan bo'lsa, o'sha faylda turadi — yuqoridagi
+        // FinanceParityModel izohidagi qoida).
+        CashBoxModel.Apply(b);
 
         // ----- PostgreSQL: vaqt turi -----
         // Tizim sanalarni Toshkent "devor soati" sifatida saqlaydi (AppClock.Now — Kind=Unspecified),

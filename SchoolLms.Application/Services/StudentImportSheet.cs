@@ -61,6 +61,11 @@ public static class StudentImportSheet
         "O'quvchi telefoni",                // 8
         "O'qish tili (uz/ru/en/kaa)",       // 9
         "Holat",                            // 10
+        // G-19: o'quv guruhlari — "Fan: Guruh nomi" juftliklari, bir nechtasi
+        // ";" bilan ajratiladi (masalan "Ingliz tili: 5-guruh; Matematika: B guruh").
+        // Fan nomi kerak, chunki guruh nomi FAQAT bitta fan ichida unikal —
+        // "5-guruh" ismli ikkita turli fandagi guruh bo'lishi mumkin.
+        "Guruhlar (Fan: Guruh; Fan: Guruh)",// 11
     };
 
     /// <summary>Eksportga qo'shiladigan, import O'QIMAYDIGAN ustunlar (11-dan keyin).</summary>
@@ -73,10 +78,16 @@ public static class StudentImportSheet
     public const string GuideSheetName = "Yo'riqnoma";
 
     /// <summary>
-    /// Bo'sh shablon: 1-varaq — ustunlar, 2-varaq — izohlar, MAVJUD sinflar va
-    /// MAVJUD holatlar ro'yxati (import faqat 1-varaqni o'qiydi).
+    /// Bo'sh shablon: 1-varaq — ustunlar, 2-varaq — izohlar, MAVJUD sinflar,
+    /// MAVJUD holatlar va MAVJUD guruhlar ro'yxati (import faqat 1-varaqni o'qiydi).
     /// </summary>
-    public static byte[] Template(IReadOnlyList<string> classNames, IReadOnlyList<string> statusNames)
+    /// <param name="groupLabels">
+    /// G-19: faol guruhlar, "Fan: Guruh nomi" shaklida — aynan "Guruhlar" katagiga
+    /// yozilishi kerak bo'lgan matn, ko'chirib qo'yish uchun.
+    /// </param>
+    public static byte[] Template(
+        IReadOnlyList<string> classNames, IReadOnlyList<string> statusNames,
+        IReadOnlyList<string> groupLabels)
     {
         var info = new List<IReadOnlyList<string>>
         {
@@ -91,6 +102,7 @@ public static class StudentImportSheet
             new[] { Headers[8], "o'quvchining O'Z raqami, ixtiyoriy" },
             new[] { Headers[9], "uz | ru | en | kaa (bo'sh bo'lsa — ko'rsatilmagan)" },
             new[] { Headers[10], "pastdagi holatlardan biri (bo'sh bo'lsa — holatsiz)" },
+            new[] { Headers[11], "pastdagi guruhlardan (bo'sh — guruhga tegilmaydi, FAQAT QO'SHADI, chiqarmaydi)" },
             new[] { "", "" },
             new[] { "Takroriy yuklash", "F.I.SH + tug'ilgan sana + sinf mos kelsa — mavjud o'quvchi YANGILANADI" },
             new[] { "Bo'sh katak", "mavjud o'quvchida maydonni TOZALAMAYDI (o'zgarishsiz qoladi)" },
@@ -103,6 +115,10 @@ public static class StudentImportSheet
         info.Add(new[] { "", "" });
         info.Add(new[] { "Mavjud holatlar:", statusNames.Count == 0 ? "(holat qo'shilmagan)" : "" });
         info.AddRange(statusNames.Select(s => (IReadOnlyList<string>)new[] { s, "" }));
+        info.Add(new[] { "", "" });
+        info.Add(new[] { "Mavjud guruhlar (Guruhlar katagiga shu matnni yozing):",
+            groupLabels.Count == 0 ? "(guruh yaratilmagan)" : "" });
+        info.AddRange(groupLabels.Select(g => (IReadOnlyList<string>)new[] { g, "" }));
 
         return ExcelExport.Build(new[]
         {
@@ -119,8 +135,18 @@ public static class StudentImportSheet
         new((value ?? "").Where(char.IsLetterOrDigit).Select(char.ToLowerInvariant).ToArray());
 }
 
+/// <summary>
+/// G-19: bitta qatorda ko'rsatilgan, tekshiruvdan o'tgan guruh — "Fan: Guruh
+/// nomi" katakchasining bitta bo'lagi. Faqat QO'SHISH uchun ishlatiladi —
+/// import bu yozuvni yopmaydi, faqat yo'q bo'lsa ochadi (izoh:
+/// <see cref="StudentImportService"/> "GURUHLAR — FAQAT QO'SHADI" bo'limi).
+/// </summary>
+public sealed record StudentImportGroupAssignment(
+    Guid GroupId, string GroupName, string SubjectId, string SubjectName);
+
 /// <summary>Tekshiruvdan o'tgan bitta qator — yozishga tayyor.</summary>
 /// <param name="Existing">null = yangi o'quvchi; aks holda ustiga yoziladigan mavjud qator.</param>
+/// <param name="Groups">G-19 — qatorda ko'rsatilgan, qo'shiladigan guruhlar.</param>
 public sealed record StudentImportItem(
     int Row,
     string FullName,
@@ -140,7 +166,8 @@ public sealed record StudentImportItem(
     string? Phone,
     string? Language,
     Guid? StatusId,
-    Student? Existing);
+    Student? Existing,
+    IReadOnlyList<StudentImportGroupAssignment> Groups);
 
 /// <summary>Butun faylning tekshiruv natijasi.</summary>
 public sealed class StudentImportPlan
@@ -171,7 +198,8 @@ public sealed class StudentImportPlan
         Skipped,
         Errors,
         [.. Items.Take(PreviewRows).Select(i => new StudentImportPreviewRowDto(
-            i.Row, i.FullName, i.ClassName, i.Existing is null ? "create" : "update"))],
+            i.Row, i.FullName, i.ClassName, i.Existing is null ? "create" : "update",
+            string.Join(", ", i.Groups.Select(g => g.GroupName))))],
         FatalMessage);
 }
 
@@ -219,13 +247,55 @@ public sealed class StudentImportService(IAppDbContext db)
         if (!HeadersMatch(rows[0])) { plan.FatalMessage = BadHeaderMessage; return plan; }
 
         // Ma'lumotnomalar bir marta yuklanadi — qator ichida DB so'rovi YO'Q.
-        var classByName = (await db.Classes.AsNoTracking().ToListAsync(ct))
+        var classesList = await db.Classes.AsNoTracking().ToListAsync(ct);
+        var classByName = classesList
             .GroupBy(c => c.Name, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(g => g.Key, g => g.First().Name, StringComparer.OrdinalIgnoreCase);
 
         var statusByName = (await db.StudentStatuses.AsNoTracking().Where(s => s.IsActive).ToListAsync(ct))
             .GroupBy(s => s.Name, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(g => g.Key, g => g.First().Id, StringComparer.OrdinalIgnoreCase);
+
+        // G-19: "Guruhlar" ustuni uchun ma'lumotnomalar — hammasi oldindan,
+        // qator ichida so'rov YO'Q (yuqoridagi naqsh bilan bir xil).
+        var groupsList = await db.StudyGroups.AsNoTracking().ToListAsync(ct);
+        var groupById = groupsList.ToDictionary(g => g.Id);
+        var subjectsList = await db.Subjects.AsNoTracking().ToListAsync(ct);
+        var subjectNameById = subjectsList.ToDictionary(s => s.Id, s => s.Name, StringComparer.Ordinal);
+        var subjectIdByName = subjectsList
+            .GroupBy(s => Collapse(s.Name).ToLowerInvariant(), StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => g.First().Id, StringComparer.Ordinal);
+
+        var classNameById = classesList.ToDictionary(c => c.Id, c => c.Name, StringComparer.Ordinal);
+        var feedingNamesByGroup = (await db.StudyGroupClasses.AsNoTracking().ToListAsync(ct))
+            .GroupBy(gc => gc.GroupId)
+            .ToDictionary(
+                g => g.Key,
+                g => g.Select(gc => classNameById.GetValueOrDefault(gc.ClassId, ""))
+                    .ToHashSet(StringComparer.Ordinal));
+
+        // (fan id, guruh nomi-kaliti) -> shu nom/fandagi guruhlar (odatda bitta —
+        // faol guruhlar orasida nom fan ichida unikal, arxivlangani bilan
+        // to'qnashishi mumkin, shu sabab ro'yxat).
+        var groupIndex = groupsList
+            .GroupBy(g => (g.SubjectId, NameKey: Collapse(g.Name).ToLowerInvariant()))
+            .ToDictionary(g => g.Key, g => g.ToList());
+
+        // O'quvchining fan bo'yicha FAOL guruhi (bor bo'lsa) — "boshqa guruhda
+        // turibdi" ziddiyatini tekshirish uchun.
+        var activeMembershipByStudent = (await db.StudyGroupMembers.AsNoTracking()
+                .Where(m => m.LeftOn == null).ToListAsync(ct))
+            .GroupBy(m => m.StudentId, StringComparer.Ordinal)
+            .ToDictionary(
+                g => g.Key,
+                g => g.ToDictionary(
+                    m => m.SubjectId,
+                    m => (m.GroupId, GroupName: groupById.TryGetValue(m.GroupId, out var gr) ? gr.Name : ""),
+                    StringComparer.Ordinal),
+                StringComparer.Ordinal);
+
+        var groupCtx = new GroupImportContext(
+            subjectIdByName, subjectNameById, groupIndex, feedingNamesByGroup, activeMembershipByStudent);
 
         // Mos keladigan o'quvchilar — FAQAT arxivda bo'lmaganlar: arxivdagi
         // bola ro'yxatdan chiqqan, uni import jimgina "tiriltirmasligi" kerak.
@@ -243,7 +313,7 @@ public sealed class StudentImportService(IAppDbContext db)
             if (r.All(string.IsNullOrWhiteSpace)) { plan.Skipped++; continue; }
             if (plan.Errors.Count >= StudentImportPlan.MaxErrors) break;
 
-            ReadRow(plan, r, excelRow, classByName, statusByName, existingByKey, seenInFile);
+            ReadRow(plan, r, excelRow, classByName, statusByName, existingByKey, seenInFile, groupCtx);
         }
 
         if (plan.Errors.Count == 0 && plan.Items.Count == 0 && plan.FatalMessage is null)
@@ -263,7 +333,8 @@ public sealed class StudentImportService(IAppDbContext db)
         Dictionary<string, string> classByName,
         Dictionary<string, Guid> statusByName,
         Dictionary<string, List<Student>> existingByKey,
-        Dictionary<string, int> seenInFile)
+        Dictionary<string, int> seenInFile,
+        GroupImportContext groupCtx)
     {
         var before = plan.Errors.Count;
         void Fail(int column, string message) =>
@@ -338,6 +409,16 @@ public sealed class StudentImportService(IAppDbContext db)
             match = candidates[0];
         }
 
+        // G-19: "Guruhlar" ustuni — match aniqlangandan KEYIN o'qiladi, chunki
+        // "boshqa guruhda turibdi" tekshiruvi va jins tekshiruvi mavjud
+        // o'quvchining bugungi qiymatlariga qarab qaror qiladi (qator jinsni
+        // o'zgartirmasa — o'quvchining bugungisi ishlatiladi).
+        var effectiveGender = gender ?? match?.Gender ?? "male";
+        var beforeGroups = plan.Errors.Count;
+        var groups = ParseGroups(
+            r[11], resolvedClass, effectiveGender, match, groupCtx, msg => Fail(11, msg));
+        if (plan.Errors.Count > beforeGroups) return;
+
         var (last, first, middle) = SplitName(fullName);
         var parentFull = Collapse(r[5]);
         var (pLast, pFirst, pMiddle) = SplitName(parentFull);
@@ -349,7 +430,130 @@ public sealed class StudentImportService(IAppDbContext db)
             parentFull.Length == 0 ? null : pLast,
             parentFull.Length == 0 ? null : pFirst,
             parentFull.Length == 0 ? null : pMiddle,
-            parentPhone, enrollment, phone, language, statusId, match));
+            parentPhone, enrollment, phone, language, statusId, match, groups));
+    }
+
+    // =====================================================================
+    //  G-19 — "Guruhlar" ustuni
+    //
+    //  QOIDA: FAQAT QO'SHADI, HECH QACHON CHIQARMAYDI. Bo'sh katak — "TEGMA"
+    //  (import yozuvi hech narsa qilmaydi, mavjud a'zolikka tegmaydi); to'la
+    //  katakda ESA yo'q guruhlar ham "TEGMA" bo'lib qoladi — faqat ro'yxatga
+    //  KIRITILGAN guruhlarga qo'shiladi, ro'yxatdan TASHQARI qolgan (o'quvchi
+    //  bugun a'zo bo'lgan, lekin katakda yo'q) guruhlardan chiqarilmaydi. Bu
+    //  sinf ustunidagi "bo'sh katak tozalamaydi" qoidasining ro'yxatlarga
+    //  kengaytmasi: eksport qilingan faylni o'zgartirmasdan qaytadan yuklash
+    //  hech narsani buzmasligi kerak (aylanish, StudentImportTests).
+    //
+    //  NOMA'LUM GURUH — QATORNI TO'XTATADI. Xuddi "Sinf topilmadi" kabi: fan
+    //  yoki guruh nomi topilmasa butun qator xato deb belgilanadi va
+    //  tasdiqlash rad etiladi — "yarim import yo'q" qoidasi ro'yxatga ham
+    //  tegishli (StudentImportController.cs izohi).
+    // =====================================================================
+
+    /// <summary>G-19 uchun oldindan yuklangan ma'lumotnomalar (bitta obyektga yig'ilgan — parametr sonini kamaytirish uchun).</summary>
+    private sealed record GroupImportContext(
+        Dictionary<string, string> SubjectIdByName,
+        Dictionary<string, string> SubjectNameById,
+        Dictionary<(string SubjectId, string NameKey), List<StudyGroup>> GroupIndex,
+        Dictionary<Guid, HashSet<string>> FeedingNamesByGroup,
+        Dictionary<string, Dictionary<string, (Guid GroupId, string GroupName)>> ActiveMembershipByStudent);
+
+    /// <summary>
+    /// "Guruhlar" katagini ("Fan: Guruh; Fan: Guruh") o'qiydi va tekshiradi.
+    /// Har bir muammo <paramref name="fail"/> orqali xato sifatida yoziladi;
+    /// chaqiruvchi (<see cref="ReadRow"/>) shundan keyin qatorni rad etadi.
+    /// </summary>
+    private static List<StudentImportGroupAssignment> ParseGroups(
+        string raw,
+        string resolvedClassName,
+        string effectiveGender,
+        Student? existing,
+        GroupImportContext ctx,
+        Action<string> fail)
+    {
+        var result = new List<StudentImportGroupAssignment>();
+        var text = Collapse(raw);
+        if (text.Length == 0) return result;
+
+        var seenSubjects = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var piece in text.Split(';', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var part = piece.Trim();
+            if (part.Length == 0) continue;
+
+            var sep = part.IndexOf(':');
+            if (sep < 0)
+            {
+                fail($"Guruhlar ustuni formati noto'g'ri: \"{part}\" (kutilgani \"Fan: Guruh nomi\")");
+                continue;
+            }
+
+            var subjectName = Collapse(part[..sep]);
+            var groupName = Collapse(part[(sep + 1)..]);
+            if (subjectName.Length == 0 || groupName.Length == 0)
+            {
+                fail($"Guruhlar ustuni formati noto'g'ri: \"{part}\" (kutilgani \"Fan: Guruh nomi\")");
+                continue;
+            }
+
+            if (!ctx.SubjectIdByName.TryGetValue(subjectName.ToLowerInvariant(), out var subjectId))
+            {
+                fail($"Fan topilmadi: \"{subjectName}\"");
+                continue;
+            }
+
+            if (!seenSubjects.Add(subjectId))
+            {
+                fail($"Bir qatorda \"{subjectName}\" faniga faqat bitta guruh ko'rsatilishi mumkin");
+                continue;
+            }
+
+            if (!ctx.GroupIndex.TryGetValue((subjectId, groupName.ToLowerInvariant()), out var candidates))
+            {
+                fail($"Guruh topilmadi: \"{groupName}\" (fan: {subjectName})");
+                continue;
+            }
+
+            // Faol nusxa ustun — arxivlangan bilan nom to'qnashishi mumkin (bir
+            // xil nom, fan ichida faqat FAOLLAR orasida unikal).
+            var group = candidates.Find(g => !g.IsArchived) ?? candidates[0];
+            if (group.IsArchived)
+            {
+                fail($"Guruh arxivlangan: \"{groupName}\" — arxivlangan guruhga qo'shib bo'lmaydi");
+                continue;
+            }
+
+            var feedingNames = ctx.FeedingNamesByGroup.GetValueOrDefault(group.Id) ?? [];
+            if (!feedingNames.Contains(resolvedClassName))
+            {
+                fail($"\"{resolvedClassName}\" sinfi \"{groupName}\" guruhini boqmaydi");
+                continue;
+            }
+
+            if (group.Gender is not null
+                && !string.Equals(group.Gender, effectiveGender, StringComparison.Ordinal))
+            {
+                fail($"\"{groupName}\" guruhi jins bo'yicha cheklangan");
+                continue;
+            }
+
+            if (existing is not null
+                && ctx.ActiveMembershipByStudent.TryGetValue(existing.Id, out var bySubject)
+                && bySubject.TryGetValue(subjectId, out var current)
+                && current.GroupId != group.Id)
+            {
+                fail($"O'quvchi \"{subjectName}\" fani bo'yicha allaqachon \"{current.GroupName}\" "
+                     + "guruhida — avval undan chiqaring yoki o'sha guruhni ko'rsating");
+                continue;
+            }
+
+            var subjectDisplayName = ctx.SubjectNameById.GetValueOrDefault(subjectId, subjectName);
+            result.Add(new StudentImportGroupAssignment(group.Id, group.Name, subjectId, subjectDisplayName));
+        }
+
+        return result;
     }
 
     // =====================================================================
