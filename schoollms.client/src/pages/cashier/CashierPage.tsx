@@ -9,7 +9,6 @@ import {
   ShieldOff,
   UserRound,
   Wallet,
-  X,
 } from 'lucide-react'
 import type { AllocationSuggestion, Payment, PaymentMethod, Role, SchoolClass } from '@/types'
 import type { CashierStudent } from '@/api/services/cashier'
@@ -29,6 +28,7 @@ import { getClasses } from '@/api/services/classes'
 import { useAuth } from '@/context/auth-context'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
+import { Modal } from '@/components/ui/Modal'
 import { Loader } from '@/components/ui/Loader'
 import { Select, Textarea } from '@/components/ui/Input'
 import { cn, exportToCsv } from '@/lib/utils'
@@ -711,25 +711,17 @@ export function CashierPage() {
           Ikki tab: "Oddiy kirim" (cashBoxIn) va "O'quvchidan to'lov" (eski
           yo'l, TEGILMAGAN — quyidagi bo'lim ilgarigi "O'QUVCHIDAN TO'LOV"
           bo'limi bilan AYNAN bir xil, faqat shart o'zgargan). */}
-      {incomePanel && (
-      <section className="space-y-4">
-        <Card>
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <h2 className="font-semibold text-slate-800">Kirim — {incomePanel.name}</h2>
-              <p className="text-sm text-slate-400">Oddiy kirim yozing yoki o'quvchidan to'lov qabul qiling.</p>
-            </div>
-            <button
-              type="button"
-              onClick={() => setIncomePanel(null)}
-              title="Yopish"
-              aria-label="Kirim panelini yopish"
-              className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          </div>
-          <div className="mt-4 inline-flex rounded-lg border border-slate-200 p-1">
+      {/* Mijoz 2026-09-18: amal oynalari sahifa PASTIDA emas, MODAL bo'lsin. */}
+      <Modal
+        open={incomePanel !== null}
+        onClose={() => setIncomePanel(null)}
+        title={incomePanel ? `Kirim — ${incomePanel.name}` : 'Kirim'}
+        size="xl"
+      >
+        {incomePanel && (
+        <div className="space-y-4">
+          <p className="text-sm text-slate-400">Oddiy kirim yozing yoki o'quvchidan to'lov qabul qiling.</p>
+          <div className="inline-flex rounded-lg border border-slate-200 p-1">
             <button
               type="button"
               onClick={() => setIncomeTab('plain')}
@@ -751,7 +743,6 @@ export function CashierPage() {
               O'quvchidan to'lov
             </button>
           </div>
-        </Card>
 
         {incomeTab === 'plain' && (
           <PlainIncomeForm box={incomePanel} onDone={handleIncomeDone} onCancel={() => setIncomePanel(null)} />
@@ -867,8 +858,9 @@ export function CashierPage() {
           )}
         </div>
         )}
-      </section>
-      )}
+        </div>
+        )}
+      </Modal>
 
       {student && splitOpen && amount !== null && amount > 0 && (
         <PaymentSplitModal
