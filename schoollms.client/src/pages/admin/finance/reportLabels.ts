@@ -81,6 +81,11 @@ export function formatSignedMoney(amount: number): string {
   return amount > 0 ? `+${formatMoney(amount)}` : `−${formatMoney(Math.abs(amount))}`
 }
 
+/** Foiz — `null` bo'lsa "—" (nolga bo'linish emas, "ma'nosiz" degani, backend qoidasi). */
+export function pctText(value: number | null): string {
+  return value === null ? '—' : `${value.toFixed(2)}%`
+}
+
 /** Musbat — yashil, manfiy — qizil, nol — kulrang. */
 export function signClass(amount: number): string {
   if (amount > 0) return 'text-emerald-600'
@@ -96,6 +101,50 @@ export const chartColors = {
   neutral: '#94a3b8',
   grid: '#eef0f4',
 } as const
+
+/**
+ * O'zgarishlar jurnali (F6.03) turi → o'zbekcha yorliq
+ * (`ChangeJournalKind`, `financeReports.ts`).
+ */
+export const changeKindLabels: Record<string, string> = {
+  studentJoined: "O'quvchi qo'shildi",
+  studentLeft: 'Obuna yopildi',
+  studentArchived: 'Arxivlandi (obuna ochiq)',
+  tariffChanged: "Tarif o'zgardi",
+  discountRequested: "Chegirma so'raldi",
+  discountApproved: 'Chegirma tasdiqlandi',
+  discountRejected: 'Chegirma rad etildi',
+  discountExpired: 'Chegirma tugadi',
+}
+
+/** Noma'lum tur kelsa ham ekran buzilmasin. */
+export function changeKindLabel(kind: string): string {
+  return changeKindLabels[kind] ?? kind
+}
+
+/**
+ * Jurnal qatorining rangi — musbat/manfiy/betaraf ta'sirga qarab (studentJoined
+ * yashil, studentLeft qizil, qolgani neytral kulrang/ko'k soyasi).
+ */
+export function changeKindClass(kind: string): string {
+  switch (kind) {
+    case 'studentJoined':
+    case 'discountRejected':
+    case 'discountExpired':
+      return 'bg-emerald-50 text-emerald-700'
+    case 'studentLeft':
+      return 'bg-red-50 text-red-700'
+    case 'studentArchived':
+      return 'bg-amber-50 text-amber-700'
+    case 'tariffChanged':
+      return 'bg-brand-50 text-brand-700'
+    case 'discountRequested':
+    case 'discountApproved':
+      return 'bg-slate-100 text-slate-600'
+    default:
+      return 'bg-slate-100 text-slate-600'
+  }
+}
 
 /** Grafik o'qi uchun qisqa summa: 12 500 000 → "12.5M" */
 export function shortAmount(value: number): string {

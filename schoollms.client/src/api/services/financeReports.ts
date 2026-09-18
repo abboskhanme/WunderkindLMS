@@ -221,6 +221,207 @@ export async function getRevenueExpectation(month?: string): Promise<RevenueExpe
 }
 
 /* =========================================================================
+   2c) P&L 2.0 — F6.03 o'zgarishlar jurnali —
+   GET /api/admin/finance/pnl/expectation/changes
+   ========================================================================= */
+
+/**
+ * O'zgarish turi (backend: `ChangeJournalKind`). EduSchool'ning besh
+ * turidan (`finance-parity.md` §2.6.1) farqli — bizning chegirma tizimi
+ * TASDIQ bilan ishlaydi (SPEC §8.1 Q5), shuning uchun `discountChanged` o'rniga
+ * uchta aniqroq holat bor: so'raldi / tasdiqlandi / rad etildi. `studentArchived`
+ * esa EduSchool'da UMUMAN yo'q — bu tizimning o'ziga xos, "arxivlangan, lekin
+ * obunasi ochiq" teshigini ko'rsatadigan qo'shimcha.
+ */
+export type ChangeJournalKind =
+  | 'studentJoined'
+  | 'studentLeft'
+  | 'studentArchived'
+  | 'tariffChanged'
+  | 'discountRequested'
+  | 'discountApproved'
+  | 'discountRejected'
+  | 'discountExpired'
+
+/** Jurnalning bitta qatori. */
+export interface ChangeJournalRow {
+  /** "YYYY-MM-DD" */
+  date: string
+  kind: ChangeJournalKind
+  studentId: string
+  studentName: string
+  className: string
+  categoryCode: string | null
+  categoryName: string | null
+  /**
+   * Kutilgan sof daromadga ta'sir. Chegirma voqealarida QACHON aniq (0 —
+   * so'ralgan/rad etilgan, hech qachon ta'sir qilmagan), QACHON ataylab
+   * `null` (tasdiqlangan/tugagan — aniq summa g'olib chegirmani aniqlashga
+   * bog'liq, backend buni ikkinchi marta hisoblamaydi).
+   */
+  netEffect: number | null
+  note: string
+  author: string
+}
+
+/** Jurnalning bitta sahifasi. */
+export interface ChangeJournalPage {
+  rows: ChangeJournalRow[]
+  page: number
+  pageSize: number
+  total: number
+  /** "YYYY-MM-DD" — oyning birinchi kuni. */
+  month: string
+}
+
+/** O'zgarishlar jurnali (§2.6, F6.03) — bitta oy, ixtiyoriy tur filtri bilan, sahifalangan. */
+export async function getChangeJournal(
+  month: string,
+  kind?: ChangeJournalKind,
+  page = 1,
+  pageSize = 50,
+): Promise<ChangeJournalPage> {
+  try {
+    const { data } = await api.get<ChangeJournalPage>('/admin/finance/pnl/expectation/changes', {
+      params: clean({ month, kind, page, pageSize }),
+    })
+    return data
+  } catch (e) {
+    throw toUzbekError(e, "O'zgarishlar jurnali")
+  }
+}
+
+/* =========================================================================
+   2d) P&L 2.0 — F6.04 kunlik dinamika —
+   GET /api/admin/finance/pnl/expectation/daily
+   ========================================================================= */
+
+/** Bitta kunning daromad/chiqim/sof natijasi. */
+export interface DailyDynamicsDay {
+  /** "YYYY-MM-DD" */
+  date: string
+  revenue: number
+  expense: number
+  net: number
+  /** Oy boshidan shu kungacha yig'ilgan sof natija. */
+  cumulativeNet: number
+}
+
+/** Bir oy uchun kunlik dinamika. */
+export interface DailyDynamics {
+  /** "YYYY-MM-DD" — oyning birinchi kuni. */
+  month: string
+  days: DailyDynamicsDay[]
+  /** Bugungi kun, AGAR so'ralgan oy ichida bo'lsa — aks holda `null`. */
+  today: string | null
+}
+
+/** Kunlik dinamika (§2.6, F6.04). `month` — "YYYY-MM". Berilmasa — server joriy oyni qaytaradi. */
+export async function getDailyDynamics(month?: string): Promise<DailyDynamics> {
+  try {
+    const { data } = await api.get<DailyDynamics>('/admin/finance/pnl/expectation/daily', {
+      params: clean({ month }),
+    })
+    return data
+  } catch (e) {
+    throw toUzbekError(e, 'Kunlik dinamika hisoboti')
+  }
+}
+
+/* =========================================================================
+   2e) P&L 2.0 — F6.05 yillik reja/fakt jadvali —
+   GET /api/admin/finance/pnl/expectation/yearly
+   ========================================================================= */
+
+/** Bitta oyning yillik jadvaldagi qatori. */
+export interface YearlyExpectationMonth {
+  /** "YYYY-MM-DD" — oyning birinchi kuni. */
+  month: string
+  grossPlan: number
+  discountAmount: number
+  netPlan: number
+  revenueActual: number
+  expenseActual: number
+  profitActual: number
+  margin: number | null
+  discountRate: number | null
+}
+
+/** Yillik reja/fakt jadvali — o'n ikki oy, yakunlar va eng yaxshi/yomon oy. */
+export interface YearlyExpectation {
+  year: number
+  /** Yanvardan dekabrgacha — har doim o'n ikkita qator. */
+  months: YearlyExpectationMonth[]
+  netPlanTotal: number
+  revenueActualTotal: number
+  expenseActualTotal: number
+  profitActualTotal: number
+  /** "YYYY-MM-DD". Yil bo'yicha harakat bo'lmasa — `null`. */
+  bestMonth: string | null
+  worstMonth: string | null
+}
+
+/** Yillik reja/fakt (§2.6, F6.05). `year` berilmasa — server joriy yilni qaytaradi. */
+export async function getYearlyExpectation(year?: number): Promise<YearlyExpectation> {
+  try {
+    const { data } = await api.get<YearlyExpectation>('/admin/finance/pnl/expectation/yearly', {
+      params: clean({ year }),
+    })
+    return data
+  } catch (e) {
+    throw toUzbekError(e, 'Yillik reja/fakt hisoboti')
+  }
+}
+
+/* =========================================================================
+   2f) P&L 2.0 — F6.01 rejalashtirilgan chiqim shablonlari (FAQAT O'QISH) —
+   GET /api/admin/finance/expense-templates
+   ========================================================================= */
+
+/**
+ * Rejalashtirilgan chiqim shabloni. CRUD (`POST`/`PUT`/`DELETE`) — BOSHQA
+ * vazifaning ishi (Moliya sozlamalari, `BillingSettingsPage.tsx`); bu yerda
+ * FAQAT o'qiladi, "Rejalashtirilgan chiqim" tabini to'ldirish uchun.
+ */
+export interface ExpenseTemplate {
+  id: string
+  name: string
+  categoryCode: string
+  categoryName: string
+  amount: number
+  /** Oyning qaysi kuni hisoblanadi (eslatma/accrual kuni). */
+  dayOfMonth: number
+  isActive: boolean
+}
+
+/**
+ * Shablonlar ro'yxati so'rovining natijasi — ikki holatli, `getFinanceFlags`
+ * bilan bir xil naqsh: endpoint boshqa vazifada hali qurilmagan bo'lishi
+ * mumkin (404/501), bu holda ekran "hali yo'q" deb ochiq aytadi, bo'sh
+ * ro'yxat ko'rsatib "shablon yo'q" deb yolg'on gapirmaydi.
+ */
+export type ExpenseTemplatesResult =
+  | { available: true; templates: ExpenseTemplate[] }
+  | { available: false; reason: string }
+
+/** Rejalashtirilgan chiqim shablonlari — F6.01 endpoint'ini iste'mol qiladi. */
+export async function getExpenseTemplates(): Promise<ExpenseTemplatesResult> {
+  try {
+    const { data } = await api.get<ExpenseTemplate[]>('/admin/finance/expense-templates')
+    return { available: true, templates: data }
+  } catch (e) {
+    if (axios.isAxiosError(e) && (e.response?.status === 404 || e.response?.status === 501)) {
+      return {
+        available: false,
+        reason:
+          "Rejalashtirilgan chiqim shablonlari hali ulanmagan — bu boshqa vazifaning ishi (F6.01).",
+      }
+    }
+    throw toUzbekError(e, 'Rejalashtirilgan chiqim shablonlari')
+  }
+}
+
+/* =========================================================================
    3) Pul oqimi — GET /api/admin/finance/cashflow
    ========================================================================= */
 
