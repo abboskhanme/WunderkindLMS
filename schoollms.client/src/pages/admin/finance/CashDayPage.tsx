@@ -32,6 +32,7 @@ import {
   CreditCard,
   Landmark,
   FileBarChart,
+  ListOrdered,
   Receipt,
   RefreshCw,
   Undo2,
@@ -144,7 +145,7 @@ export function CashDayPage() {
           {/*
             §2.8 F8.01 — kundan hisobotga o'tish. EduSchool'da bu "jurnal"
             tabi; bizda kunning harakatlari shu sahifaning o'zida turibdi,
-            shuning uchun havola DAVR hisobotiga olib boradi: o'sha kun
+            shuning uchun bitta havola DAVR hisobotiga olib boradi: o'sha kun
             tanlangan holda toifalar, usullar va grafik ochiladi.
           */}
           <Button
@@ -154,6 +155,21 @@ export function CashDayPage() {
           >
             <FileBarChart className="h-4 w-4" />
             Hisobotda ochish
+          </Button>
+          {/*
+            §2.8 F8.01 (davomi) — EduSchool'dagi "jurnal" tabining o'zi:
+            shu kunning har bir tranzaksiyasi (to'lov, storno, chiqim) qator
+            darajasidagi amallar bilan — storno, chek — faqat Tranzaksiyalar
+            ekranida bor; "Kun harakatlari" jadvali bu sahifada faqat o'qish
+            uchun. `TransactionsPage` `from`/`to` parametrini o'qiydi.
+          */}
+          <Button
+            variant="secondary"
+            onClick={() => navigate(`/admin/finance/transactions?from=${date}&to=${date}`)}
+            title="Shu kunni tranzaksiyalar jurnalida ochish"
+          >
+            <ListOrdered className="h-4 w-4" />
+            Jurnalda ochish
           </Button>
           <Button
             variant="secondary"

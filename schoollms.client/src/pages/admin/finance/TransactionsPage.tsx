@@ -17,7 +17,7 @@
  * bo'yicha emas.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import {
   ArrowDownCircle,
   ArrowUpCircle,
@@ -105,17 +105,25 @@ interface Filters {
   firstPaymentOnly: boolean
 }
 
-const INITIAL: Filters = {
-  from: firstOfMonth(),
-  to: isoDay(),
-  direction: 'all',
-  kind: 'all',
-  method: 'all',
-  status: 'all',
-  className: 'all',
-  category: 'all',
-  receiptNo: '',
-  firstPaymentOnly: false,
+/**
+ * Sukut filtr. `from`/`to` — Kassa kuni yoki boshqa ekrandan kelgan havola
+ * ustidan yoziladi (§2.8 F8.01: "kundan jurnalga o'tish" —
+ * `CashDayPage.tsx`dagi "Jurnalda ochish" tugmasi shu ikki parametrni beradi,
+ * xuddi `FinancialReportsPage.tsx` da qilingani kabi).
+ */
+function initialFilters(params: URLSearchParams): Filters {
+  return {
+    from: params.get('from') || firstOfMonth(),
+    to: params.get('to') || isoDay(),
+    direction: 'all',
+    kind: 'all',
+    method: 'all',
+    status: 'all',
+    className: 'all',
+    category: 'all',
+    receiptNo: '',
+    firstPaymentOnly: false,
+  }
 }
 
 const statusTones: Record<TransactionStatus, 'success' | 'danger' | 'warning'> = {
@@ -128,8 +136,13 @@ export function TransactionsPage() {
   const { user } = useAuth()
   const allowed = user !== null && ALLOWED_ROLES.includes(user.role)
 
+  // Faqat BIR MARTA o'qiladi — havoladan kelgan `from`/`to` ni boshlang'ich
+  // filtrga aylantiradi (F8.01). Keyingi navigatsiya URL bilan sinxron emas,
+  // xuddi shu ekrandagi boshqa filtrlar kabi — sahifa o'z holatini saqlaydi.
+  const [initialParams] = useSearchParams()
+
   const [data, setData] = useState<TransactionPage>(EMPTY)
-  const [filters, setFilters] = useState<Filters>(INITIAL)
+  const [filters, setFilters] = useState<Filters>(() => initialFilters(initialParams))
   const [receiptInput, setReceiptInput] = useState('')
   const [page, setPage] = useState(1)
   const [loading, setLoading] = useState(true)
@@ -218,7 +231,20 @@ export function TransactionsPage() {
   const reset = () => {
     setPage(1)
     setReceiptInput('')
-    setFilters(INITIAL)
+    // Havoladan kelgan kunga emas, doim sukut (joriy oy) ga qaytadi —
+    // "Tozalash" tugmasi so'zma-so'z shuni va'da qiladi.
+    setFilters({
+      from: firstOfMonth(),
+      to: isoDay(),
+      direction: 'all',
+      kind: 'all',
+      method: 'all',
+      status: 'all',
+      className: 'all',
+      category: 'all',
+      receiptNo: '',
+      firstPaymentOnly: false,
+    })
   }
 
   const handleReverse = async (reason: string) => {
