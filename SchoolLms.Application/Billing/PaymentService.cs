@@ -134,6 +134,30 @@ public sealed class PaymentService(
     private const string ReceiptUniqueIndex = "ix_payments_cash_shift_id_receipt_no";
 
     /// <summary>
+    /// <b>HISOB-FAKTURA QOLDIG'I QULFI (advisory lock, §2.1 F1.10).</b> Avval
+    /// bu yerda qulf YO'Q edi: ikki kassa BIR VAQTDA bitta hisob-fakturaga
+    /// to'lov yozsa, ikkalasi ham eski (hali kamaymagan) qoldiqni ko'rib,
+    /// ikkalasi ham "sig'adi" deb qaror qilishi mumkin edi — natija ortiqcha
+    /// to'langan hisob-faktura. <c>ExpenseService</c> / <c>CashShiftService</c>
+    /// dagi bilan bir xil naqsh: EF LINQ bilan ifodalab bo'lmaydigan yagona
+    /// narsa, shuning uchun xom SQL. Kalit satr bilan nomlangan — advisory
+    /// lock'ning 64-bitli fazosi butun bazada YAGONA, boshqa qulflar bilan
+    /// tasodifan to'qnashmasligi kerak.
+    /// </summary>
+    private const string InvoiceLockSql = "SELECT pg_advisory_xact_lock(hashtextextended({0}::text, 0))";
+
+    private static string InvoiceLockKey(Guid invoiceId) => $"invoice_allocation:{invoiceId:D}";
+
+    /// <summary>
+    /// Xom SQL uchun kontekstning o'zi. <see cref="IAppDbContext"/> da
+    /// <c>Database</c> yo'q (u ataylab tor interfeys) — <c>ExpenseService</c>
+    /// dagi bilan bir xil yechim.
+    /// </summary>
+    private readonly DbContext ef = db as DbContext ?? throw new ArgumentException(
+        $"{nameof(PaymentService)} EF kontekstini talab qiladi: hisob-faktura qulfi xom SQL "
+        + "orqali qo'yiladi. Berilgan implementatsiya DbContext emas.", nameof(db));
+
+    /// <summary>
     /// Maktab mintaqasi ofseti (UTC+5, yozgi vaqt yo'q) — <c>received_at</c>
     /// (<c>timestamptz</c>) ni KALENDAR KUNI bo'yicha filtrlash uchun.
     /// <see cref="AppClock"/> dan hisoblab olinadi, qo'lda "+5" yozilmaydi.
@@ -205,14 +229,20 @@ public sealed class PaymentService(
         // ---- 4. BITTA TRANZAKSIYA ----
         await using var tx = await db.BeginTransactionAsync(ct);
 
-        // Hisob-fakturalar TRANZAKSIYA ICHIDA o'qiladi — qoldiqni yozuvdan
-        // imkon qadar yaqin nuqtada tekshirish uchun. Qator qulfi qo'yilmaydi:
-        // `SELECT ... FOR UPDATE` uchun EF'da xom SQL kerak bo'lardi va
-        // Application qatlamida Relational paketi yo'q. Ya'ni bir xil
-        // hisob-fakturaga BIR VAQTDA ikki kassa to'lov yozsa, ikkalasi ham
-        // o'tib ketishi mumkin — natijasi "ortiqcha to'langan hisob-faktura",
-        // storno bilan tuzatiladigan holat. To'lov summasi bo'yicha invariant
-        // esa qat'iy: uni bazadagi trigger qo'riqlaydi.
+        // F1.10 — hisob-fakturalarni QULFLAYMIZ, o'qishdan OLDIN. Guid
+        // tartibida (shu chaqiruv doirasida barqaror): ikki to'lov bir xil
+        // hisob-fakturalar to'plamini turli tartibda qulflasa, deadlock
+        // yuzaga kelishi mumkin edi. Ikkinchi kassa shu yerda BIRINCHISI
+        // commit (yoki rollback) bo'lguncha kutadi va keyin YANGILANGAN
+        // qoldiqni ko'radi — "READ COMMITTED" izolyatsiyasida qulfdan keyingi
+        // o'qish har doim so'nggi commit qilingan holatni qaytaradi.
+        foreach (var invoiceId in invoiceIds.OrderBy(id => id))
+            await ef.Database.ExecuteSqlRawAsync(InvoiceLockSql, [InvoiceLockKey(invoiceId)], ct);
+
+        // Hisob-fakturalar TRANZAKSIYA ICHIDA, QULFDAN KEYIN o'qiladi —
+        // qoldiqni yozuvdan imkon qadar yaqin nuqtada tekshirish uchun.
+        // To'lov summasi bo'yicha invariant qat'iy: uni bazadagi trigger ham
+        // qo'riqlaydi — advisory lock esa hisob-faktura QOLDIG'INI qo'riqlaydi.
         // Kuzatiladigan (tracked) holda o'qiymiz: status keyin shu obyektlarda yangilanadi.
         var invoices = await db.Invoices.Where(i => invoiceIds.Contains(i.Id)).ToListAsync(ct);
         var paidBefore = await PaidByInvoiceAsync(invoiceIds, ct);

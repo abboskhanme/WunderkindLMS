@@ -50,7 +50,7 @@ public sealed record PaymentErrorDto(string Code, string Message);
 [ApiController]
 [Authorize]
 [Produces("application/json")]
-public class PaymentsController(IPaymentService payments) : ControllerBase
+public class PaymentsController(IPaymentService payments, IReceiptService receipts) : ControllerBase
 {
     /// <summary>
     /// SPEC §4.4 — SERVER ANIQLAYDIGAN SHAXS. Bu nomlar so'rov tanasida
@@ -111,6 +111,16 @@ public class PaymentsController(IPaymentService payments) : ControllerBase
         {
             var payment = await payments.AcceptAsync(
                 request, FinanceActor.RequireUserId(User), ct);
+
+            // finance-parity.md F1.07 / SPEC §4.7 — chek AVTOMATIK ota-onaning
+            // Telegramiga yuboriladi, tugmani bosishni kutmaydi. To'lov
+            // ALLAQACHON qabul qilingan (yuqoridagi qator commit bo'lgan);
+            // `SendToGuardianAsync` HECH QACHON istisno tashlamaydi va
+            // natijasini bu yerda e'tiborsiz qoldiramiz — yetkazilmaslik
+            // (ota-ona botga ulanmagan, Telegram javob bermadi) to'lovni
+            // bekor qilmaydi. "Qayta yuborish" tugmasi ekranda qoladi.
+            _ = await receipts.SendToGuardianAsync(payment.Id, ct);
+
             return Ok(payment);
         }
         catch (PaymentException ex)

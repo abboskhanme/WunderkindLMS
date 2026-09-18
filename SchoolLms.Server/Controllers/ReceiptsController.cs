@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using SchoolLms.Application.Billing;
+using SchoolLms.Domain;
 
 namespace SchoolLms.Server.Controllers;
 
@@ -32,7 +33,7 @@ namespace SchoolLms.Server.Controllers;
 [ApiController]
 [Authorize]
 [Route("api/receipts")]
-public class ReceiptsController(IReceiptService receipts) : ControllerBase
+public class ReceiptsController(IReceiptService receipts, IPaymentService payments) : ControllerBase
 {
     private const string PdfMime = "application/pdf";
 
@@ -57,6 +58,8 @@ public class ReceiptsController(IReceiptService receipts) : ControllerBase
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Pdf(Guid paymentId, CancellationToken ct)
     {
+        if (await ForbiddenForOtherCashierAsync(paymentId, ct) is { } forbidden) return forbidden;
+
         byte[] pdf;
         try
         {
@@ -86,6 +89,8 @@ public class ReceiptsController(IReceiptService receipts) : ControllerBase
     [FinanceRole(FinanceAction.AcceptPayment)]
     public async Task<ActionResult<ReceiptDeliveryDto>> SendToTelegram(Guid paymentId, CancellationToken ct)
     {
+        if (await ForbiddenForOtherCashierAsync(paymentId, ct) is { } forbidden) return forbidden;
+
         var delivered = await receipts.SendToGuardianAsync(paymentId, ct);
 
         return new ReceiptDeliveryDto(
@@ -95,6 +100,30 @@ public class ReceiptsController(IReceiptService receipts) : ControllerBase
                 : "Chek yuborilmadi: ota-ona Telegramda ro'yxatdan o'tmagan yoki Telegram javob bermadi. "
                   + "To'lov kuchda qoladi — chekni chop etib bering.");
     }
+
+    /// <summary>
+    /// finance-parity.md F0.04 — <c>PaymentsController.OnlyOwnPayments</c>
+    /// bilan bir xil qoida (SPEC §4.3: kassirda "kassirlar kesimidagi
+    /// ko'rinish" yo'q): kassir FAQAT o'zi qabul qilgan to'lovning chekini
+    /// ko'ra yoki qayta yubora oladi, boshqa kassirning cheki uning uchun
+    /// <b>mavjud emas</b> — 403 emas, 404 (chekning borligi ham ma'lumot).
+    /// Admin va direktor cheklanmagan.
+    /// </summary>
+    private async Task<ActionResult?> ForbiddenForOtherCashierAsync(Guid paymentId, CancellationToken ct)
+    {
+        if (!OnlyOwnReceipts) return null;
+
+        var payment = await payments.GetAsync(paymentId, ct);
+        if (payment is null || payment.CashierId != FinanceActor.RequireUserId(User))
+            return NotFound(new { message = "To'lov topilmadi" });
+
+        return null;
+    }
+
+    private bool OnlyOwnReceipts =>
+        User.IsInRole(Roles.Cashier)
+        && !User.IsInRole(Roles.Admin)
+        && !User.IsInRole(Roles.SuperAdmin);
 }
 
 /// <summary>

@@ -332,6 +332,57 @@ public class PaymentsTests(ApiFixture fixture)
         Assert.Equal("allocation_exceeds_invoice", error?.Code);
     }
 
+    /// <summary>
+    /// finance-parity.md F1.10 — ikki kassir BIR VAQTDA bitta hisob-fakturaga
+    /// to'lov yozsa, faqat BIRI o'tishi kerak. Qulfsiz versiyada (eski kod,
+    /// izohi hali ham faylda saqlangan) ikkalasi ham eski — hali kamaymagan —
+    /// qoldiqni o'qib, ikkalasi ham "sig'adi" deb qaror qilardi: natija
+    /// hisob-fakturaning REAL summasidan ortiq taqsimot. Ikki kassirning
+    /// SMENALARI har xil (receipt-raqam qulfi bilan chalkashmasin) — faqat
+    /// hisob-faktura BIR XIL.
+    /// </summary>
+    [Fact]
+    public async Task Ikki_kassir_bir_vaqtda_bitta_hisob_fakturaga_tolov_yozsa_faqat_bittasi_otadi()
+    {
+        var (cashierA, clientA) = await ActorAsync(Roles.Cashier);
+        await OpenShiftAsync(cashierA.Id);
+        var (cashierB, clientB) = await ActorAsync(Roles.Cashier);
+        await OpenShiftAsync(cashierB.Id);
+
+        var studentId = await NewStudentAsync();
+        var tuition = await NewInvoiceAsync(studentId, "tuition", 500_000m);
+
+        Task<HttpResponseMessage> PayAsync(HttpClient client) => client.PostAsJsonAsync(
+            "/api/cash/payments", new
+            {
+                studentId,
+                amount = 300_000m,
+                method = PaymentMethod.Cash,
+                allocations = new[] { new { invoiceId = tuition, amount = 300_000m } },
+            });
+
+        // 300 000 + 300 000 = 600 000 > 500 000 — birontasi ham ikkinchisini
+        // "ko'rmasdan" o'tib ketmasligi kerak.
+        var results = await Task.WhenAll(PayAsync(clientA), PayAsync(clientB));
+
+        var statuses = results.Select(r => r.StatusCode).ToList();
+        Assert.Contains(HttpStatusCode.OK, statuses);
+        Assert.Contains(HttpStatusCode.BadRequest, statuses);
+
+        var failed = results.Single(r => r.StatusCode == HttpStatusCode.BadRequest);
+        var error = await failed.Content.ReadFromJsonAsync<PaymentErrorDto>();
+        Assert.Equal("allocation_exceeds_invoice", error?.Code);
+
+        // Bazada tekshiruv: hisob-fakturaga taqsimlangan yig'indi hisob-faktura
+        // summasidan (500 000) OSHMAYDI — qulf yo'q bo'lganda shu yerda 600 000
+        // chiqardi.
+        await using var db = NewDb();
+        var allocated = await db.PaymentAllocations.AsNoTracking()
+            .Where(a => a.InvoiceId == tuition)
+            .SumAsync(a => a.Amount);
+        Assert.True(allocated <= 500_000m, $"Hisob-fakturaga ortiqcha taqsimlandi: {allocated}");
+    }
+
     // -----------------------------------------------------------------
     //  Taqsimlanmagan qoldiq = kredit, o'zgaruvchan balans ustuni EMAS
     // -----------------------------------------------------------------
@@ -389,6 +440,72 @@ public class PaymentsTests(ApiFixture fixture)
             .SingleAsync(e => e.RefId == dto.Id && e.Direction == LedgerDirection.Debit);
 
         Assert.Equal(Accounts.Bank, debit.Account);
+    }
+
+    // -----------------------------------------------------------------
+    //  Chekni avtomatik Telegramga yuborish (finance-parity.md F1.07, SPEC §4.7)
+    // -----------------------------------------------------------------
+
+    /// <summary>
+    /// F1.07 — to'lov qabul qilinishi bilanoq chek yuborish SO'RALADI, kassir
+    /// alohida tugma bosishini kutmasdan. Telegramning o'zi (yetkazish,
+    /// qayta urinish, bot sozlanmagan holat) <c>ReceiptTests.cs</c> da to'liq
+    /// sinalgan — bu yerda faqat CHAQIRILGANINI, aynan SHU to'lov id'si bilan
+    /// va to'lovning o'zi muvaffaqiyatli qaytganini tekshiramiz.
+    /// </summary>
+    [Fact]
+    public async Task Tolov_qabul_qilingach_chek_avtomatik_yuborishga_urinadi()
+    {
+        var spy = new SpyReceiptService();
+        await using var factory = fixture.Api.WithWebHostBuilder(builder =>
+            builder.ConfigureServices(services =>
+            {
+                services.AddScoped<ILedgerService, LedgerService>();
+                services.AddScoped<ICashShiftService, ShiftDouble>();
+                services.AddScoped<IPaymentService, PaymentService>();
+                services.AddScoped<IReceiptService>(_ => spy);
+            }));
+
+        var (cashier, _) = await fixture.Api.SeedUserAsync(Roles.Cashier);
+        await OpenShiftAsync(cashier.Id);
+        var studentId = await NewStudentAsync();
+        var tuition = await NewInvoiceAsync(studentId, "tuition", 300_000m);
+
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+            "Bearer", fixture.Api.TokenFor(Roles.Cashier, cashier.Id, cashier.FullName, cashier.Email));
+
+        var response = await client.PostAsJsonAsync("/api/cash/payments", new
+        {
+            studentId,
+            amount = 300_000m,
+            method = PaymentMethod.Cash,
+            allocations = new[] { new { invoiceId = tuition, amount = 300_000m } },
+        });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var dto = await response.Content.ReadFromJsonAsync<PaymentDto>();
+
+        var sentPaymentId = Assert.Single(spy.SentTo);
+        Assert.Equal(dto!.Id, sentPaymentId);
+    }
+
+    /// <summary>
+    /// Josus <see cref="IReceiptService"/>: Telegram tarmog'iga chiqmaydi,
+    /// faqat qaysi to'lov id'lari uchun yuborish so'ralganini yozib boradi.
+    /// </summary>
+    private sealed class SpyReceiptService : IReceiptService
+    {
+        public readonly List<Guid> SentTo = [];
+
+        public Task<byte[]> RenderPdfAsync(Guid paymentId, CancellationToken ct = default) =>
+            throw new NotSupportedException("F1.07 testida ishlatilmaydi.");
+
+        public Task<bool> SendToGuardianAsync(Guid paymentId, CancellationToken ct = default)
+        {
+            SentTo.Add(paymentId);
+            return Task.FromResult(false);
+        }
     }
 
     // -----------------------------------------------------------------

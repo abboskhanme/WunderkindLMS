@@ -307,10 +307,12 @@ public class ReceiptTests(ApiFixture fixture)
     public async Task Kassir_chek_pdf_ini_ola_oladi()
     {
         var paymentId = Guid.NewGuid();
-        var payment = SamplePayment(receiptNo: 501) with { Id = paymentId };
+        var (user, _) = await fixture.Api.SeedUserAsync(Roles.Cashier);
+        // F0.04: chek FAQAT shu kassirning O'ZI qabul qilgan to'lovi bo'lsa
+        // ko'rinadi — shuning uchun payment.CashierId aynan shu foydalanuvchi.
+        var payment = SamplePayment(receiptNo: 501) with { Id = paymentId, CashierId = user.Id };
 
         await using var factory = WithReceiptServices(new FakePaymentService(payment));
-        var (user, _) = await fixture.Api.SeedUserAsync(Roles.Cashier);
         using var client = factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
             "Bearer", fixture.Api.TokenFor(Roles.Cashier, user.Id, user.FullName, user.Email));
@@ -340,6 +342,50 @@ public class ReceiptTests(ApiFixture fixture)
         var response = await client.GetAsync($"/api/receipts/{Guid.NewGuid()}.pdf");
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    /// <summary>
+    /// finance-parity.md F0.04 — kassir BOSHQA kassirning chekini ocha
+    /// olmaydi: to'lov mavjud bo'lsa ham, unga tegishli emasligi sababli
+    /// javob 404 (SPEC §4.3, "variance across cashiers" bilan bir xil
+    /// mulohaza — chekning borligi ham ma'lumot, shuning uchun 403 emas).
+    /// </summary>
+    [Fact]
+    public async Task Kassir_boshqa_kassirning_chek_pdf_ini_ola_olmaydi()
+    {
+        var paymentId = Guid.NewGuid();
+        var payment = SamplePayment(receiptNo: 502) with { Id = paymentId, CashierId = "boshqa-kassir" };
+
+        await using var factory = WithReceiptServices(new FakePaymentService(payment));
+        var (user, _) = await fixture.Api.SeedUserAsync(Roles.Cashier);
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+            "Bearer", fixture.Api.TokenFor(Roles.Cashier, user.Id, user.FullName, user.Email));
+
+        var response = await client.GetAsync($"/api/receipts/{paymentId}.pdf");
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    /// <summary>
+    /// finance-parity.md F0.04 — admin va direktor CHEKLANMAGAN: har qanday
+    /// kassirning chekini ko'ra oladi (SPEC §4.3, moliya hisobotlari qatori).
+    /// </summary>
+    [Fact]
+    public async Task Admin_istalgan_kassirning_chek_pdf_ini_ola_oladi()
+    {
+        var paymentId = Guid.NewGuid();
+        var payment = SamplePayment(receiptNo: 503) with { Id = paymentId, CashierId = "boshqa-kassir" };
+
+        await using var factory = WithReceiptServices(new FakePaymentService(payment));
+        var (user, _) = await fixture.Api.SeedUserAsync(Roles.Admin);
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+            "Bearer", fixture.Api.TokenFor(Roles.Admin, user.Id, user.FullName, user.Email));
+
+        var response = await client.GetAsync($"/api/receipts/{paymentId}.pdf");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
     // ===================================================================
