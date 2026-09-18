@@ -1086,8 +1086,8 @@ This screen **did not exist** on 2026-09-17 ("no single dashboard"). It exists n
 | F5.02 | Start/end balance rows | **built** | same query, "Yil oxiridagi pul" in `PnlTab.tsx` |
 | F5.03 | Drill-down to ledger lines | **built** | `LedgerDetailsModal.tsx` via `GET ledger/lines` |
 | F5.04 | Child rows under a category | **declined** (§2.0/§3.3) — `Accounts.cs` is closed and flat, not a gap to close | — |
-| F5.05 | Dividends row | **missing** (P2, Q7 — decision if silent is "no") | no equity account |
-| F5.06 | xlsx export | **missing** (P2, CSV only) | `PnlTab.tsx` `handleExport` → `exportToCsv` |
+| F5.05 | Dividends row | **investigated, declined** (§10.2) — needs a new equity account code, very likely a new audit table, and Q7 is still unanswered | no equity account |
+| F5.06 | xlsx export | **built** (§10.1) | `GET pnl/export` (period), `GET pnl/matrix/export` (year); `PnlTab.tsx` "Excel" button in both modes |
 | F6.01–F6.05 | P&L 2.0 (forecast, change journal, planned expenses, yearly, daily) | **deferred** — `existing-module-gaps.md` §3.6, `finance-parity.md` §5 Q6 unanswered. Not a gap; a standing decision. | confirmed zero code (§6.0 above) |
 
 ### 6.6 Pul oqimi (§2.7, `F7.xx`) — `CashFlowTab.tsx`
@@ -1439,3 +1439,84 @@ mostly be re-describing other agents' already-committed, already-tested work rat
 information. What is here is what a merge log honestly supports: what conflicted, why it was resolved
 that way, and which previously-"unmerged" gaps are now reachable. A full re-audit, if wanted, is a
 fresh instance of this same task's Part 1 against current `HEAD`.
+
+---
+
+## 10. Update — 2026-09-18 (fifth pass): F5.06 built, F5.05 investigated and declined
+
+This branch was already at master's tip at STEP 0 (`b345759` on both) — no merge needed.
+
+### 10.1 F5.06 — xlsx export — **built**
+
+`GET /api/admin/finance/pnl/export?from&to` (`FinanceReportsController.cs`, DAVR mode) and
+`GET /api/admin/finance/pnl/matrix/export?year` (`FinanceStatementsController.cs`, YIL mode), both
+following the `ArrearsPivotExport` idiom exactly: the action calls the existing `ProfitLoss` /
+`ProfitLossMatrix` action internally, reshapes the same DTO into `ExcelExport.XlsxCell` rows, and
+returns `ExcelExport.BuildTable(...)`. **Neither `ProfitLossAsync` nor
+`FinanceReportQueries.ProfitLossMatrix.cs` was touched** — the export layers on top, reads the same
+numbers the screen shows (including the F5.02 start/end balance rows in YIL mode), and duplicates no
+arithmetic. Category labels reuse `MoneyFlowQueries.LabelFor` (the same dictionary `CashDayQueries`
+and ledger drill-down already use), not a new one. `PnlTab.tsx` gets an "Excel" button next to the
+existing CSV button in both Davr and Yil modes; `api/services/financeReports.ts` and
+`api/services/financeStatements.ts` get matching `downloadProfitLoss` / `downloadProfitLossMatrix`
+functions (same blob/anchor download pattern as `downloadArrearsPivot`).
+
+Both endpoints inherit the controllers' class-level `[FinanceRole(FinanceAction.ViewBillingReports)]`
+gate — no new attribute needed — and are added to the existing `AllReports` / `AllEndpoints` RBAC
+arrays in `FinanceReportsTests.cs` / `FinanceStatementsTests.cs`, so the pre-existing
+cashier-403 / teacher-403 / anonymous-401 / admin-200 theories cover them automatically. Two new
+arithmetic tests parse the generated `.xlsx` back (`DocumentFormat.OpenXml`, same read pattern as
+`CertificatesTests.cs`) and assert every category, month and total cell equals the corresponding
+`ProfitLossDto` / `ProfitLossMatrixDto` field — including the "Oy boshida" / "Oy oxirida" balance
+rows — plus a 400-on-bad-input check. `./tools/test.sh`: 1386/1386 (1384 + these 2). Frontend build
+clean; lint 39 errors + 9 warnings (unchanged baseline, none in a touched file).
+
+### 10.2 F5.05 — dividends / owner withdrawals — **investigated, not built**
+
+Read `Accounts.cs` in full (§3.3 above already called it "closed and flat"; confirmed by the file's
+own header comment: adding a code is deliberately made "a bit inconvenient" — one line in a hand-edited
+closed list — precisely so it is not done casually). Read `ExpenseService.cs`, `LedgerRefType` in
+`SchoolLms.Domain/Billing.cs`, and `BillingModel.ConfigureLedger` (the actual DB constraints on
+`ledger_entries`).
+
+**What it would take:**
+
+- **A new account code is unavoidable.** There is no existing account a dividend can post against.
+  `cash`/`bank`/`receivable` are asset accounts; every `revenue:*`/`expense:*` code is either income
+  or an operating cost. An owner draw is neither — it is a distribution of equity, and EduSchool's own
+  matrix shape (§2.5.1: `profit[]` computed, **then** `dividends[]` as its own row, **then**
+  `endBalance[]`) treats it that way: dividends reduce cash but must **not** reduce reported profit. A
+  plausible code: `equity:dividends`. This alone fails this task's bar to auto-build ("no new account
+  code").
+- **It cannot reuse `ExpenseService.cs` as-is.** Every expense debits `Accounts.ExpenseFor(category)`,
+  which is always an `expense:*` account and therefore always inside `ProfitLossAsync`'s expense total.
+  Posting a dividend through Expenses — even under a new closed-list category — would silently lower
+  "Sof natija", which is wrong: an owner draw is not a cost of running the school. A dividend needs its
+  own movement/service, not a new `Accounts.ExpenseCategories` entry.
+- **No DB migration is strictly required for the account code itself** — `ledger_entries.account` and
+  `expenses.category` both carry no DB `CHECK` (`BillingModel.ConfigureLedger` only constrains
+  `amount`, `direction`, `reversal_not_self`); the closed list is enforced in C# only, the same way
+  `LedgerRefType.CashHandover`/`Refund` were added code-only per §3.1 A5. **But** a proper audit trail
+  most likely does need a new table. `cash_handovers` (A2) and `student_refunds` (A3) each exist
+  specifically so the drill-down decorator (`FinanceReportQueries.LedgerNames.cs`) has something to
+  look up for `Title`/`Person`/`ActorName`/`Memo` — who requested it, who approved it, why. A dividend
+  ledger entry with no backing table would decorate as `KindLabel: "Boshqa harakat"` with no title, the
+  same catch-all EduSchool-parity has deliberately avoided everywhere else in this document. So the
+  gap table's "no table; one account code, 3 BE h" estimate (§2.5.3) is optimistic — a faithful build is
+  closer to an A2/A3-sized slice (new table + guard SQL + `init-roles.sql` entry + a migration), not a
+  pure code change.
+- **§4.5 dual control likely applies.** "Manual ledger adjustment — always" requires
+  `approved_by <> created_by`. An owner draw is exactly that kind of adjustment, which argues for the
+  same `requested_by`/`approved_by` shape as `student_refunds` (A3), not a single-actor post.
+- **The product decision is still open.** Q7 (§5) is unanswered; the documented default is "no equity
+  account, F5.05 stays P2." Even if the client answers yes, open sub-questions remain: cash draw, bank
+  draw, or both; who may request/approve (director only? dual control every time?); does a cash draw
+  reduce a `CashShift`'s expected cash like a handover (F1.04, `CashShiftService.AddCashOutflowAsync`)
+  or bypass the till entirely; does it also need a line in Pul oqimi (§2.7, F7.02's declined
+  operating/investing/financing split is the same open question by another name).
+
+**Conclusion: not built.** All three of this task's disqualifying conditions apply — new account code,
+very likely new schema, and an unanswered product decision — so per the brief ("build it only if you
+find it needs no schema change, no new account code and no product decision") this stays P2 · Q7,
+unchanged. Building the report layer without the recording layer would also be dishonest: there would
+be nowhere in the product to actually enter a dividend, so a P&L row for it would always read zero.
