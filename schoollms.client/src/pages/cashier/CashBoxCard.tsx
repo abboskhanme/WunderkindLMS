@@ -26,14 +26,17 @@ interface Props {
 export function CashBoxCard({ box, selected, canManage, onSelect, onEdit, onAction }: Props) {
   if (selected) {
     return (
+      // TUZILISH EduSchool'dan (2026-09-18 da ekrani ochib ko'rildi):
+      //   chapda — BALANS eng tepada va eng katta, ostida kassa nomi,
+      //   mas'ul ismi, keyin "Tahrirlash" tugmasi va yonida yulduzcha;
+      //   o'ngda — to'rtta amal USTMA-UST, kartochka bo'yiga cho'zilgan.
+      // Ranglar va uslub BIZNIKI (CLAUDE.md): ularning binafsha gradienti
+      // emas, o'zimizning `brand` rangimiz.
       <div className="rounded-2xl bg-brand-600 p-4 text-white shadow-sm">
-        <div className="flex items-start justify-between gap-2">
-          <div className="min-w-0">
-            <p className="flex items-center gap-1.5 text-sm font-medium text-brand-50">
-              {box.isDefault && <Star className="h-3.5 w-3.5 shrink-0 fill-amber-300 text-amber-300" />}
-              <span className="truncate">{box.name}</span>
-            </p>
-            <p className="mt-1 text-2xl font-semibold tabular-nums">{formatSumWithUnit(box.balance)}</p>
+        <div className="flex items-stretch gap-3">
+          <div className="min-w-0 flex-1">
+            <p className="text-2xl font-semibold tabular-nums">{formatSumWithUnit(box.balance)}</p>
+            <p className="mt-1 truncate text-sm font-medium text-brand-50">{box.name}</p>
             {box.responsibleName && (
               <p className="mt-0.5 truncate text-xs text-brand-100">{box.responsibleName}</p>
             )}
@@ -42,70 +45,79 @@ export function CashBoxCard({ box, selected, canManage, onSelect, onEdit, onActi
                 Nofaol
               </span>
             )}
-          </div>
-          {canManage && (
-            <button
-              type="button"
-              onClick={onEdit}
-              title="Tahrirlash"
-              aria-label="Kassani tahrirlash"
-              className="shrink-0 rounded-lg bg-white/10 p-1.5 transition-colors hover:bg-white/20"
-            >
-              <Pencil className="h-4 w-4" />
-            </button>
-          )}
-        </div>
 
-        <div className="mt-3 grid grid-cols-2 gap-2">
-          <ActionButton
-            label="Kirim"
-            icon={ArrowDownCircle}
-            className="bg-emerald-500 text-white hover:bg-emerald-400"
-            onClick={() => onAction('in')}
-          />
-          <ActionButton
-            label="Chiqim"
-            icon={ArrowUpCircle}
-            className="bg-red-500 text-white hover:bg-red-400"
-            onClick={() => onAction('out')}
-          />
-          <ActionButton
-            label="Ko'chirish"
-            icon={ArrowLeftRight}
-            className="bg-white/10 text-white hover:bg-white/20"
-            onClick={() => onAction('transfer')}
-          />
-          <ActionButton
-            label="Ayirboshlash"
-            icon={Repeat}
-            className="bg-white/10 text-white hover:bg-white/20"
-            onClick={() => onAction('exchange')}
-          />
+            <div className="mt-3 flex items-center gap-2">
+              {canManage && (
+                <button
+                  type="button"
+                  onClick={onEdit}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-white/15 px-3 py-1.5 text-xs font-medium transition-colors hover:bg-white/25"
+                >
+                  <Pencil className="h-3.5 w-3.5" /> Tahrirlash
+                </button>
+              )}
+              {box.isDefault && (
+                <Star
+                  className="h-5 w-5 shrink-0 fill-amber-300 text-amber-300"
+                  aria-label="Standart kassa"
+                />
+              )}
+            </div>
+          </div>
+
+          <div className="flex w-36 shrink-0 flex-col gap-2">
+            <ActionButton
+              label="Kirim"
+              icon={ArrowDownCircle}
+              className="flex-1 bg-emerald-500 text-white hover:bg-emerald-400"
+              onClick={() => onAction('in')}
+            />
+            <ActionButton
+              label="Chiqim"
+              icon={ArrowUpCircle}
+              className="flex-1 bg-red-500 text-white hover:bg-red-400"
+              onClick={() => onAction('out')}
+            />
+            <ActionButton
+              label="Ko'chirish"
+              icon={ArrowLeftRight}
+              className="flex-1 bg-white/15 text-white hover:bg-white/25"
+              onClick={() => onAction('transfer')}
+            />
+            <ActionButton
+              label="Ayirboshlash"
+              icon={Repeat}
+              className="flex-1 bg-white/15 text-white hover:bg-white/25"
+              onClick={() => onAction('exchange')}
+            />
+          </div>
         </div>
       </div>
     )
   }
 
   return (
+    // Tanlanmagan kassa — sokin kartochka, amal tugmalarisiz (ularda ham
+    // shunday): balans tepada, ostida nomi va mas'uli.
     <button
       type="button"
       onClick={onSelect}
       className={cn(
-        'w-full rounded-2xl border border-slate-200 bg-white p-4 text-left transition-colors',
-        'hover:border-brand-200 hover:bg-brand-50/30',
+        'w-full rounded-2xl bg-slate-50 p-4 text-left transition-colors',
+        'hover:bg-slate-100',
       )}
     >
-      <p className="flex items-center gap-1.5 text-sm font-medium text-slate-500">
+      <p className="text-lg font-semibold tabular-nums text-slate-800">
+        {formatSumWithUnit(box.balance)}
+      </p>
+      <p className="mt-1 flex items-center gap-1.5 text-sm font-medium text-slate-600">
         {box.isDefault && <Star className="h-3.5 w-3.5 shrink-0 fill-amber-400 text-amber-400" />}
         <span className="truncate">{box.name}</span>
         {!box.isActive && (
-          <span className="shrink-0 rounded-md bg-slate-100 px-1.5 py-0.5 text-[11px] text-slate-400">
+          <span className="shrink-0 rounded-md bg-slate-200 px-1.5 py-0.5 text-[11px] text-slate-500">
             Nofaol
           </span>
         )}
-      </p>
-      <p className="mt-1 text-lg font-semibold tabular-nums text-slate-800">
-        {formatSumWithUnit(box.balance)}
       </p>
       {box.responsibleName && (
         <p className="mt-0.5 truncate text-xs text-slate-400">{box.responsibleName}</p>
