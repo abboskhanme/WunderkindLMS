@@ -126,6 +126,12 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<StudentContract> StudentContracts => Set<StudentContract>();
     public DbSet<Room> Rooms => Set<Room>();
 
+    // Kassalar (cash boxes) — "smena" o'rnini bosadi (2026-09). Konfiguratsiya:
+    // CashBoxModel.cs. `CashBoxTransactions` FAQAT INSERT (finance-parity
+    // naqshi), `CashBoxes` — oddiy kataloq (DELETE yopiq, UPDATE ochiq).
+    public DbSet<CashBox> CashBoxes => Set<CashBox>();
+    public DbSet<CashBoxTransaction> CashBoxTransactions => Set<CashBoxTransaction>();
+
     /// <inheritdoc />
     public Task<Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction> BeginTransactionAsync(
         CancellationToken cancellationToken = default) =>
@@ -264,6 +270,13 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
         // Oltinchi alohida fayl. `expenses.cash_shift_id` (A1) ham shu yerda —
         // o'zgarish qaysi hujjatdan kelgan bo'lsa, o'sha faylda turadi.
         FinanceParityModel.Apply(b);
+
+        // ----- Kassalar (cash boxes): "smena" o'rnini bosadi (2026-09) -----
+        // Ettinchi alohida fayl. `payments`/`expenses`/`student_refunds` ning
+        // yangi `cash_box_id` ustuni ham shu yerda (o'zgarish qaysi
+        // migratsiyadan kelgan bo'lsa, o'sha faylda turadi — yuqoridagi
+        // FinanceParityModel izohidagi qoida).
+        CashBoxModel.Apply(b);
 
         // ----- PostgreSQL: vaqt turi -----
         // Tizim sanalarni Toshkent "devor soati" sifatida saqlaydi (AppClock.Now — Kind=Unspecified),
