@@ -421,7 +421,6 @@ one section at the bottom, to be restored or dropped later.
 
 | Group | Entries |
 |---|---|
-| DAVOMAT | Kunlik davomat · Davomat analitikasi |
 | KELDI-KETDI | Jonli turniket · Turniket analitikasi · Kirib-chiqish statistikasi · Kunlik davomat hisoboti |
 | ILOVA | Topshiriqlar · Topshiriqlar bali · Ta'lim (LMS) · Oshxona · O'qituvchilar |
 
@@ -432,5 +431,11 @@ each entry carries the same `perm` its section used to carry at the top level
 **Undoing it is small**: delete the `Future` block and restore the three
 sections — git holds them in the commit before this one.
 
-The sidebar above it now reads EduSchool's sequence from Bosh sahifa to
-Xulq-atvor, then Sozlamalar, then Future.
+**Davomat stayed at the top level**, on the client's second thought the same
+day: it is used daily, and filing it under Future would have put it a click
+further away. It sits after Xabarlar, where it always was. That is the one
+place our top-level sequence departs from EduSchool's, deliberately — EduSchool
+has no Davomat section at all.
+
+The sidebar therefore reads EduSchool's sequence with Davomat inserted after
+Xabarlar, then Sozlamalar, then Future.

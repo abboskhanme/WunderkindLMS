@@ -1,5 +1,6 @@
 import type { LucideIcon } from 'lucide-react'
 import {
+  CalendarCheck,
   FlaskConical,
   LayoutDashboard,
   UserPlus,
@@ -187,6 +188,20 @@ export const navByRole: Record<Role, NavItem[]> = {
     },
     { label: 'Xabarlar', to: '/admin/messages', icon: MessageSquare, perm: 'messages' },
     {
+      // Davomat EduSchool'da yo'q, lekin mijoz uni yuqorida qoldirishni
+      // so'radi (2026-09-18) — kundalik ishlatiladigan bo'lim, `Future`
+      // ichiga tiqib qo'yish uni uzoqlashtirardi. Shu bois EduSchool
+      // ketma-ketligi aynan shu bitta yozuvda uziladi, ataylab.
+      label: 'Davomat',
+      to: '/admin/attendance',
+      icon: CalendarCheck,
+      perm: 'attendance',
+      children: [
+        { label: 'Kunlik davomat', to: '/admin/attendance', end: true, group: 'DAVOMAT' },
+        { label: 'Davomat analitikasi', to: '/admin/attendance/analytics', group: 'DAVOMAT' },
+      ],
+    },
+    {
       label: 'HR',
       to: '/admin/teachers',
       icon: GraduationCap,
@@ -276,8 +291,6 @@ export const navByRole: Record<Role, NavItem[]> = {
       to: '/admin/attendance',
       icon: FlaskConical,
       children: [
-        { label: 'Kunlik davomat', to: '/admin/attendance', end: true, perm: 'attendance', group: 'DAVOMAT' },
-        { label: 'Davomat analitikasi', to: '/admin/attendance/analytics', perm: 'attendance', group: 'DAVOMAT' },
         { label: 'Jonli turniket', to: '/admin/students/turniket', end: true, perm: 'students', group: 'KELDI-KETDI' },
         { label: 'Turniket analitikasi', to: '/admin/students/turniket/analitika', perm: 'students', group: 'KELDI-KETDI' },
         { label: 'Kirib-chiqish statistikasi', to: '/admin/students/turniket/kirish-chiqish', perm: 'students', group: 'KELDI-KETDI' },
