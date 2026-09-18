@@ -721,11 +721,9 @@ export function CashierPage() {
         open={incomePanel !== null}
         onClose={() => setIncomePanel(null)}
         title={incomePanel ? `Kirim — ${incomePanel.name}` : 'Kirim'}
-        // O'lcham TABGA qarab: oddiy kirim — qisqa shakl, tor va tik bo'lgani
-        // yaxshi; o'quvchidan to'lov esa ikki ustun (qidiruv | kartochka va
-        // hisob-fakturalar), unga keng joy kerak. Bitta o'lcham ikkalasiga
-        // to'g'ri kelmaydi.
-        size={incomeTab === 'student' ? 'xl' : 'md'}
+        // Ikkala tab ham TIK: oddiy kirim ham, o'quvchidan to'lov ham
+        // ustma-ust joylashgan, shuning uchun bitta tor o'lcham yetadi.
+        size="md"
       >
         {incomePanel && (
         <div className="space-y-4">
@@ -757,8 +755,11 @@ export function CashierPage() {
           <PlainIncomeForm box={incomePanel} onDone={handleIncomeDone} onCancel={() => setIncomePanel(null)} />
         )}
 
+        {/* TIK tartib: qidiruv tepada, tanlangan o'quvchi va to'lov shakli
+            ostida. Ilgari ikki ustun edi va o'quvchi tanlanmaguncha o'ng
+            yarmi bo'sh turardi — modal keng va bo'm-bo'sh ko'rinardi. */}
         {incomeTab === 'student' && (
-        <div className="grid gap-6 lg:grid-cols-[minmax(320px,380px)_1fr]">
+        <div className="grid gap-4">
           <StudentSearch selectedId={student?.id ?? null} onSelect={selectStudent} />
 
           {!student ? (
