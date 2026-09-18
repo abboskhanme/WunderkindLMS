@@ -53,31 +53,32 @@ namespace SchoolLms.Application.Billing;
 //  (<see cref="ExpenseStatus"/>) — pul haqidagi yagona haqiqat manbai bitta
 //  joyda qoladi (SPEC §3.7).
 //
-//  NAQD CHIQIM SMENAGA TEGISHLI (F1.03)
-//  ------------------------------------
-//  Ilgari naqd chiqim jurnalga `credit cash` bo'lib tushardi, lekin HECH BIR
-//  smenaga bog'lanmasdi. `CashShiftService.ExpectedCashAsync` esa faqat
-//  to'lovlarni sanardi, ya'ni pul javondan chiqib ketardi, "kutilgan naqd"
-//  o'zgarmasdi va smena AYNAN o'sha summaga kam pul bilan yopilardi. Har
-//  naqd chiqimda, har kuni, aybsiz kassirning ustiga `shift_variance`
-//  bayrog'i bilan.
-//
-//  Endi qoida bitta jumla: NAQD pul KIMNINGDIR ochiq smenasidan chiqadi.
-//    * darhol jurnalga tushadigan chiqim  → YOZAYOTGAN odamning smenasi;
-//    * tasdiq kutgan chiqim               → TASDIQLOVCHINING smenasi
-//                                           (usulni ham o'sha tanlaydi);
-//    * storno                             → STORNO QILUVCHINING smenasi
-//                                           (pul aynan uning javoniga qaytadi).
-//  Uchalasida ham ochiq smena bo'lmasa — 409 `no_open_shift`, to'lov
-//  stornosidagi qoidaning AYNAN o'zi (`PaymentService`). Naqd bo'lmagan
-//  chiqim (karta, o'tkazma, onlayn) bank hisobidan chiqadi va smenaga umuman
+//  NAQD CHIQIM ENDI KASSAGA TEGISHLI, SMENAGA EMAS (kassalar modeli, 2026-09)
+//  ----------------------------------------------------------------------
+//  Ilgari (F1.03) naqd chiqim yozuvchining OCHIQ SMENASIGA biriktirilardi,
+//  smenasiz esa 409 `no_open_shift` bilan rad etilardi. Mijoz javobi
+//  ("smena degan tushuncha umuman bo'lmasin") bilan bu qoida OLIB
+//  TASHLANDI: `ExpenseService` endi `ICashShiftService` ga UMUMAN
+//  bog'lanmaydi. Qoida endi:
+//    * darhol jurnalga tushadigan chiqim  → SO'ROVDA ko'rsatilgan (yoki
+//                                           SUKUT) kassa;
+//    * tasdiq kutgan chiqim               → TASDIQLOVCHI ko'rsatgan (yoki
+//                                           SUKUT) kassa (usulni ham
+//                                           o'sha tanlaydi);
+//    * storno                             → HECH QANDAY kassa/smena talab
+//                                           qilinmaydi — `expenses` ga bu
+//                                           qadamda hech qanday ustun
+//                                           yozilmaydi (pastdagi izoh),
+//                                           ya'ni biriktiriladigan maydon
+//                                           ham yo'q.
+//  Kassa mavjud va FAOL ekanligi tekshiriladi (`cash_box_not_found` /
+//  `cash_box_inactive`), lekin bu — SMENA emas. Naqd bo'lmagan chiqim
+//  (karta, o'tkazma, onlayn) bank hisobidan chiqadi va kassaga umuman
 //  tegmaydi.
 //
-//  Smenani biriktirish — TEKSHIR-VA-YOZ, shuning uchun u `CashShiftService`
-//  ning smena qulfi ostida bajariladi (`ShiftLockKey`). Qulfsiz smena
-//  yopilish bilan poyga bo'lardi: yopish `expected_cash` ni hisoblab
-//  bo'lgandan keyin chiqim unga biriktirilib qolardi va o'sha pul
-//  hisobotdan JIMGINA tushib qolardi.
+//  Kassani biriktirish — TEKSHIR-VA-YOZ, shuning uchun u
+//  `CashBoxService.BoxLockKey` qulfi ostida bajariladi (xuddi ilgari
+//  `CashShiftService.ShiftLockKey` ishlatilgani kabi, endi kassa bo'yicha).
 // ===========================================================================
 
 /// <summary>

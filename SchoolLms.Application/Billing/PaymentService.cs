@@ -61,8 +61,10 @@ public enum PaymentError
 
 /// <summary>
 /// To'lov xizmatining boshqariladigan xatosi. <see cref="Code"/> — MASHINA
-/// uchun kalit (<c>no_open_shift</c>, <c>already_reversed</c>, ...): UI shunga
-/// qarab xabar ko'rsatadi, matn esa o'zgarishi mumkin.
+/// uchun kalit (<c>cash_box_inactive</c>, <c>already_reversed</c>, ...): UI
+/// shunga qarab xabar ko'rsatadi, matn esa o'zgarishi mumkin.
+/// <c>no_open_shift</c> ENDI YO'Q — "smena" tushunchasi PaymentService'dan
+/// butunlay uzilgan (kassalar modeli, 2026-09).
 /// </summary>
 public sealed class PaymentException(PaymentError error, string code, string message)
     : Exception(message)

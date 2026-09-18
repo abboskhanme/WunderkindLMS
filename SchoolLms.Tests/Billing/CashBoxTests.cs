@@ -31,13 +31,27 @@ namespace SchoolLms.Tests.Billing;
 // ===========================================================================
 
 [Collection(SchoolLmsCollection.Name)]
-public class CashBoxTests
+public class CashBoxTests : IDisposable
 {
     private const string Url = "/api/admin/cash-boxes";
 
     public CashBoxTests(ApiFixture fixture) => this.fixture = fixture;
 
     private readonly ApiFixture fixture;
+
+    /// <summary>
+    /// Konkurrentlik testi o'z, kengaytirilgan pool'li (40+) alohida bazasini
+    /// ochadi (<c>ReceiptNumberingTests</c> dagi bilan bir xil sabab) — test
+    /// tugagach ularni DARHOL bo'shatamiz, aks holda Npgsql ~5 daqiqa BO'SH
+    /// ushlab turadi va shu davrda ishga tushgan boshqa ko'p-ulanishli test
+    /// (<c>CashShiftServiceTests</c>) konteynerdagi <c>max_connections</c>
+    /// chegarasiga tegib, 53300 bilan yiqiladi.
+    /// </summary>
+    public void Dispose()
+    {
+        NpgsqlConnection.ClearAllPools();
+        GC.SuppressFinalize(this);
+    }
 
     private AppDbContext NewDb() => PostgresFixture.NewContext(fixture.Database.OwnerConnectionString);
 
@@ -47,9 +61,14 @@ public class CashBoxTests
     //  1. Kataloq — ochish, sukut (default) belgisi
     // =====================================================================
 
-    /// <summary>Birinchi kassa avtomatik SUKUT bo'ladi — SPEC: "exactly one box must be the default".</summary>
+    /// <summary>
+    /// SPEC: "exactly one box must be the default". Umumiy test bazasida
+    /// migratsiya SEED qilgan sukut kassa allaqachon bor — shuning uchun
+    /// "birinchi kassa" emas, balki "sukut ko'rsatilmasa yangi kassa sukut
+    /// bo'lmaydi" tekshiriladi (chunki bittasi allaqachon bor).
+    /// </summary>
     [Fact]
-    public async Task Birinchi_kassa_avtomatik_sukut_boladi()
+    public async Task Sukut_korsatilmasa_yangi_kassa_sukut_bolmaydi_chunki_bittasi_allaqachon_bor()
     {
         var (_, admin) = await ActorAsync(Roles.Admin);
 
@@ -57,9 +76,13 @@ public class CashBoxTests
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var box = (await response.Content.ReadFromJsonAsync<CashBoxDto>())!;
 
-        Assert.True(box.IsDefault);
+        Assert.False(box.IsDefault);
         Assert.True(box.IsActive);
         Assert.Equal(0m, box.Balance);
+
+        // Baribir aynan BITTA kassa sukut bo'lib qoladi (migratsiya seed'i).
+        var list = (await (await admin.GetAsync(Url)).Content.ReadFromJsonAsync<List<CashBoxDto>>())!;
+        Assert.Single(list.Where(b => b.IsDefault));
     }
 
     /// <summary>
@@ -452,8 +475,9 @@ public class CashBoxTests
         var finalA = await GetBoxAsync(admin, boxA.Id);
         var finalB = await GetBoxAsync(admin, boxB.Id);
 
-        // 1 000 000 + 200 000 − 50 000 (chiqim, storno bilan bekor) − 300 000 (chiqdi) = 850 000
-        Assert.Equal(850_000m, finalA.Balance);
+        // 1 000 000 + 200 000 − 300 000 (chiqdi) = 900 000. Chiqim (50 000)
+        // BEKOR QILINGAN, ya'ni uning ta'siri YO'Q — shuning uchun ayirilmaydi.
+        Assert.Equal(900_000m, finalA.Balance);
         Assert.Equal(300_000m, finalB.Balance);
 
         // Umumiy tizimga kirgan-chiqqan pul: 1 200 000 kirdi, 300 000 boshqa

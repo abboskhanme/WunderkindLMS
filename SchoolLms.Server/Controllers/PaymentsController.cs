@@ -38,8 +38,9 @@ namespace SchoolLms.Server.Controllers;
 
 /// <summary>
 /// Moliya xatosining javob shakli. <c>code</c> — MASHINA uchun barqaror kalit
-/// (<c>no_open_shift</c>, <c>already_reversed</c>, ...), <c>message</c> — ekranga
-/// chiqadigan o'zbekcha matn. Klient matnga emas, kodga qarab qaror qabul qiladi.
+/// (<c>cash_box_inactive</c>, <c>already_reversed</c>, ...), <c>message</c> —
+/// ekranga chiqadigan o'zbekcha matn. Klient matnga emas, kodga qarab qaror
+/// qabul qiladi. <c>no_open_shift</c> ENDI YO'Q — kassalar modeli (2026-09).
 /// </summary>
 public sealed record PaymentErrorDto(string Code, string Message);
 
@@ -89,10 +90,11 @@ public class PaymentsController(IPaymentService payments) : ControllerBase
     /// bir necha TOIFAGA taqsimlanadi: o'qish + avtobus + yotoqxona bitta chekda.
     /// </para>
     /// <para>
-    /// Kassir (<c>cashier_id</c>) JWT'dan, smena esa uning ochiq smenasidan
-    /// olinadi. So'rov tanasida shu maydonlar bo'lsa — <b>400</b> (SPEC §4.4).
-    /// Ochiq smena bo'lmasa — <b>409 <c>no_open_shift</c></b> va bitta ham pul
-    /// qatori yozilmaydi.
+    /// Kassir (<c>cashier_id</c>) JWT'dan olinadi. So'rov tanasida shu maydon
+    /// bo'lsa — <b>400</b> (SPEC §4.4). "Smena" ENDI TALAB QILINMAYDI (mijoz
+    /// javobi, 2026-09): pul <c>cashBoxId</c> ko'rsatilgan (yoki SUKUT)
+    /// kassaga tushadi. Bo'lmagan yoki faol bo'lmagan kassa — <b>404</b>/
+    /// <b>409</b> va bitta ham pul qatori yozilmaydi.
     /// </para>
     /// </summary>
     [HttpPost("/api/cash/payments")]
@@ -163,10 +165,11 @@ public class PaymentsController(IPaymentService payments) : ControllerBase
     public async Task<ActionResult<IEnumerable<PaymentDto>>> List(
         [FromQuery] string? studentId, [FromQuery] string? cashierId,
         [FromQuery] Guid? cashShiftId, [FromQuery] DateOnly? from, [FromQuery] DateOnly? to,
-        [FromQuery] string? method, [FromQuery] bool onlyReversals,
+        [FromQuery] string? method, [FromQuery] bool onlyReversals, [FromQuery] Guid? cashBoxId,
         CancellationToken ct)
     {
-        var query = new PaymentQuery(studentId, cashierId, cashShiftId, from, to, method, onlyReversals);
+        var query = new PaymentQuery(
+            studentId, cashierId, cashShiftId, from, to, method, onlyReversals, cashBoxId);
         if (OnlyOwnPayments) query = query with { CashierId = FinanceActor.RequireUserId(User) };
 
         var list = await payments.ListAsync(query, ct);
@@ -188,9 +191,9 @@ public class PaymentsController(IPaymentService payments) : ControllerBase
     /// urinish — <b>403</b> (SPEC §4.5, ikki qavatli nazorat).
     /// </para>
     /// <para>
-    /// Storno qatori tasdiqlovchining O'Z ochiq smenasiga yoziladi (pul bugun,
-    /// uning kassasidan chiqadi), shuning uchun ochiq smena bo'lmasa —
-    /// <b>409 <c>no_open_shift</c></b>.
+    /// Storno qatori tasdiqlovchi ko'rsatgan (yoki SUKUT) kassaga yoziladi —
+    /// pul bugun, o'sha kassadan chiqadi. "Smena" ENDI TALAB QILINMAYDI
+    /// (mijoz javobi, 2026-09).
     /// </para>
     /// </summary>
     [HttpPost("/api/admin/payments/{id:guid}/reverse")]

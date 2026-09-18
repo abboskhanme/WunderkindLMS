@@ -228,7 +228,10 @@ public class CashShiftTests(ApiFixture fixture)
         var shift = await OpenShiftAsync(client, openingFloat: 50_000m);
         var scene = await SceneAsync(amounts: [250_000m]);
 
-        await AcceptAsync(client, scene, 0, PaymentMethod.Cash);
+        // TO'G'RIDAN-TO'G'RI smenaga biriktirib yoziladi — kassalar modelida
+        // (2026-09) `PaymentService` endi HECH QACHON smenaga yozmaydi; bu
+        // test smena/variance ARIFMETIKASINI sinaydi (fayl boshidagi izoh).
+        await AddShiftLinkedCashPaymentAsync(shift.Id, cashier.Id, scene, 0);
 
         var response = await client.PostAsJsonAsync(
             $"/api/cash/shifts/{shift.Id}/close", new { countedCash = (decimal)counted, note = (string?)null });
@@ -276,7 +279,7 @@ public class CashShiftTests(ApiFixture fixture)
         var (cashier, client) = await ClientAsync(Roles.Cashier);
         var shift = await OpenShiftAsync(client);
         var scene = await SceneAsync(amounts: [300_000m]);
-        await AcceptAsync(client, scene, 0, PaymentMethod.Cash);
+        await AddShiftLinkedCashPaymentAsync(shift.Id, cashier.Id, scene, 0);
 
         var closeResponse = await client.PostAsJsonAsync(
             $"/api/cash/shifts/{shift.Id}/close", new { countedCash = 250_000m, note = "50 ming yetishmadi" });
@@ -753,7 +756,7 @@ public class CashShiftTests(ApiFixture fixture)
         var (cashier, client) = await ClientAsync(Roles.Cashier);
         var shift = await OpenShiftAsync(client);
         var scene = await SceneAsync(amounts: [100_000m]);
-        await AcceptAsync(client, scene, 0, PaymentMethod.Cash);
+        await AddShiftLinkedCashPaymentAsync(shift.Id, cashier.Id, scene, 0);
 
         var first = await client.PostAsJsonAsync(
             $"/api/cash/shifts/{shift.Id}/close", new { countedCash = 90_000m });
@@ -897,6 +900,46 @@ public class CashShiftTests(ApiFixture fixture)
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         return (await response.Content.ReadFromJsonAsync<PaymentDto>())!;
+    }
+
+    /// <summary>
+    /// Naqd to'lovni TO'G'RIDAN-TO'G'RI shu smenaga biriktirib yozadi
+    /// (<c>PaymentService</c> ni chetlab o'tib — kassalar modelida, 2026-09,
+    /// u endi HECH QACHON <c>cash_shift_id</c> ni to'ldirmaydi). Bu yerdagi
+    /// testlar smena/variance ARIFMETIKASINI sinaydi, "smena to'lov
+    /// biriktiradimi" degan savolni emas — o'sha savol endi yo'q
+    /// (<c>CashDeskOutflowTests</c>). Naqshi <c>CashShiftServiceTests.AddPaymentAsync</c>
+    /// bilan bir xil: to'lov qatori + AYNAN shu ikki jurnal satri.
+    /// </summary>
+    private async Task<Payment> AddShiftLinkedCashPaymentAsync(
+        Guid shiftId, string cashierId, Scene scene, int index)
+    {
+        var amount = scene.Amounts[index];
+
+        await using var db = NewDb();
+        var payment = new Payment
+        {
+            ReceiptNo = await db.Payments.Where(p => p.CashShiftId == shiftId)
+                .MaxAsync(p => (long?)p.ReceiptNo) is { } last ? last + 1 : 1,
+            StudentId = scene.StudentIds[index],
+            Amount = amount,
+            Method = PaymentMethod.Cash,
+            CashShiftId = shiftId,
+            CashierId = cashierId,
+            ReceivedAt = AppClock.NowInstant,
+        };
+        db.Payments.Add(payment);
+        await db.SaveChangesAsync();
+
+        await new LedgerService(db).PostAsync(
+        [
+            new LedgerPosting(Accounts.Cash, LedgerDirection.Debit, amount,
+                LedgerRefType.Payment, payment.Id),
+            new LedgerPosting(Accounts.Receivable, LedgerDirection.Credit, amount,
+                LedgerRefType.Payment, payment.Id),
+        ], cashierId);
+
+        return payment;
     }
 
     private static async Task<CashShiftDto> OpenShiftAsync(HttpClient client, decimal openingFloat = 0m)

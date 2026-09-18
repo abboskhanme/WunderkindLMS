@@ -655,6 +655,21 @@ public class RbacMatrixTests(ApiFixture fixture)
     {
         var payment = await PaymentByAnotherCashierAsync(200_000m);
 
+        // Kassalar modelida (2026-09) `PaymentService` endi HECH QACHON
+        // `cash_shift_id` ni to'ldirmaydi — pul SUKUT kassaga tushadi. Bu
+        // metod esa AYNAN smena/variance arifmetikasini sinaydi, shuning
+        // uchun to'lov qatori TO'G'RIDAN-TO'G'RI (OWNER ulanishi bilan,
+        // `app_rw` uchun yopiq REVOKE'ni chetlab o'tib — bu test tayyorgarligi,
+        // ishlab turgan yo'l emas) shu smenaga qayta biriktiriladi. Jurnal
+        // yozuvlari haqiqiy `PaymentService` orqali allaqachon to'g'ri
+        // yozilgan — bu yerda faqat smena bog'lanishi qo'shiladi.
+        await using (var owner = NewDb())
+        {
+            var row = await owner.Payments.SingleAsync(p => p.Id == payment.PaymentId);
+            row.CashShiftId = payment.ShiftId;
+            await owner.SaveChangesAsync();
+        }
+
         // Smenani AYNAN o'sha kassir yopadi — chunki §4.3 ga ko'ra u buni qila oladi.
         await using var db = NewDb();
         var cashier = await db.Users.AsNoTracking().SingleAsync(u => u.Id == payment.CashierId);
