@@ -6,15 +6,23 @@
  * §3.6: "Verdict: defer... Revisit at the start of the next academic
  * year"). Mijoz 2026-09-18 da shu qarorni bekor qildi.
  *
- * <b>Bu — EduSchool'dagi to'liq besh tabli ekranning ENG KICHIK halol
- * qismi</b> (`finance-parity.md` §2.6.1: `expectation`, `dynamics`,
- * `changes`, `yearly`, `planned`). Shu sahifada FAQAT `expectation` —
- * bitta oy uchun reja/fakt/farq jadvali. Nima yo'q va nega — pastdagi
- * "Nima qurilmagan" bandida.
+ * <b>Besh tabli ekran endi TO'LIQ</b> (`finance-parity.md` §2.6.1:
+ * `expectation`, `dynamics`, `changes`, `yearly`, `planned`):
+ *   · <c>Kutish</c> — shu fayl, bitta oy uchun reja/fakt/farq jadvali
+ *     (`FinanceReportQueries.RevenueExpectation.cs`, eng birinchi qurilgan);
+ *   · <c>Dinamika</c> — `DailyDynamicsTab.tsx` (F6.04, kunlik grafik);
+ *   · <c>Jurnal</c> — `ChangeJournalTab.tsx` (F6.03, "nega reja siljidi");
+ *   · <c>Yillik</c> — `YearlyExpectationTab.tsx` (F6.05, oy × oy, eng
+ *     yaxshi/yomon oy bilan);
+ *   · <c>Rejalashtirilgan chiqim</c> — `PlannedExpenseTab.tsx` (F6.01 ni
+ *     QURMAYDI, faqat boshqa vazifa quradigan `expense-templates`
+ *     endpoint'ini ISTE'MOL qiladi — ekran shu tab bilan "bo'sh joysiz").
+ * Har birining o'z "hali yo'q" izohi bor — soxta panel yo'q, "keyinroq"
+ * deb yozilgan narsa ANIQ aytiladi.
  *
  * <b>PULNI FRONTEND HISOBLAMAYDI</b> (`financeReports.ts` dagi qoida bu
  * yerda ham): hamma summa, foiz va farq SERVERDAN tayyor keladi
- * (`FinanceReportQueries.RevenueExpectation.cs`). "Fakt" ustunining
+ * (`FinanceReportQueries.RevenueExpectation*.cs`). "Fakt" ustunining
  * daromad/chiqim/natija qatorlari — oddiy P&L (`/admin/finance/pnl`) bilan
  * AYNAN bir manbadan (`ProfitLossAsync`), shuning uchun ikkovi hech qachon
  * kelisha olmay qolmaydi.
@@ -32,6 +40,10 @@ import { formatMonth } from '@/config/constants'
 import { cn, exportToCsv, formatMoney } from '@/lib/utils'
 import { formatSignedMoney, signClass } from './reportLabels'
 import { ReportState } from './ReportState'
+import { ChangeJournalTab } from './ChangeJournalTab'
+import { DailyDynamicsTab } from './DailyDynamicsTab'
+import { YearlyExpectationTab } from './YearlyExpectationTab'
+import { PlannedExpenseTab } from './PlannedExpenseTab'
 
 /** SPEC §4.3: moliya hisobotlari faqat admin va direktorga ochiq. */
 const ALLOWED_ROLES = ['admin', 'superadmin']
@@ -133,10 +145,25 @@ function buildRows(data: RevenueExpectation): { group: string; rows: Row[] }[] {
   ]
 }
 
+type Tab = 'expectation' | 'dynamics' | 'changes' | 'yearly' | 'planned'
+
+const tabs: { value: Tab; label: string }[] = [
+  { value: 'expectation', label: 'Kutish' },
+  { value: 'dynamics', label: 'Dinamika' },
+  { value: 'changes', label: 'Jurnal' },
+  { value: 'yearly', label: 'Yillik' },
+  { value: 'planned', label: 'Rejalashtirilgan chiqim' },
+]
+
+/** Oy tanlovi FAQAT shu uch tabga tegishli — "Yillik" o'z yil tanlovi bilan, "Rejalashtirilgan
+ * chiqim" esa davr bilan bog'liq emas (shablon KATALOGI, bitta oyga tegishli emas). */
+const monthTabs: Tab[] = ['expectation', 'dynamics', 'changes']
+
 export function PnlExpectationPage() {
   const { user } = useAuth()
   const allowed = user !== null && ALLOWED_ROLES.includes(user.role)
 
+  const [tab, setTab] = useState<Tab>('expectation')
   const [month, setMonth] = useState(currentMonth)
 
   const { data, loading, error, refetch } = useAsync(() => getRevenueExpectation(month), [month])
@@ -178,19 +205,44 @@ export function PnlExpectationPage() {
         </p>
       </div>
 
-      <Card className="flex flex-wrap items-center gap-3 p-4">
-        <span className="text-sm font-medium text-slate-600">Oy:</span>
-        <input
-          type="month"
-          value={month}
-          max={currentMonth()}
-          onChange={(e) => setMonth(e.target.value)}
-          aria-label="Oy"
-          className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-brand-400"
-        />
-        <p className="text-xs text-slate-400">{formatMonth(month)}</p>
-      </Card>
+      <div className="flex flex-wrap items-center gap-2">
+        {tabs.map((t) => (
+          <button
+            key={t.value}
+            onClick={() => setTab(t.value)}
+            className={cn(
+              'rounded-lg px-4 py-2 text-sm font-medium transition-colors',
+              tab === t.value
+                ? 'bg-brand-600 text-white'
+                : 'bg-white text-slate-600 hover:bg-slate-100',
+            )}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
 
+      {monthTabs.includes(tab) && (
+        <Card className="flex flex-wrap items-center gap-3 p-4">
+          <span className="text-sm font-medium text-slate-600">Oy:</span>
+          <input
+            type="month"
+            value={month}
+            max={currentMonth()}
+            onChange={(e) => setMonth(e.target.value)}
+            aria-label="Oy"
+            className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-brand-400"
+          />
+          <p className="text-xs text-slate-400">{formatMonth(month)}</p>
+        </Card>
+      )}
+
+      {tab === 'dynamics' && <DailyDynamicsTab month={month} />}
+      {tab === 'changes' && <ChangeJournalTab month={month} />}
+      {tab === 'yearly' && <YearlyExpectationTab />}
+      {tab === 'planned' && <PlannedExpenseTab />}
+
+      {tab === 'expectation' && (
       <ReportState
         loading={loading}
         error={error}
@@ -262,24 +314,33 @@ export function PnlExpectationPage() {
               </div>
               <p className="border-t border-slate-100 px-4 py-3 text-xs text-slate-400">
                 "Reja" — shu oyning faol obunalari va hisob-fakturalaridan; "Fakt" — jurnaldagi
-                haqiqiy harakat (storno hisobga olingan). Chiqim tomonida reja yo'q: rejalashtirilgan
-                chiqim shablonlari hali qurilmagan.
+                haqiqiy harakat (storno hisobga olingan). Shu JADVALDA chiqim tomonida reja yo'q
+                (rejalashtirilgan chiqim shablonlari "Rejalashtirilgan chiqim" tabida — katalog
+                sifatida, oylik reja/fakt solishtiruvi sifatida emas).
               </p>
             </Card>
 
             <Card className="space-y-2 bg-slate-50/60 text-xs text-slate-500">
               <p className="font-medium text-slate-600">Bu ekranda hali yo'q (EduSchool'da bor):</p>
               <ul className="list-inside list-disc space-y-1">
-                <li>Rejalashtirilgan chiqim shablonlari va eslatmalar (yangi jadval kerak).</li>
-                <li>To'liq o'zgarishlar jurnali — kim, qachon, nima o'zgartirgani (sahifalash bilan).</li>
-                <li>Kunlik dinamika grafigi va bashorat chizig'i.</li>
-                <li>Yillik reja/fakt jadvali (eng yaxshi/yomon oy bilan).</li>
+                <li>
+                  Rejalashtirilgan chiqim shablonlarining OYLIK hisoblangan/hisoblanmagan holati va
+                  eslatmalar — "Rejalashtirilgan chiqim" tabida faqat shablon KATALOGI bor (boshqa
+                  vazifaning endpoint'i orqali).
+                </li>
+                <li>Kunlik dinamika grafigida bashorat chizig'i — faqat FAKT bor.</li>
+                <li>
+                  "Jurnal" tabidagi tur nomlari EduSchool'nikidan farq qiladi: bizning chegirma
+                  ish jarayoni tasdiq bilan ishlaydi (so'raldi/tasdiqlandi/rad etildi), EduSchool'da
+                  yagona "discountChanged" bor.
+                </li>
                 <li>Filial tanlovi — bizda bitta maktab, filial tushunchasi yo'q.</li>
               </ul>
             </Card>
           </div>
         )}
       </ReportState>
+      )}
     </div>
   )
 }

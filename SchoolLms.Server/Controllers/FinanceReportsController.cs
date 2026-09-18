@@ -177,6 +177,77 @@ public class FinanceReportsController(AppDbContext db) : ControllerBase
     }
 
     /// <summary>
+    /// <c>GET /api/admin/finance/pnl/expectation/changes</c> — F6.03:
+    /// o'zgarishlar jurnali ("nega reja shu oy siljidi"), sahifalangan.
+    /// To'liq qoida <c>FinanceReportQueries.RevenueExpectationChanges.cs</c> da.
+    /// </summary>
+    /// <param name="month">"YYYY-MM". Sukut: joriy oy.</param>
+    /// <param name="kind">Bitta turga toraytirish (<see cref="ChangeJournalKind.All"/>). Sukut: hammasi.</param>
+    /// <param name="page">Sahifa raqami (1 dan).</param>
+    /// <param name="pageSize">Sahifadagi qatorlar soni.</param>
+    [HttpGet("pnl/expectation/changes")]
+    public async Task<ActionResult<ChangeJournalPageDto>> PnlExpectationChanges(
+        [FromQuery] string? month,
+        [FromQuery] string? kind,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = FinanceReportQueries.ChangeJournalDefaultPageSize,
+        CancellationToken ct = default)
+    {
+        if (!TryMonth(month, DefaultToMonth(), out var parsed))
+            return InvalidMonth(nameof(month), month);
+
+        if (!string.IsNullOrWhiteSpace(kind) && !ChangeJournalKind.All.Contains(kind, StringComparer.Ordinal))
+            return BadRequest(new
+            {
+                message = $"Noma'lum tur: '{kind}'. Ruxsat etilganlar: {string.Join(", ", ChangeJournalKind.All)}.",
+            });
+
+        var query = new ChangeJournalQuery(
+            parsed,
+            string.IsNullOrWhiteSpace(kind) ? null : kind,
+            Math.Max(1, page),
+            Math.Clamp(pageSize <= 0 ? FinanceReportQueries.ChangeJournalDefaultPageSize : pageSize,
+                1, FinanceReportQueries.ChangeJournalMaxPageSize));
+
+        return Ok(await _reports.RevenueExpectationChangesAsync(query, ct));
+    }
+
+    /// <summary>
+    /// <c>GET /api/admin/finance/pnl/expectation/daily</c> — F6.04: kunlik
+    /// dinamika, bitta oy. To'liq qoida
+    /// <c>FinanceReportQueries.RevenueExpectationDaily.cs</c> da.
+    /// </summary>
+    /// <param name="month">"YYYY-MM". Sukut: joriy oy.</param>
+    [HttpGet("pnl/expectation/daily")]
+    public async Task<ActionResult<DailyDynamicsDto>> PnlExpectationDaily(
+        [FromQuery] string? month,
+        CancellationToken ct = default)
+    {
+        if (!TryMonth(month, DefaultToMonth(), out var parsed))
+            return InvalidMonth(nameof(month), month);
+
+        return Ok(await _reports.RevenueExpectationDailyAsync(parsed, ct));
+    }
+
+    /// <summary>
+    /// <c>GET /api/admin/finance/pnl/expectation/yearly</c> — F6.05: yillik
+    /// reja/fakt jadvali, eng yaxshi/yomon oy bilan. To'liq qoida
+    /// <c>FinanceReportQueries.RevenueExpectationYearly.cs</c> da.
+    /// </summary>
+    /// <param name="year">Kalendar yil. Sukut: joriy yil.</param>
+    [HttpGet("pnl/expectation/yearly")]
+    public async Task<ActionResult<YearlyExpectationDto>> PnlExpectationYearly(
+        [FromQuery] int? year,
+        CancellationToken ct = default)
+    {
+        var y = year ?? AppClock.Today.Year;
+        if (y is < 2000 or > 2100)
+            return BadRequest(new { message = $"Yaroqsiz yil: {y}." });
+
+        return Ok(await _reports.RevenueExpectationYearlyAsync(y, ct));
+    }
+
+    /// <summary>
     /// Pul oqimi (Cash Flow): <c>cash</c> va <c>bank</c> hisoblarining
     /// harakati, oylar kesimida. Davr boshidagi qoldiq ham beriladi.
     /// </summary>
