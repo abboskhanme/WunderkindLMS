@@ -77,6 +77,7 @@ function TransactionTypesView() {
       .finally(() => setLoading(false))
   }, [])
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- bo'lim (kind) almashganda ro'yxatni qayta yuklaymiz (maqsadli)
   useEffect(() => load(kind), [kind, load])
 
   const selectKind = (next: TransactionTypeKind) => {

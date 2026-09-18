@@ -1191,6 +1191,7 @@ function PlainIncomeForm({ box, onDone, onCancel }: PlainIncomeFormProps) {
 
   useEffect(() => {
     let alive = true
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- katalogni bir marta yuklaymiz, yuklanish holati shu yerda boshlanadi (maqsadli)
     setTypesLoading(true)
     setTypesError(null)
     getTransactionTypes('in')
