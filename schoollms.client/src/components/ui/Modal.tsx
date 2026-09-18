@@ -42,7 +42,8 @@ export function Modal({ open, onClose, title, children, footer, size = 'md' }: M
             <X className="h-5 w-5" />
           </button>
         </header>
-        <div className="max-h-[70vh] overflow-y-auto px-5 py-4">{children}</div>
+        {/* Balandroq: modal tik cho'zilsin, kontent erta kesilmasin. */}
+        <div className="max-h-[80vh] overflow-y-auto px-5 py-4">{children}</div>
         {footer && (
           <footer className="flex justify-end gap-2 border-t border-slate-100 px-5 py-3">
             {footer}

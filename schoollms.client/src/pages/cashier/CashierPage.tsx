@@ -716,7 +716,7 @@ export function CashierPage() {
         open={incomePanel !== null}
         onClose={() => setIncomePanel(null)}
         title={incomePanel ? `Kirim — ${incomePanel.name}` : 'Kirim'}
-        size="xl"
+        size="md"
       >
         {incomePanel && (
         <div className="space-y-4">
@@ -800,7 +800,8 @@ export function CashierPage() {
 
               <Card>
                 <h2 className="mb-4 font-semibold text-slate-800">To'lov</h2>
-                <div className="grid gap-4 sm:grid-cols-2">
+                {/* Modal tik bo'lgani uchun maydonlar USTMA-UST turadi. */}
+      <div className="grid gap-4">
                   <MoneyInput
                     label="Summa (so'm)"
                     value={amountRaw}
