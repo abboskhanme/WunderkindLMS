@@ -8,10 +8,10 @@ import {
   Search,
   ShieldOff,
   UserRound,
-  Users,
   Wallet,
+  X,
 } from 'lucide-react'
-import type { AllocationSuggestion, Payment, PaymentMethod, Role } from '@/types'
+import type { AllocationSuggestion, Payment, PaymentMethod, Role, SchoolClass } from '@/types'
 import type { CashierStudent } from '@/api/services/cashier'
 import {
   MIN_SEARCH_LENGTH,
@@ -22,7 +22,10 @@ import {
   suggestAllocation,
 } from '@/api/services/cashier'
 import type { CashBox, CashBoxTransactionRow, CashBoxTransactionsResult } from '@/api/services/cashBoxes'
-import { cancelCashBoxTransaction, getCashBoxTransactions, getCashBoxes } from '@/api/services/cashBoxes'
+import { cancelCashBoxTransaction, cashBoxIn, getCashBoxTransactions, getCashBoxes } from '@/api/services/cashBoxes'
+import type { StudentContract } from '@/api/services/studentContracts'
+import { searchStudentContracts } from '@/api/services/studentContracts'
+import { getClasses } from '@/api/services/classes'
 import { useAuth } from '@/context/auth-context'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
@@ -48,6 +51,9 @@ import {
   parseSum,
   statusLabel,
 } from './format'
+
+/** Kassa harakati turlari — "Tranzaksiya turi" filtri shu ro'yxatdan (format.ts dagi kindLabel bilan bir xil to'rttasi). */
+const TRANSACTION_KINDS: CashBoxTransactionRow['kind'][] = ['in', 'out', 'transfer', 'exchange']
 
 /* ==========================================================================
    BU SAHIFADA TO'LOVNI TAHRIRLASH VA O'CHIRISH TUGMASI YO'Q — ATAYLAB.
@@ -92,16 +98,22 @@ const dateInputClass =
 const todayStr = () => new Date().toISOString().slice(0, 10)
 
 /**
- * Kassir ish o'rni (P1-16 → kassalarga o'tish, 2026-09-18).
+ * Kassir ish o'rni (P1-16 → kassalarga o'tish, 2026-09-18; EduSchool
+ * skrinshotiga moslash va Kirim panelining ikkinchi tabi, 2026-09-18 kech).
  *
  * Ikki bo'lim bor:
  *   1) KASSALAR — bir nechta kassa, har birining qoldig'i, kirim/chiqim/
- *      ko'chirish/ayirboshlash va umumiy tranzaksiyalar jadvali.
- *   2) O'QUVCHIDAN TO'LOV QABUL QILISH — eski yo'l, O'ZGARTIRILMAGAN: hisob-
- *      fakturaga taqsimlanadigan to'lov ilgarigidek `acceptPayment`
- *      (`/cash/payments`) orqali ketadi. Bu FIFO taqsimotni, hisob-
- *      fakturalarni bilmagan umumiy "Kirim" amalidan TUBDAN farq qiladi —
- *      shuning uchun ikkalasi ham bor va bir-biriga aylantirilmagan.
+ *      ko'chirish/ayirboshlash va umumiy tranzaksiyalar jadvali (filtr
+ *      qatori + ustunlar sozlamasi bilan).
+ *   2) KIRIM PANELI — tanlangan kassaning "Kirim" tugmasi ochadi, ikki tabi
+ *      bor: "Oddiy kirim" (`cashBoxIn`) va "O'quvchidan to'lov" — eski yo'l,
+ *      O'ZGARTIRILMAGAN: hisob-fakturaga taqsimlanadigan to'lov ilgarigidek
+ *      `acceptPayment` (`/cash/payments`) orqali ketadi. Bu FIFO taqsimotni,
+ *      hisob-fakturalarni bilmagan umumiy "Kirim" amalidan TUBDAN farq
+ *      qiladi — shuning uchun ikkalasi ham bor va bir-biriga
+ *      aylantirilmagan. Sarlavhadagi alohida tugma OLIB TASHLANDI (mijoz,
+ *      2026-09-18): "o'quvchidan to'lov degan button ham bu yerda kerak
+ *      emas" — lekin OQIM o'zi Kirim panelining tabi sifatida qolmoqda.
  */
 export function CashierPage() {
   const { user } = useAuth()
@@ -137,19 +149,70 @@ export function CashierPage() {
 
   const [boxFormOpen, setBoxFormOpen] = useState(false)
   const [editingBox, setEditingBox] = useState<CashBox | null>(null)
-  const [actionState, setActionState] = useState<{ box: CashBox; mode: CashBoxActionMode } | null>(null)
+  // `CashBoxActionModal` endi FAQAT chiqim/ko'chirish/ayirboshlash uchun —
+  // Kirim pastdagi `incomePanel` orqali ochiladi (izoh: fayl oxiridagi tab bo'limi).
+  const [actionState, setActionState] = useState<{ box: CashBox; mode: Exclude<CashBoxActionMode, 'in'> } | null>(
+    null,
+  )
+
+  /* ==========================================================================
+     KIRIM PANELI — mijoz "O'quvchidan to'lov" tugmasini bosh sahifadan olib
+     tashlashni so'radi (2026-09-18, ikkinchi xat): "o'quvchidan to'lov degan
+     button ham bu yerda kerak emas". Lekin IMKONIYAT qolishi kerak — bugun
+     sinaladigan yagona oqim shu. EduSchool'da o'quvchi to'lovi ham kassaning
+     o'z Kirim amali orqali kiritiladi (`finance-parity.md` §2.1), shuning
+     uchun bu yerda ham Kirim ikki rejimli: "Oddiy kirim" (mavjud
+     `cashBoxIn`) va "O'quvchidan to'lov" (eski yo'l — StudentSearch →
+     hisob-fakturalar → PaymentSplitModal → ReceiptPreview — TEGILMAGAN).
+
+     MODAL EMAS, PANEL: agar Kirim ham `CashBoxActionModal` (Modal) bo'lib
+     qolsa, "O'quvchidan to'lov" rejimida `PaymentSplitModal` uning USTIGA
+     ochilib, ikki oyna bir-birining ustiga chiqadi — bunga yo'l qo'ymaslik
+     so'ralgan edi. Shuning uchun Kirim sahifa ichidagi ODDIY BO'LIM
+     (avvalgi "O'QUVCHIDAN TO'LOV" bo'limi bilan bir xil joyda), va
+     `PaymentSplitModal` sahifa ustiga ochiladi — hech qachon ikkinchi oyna
+     ustiga emas. */
+  const [incomePanel, setIncomePanel] = useState<CashBox | null>(null)
+  const [incomeTab, setIncomeTab] = useState<'plain' | 'student'>('plain')
 
   /* ---- Tranzaksiyalar jadvali ---- */
   const [from, setFrom] = useState(todayStr())
   const [to, setTo] = useState(todayStr())
+  // Filtr qatori — EduSchool skrinshotida doim ko'rinadi, lekin mijoz keyin
+  // (2026-09-18, soatlar farqi bilan) fikrini o'zgartirdi: "filter buttoni
+  // bosilsa filterlar tushib chiqadi, yani bekinadi yoki ko'rinadi" — demak
+  // tugma bilan YOPIQ/OCHIQ bo'lishi kerak, oldingi "Filtr" tugmasi kabi.
   const [filtersOpen, setFiltersOpen] = useState(false)
-  // O'quvchidan to'lov — ALOHIDA sahifa emas, kassa ekranining AMALI.
-  // Ilgari u pastda, chiziq bilan ajratilgan ikkinchi ekran bo'lib turardi
-  // va mijoz aynan shuni "ajralib turmasin" dedi (2026-09-18). Endi yopiq
-  // turadi va yuqoridagi tugma bilan ochiladi; ichidagi oqim O'ZGARMAGAN.
-  const [payOpen, setPayOpen] = useState(false)
   const [boxFilter, setBoxFilter] = useState('')
   const [q, setQ] = useState('')
+
+  /* ---- Qo'shimcha filtrlar (EduSchool skrinshoti): To'lov usuli, Tranzaksiya
+     turi, O'quvchi, Sinf. Backend `/cash-boxes/transactions` faqat
+     `from/to/boxId/q` qabul qiladi (CashBoxesController.cs), shuning uchun
+     bu to'rttasi JADVAL QATORLARI ustida MIJOZ TOMONDA filtrlanadi —
+     `filteredRows` pastda. Yig'indi kartochkalari esa serverdan kelgan
+     davr/kassa yig'indisi bo'lib qoladi (`CashLedger`: "Pulni bu yerda
+     HECH KIM hisoblamaydi" qoidasi) — shu to'rttasi ishga tushganda
+     kartochkalar ostida ogohlantiruvchi izoh chiqadi. */
+  const [methodFilter, setMethodFilter] = useState<PaymentMethod | ''>('')
+  const [kindFilter, setKindFilter] = useState<CashBoxTransactionRow['kind'] | ''>('')
+
+  // "O'quvchi" filtri — jadval qatorida faqat `contractNo` bor (o'quvchining
+  // ismi YO'Q, faqat shartnoma raqami). Shuning uchun o'quvchi tanlanganda
+  // uning shartnoma raqami(lari) `/admin/student-contracts` orqali olinadi
+  // va qatorlar shu raqamlarga qarab filtrlanadi.
+  const [studentQuery, setStudentQuery] = useState('')
+  const [studentResults, setStudentResults] = useState<StudentContract[]>([])
+  const [studentSearchOpen, setStudentSearchOpen] = useState(false)
+  const [studentFilter, setStudentFilter] = useState<{ label: string; numbers: Set<string> } | null>(null)
+
+  // "Sinf" filtri — xuddi shu naqsh: sinf tanlanganda o'sha sinfdagi barcha
+  // o'quvchilarning shartnoma raqamlari yig'ib olinadi.
+  const [classList, setClassList] = useState<SchoolClass[]>([])
+  const [classFilter, setClassFilter] = useState('')
+  const [classFilterNumbers, setClassFilterNumbers] = useState<Set<string> | null>(null)
+  const [classFilterLoading, setClassFilterLoading] = useState(false)
+
   const [ledger, setLedger] = useState<CashBoxTransactionsResult | null>(null)
   const [ledgerLoading, setLedgerLoading] = useState(true)
   const [ledgerError, setLedgerError] = useState<string | null>(null)
@@ -188,6 +251,97 @@ export function CashierPage() {
     }
   }, [allowed, from, to, boxFilter, q, ledgerReload])
 
+  /* ---- Sinflar ro'yxati — "Sinf" filtri uchun, bir marta yuklanadi ---- */
+  useEffect(() => {
+    if (!allowed) return
+    let alive = true
+    getClasses()
+      .then((rows) => {
+        if (alive) setClassList(rows)
+      })
+      .catch(() => undefined)
+    return () => {
+      alive = false
+    }
+  }, [allowed])
+
+  /* ---- "O'quvchi" filtri — nom bo'yicha qidiruv, natijada shartnoma
+     raqami(lari) keladi (`searchStudentContracts`, mavjud endpoint). ---- */
+  useEffect(() => {
+    const term = studentQuery.trim()
+    if (term.length < MIN_SEARCH_LENGTH) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- qidiruv so'zi qisqarganda natijalar ro'yxatini darrov tozalash (StudentSearch'dagi bilan bir xil naqsh)
+      setStudentResults([])
+      return
+    }
+    const controller = new AbortController()
+    const timer = setTimeout(() => {
+      searchStudentContracts({ search: term, pageSize: 20 })
+        .then((page) => {
+          setStudentResults(page.items)
+        })
+        .catch(() => undefined)
+    }, 300)
+    return () => {
+      clearTimeout(timer)
+      controller.abort()
+    }
+  }, [studentQuery])
+
+  /* ---- "Sinf" filtri — tanlangan sinfdagi barcha o'quvchilarning shartnoma
+     raqamlarini yig'ib oladi (jadval qatorida sinf nomi YO'Q — faqat shu
+     yo'l bilan bog'lanadi). ---- */
+  useEffect(() => {
+    if (!classFilter) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- sinf filtri tozalanganda shartnoma raqamlari to'plamini darrov bo'shatish
+      setClassFilterNumbers(null)
+      return
+    }
+    let alive = true
+    setClassFilterLoading(true)
+    searchStudentContracts({ className: classFilter, pageSize: 1000 })
+      .then((page) => {
+        if (!alive) return
+        setClassFilterNumbers(new Set(page.items.map((c) => c.number).filter((n): n is string => !!n)))
+      })
+      .catch(() => {
+        if (alive) setClassFilterNumbers(new Set())
+      })
+      .finally(() => {
+        if (alive) setClassFilterLoading(false)
+      })
+    return () => {
+      alive = false
+    }
+  }, [classFilter])
+
+  /**
+   * Ko'rsatilayotgan qatorlar — server javobi (`ledger.rows`, davr/kassa/`q`
+   * bo'yicha) ustiga TO'RTTA qo'shimcha filtrni (usul, turi, o'quvchi, sinf)
+   * MIJOZ TOMONDA qo'llaydi (sabab — fayl boshidagi izoh).
+   */
+  const filteredRows = useMemo(() => {
+    const rows = ledger?.rows ?? []
+    return rows.filter((r) => {
+      if (methodFilter && r.method !== methodFilter) return false
+      if (kindFilter && r.kind !== kindFilter) return false
+      if (studentFilter && !(r.contractNo && studentFilter.numbers.has(r.contractNo))) return false
+      if (classFilter && !(r.contractNo && classFilterNumbers?.has(r.contractNo))) return false
+      return true
+    })
+  }, [ledger, methodFilter, kindFilter, studentFilter, classFilter, classFilterNumbers])
+
+  /** Kartochkalardagi yig'indi davr/kassa bo'yicha — shu to'rttasi ishga tushsa, izoh ko'rsatiladi. */
+  const rowsNarrowed = methodFilter !== '' || kindFilter !== '' || studentFilter !== null || classFilter !== ''
+
+  const resetExtraFilters = () => {
+    setMethodFilter('')
+    setKindFilter('')
+    setStudentFilter(null)
+    setStudentQuery('')
+    setClassFilter('')
+  }
+
   const toggleSelectRow = (id: string) => {
     setSelectedRows((prev) => {
       const next = new Set(prev)
@@ -198,7 +352,7 @@ export function CashierPage() {
   }
 
   const toggleSelectAll = () => {
-    const rows = ledger?.rows ?? []
+    const rows = filteredRows
     setSelectedRows((prev) => {
       const allSelected = rows.length > 0 && rows.every((r) => prev.has(r.id))
       return allSelected ? new Set() : new Set(rows.map((r) => r.id))
@@ -207,6 +361,13 @@ export function CashierPage() {
 
   const handleActionDone = () => {
     setActionState(null)
+    void loadBoxes()
+    setLedgerReload((n) => n + 1)
+  }
+
+  /** Oddiy kirim (Kirim panelining "Oddiy kirim" tabi) yozilgach. */
+  const handleIncomeDone = () => {
+    setIncomePanel(null)
     void loadBoxes()
     setLedgerReload((n) => n + 1)
   }
@@ -234,11 +395,12 @@ export function CashierPage() {
   }
 
   const handleExport = () => {
-    const rows = ledger?.rows ?? []
+    // Ekranda TURGAN qatorlar eksport qilinadi — filtrlangan ro'yxat, ekrandagi bilan bir xil.
+    const rows = filteredRows
     const source = selectedRows.size > 0 ? rows.filter((r) => selectedRows.has(r.id)) : rows
     exportToCsv(
       `kassa-tranzaksiyalari-${from}_${to}.csv`,
-      ['№', 'Sana', 'Kim', 'Shartnoma raqami', 'Miqdor', 'Tranzaksiya', 'Usul', 'Holati'],
+      ['№', 'Sana', 'Kim', 'Shartnoma raqami', 'Miqdor', 'Tranzaksiya', "To'lov usuli", 'Holati', 'Kassir'],
       source.map((r) => [
         String(r.no),
         formatDateTime(r.date),
@@ -248,6 +410,7 @@ export function CashierPage() {
         kindLabel(r.kind),
         methodLabels[r.method] ?? r.method,
         statusLabel(r.status),
+        r.who,
       ]),
     )
   }
@@ -355,34 +518,130 @@ export function CashierPage() {
             aria-label="Davr oxiri"
             className={dateInputClass}
           />
-          <Button onClick={() => setPayOpen((v) => !v)}>
-            <Users className="h-4 w-4" />
-            {payOpen ? "To'lovni yopish" : "O'quvchidan to'lov"}
-          </Button>
           <Button variant="secondary" onClick={() => setFiltersOpen((v) => !v)}>
             <Filter className="h-4 w-4" /> Filtr
           </Button>
-          <Button variant="secondary" onClick={handleExport} disabled={(ledger?.rows.length ?? 0) === 0}>
+          <Button variant="secondary" onClick={handleExport} disabled={filteredRows.length === 0}>
             <Download className="h-4 w-4" /> Export
           </Button>
         </div>
       </header>
 
       {filtersOpen && (
-        <Card className="flex flex-wrap items-center gap-3 p-4">
-          <Select
-            label="Kassa bo'yicha"
-            value={boxFilter}
-            onChange={(e) => setBoxFilter(e.target.value)}
-            className="max-w-xs"
-          >
-            <option value="">Barcha kassalar</option>
-            {boxes.map((b) => (
-              <option key={b.id} value={b.id}>
-                {b.name}
-              </option>
-            ))}
-          </Select>
+        <Card className="flex flex-col gap-3 p-4">
+          <div className="flex flex-wrap items-end gap-3">
+            <Select
+              label="Kassa bo'yicha"
+              value={boxFilter}
+              onChange={(e) => setBoxFilter(e.target.value)}
+              className="max-w-xs"
+            >
+              <option value="">Barcha kassalar</option>
+              {boxes.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.name}
+                </option>
+              ))}
+            </Select>
+
+            {/* O'quvchi — nomi bo'yicha qidiruv, tanlansa shartnoma raqami(lari) bilan filtrlaydi. */}
+            <div className="relative w-48">
+              <label className="mb-1 block text-sm font-medium text-slate-600">O'quvchi</label>
+              <input
+                value={studentFilter ? studentFilter.label : studentQuery}
+                onChange={(e) => {
+                  setStudentFilter(null)
+                  setStudentQuery(e.target.value)
+                  setStudentSearchOpen(true)
+                }}
+                onFocus={() => setStudentSearchOpen(true)}
+                onBlur={() => setTimeout(() => setStudentSearchOpen(false), 150)}
+                placeholder="Ism bo'yicha qidirish"
+                autoComplete="off"
+                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-brand-400"
+              />
+              {studentSearchOpen && studentQuery.trim().length >= MIN_SEARCH_LENGTH && !studentFilter && (
+                <ul className="absolute z-20 mt-1 max-h-64 w-72 overflow-y-auto rounded-lg border border-slate-200 bg-white p-1 shadow-lg">
+                  {studentResults.length === 0 && (
+                    <li className="px-3 py-2 text-sm text-slate-400">Topilmadi</li>
+                  )}
+                  {studentResults.map((c) => (
+                    <li key={c.id}>
+                      <button
+                        type="button"
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => {
+                          setStudentFilter({ label: c.studentName, numbers: new Set(c.number ? [c.number] : []) })
+                          setStudentSearchOpen(false)
+                        }}
+                        className="w-full rounded-lg px-3 py-1.5 text-left text-sm hover:bg-slate-50"
+                      >
+                        <span className="block font-medium text-slate-800">{c.studentName}</span>
+                        <span className="block text-xs text-slate-400">
+                          {c.className}
+                          {c.number ? ` · ${c.number}` : ' · shartnomasiz'}
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+
+            <Select
+              label="Sinf"
+              value={classFilter}
+              onChange={(e) => setClassFilter(e.target.value)}
+              className="max-w-[10rem]"
+            >
+              <option value="">Barcha sinflar</option>
+              {classList.map((c) => (
+                <option key={c.id} value={c.name}>
+                  {c.name}
+                </option>
+              ))}
+            </Select>
+
+            <Select
+              label="To'lov usuli"
+              value={methodFilter}
+              onChange={(e) => setMethodFilter(e.target.value as PaymentMethod | '')}
+              className="max-w-[10rem]"
+            >
+              <option value="">Barchasi</option>
+              {METHODS.map((m) => (
+                <option key={m} value={m}>
+                  {methodLabels[m]}
+                </option>
+              ))}
+            </Select>
+
+            <Select
+              label="Tranzaksiya turi"
+              value={kindFilter}
+              onChange={(e) => setKindFilter(e.target.value as CashBoxTransactionRow['kind'] | '')}
+              className="max-w-[10rem]"
+            >
+              <option value="">Barchasi</option>
+              {TRANSACTION_KINDS.map((k) => (
+                <option key={k} value={k}>
+                  {kindLabel(k)}
+                </option>
+              ))}
+            </Select>
+
+            {(methodFilter || kindFilter || studentFilter || classFilter) && (
+              <button
+                type="button"
+                onClick={resetExtraFilters}
+                className="mb-0.5 text-sm font-medium text-brand-600 hover:underline"
+              >
+                Filtrni tozalash
+              </button>
+            )}
+          </div>
+
+          {classFilterLoading && <p className="text-xs text-slate-400">Sinf bo'yicha yuklanmoqda...</p>}
         </Card>
       )}
 
@@ -418,14 +677,23 @@ export function CashierPage() {
               setEditingBox(box)
               setBoxFormOpen(true)
             }}
-            onAction={(box, mode) => setActionState({ box, mode })}
+            onAction={(box, mode) => {
+              if (mode === 'in') {
+                // Kirim — modal emas, pastdagi panel (izoh: `incomePanel` e'loni).
+                setIncomePanel(box)
+                setIncomeTab('plain')
+              } else {
+                setActionState({ box, mode })
+              }
+            }}
           />
 
           <CashLedger
             totalsByMethod={ledger?.totalsByMethod ?? {}}
             inTotal={ledger?.inTotal ?? 0}
             outTotal={ledger?.outTotal ?? 0}
-            rows={ledger?.rows ?? []}
+            rows={filteredRows}
+            narrowed={rowsNarrowed}
             loading={ledgerLoading}
             error={ledgerError}
             onRetry={() => setLedgerReload((n) => n + 1)}
@@ -439,10 +707,57 @@ export function CashierPage() {
         </div>
       )}
 
-      {/* ============ O'QUVCHIDAN TO'LOV QABUL QILISH ============ */}
-      {payOpen && (
+      {/* ============ KIRIM PANELI ============
+          Ikki tab: "Oddiy kirim" (cashBoxIn) va "O'quvchidan to'lov" (eski
+          yo'l, TEGILMAGAN — quyidagi bo'lim ilgarigi "O'QUVCHIDAN TO'LOV"
+          bo'limi bilan AYNAN bir xil, faqat shart o'zgargan). */}
+      {incomePanel && (
       <section className="space-y-4">
+        <Card>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 className="font-semibold text-slate-800">Kirim — {incomePanel.name}</h2>
+              <p className="text-sm text-slate-400">Oddiy kirim yozing yoki o'quvchidan to'lov qabul qiling.</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setIncomePanel(null)}
+              title="Yopish"
+              aria-label="Kirim panelini yopish"
+              className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+          <div className="mt-4 inline-flex rounded-lg border border-slate-200 p-1">
+            <button
+              type="button"
+              onClick={() => setIncomeTab('plain')}
+              className={cn(
+                'rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
+                incomeTab === 'plain' ? 'bg-brand-600 text-white' : 'text-slate-500 hover:text-slate-700',
+              )}
+            >
+              Oddiy kirim
+            </button>
+            <button
+              type="button"
+              onClick={() => setIncomeTab('student')}
+              className={cn(
+                'rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
+                incomeTab === 'student' ? 'bg-brand-600 text-white' : 'text-slate-500 hover:text-slate-700',
+              )}
+            >
+              O'quvchidan to'lov
+            </button>
+          </div>
+        </Card>
 
+        {incomeTab === 'plain' && (
+          <PlainIncomeForm box={incomePanel} onDone={handleIncomeDone} onCancel={() => setIncomePanel(null)} />
+        )}
+
+        {incomeTab === 'student' && (
         <div className="grid gap-6 lg:grid-cols-[minmax(320px,380px)_1fr]">
           <StudentSearch selectedId={student?.id ?? null} onSelect={selectStudent} />
 
@@ -551,6 +866,7 @@ export function CashierPage() {
             </div>
           )}
         </div>
+        )}
       </section>
       )}
 
@@ -817,6 +1133,101 @@ function InvoiceList({ invoices, loading, error, onRetry }: InvoiceListProps) {
           ))}
         </ul>
       )}
+    </Card>
+  )
+}
+
+/* ==========================================================================
+   Kirim panelining "Oddiy kirim" tabi
+   ========================================================================== */
+
+interface PlainIncomeFormProps {
+  box: CashBox
+  onDone: () => void
+  onCancel: () => void
+}
+
+/**
+ * `CashBoxActionModal`dagi "Kirim" (mode `in`) shakli bilan AYNAN BIR XIL
+ * maydonlar va chaqiruv (`cashBoxIn`) — faqat `Modal` ichida emas, sahifa
+ * ichidagi oddiy `Card`da, chunki bu yerda ikkinchi tab (`PaymentSplitModal`
+ * ochadigan "O'quvchidan to'lov") bilan bitta panelni bo'lishadi (izoh:
+ * `incomePanel` e'loni, `CashierPage` boshida).
+ */
+function PlainIncomeForm({ box, onDone, onCancel }: PlainIncomeFormProps) {
+  const [amountRaw, setAmountRaw] = useState('')
+  const [method, setMethod] = useState<PaymentMethod>('cash')
+  const [note, setNote] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const amount = parseSum(amountRaw)
+  const amountValid = amount !== null && amount > 0
+
+  const submit = async () => {
+    if (!amountValid || amount === null || busy) return
+    setBusy(true)
+    setError(null)
+    try {
+      await cashBoxIn(box.id, { amount, method, note: note.trim() || undefined })
+      onDone()
+    } catch (err) {
+      setError(financeErrorMessage(err, "Kirimni yozib bo'lmadi."))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Card>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <MoneyInput
+          label="Summa (so'm)"
+          value={amountRaw}
+          onValueChange={setAmountRaw}
+          placeholder="0"
+          invalid={amountRaw.length > 0 && !amountValid}
+          hint={amountRaw.length > 0 && !amountValid ? "Summa noldan katta bo'lishi kerak." : undefined}
+          autoFocus
+        />
+        <Select label="To'lov usuli" value={method} onChange={(e) => setMethod(e.target.value as PaymentMethod)}>
+          {METHODS.map((m) => (
+            <option key={m} value={m}>
+              {methodLabels[m]}
+            </option>
+          ))}
+        </Select>
+      </div>
+
+      <div className="mt-4">
+        <Textarea
+          label="Izoh (ixtiyoriy)"
+          rows={2}
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          placeholder="Masalan: boshlang'ich mablag'"
+        />
+      </div>
+
+      <p className="mt-3 text-xs text-slate-400">Joriy qoldiq: {formatSum(box.balance)} so'm</p>
+
+      {error && (
+        <div className="mt-3 rounded-xl border border-red-200 bg-red-50/70 px-3 py-3">
+          <div className="flex items-start gap-2 text-sm text-red-700">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>{error}</span>
+          </div>
+        </div>
+      )}
+
+      <div className="mt-4 flex items-center justify-end gap-2">
+        <Button variant="secondary" onClick={onCancel} disabled={busy}>
+          Bekor qilish
+        </Button>
+        <Button onClick={() => void submit()} disabled={!amountValid || busy}>
+          {busy ? 'Yozilmoqda...' : 'Kirim'}
+        </Button>
+      </div>
     </Card>
   )
 }
