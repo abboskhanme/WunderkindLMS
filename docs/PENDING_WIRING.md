@@ -1524,3 +1524,69 @@ that true — it already was:
 
 `BillingSettingsService.UpdateAsync` writes only the `billing_settings` singleton row — it does
 not, and must not, touch `invoices` or `expenses`.
+
+---
+
+## For whoever next edits `Program.cs` — F6.01 planned-expense templates
+
+Built on the `expense_templates` migration (finance-parity.md §2.6.3, F6.01). This task's brief
+forbade editing `Program.cs`, `App.tsx`, `navigation.ts`, `constants.ts` and `AuditService.cs` —
+everything below was deliberately routed around those files, the same way P1-14/P1-17 routed
+around a shared `Program.cs` before their sequential task landed (entries 1, 9 above).
+
+### 1. `ExpenseTemplateService` / `ExpenseTemplatesController` need **no** DI registration
+
+`IExpenseTemplateService` is never resolved from the container. `ExpenseTemplatesController`
+takes the two dependencies it needs (`IAppDbContext`, `AuditService`) — both already registered
+— and builds the service by hand:
+
+```csharp
+private readonly IExpenseTemplateService templates = new ExpenseTemplateService(db, audit);
+```
+
+Same pattern as `PayrollAdjustmentsController` and `BillingCatalogController.Settings`
+(docs/PENDING_WIRING.md §3a). **Nothing to add here** — this entry exists only so the next
+person does not go looking for a missing registration that was never needed.
+
+### 2. `ExpenseTemplateReminderService` — hosted service, **needs one line**
+
+Unlike the CRUD service, the daily Telegram reminder (`SchoolLms.Application/Billing/
+ExpenseTemplateReminderService.cs`) is a `BackgroundService` and must be registered as a hosted
+service to ever run:
+
+```csharp
+builder.Services.AddHostedService<SchoolLms.Application.Billing.ExpenseTemplateReminderService>();
+```
+
+Its own two dependencies (`IAppDbContext`, `TelegramService`) are resolved per-run from a scope
+it creates itself (`AnomalyScanService`/`BillingAccrualService` shape) — nothing else to
+register.
+
+**If skipped:** the reminder logic is written, tested (`RunOnceAsync` is called directly in
+tests, bypassing the host) and correct, but never runs in the deployed app — the director gets
+no Telegram message and no error, because nothing calls `ExecuteAsync`. Silent, not broken.
+
+### 3. Menu entry: settings screen only, no new route
+
+The templates catalog was added *inside* the existing `BillingSettingsPage.tsx`
+(`/admin/billing/settings`) as another catalogue card — no new route, no new navigation entry,
+because the page and its menu entry already exist (`config/navigation.ts` → `Sozlamalar`,
+entry already added by F14.01, see this file's own tail). **Nothing to add to `App.tsx` or
+`navigation.ts`.**
+
+### 4. Audit constant used, not centralized
+
+`ExpenseTemplateService` writes audit rows under a **local** constant, `"ExpenseTemplate"` —
+not added to `AuditService.cs` (forbidden by this task's brief). Same precedent as
+`BillingSettingsService.AuditEntity`. If a future pass centralizes these, `"ExpenseTemplate"`
+is the string to promote.
+
+### 5. The director's Telegram chat — read before extending
+
+`ExpenseTemplateReminderService` reaches the director through the **only** channel that exists
+today: `TelegramRegistrations.TeacherId`, which requires the director to also have a `teachers`
+row (`teachers.user_id` → the `superadmin` `app_users` row) with a phone number the director
+registered with the bot — the exact same mechanism a teacher uses. There is no
+`app_users.phone` / direct chat-id column for a login account that is not also a teacher. If a
+director-only login (no teacher profile) needs this reminder, that is new schema, not a bug in
+this service — see the service's own header comment for the full reasoning.

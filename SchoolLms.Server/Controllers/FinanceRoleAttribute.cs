@@ -120,6 +120,15 @@ public enum FinanceAction
 
     /// <summary>Kassa amalini bekor qilish (storno).</summary>
     CancelCashBoxTransaction,
+
+    /// <summary>
+    /// Rejalashtirilgan chiqim shablonlarini boshqarish (F6.01, finance-parity.md
+    /// §2.6). Shablon moliyaviy EMAS (pul jurnalga o'z-o'zidan tushmaydi —
+    /// <c>ExpenseTemplates.cs</c> boshidagi izoh), lekin summa bilan ishlagani
+    /// uchun <see cref="ManageBillingSettings"/> bilan bir xil daraja — kassir
+    /// bu yerga umuman kirmaydi.
+    /// </summary>
+    ManageExpenseTemplates,
 }
 
 /// <summary>
@@ -227,6 +236,11 @@ public static class FinanceMatrix
 
         new(FinanceAction.CancelCashBoxTransaction, AdminAndDirector,
             "Kassa amalini bekor qilish (storno)"),
+
+        // F6.01 — rejalashtirilgan chiqim shabloni. `ManageBillingSettings`
+        // bilan bir xil daraja: sozlama, lekin summa bilan ishlaydi.
+        new(FinanceAction.ManageExpenseTemplates, AdminAndDirector,
+            "Rejalashtirilgan chiqim shablonlarini boshqarish (F6.01)"),
     ];
 
     /// <summary>

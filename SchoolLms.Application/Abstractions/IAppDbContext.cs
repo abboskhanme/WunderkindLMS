@@ -205,6 +205,14 @@ public interface IAppDbContext
     DbSet<CashBox> CashBoxes { get; }
     DbSet<CashBoxTransaction> CashBoxTransactions { get; }
 
+    /// <summary>
+    /// Rejalashtirilgan chiqim shablonlari (F6.01, finance-parity.md §2.6).
+    /// Moliyaviy EMAS — to'liq CRUD (<c>students_parity_p1_guards.sql</c>
+    /// naqshi, <c>Migrations/Sql/expense_templates_guards.sql</c>). Shablon
+    /// hech qachon jurnalga o'z-o'zidan tushmaydi — batafsil: <c>ExpenseTemplates.cs</c>.
+    /// </summary>
+    DbSet<ExpenseTemplate> ExpenseTemplates { get; }
+
     int SaveChanges();
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 

@@ -1520,3 +1520,31 @@ very likely new schema, and an unanswered product decision — so per the brief 
 find it needs no schema change, no new account code and no product decision") this stays P2 · Q7,
 unchanged. Building the report layer without the recording layer would also be dishonest: there would
 be nowhere in the product to actually enter a dividend, so a P&L row for it would always read zero.
+
+## 10. Update — 2026-09-18: F6.01 built (planned-expense templates)
+
+§6.15's C7 migration owner slice is done. `expense_templates` (id, name, category, amount,
+day_of_month, is_active, created_at) — a settings catalog, not a ledger table, so full CRUD and
+`app_rw` gets SELECT/INSERT/UPDATE/DELETE (`Migrations/Sql/expense_templates_guards.sql`), unlike
+the insert-only money tables in §3.4. `ExpenseTemplateService` + `ExpenseTemplatesController`
+(`/api/admin/finance/expense-templates`, RBAC via a new `FinanceAction.ManageExpenseTemplates`,
+admin+director) match the exact shape the `planned` tab (§2.6.1) was told to build against. A
+template never posts to the ledger by itself — a real expense is still a separate, deliberate
+`ExpenseService.CreateAsync` call with its own SPEC §4.5 approval rules.
+
+The monthly reminder (`ExpenseTemplateReminderService`, a `BackgroundService`) sends the director
+a daily Telegram digest of templates due that day — CLAUDE.md's Telegram-only rule, no SMS. It
+reaches the director through the only staff-Telegram channel that exists
+(`TelegramRegistrations.TeacherId`, which needs the director to also have a `teachers` row linked
+to their `superadmin` account and registered with the bot by phone, same as any teacher); if that
+link is missing, it sends nothing and fails nothing, same as `DisciplineParentNotifier`. Not yet
+registered as a hosted service — `Program.cs` was off-limits for this task; the one line it needs
+is in `docs/PENDING_WIRING.md`.
+
+Frontend: a fifth catalogue tab inside `BillingSettingsPage.tsx`'s existing two-column hub
+(`?tab=expense-templates`) — no new route, no `navigation.ts` change, both files were also
+off-limits and the page/menu entry already exist (F14.01).
+
+Verification: `./tools/test.sh` — 1409/1409 passed (1384 + 25 new: 5 migration, 16 controller/RBAC,
+4 reminder-service). Frontend `npm run build` clean; `npx eslint src` — 39 errors + 9 warnings,
+unchanged from the stated baseline, none in any file this pass touched.

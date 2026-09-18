@@ -252,6 +252,12 @@ builder.Services.AddScoped<SchoolLms.Application.Billing.IAnomalyService,
 
 // Tungi tekshiruv: ishga tushishda bir marta, keyin har kuni 03:00 da.
 builder.Services.AddHostedService<SchoolLms.Application.Billing.AnomalyScanService>();
+// Rejali xarajat eslatmasi (F6.01) — har kuni 08:00 (Toshkent) da o'sha kunga
+// belgilangan shablonlarni direktorga Telegram orqali yig'ib yuboradi.
+// ATAYLAB ishga tushganda YURMAYDI: `AnomalyScanService` dan farqli, bu yerda
+// bir kunda ikki marta yuborishdan saqlaydigan bazadagi belgi yo'q — redeploy
+// paytida takroriy xabar ketmasligi uchun faqat soat bo'yicha ishlaydi.
+builder.Services.AddHostedService<SchoolLms.Application.Billing.ExpenseTemplateReminderService>();
 
 // Shartnoma andozasini (Word) to'ldirish xizmati
 builder.Services.AddScoped<SchoolLms.Application.Services.ContractService>();
