@@ -254,10 +254,7 @@ function OpenShifts({ day }: { day: CashDay }) {
   if (day.openShifts.length === 0) {
     return (
       <Card className="border-slate-200 bg-slate-50/70">
-        <p className="text-sm text-slate-500">
-          Hozir ochiq smena yo'q — kassa yopiq. To'lov qabul qilish uchun kassir smena ochishi
-          kerak (SPEC §4.2).
-        </p>
+        <p className="text-sm text-slate-500">Hozir kassada faol kassir yo'q.</p>
       </Card>
     )
   }

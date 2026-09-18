@@ -13,11 +13,6 @@ import { TeacherSalaryDetailModal } from './TeacherSalaryDetailModal'
 import { PnlTab } from './PnlTab'
 import { CashFlowTab } from './CashFlowTab'
 import { DebtorsTab } from './DebtorsTab'
-import { CashDayPage } from './CashDayPage'
-import { ZReportTab } from './ZReportTab'
-import { VarianceTab } from './VarianceTab'
-import { VarianceBanner } from './VarianceBanner'
-import { useVarianceWatch } from './useVarianceWatch'
 
 const todayStr = new Date().toISOString().slice(0, 10)
 const yearOf = (d: string) => Number(d.slice(0, 4))
@@ -42,27 +37,20 @@ const control =
  * "O'qituvchilar" (maosh) tabi QOLDI: uning o'rnini bosadigan yangi hisobot
  * yo'q. Manbasi almashdi — server uni endi `expenses` dan hisoblaydi.
  *
- * "KASSA KUNI" TABI — 2026-09-18, MENYU YOZUVSIZ QOLGANDAN KEYIN
- * -----------------------------------------------------------------
- * `navigation.ts` Moliya menyusi EduSchool ro'yxatiga moslashtirilgach
- * (commit 7270989) bu ekran hech qanday menyuda qolmadi — faqat URL orqali
- * ochilardi. EduSchool'da ham alohida menyu yozuvi yo'q: kunlik hisobot
- * shu direktor panelining o'zida, Z-hisobot va Nomuvofiqlik bilan bir
- * oilada (ular ham aynan shu sababdan — smena/kassa nazorati — shu yerda).
- * `CashDayPage` O'ZGARTIRILMAY import qilingan: uning o'z sana/kalendar
- * boshqaruvi bor (bitta kun + oy, `from`/`to` DAVRIDAN farqli), shuning
- * uchun `periodTabs` ga QO'SHILMAGAN — pastdagi umumiy davr tanlagich bu
- * tabda ma'nosiz bo'lardi, sahifaning o'zidagi sana maydoni ishlatiladi.
+ * "Z-HISOBOT" VA "NOMUVOFIQLIK" OLIB TASHLANDI (mijoz, 2026-09-18): smena
+ * tushunchasi butunlay olib tashlanmoqda ("kassa" bo'ladi, smena emas), bu
+ * ikkala tab esa aynan smena yopilishi — kutilgan/sanalgan naqd farqi —
+ * haqida edi. Fayllar (`ZReportTab.tsx`, `VarianceTab.tsx`) va ular bilan
+ * bog'liq `VarianceBanner.tsx` / `useVarianceWatch.ts` O'CHIRILMADI
+ * (CLAUDE.md: so'ralmagan o'chirish yo'q) — shunchaki shu sahifadan
+ * uzildi, endi hech qayerdan chaqirilmaydi.
  */
-type Tab = 'teachers' | 'pnl' | 'cashflow' | 'debtors' | 'cashday' | 'zreport' | 'variance'
+type Tab = 'teachers' | 'pnl' | 'cashflow' | 'debtors'
 
 const reportTabs: { value: Tab; label: string }[] = [
   { value: 'pnl', label: 'Foyda va zarar' },
   { value: 'cashflow', label: 'Pul oqimi' },
   { value: 'debtors', label: 'Qarzdorlar' },
-  { value: 'cashday', label: 'Kassa kuni' },
-  { value: 'zreport', label: 'Z-hisobot' },
-  { value: 'variance', label: 'Nomuvofiqlik' },
 ]
 
 /** Yuqoridagi sana oralig'i faqat shu tablarda ma'noga ega. */
@@ -82,19 +70,17 @@ function balanceClass(v: number): string {
 }
 
 /**
- * `initialTab` — menyudan TO'G'RIDAN-TO'G'RI bitta tabga kirish uchun
- * (`Qarzdorlar bilan ishlash`, `Moliya hisobotlari (P&L)`, `Pul oqimi`
- * EduSchool'da alohida menyu yozuvi, bizda esa shu sahifaning tablari).
- * Ekran ikkiga bo'linmaydi — bitta sahifa, boshlang'ich tabi boshqa.
- * Xuddi shu naqsh `StudentsPage` da `Arxiv o'quvchilar` uchun ishlatilgan.
+ * `initialTab` — menyudan TO'G'RIDAN-TO'G'RI bitta hisobotga kirish uchun
+ * (`Qarzdorlar bilan ishlash`, `Moliya hisobotlari (P&L)`, `Pul oqimi` —
+ * har biri o'z menyu yozuvi, lekin shu sahifaning tabi). Shu holda tab
+ * qatori KO'RSATILMAYDI: foydalanuvchi allaqachon menyudan tanlab kelgan.
  */
 export function FinancePage({ initialTab }: { initialTab?: Tab } = {}) {
   const { user } = useAuth()
   const canSeeReports = !!user && reportRoles.includes(user.role)
 
   // Ruxsati yo'q xodim uchun yagona ochiq tab — maosh hisoboti.
-  const [tab, setTab] = useState<Tab>(
-    canSeeReports ? (initialTab ?? 'pnl') : 'teachers')
+  const [tab, setTab] = useState<Tab>(canSeeReports ? (initialTab ?? 'pnl') : 'teachers')
   const [from, setFrom] = useState(`${yearOf(todayStr)}-01-01`)
   const [to, setTo] = useState(todayStr)
 
@@ -103,11 +89,6 @@ export function FinancePage({ initialTab }: { initialTab?: Tab } = {}) {
 
   const [audit, setAudit] = useState<{ filters: AuditFilters; title: string } | null>(null)
   const [detailTeacher, setDetailTeacher] = useState<SalaryReportRow | null>(null)
-
-  // Hal qilinmagan nomuvofiqlik hisoblagichi (SPEC §4.6). Banner ham,
-  // "Nomuvofiqlik" tabi ham SHU bitta manbadan o'qiydi — ekranda ikkita
-  // har xil raqam paydo bo'lmasligi uchun.
-  const variance = useVarianceWatch(canSeeReports)
 
   const load = useCallback(() => {
     // Boshqa tablar o'z ma'lumotini o'zi oladi.
@@ -164,28 +145,7 @@ export function FinancePage({ initialTab }: { initialTab?: Tab } = {}) {
         </Button>
       </div>
 
-      {/*
-        HAL QILINMAGAN NOMUVOFIQLIK HISOBLAGICHI (SPEC §4.6).
-        Sahifa ochilishi bilan ko'rinadi va YOPIB BO'LMAYDI — bannerda "x"
-        tugmasi yo'q, uni yashiradigan holat ham yo'q. Batafsil izoh:
-        `VarianceBanner.tsx`.
-      */}
-      {canSeeReports && !initialTab && (
-        <VarianceBanner
-          watch={variance}
-          onOpen={() => setTab('variance')}
-          hideOpenAction={tab === 'variance'}
-        />
-      )}
-
-      {/*
-        Bo'limlar (tablar) — FAQAT sahifa o'z manzilida (`/admin/finance`)
-        ochilganda. Menyudan aniq hisobotga kirilganda (Qarzdorlar bilan
-        ishlash, P&L, Pul oqimi — har biri o'z menyu yozuvi) tab qatori
-        menyuni TAKRORLAYDI: foydalanuvchi allaqachon tanlab kelgan, ustiga
-        yana yetti tugma ko'rsatish chalkashtiradi. Mijoz 2026-09-18 da aynan
-        shuni so'radi.
-      */}
+      {/* Bo'limlar (tablar) — faqat sahifa o'z manzilida ochilganda. */}
       {!initialTab && (
       <div className="flex flex-wrap items-center gap-2">
         <button
@@ -216,16 +176,6 @@ export function FinancePage({ initialTab }: { initialTab?: Tab } = {}) {
                 )}
               >
                 {t.label}
-                {t.value === 'variance' && variance.count > 0 && (
-                  <span
-                    className={cn(
-                      'ml-2 rounded-full px-1.5 py-0.5 text-xs font-semibold',
-                      tab === t.value ? 'bg-white text-red-700' : 'bg-red-100 text-red-700',
-                    )}
-                  >
-                    {variance.count}
-                  </span>
-                )}
               </button>
             ))}
           </>
@@ -337,11 +287,6 @@ export function FinancePage({ initialTab }: { initialTab?: Tab } = {}) {
       {canSeeReports && tab === 'pnl' && <PnlTab from={from} to={to} />}
       {canSeeReports && tab === 'cashflow' && <CashFlowTab from={from} to={to} />}
       {canSeeReports && tab === 'debtors' && <DebtorsTab />}
-      {canSeeReports && tab === 'cashday' && <CashDayPage />}
-      {canSeeReports && tab === 'zreport' && <ZReportTab />}
-      {canSeeReports && tab === 'variance' && (
-        <VarianceTab watch={variance} canResolve={canSeeReports} />
-      )}
 
       <AuditHistoryModal
         open={!!audit}
