@@ -1389,3 +1389,53 @@ unmerged, on another local branch per §7.5 (F1.05, F11.01/02, a second F14.01, 
 integrating those is a merge decision, not a gap in this audit), or (c) is P2 by the original §1
 prioritisation (exports, doughnuts, print stylesheets, the group filter, dividends). Nothing P0 or
 P1 is both open on this branch and free of one of those three blockers.
+
+---
+
+## 9. Update — 2026-09-18 (same day, fourth pass): merged master, §7.5's branches landed there
+
+STEP 0 of this task's brief ("`git log --oneline -1`; if behind master, `git merge master --no-edit`")
+was missed at the very start of this session — this branch was already behind master when work began,
+and stayed behind while §6–§8 above were written. By the time this was caught, master had moved 259
+files and ~52 000 lines ahead (many other worktree-agents' output, running in parallel with this one).
+`git merge master --no-edit` was run; it conflicted in exactly the files both this branch and master
+had independently edited to close the **same** gaps (F1.10, F1.07, F14.01 and their tests) — resolved
+in favour of master's side throughout, because master's versions were each more complete in a way that
+mattered (detailed in the merge commit `afc2223`): the F1.10 lock shares its key with `InvoiceService`'s
+void lock (this branch's did not), F1.07 sends the Telegram receipt as a real background task instead
+of blocking the HTTP response, and F14.01 enforces SPEC §4.5's "only a director may change the
+threshold" rule through `BillingSettingsService`, which this branch's version did not have. One
+knock-on: `BillingSettingsTests.cs` (built independently on this branch, not itself in conflict)
+asserted this branch's now-discarded error codes — fixed to master's real ones rather than deleted, its
+RBAC/audit coverage kept because master's own `BillingSettingsServiceTests.cs` tests the service layer
+only, not the HTTP/RBAC surface. This branch's own contributions — the §6/§7/§8 audit and F9.02's
+receipt-action buttons on `TransactionsPage.tsx` — had no equivalent on master and merged without
+conflict.
+
+**§7.5's "other worktree branches carry more of this work, unmerged" is resolved — they are merged now**,
+reachable from `HEAD` via master. Re-checked each by grep, not by a full re-read of the code (that would
+repeat §6–§8's method on gaps this document did not build and is not the author of):
+
+| Gap | Now on this branch | Evidence |
+|---|---|---|
+| F1.05 (refunds) | **yes** | `SchoolLms.Application/Billing/StudentRefundService.cs`, `StudentRefundsController.cs`, `SchoolLms.Tests/Billing/StudentRefundTests.cs`, `pages/admin/finance/RefundsPage.tsx` |
+| F11.01/F11.02 (bonus/penalty) | **yes**, with its own migration | `SchoolLms.Domain/PayrollAdjustments.cs`, migration `20260917180810_PayrollAdjustments`, `PayrollAdjustmentService.cs`, `PayrollAdjustmentsController.cs`, `pages/admin/hr/AdjustmentsPage.tsx` + `AdjustmentReasonsModal.tsx` + `AdjustmentFormModal.tsx` |
+| F14.01 (billing settings), second implementation | **superseded by §7.2/§9's merge**, not duplicated | one `BillingSettingsPage.tsx` survives (master's, now a two-column catalogues hub — see the file's own header comment) |
+| F10.05, F13.01/02/03/05/06 (arrears xlsx + filters) | not independently re-verified this pass | commit `b8a5bdc` is reachable from `HEAD` post-merge; take on trust from git history rather than re-audited here |
+| P&L 2.0 (§2.6, previously "deferred, zero code") | **built as a "smallest honest slice"**, contradicting §6.5/§8.3's "deferred" note | `pages/admin/finance/PnlExpectationPage.tsx`, route `finance/pnl-2` (`App.tsx:177`) — commit `016972c`. This document is **not** the record of that decision being revisited; note it and move on, do not re-litigate Q6 here. |
+| Cashier model | **replaced**: cash shifts → cash boxes | `CashBoxService.cs`, `CashBoxModel.cs`, migration `20260918000559_CashBoxes` and later ones; `pages/cashier/CashierPage.tsx` rewritten (805-line diff) — this is the "other agent reworking `pages/cashier/*`" this task was told not to touch, now merged in. Not audited against §2.1 here; a fresh §2.1 pass would need to re-read the new model first. |
+
+**Verification after the merge** (independent of §8.1, run again on the final merged tree):
+`./tools/test.sh` — **1384 / 1384 passed, 0 failed** (1077 base + this branch's own tests + everything
+the merge brought in). Frontend: `npm run build` clean; `npx eslint src` — **39 errors + 9 warnings (48
+total)**, none in any file this session touched — and the 39-error count now matches this task's stated
+baseline exactly (measured on the pre-merge branch tip it was 42; the branch was simply behind and the
+comparison was against the wrong tree).
+
+**What this pass did not do:** re-run §6/§7/§8's full screen-by-screen method against the merged tree.
+Master brought in enough independent work (a cashier-model rewrite, four more closed gaps, a revived
+P&L 2.0) that a faithful re-audit is its own multi-hour task, not a one-paragraph update — and it would
+mostly be re-describing other agents' already-committed, already-tested work rather than producing new
+information. What is here is what a merge log honestly supports: what conflicted, why it was resolved
+that way, and which previously-"unmerged" gaps are now reachable. A full re-audit, if wanted, is a
+fresh instance of this same task's Part 1 against current `HEAD`.
