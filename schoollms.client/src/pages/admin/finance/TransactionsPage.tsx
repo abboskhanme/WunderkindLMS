@@ -25,12 +25,14 @@ import {
   ChevronRight,
   Clock3,
   Download,
+  FileText,
   Lock,
   Minus,
   Plus,
   RotateCcw,
   Scale,
   Search,
+  Send,
   Undo2,
 } from 'lucide-react'
 import type { FeeCategory, PaymentMethod, SchoolClass } from '@/types'
@@ -49,6 +51,12 @@ import {
   transactionStatusLabels,
 } from '@/api/services/transactions'
 import { reversePayment } from '@/api/services/payments'
+// Chek PDF va Telegramga qayta yuborish — mavjud `/receipts/*` endpoint va
+// mijoz funksiyalari (F0.04 bilan RBAC allaqachon to'g'irlangan), F9.02
+// uchun qayta ishlatiladi. `pages/cashier/*` TAHRIRLANMAYDI — bu yerda
+// faqat `api/services/cashier.ts` dagi eksport qilingan funksiyalar
+// import qilinadi, ular boshqa agent ishlayotgan sahifalarga tegishli emas.
+import { financeErrorMessage, getReceiptPdf, sendReceiptToTelegram } from '@/api/services/cashier'
 import { billingErrorCode, billingErrorMessage } from '@/api/services/billingError'
 import { getFeeCategories } from '@/api/services/billingCatalog'
 import { getClasses } from '@/api/services/classes'
@@ -157,6 +165,9 @@ export function TransactionsPage() {
   const [actionCode, setActionCode] = useState<string | null>(null)
   const [done, setDone] = useState<string | null>(null)
   const [exporting, setExporting] = useState(false)
+  // F9.02 — Chek (PDF) va Telegramga qayta yuborish, qator bo'yicha band
+  // holat (bitta vaqtda faqat bitta qator uchun).
+  const [receiptBusyId, setReceiptBusyId] = useState<string | null>(null)
 
   // Ma'lumotnomalar bir marta: sinflar va toifalar filtri uchun.
   useEffect(() => {
@@ -274,6 +285,48 @@ export function TransactionsPage() {
       setError(billingErrorMessage(e, "Eksport qilib bo'lmadi"))
     } finally {
       setExporting(false)
+    }
+  }
+
+  /**
+   * F9.02 — "Chek (PDF)". To'lov va storno qatorining o'zi ham `payments`
+   * jadvalidagi yozuv (o'z chek raqami bilan), shuning uchun bitta endpoint
+   * ikkalasiga ham xizmat qiladi. Havola avval blob sifatida yuklanadi —
+   * oddiy `<a href>` `/receipts/{id}.pdf` uchun Authorization sarlavhasini
+   * yubormay 401 olardi (xuddi `ReceiptPreview.tsx` dagi kabi).
+   */
+  const handleReceiptPdf = async (row: TransactionRow) => {
+    setReceiptBusyId(row.id)
+    setDone(null)
+    setError(null)
+    try {
+      const blob = await getReceiptPdf(row.id)
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `chek-${row.receiptNo ?? row.id}.pdf`
+      link.click()
+      URL.revokeObjectURL(url)
+    } catch (e: unknown) {
+      setError(financeErrorMessage(e, "Chek PDF'i tayyorlanmadi"))
+    } finally {
+      setReceiptBusyId(null)
+    }
+  }
+
+  /** F9.02 — "Telegramga qayta yuborish". Javob har doim 200; `delivered:
+   * false` xato emas — server xabarining o'zi tushuntiradi. */
+  const handleResendReceipt = async (row: TransactionRow) => {
+    setReceiptBusyId(row.id)
+    setDone(null)
+    setError(null)
+    try {
+      const result = await sendReceiptToTelegram(row.id)
+      setDone(result.message)
+    } catch (e: unknown) {
+      setError(financeErrorMessage(e, "Telegramga yuborib bo'lmadi"))
+    } finally {
+      setReceiptBusyId(null)
     }
   }
 
@@ -570,22 +623,49 @@ export function TransactionsPage() {
                       </StatusPill>
                     </td>
                     <td className="px-4 py-3 text-right">
-                      {canReverse(row) && (
-                        <button
-                          type="button"
-                          title="Storno qilish"
-                          aria-label="Storno qilish"
-                          onClick={() => {
-                            setActionError(null)
-                            setActionCode(null)
-                            setDone(null)
-                            setReversing(row)
-                          }}
-                          className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-red-50 hover:text-red-600"
-                        >
-                          <Undo2 className="h-4 w-4" />
-                        </button>
-                      )}
+                      <div className="flex items-center justify-end gap-1">
+                        {/* F9.02 — faqat to'lov va storno qatorida chek bor (expenda yo'q). */}
+                        {row.receiptNo !== null && (
+                          <>
+                            <button
+                              type="button"
+                              title="Chek (PDF)"
+                              aria-label="Chek (PDF)"
+                              disabled={receiptBusyId === row.id}
+                              onClick={() => handleReceiptPdf(row)}
+                              className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
+                            >
+                              <FileText className="h-4 w-4" />
+                            </button>
+                            <button
+                              type="button"
+                              title="Telegramga qayta yuborish"
+                              aria-label="Telegramga qayta yuborish"
+                              disabled={receiptBusyId === row.id}
+                              onClick={() => handleResendReceipt(row)}
+                              className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-brand-50 hover:text-brand-600 disabled:cursor-not-allowed disabled:opacity-40"
+                            >
+                              <Send className="h-4 w-4" />
+                            </button>
+                          </>
+                        )}
+                        {canReverse(row) && (
+                          <button
+                            type="button"
+                            title="Storno qilish"
+                            aria-label="Storno qilish"
+                            onClick={() => {
+                              setActionError(null)
+                              setActionCode(null)
+                              setDone(null)
+                              setReversing(row)
+                            }}
+                            className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-red-50 hover:text-red-600"
+                          >
+                            <Undo2 className="h-4 w-4" />
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}

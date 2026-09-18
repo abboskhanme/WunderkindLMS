@@ -1333,3 +1333,59 @@ code here — this branch's audit (§6, §7) reflects only what `HEAD` actually 
 task's instruction to compare *the code* against *the record of theirs*. Whoever integrates the
 parallel branches should expect an F14.01 merge conflict against §7.2 and should keep the more
 complete side (compare `GET/PUT /api/admin/billing/settings` in both).
+
+---
+
+## 8. Update — 2026-09-18 (same day, third pass): reconciled §6/§7, closed the last P0 gap
+
+§6 and §7 above are two independent passes of this same task that ran concurrently on this branch
+(the note at the top of §7 explains how they interleaved). Both reached the same verdict on every
+one of the ~90 gap ids they checked in common, which cross-validates both — no rework was needed.
+This pass re-verified the machine-checkable claims independently rather than re-auditing the code
+by hand, then closed the one P0 gap both passes had explicitly left open.
+
+### 8.1 Independent re-verification
+
+- `./tools/test.sh` (fresh run, this pass): **1077 / 1077 passed, 0 failed** — matches both §6.14
+  and §7.3's counts exactly.
+- Frontend, from a clean `git archive`-equivalent checkout (`rsync --exclude node_modules --exclude
+  dist` + `docker run node:20-alpine`, the project's own prescribed verification command):
+  `npm run build` clean; `npx eslint src -f json` → **42 errors + 7 warnings = 49 total**, matching
+  §7.3's independently re-measured number exactly (a *third* measurement, same result). This task's
+  own brief states a baseline of "39" — that number does not match current `master` under any of the
+  three measurements taken today; treat **49** as the real baseline and "add none" as the bar, which
+  every pass here (including this one) has held to.
+
+### 8.2 Built — F9.02's second half: Chek (PDF) and Telegramga qayta yuborish on the journal
+
+§6.8 and §7 both left F9.02 **partial**: storno was on `TransactionsPage.tsx`, but the receipt row
+actions were not — "Chek (PDF)" and "Telegramga qayta yuborish" existed only on `/cashier`'s
+`ReceiptPreview.tsx`. §6.14 named this "a clean next pick" once F0.04 fixed the endpoints' RBAC,
+which it now has. Closed the last standing **P0** gap on the summary list (§1.1):
+
+- `TransactionsPage.tsx` gains two row-action buttons next to the existing storno icon, shown for
+  every row with a receipt (`row.receiptNo !== null` — payment and reversal rows; expense rows have
+  none, correctly excluded). Both call the **same** client functions `/cashier`'s own receipt modal
+  already uses (`getReceiptPdf`, `sendReceiptToTelegram`, `financeErrorMessage` from
+  `api/services/cashier.ts`) — one endpoint, two callers, no duplicated logic. PDF downloads as a
+  blob (the project's established pattern for an authenticated file download, e.g.
+  `AcademicYearPage.tsx`'s archive zip) since a bare `<a href>` cannot carry the `Authorization`
+  header; Telegram resend shows the server's own message (`delivered` can legitimately be `false` —
+  not an error, per `ReceiptsController.cs`'s doc comment — so the message is shown either way).
+- **Did not touch `pages/cashier/*`** (import only, from `api/services/cashier.ts`, a different
+  directory) — the other agent reworking that folder is unaffected.
+- RBAC: unchanged, inherited from the existing endpoints (`[FinanceRole(FinanceAction.AcceptPayment)]`
+  + F0.04's own-receipts-only rule for cashiers — moot here since `TransactionsPage` itself is
+  admin/superadmin only).
+- Verification: `npx tsc --noEmit` and the docker-based `eslint` run above both report
+  `TransactionsPage.tsx` clean (0 errors, 0 warnings); no backend file changed, so the 1077/1077
+  count in §8.1 already covers this.
+
+### 8.3 What remains, and why it stays open
+
+Every other gap either (a) needs a migration this task must not run (§6.15's list — F1.12, F1.13,
+F2.03, F10.04, F11.01/02, F14.02, plus F3.01's 206 h payroll spine), or (b) is already carried,
+unmerged, on another local branch per §7.5 (F1.05, F11.01/02, a second F14.01, F10.05, F13.0x —
+integrating those is a merge decision, not a gap in this audit), or (c) is P2 by the original §1
+prioritisation (exports, doughnuts, print stylesheets, the group filter, dividends). Nothing P0 or
+P1 is both open on this branch and free of one of those three blockers.
