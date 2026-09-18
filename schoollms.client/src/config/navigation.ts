@@ -59,6 +59,16 @@ export const navByRole: Record<Role, NavItem[]> = {
   //  qo'shiladi; o'rni MENU-PARITY.md da belgilangan.
   // ==========================================================================
   admin: [
+    // TARTIB EduSchool'ning yon menyusidan olingan (mijoz ko'rsatgan ekran,
+    // 2026-09-18): Dashboard · Lidlar · Moliya · Jurnal · O'quv bo'limi ·
+    // Dars jadvali · Chat · HR · Analitika · Boshqaruv · Xulq-atvor ·
+    // Sozlamalar. Ularda bor-u bizda hali qurilmagan bo'limlar (Topshiriqlar,
+    // Gamifikatsiya, Qabul, Imtihonlar, Blok Test) menyuda YO'Q — bo'sh
+    // sahifaga olib boradigan yozuv yo'q yozuvdan battar (MENU-PARITY.md).
+    //
+    // Bizda bor-u ularda yo'q uchtasi (Davomat, Keldi-ketdi, Ilova) OXIRIGA,
+    // Sozlamalardan oldin qo'yilgan — shunda EduSchool ketma-ketligi
+    // boshidan Xulq-atvorgacha uzilmay o'qiladi.
     { label: 'Bosh sahifa', to: '/admin', icon: LayoutDashboard },
     {
       label: 'Lidlar',
@@ -178,30 +188,6 @@ export const navByRole: Record<Role, NavItem[]> = {
     },
     { label: 'Xabarlar', to: '/admin/messages', icon: MessageSquare, perm: 'messages' },
     {
-      label: 'Davomat',
-      to: '/admin/attendance',
-      icon: CalendarCheck,
-      perm: 'attendance',
-      children: [
-        { label: 'Kunlik davomat', to: '/admin/attendance', end: true, group: 'DAVOMAT' },
-        { label: 'Davomat analitikasi', to: '/admin/attendance/analytics', group: 'DAVOMAT' },
-      ],
-    },
-    {
-      label: 'Keldi-ketdi',
-      to: '/admin/students/turniket',
-      icon: ClipboardCheck,
-      perm: 'students',
-      children: [
-        { label: 'Jonli turniket', to: '/admin/students/turniket', end: true, group: 'TURNIKET' },
-        { label: 'Turniket analitikasi', to: '/admin/students/turniket/analitika', group: 'HISOBOTLAR' },
-        { label: 'Kirib-chiqish statistikasi', to: '/admin/students/turniket/kirish-chiqish', group: 'HISOBOTLAR' },
-        // Ruxsat kaliti `students` — endpoint ham shunday. `attendance` ostiga
-        // qo'yilsa menyu bilan server bir xodim uchun ZID javob berardi.
-        { label: 'Kunlik davomat hisoboti', to: '/admin/students/turniket/kunlik-davomat', group: 'HISOBOTLAR' },
-      ],
-    },
-    {
       label: 'HR',
       to: '/admin/teachers',
       icon: GraduationCap,
@@ -228,19 +214,6 @@ export const navByRole: Record<Role, NavItem[]> = {
       ],
     },
     {
-      label: 'Ilova',
-      to: '/admin/assignments',
-      icon: Smartphone,
-      perm: 'app',
-      children: [
-        { label: 'Topshiriqlar', to: '/admin/assignments', group: "TA'LIM" },
-        { label: 'Topshiriqlar bali', to: '/admin/assignment-scores', group: "TA'LIM" },
-        { label: "Ta'lim (LMS)", to: '/admin/lms', group: "TA'LIM" },
-        { label: 'Oshxona', to: '/admin/canteen', group: 'BOSHQA' },
-        { label: "O'qituvchilar", to: '/admin/app/teachers', group: 'BOSHQA' },
-      ],
-    },
-    {
       label: 'Boshqaruv',
       to: '/admin/boshqaruv/staff',
       icon: Building2,
@@ -262,6 +235,43 @@ export const navByRole: Record<Role, NavItem[]> = {
         { label: 'Harakatlar', to: '/admin/discipline/incidents' },
         { label: 'Davomat intizomi', to: '/admin/discipline/attendance-report' },
         { label: 'Ball sabablar', to: '/admin/discipline/reasons' },
+      ],
+    },
+    {
+      label: 'Davomat',
+      to: '/admin/attendance',
+      icon: CalendarCheck,
+      perm: 'attendance',
+      children: [
+        { label: 'Kunlik davomat', to: '/admin/attendance', end: true, group: 'DAVOMAT' },
+        { label: 'Davomat analitikasi', to: '/admin/attendance/analytics', group: 'DAVOMAT' },
+      ],
+    },
+    {
+      label: 'Keldi-ketdi',
+      to: '/admin/students/turniket',
+      icon: ClipboardCheck,
+      perm: 'students',
+      children: [
+        { label: 'Jonli turniket', to: '/admin/students/turniket', end: true, group: 'TURNIKET' },
+        { label: 'Turniket analitikasi', to: '/admin/students/turniket/analitika', group: 'HISOBOTLAR' },
+        { label: 'Kirib-chiqish statistikasi', to: '/admin/students/turniket/kirish-chiqish', group: 'HISOBOTLAR' },
+        // Ruxsat kaliti `students` — endpoint ham shunday. `attendance` ostiga
+        // qo'yilsa menyu bilan server bir xodim uchun ZID javob berardi.
+        { label: 'Kunlik davomat hisoboti', to: '/admin/students/turniket/kunlik-davomat', group: 'HISOBOTLAR' },
+      ],
+    },
+    {
+      label: 'Ilova',
+      to: '/admin/assignments',
+      icon: Smartphone,
+      perm: 'app',
+      children: [
+        { label: 'Topshiriqlar', to: '/admin/assignments', group: "TA'LIM" },
+        { label: 'Topshiriqlar bali', to: '/admin/assignment-scores', group: "TA'LIM" },
+        { label: "Ta'lim (LMS)", to: '/admin/lms', group: "TA'LIM" },
+        { label: 'Oshxona', to: '/admin/canteen', group: 'BOSHQA' },
+        { label: "O'qituvchilar", to: '/admin/app/teachers', group: 'BOSHQA' },
       ],
     },
     {

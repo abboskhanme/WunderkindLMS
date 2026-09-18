@@ -391,3 +391,22 @@ inside Umumiy.
 
 **`Moliya hisobotlari (P&L) 2.0` is not coming** — declined in
 `existing-module-gaps.md` §3.6, before this menu work.
+
+## The top-level sidebar, reordered to EduSchool's sequence (2026-09-18)
+
+The client sent their sidebar and asked for the same order at the top level too.
+Theirs reads: Dashboard · Lidlar · Moliya · Jurnal · O'quv bo'limi ·
+Topshiriqlar · Dars jadvali · Chat · Gamifikatsiya · Qabul · Imtihonlar · HR ·
+Analitika · Boshqaruv · Xulq-atvor · Blok Test · Sozlamalar.
+
+Every entry we share was already in their relative order; what broke the
+sequence was our own three — Davomat, Keldi-ketdi and Ilova — sitting in the
+middle of it. They now come after Xulq-atvor and before Sozlamalar, so their
+run reads unbroken from the top to Xulq-atvor, and Sozlamalar stays last as it
+is for them.
+
+**Their five unbuilt modules stay out of the menu**: Topshiriqlar,
+Gamifikatsiya, Qabul, Imtihonlar, Blok Test. The rule from the first pass holds
+— an entry that opens a blank page reads as a broken product rather than an
+unfinished one. Each has its spec in `docs/modules/` and its position here for
+when it lands.
