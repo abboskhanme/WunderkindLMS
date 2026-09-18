@@ -8,6 +8,7 @@ import {
   Search,
   ShieldOff,
   UserRound,
+  Users,
   Wallet,
 } from 'lucide-react'
 import type { AllocationSuggestion, Payment, PaymentMethod, Role } from '@/types'
@@ -142,6 +143,11 @@ export function CashierPage() {
   const [from, setFrom] = useState(todayStr())
   const [to, setTo] = useState(todayStr())
   const [filtersOpen, setFiltersOpen] = useState(false)
+  // O'quvchidan to'lov — ALOHIDA sahifa emas, kassa ekranining AMALI.
+  // Ilgari u pastda, chiziq bilan ajratilgan ikkinchi ekran bo'lib turardi
+  // va mijoz aynan shuni "ajralib turmasin" dedi (2026-09-18). Endi yopiq
+  // turadi va yuqoridagi tugma bilan ochiladi; ichidagi oqim O'ZGARMAGAN.
+  const [payOpen, setPayOpen] = useState(false)
   const [boxFilter, setBoxFilter] = useState('')
   const [q, setQ] = useState('')
   const [ledger, setLedger] = useState<CashBoxTransactionsResult | null>(null)
@@ -349,6 +355,10 @@ export function CashierPage() {
             aria-label="Davr oxiri"
             className={dateInputClass}
           />
+          <Button onClick={() => setPayOpen((v) => !v)}>
+            <Users className="h-4 w-4" />
+            {payOpen ? "To'lovni yopish" : "O'quvchidan to'lov"}
+          </Button>
           <Button variant="secondary" onClick={() => setFiltersOpen((v) => !v)}>
             <Filter className="h-4 w-4" /> Filtr
           </Button>
@@ -429,14 +439,9 @@ export function CashierPage() {
         </div>
       )}
 
-      {/* ============ O'QUVCHIDAN TO'LOV QABUL QILISH (eski yo'l) ============ */}
-      <section className="space-y-4 border-t border-slate-100 pt-6">
-        <div>
-          <h2 className="text-lg font-semibold text-slate-800">O'quvchidan to'lov qabul qilish</h2>
-          <p className="text-sm text-slate-400">
-            O'quvchini toping, summani kiriting va chek bering.
-          </p>
-        </div>
+      {/* ============ O'QUVCHIDAN TO'LOV QABUL QILISH ============ */}
+      {payOpen && (
+      <section className="space-y-4">
 
         <div className="grid gap-6 lg:grid-cols-[minmax(320px,380px)_1fr]">
           <StudentSearch selectedId={student?.id ?? null} onSelect={selectStudent} />
@@ -547,6 +552,7 @@ export function CashierPage() {
           )}
         </div>
       </section>
+      )}
 
       {student && splitOpen && amount !== null && amount > 0 && (
         <PaymentSplitModal
