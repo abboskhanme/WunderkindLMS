@@ -716,7 +716,11 @@ export function CashierPage() {
         open={incomePanel !== null}
         onClose={() => setIncomePanel(null)}
         title={incomePanel ? `Kirim — ${incomePanel.name}` : 'Kirim'}
-        size="md"
+        // O'lcham TABGA qarab: oddiy kirim — qisqa shakl, tor va tik bo'lgani
+        // yaxshi; o'quvchidan to'lov esa ikki ustun (qidiruv | kartochka va
+        // hisob-fakturalar), unga keng joy kerak. Bitta o'lcham ikkalasiga
+        // to'g'ri kelmaydi.
+        size={incomeTab === 'student' ? 'xl' : 'md'}
       >
         {incomePanel && (
         <div className="space-y-4">
