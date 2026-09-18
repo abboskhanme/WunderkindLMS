@@ -112,6 +112,51 @@ public class FinanceReportsController(AppDbContext db) : ControllerBase
     }
 
     /// <summary>
+    /// <c>GET /api/admin/finance/pnl/export?from&amp;to</c> — DAVR rejimidagi
+    /// P&amp;L eksporti, .xlsx (§2.5 F5.06). Parametrlar <see cref="ProfitLoss"/>
+    /// bilan AYNAN bir xil — ikkinchi ta'rif yo'q (<c>ArrearsPivotExport</c>
+    /// bilan bir xil naqsh: ichkaridan o'sha action'ni chaqiradi).
+    ///
+    /// <para>
+    /// Qatorlar <c>PnlTab.tsx</c>'ning <c>handleExport</c> (CSV) bilan AYNAN
+    /// bir shaklda: toifa qatorlari, so'ng "Jami · Daromad" / "Jami · Xarajat"
+    /// va yakunda qalin "Jami · Sof natija" qatori — ekranda ko'rinadigan
+    /// raqamning O'ZI, qayta hisoblanmagan.
+    /// </para>
+    /// </summary>
+    [HttpGet("pnl/export")]
+    public async Task<ActionResult> ProfitLossExport(
+        [FromQuery] DateOnly? from,
+        [FromQuery] DateOnly? to,
+        CancellationToken ct = default)
+    {
+        var result = await ProfitLoss(from, to, ct);
+
+        // `ProfitLoss` o'zi 400 qaytargan bo'lishi mumkin (teskari davr) —
+        // o'sha xatoni AYNAN o'zi bilan qaytaramiz, ikkinchi marta tekshirmaymiz.
+        if (result.Result is not OkObjectResult ok || ok.Value is not ProfitLossDto pnl)
+            return result.Result ?? StatusCode(500);
+
+        string[] headers = ["Yo'nalish", "Toifa", "Summa"];
+
+        var rows = new List<IReadOnlyList<ExcelExport.XlsxCell>>();
+        rows.AddRange(pnl.Revenue.Select(l => PnlRow("Daromad", MoneyFlowQueries.LabelFor(l.Account), l.Amount)));
+        rows.AddRange(pnl.Expense.Select(l => PnlRow("Xarajat", MoneyFlowQueries.LabelFor(l.Account), l.Amount)));
+        rows.Add(PnlRow("Jami", "Daromad", pnl.RevenueTotal));
+        rows.Add(PnlRow("Jami", "Xarajat", pnl.ExpenseTotal));
+
+        IReadOnlyList<ExcelExport.XlsxCell> totalsRow = PnlRow("Jami", "Sof natija", pnl.Net);
+
+        var bytes = ExcelExport.BuildTable("Foyda va zarar", headers, rows, totalsRow);
+        return File(bytes, XlsxMime,
+            $"foyda-zarar_{pnl.From:yyyy-MM-dd}_{pnl.To:yyyy-MM-dd}.xlsx");
+    }
+
+    /// <summary>Bitta P&amp;L qatori — yo'nalish, toifa, summa (son katagi).</summary>
+    private static IReadOnlyList<ExcelExport.XlsxCell> PnlRow(string direction, string category, decimal amount) =>
+        [ExcelExport.XlsxCell.Of(direction), ExcelExport.XlsxCell.Of(category), ExcelExport.XlsxCell.Num(amount)];
+
+    /// <summary>
     /// <c>GET /api/admin/finance/pnl/expectation?month=YYYY-MM</c> — P&amp;L
     /// 2.0 (§2.6, <c>FINANCE_ALL.PNL_EXPECTATION</c>, beta): bir oy uchun
     /// reja (faol obunalar/hisob-fakturalardan kutilgan daromad) va fakt

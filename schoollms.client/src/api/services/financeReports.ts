@@ -171,6 +171,28 @@ export async function getProfitLoss(from: string, to: string): Promise<ProfitLos
   }
 }
 
+/**
+ * DAVR rejimidagi P&amp;L — .xlsx (§2.5 F5.06). Ekranda ko'rinayotgan
+ * SHU davr, `downloadArrearsPivot` bilan bir xil yuklab olish naqshi.
+ */
+export async function downloadProfitLoss(from: string, to: string): Promise<void> {
+  const res = await api.get('/admin/finance/pnl/export', {
+    params: { from, to },
+    responseType: 'blob',
+  })
+
+  const url = URL.createObjectURL(res.data as Blob)
+  const a = document.createElement('a')
+  a.href = url
+  const cd = (res.headers['content-disposition'] as string | undefined) ?? ''
+  const m = cd.match(/filename="?([^"]+)"?/)
+  a.download = m?.[1] ?? `foyda-zarar_${from}_${to}.xlsx`
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  URL.revokeObjectURL(url)
+}
+
 /* =========================================================================
    2b) P&L 2.0 (beta) — GET /api/admin/finance/pnl/expectation
    ========================================================================= */

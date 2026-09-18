@@ -1,6 +1,10 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.Net;
 using System.Text.Json;
+using DocumentFormat.OpenXml.Packaging;
+using DocumentFormat.OpenXml.Spreadsheet;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using SchoolLms.Application.Billing;
@@ -8,6 +12,7 @@ using SchoolLms.Application.Dtos.Billing;
 using SchoolLms.Domain;
 using SchoolLms.Infrastructure.Auth;
 using SchoolLms.Infrastructure.Data;
+using SchoolLms.Server.Controllers;
 using SchoolLms.Tests.Fixtures;
 using Xunit.Abstractions;
 
@@ -59,9 +64,12 @@ public class FinanceReportsTests(ApiFixture fixture, ITestOutputHelper output) :
     // F13.05 — o'sha ruxsat darvozasidan o'tadi (`ArrearsPivot` ni ichkaridan
     // chaqiradi), shuning uchun RUXSAT testlarida ham `AllReports` qatorida.
     private const string ArrearsPivotExport = "/api/admin/finance/arrears-pivot/export";
+    // F5.06 — `Pnl` ning o'sha ruxsat darvozasidan o'tadi (ichkaridan uni
+    // chaqiradi), shuning uchun u ham RUXSAT testlarida `AllReports` qatorida.
+    private const string PnlExport = "/api/admin/finance/pnl/export";
 
     private static readonly string[] AllReports =
-        [Debtors, Pnl, CashFlow, CollectionRate, ArrearsPivot, ArrearsPivotExport];
+        [Debtors, Pnl, CashFlow, CollectionRate, ArrearsPivot, ArrearsPivotExport, PnlExport];
 
     // =====================================================================
     //  1. RUXSAT — SPEC §4.3
@@ -510,6 +518,76 @@ public class FinanceReportsTests(ApiFixture fixture, ITestOutputHelper output) :
         Assert.DoesNotContain(pnl.Revenue.Concat(pnl.Expense), l => l.Account == Accounts.Receivable);
         Assert.All(pnl.Revenue, l => Assert.StartsWith(FinanceReportQueries.RevenuePrefix, l.Account));
         Assert.All(pnl.Expense, l => Assert.StartsWith(FinanceReportQueries.ExpensePrefix, l.Account));
+    }
+
+    /// <summary>
+    /// F5.06 — DAVR rejimidagi .xlsx eksporti. <b>Mezon — IKKINCHI TA'RIF
+    /// YO'Q:</b> faylning har katagi <c>ProfitLossAsync</c>'ning O'SHA
+    /// raqami (qayta hisoblanmagan, faqat qayta shaklga solingan) —
+    /// <c>ClassAnalyticsController</c> testlaridagi bilan bir xil naqsh:
+    /// controller to'g'ridan-to'g'ri (HTTP'siz) chaqiriladi, toza bazada.
+    /// </summary>
+    [Fact]
+    public async Task Pnl_export_xlsx_ekrandagi_raqamga_teng()
+    {
+        await using var db = await NewBillingDbAsync("pnl-export");
+        var actorId = await SeedUserAsync(db, Roles.Admin);
+        var ledger = new LedgerService(db);
+
+        var march = new DateOnly(2025, 3, 5);
+        var tuitionRef = Guid.NewGuid();
+        await ledger.PostAsync(
+        [
+            new LedgerPosting(Accounts.Receivable, LedgerDirection.Debit, 1_000_000m, LedgerRefType.Invoice, tuitionRef, march),
+            new LedgerPosting(Accounts.RevenueTuition, LedgerDirection.Credit, 1_000_000m, LedgerRefType.Invoice, tuitionRef, march),
+        ], actorId);
+
+        var expenseRef = Guid.NewGuid();
+        await ledger.PostAsync(
+        [
+            new LedgerPosting(Accounts.ExpenseUtilities, LedgerDirection.Debit, 400_000m, LedgerRefType.Expense, expenseRef, march),
+            new LedgerPosting(Accounts.Cash, LedgerDirection.Credit, 400_000m, LedgerRefType.Expense, expenseRef, march),
+        ], actorId);
+
+        var from = new DateOnly(2025, 1, 1);
+        var to = new DateOnly(2025, 12, 31);
+        var pnl = await new FinanceReportQueries(db).ProfitLossAsync(from, to);
+
+        var response = await new FinanceReportsController(db).ProfitLossExport(from, to);
+        var file = Assert.IsType<FileContentResult>(response);
+        Assert.Equal(
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            file.ContentType);
+
+        var rows = ReadXlsxRows(file.FileContents);
+
+        var revenueRow = rows.Single(r => r[1] == MoneyFlowQueries.LabelFor(Accounts.RevenueTuition));
+        Assert.Equal("Daromad", revenueRow[0]);
+        Assert.Equal(
+            pnl.Revenue.Single(l => l.Account == Accounts.RevenueTuition).Amount,
+            ParseAmount(revenueRow[2]));
+
+        var expenseRow = rows.Single(r => r[1] == MoneyFlowQueries.LabelFor(Accounts.ExpenseUtilities));
+        Assert.Equal("Xarajat", expenseRow[0]);
+        Assert.Equal(
+            pnl.Expense.Single(l => l.Account == Accounts.ExpenseUtilities).Amount,
+            ParseAmount(expenseRow[2]));
+
+        var revenueTotalRow = rows.Single(r => r[0] == "Jami" && r[1] == "Daromad");
+        Assert.Equal(pnl.RevenueTotal, ParseAmount(revenueTotalRow[2]));
+
+        var expenseTotalRow = rows.Single(r => r[0] == "Jami" && r[1] == "Xarajat");
+        Assert.Equal(pnl.ExpenseTotal, ParseAmount(expenseTotalRow[2]));
+
+        // Yakun qatori — oxirgi, qalin ("Sof natija" = ekrandagi "Davr yakuni").
+        var netRow = rows[^1];
+        Assert.Equal("Jami", netRow[0]);
+        Assert.Equal("Sof natija", netRow[1]);
+        Assert.Equal(pnl.Net, ParseAmount(netRow[2]));
+
+        // Teskari davr — export ham `ProfitLoss` bilan bir xil xatoni beradi (400, 500 emas).
+        var invalid = await new FinanceReportsController(db).ProfitLossExport(to, from);
+        Assert.IsType<BadRequestObjectResult>(invalid);
     }
 
     // =====================================================================
@@ -1056,6 +1134,26 @@ public class FinanceReportsTests(ApiFixture fixture, ITestOutputHelper output) :
         stopwatch.Stop();
         return stopwatch.Elapsed.TotalMilliseconds;
     }
+
+    /// <summary>
+    /// F5.06 eksport testlari uchun: .xlsx faylning birinchi varag'ini
+    /// qator × katak matniga aylantiradi (sarlavha ham ichida) —
+    /// <c>CertificatesTests</c> dagi bilan bir xil o'qish naqshi.
+    /// </summary>
+    private static List<string[]> ReadXlsxRows(byte[] bytes)
+    {
+        using var stream = new MemoryStream(bytes);
+        using var doc = SpreadsheetDocument.Open(stream, isEditable: false);
+        var wbPart = doc.WorkbookPart!;
+        var sheet = Assert.Single(wbPart.Workbook.Descendants<Sheet>());
+        var wsPart = (WorksheetPart)wbPart.GetPartById(sheet.Id!.Value!);
+        return [.. wsPart.Worksheet.Descendants<Row>()
+            .Select(r => r.Elements<Cell>().Select(c => c.InnerText).ToArray())];
+    }
+
+    /// <summary>Son katagining matnini pulga aylantiradi (`ExcelExport` — "0.00", invariant).</summary>
+    private static decimal ParseAmount(string text) =>
+        decimal.Parse(text, NumberStyles.Number, CultureInfo.InvariantCulture);
 
     /// <summary>
     /// Toza, migratsiya qo'llangan baza — shablondan nusxa (~100 ms).

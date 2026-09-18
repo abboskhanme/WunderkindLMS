@@ -262,6 +262,29 @@ export async function getProfitLossMatrix(year: number): Promise<ProfitLossMatri
 }
 
 /**
+ * YIL × OY rejimidagi P&L — .xlsx (§2.5 F5.06), qoldiq qatorlari bilan.
+ * `financeReports.ts` dagi `downloadArrearsPivot` bilan bir xil yuklab
+ * olish naqshi.
+ */
+export async function downloadProfitLossMatrix(year: number): Promise<void> {
+  const res = await api.get('/admin/finance/pnl/matrix/export', {
+    params: { year },
+    responseType: 'blob',
+  })
+
+  const url = URL.createObjectURL(res.data as Blob)
+  const a = document.createElement('a')
+  a.href = url
+  const cd = (res.headers['content-disposition'] as string | undefined) ?? ''
+  const m = cd.match(/filename="?([^"]+)"?/)
+  a.download = m?.[1] ?? `foyda-zarar_${year}.xlsx`
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  URL.revokeObjectURL(url)
+}
+
+/**
  * P&L katagining ortidagi jurnal satrlari.
  * @param account bitta hisob kodi yoki guruh (`revenue:*`, `expense:*`).
  */

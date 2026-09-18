@@ -2,6 +2,7 @@ using System.Globalization;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using SchoolLms.Application.Billing;
+using SchoolLms.Application.Services;
 using SchoolLms.Domain;
 using SchoolLms.Infrastructure.Data;
 
@@ -100,6 +101,65 @@ public sealed class FinanceStatementsController(AppDbContext db) : ControllerBas
             return BadRequest(new { message = badYear.Message });
         }
     }
+
+    /// <summary>
+    /// <c>GET /api/admin/finance/pnl/matrix/export?year=2026</c> — YIL × OY
+    /// P&amp;L eksporti, .xlsx (§2.5 F5.06). Parametr <see cref="ProfitLossMatrix"/>
+    /// bilan AYNAN bir xil (<c>FinanceReportsController.ArrearsPivotExport</c>
+    /// bilan bir xil naqsh: ichkaridan o'sha action'ni chaqiradi, ikkinchi
+    /// ta'rif yo'q).
+    ///
+    /// <para>
+    /// Qatorlar <c>PnlTab.tsx</c>'ning <c>PnlYear</c>'dagi <c>handleExport</c>
+    /// (CSV) bilan AYNAN bir shaklda va tartibda: toifa qatorlari (oylar +
+    /// jami), "Jami · Daromad", "Jami · Xarajat", "Jami · Sof natija", so'ng
+    /// F5.02'ning qoldiq qatorlari — "Oy boshida" va (qalin, oxirgi qator)
+    /// "Oy oxirida". Ekranda ko'rinadigan raqamning O'ZI, qayta hisoblanmagan.
+    /// </para>
+    /// </summary>
+    [HttpGet("pnl/matrix/export")]
+    public async Task<ActionResult> ProfitLossMatrixExport(
+        [FromQuery] int? year,
+        CancellationToken ct = default)
+    {
+        var result = await ProfitLossMatrix(year, ct);
+
+        // `ProfitLossMatrix` o'zi 400 qaytargan bo'lishi mumkin (yil chegaradan
+        // tashqarida) — o'sha xatoni AYNAN o'zi bilan qaytaramiz.
+        if (result.Result is not OkObjectResult ok || ok.Value is not ProfitLossMatrixDto matrix)
+            return result.Result ?? StatusCode(500);
+
+        string[] headers = ["Yo'nalish", "Toifa", .. matrix.Months, "Jami"];
+
+        var rows = new List<IReadOnlyList<ExcelExport.XlsxCell>>();
+        rows.AddRange(matrix.Revenue.Select(r =>
+            MatrixRow("Daromad", MoneyFlowQueries.LabelFor(r.Account), r.Months, r.Total)));
+        rows.AddRange(matrix.Expense.Select(r =>
+            MatrixRow("Xarajat", MoneyFlowQueries.LabelFor(r.Account), r.Months, r.Total)));
+        rows.Add(MatrixRow("Jami", "Daromad", matrix.RevenueMonths, matrix.RevenueTotal));
+        rows.Add(MatrixRow("Jami", "Xarajat", matrix.ExpenseMonths, matrix.ExpenseTotal));
+        rows.Add(MatrixRow("Jami", "Sof natija", matrix.NetMonths, matrix.NetTotal));
+        rows.Add(MatrixRow("Qoldiq", "Oy boshida", matrix.StartBalance, matrix.OpeningBalance));
+
+        IReadOnlyList<ExcelExport.XlsxCell> totalsRow =
+            MatrixRow("Qoldiq", "Oy oxirida", matrix.EndBalance, matrix.ClosingBalance);
+
+        var bytes = ExcelExport.BuildTable($"P&L-{matrix.Year}", headers, rows, totalsRow);
+        return File(bytes, XlsxMime, $"foyda-zarar_{matrix.Year}.xlsx");
+    }
+
+    /// <summary>Matritsaning bitta qatori — yo'nalish, toifa, 12 oy va yakun (son katagi).</summary>
+    private static IReadOnlyList<ExcelExport.XlsxCell> MatrixRow(
+        string direction, string category, IReadOnlyList<decimal> months, decimal total) =>
+        [
+            ExcelExport.XlsxCell.Of(direction),
+            ExcelExport.XlsxCell.Of(category),
+            .. months.Select(m => ExcelExport.XlsxCell.Num(m)),
+            ExcelExport.XlsxCell.Num(total),
+        ];
+
+    private const string XlsxMime =
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
     /// <summary>
     /// <c>GET /api/admin/finance/ledger/lines?account&amp;from&amp;to</c> —

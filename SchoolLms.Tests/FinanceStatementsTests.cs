@@ -1,10 +1,15 @@
+using System.Globalization;
 using System.Net;
+using DocumentFormat.OpenXml.Packaging;
+using DocumentFormat.OpenXml.Spreadsheet;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using SchoolLms.Application.Billing;
 using SchoolLms.Domain;
 using SchoolLms.Infrastructure.Auth;
 using SchoolLms.Infrastructure.Data;
+using SchoolLms.Server.Controllers;
 using SchoolLms.Tests.Fixtures;
 
 namespace SchoolLms.Tests;
@@ -54,9 +59,12 @@ public class FinanceStatementsTests(ApiFixture fixture) : IAsyncLifetime
     private const string LedgerLines = "/api/admin/finance/ledger/lines?account=revenue:*";
     private const string Statement = "/api/admin/finance/cashflow/statement";
     private const string CashFlowLines = "/api/admin/finance/cashflow/lines?key=advance";
+    // F5.06 — `Matrix` ning o'sha ruxsat darvozasidan o'tadi (ichkaridan uni
+    // chaqiradi), shuning uchun u ham RUXSAT testlarida `AllEndpoints` qatorida.
+    private const string MatrixExport = "/api/admin/finance/pnl/matrix/export";
 
     private static readonly string[] AllEndpoints =
-        [Dashboard, Matrix, LedgerLines, Statement, CashFlowLines];
+        [Dashboard, Matrix, LedgerLines, Statement, CashFlowLines, MatrixExport];
 
     // =====================================================================
     //  1. RUXSAT — SPEC §4.3
@@ -239,6 +247,74 @@ public class FinanceStatementsTests(ApiFixture fixture) : IAsyncLifetime
 
         // Aprelda 570 000 chiqdi — qoldiq shuncha kamayadi.
         Assert.Equal(-570_000m, matrix.EndBalance[3] - matrix.StartBalance[3]);
+    }
+
+    /// <summary>
+    /// F5.06 — YIL × OY .xlsx eksporti, QOLDIQ QATORLARI bilan. <b>Mezon —
+    /// IKKINCHI TA'RIF YO'Q:</b> faylning har katagi <c>ProfitLossMatrixAsync</c>
+    /// bilan (demak ekranda ko'ringan bilan) AYNAN bir xil, "Oy boshida" /
+    /// "Oy oxirida" qatorlari ham ichida — <c>ClassAnalyticsController</c>
+    /// testlaridagi bilan bir xil naqsh: controller HTTP'siz chaqiriladi.
+    /// </summary>
+    [Fact]
+    public async Task Matrix_export_xlsx_qoldiq_qatorlari_bilan_ekrandagi_raqamga_teng()
+    {
+        await using var db = await NewDbAsync("matrix-export");
+        var actorId = await SeedUserAsync(db, Roles.Admin);
+        var ledger = new LedgerService(db);
+
+        await PostAsync(ledger, actorId, new DateOnly(2021, 3, 5),
+            Accounts.Receivable, Accounts.RevenueTuition, 1_000_000m, LedgerRefType.Invoice);
+        await PostAsync(ledger, actorId, new DateOnly(2021, 4, 10),
+            Accounts.ExpenseSalary, Accounts.Bank, 450_000m, LedgerRefType.Salary);
+
+        var matrix = await new FinanceReportQueries(db).ProfitLossMatrixAsync(2021);
+
+        var response = await new FinanceStatementsController(db).ProfitLossMatrixExport(2021);
+        var file = Assert.IsType<FileContentResult>(response);
+        Assert.Equal(
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            file.ContentType);
+
+        var rows = ReadXlsxRows(file.FileContents);
+
+        // Sarlavha: "Yo'nalish", "Toifa", 12 oy, "Jami".
+        var header = rows[0];
+        Assert.Equal("Jami", header[^1]);
+        Assert.Equal(matrix.Months, header[2..^1]);
+
+        var revenueRow = rows.Single(r => r[1] == MoneyFlowQueries.LabelFor(Accounts.RevenueTuition));
+        var revenueLine = matrix.Revenue.Single(l => l.Account == Accounts.RevenueTuition);
+        Assert.Equal("Daromad", revenueRow[0]);
+        Assert.Equal(revenueLine.Months, ParseAmounts(revenueRow[2..^1]));
+        Assert.Equal(revenueLine.Total, ParseAmount(revenueRow[^1]));
+
+        var revenueTotalRow = rows.Single(r => r[0] == "Jami" && r[1] == "Daromad");
+        Assert.Equal(matrix.RevenueMonths, ParseAmounts(revenueTotalRow[2..^1]));
+        Assert.Equal(matrix.RevenueTotal, ParseAmount(revenueTotalRow[^1]));
+
+        var expenseTotalRow = rows.Single(r => r[0] == "Jami" && r[1] == "Xarajat");
+        Assert.Equal(matrix.ExpenseMonths, ParseAmounts(expenseTotalRow[2..^1]));
+        Assert.Equal(matrix.ExpenseTotal, ParseAmount(expenseTotalRow[^1]));
+
+        var netRow = rows.Single(r => r[0] == "Jami" && r[1] == "Sof natija");
+        Assert.Equal(matrix.NetMonths, ParseAmounts(netRow[2..^1]));
+        Assert.Equal(matrix.NetTotal, ParseAmount(netRow[^1]));
+
+        // F5.02 — qoldiq qatorlari, "Oy oxirida" oxirgi (qalin) qator.
+        var startRow = rows.Single(r => r[0] == "Qoldiq" && r[1] == "Oy boshida");
+        Assert.Equal(matrix.StartBalance, ParseAmounts(startRow[2..^1]));
+        Assert.Equal(matrix.OpeningBalance, ParseAmount(startRow[^1]));
+
+        var endRow = rows[^1];
+        Assert.Equal("Qoldiq", endRow[0]);
+        Assert.Equal("Oy oxirida", endRow[1]);
+        Assert.Equal(matrix.EndBalance, ParseAmounts(endRow[2..^1]));
+        Assert.Equal(matrix.ClosingBalance, ParseAmount(endRow[^1]));
+
+        // Yil ishonchli oraliqdan tashqarida — export ham 400 (500 emas).
+        var invalid = await new FinanceStatementsController(db).ProfitLossMatrixExport(20226);
+        Assert.IsType<BadRequestObjectResult>(invalid);
     }
 
     /// <summary>
@@ -505,6 +581,28 @@ public class FinanceStatementsTests(ApiFixture fixture) : IAsyncLifetime
     // =====================================================================
     //  Test ma'lumoti
     // =====================================================================
+
+    /// <summary>
+    /// F5.06 eksport testi uchun: .xlsx faylning birinchi varag'ini qator ×
+    /// katak matniga aylantiradi (sarlavha ham ichida) — <c>CertificatesTests</c>
+    /// dagi bilan bir xil o'qish naqshi.
+    /// </summary>
+    private static List<string[]> ReadXlsxRows(byte[] bytes)
+    {
+        using var stream = new MemoryStream(bytes);
+        using var doc = SpreadsheetDocument.Open(stream, isEditable: false);
+        var wbPart = doc.WorkbookPart!;
+        var sheet = Assert.Single(wbPart.Workbook.Descendants<Sheet>());
+        var wsPart = (WorksheetPart)wbPart.GetPartById(sheet.Id!.Value!);
+        return [.. wsPart.Worksheet.Descendants<Row>()
+            .Select(r => r.Elements<Cell>().Select(c => c.InnerText).ToArray())];
+    }
+
+    /// <summary>Son katagining matnini pulga aylantiradi (`ExcelExport` — "0.00", invariant).</summary>
+    private static decimal ParseAmount(string text) =>
+        decimal.Parse(text, NumberStyles.Number, CultureInfo.InvariantCulture);
+
+    private static List<decimal> ParseAmounts(IEnumerable<string> texts) => [.. texts.Select(ParseAmount)];
 
     private async Task<AppDbContext> NewDbAsync(string prefix)
     {

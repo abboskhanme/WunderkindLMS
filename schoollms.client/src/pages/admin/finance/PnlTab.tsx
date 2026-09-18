@@ -17,10 +17,18 @@
  * toifa xarajatning yarmini yeyayotganini ko'rsatadi.
  */
 import { useState } from 'react'
-import { Download, TrendingDown, TrendingUp, Wallet } from 'lucide-react'
+import { Download, FileSpreadsheet, TrendingDown, TrendingUp, Wallet } from 'lucide-react'
 import { useAsync } from '@/hooks/useAsync'
-import { getProfitLoss, type ProfitLossLine } from '@/api/services/financeReports'
-import { getProfitLossMatrix, type ProfitLossMatrixRow } from '@/api/services/financeStatements'
+import {
+  downloadProfitLoss,
+  getProfitLoss,
+  type ProfitLossLine,
+} from '@/api/services/financeReports'
+import {
+  downloadProfitLossMatrix,
+  getProfitLossMatrix,
+  type ProfitLossMatrixRow,
+} from '@/api/services/financeStatements'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { StatCard } from '@/components/ui/StatCard'
@@ -98,6 +106,7 @@ function ViewButton({
 
 function PnlPeriod({ from, to }: Props) {
   const { data, loading, error, refetch } = useAsync(() => getProfitLoss(from, to), [from, to])
+  const [exporting, setExporting] = useState(false)
 
   const isEmpty = !!data && data.revenueTotal === 0 && data.expenseTotal === 0
 
@@ -114,6 +123,17 @@ function PnlPeriod({ from, to }: Props) {
         ['Jami', 'Sof natija', String(data.net)],
       ],
     )
+  }
+
+  // F5.06 — .xlsx, joriy DAVR bo'yicha (server qatorlari CSV bilan bir xil).
+  const handleDownloadXlsx = async () => {
+    if (!data) return
+    setExporting(true)
+    try {
+      await downloadProfitLoss(data.from, data.to)
+    } finally {
+      setExporting(false)
+    }
   }
 
   return (
@@ -154,9 +174,12 @@ function PnlPeriod({ from, to }: Props) {
             />
           </div>
 
-          <div className="flex justify-end">
+          <div className="flex justify-end gap-2">
             <Button variant="secondary" onClick={handleExport}>
               <Download className="h-4 w-4" /> CSV
+            </Button>
+            <Button variant="secondary" onClick={handleDownloadXlsx} disabled={exporting}>
+              <FileSpreadsheet className="h-4 w-4" /> {exporting ? 'Tayyorlanmoqda...' : 'Excel'}
             </Button>
           </div>
 
@@ -284,6 +307,7 @@ function LinesTable({
 function PnlYear({ year }: { year: number }) {
   const { data, loading, error, refetch } = useAsync(() => getProfitLossMatrix(year), [year])
   const [details, setDetails] = useState<LedgerDetailsRequest | null>(null)
+  const [exporting, setExporting] = useState(false)
 
   const isEmpty = !!data && data.revenueTotal === 0 && data.expenseTotal === 0
 
@@ -312,6 +336,17 @@ function PnlYear({ year }: { year: number }) {
         ['Qoldiq', 'Oy oxirida', ...data.endBalance.map(String), String(data.closingBalance)],
       ],
     )
+  }
+
+  // F5.06 — .xlsx, joriy YIL bo'yicha, qoldiq qatorlari bilan.
+  const handleDownloadXlsx = async () => {
+    if (!data) return
+    setExporting(true)
+    try {
+      await downloadProfitLossMatrix(data.year)
+    } finally {
+      setExporting(false)
+    }
   }
 
   /** Katakning davri: oy ustuni yoki butun yil ("Jami" ustuni). */
@@ -365,9 +400,12 @@ function PnlYear({ year }: { year: number }) {
               />
             </div>
 
-            <div className="flex justify-end">
+            <div className="flex justify-end gap-2">
               <Button variant="secondary" onClick={handleExport}>
                 <Download className="h-4 w-4" /> CSV
+              </Button>
+              <Button variant="secondary" onClick={handleDownloadXlsx} disabled={exporting}>
+                <FileSpreadsheet className="h-4 w-4" /> {exporting ? 'Tayyorlanmoqda...' : 'Excel'}
               </Button>
             </div>
 
