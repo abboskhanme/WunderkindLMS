@@ -186,3 +186,36 @@ export async function rejectDiscount(id: string, reason: string): Promise<Discou
   const { data } = await api.post<DiscountRecord>(`${BASE}/discounts/${id}/reject`, { reason })
   return data
 }
+
+/* ---------- Moliya sozlamalari (F14.01, finance-parity.md §2.14) ---------- */
+
+export interface BillingSettings {
+  /** Hisob-faktura to'lov muddati — oyning shu kuni (1..28). */
+  paymentDueDay: number
+  /** Shu kundan keyin qarz "muddati o'tgan" hisoblanadi (1..28). */
+  overdueAfterDay: number
+  /** Shu summadan KATTA chiqim ikkinchi shaxsning tasdig'isiz o'tmaydi (SPEC §4.5). */
+  expenseApprovalThreshold: number
+  updatedAt: string
+  updatedByName: string | null
+}
+
+export interface UpdateBillingSettingsInput {
+  paymentDueDay: number
+  overdueAfterDay: number
+  expenseApprovalThreshold: number
+}
+
+/** Joriy moliya sozlamalari — admin va direktor. */
+export async function getBillingSettings(): Promise<BillingSettings> {
+  const { data } = await api.get<BillingSettings>(`${BASE}/settings`)
+  return data
+}
+
+/** Sozlamalarni saqlaydi — `FinanceAction.ManageBillingSettings` (admin, direktor). */
+export async function updateBillingSettings(
+  input: UpdateBillingSettingsInput,
+): Promise<BillingSettings> {
+  const { data } = await api.put<BillingSettings>(`${BASE}/settings`, input)
+  return data
+}

@@ -411,7 +411,15 @@ public record BillingSettingsDto(
     int PaymentDueDay,
     // Shu kundan keyin qarz "muddati o'tgan" hisoblanadi (1..28).
     int OverdueAfterDay,
-    DateTimeOffset UpdatedAt, string? UpdatedByName);
+    DateTimeOffset UpdatedAt, string? UpdatedByName,
+    // F14.01 — chiqim tasdiq chegarasi (SPEC §4.5). Qo'shimcha maydon —
+    // bu yozuvni birinchi qurgan agent uni ataylab tashlab ketgan edi
+    // (docs/PENDING_WIRING.md §E), shu ekran uni yopadi. Muzlatilgan faylning
+    // boshidagi qoida: yangi, sukut qiymatli maydon qo'shish buzmaydigan
+    // o'zgarish — oxiriga qo'shilgan, mavjud pozitsion chaqiruvni buzmaydi.
+    decimal ExpenseApprovalThreshold = 5_000_000m);
 
 /// <summary>Sozlamalarni saqlash. `updated_by` JWT'dan (§4.4).</summary>
-public record UpdateBillingSettingsRequest(int PaymentDueDay, int OverdueAfterDay);
+public record UpdateBillingSettingsRequest(
+    int PaymentDueDay, int OverdueAfterDay,
+    decimal ExpenseApprovalThreshold = 5_000_000m);
