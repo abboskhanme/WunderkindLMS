@@ -36,7 +36,6 @@ import { Button } from '@/components/ui/Button'
 import { StatCard } from '@/components/ui/StatCard'
 import { cn, exportToCsv, formatMoney } from '@/lib/utils'
 import { ReportState } from './ReportState'
-import { CollectionRateCard } from './CollectionRateCard'
 import { DebtorActionModal } from './DebtorActionModal'
 import { formatDateTime, formatMonthLabel } from './reportLabels'
 
@@ -287,23 +286,13 @@ export function DebtorsTab() {
             />
           </div>
 
-          {/* Toifalar kesimi — maktab / avtobus / yotoqxona ALOHIDA */}
-          <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-            {columns.map((c) => (
-              <Card key={c.code} className="p-4">
-                <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
-                  {c.name}
-                </p>
-                <p className="mt-1 text-lg font-semibold text-slate-800">
-                  {formatMoney(totals.byCategory.get(c.code) ?? 0)}
-                </p>
-              </Card>
-            ))}
-          </div>
-
-          {/* Yig'ilish darajasi — "qancha hisoblandi, qanchasi keldi" savoli. */}
-          <CollectionRateCard />
-
+          {/*
+            Toifalar kesimi (maktab / avtobus / yotoqxona) va "Yig'ilish
+            darajasi" kartasi bu ekrandan OLIB TASHLANDI — mijoz 2026-09-18:
+            yuqoridagi to'rtta raqam yetarli. Toifa bo'yicha taqsimot
+            yo'qolmadi: u quyidagi jadvalning ustunlarida va Excel eksportida
+            hamon bor, yig'ilish darajasi esa Moliya hisobotlarida.
+          */}
           <Card className="p-0">
             <div className="border-b border-slate-100 p-4">
               <h2 className="font-semibold text-slate-800">Qarzdorlar ro'yxati</h2>
