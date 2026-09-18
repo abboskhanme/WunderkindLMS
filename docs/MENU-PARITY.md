@@ -410,3 +410,27 @@ Gamifikatsiya, Qabul, Imtihonlar, Blok Test. The rule from the first pass holds
 — an entry that opens a blank page reads as a broken product rather than an
 unfinished one. Each has its spec in `docs/modules/` and its position here for
 when it lands.
+
+## "Future" — where our own sections wait (2026-09-18)
+
+The client's suggestion, once the top-level order matched: keep the main sidebar
+exactly EduSchool's, and collect everything of ours that they do not have into
+one section at the bottom, to be restored or dropped later.
+
+`Future` is that section, last in the sidebar, holding three groups:
+
+| Group | Entries |
+|---|---|
+| DAVOMAT | Kunlik davomat · Davomat analitikasi |
+| KELDI-KETDI | Jonli turniket · Turniket analitikasi · Kirib-chiqish statistikasi · Kunlik davomat hisoboti |
+| ILOVA | Topshiriqlar · Topshiriqlar bali · Ta'lim (LMS) · Oshxona · O'qituvchilar |
+
+**Nothing moved but the menu.** Every route, page and permission is untouched;
+each entry carries the same `perm` its section used to carry at the top level
+(`attendance`, `students`, `app`), so who can see what has not changed.
+
+**Undoing it is small**: delete the `Future` block and restore the three
+sections — git holds them in the commit before this one.
+
+The sidebar above it now reads EduSchool's sequence from Bosh sahifa to
+Xulq-atvor, then Sozlamalar, then Future.

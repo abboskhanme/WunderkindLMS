@@ -1,17 +1,16 @@
 import type { LucideIcon } from 'lucide-react'
 import {
+  FlaskConical,
   LayoutDashboard,
   UserPlus,
   GraduationCap,
   NotebookText,
   CalendarRange,
   ClipboardList,
-  CalendarCheck,
   Wallet,
   MessageSquare,
   ClipboardCheck,
   Settings,
-  Smartphone,
   BarChart3,
   Building2,
   BookOpen,
@@ -69,7 +68,7 @@ export const navByRole: Record<Role, NavItem[]> = {
     // Bizda bor-u ularda yo'q uchtasi (Davomat, Keldi-ketdi, Ilova) OXIRIGA,
     // Sozlamalardan oldin qo'yilgan — shunda EduSchool ketma-ketligi
     // boshidan Xulq-atvorgacha uzilmay o'qiladi.
-    { label: 'Bosh sahifa', to: '/admin', icon: LayoutDashboard },
+        { label: 'Bosh sahifa', to: '/admin', icon: LayoutDashboard },
     {
       label: 'Lidlar',
       to: '/admin/leads',
@@ -238,43 +237,6 @@ export const navByRole: Record<Role, NavItem[]> = {
       ],
     },
     {
-      label: 'Davomat',
-      to: '/admin/attendance',
-      icon: CalendarCheck,
-      perm: 'attendance',
-      children: [
-        { label: 'Kunlik davomat', to: '/admin/attendance', end: true, group: 'DAVOMAT' },
-        { label: 'Davomat analitikasi', to: '/admin/attendance/analytics', group: 'DAVOMAT' },
-      ],
-    },
-    {
-      label: 'Keldi-ketdi',
-      to: '/admin/students/turniket',
-      icon: ClipboardCheck,
-      perm: 'students',
-      children: [
-        { label: 'Jonli turniket', to: '/admin/students/turniket', end: true, group: 'TURNIKET' },
-        { label: 'Turniket analitikasi', to: '/admin/students/turniket/analitika', group: 'HISOBOTLAR' },
-        { label: 'Kirib-chiqish statistikasi', to: '/admin/students/turniket/kirish-chiqish', group: 'HISOBOTLAR' },
-        // Ruxsat kaliti `students` — endpoint ham shunday. `attendance` ostiga
-        // qo'yilsa menyu bilan server bir xodim uchun ZID javob berardi.
-        { label: 'Kunlik davomat hisoboti', to: '/admin/students/turniket/kunlik-davomat', group: 'HISOBOTLAR' },
-      ],
-    },
-    {
-      label: 'Ilova',
-      to: '/admin/assignments',
-      icon: Smartphone,
-      perm: 'app',
-      children: [
-        { label: 'Topshiriqlar', to: '/admin/assignments', group: "TA'LIM" },
-        { label: 'Topshiriqlar bali', to: '/admin/assignment-scores', group: "TA'LIM" },
-        { label: "Ta'lim (LMS)", to: '/admin/lms', group: "TA'LIM" },
-        { label: 'Oshxona', to: '/admin/canteen', group: 'BOSHQA' },
-        { label: "O'qituvchilar", to: '/admin/app/teachers', group: 'BOSHQA' },
-      ],
-    },
-    {
       label: 'Sozlamalar',
       to: '/admin/settings/school',
       icon: Settings,
@@ -295,6 +257,36 @@ export const navByRole: Record<Role, NavItem[]> = {
         // yiliga bir marta bajariladigan va ORQAGA QAYTMAYDIGAN amal
         // (o'quvchilarni ko'chiradi, baho va jadvalni tozalaydi).
         { label: "Yangi o'quv yiliga o'tish", to: '/admin/academic-year', perm: 'academicYear', group: 'AMALLAR' },
+      ],
+    },
+    {
+      // ---------------------------------------------------------------------
+      //  FUTURE — bizda bor, EduSchool'da yo'q bo'limlar vaqtincha shu yerda.
+      //
+      //  Mijoz taklifi (2026-09-18): asosiy menyu EduSchool bilan bir xil
+      //  bo'lib tursin, o'zimiz qo'shgan qismlar esa eng pastda bitta joyda
+      //  yig'ilsin — keyinchalik yo asosiy menyuga qaytariladi, yo o'chiriladi.
+      //
+      //  Ekranlar va marshrutlar TEGILMAGAN — bu faqat menyudagi joylashuv.
+      //  Qaytarish kerak bo'lsa: bu blokni o'chirib, uchta bo'limni
+      //  (Davomat / Keldi-ketdi / Ilova) o'z holida qaytarish kifoya —
+      //  git tarixida ular shu ko'rinishda turibdi.
+      // ---------------------------------------------------------------------
+      label: 'Future',
+      to: '/admin/attendance',
+      icon: FlaskConical,
+      children: [
+        { label: 'Kunlik davomat', to: '/admin/attendance', end: true, perm: 'attendance', group: 'DAVOMAT' },
+        { label: 'Davomat analitikasi', to: '/admin/attendance/analytics', perm: 'attendance', group: 'DAVOMAT' },
+        { label: 'Jonli turniket', to: '/admin/students/turniket', end: true, perm: 'students', group: 'KELDI-KETDI' },
+        { label: 'Turniket analitikasi', to: '/admin/students/turniket/analitika', perm: 'students', group: 'KELDI-KETDI' },
+        { label: 'Kirib-chiqish statistikasi', to: '/admin/students/turniket/kirish-chiqish', perm: 'students', group: 'KELDI-KETDI' },
+        { label: 'Kunlik davomat hisoboti', to: '/admin/students/turniket/kunlik-davomat', perm: 'students', group: 'KELDI-KETDI' },
+        { label: 'Topshiriqlar', to: '/admin/assignments', perm: 'app', group: 'ILOVA' },
+        { label: 'Topshiriqlar bali', to: '/admin/assignment-scores', perm: 'app', group: 'ILOVA' },
+        { label: "Ta'lim (LMS)", to: '/admin/lms', perm: 'app', group: 'ILOVA' },
+        { label: 'Oshxona', to: '/admin/canteen', perm: 'app', group: 'ILOVA' },
+        { label: "O'qituvchilar", to: '/admin/app/teachers', perm: 'app', group: 'ILOVA' },
       ],
     },
   ],
