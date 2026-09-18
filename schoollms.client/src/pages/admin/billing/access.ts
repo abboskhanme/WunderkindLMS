@@ -79,6 +79,12 @@ export interface BillingAccess {
    */
   canManageBillingSettings: boolean
   /**
+   * Rejalashtirilgan chiqim shablonlarini boshqarish (F6.01) — admin va
+   * direktor, `canManageBillingSettings` bilan bir xil daraja
+   * (server: `FinanceAction.ManageExpenseTemplates`, `FinanceRoleAttribute.cs`).
+   */
+  canManageExpenseTemplates: boolean
+  /**
    * Joriy foydalanuvchi direktormi. Ichkarida chegirma/chiqim tasdig'i uchun
    * ishlatilgan hisob shu yerda ham ochiladi — F14.01 moliya sozlamalari
    * sahifasi chiqim chegarasini faqat direktorga tahrirlanadigan qiladi.
@@ -117,6 +123,7 @@ export function useBillingAccess(): BillingAccess {
     isCashier: user?.role === 'cashier',
     canManageSubscriptions: canOpen,
     canManageBillingSettings: canOpen,
+    canManageExpenseTemplates: canOpen,
     isDirector,
     canGrantDiscount: canOpen,
     canApproveDiscount: isDirector,

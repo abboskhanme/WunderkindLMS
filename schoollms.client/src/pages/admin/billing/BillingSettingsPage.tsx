@@ -52,8 +52,8 @@
  *   Coin birligi         → yo'q — gamifikatsiya, bizda mavjud emas.
  *   Tizim obunasi        → yo'q — EduSchool o'zining SaaS to'lovi, bizga
  *                          aloqasi yo'q ("not applicable", §2.0).
- *   Rejali xarajat       → yo'q — F6.01 (P2), hali qurilmagan shablon
- *                          katalogi. ("Chiqimlar" bunga TENG EMAS — u haqiqiy
+ *   Rejali xarajat       → Rejalashtirilgan chiqimlar (F6.01, 2026-09-18 da
+ *                          qurildi). ("Chiqimlar" bunga TENG EMAS — u haqiqiy
  *                          chiqim yozuvi, shablon emas, va operatsion ekran —
  *                          pastga qarang.)
  *   Soliq                → yo'q — soliq stavkalari `hr.md` §2.5 da, alohida.
@@ -79,7 +79,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { Check, Layers, Settings, ShieldCheck, Tag, Users } from 'lucide-react'
+import { CalendarClock, Check, Layers, Settings, ShieldCheck, Tag, Users } from 'lucide-react'
 import type { BillingSettingsInput } from '@/api/services/billingCatalog'
 import { getBillingSettings, updateBillingSettings } from '@/api/services/billingCatalog'
 import { billingErrorMessage } from '@/api/services/billingError'
@@ -93,8 +93,15 @@ import { CategoriesPage } from './CategoriesPage'
 import { SubscriptionsPage } from './SubscriptionsPage'
 import { DiscountsPage } from './DiscountsPage'
 import { DebtorStatusesPage } from '../finance/DebtorStatusesPage'
+import { ExpenseTemplatesPage } from './ExpenseTemplatesPage'
 
-type SectionKey = 'settings' | 'categories' | 'subscriptions' | 'discounts' | 'debtor-statuses'
+type SectionKey =
+  | 'settings'
+  | 'categories'
+  | 'subscriptions'
+  | 'discounts'
+  | 'debtor-statuses'
+  | 'expense-templates'
 
 /**
  * Chap ustun — tartib ataylab shunday: `settings` BIRINCHI, chunki bu
@@ -112,6 +119,7 @@ const SECTIONS: Array<{ key: SectionKey; label: string; icon: typeof Layers }> =
   { key: 'subscriptions', label: 'Obunalar', icon: Users },
   { key: 'discounts', label: 'Chegirmalar', icon: ShieldCheck },
   { key: 'debtor-statuses', label: 'Qarzdor holatlari', icon: Tag },
+  { key: 'expense-templates', label: 'Rejalashtirilgan chiqimlar', icon: CalendarClock },
 ]
 
 function isSectionKey(value: string | null): value is SectionKey {
@@ -169,6 +177,7 @@ function BillingSettingsHub() {
         {active === 'subscriptions' && <SubscriptionsPage />}
         {active === 'discounts' && <DiscountsPage />}
         {active === 'debtor-statuses' && <DebtorStatusesPage />}
+        {active === 'expense-templates' && <ExpenseTemplatesPage />}
       </div>
     </div>
   )
