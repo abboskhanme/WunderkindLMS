@@ -115,7 +115,8 @@ P1** gap on that row; P2 in brackets. Gap ids refer to §2.
 | 2.14 | Finance settings (reachable catalogues) | transaction types, payment methods, plans, discounts, currency, planned expenses, tax, debtor statuses | categories, subscriptions, discounts pages; no billing-settings screen | **partial** | **7** (11) |
 | 2.15 | Cross-cutting | xlsx everywhere, per-user columns | CSV on some screens; money reads open to staff | **partial** | **7** (1) |
 | — | Cashboxes, transfers, exchange, currency, editable type tree / methods, branch views | — | one desk, `cash` + `bank` accounts | **declined** | — |
-| — | Cancel a transaction, back-dating, stored `beforeAmount/afterAmount`, delete-all, flag-cancel of bonus/fine/salary | — | reversal (storno), derived balances | **refused (§4)** | — |
+| — | Cancel a transaction, stored `beforeAmount/afterAmount`, delete-all, flag-cancel of bonus/fine/salary | — | reversal (storno), derived balances | **refused (§4)** | — |
+| — | **Back-dating a cash-desk entry** | date field on the income / expense form | date field on our Kirim, Chiqim, Ko'chirish, Ayirboshlash and pupil-payment forms | **have** (client asked for it on 2026-09-18; was *refused (§4)* before) — future dates and anything older than 366 days are rejected, and a back-dated row is marked as such in the audit log | — |
 
 **Totals:** P0 **69 h** · P1 **398 h** (206 of it HR-1) · P2 **193 h**.
 
@@ -316,6 +317,11 @@ expense reminders, §2.6).
 | F1.11 | Menu entry **"Kassa"** under *Moliya* for admin / superadmin (EduSchool's *Moliya* is the admin's own screen; `/cashier` already admits them). | `schoollms.client/src/config/navigation.ts` (orchestrator) | no | 0 | 0.5 | P1 |
 | F1.12 | Receipt settings: header / footer text, logo, parent-app QR, auto-print on accept (EduSchool `GET /receipt`). | `ReceiptDocument.cs`, `ReceiptService.cs`, billing-settings screen (F14.01) | **yes** — 4 columns on `billing_settings` | 4 | 4 | P2 |
 | F1.13 | An expense for a *month* (EduSchool `forMonthes[]`, e.g. September rent paid in October). | `ExpenseService.cs`, `ExpenseFormModal.tsx`, P&L matrix F5.01 reads it | **yes** — `expenses.period_month` | 2 | 2 | P2 |
+| F1.14 | ~~Cash-desk ledger shows neither the cashier's **note** nor the **reason** a row was cancelled, and the date column hides the time.~~ **Done 2026-09-18** — read off EduSchool's own `/cash` list (columns `IZOH`, `SABAB`, `SANA` with `DD.MM.YYYY \| HH:mm`). `CashBoxTransactionRowDto` now carries `Note`, `CancelReason` (the storno row's note) and `CreatedAt`; both columns and the time are in the table and the CSV. | `CashBoxService.cs`, `CashLedger.tsx`, `CashierPage.tsx` | no | — | — | done |
+| F1.15 | ~~No printable receipt for a plain cash-box transaction~~ (EduSchool prints one for every cash movement — a hidden `.check` block with school, cashier, date, cashbox, method, transaction type, note, amount). **Done 2026-09-18** — `CashTransactionReceipt.tsx`, opened by the printer icon on any ledger row, printed by the browser with a print-only stylesheet. Our own layout: no EduSchool slogan and no app QR. The **pupil-payment** receipt stays the server-rendered PDF — that one is the official copy the parent keeps. | new `pages/cashier/CashTransactionReceipt.tsx`, `index.css`, `CashLedger.tsx` | no | — | — | done |
+| F1.18 | ~~*Moliya hisobotlari* has no discount analysis~~ — theirs shows total discount, times applied, average and each discount's share. **Done 2026-09-18**: `FinanceReportQueries.DiscountAnalysisAsync` + a card on the screen. Split is **by fee category** (exact) rather than by discount rule (not recoverable without `invoices.discount_id`) — see `REMAINING-PARITY.md` §3.4. | `FinanceReportQueries.CashStatements.cs`, `FinancialReportsPage.tsx`, `financeStatements.ts` | no | — | — | done |
+| F1.17 | ~~The transaction journal showed neither **which cash box** the money landed in nor the **reason** a payment was stornoed~~ — EduSchool's own `/transactions` list carries `KASSA` and `SABAB` (read 2026-09-18). **Done**: `TransactionRowDto` gained `CashBoxName` (from `payments.cash_box_id`) and `CancelReason` (the storno row's note); the expense rows stopped folding "Storno: …" into the note now that the reason has its own column. | `TransactionJournalQuery.cs`, `TransactionsPage.tsx`, `api/services/transactions.ts` | no | — | — | done |
+| F1.16 | ~~**[defect]** the ledger printed raw `pay_in` / `posted` instead of *Kirim* / *Bajarildi*, and the "Tranzaksiya" filter matched nothing~~ — the client-side label maps used `in`/`out`/`completed` while the server sends `pay_in`/`pay_out`/`posted`/`reversal`. **Fixed 2026-09-18**, found while comparing our list with theirs. | `format.ts`, `cashBoxes.ts`, `CashierPage.tsx`, `CashLedger.tsx` | no | — | — | done |
 
 ---
 
@@ -1076,7 +1082,7 @@ This screen **did not exist** on 2026-09-17 ("no single dashboard"). It exists n
 | F4.02 | Breakdown by account/method + drill-down | **built** | `SectionCard`/`MethodsCard` in `FinancialReportsPage.tsx`, `LedgerDetailsModal.tsx` opens `GET cashflow/lines` |
 | F4.03 | Doughnut by account | **missing** (P2) | bar-share only, no chart library doughnut on this page |
 | F4.04 | Discount summary | **missing** (P2) | no discount section in `FinanceDashboardDto` |
-| F4.05 | xlsx export | **missing** (P2, CSV exists) | `handleExport` uses `exportToCsv`, not the xlsx writer (F0.01, which exists and is used elsewhere) |
+| F4.05 | xlsx export | **built** (2026-09-19) | `GET dashboard/export` (`FinanceStatementsController.DashboardExport`) — five sheets: Umumiy · Kunlar · Toifalar · To'lov usullari · Chegirmalar; `FinancialReportsPage.tsx` "Excel"; pinned by `Panel_export_besh_varaqli_xlsx_ekrandagi_raqamga_teng` |
 
 ### 6.5 P&L / P&L 2.0 (§2.5–2.6, `F5.xx`/`F6.xx`) — `PnlTab.tsx`
 
@@ -1097,7 +1103,7 @@ This screen **did not exist** on 2026-09-17 ("no single dashboard"). It exists n
 | F7.01 | In/out by category | **built** | `GET cashflow/statement` (`FinanceStatementsController.cs:149-167`), "Toifalar bo'yicha" table in `CashFlowTab.tsx` |
 | F7.02 | Operating/investing/financing sections | **missing** (P2 — decision: a static map next to `Accounts.cs`, not built) | no such grouping in `CashFlowTab.tsx` or the query |
 | F7.03 | Drill-down | **built** | `LedgerDetailsModal.tsx` via `GET cashflow/lines` |
-| F7.04 | xlsx export | **missing** (P2, CSV only) | `CashFlowTab.tsx` `handleExport` → `exportToCsv` (two places) |
+| F7.04 | xlsx export | **built** (2026-09-19) | `GET cashflow/export` (`FinanceStatementsController.CashFlowExport`) — two sheets: Oylar · Toifalar, one query, both buttons give the same file; pinned by `Cashflow_export_ikki_varaqli_xlsx_ekrandagi_raqamga_teng` |
 
 ### 6.7 Moliya analitikasi (§2.8, `F8.xx`) — `CashDayPage.tsx` + `MoneyFlowPage.tsx`
 
