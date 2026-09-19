@@ -70,6 +70,10 @@ export interface TransactionRow {
   reversalOf: string | null
   /** Storno qilingan to'lovda — storno qatori id'si. */
   reversedBy: string | null
+  /** Pul qaysi kassaga tushgani (to'lov/storno); chiqimda `null`. */
+  cashBoxName: string | null
+  /** Bekor qilish sababi — kassa jadvalidagi "Sabab" ustuni bilan bir xil. */
+  cancelReason: string | null
 }
 
 /** Yakun — BUTUN FILTR bo'yicha, sahifa bo'yicha emas. */

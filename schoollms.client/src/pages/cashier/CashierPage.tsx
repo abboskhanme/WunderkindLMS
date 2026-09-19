@@ -1,14 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import type { ReactNode } from 'react'
 import {
   AlertTriangle,
   Download,
   Filter,
   Inbox,
-  Lock,
   RefreshCw,
   Search,
   ShieldOff,
-  UserRound,
   Wallet,
 } from 'lucide-react'
 import type { AllocationSuggestion, Payment, PaymentMethod, Role, SchoolClass } from '@/types'
@@ -44,6 +43,7 @@ import { CashBoxFormModal } from './CashBoxFormModal'
 import { CashBoxActionModal } from './CashBoxActionModal'
 import type { CashBoxActionMode } from './CashBoxCard'
 import { CashLedger } from './CashLedger'
+import { CashTransactionReceipt } from './CashTransactionReceipt'
 import {
   formatDateTime,
   formatPeriod,
@@ -54,9 +54,10 @@ import {
   parseSum,
   statusLabel,
 } from './format'
+import { DatePicker } from '@/components/ui/DatePicker'
 
 /** Kassa harakati turlari — "Tranzaksiya turi" filtri shu ro'yxatdan (format.ts dagi kindLabel bilan bir xil to'rttasi). */
-const TRANSACTION_KINDS: CashBoxTransactionRow['kind'][] = ['in', 'out', 'transfer', 'exchange']
+const TRANSACTION_KINDS: CashBoxTransactionRow['kind'][] = ['pay_in', 'pay_out', 'transfer', 'exchange']
 
 /* ==========================================================================
    BU SAHIFADA TO'LOVNI TAHRIRLASH VA O'CHIRISH TUGMASI YO'Q — ATAYLAB.
@@ -95,10 +96,42 @@ const CASH_BOX_MANAGE_ROLES: Role[] = ['admin', 'superadmin']
 
 const METHODS: PaymentMethod[] = ['cash', 'card', 'transfer', 'online']
 
-const dateInputClass =
-  'rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-brand-400'
+/**
+ * "O'quvchi oylik to'lovi" — seed qilingan tranzaksiya turi
+ * (`transaction_types_seed.sql`, barqaror UUID). Kirim shaklida AYNAN SHU
+ * tur tanlanganda o'quvchi qidiruvi ochiladi va pul hisob-fakturalarga
+ * taqsimlanadi (mijoz, 2026-09-18: "to'lov turi tanlanganda ... o'quvchi
+ * oylik to'lovi tanlanganda keyin o'quvchi qidirish joyi chiqishi kerak").
+ *
+ * Katalogda "bu tur o'quvchiga bog'lanadi" degan BAYROQ yo'q, shuning uchun
+ * bog'lanish ikki yo'l bilan topiladi: seed ID (admin nomini o'zgartirsa ham
+ * ishlaydi) yoki nomida "o'quvchi" so'zi bo'lgan admin qo'shgan tur
+ * ({@link isStudentTuitionType}).
+ */
+const STUDENT_TUITION_TYPE_ID = '00000000-0000-0000-0000-0000000000a4'
+
+/** Apostrof shakllari har xil yoziladi ('/’/`) — solishtirishdan oldin tenglashtiriladi. */
+const normalizeTypeName = (name: string) =>
+  name.toLowerCase().replace(/[\u2018\u2019\u02bc`\u00b4]/g, "'")
+
+const isStudentTuitionType = (type: TransactionType | undefined) =>
+  type !== undefined &&
+  (type.id === STUDENT_TUITION_TYPE_ID || normalizeTypeName(type.name).includes("o'quvchi"))
+
 
 const todayStr = () => new Date().toISOString().slice(0, 10)
+
+/**
+ * Kirim shaklida tanlash mumkin bo'lgan ENG ESKI sana — bir yil orqaga.
+ * Serverdagi chegara bilan bir xil (`CashBoxService.MaxBackdateDays` = 366):
+ * u yerdagi qoida — "2026" o'rniga "2025" terib, pulni yopilgan yilga
+ * yuborib yubormaslik. Shakl ham shu oraliqdan tashqarisini yubormaydi.
+ */
+const MIN_ENTRY_DATE = () => {
+  const d = new Date()
+  d.setDate(d.getDate() - 366)
+  return d.toISOString().slice(0, 10)
+}
 
 /**
  * Kassir ish o'rni (P1-16 → kassalarga o'tish, 2026-09-18; EduSchool
@@ -108,15 +141,14 @@ const todayStr = () => new Date().toISOString().slice(0, 10)
  *   1) KASSALAR — bir nechta kassa, har birining qoldig'i, kirim/chiqim/
  *      ko'chirish/ayirboshlash va umumiy tranzaksiyalar jadvali (filtr
  *      qatori + ustunlar sozlamasi bilan).
- *   2) KIRIM PANELI — tanlangan kassaning "Kirim" tugmasi ochadi, ikki tabi
- *      bor: "Oddiy kirim" (`cashBoxIn`) va "O'quvchidan to'lov" — eski yo'l,
- *      O'ZGARTIRILMAGAN: hisob-fakturaga taqsimlanadigan to'lov ilgarigidek
- *      `acceptPayment` (`/cash/payments`) orqali ketadi. Bu FIFO taqsimotni,
- *      hisob-fakturalarni bilmagan umumiy "Kirim" amalidan TUBDAN farq
- *      qiladi — shuning uchun ikkalasi ham bor va bir-biriga
- *      aylantirilmagan. Sarlavhadagi alohida tugma OLIB TASHLANDI (mijoz,
- *      2026-09-18): "o'quvchidan to'lov degan button ham bu yerda kerak
- *      emas" — lekin OQIM o'zi Kirim panelining tabi sifatida qolmoqda.
+ *   2) KIRIM MODALI — tanlangan kassaning "Kirim" tugmasi ochadi. BITTA
+ *      UMUMIY SHAKL (mijoz, 2026-09-18): tab yo'q, o'quvchi esa ixtiyoriy
+ *      maydon. Tanlanmasa — oddiy kassa kirimi (`cashBoxIn`); tanlansa —
+ *      eski yo'l, O'ZGARTIRILMAGAN: hisob-fakturaga taqsimlanadigan to'lov
+ *      ilgarigidek `acceptPayment` (`/cash/payments`) orqali ketadi. Bu
+ *      FIFO taqsimotni bilmagan umumiy "Kirim" amalidan TUBDAN farq qiladi
+ *      — shuning uchun ikki server yo'li ham bor va bir-biriga
+ *      aylantirilmagan, faqat ularga kiradigan ekran bitta.
  */
 export function CashierPage() {
   const { user } = useAuth()
@@ -159,24 +191,16 @@ export function CashierPage() {
   )
 
   /* ==========================================================================
-     KIRIM PANELI — mijoz "O'quvchidan to'lov" tugmasini bosh sahifadan olib
-     tashlashni so'radi (2026-09-18, ikkinchi xat): "o'quvchidan to'lov degan
-     button ham bu yerda kerak emas". Lekin IMKONIYAT qolishi kerak — bugun
-     sinaladigan yagona oqim shu. EduSchool'da o'quvchi to'lovi ham kassaning
-     o'z Kirim amali orqali kiritiladi (`finance-parity.md` §2.1), shuning
-     uchun bu yerda ham Kirim ikki rejimli: "Oddiy kirim" (mavjud
-     `cashBoxIn`) va "O'quvchidan to'lov" (eski yo'l — StudentSearch →
-     hisob-fakturalar → PaymentSplitModal → ReceiptPreview — TEGILMAGAN).
-
-     MODAL EMAS, PANEL: agar Kirim ham `CashBoxActionModal` (Modal) bo'lib
-     qolsa, "O'quvchidan to'lov" rejimida `PaymentSplitModal` uning USTIGA
-     ochilib, ikki oyna bir-birining ustiga chiqadi — bunga yo'l qo'ymaslik
-     so'ralgan edi. Shuning uchun Kirim sahifa ichidagi ODDIY BO'LIM
-     (avvalgi "O'QUVCHIDAN TO'LOV" bo'limi bilan bir xil joyda), va
-     `PaymentSplitModal` sahifa ustiga ochiladi — hech qachon ikkinchi oyna
-     ustiga emas. */
+     KIRIM — tanlangan kassaning "Kirim" tugmasi ochadigan modal. EduSchool'da
+     o'quvchi to'lovi ham kassaning o'z Kirim amali orqali kiritiladi
+     (`finance-parity.md` §2.1); mijoz ham shuni so'radi (2026-09-18):
+     "oddiy kirim va o'quvchi to'lovi degan narsalarni olib tashla va bitta
+     umumiy bo'lsin". Shuning uchun tab YO'Q — bitta shakl, ichida ixtiyoriy
+     "O'quvchi" maydoni bor (`IncomeForm`, fayl oxirida):
+       · o'quvchisiz → `cashBoxIn`;
+       · o'quvchi bilan → StudentSearch → hisob-fakturalar →
+         PaymentSplitModal → ReceiptPreview (eski yo'l, TEGILMAGAN). */
   const [incomePanel, setIncomePanel] = useState<CashBox | null>(null)
-  const [incomeTab, setIncomeTab] = useState<'plain' | 'student'>('plain')
 
   /* ---- Tranzaksiyalar jadvali ---- */
   const [from, setFrom] = useState(todayStr())
@@ -200,6 +224,15 @@ export function CashierPage() {
   const [methodFilter, setMethodFilter] = useState<PaymentMethod | ''>('')
   const [kindFilter, setKindFilter] = useState<CashBoxTransactionRow['kind'] | ''>('')
 
+  /* "Tranzaksiya turi" — jadvaldagi AYNAN shu nomli ustun (Do'ppi uchun,
+     Kanselyariya xarajati, ...). Ilgari bu yerda faqat KIND (Kirim/Chiqim/
+     Ko'chirish/Ayirboshlash) filtri bor edi va u xato ravishda "Tranzaksiya
+     turi" deb nomlangandi — endi kind filtri "Tranzaksiya" (ustun nomi bilan
+     bir xil), tur esa o'z filtriga ega. Qator turning NOMINI olib keladi
+     (`transactionTypeName`, id emas), shuning uchun tanlov ham nom bo'yicha. */
+  const [typeNameFilter, setTypeNameFilter] = useState('')
+  const [typeOptions, setTypeOptions] = useState<TransactionType[]>([])
+
   // "O'quvchi" filtri — jadval qatorida faqat `contractNo` bor (o'quvchining
   // ismi YO'Q, faqat shartnoma raqami). Shuning uchun o'quvchi tanlanganda
   // uning shartnoma raqami(lari) `/admin/student-contracts` orqali olinadi
@@ -222,6 +255,8 @@ export function CashierPage() {
   const [ledgerReload, setLedgerReload] = useState(0)
   const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set())
   const [cancelRow, setCancelRow] = useState<CashBoxTransactionRow | null>(null)
+  /** Chek oynasi — jadvaldagi printer tugmasi ochadi (`CashTransactionReceipt`). */
+  const [receiptRow, setReceiptRow] = useState<CashBoxTransactionRow | null>(null)
   const [cancelBusy, setCancelBusy] = useState(false)
   const [cancelError, setCancelError] = useState<string | null>(null)
 
@@ -253,6 +288,20 @@ export function CashierPage() {
       controller.abort()
     }
   }, [allowed, from, to, boxFilter, q, ledgerReload])
+
+  /* ---- Tranzaksiya turlari — filtr ro'yxati uchun, bir marta yuklanadi ---- */
+  useEffect(() => {
+    if (!allowed) return
+    let alive = true
+    getTransactionTypes()
+      .then((rows) => {
+        if (alive) setTypeOptions(rows)
+      })
+      .catch(() => undefined)
+    return () => {
+      alive = false
+    }
+  }, [allowed])
 
   /* ---- Sinflar ro'yxati — "Sinf" filtri uchun, bir marta yuklanadi ---- */
   useEffect(() => {
@@ -328,18 +377,25 @@ export function CashierPage() {
     return rows.filter((r) => {
       if (methodFilter && r.method !== methodFilter) return false
       if (kindFilter && r.kind !== kindFilter) return false
+      if (typeNameFilter && r.transactionTypeName !== typeNameFilter) return false
       if (studentFilter && !(r.contractNo && studentFilter.numbers.has(r.contractNo))) return false
       if (classFilter && !(r.contractNo && classFilterNumbers?.has(r.contractNo))) return false
       return true
     })
-  }, [ledger, methodFilter, kindFilter, studentFilter, classFilter, classFilterNumbers])
+  }, [ledger, methodFilter, kindFilter, typeNameFilter, studentFilter, classFilter, classFilterNumbers])
 
   /** Kartochkalardagi yig'indi davr/kassa bo'yicha — shu to'rttasi ishga tushsa, izoh ko'rsatiladi. */
-  const rowsNarrowed = methodFilter !== '' || kindFilter !== '' || studentFilter !== null || classFilter !== ''
+  const rowsNarrowed =
+    methodFilter !== '' ||
+    kindFilter !== '' ||
+    typeNameFilter !== '' ||
+    studentFilter !== null ||
+    classFilter !== ''
 
   const resetExtraFilters = () => {
     setMethodFilter('')
     setKindFilter('')
+    setTypeNameFilter('')
     setStudentFilter(null)
     setStudentQuery('')
     setClassFilter('')
@@ -368,7 +424,7 @@ export function CashierPage() {
     setLedgerReload((n) => n + 1)
   }
 
-  /** Oddiy kirim (Kirim panelining "Oddiy kirim" tabi) yozilgach. */
+  /** Oddiy kassa kirimi (o'quvchisiz yo'l) yozilgach. */
   const handleIncomeDone = () => {
     setIncomePanel(null)
     void loadBoxes()
@@ -405,7 +461,7 @@ export function CashierPage() {
       `kassa-tranzaksiyalari-${from}_${to}.csv`,
       [
         '№', 'Sana', 'Kim', 'Shartnoma raqami', 'Miqdor', 'Tranzaksiya',
-        'Tranzaksiya turi', "To'lov usuli", 'Holati', 'Kassir',
+        'Tranzaksiya turi', "To'lov usuli", 'Holati', 'Kassir', 'Izoh', 'Sabab',
       ],
       source.map((r) => [
         String(r.no),
@@ -418,30 +474,25 @@ export function CashierPage() {
         methodLabels[r.method] ?? r.method,
         statusLabel(r.status),
         r.who,
+        r.note ?? '',
+        r.cancelReason ?? '',
       ]),
     )
   }
 
-  /* ---- Tanlangan o'quvchi va to'lov shakli (o'zgarmagan yo'l) ---- */
+  /* ---- Tanlangan o'quvchi va taqsimotga uzatiladigan to'lov ----
+     Shaklning O'ZI (summa, usul, izoh) `IncomeForm` ichida — bu yerda faqat
+     TAQSIMOT oynasiga uzatiladigan nusxa turadi: o'quvchi tanlangan holda
+     "Kirim" bosilsa shakl shu `splitDraft`ni to'ldiradi va
+     `PaymentSplitModal` ochiladi. */
   const [student, setStudent] = useState<CashierStudent | null>(null)
-  const [amountRaw, setAmountRaw] = useState('')
-  const [method, setMethod] = useState<PaymentMethod>('cash')
-  const [note, setNote] = useState('')
-  const [splitOpen, setSplitOpen] = useState(false)
+  const [splitDraft, setSplitDraft] = useState<{
+    amount: number
+    method: PaymentMethod
+    note: string
+    receivedOn: string
+  } | null>(null)
   const [receipt, setReceipt] = useState<Payment | null>(null)
-
-  const amount = parseSum(amountRaw)
-
-  const resetForm = () => {
-    setAmountRaw('')
-    setNote('')
-    setMethod('cash')
-  }
-
-  const selectStudent = (next: CashierStudent) => {
-    setStudent(next)
-    resetForm()
-  }
 
   /* ---- Tanlangan o'quvchining ochiq hisob-fakturalari ---- */
   const [invoices, setInvoices] = useState<AllocationSuggestion[]>([])
@@ -498,7 +549,6 @@ export function CashierPage() {
     )
   }
 
-  const canSubmit = student !== null && amount !== null && amount > 0
 
   return (
     <div className="space-y-6">
@@ -510,20 +560,18 @@ export function CashierPage() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <input
-            type="date"
+          <DatePicker
             value={from}
-            onChange={(e) => setFrom(e.target.value)}
-            aria-label="Davr boshi"
-            className={dateInputClass}
+            onChange={(value: string) => setFrom(value)}
+            ariaLabel="Davr boshi"
+            className="w-40"
           />
           <span className="text-slate-400">—</span>
-          <input
-            type="date"
+          <DatePicker
             value={to}
-            onChange={(e) => setTo(e.target.value)}
-            aria-label="Davr oxiri"
-            className={dateInputClass}
+            onChange={(value: string) => setTo(value)}
+            ariaLabel="Davr oxiri"
+            className="w-40"
           />
           <Button variant="secondary" onClick={() => setFiltersOpen((v) => !v)}>
             <Filter className="h-4 w-4" /> Filtr
@@ -624,7 +672,7 @@ export function CashierPage() {
             </Select>
 
             <Select
-              label="Tranzaksiya turi"
+              label="Tranzaksiya"
               value={kindFilter}
               onChange={(e) => setKindFilter(e.target.value as CashBoxTransactionRow['kind'] | '')}
               className="max-w-[10rem]"
@@ -637,7 +685,23 @@ export function CashierPage() {
               ))}
             </Select>
 
-            {(methodFilter || kindFilter || studentFilter || classFilter) && (
+            {/* Jadvaldagi "TRANZAKSIYA TURI" ustuni bo'yicha filtr — katalogdan
+                (`transaction_types`), kirim va chiqim turlari birga. */}
+            <Select
+              label="Tranzaksiya turi"
+              value={typeNameFilter}
+              onChange={(e) => setTypeNameFilter(e.target.value)}
+              className="max-w-[12rem]"
+            >
+              <option value="">Barchasi</option>
+              {typeOptions.map((t) => (
+                <option key={t.id} value={t.name}>
+                  {t.name}
+                </option>
+              ))}
+            </Select>
+
+            {rowsNarrowed && (
               <button
                 type="button"
                 onClick={resetExtraFilters}
@@ -686,9 +750,8 @@ export function CashierPage() {
             }}
             onAction={(box, mode) => {
               if (mode === 'in') {
-                // Kirim — modal emas, pastdagi panel (izoh: `incomePanel` e'loni).
+                // Kirim — bitta umumiy shakl (izoh: `incomePanel` e'loni).
                 setIncomePanel(box)
-                setIncomeTab('plain')
               } else {
                 setActionState({ box, mode })
               }
@@ -708,181 +771,61 @@ export function CashierPage() {
             onToggleSelect={toggleSelectRow}
             onToggleSelectAll={toggleSelectAll}
             onCancelRow={setCancelRow}
+            onReceiptRow={setReceiptRow}
           />
         </div>
       )}
 
-      {/* ============ KIRIM PANELI ============
-          Ikki tab: "Oddiy kirim" (cashBoxIn) va "O'quvchidan to'lov" (eski
-          yo'l, TEGILMAGAN — quyidagi bo'lim ilgarigi "O'QUVCHIDAN TO'LOV"
-          bo'limi bilan AYNAN bir xil, faqat shart o'zgargan). */}
-      {/* Mijoz 2026-09-18: amal oynalari sahifa PASTIDA emas, MODAL bo'lsin. */}
+      {/* ============ KIRIM MODALI ============
+          BITTA UMUMIY SHAKL (mijoz, 2026-09-18): "oddiy kirim va o'quvchi
+          to'lovi degan narsalarni olib tashla va bitta umumiy bo'lsin".
+          Ilgari ikkita tab bor edi; endi farq TABDA emas, MAYDONDA:
+          o'quvchi tanlansa to'lov hisob-fakturalarga taqsimlanadi
+          (`acceptPayment` → `PaymentSplitModal`), tanlanmasa oddiy kassa
+          kirimi bo'ladi (`cashBoxIn`). Ikki server yo'li ham
+          O'ZGARTIRILMAGAN — faqat ularga kiradigan eshik bitta. */}
       <Modal
         open={incomePanel !== null}
-        onClose={() => setIncomePanel(null)}
+        onClose={() => {
+          setIncomePanel(null)
+          setStudent(null)
+        }}
         title={incomePanel ? `Kirim — ${incomePanel.name}` : 'Kirim'}
-        // Ikkala tab ham TIK: oddiy kirim ham, o'quvchidan to'lov ham
-        // ustma-ust joylashgan, shuning uchun bitta tor o'lcham yetadi.
+        // Maydonlar ustma-ust turadi, shuning uchun bitta tor o'lcham yetadi.
         size="md"
       >
         {incomePanel && (
-        <div className="space-y-4">
-          <p className="text-sm text-slate-400">Oddiy kirim yozing yoki o'quvchidan to'lov qabul qiling.</p>
-          <div className="inline-flex rounded-lg border border-slate-200 p-1">
-            <button
-              type="button"
-              onClick={() => setIncomeTab('plain')}
-              className={cn(
-                'rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
-                incomeTab === 'plain' ? 'bg-brand-600 text-white' : 'text-slate-500 hover:text-slate-700',
-              )}
-            >
-              Oddiy kirim
-            </button>
-            <button
-              type="button"
-              onClick={() => setIncomeTab('student')}
-              className={cn(
-                'rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
-                incomeTab === 'student' ? 'bg-brand-600 text-white' : 'text-slate-500 hover:text-slate-700',
-              )}
-            >
-              O'quvchidan to'lov
-            </button>
-          </div>
-
-        {incomeTab === 'plain' && (
-          <PlainIncomeForm box={incomePanel} onDone={handleIncomeDone} onCancel={() => setIncomePanel(null)} />
-        )}
-
-        {/* TIK tartib: qidiruv tepada, tanlangan o'quvchi va to'lov shakli
-            ostida. Ilgari ikki ustun edi va o'quvchi tanlanmaguncha o'ng
-            yarmi bo'sh turardi — modal keng va bo'm-bo'sh ko'rinardi. */}
-        {incomeTab === 'student' && (
-        <div className="grid gap-4">
-          <StudentSearch selectedId={student?.id ?? null} onSelect={selectStudent} />
-
-          {!student ? (
-            <Card>
-              <div className="flex flex-col items-center gap-2 py-16 text-center">
-                <UserRound className="h-8 w-8 text-slate-300" />
-                <p className="font-medium text-slate-600">O'quvchi tanlanmagan</p>
-                <p className="max-w-sm text-sm text-slate-400">
-                  Chapdagi qidiruvdan o'quvchini toping — uning ochiq hisob-fakturalari
-                  va to'lov shakli shu yerda ochiladi.
-                </p>
-              </div>
-            </Card>
-          ) : (
-            <div className="space-y-4">
-              <Card>
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div>
-                    <p className="font-semibold text-slate-800">{student.fullName}</p>
-                    <p className="text-sm text-slate-500">
-                      {student.className}
-                      {student.parentFullName ? ` · ${student.parentFullName}` : ''}
-                      {student.parentPhone ? ` · ${student.parentPhone}` : ''}
-                    </p>
-                  </div>
-                  {!invoicesLoading && !invoicesError && (
-                    <div className="text-right">
-                      <p className="text-xs uppercase tracking-wide text-slate-400">Jami qarz</p>
-                      <p
-                        className={cn(
-                          'text-lg font-semibold tabular-nums',
-                          debt > 0 ? 'text-red-600' : 'text-emerald-600',
-                        )}
-                      >
-                        {formatSumWithUnit(debt)}
-                      </p>
-                    </div>
-                  )}
-                </div>
-              </Card>
-
-              <InvoiceList
-                invoices={invoices}
-                loading={invoicesLoading}
-                error={invoicesError}
-                onRetry={() => setInvoicesReload((n) => n + 1)}
-              />
-
-              <Card>
-                <h2 className="mb-4 font-semibold text-slate-800">To'lov</h2>
-                {/* Modal tik bo'lgani uchun maydonlar USTMA-UST turadi. */}
-      <div className="grid gap-4">
-                  <MoneyInput
-                    label="Summa (so'm)"
-                    value={amountRaw}
-                    onValueChange={setAmountRaw}
-                    placeholder="0"
-                    invalid={amountRaw.length > 0 && (amount === null || amount <= 0)}
-                    hint={
-                      amountRaw.length > 0 && (amount === null || amount <= 0)
-                        ? "Summa noldan katta bo'lishi kerak."
-                        : undefined
-                    }
-                  />
-                  <Select
-                    label="To'lov usuli"
-                    value={method}
-                    onChange={(e) => setMethod(e.target.value as PaymentMethod)}
-                  >
-                    {METHODS.map((m) => (
-                      <option key={m} value={m}>
-                        {methodLabels[m]}
-                      </option>
-                    ))}
-                  </Select>
-                </div>
-
-                <div className="mt-4">
-                  <Textarea
-                    label="Izoh (ixtiyoriy)"
-                    rows={2}
-                    value={note}
-                    onChange={(e) => setNote(e.target.value)}
-                    placeholder="Masalan: sentabr uchun, otasi to'ladi"
-                  />
-                </div>
-
-                <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-                  {debt > 0 && !invoicesLoading && !invoicesError ? (
-                    <Button
-                      variant="ghost"
-                      onClick={() => setAmountRaw(String(debt))}
-                      type="button"
-                    >
-                      Butun qarzni qo'yish ({formatSum(debt)})
-                    </Button>
-                  ) : (
-                    <span />
-                  )}
-
-                  <Button disabled={!canSubmit} onClick={() => setSplitOpen(true)}>
-                    <Wallet className="h-4 w-4" /> Taqsimlash va qabul qilish
-                  </Button>
-                </div>
-              </Card>
-            </div>
-          )}
-        </div>
-        )}
-        </div>
+          <IncomeForm
+            box={incomePanel}
+            student={student}
+            onSelectStudent={setStudent}
+            onClearStudent={() => setStudent(null)}
+            invoices={invoices}
+            invoicesLoading={invoicesLoading}
+            invoicesError={invoicesError}
+            onInvoicesRetry={() => setInvoicesReload((n) => n + 1)}
+            debt={debt}
+            onStudentSubmit={setSplitDraft}
+            onDone={handleIncomeDone}
+            onCancel={() => {
+              setIncomePanel(null)
+              setStudent(null)
+            }}
+          />
         )}
       </Modal>
 
-      {student && splitOpen && amount !== null && amount > 0 && (
+      {student && splitDraft && (
         <PaymentSplitModal
           open
           student={student}
-          amount={amount}
-          method={method}
-          note={note}
-          onClose={() => setSplitOpen(false)}
+          amount={splitDraft.amount}
+          method={splitDraft.method}
+          note={splitDraft.note}
+          receivedOn={splitDraft.receivedOn}
+          onClose={() => setSplitDraft(null)}
           onAccepted={(payment) => {
-            setSplitOpen(false)
+            setSplitDraft(null)
             setReceipt(payment)
           }}
         />
@@ -893,9 +836,14 @@ export function CashierPage() {
           open
           payment={receipt}
           onClose={() => {
+            // To'lov yozildi — Kirim oynasi yopiladi va ekran yangilanadi:
+            // ochiq qolsa eski o'quvchi va eski summa bilan turib qolardi.
             setReceipt(null)
-            resetForm()
+            setIncomePanel(null)
+            setStudent(null)
             setInvoicesReload((n) => n + 1)
+            void loadBoxes()
+            setLedgerReload((n) => n + 1)
           }}
         />
       )}
@@ -918,6 +866,18 @@ export function CashierPage() {
           mode={actionState.mode}
           onClose={() => setActionState(null)}
           onDone={handleActionDone}
+        />
+      )}
+
+      {receiptRow && (
+        <CashTransactionReceipt
+          row={receiptRow}
+          // Jadval qatorida kassa nomi yo'q — filtrlangan kassa (yoki
+          // tanlangan kassa) nomini chekka o'zimiz beramiz.
+          boxName={
+            boxes.find((b) => b.id === (boxFilter || selectedBoxId))?.name ?? ''
+          }
+          onClose={() => setReceiptRow(null)}
         />
       )}
 
@@ -949,6 +909,13 @@ export function CashierPage() {
 interface StudentSearchProps {
   selectedId: string | null
   onSelect: (student: CashierStudent) => void
+  /**
+   * `true` — `Card` o'ramisiz chiziladi. Kirim shaklida qidiruv shaklning
+   * O'Z kartochkasi ichida, tranzaksiya turidan keyingi oddiy maydon sifatida
+   * turadi (mijoz, 2026-09-18: "alohida qismda emas, tranzaksiya turini
+   * pastida chiqishi kerak") — kartochka ichida yana kartochka bo'lmasin.
+   */
+  bare?: boolean
 }
 
 /**
@@ -959,7 +926,7 @@ interface StudentSearchProps {
  * kassir tez yozadi, har harf uchun so'rov yuborish serverni ham, ro'yxatni
  * ham sakratadi.
  */
-function StudentSearch({ selectedId, onSelect }: StudentSearchProps) {
+function StudentSearch({ selectedId, onSelect, bare = false }: StudentSearchProps) {
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<CashierStudent[]>([])
   const [loading, setLoading] = useState(false)
@@ -999,8 +966,10 @@ function StudentSearch({ selectedId, onSelect }: StudentSearchProps) {
     }
   }, [term, tooShort, attempt])
 
+  const Shell = bare ? BareBlock : Card
+
   return (
-    <Card className="flex h-fit flex-col gap-3">
+    <Shell className="flex h-fit flex-col gap-3">
       <label className="block">
         <span className="mb-1 block text-sm font-medium text-slate-600">O'quvchini qidirish</span>
         <div className="relative">
@@ -1047,7 +1016,7 @@ function StudentSearch({ selectedId, onSelect }: StudentSearchProps) {
       )}
 
       {!tooShort && !loading && !error && results.length > 0 && (
-        <ul className="max-h-[28rem] divide-y divide-slate-100 overflow-y-auto">
+        <ul className="max-h-[22rem] divide-y divide-slate-100 overflow-y-auto">
           {results.map((s) => (
             <li key={s.id}>
               <button
@@ -1075,8 +1044,13 @@ function StudentSearch({ selectedId, onSelect }: StudentSearchProps) {
           ))}
         </ul>
       )}
-    </Card>
+    </Shell>
   )
+}
+
+/** `Card` o'rniga ishlatiladigan bo'sh o'ram — `StudentSearch bare` uchun. */
+function BareBlock({ className, children }: { className?: string; children: ReactNode }) {
+  return <div className={className}>{children}</div>
 }
 
 /* ==========================================================================
@@ -1141,11 +1115,28 @@ function InvoiceList({ invoices, loading, error, onRetry }: InvoiceListProps) {
 }
 
 /* ==========================================================================
-   Kirim panelining "Oddiy kirim" tabi
+   Kirim shakli — BITTA UMUMIY (tab yo'q)
    ========================================================================== */
 
-interface PlainIncomeFormProps {
+interface IncomeFormProps {
   box: CashBox
+  /** Tanlangan o'quvchi — faqat "o'quvchi to'lovi" turida so'raladi. */
+  student: CashierStudent | null
+  onSelectStudent: (student: CashierStudent) => void
+  onClearStudent: () => void
+  invoices: AllocationSuggestion[]
+  invoicesLoading: boolean
+  invoicesError: string | null
+  onInvoicesRetry: () => void
+  debt: number
+  /** O'quvchi to'lovi yuborilganda — taqsimot oynasiga uzatiladi. */
+  onStudentSubmit: (draft: {
+    amount: number
+    method: PaymentMethod
+    note: string
+    receivedOn: string
+  }) => void
+  /** Oddiy kassa kirimi yozilgach. */
   onDone: () => void
   onCancel: () => void
 }
@@ -1153,6 +1144,25 @@ interface PlainIncomeFormProps {
 /**
  * Mijoz yuborgan EduSchool kassa kirim shaklidagi tartib bilan mos:
  * **Tranzaksiya turi (majburiy) · summa (+ to'lov usuli) · sana · izoh**.
+ *
+ * BITTA SHAKL, IKKI YO'L (mijoz, 2026-09-18): "oddiy kirim va o'quvchi
+ * to'lovi degan narsalarni olib tashla va bitta umumiy bo'lsin" va "to'lov
+ * turi tanlanganda ... o'quvchi oylik to'lovi tanlanganda keyin o'quvchi
+ * qidirish joyi chiqishi kerak". Ya'ni yo'lni TAB emas, TRANZAKSIYA TURI
+ * tanlaydi:
+ *   · "O'quvchi oylik to'lovi" ({@link isStudentTuitionType}) → o'quvchi
+ *     qidiruvi va uning ochiq hisob-fakturalari ochiladi, "Kirim"
+ *     `PaymentSplitModal`ni ochadi va pul eski yo'l bilan yoziladi
+ *     (`acceptPayment`, FIFO taqsimot serverda — TEGILMAGAN);
+ *   · qolgan barcha turlar → oddiy kassa kirimi (`cashBoxIn`).
+ * Ikki server yo'li bir-biriga aylantirilmagan — ular tubdan har xil, faqat
+ * ularga kiradigan ekran bitta.
+ *
+ * TUR O'QUVCHI TO'LOVIDA JO'NATILMAYDI: `acceptPayment` so'rovida bunday
+ * maydon yo'q (`cashier.ts`, `AcceptPaymentPayload`) — u yerda yozuvning
+ * mazmuni hisob-faktura toifasidan keladi. Bu yerda tur — YO'LNI TANLAYDIGAN
+ * savol; uni jo'natish uchun backend kontrakti kengaytirilishi kerak bo'lardi,
+ * bu esa alohida ish (docs/ASSUMPTIONS.md, 2026-09-18).
  *
  * TO'LOV USULINI SAQLAB QOLDIK, ULARNING SHAKLIDA U YO'Q BO'LSA HAM:
  * Kassa ekranining har-usul kesimi (`CashLedger.tsx`, `Naqd`/`Klik`/
@@ -1165,22 +1175,33 @@ interface PlainIncomeFormProps {
  * TANLANADIGAN maydon, lekin backend `CreatedAt`ni har doim serverda,
  * HOZIR bilan belgilaydi (`CashBoxService.PayInAsync` — so'rov tanasida
  * sana maydoni UMUMAN yo'q) — shu yerda ham faqat bugungi sana O'QISH
- * uchun ko'rsatiladi, tahrirlanmaydi. Tanlov: sanani "tuzatilmaydigan
- * ko'rinishda ko'rsatish" (butunlay olib tashlashdan ko'ra) — mijozning
- * shakl tartibiga to'g'ri keladi va kassirga "bugun yozilyapti" ekanini
- * aniq ko'rsatadi, xato tushunmaslikning oldini oladi.
+ * uchun ko'rsatiladi, tahrirlanmaydi.
  *
  * TRANZAKSIYA TURI — MAJBURIY BU EKRANDA, BACKEND'DA IXTIYORIY: server
- * `CashBoxPayInRequest.TransactionTypeId`ni ixtiyoriy qabul qiladi (izohi —
- * shu yerda), chunki uni butun tizim darajasida majburiy qilish
- * `CashBoxActionModal.tsx`ning eski "in" yo'lini va o'nlab mavjud testni
- * (`CashBoxTests.cs`) buzardi. Bu FORMA — mijoz talab qilgan haqiqiy
- * yuzaki (product) sirtki qatlam — uni majburiy qiladi (pastga: `canSubmit`).
+ * `CashBoxPayInRequest.TransactionTypeId`ni ixtiyoriy qabul qiladi, chunki
+ * uni butun tizim darajasida majburiy qilish `CashBoxActionModal.tsx`ning
+ * eski "in" yo'lini va o'nlab mavjud testni (`CashBoxTests.cs`) buzardi.
+ * Bu FORMA — mijoz talab qilgan haqiqiy sirtki qatlam — uni majburiy qiladi
+ * (pastga: `canSubmit`).
  */
-function PlainIncomeForm({ box, onDone, onCancel }: PlainIncomeFormProps) {
+function IncomeForm({
+  box,
+  student,
+  onSelectStudent,
+  onClearStudent,
+  invoices,
+  invoicesLoading,
+  invoicesError,
+  onInvoicesRetry,
+  debt,
+  onStudentSubmit,
+  onDone,
+  onCancel,
+}: IncomeFormProps) {
   const [amountRaw, setAmountRaw] = useState('')
   const [method, setMethod] = useState<PaymentMethod>('cash')
   const [note, setNote] = useState('')
+  const [date, setDate] = useState(todayStr())
   const [transactionTypeId, setTransactionTypeId] = useState('')
   const [types, setTypes] = useState<TransactionType[]>([])
   const [typesLoading, setTypesLoading] = useState(true)
@@ -1211,16 +1232,38 @@ function PlainIncomeForm({ box, onDone, onCancel }: PlainIncomeFormProps) {
     }
   }, [])
 
+  const selectedType = types.find((t) => t.id === transactionTypeId)
+  const studentMode = isStudentTuitionType(selectedType)
+
+  /** Tur o'zgarganda o'quvchi yo'li yopilsa, tanlangan o'quvchi ham tushadi. */
+  const changeType = (nextId: string) => {
+    setTransactionTypeId(nextId)
+    if (!isStudentTuitionType(types.find((t) => t.id === nextId))) onClearStudent()
+  }
+
   const amount = parseSum(amountRaw)
   const amountValid = amount !== null && amount > 0
-  const canSubmit = amountValid && transactionTypeId !== ''
-  // `todayStr()` — "YYYY-MM-DD" (fayl boshida e'lon qilingan) — jadval bilan
-  // bir xil "DD.MM.YYYY" ko'rinishiga o'giradi (`formatDateTime` naqshi).
-  const [todayY, todayM, todayD] = todayStr().split('-')
-  const todayDisplay = `${todayD}.${todayM}.${todayY}`
+  // O'quvchi to'lovida o'quvchi majburiy — kimning qarziga tushishi noma'lum
+  // bo'lsa, taqsimot oynasini ochib ham bo'lmaydi.
+  // Sana — bugundan keyingi kun ham, bir yildan uzoq orqadagi kun ham
+  // yuborilmaydi: server ikkalasini ham rad etadi (`CashBoxService.
+  // MaxBackdateDays`), shuning uchun tanlash ham shu oraliqda.
+  const today = todayStr()
+  const earliest = MIN_ENTRY_DATE()
+  const dateValid = date !== '' && date <= today && date >= earliest
+  const canSubmit =
+    amountValid && dateValid && transactionTypeId !== '' && (!studentMode || student !== null)
 
   const submit = async () => {
     if (!canSubmit || amount === null || busy) return
+
+    // O'quvchi to'lovi — pul hisob-fakturalarga taqsimlanadi, yozuvni
+    // taqsimot oynasi yozadi (`acceptPayment`).
+    if (studentMode && student) {
+      onStudentSubmit({ amount, method, note: note.trim(), receivedOn: date })
+      return
+    }
+
     setBusy(true)
     setError(null)
     try {
@@ -1229,6 +1272,7 @@ function PlainIncomeForm({ box, onDone, onCancel }: PlainIncomeFormProps) {
         method,
         note: note.trim() || undefined,
         transactionTypeId,
+        date,
       })
       onDone()
     } catch (err) {
@@ -1239,76 +1283,154 @@ function PlainIncomeForm({ box, onDone, onCancel }: PlainIncomeFormProps) {
   }
 
   return (
-    <Card>
-      <div>
-        <Select
-          label="Tranzaksiya turi"
-          required
-          autoFocus
-          value={transactionTypeId}
-          onChange={(e) => setTransactionTypeId(e.target.value)}
-          disabled={typesLoading || types.length === 0}
-        >
-          {typesLoading && <option value="">Yuklanmoqda...</option>}
-          {!typesLoading && types.length === 0 && <option value="">Turlar yo'q</option>}
-          {!typesLoading &&
-            types.length > 0 && [
-              <option key="" value="" disabled>
-                Tanlang...
-              </option>,
-              ...types.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.name}
-                </option>
-              )),
-            ]}
-        </Select>
-        {typesError && <p className="mt-1 text-xs text-red-600">{typesError}</p>}
-      </div>
-
-      <div className="mt-4 grid gap-4 sm:grid-cols-2">
-        <MoneyInput
-          label="Summa (so'm)"
-          value={amountRaw}
-          onValueChange={setAmountRaw}
-          placeholder="0"
-          invalid={amountRaw.length > 0 && !amountValid}
-          hint={amountRaw.length > 0 && !amountValid ? "Summa noldan katta bo'lishi kerak." : undefined}
-        />
-        <Select label="To'lov usuli" value={method} onChange={(e) => setMethod(e.target.value as PaymentMethod)}>
-          {METHODS.map((m) => (
-            <option key={m} value={m}>
-              {methodLabels[m]}
-            </option>
-          ))}
-        </Select>
-      </div>
-
-      <div className="mt-4">
-        <span className="mb-1 block text-sm font-medium text-slate-600">Sana</span>
-        <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-500">
-          <Lock className="h-3.5 w-3.5 shrink-0 text-slate-400" />
-          {todayDisplay}
+    <div className="space-y-4">
+      <Card>
+        <div>
+          <Select
+            label="Tranzaksiya turi"
+            required
+            autoFocus
+            value={transactionTypeId}
+            onChange={(e) => changeType(e.target.value)}
+            disabled={typesLoading || types.length === 0}
+          >
+            {typesLoading && <option value="">Yuklanmoqda...</option>}
+            {!typesLoading && types.length === 0 && <option value="">Turlar yo'q</option>}
+            {!typesLoading &&
+              types.length > 0 && [
+                <option key="" value="" disabled>
+                  Tanlang...
+                </option>,
+                ...types.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name}
+                  </option>
+                )),
+              ]}
+          </Select>
+          {typesError && <p className="mt-1 text-xs text-red-600">{typesError}</p>}
         </div>
-        <p className="mt-1 text-xs text-slate-400">
-          Har doim bugun — orqaga sana bilan yozib bo'lmaydi (SPEC §4).
-        </p>
-      </div>
 
-      <div className="mt-4">
-        <Textarea
-          label="Izoh (ixtiyoriy)"
-          rows={2}
-          value={note}
-          onChange={(e) => setNote(e.target.value)}
-          placeholder="Masalan: boshlang'ich mablag'"
+        {/* --- O'quvchi: FAQAT o'quvchi to'lovi turida, va AYNAN tranzaksiya
+            turining ostida (mijoz, 2026-09-18: "o'quvchi tanlash ... alohida
+            qismda emas, balki tranzaksiya turini pastida chiqishi kerak") --- */}
+        {studentMode && (
+          <div className="mt-4">
+            {student ? (
+              <div className="rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-2.5">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="truncate font-medium text-slate-800">{student.fullName}</p>
+                    <p className="truncate text-xs text-slate-500">
+                      {student.className}
+                      {student.parentFullName ? ` · ${student.parentFullName}` : ''}
+                      {student.parentPhone ? ` · ${student.parentPhone}` : ''}
+                    </p>
+                  </div>
+                  <div className="ml-auto flex items-center gap-3">
+                    {!invoicesLoading && !invoicesError && (
+                      <div className="text-right">
+                        <p className="text-[11px] uppercase tracking-wide text-slate-400">Jami qarz</p>
+                        <p
+                          className={cn(
+                            'text-sm font-semibold tabular-nums',
+                            debt > 0 ? 'text-red-600' : 'text-emerald-600',
+                          )}
+                        >
+                          {formatSumWithUnit(debt)}
+                        </p>
+                      </div>
+                    )}
+                    <Button variant="ghost" type="button" onClick={onClearStudent} disabled={busy}>
+                      O'zgartirish
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <StudentSearch bare selectedId={null} onSelect={onSelectStudent} />
+            )}
+          </div>
+        )}
+
+        <div className="mt-4 grid gap-4 sm:grid-cols-2">
+          <MoneyInput
+            label="Summa (so'm)"
+            value={amountRaw}
+            onValueChange={setAmountRaw}
+            placeholder="0"
+            invalid={amountRaw.length > 0 && !amountValid}
+            hint={amountRaw.length > 0 && !amountValid ? "Summa noldan katta bo'lishi kerak." : undefined}
+          />
+          <Select label="To'lov usuli" value={method} onChange={(e) => setMethod(e.target.value as PaymentMethod)}>
+            {METHODS.map((m) => (
+              <option key={m} value={m}>
+                {methodLabels[m]}
+              </option>
+            ))}
+          </Select>
+        </div>
+
+        {studentMode && student && debt > 0 && !invoicesLoading && !invoicesError && (
+          <Button
+            variant="ghost"
+            className="mt-2"
+            type="button"
+            onClick={() => setAmountRaw(String(debt))}
+          >
+            Butun qarzni qo'yish ({formatSum(debt)})
+          </Button>
+        )}
+
+        {/* SANA TANLANADI (mijoz, 2026-09-18): "oldingi sana uchun tanlash
+            mumkin bo'lsin". Ilgari bu maydon qulflangan edi — SPEC §4 orqaga
+            sanani taqiqlardi va backend `CreatedAt`ni har doim serverda
+            belgilardi. Endi ikkalasi ham o'zgardi: so'rovda ixtiyoriy sana
+            bor, server esa uni tekshiradi (kelajak yo'q, bir yildan uzoq
+            orqaga yo'q). Kechagi pulni bugun kiritganda u KECHAGI kun
+            hisobotiga tushadi. */}
+        <div className="mt-4">
+          <label className="block">
+            <span className="mb-1 block text-sm font-medium text-slate-600">Sana</span>
+            <DatePicker
+              value={date}
+              max={today}
+              min={earliest}
+              onChange={setDate}
+              invalid={!dateValid}
+            />
+          </label>
+          <p className={cn('mt-1 text-xs', dateValid ? 'text-slate-400' : 'text-red-600')}>
+            {dateValid
+              ? "Sukut bo'yicha bugun — o'tgan kun bilan ham yozish mumkin."
+              : "Sana bugundan keyin ham, bir yildan uzoq orqada ham bo'lmasligi kerak."}
+          </p>
+        </div>
+
+        <div className="mt-4">
+          <Textarea
+            label="Izoh (ixtiyoriy)"
+            rows={2}
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder={studentMode ? "Masalan: sentabr uchun, otasi to'ladi" : "Masalan: boshlang'ich mablag'"}
+          />
+        </div>
+
+        <p className="mt-3 text-xs text-slate-400">Joriy qoldiq: {formatSum(box.balance)} so'm</p>
+      </Card>
+
+      {studentMode && student && (
+        <InvoiceList
+          invoices={invoices}
+          loading={invoicesLoading}
+          error={invoicesError}
+          onRetry={onInvoicesRetry}
         />
-      </div>
-
-      <p className="mt-3 text-xs text-slate-400">Joriy qoldiq: {formatSum(box.balance)} so'm</p>
+      )}
 
       {error && (
-        <div className="mt-3 rounded-xl border border-red-200 bg-red-50/70 px-3 py-3">
+        <div className="rounded-xl border border-red-200 bg-red-50/70 px-3 py-3">
           <div className="flex items-start gap-2 text-sm text-red-700">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
             <span>{error}</span>
@@ -1316,14 +1438,15 @@ function PlainIncomeForm({ box, onDone, onCancel }: PlainIncomeFormProps) {
         </div>
       )}
 
-      <div className="mt-4 flex items-center justify-end gap-2">
+      <div className="flex items-center justify-end gap-2">
         <Button variant="secondary" onClick={onCancel} disabled={busy}>
           Bekor qilish
         </Button>
         <Button onClick={() => void submit()} disabled={!canSubmit || busy}>
+          {studentMode ? <Wallet className="h-4 w-4" /> : null}
           {busy ? 'Yozilmoqda...' : 'Kirim'}
         </Button>
       </div>
-    </Card>
+    </div>
   )
 }

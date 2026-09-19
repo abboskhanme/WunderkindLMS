@@ -125,6 +125,58 @@ public class FinanceController(AppDbContext db) : ControllerBase
         }).ToList();
     }
 
+    /// <summary>
+    /// <c>GET /api/admin/finance/salary-report/export?from&amp;to</c> — maosh
+    /// hisobotining .xlsx nusxasi.
+    ///
+    /// <para>
+    /// Mijoz, 2026-09-19: "yuklab olish csv emas excel fayl uchun bo'lsin".
+    /// Raqamlar <see cref="SalaryReport"/> dan olinadi — ekrandagining
+    /// aynan o'zi, bu yerda hech narsa qayta hisoblanmaydi.
+    /// </para>
+    /// </summary>
+    [HttpGet("salary-report/export")]
+    [FinanceRole(FinanceAction.ViewBillingReports)]
+    public async Task<ActionResult> SalaryReportExport(
+        [FromQuery] string? from, [FromQuery] string? to, CancellationToken ct)
+    {
+        var result = await SalaryReport(from, to, ct);
+        if (result.Value is not IEnumerable<SalaryReportRowDto> report)
+            return result.Result ?? StatusCode(500);
+
+        var rows = report.ToList();
+
+        string[] headers = ["O'qituvchi", "Oylik", "Oylar", "Hisoblangan", "Berilgan", "To'lovlar", "Qoldiq"];
+
+        var cells = rows.Select(r => (IReadOnlyList<ExcelExport.XlsxCell>)
+        [
+            ExcelExport.XlsxCell.Of(r.TeacherName),
+            ExcelExport.XlsxCell.Num(r.Salary),
+            ExcelExport.XlsxCell.Num(r.Months),
+            ExcelExport.XlsxCell.Num(r.Expected),
+            ExcelExport.XlsxCell.Num(r.TotalPaid),
+            ExcelExport.XlsxCell.Num(r.PaymentsCount),
+            ExcelExport.XlsxCell.Num(r.Remaining),
+        ]).ToList();
+
+        IReadOnlyList<ExcelExport.XlsxCell> totals =
+        [
+            ExcelExport.XlsxCell.Of("Jami"),
+            ExcelExport.XlsxCell.Of(null),
+            ExcelExport.XlsxCell.Of(null),
+            ExcelExport.XlsxCell.Num(rows.Sum(r => r.Expected)),
+            ExcelExport.XlsxCell.Num(rows.Sum(r => r.TotalPaid)),
+            ExcelExport.XlsxCell.Num(rows.Sum(r => r.PaymentsCount)),
+            ExcelExport.XlsxCell.Num(rows.Sum(r => r.Remaining)),
+        ];
+
+        var bytes = ExcelExport.BuildTable("Maosh hisoboti", headers, cells, totals);
+        return File(
+            bytes,
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "oqituvchilar-maoshi.xlsx");
+    }
+
     /// <summary>"yyyy-MM" → o'sha oyning birinchi kuni.</summary>
     private static DateOnly MonthStart(string month) =>
         new(int.Parse(month[..4]), int.Parse(month[5..7]), 1);

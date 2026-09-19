@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Download, History } from 'lucide-react'
+import { FileSpreadsheet, History } from 'lucide-react'
 import type { Role, SalaryReportRow } from '@/types'
-import { getSalaryReport } from '@/api/services/finance'
-import { formatMoney, exportToCsv, cn } from '@/lib/utils'
+import { downloadSalaryReport, getSalaryReport } from '@/api/services/finance'
+import { formatMoney, cn } from '@/lib/utils'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Loader } from '@/components/ui/Loader'
@@ -13,12 +13,11 @@ import { TeacherSalaryDetailModal } from './TeacherSalaryDetailModal'
 import { PnlTab } from './PnlTab'
 import { CashFlowTab } from './CashFlowTab'
 import { DebtorsTab } from './DebtorsTab'
+import { DatePicker } from '@/components/ui/DatePicker'
 
 const todayStr = new Date().toISOString().slice(0, 10)
 const yearOf = (d: string) => Number(d.slice(0, 4))
 
-const control =
-  'rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-brand-400'
 
 /**
  * DIREKTOR MOLIYA PANELI.
@@ -46,6 +45,21 @@ const control =
  * uzildi, endi hech qayerdan chaqirilmaydi.
  */
 type Tab = 'teachers' | 'pnl' | 'cashflow' | 'debtors'
+
+/**
+ * Sahifa sarlavhasi. Menyudan TO'G'RIDAN-TO'G'RI bitta tabga kirilganda
+ * (`initialTab`) sarlavha MENYUDAGI yozuv bilan bir xil bo'lishi kerak:
+ * ilgari "Qarzdorlar bilan ishlash" ni ochganda ham "Moliya — Hisobotlar va
+ * o'qituvchilar maoshi" yozuvi turardi va ekran boshqa joyga o'xshab
+ * ko'rinardi. Tab qatori ko'rinib turgan holatda (menyudagi "Moliya" ning
+ * o'zi) umumiy sarlavha qoladi.
+ */
+const tabHeadings: Record<Tab, { title: string; subtitle: string }> = {
+  teachers: { title: "O'qituvchilar maoshi", subtitle: 'Hisoblangan, berilgan va qoldiq — davr bo\'yicha' },
+  pnl: { title: 'Moliya hisobotlari (P&L)', subtitle: 'Foyda va zarar — buxgalteriya jurnali bo\'yicha' },
+  cashflow: { title: 'Pul oqimi', subtitle: 'Kirim va chiqim harakati — oylar kesimida' },
+  debtors: { title: 'Qarzdorlar bilan ishlash', subtitle: "Qarzi bor o'quvchilar, muddati o'tgan qarz va va'dalar" },
+}
 
 const reportTabs: { value: Tab; label: string }[] = [
   { value: 'pnl', label: 'Foyda va zarar' },
@@ -86,6 +100,7 @@ export function FinancePage({ initialTab }: { initialTab?: Tab } = {}) {
 
   const [salaryReport, setSalaryReport] = useState<SalaryReportRow[]>([])
   const [loading, setLoading] = useState(false)
+  const [exporting, setExporting] = useState(false)
 
   const [audit, setAudit] = useState<{ filters: AuditFilters; title: string } | null>(null)
   const [detailTeacher, setDetailTeacher] = useState<SalaryReportRow | null>(null)
@@ -102,18 +117,13 @@ export function FinancePage({ initialTab }: { initialTab?: Tab } = {}) {
   // eslint-disable-next-line react-hooks/set-state-in-effect -- filtr o'zgarganda ma'lumotni qayta yuklash (maqsadli, useAsync bilan bir xil naqsh)
   useEffect(() => load(), [load])
 
-  const handleExportTeachers = () => {
-    exportToCsv(
-      'oqituvchilar-maoshi.csv',
-      ["O'qituvchi", 'Oylik', 'Hisoblangan', 'Berilgan', 'Qoldiq'],
-      salaryReport.map((r) => [
-        r.teacherName,
-        String(r.salary),
-        String(r.expected),
-        String(r.totalPaid),
-        String(r.remaining),
-      ]),
-    )
+  const handleExportTeachers = async () => {
+    setExporting(true)
+    try {
+      await downloadSalaryReport(from, to)
+    } finally {
+      setExporting(false)
+    }
   }
 
   // Tanlangan davrning kalendar oylari (har o'qituvchining hisoblangan oyi boshlanish oyiga
@@ -134,8 +144,12 @@ export function FinancePage({ initialTab }: { initialTab?: Tab } = {}) {
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-xl font-semibold text-slate-800">Moliya</h1>
-          <p className="text-sm text-slate-400">Hisobotlar va o'qituvchilar maoshi</p>
+          <h1 className="text-xl font-semibold text-slate-800">
+            {initialTab ? tabHeadings[initialTab].title : 'Moliya'}
+          </h1>
+          <p className="text-sm text-slate-400">
+            {initialTab ? tabHeadings[initialTab].subtitle : "Hisobotlar va o'qituvchilar maoshi"}
+          </p>
         </div>
         <Button
           variant="secondary"
@@ -187,9 +201,17 @@ export function FinancePage({ initialTab }: { initialTab?: Tab } = {}) {
       {periodTabs.includes(tab) && (
         <Card className="flex flex-wrap items-center gap-3 p-4">
           <span className="text-sm font-medium text-slate-600">Davr:</span>
-          <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className={control} />
+          <DatePicker
+            value={from}
+            onChange={(value: string) => setFrom(value)}
+            className="w-40"
+          />
           <span className="text-slate-400">—</span>
-          <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className={control} />
+          <DatePicker
+            value={to}
+            onChange={(value: string) => setTo(value)}
+            className="w-40"
+          />
         </Card>
       )}
 
@@ -222,13 +244,18 @@ export function FinancePage({ initialTab }: { initialTab?: Tab } = {}) {
                     Davr bo'yicha — {periodMonths} oy · batafsil uchun o'qituvchini bosing
                   </p>
                 </div>
-                <Button variant="secondary" onClick={handleExportTeachers} disabled={salaryReport.length === 0}>
-                  <Download className="h-4 w-4" /> CSV
+                <Button
+                  variant="secondary"
+                  onClick={handleExportTeachers}
+                  disabled={exporting || salaryReport.length === 0}
+                >
+                  <FileSpreadsheet className="h-4 w-4" />{' '}
+                  {exporting ? 'Tayyorlanmoqda...' : 'Excel'}
                 </Button>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-sm">
-                  <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
+                  <thead className="whitespace-nowrap bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
                     <tr>
                       <th className="px-4 py-3">O'qituvchi</th>
                       <th className="px-4 py-3 text-right">Oylik</th>

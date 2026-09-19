@@ -17,7 +17,7 @@
  * bo'yicha emas.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
+import { useSearchParams } from 'react-router-dom'
 import {
   ArrowDownCircle,
   ArrowUpCircle,
@@ -27,8 +27,6 @@ import {
   Download,
   FileText,
   Lock,
-  Minus,
-  Plus,
   RotateCcw,
   Scale,
   Search,
@@ -61,6 +59,7 @@ import { billingErrorCode, billingErrorMessage } from '@/api/services/billingErr
 import { getFeeCategories } from '@/api/services/billingCatalog'
 import { getClasses } from '@/api/services/classes'
 import { useAuth } from '@/context/auth-context'
+import { financeCategoryLabel } from '@/config/constants'
 import { cn, formatMoney } from '@/lib/utils'
 import { Card } from '@/components/ui/Card'
 import { Loader } from '@/components/ui/Loader'
@@ -68,6 +67,7 @@ import { StatCard } from '@/components/ui/StatCard'
 import { Notice, StatusPill } from '@/pages/admin/billing/BillingUi'
 import { formatDateTime, formatSignedMoney, paymentMethodLabel, signClass } from './reportLabels'
 import { ReversePaymentModal } from './ReversePaymentModal'
+import { DatePicker } from '@/components/ui/DatePicker'
 
 const control =
   'rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-brand-400'
@@ -138,6 +138,18 @@ const statusTones: Record<TransactionStatus, 'success' | 'danger' | 'warning'> =
   active: 'success',
   reversed: 'danger',
   pending: 'warning',
+}
+
+/**
+ * Qatordagi toifa matni. To'lovda server tayyor yorliq beradi
+ * (`categoryLabel` — hisob-faktura toifalari), chiqimda esa faqat KOD
+ * (`salary`, `rent`, ...) keladi — u `financeCategoryLabel` orqali
+ * o'zbekchaga o'giriladi (Chiqimlar ekranidagi bilan bir xil nom).
+ */
+function categoryText(row: TransactionRow): string {
+  if (row.categoryLabel) return row.categoryLabel
+  if (!row.category) return '—'
+  return financeCategoryLabel(row.category)
 }
 
 export function TransactionsPage() {
@@ -359,21 +371,11 @@ export function TransactionsPage() {
             bo'yicha, ko'rinib turgan sahifa bo'yicha emas.
           </p>
         </div>
+        {/* "Kirim" va "Chiqim" tugmalari BU YERDAN OLIB TASHLANDI (mijoz,
+            2026-09-19): ular pul yozmasdi, shunchaki Kassa (yoki Chiqimlar)
+            ekraniga olib o'tib qo'yardi. Pul amallari FAQAT Kassa bo'limida
+            bo'ladi — bu ekran jurnal, ya'ni O'QISH uchun. */}
         <div className="flex flex-wrap items-center gap-2">
-          <Link
-            to="/cashier"
-            className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700 transition-colors hover:bg-emerald-100"
-          >
-            <Plus className="h-4 w-4" />
-            Kirim
-          </Link>
-          <Link
-            to="/admin/billing/expenses"
-            className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700 transition-colors hover:bg-red-100"
-          >
-            <Minus className="h-4 w-4" />
-            Chiqim
-          </Link>
           <button
             type="button"
             onClick={handleExport}
@@ -427,18 +429,16 @@ export function TransactionsPage() {
       <Card className="p-0">
         <div className="space-y-3 border-b border-slate-100 p-4">
           <div className="flex flex-wrap items-center gap-2">
-            <input
-              type="date"
+            <DatePicker
               value={filters.from}
-              onChange={(e) => set({ from: e.target.value })}
-              className={control}
+              onChange={(value: string) => set({ from: value })}
+              className="w-40"
             />
             <span className="text-sm text-slate-400">—</span>
-            <input
-              type="date"
+            <DatePicker
               value={filters.to}
-              onChange={(e) => set({ to: e.target.value })}
-              className={control}
+              onChange={(value: string) => set({ to: value })}
+              className="w-40"
             />
             <div className="flex items-center gap-1">
               {[
@@ -559,7 +559,11 @@ export function TransactionsPage() {
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
-              <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
+              {/* Ustunlar kassa jadvali bilan BIR XIL tartibda o'qiladi:
+                  ... usul · KASSA · kassir · IZOH · SABAB · holat (EduSchool
+                  jurnalida ham shunday, 2026-09-18 da o'qildi). Qatorlar bir
+                  satrda — uzun matn "..." bilan kesiladi, to'lig'i hoverda. */}
+              <thead className="whitespace-nowrap bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
                 <tr>
                   <th className="px-4 py-3">Sana</th>
                   <th className="px-4 py-3">Turi</th>
@@ -568,8 +572,10 @@ export function TransactionsPage() {
                   <th className="px-4 py-3 text-right">Summa</th>
                   <th className="px-4 py-3">Toifa</th>
                   <th className="px-4 py-3">Usul</th>
+                  <th className="px-4 py-3">Kassa</th>
                   <th className="px-4 py-3">Kassir / yozgan</th>
                   <th className="px-4 py-3">Izoh</th>
+                  <th className="px-4 py-3">Sabab</th>
                   <th className="px-4 py-3">Holat</th>
                   <th className="px-4 py-3" />
                 </tr>
@@ -590,10 +596,12 @@ export function TransactionsPage() {
                     <td className="whitespace-nowrap px-4 py-3 text-slate-700">
                       {transactionKindLabels[row.kind]}
                     </td>
-                    <td className="px-4 py-3 font-medium text-slate-800">
-                      {row.personName ?? '—'}
+                    <td className="whitespace-nowrap px-4 py-3 font-medium text-slate-800">
+                      <span className="inline-block max-w-[13rem] truncate align-middle" title={row.personName ?? ''}>
+                        {row.personName ?? '—'}
+                      </span>
                       {row.className && (
-                        <span className="ml-2 rounded-md bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-500">
+                        <span className="ml-2 whitespace-nowrap rounded-md bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-500">
                           {row.className}
                         </span>
                       )}
@@ -608,14 +616,33 @@ export function TransactionsPage() {
                       {formatSignedMoney(row.amount)}
                     </td>
                     <td className="px-4 py-3 text-slate-600">
-                      {row.categoryLabel ?? row.category ?? '—'}
+                      {/* CHIQIMDA `categoryLabel` bo'sh keladi — u yerda xom
+                          kod ("salary") turardi. Kodni o'zbekchaga
+                          o'giramiz (mijoz, 2026-09-19). */}
+                      <span className="block max-w-[12rem] truncate" title={categoryText(row)}>
+                        {categoryText(row)}
+                      </span>
                     </td>
-                    <td className="px-4 py-3 text-slate-600">
+                    <td className="whitespace-nowrap px-4 py-3 text-slate-600">
                       {row.method ? paymentMethodLabel(row.method) : '—'}
                     </td>
-                    <td className="px-4 py-3 text-slate-500">{row.actorName ?? '—'}</td>
-                    <td className="max-w-[220px] truncate px-4 py-3 text-slate-500">
-                      {row.note || '—'}
+                    <td className="whitespace-nowrap px-4 py-3 text-slate-600">
+                      {row.cashBoxName ?? '—'}
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-3 text-slate-500">{row.actorName ?? '—'}</td>
+                    <td className="px-4 py-3 text-slate-500">
+                      <span className="block max-w-[14rem] truncate" title={row.note ?? ''}>
+                        {row.note || '—'}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      {row.cancelReason ? (
+                        <span className="block max-w-[14rem] truncate text-red-600" title={row.cancelReason}>
+                          {row.cancelReason}
+                        </span>
+                      ) : (
+                        <span className="text-slate-300">—</span>
+                      )}
                     </td>
                     <td className="px-4 py-3">
                       <StatusPill tone={statusTones[row.status]}>
@@ -671,7 +698,7 @@ export function TransactionsPage() {
                 ))}
                 {data.rows.length === 0 && (
                   <tr>
-                    <td colSpan={11} className="px-4 py-12 text-center text-slate-400">
+                    <td colSpan={13} className="px-4 py-12 text-center text-slate-400">
                       Tanlangan filtr bo'yicha pul harakati yo'q
                     </td>
                   </tr>
@@ -691,7 +718,7 @@ export function TransactionsPage() {
                     >
                       {formatSignedMoney(data.totals.net)}
                     </td>
-                    <td className="px-4 py-2.5 text-xs text-slate-500" colSpan={6}>
+                    <td className="px-4 py-2.5 text-xs text-slate-500" colSpan={8}>
                       Kirim {formatMoney(data.totals.totalIn)} · Chiqim{' '}
                       {formatMoney(data.totals.totalOut)}
                     </td>

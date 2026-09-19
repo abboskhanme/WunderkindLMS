@@ -11,19 +11,19 @@
  * ikki qatorni ekranda birlashtirish.
  */
 import { Fragment, useMemo, useState } from 'react'
-import { ArrowDownRight, ArrowUpRight, Download, Landmark, Wallet } from 'lucide-react'
+import { ArrowDownRight, ArrowUpRight, FileSpreadsheet, Landmark, Wallet } from 'lucide-react'
 import { useAsync } from '@/hooks/useAsync'
 import {
   getCashFlow,
   type CashFlowAccount,
   type CashFlowMonth,
 } from '@/api/services/financeReports'
-import { getCashFlowStatement } from '@/api/services/financeStatements'
+import { downloadCashFlow, getCashFlowStatement } from '@/api/services/financeStatements'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { StatCard } from '@/components/ui/StatCard'
 import { CashFlowChart } from '@/components/charts/CashFlowChart'
-import { cn, exportToCsv, formatMoney } from '@/lib/utils'
+import { cn, formatMoney } from '@/lib/utils'
 import { ReportState } from './ReportState'
 import { LedgerDetailsModal, type LedgerDetailsRequest } from './LedgerDetailsModal'
 import { accountLabel, formatMonthLabel, formatSignedMoney, signClass } from './reportLabels'
@@ -68,6 +68,7 @@ function combineMonths(accounts: CashFlowAccount[]): CashFlowMonth[] {
 
 export function CashFlowTab({ from, to }: Props) {
   const [view, setView] = useState<View>('all')
+  const [exporting, setExporting] = useState(false)
   const { data, loading, error, refetch } = useAsync(() => getCashFlow(from, to), [from, to])
 
   const shown = useMemo(() => {
@@ -97,20 +98,20 @@ export function CashFlowTab({ from, to }: Props) {
   const isEmpty =
     !!data && (!shown || (data.inflow === 0 && data.outflow === 0 && data.opening === 0))
 
-  const handleExport = () => {
-    if (!data || !shown) return
-    exportToCsv(
-      `pul-oqimi_${data.from}_${data.to}.csv`,
-      ['Oy', "Boshlang'ich qoldiq", 'Kirim', 'Chiqim', 'Sof', 'Yakuniy qoldiq'],
-      shown.months.map((m) => [
-        formatMonthLabel(m.month),
-        String(m.opening),
-        String(m.inflow),
-        String(m.outflow),
-        String(m.net),
-        String(m.closing),
-      ]),
-    )
+  /**
+   * Excel (mijoz, 2026-09-19: "yuklab olish csv emas excel fayl uchun
+   * bo'lsin"). Fayl serverda yig'iladi va IKKI varaqdan iborat: oylar va
+   * toifalar — shuning uchun "Toifalar bo'yicha" jadvalining tugmasi ham
+   * shu faylni beradi.
+   */
+  const handleExport = async () => {
+    if (!data) return
+    setExporting(true)
+    try {
+      await downloadCashFlow(from, to, view === 'all' ? undefined : view)
+    } finally {
+      setExporting(false)
+    }
   }
 
   return (
@@ -175,8 +176,12 @@ export function CashFlowTab({ from, to }: Props) {
                 </button>
               ))}
             </div>
-            <Button variant="secondary" onClick={handleExport} disabled={shown.months.length === 0}>
-              <Download className="h-4 w-4" /> CSV
+            <Button
+              variant="secondary"
+              onClick={handleExport}
+              disabled={exporting || shown.months.length === 0}
+            >
+              <FileSpreadsheet className="h-4 w-4" /> {exporting ? 'Tayyorlanmoqda...' : 'Excel'}
             </Button>
           </Card>
 
@@ -200,7 +205,7 @@ export function CashFlowTab({ from, to }: Props) {
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-left text-sm">
-                <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
+                <thead className="whitespace-nowrap bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
                   <tr>
                     <th className="px-4 py-3">Oy</th>
                     <th className="px-4 py-3 text-right">Boshlang'ich</th>
@@ -312,21 +317,18 @@ function CategoriesCard({
     [from, to, account],
   )
   const [details, setDetails] = useState<LedgerDetailsRequest | null>(null)
+  const [exporting, setExporting] = useState(false)
 
-  const handleExport = () => {
+  // Yuqoridagi tugma bilan BIR XIL fayl: ikki varaqli .xlsx — shuning
+  // uchun bu yerda alohida CSV yasalmaydi.
+  const handleExport = async () => {
     if (!data) return
-    exportToCsv(
-      `pul-oqimi-toifalar_${data.from}_${data.to}.csv`,
-      ["Bo'lim", 'Toifa', ...data.months, 'Jami'],
-      data.sections.flatMap((section) =>
-        section.rows.map((row) => [
-          section.label,
-          row.label,
-          ...row.months.map((m) => String(m.amount)),
-          String(row.total.amount),
-        ]),
-      ),
-    )
+    setExporting(true)
+    try {
+      await downloadCashFlow(from, to, account as 'cash' | 'bank' | undefined)
+    } finally {
+      setExporting(false)
+    }
   }
 
   return (
@@ -339,8 +341,8 @@ function CategoriesCard({
               Kirim — to'lov taqsimotidan, chiqim — chiqim toifasidan · katakni bosing
             </p>
           </div>
-          <Button variant="secondary" onClick={handleExport} disabled={!data}>
-            <Download className="h-4 w-4" /> CSV
+          <Button variant="secondary" onClick={handleExport} disabled={exporting || !data}>
+            <FileSpreadsheet className="h-4 w-4" /> {exporting ? 'Tayyorlanmoqda...' : 'Excel'}
           </Button>
         </div>
 
@@ -362,7 +364,7 @@ function CategoriesCard({
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
-              <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
+              <thead className="whitespace-nowrap bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
                 <tr>
                   <th className="px-4 py-3">Toifa</th>
                   {data.months.map((m) => (

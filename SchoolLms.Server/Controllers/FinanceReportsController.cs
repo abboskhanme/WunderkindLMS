@@ -94,6 +94,76 @@ public class FinanceReportsController(AppDbContext db) : ControllerBase
     }
 
     /// <summary>
+    /// <c>GET /api/admin/finance/debtors/export</c> — qarzdorlar ro'yxati
+    /// XLSX sifatida (mijoz, 2026-09-19: "yuklab olish csv emas excel fayl
+    /// uchun bo'lsin").
+    ///
+    /// <para>
+    /// Filtrlar ekrandagi bilan AYNAN bir xil — ro'yxatning o'zini
+    /// <see cref="Debtors"/> qaytaradi va bu yerda faqat jadvalga o'giriladi.
+    /// Toifa ustunlari ma'lumotdan kelib chiqadi: qaysi toifada qarz bo'lsa,
+    /// o'sha ustun chiqadi (ekrandagi qoida).
+    /// </para>
+    /// <para>
+    /// "Izoh" ustuni qarzdor bilan ishlash yozuvidan
+    /// (<c>DebtorWorkflowService.RowsAsync</c>) keladi: ekranda ham eng
+    /// oxirgi izoh ko'rinadi, eksportda ham o'sha.
+    /// </para>
+    /// </summary>
+    [HttpGet("debtors/export")]
+    public async Task<ActionResult> DebtorsExport(
+        [FromQuery] string? className,
+        [FromQuery] decimal? minDebt,
+        [FromQuery] string? month,
+        [FromQuery] bool onlyOverdue = false,
+        [FromQuery] bool includeArchived = true,
+        CancellationToken ct = default)
+    {
+        var result = await Debtors(className, minDebt, month, onlyOverdue, includeArchived, ct);
+        if (result.Result is not OkObjectResult ok || ok.Value is not IEnumerable<DebtorRowDto> data)
+            return result.Result ?? StatusCode(500);
+
+        var rows = data.ToList();
+
+        // Toifa ustunlari — ro'yxatda uchragan tartibda (ekranda ham shunday).
+        var categories = rows
+            .SelectMany(r => r.ByCategory)
+            .GroupBy(c => c.CategoryCode)
+            .Select(g => (Code: g.Key, Name: g.First().CategoryName))
+            .ToList();
+
+        var workflow = (await new DebtorWorkflowService(db).RowsAsync(className, ct))
+            .ToDictionary(w => w.StudentId, w => w, StringComparer.Ordinal);
+
+        var headers = new List<string> { "O'quvchi", "Sinf", "Telefon" };
+        headers.AddRange(categories.Select(c => c.Name));
+        headers.AddRange(["Jami qarz", "Kechikish (kun)", "Eng eski oy", "Holat", "Izoh"]);
+
+        var table = rows.Select(r =>
+        {
+            workflow.TryGetValue(r.StudentId, out var w);
+            var cells = new List<ExcelExport.XlsxCell>
+            {
+                ExcelExport.XlsxCell.Of(r.FullName),
+                ExcelExport.XlsxCell.Of(r.ClassName),
+                ExcelExport.XlsxCell.Of(r.ParentPhone),
+            };
+            cells.AddRange(categories.Select(c => ExcelExport.XlsxCell.Num(
+                r.ByCategory.FirstOrDefault(x => x.CategoryCode == c.Code)?.Debt ?? 0m)));
+            cells.Add(ExcelExport.XlsxCell.Num(r.Debt));
+            cells.Add(ExcelExport.XlsxCell.Num(r.DaysOverdue));
+            cells.Add(ExcelExport.XlsxCell.Of(
+                r.OldestUnpaidMonth is { } m ? m.ToString("yyyy-MM") : ""));
+            cells.Add(ExcelExport.XlsxCell.Of(w?.StatusName ?? ""));
+            cells.Add(ExcelExport.XlsxCell.Of(w?.LastComment ?? ""));
+            return (IReadOnlyList<ExcelExport.XlsxCell>)cells;
+        }).ToList();
+
+        var bytes = ExcelExport.BuildTable("Qarzdorlar", headers, table);
+        return File(bytes, XlsxMime, $"qarzdorlar_{AppClock.Today:yyyy-MM-dd}.xlsx");
+    }
+
+    /// <summary>
     /// Foyda va zarar (P&amp;L): <c>ledger_entries</c> ni akkaunt prefiksi
     /// bo'yicha yig'adi — <c>revenue:*</c> va <c>expense:*</c>.
     /// </summary>

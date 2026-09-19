@@ -62,9 +62,17 @@ public class FinanceStatementsTests(ApiFixture fixture) : IAsyncLifetime
     // F5.06 — `Matrix` ning o'sha ruxsat darvozasidan o'tadi (ichkaridan uni
     // chaqiradi), shuning uchun u ham RUXSAT testlarida `AllEndpoints` qatorida.
     private const string MatrixExport = "/api/admin/finance/pnl/matrix/export";
+    // F7.04 va F4.05 — ikkalasi ham o'z so'rovini ICHKARIDAN chaqiradi, ya'ni
+    // o'sha ruxsat darvozasidan o'tadi; shunday bo'lsa ham ro'yxatda turadi,
+    // aks holda kelajakdagi o'zgarish ularni jimgina ochib yuborishi mumkin.
+    private const string StatementExport = "/api/admin/finance/cashflow/export";
+    private const string DashboardExport = "/api/admin/finance/dashboard/export";
 
     private static readonly string[] AllEndpoints =
-        [Dashboard, Matrix, LedgerLines, Statement, CashFlowLines, MatrixExport];
+    [
+        Dashboard, Matrix, LedgerLines, Statement, CashFlowLines,
+        MatrixExport, StatementExport, DashboardExport,
+    ];
 
     // =====================================================================
     //  1. RUXSAT — SPEC §4.3
@@ -501,9 +509,141 @@ public class FinanceStatementsTests(ApiFixture fixture) : IAsyncLifetime
         Assert.True(await db.Payments.AsNoTracking().AnyAsync(p => p.Id == reversedId));
     }
 
+    /// <summary>
+    /// F7.04 — pul oqimi .xlsx, IKKI varaq. Mezon o'sha: faylda ekrandagi
+    /// raqamning aynan o'zi turadi, ya'ni <c>CashFlowStatementAsync</c>
+    /// javobidan nusxa. "Oylar" varag'ining oxirgi qatori — davr yakuni,
+    /// "Toifalar" niki — sof oqim.
+    /// </summary>
+    [Fact]
+    public async Task Cashflow_export_ikki_varaqli_xlsx_ekrandagi_raqamga_teng()
+    {
+        await using var db = await NewDbAsync("cashflow-export");
+        var actorId = await SeedUserAsync(db, Roles.Admin);
+        var ledger = new LedgerService(db);
+
+        var today = AppClock.Today;
+        var from = new DateOnly(today.Year, today.Month, 1);
+
+        await PostAsync(ledger, actorId, from,
+            Accounts.Cash, Accounts.RevenueTuition, 1_000_000m, LedgerRefType.Payment);
+        await PostAsync(ledger, actorId, today,
+            Accounts.ExpenseUtilities, Accounts.Bank, 400_000m, LedgerRefType.Expense);
+
+        var statement = await new FinanceReportQueries(db).CashFlowStatementAsync(from, today);
+
+        var response = await new FinanceStatementsController(db).CashFlowExport(from, today, null);
+        var file = Assert.IsType<FileContentResult>(response);
+        Assert.Equal(
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            file.ContentType);
+        Assert.Equal(["Oylar", "Toifalar"], SheetNames(file.FileContents));
+
+        // ---- 1-varaq: oylar ----
+        var months = ReadXlsxSheet(file.FileContents, "Oylar");
+        Assert.Equal("Oy", months[0][0]);
+        Assert.Equal(statement.Months.Count + 2, months.Count);   // sarlavha + oylar + "Jami"
+
+        var firstMonth = months[1];
+        Assert.Equal(statement.Months[0], firstMonth[0]);
+        Assert.Equal(statement.Opening[0], ParseAmount(firstMonth[1]));
+        Assert.Equal(statement.MonthTotals[0].Inflow, ParseAmount(firstMonth[2]));
+        Assert.Equal(statement.MonthTotals[0].Outflow, ParseAmount(firstMonth[3]));
+        Assert.Equal(statement.MonthTotals[0].Amount, ParseAmount(firstMonth[4]));
+        Assert.Equal(statement.Closing[0], ParseAmount(firstMonth[5]));
+
+        var monthTotals = months[^1];
+        Assert.Equal("Jami", monthTotals[0]);
+        Assert.Equal(statement.OpeningBalance, ParseAmount(monthTotals[1]));
+        Assert.Equal(statement.Total.Inflow, ParseAmount(monthTotals[2]));
+        Assert.Equal(statement.Total.Outflow, ParseAmount(monthTotals[3]));
+        Assert.Equal(statement.Total.Amount, ParseAmount(monthTotals[4]));
+        Assert.Equal(statement.ClosingBalance, ParseAmount(monthTotals[5]));
+
+        // ---- 2-varaq: toifalar ----
+        var categories = ReadXlsxSheet(file.FileContents, "Toifalar");
+        Assert.Equal(statement.Months, categories[0][2..^1]);
+
+        foreach (var section in statement.Sections)
+        {
+            foreach (var row in section.Rows)
+            {
+                var line = categories.Single(r => r[0] == section.Label && r[1] == row.Label);
+                Assert.Equal(row.Months.Select(c => c.Amount), ParseAmounts(line[2..^1]));
+                Assert.Equal(row.Total.Amount, ParseAmount(line[^1]));
+            }
+
+            var sectionTotal = categories.Single(r => r[0] == section.Label && r[1] == "Jami");
+            Assert.Equal(section.Total.Amount, ParseAmount(sectionTotal[^1]));
+        }
+
+        var net = categories[^1];
+        Assert.Equal("Sof oqim", net[0]);
+        Assert.Equal(statement.MonthTotals.Select(c => c.Amount), ParseAmounts(net[2..^1]));
+        Assert.Equal(statement.Total.Amount, ParseAmount(net[^1]));
+
+        // Teskari davr — eksport ham 400 (500 emas).
+        var invalid = await new FinanceStatementsController(db).CashFlowExport(today, from, null);
+        Assert.IsType<BadRequestObjectResult>(invalid);
+    }
+
     // =====================================================================
     //  4. "Moliya hisobotlari" paneli
     // =====================================================================
+
+    /// <summary>
+    /// Chegirmalar tahlili: jami, qo'llanishlar soni, o'rtacha va TOIFA
+    /// kesimi. Bekor qilingan (`void`) hisob-faktura sanalmaydi — uning
+    /// chegirmasi amalda yo'q.
+    /// </summary>
+    [Fact]
+    public async Task Panel_chegirmalar_tahlilini_toifa_kesimida_beradi()
+    {
+        await using var db = await NewDbAsync("discounts");
+        var (queries, ledger, _, approverId, _, studentId) = await SeedDeskAsync(db, "Chegirma Bolasi");
+
+        // Bitta o'quvchiga bir oyda bir toifadan BITTA hisob-faktura
+        // (`ix_invoices_student_id_category_id_period_month`) — shuning uchun
+        // kesim uchun toifalar har xil olinadi.
+        var tuition = await CategoryIdAsync(db, "tuition");
+        var meals = await CategoryIdAsync(db, "meals");
+        var bus = await CategoryIdAsync(db, "bus");
+        var other = await CategoryIdAsync(db, "other");
+        var today = AppClock.Today;
+        var from = new DateOnly(today.Year, today.Month, 1);
+
+        var a = await AccrueAsync(db, ledger, approverId, studentId, tuition,
+            Accounts.RevenueTuition, from, 2_000_000m);
+        var b = await AccrueAsync(db, ledger, approverId, studentId, meals,
+            Accounts.RevenueMeals, from, 1_000_000m);
+        var c = await AccrueAsync(db, ledger, approverId, studentId, bus,
+            Accounts.RevenueBus, from, 400_000m);
+        var voided = await AccrueAsync(db, ledger, approverId, studentId, other,
+            Accounts.RevenueOther, from, 400_000m);
+
+        a.Discount = 300_000m;
+        b.Discount = 100_000m;
+        c.Discount = 100_000m;
+        // `ck_invoices_discount`: chegirma summadan katta bo'lolmaydi — baza
+        // pulni shu yerda ham qo'riqlaydi.
+        voided.Discount = 200_000m;
+        voided.Status = InvoiceStatus.Void;   // sanalmasligi kerak
+        await db.SaveChangesAsync();
+
+        var panel = await queries.DashboardAsync(from, today);
+
+        Assert.Equal(500_000m, panel.Discounts.Total);
+        Assert.Equal(3, panel.Discounts.AppliedCount);
+        Assert.Equal(decimal.Round(500_000m / 3, 2), panel.Discounts.Average);
+
+        var rows = panel.Discounts.Rows;
+        Assert.Equal(3, rows.Count);
+        Assert.Equal("tuition", rows[0].CategoryCode);   // eng kattasi birinchi
+        Assert.Equal(300_000m, rows[0].Total);
+        Assert.Equal(1, rows[0].InvoiceCount);
+        Assert.Equal(60m, rows[0].Share);
+        Assert.DoesNotContain(rows, r => r.CategoryCode == "other");   // void sanalmadi
+    }
 
     /// <summary>
     /// Panel: KPI'lar pul oqimining o'sha raqamlari, foiz esa oldingi
@@ -578,6 +718,86 @@ public class FinanceStatementsTests(ApiFixture fixture) : IAsyncLifetime
         Assert.Equal(method.Inflow, lines.Lines.Sum(l => l.Signed));
     }
 
+    /// <summary>
+    /// F4.05 — "Moliya hisobotlari" .xlsx, BESH varaq. Ekrandagi beshala
+    /// blok ham faylga tushadi va raqamlar <c>DashboardAsync</c> niki
+    /// bo'ladi: KPI, kunlar, toifalar, to'lov usullari, chegirmalar.
+    /// </summary>
+    [Fact]
+    public async Task Panel_export_besh_varaqli_xlsx_ekrandagi_raqamga_teng()
+    {
+        await using var db = await NewDbAsync("panel-export");
+        var (queries, ledger, _, approverId, _, studentId) = await SeedDeskAsync(db, "Panel Bolasi");
+
+        var today = AppClock.Today;
+        var from = new DateOnly(today.Year, today.Month, 1);
+
+        var tuition = await CategoryIdAsync(db, "tuition");
+        var invoice = await AccrueAsync(db, ledger, approverId, studentId, tuition,
+            Accounts.RevenueTuition, from, 2_000_000m);
+        invoice.Discount = 200_000m;
+        await db.SaveChangesAsync();
+
+        await PostAsync(ledger, approverId, from,
+            Accounts.Cash, Accounts.RevenueTuition, 1_000_000m, LedgerRefType.Payment);
+        await PostAsync(ledger, approverId, today,
+            Accounts.ExpenseUtilities, Accounts.Bank, 400_000m, LedgerRefType.Expense);
+
+        var panel = await queries.DashboardAsync(from, today);
+
+        var response = await new FinanceStatementsController(db).DashboardExport(from, today);
+        var file = Assert.IsType<FileContentResult>(response);
+        Assert.Equal(
+            ["Umumiy", "Kunlar", "Toifalar", "To'lov usullari", "Chegirmalar"],
+            SheetNames(file.FileContents));
+
+        // ---- Umumiy: KPI va qoldiqlar ----
+        var summary = ReadXlsxSheet(file.FileContents, "Umumiy");
+        var inflow = summary.Single(r => r[0] == "Kirim");
+        Assert.Equal(panel.Inflow.Current, ParseAmount(inflow[1]));
+        Assert.Equal(panel.Inflow.Previous, ParseAmount(inflow[2]));
+
+        var opening = summary.Single(r => r[0] == "Davr boshidagi qoldiq");
+        Assert.Equal(panel.OpeningBalance, ParseAmount(opening[1]));
+
+        var closing = summary[^1];
+        Assert.Equal("Davr oxiridagi qoldiq", closing[0]);
+        Assert.Equal(panel.ClosingBalance, ParseAmount(closing[1]));
+
+        // ---- Kunlar: har kun bitta qator ----
+        var days = ReadXlsxSheet(file.FileContents, "Kunlar");
+        Assert.Equal(panel.Days.Count + 1, days.Count);   // sarlavha + kunlar
+        Assert.Equal(
+            panel.Days[0].Date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+            days[1][0]);
+
+        // ---- Toifalar: bo'lim yakuni bilan ----
+        var categories = ReadXlsxSheet(file.FileContents, "Toifalar");
+        foreach (var section in panel.Sections)
+        {
+            var total = categories.Single(r => r[0] == section.Label && r[1] == "Jami");
+            Assert.Equal(section.Total.Amount, ParseAmount(total[^1]));
+        }
+
+        // ---- To'lov usullari: oxirgi qator — yakun ----
+        var methods = ReadXlsxSheet(file.FileContents, "To'lov usullari");
+        var methodTotals = methods[^1];
+        Assert.Equal("Jami", methodTotals[0]);
+        Assert.Equal(panel.MethodsTotal.Inflow, ParseAmount(methodTotals[1]));
+        Assert.Equal(panel.MethodsTotal.Count, ParseAmount(methodTotals[4]));
+
+        // ---- Chegirmalar: toifa kesimi va yakuni ----
+        var discounts = ReadXlsxSheet(file.FileContents, "Chegirmalar");
+        var discountTotals = discounts[^1];
+        Assert.Equal("Jami", discountTotals[0]);
+        Assert.Equal(panel.Discounts.AppliedCount, ParseAmount(discountTotals[1]));
+        Assert.Equal(panel.Discounts.Total, ParseAmount(discountTotals[2]));
+
+        // Teskari davr — eksport ham 400.
+        var invalid = await new FinanceStatementsController(db).DashboardExport(today, from);
+        Assert.IsType<BadRequestObjectResult>(invalid);
+    }
+
     // =====================================================================
     //  Test ma'lumoti
     // =====================================================================
@@ -596,6 +816,30 @@ public class FinanceStatementsTests(ApiFixture fixture) : IAsyncLifetime
         var wsPart = (WorksheetPart)wbPart.GetPartById(sheet.Id!.Value!);
         return [.. wsPart.Worksheet.Descendants<Row>()
             .Select(r => r.Elements<Cell>().Select(c => c.InnerText).ToArray())];
+    }
+
+    /// <summary>
+    /// Ko'p varaqli .xlsx dan BITTA varaqni nomi bo'yicha o'qiydi (F7.04,
+    /// F4.05 eksportlari bir necha varaqdan iborat).
+    /// </summary>
+    private static List<string[]> ReadXlsxSheet(byte[] bytes, string name)
+    {
+        using var stream = new MemoryStream(bytes);
+        using var doc = SpreadsheetDocument.Open(stream, isEditable: false);
+        var wbPart = doc.WorkbookPart!;
+        var sheet = Assert.Single(
+            wbPart.Workbook.Descendants<Sheet>().Where(x => x.Name?.Value == name));
+        var wsPart = (WorksheetPart)wbPart.GetPartById(sheet.Id!.Value!);
+        return [.. wsPart.Worksheet.Descendants<Row>()
+            .Select(r => r.Elements<Cell>().Select(c => c.InnerText).ToArray())];
+    }
+
+    /// <summary>Kitobdagi varaq nomlari — tartibi bilan.</summary>
+    private static List<string> SheetNames(byte[] bytes)
+    {
+        using var stream = new MemoryStream(bytes);
+        using var doc = SpreadsheetDocument.Open(stream, isEditable: false);
+        return [.. doc.WorkbookPart!.Workbook.Descendants<Sheet>().Select(x => x.Name!.Value!)];
     }
 
     /// <summary>Son katagining matnini pulga aylantiradi (`ExcelExport` — "0.00", invariant).</summary>

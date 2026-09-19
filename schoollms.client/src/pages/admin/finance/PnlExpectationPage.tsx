@@ -44,6 +44,7 @@ import { ChangeJournalTab } from './ChangeJournalTab'
 import { DailyDynamicsTab } from './DailyDynamicsTab'
 import { YearlyExpectationTab } from './YearlyExpectationTab'
 import { PlannedExpenseTab } from './PlannedExpenseTab'
+import { MonthPicker } from '@/components/ui/DatePicker'
 
 /** SPEC §4.3: moliya hisobotlari faqat admin va direktorga ochiq. */
 const ALLOWED_ROLES = ['admin', 'superadmin']
@@ -225,13 +226,12 @@ export function PnlExpectationPage() {
       {monthTabs.includes(tab) && (
         <Card className="flex flex-wrap items-center gap-3 p-4">
           <span className="text-sm font-medium text-slate-600">Oy:</span>
-          <input
-            type="month"
+          <MonthPicker
             value={month}
             max={currentMonth()}
-            onChange={(e) => setMonth(e.target.value)}
-            aria-label="Oy"
-            className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-brand-400"
+            onChange={(value: string) => setMonth(value)}
+            ariaLabel="Oy"
+            className="w-44"
           />
           <p className="text-xs text-slate-400">{formatMonth(month)}</p>
         </Card>
@@ -297,7 +297,7 @@ export function PnlExpectationPage() {
             <Card className="p-0">
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[40rem] text-left text-sm">
-                  <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
+                  <thead className="whitespace-nowrap bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
                     <tr>
                       <th className="px-4 py-3">Ko'rsatkich</th>
                       <th className="px-4 py-3 text-right">Reja</th>

@@ -302,6 +302,171 @@ public class CashBoxTests : IDisposable
     }
 
     // =====================================================================
+    //  3.5. Orqadagi sana bilan kirim (mijoz, 2026-09-18)
+    // =====================================================================
+
+    /// <summary>
+    /// "Oldingi sana uchun tanlash mumkin bo'lsin" — kirim TANLANGAN kun
+    /// bilan yoziladi: qatorning sanasi ham, kunlik filtr ham o'sha kunni
+    /// ko'rsatadi, bugungi kun esa uni KO'RMAYDI. Pul esa baribir bugungi
+    /// balansda (balans sana bo'yicha emas, qatorlar bo'yicha hisoblanadi).
+    /// </summary>
+    [Fact]
+    public async Task Kirim_tanlangan_oldingi_sana_bilan_yoziladi()
+    {
+        var (_, admin) = await ActorAsync(Roles.Admin);
+        var box = await CreateBoxAsync(admin);
+        var threeDaysAgo = AppClock.Today.AddDays(-3);
+
+        var response = await admin.PostAsJsonAsync($"{Url}/{box.Id}/in", new
+        {
+            amount = 250_000m,
+            method = PaymentMethod.Cash,
+            date = threeDaysAgo.ToString("yyyy-MM-dd"),
+        });
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var row = (await response.Content.ReadFromJsonAsync<CashBoxTransactionRowDto>())!;
+        Assert.Equal(threeDaysAgo, row.Date);
+
+        var thatDay = (await (await admin.GetAsync(
+                $"{Url}/transactions?boxId={box.Id}&from={threeDaysAgo:yyyy-MM-dd}&to={threeDaysAgo:yyyy-MM-dd}"))
+            .Content.ReadFromJsonAsync<CashBoxTransactionsPageDto>())!;
+        Assert.Contains(thatDay.Rows, r => r.Id == row.Id);
+
+        var today = (await (await admin.GetAsync(
+                $"{Url}/transactions?boxId={box.Id}&from={AppClock.Today:yyyy-MM-dd}&to={AppClock.Today:yyyy-MM-dd}"))
+            .Content.ReadFromJsonAsync<CashBoxTransactionsPageDto>())!;
+        Assert.DoesNotContain(today.Rows, r => r.Id == row.Id);
+
+        // Sana qayerga yozilganidan qat'i nazar, pul kassada TURIBDI.
+        Assert.Equal(250_000m, (await GetBoxAsync(admin, box.Id)).Balance);
+    }
+
+    /// <summary>
+    /// Chiqim, ko'chirish va ayirboshlash ham tanlangan kun bilan yoziladi —
+    /// kirim bilan bir xil qoida (mijoz, 2026-09-18).
+    /// </summary>
+    [Fact]
+    public async Task Chiqim_kochirish_ayirboshlash_ham_oldingi_sana_bilan_yoziladi()
+    {
+        var (_, admin) = await ActorAsync(Roles.Admin);
+        var box = await CreateBoxAsync(admin);
+        var other = await CreateBoxAsync(admin);
+        var twoDaysAgo = AppClock.Today.AddDays(-2);
+        var day = twoDaysAgo.ToString("yyyy-MM-dd");
+
+        await PayInAsync(admin, box.Id, 1_000_000m, PaymentMethod.Cash);
+
+        var payOut = await admin.PostAsJsonAsync($"{Url}/{box.Id}/out",
+            new { amount = 100_000m, method = PaymentMethod.Cash, date = day });
+        Assert.Equal(HttpStatusCode.OK, payOut.StatusCode);
+        Assert.Equal(twoDaysAgo, (await payOut.Content.ReadFromJsonAsync<CashBoxTransactionRowDto>())!.Date);
+
+        var transfer = await admin.PostAsJsonAsync($"{Url}/{box.Id}/transfer",
+            new { toBoxId = other.Id, amount = 200_000m, method = PaymentMethod.Cash, date = day });
+        Assert.Equal(HttpStatusCode.OK, transfer.StatusCode);
+        Assert.Equal(twoDaysAgo, (await transfer.Content.ReadFromJsonAsync<CashBoxTransactionRowDto>())!.Date);
+
+        var exchange = await admin.PostAsJsonAsync($"{Url}/{box.Id}/exchange",
+            new
+            {
+                amount = 50_000m,
+                fromMethod = PaymentMethod.Cash,
+                toMethod = PaymentMethod.Card,
+                date = day,
+            });
+        Assert.Equal(HttpStatusCode.OK, exchange.StatusCode);
+        Assert.Equal(twoDaysAgo, (await exchange.Content.ReadFromJsonAsync<CashBoxTransactionRowDto>())!.Date);
+
+        // Pul harakati o'zgarmadi — sana faqat qator qaysi kunga tushishini aytadi.
+        var reloaded = await GetBoxAsync(admin, box.Id);
+        Assert.Equal(700_000m, reloaded.Balance);
+        Assert.Equal(200_000m, (await GetBoxAsync(admin, other.Id)).Balance);
+    }
+
+    /// <summary>
+    /// Jadval qatori IZOH, SABAB va yozuv LAHZASINI ham olib keladi —
+    /// EduSchool kassa ro'yxatida bor, bizda yo'q edi (2026-09-18 da o'qildi).
+    /// Bekor qilingandan keyin: izoh o'z joyida qoladi, sabab esa storno
+    /// qatoridan keladi.
+    /// </summary>
+    [Fact]
+    public async Task Qator_izoh_sabab_va_vaqtni_olib_keladi()
+    {
+        var (_, admin) = await ActorAsync(Roles.Admin);
+        var box = await CreateBoxAsync(admin);
+
+        var payIn = await admin.PostAsJsonAsync($"{Url}/{box.Id}/in", new
+        {
+            amount = 300_000m,
+            method = PaymentMethod.Cash,
+            note = "Boshlang'ich mablag'",
+        });
+        Assert.Equal(HttpStatusCode.OK, payIn.StatusCode);
+        var row = (await payIn.Content.ReadFromJsonAsync<CashBoxTransactionRowDto>())!;
+
+        Assert.Equal("Boshlang'ich mablag'", row.Note);
+        Assert.Null(row.CancelReason);
+        Assert.NotEqual(default, row.CreatedAt);
+        Assert.Equal(row.Date, AppClock.LocalDateOf(row.CreatedAt));
+
+        Assert.Equal(HttpStatusCode.OK, (await admin.PostAsJsonAsync(
+            $"{Url}/transactions/{row.Id}/cancel", new { reason = "Ikki marta yozilgan" })).StatusCode);
+
+        var page = (await (await admin.GetAsync($"{Url}/transactions?boxId={box.Id}"))
+            .Content.ReadFromJsonAsync<CashBoxTransactionsPageDto>())!;
+
+        var cancelled = page.Rows.Single(r => r.Id == row.Id);
+        Assert.Equal("Boshlang'ich mablag'", cancelled.Note);
+        Assert.Equal("Ikki marta yozilgan", cancelled.CancelReason);
+
+        // Stornoning O'ZIDA izoh sabab hisoblanadi — ikkala ustunda bir xil
+        // matn turmasin: `Note` bo'sh, `CancelReason` to'la.
+        var reversal = page.Rows.Single(r => r.Id != row.Id);
+        Assert.Null(reversal.Note);
+        Assert.Equal("Ikki marta yozilgan", reversal.CancelReason);
+    }
+
+    /// <summary>Sana bo'lmasa — bugun (eski xatti-harakat o'zgarmadi).</summary>
+    [Fact]
+    public async Task Sanasiz_kirim_bugungi_kun_bilan_yoziladi()
+    {
+        var (_, admin) = await ActorAsync(Roles.Admin);
+        var box = await CreateBoxAsync(admin);
+
+        var row = await PayInAsync(admin, box.Id, 100_000m, PaymentMethod.Cash);
+
+        Assert.Equal(AppClock.Today, row.Date);
+    }
+
+    /// <summary>
+    /// Ikki chegara: KELAJAK sana va bir yildan uzoq ORQAGA. Ikkalasi ham
+    /// 400 — sabab: <c>CashBoxPayInRequest.Date</c> izohi (terish xatosi
+    /// pulni yopilgan davrga yuborib yubormasin).
+    /// </summary>
+    [Theory]
+    [InlineData(1, "future_date")]
+    [InlineData(-400, "date_too_old")]
+    public async Task Chegaradan_tashqari_sana_400(int dayOffset, string expectedCode)
+    {
+        var (_, admin) = await ActorAsync(Roles.Admin);
+        var box = await CreateBoxAsync(admin);
+
+        var response = await admin.PostAsJsonAsync($"{Url}/{box.Id}/in", new
+        {
+            amount = 100_000m,
+            method = PaymentMethod.Cash,
+            date = AppClock.Today.AddDays(dayOffset).ToString("yyyy-MM-dd"),
+        });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal(expectedCode, (await Error(response)).Code);
+        // Rad etilgan so'rovdan keyin kassada bitta ham qator qolmaydi.
+        Assert.Equal(0m, (await GetBoxAsync(admin, box.Id)).Balance);
+    }
+
+    // =====================================================================
     //  4. Ayirboshlash (Exchange)
     // =====================================================================
 

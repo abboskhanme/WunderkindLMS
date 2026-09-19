@@ -174,6 +174,32 @@ public sealed record FinanceMethodRowDto(
 /// <param name="Sections">Toifalar kesimi — pul oqimi hisobotining o'sha bo'limlari.</param>
 /// <param name="Methods">To'lov usullari kesimi.</param>
 /// <param name="MethodsTotal">Usullar yakuni — qatorlar yig'indisi.</param>
+/// <summary>Chegirma tahlilining bitta qatori — toifa kesimida.</summary>
+/// <param name="Share">Umumiy chegirmadagi ulushi, foizda (ko'rsatish uchun).</param>
+public sealed record DiscountBreakdownRowDto(
+    string CategoryCode, string CategoryName, int InvoiceCount, decimal Total, decimal Share);
+
+/// <summary>
+/// Chegirmalar tahlili (EduSchool "Moliya hisobotlari" ekranidagi
+/// "Chegirmalar tahlili" bloki — 2026-09-18 da o'qildi).
+///
+/// <para>
+/// KESIM TOIFA BO'YICHA, CHEGIRMA NOMI BO'YICHA EMAS. Ularda har bir
+/// chegirma qoidasining ulushi ko'rsatiladi; bizda hisob-faktura QAYSI
+/// chegirma qoidasidan kelganini saqlaydigan ustun yo'q
+/// (<c>invoices.discount</c> — faqat summa). Mavjud ma'lumotdan qoidaga
+/// qaytib bo'lmaydi: bitta o'quvchida ikkita ustma-ust chegirma bo'lsa,
+/// summani ular orasida bo'lish TAXMIN bo'lardi — pul hisobotida taxmin
+/// qilmaymiz. Toifa kesimi esa ANIQ: u hisob-fakturaning o'z ustunidan
+/// keladi. Qoida bo'yicha kesim kerak bo'lsa —
+/// <c>invoices.discount_id</c> ustuni qo'shilishi kerak (docs/REMAINING-PARITY.md §3.4).
+/// </para>
+/// </summary>
+/// <param name="AppliedCount">Chegirma qo'llangan hisob-fakturalar soni.</param>
+/// <param name="Average">O'rtacha chegirma (jami ÷ qo'llanishlar soni).</param>
+public sealed record DiscountAnalysisDto(
+    decimal Total, int AppliedCount, decimal Average, List<DiscountBreakdownRowDto> Rows);
+
 public sealed record FinanceDashboardDto(
     DateOnly From, DateOnly To, DateOnly PreviousFrom, DateOnly PreviousTo,
     FinanceKpiDto Inflow, FinanceKpiDto Outflow, FinanceKpiDto Net,
@@ -181,7 +207,8 @@ public sealed record FinanceDashboardDto(
     List<FinanceDayDto> Days,
     List<CashFlowSectionDto> Sections,
     List<FinanceMethodRowDto> Methods,
-    FinanceMethodRowDto MethodsTotal);
+    FinanceMethodRowDto MethodsTotal,
+    DiscountAnalysisDto Discounts);
 
 public sealed partial class FinanceReportQueries
 {
@@ -364,6 +391,8 @@ public sealed partial class FinanceReportQueries
             methods.Sum(r => r.Inflow), methods.Sum(r => r.Outflow), methods.Sum(r => r.Amount),
             methods.Sum(r => r.Count));
 
+        var discounts = await DiscountAnalysisAsync(from, to, ct);
+
         return new FinanceDashboardDto(
             From: from,
             To: to,
@@ -377,7 +406,61 @@ public sealed partial class FinanceReportQueries
             Days: daily,
             Sections: statement.Sections,
             Methods: methods,
-            MethodsTotal: methodsTotal);
+            MethodsTotal: methodsTotal,
+            Discounts: discounts);
+    }
+
+    /// <summary>
+    /// Chegirmalar tahlili — davrga tegishli hisob-fakturalardagi chegirma.
+    ///
+    /// <para>
+    /// DAVR — hisob-fakturaning OYI bo'yicha (<c>period_month</c>), pul
+    /// harakati sanasi bo'yicha emas: chegirma pul emas, HISOBLANGAN summani
+    /// kamaytiradi, ya'ni u qaysi OYGA tegishli ekani muhim. Shu sababli
+    /// ekrandagi davr "sentabr" bo'lsa, sentabr hisob-fakturalaridagi
+    /// chegirma ko'rinadi — to'lov qachon kelganidan qat'i nazar.
+    /// </para>
+    /// <para>
+    /// BEKOR QILINGAN (<c>void</c>) hisob-faktura hisobga OLINMAYDI: uning
+    /// summasi ham, chegirmasi ham amalda yo'q.
+    /// </para>
+    /// </summary>
+    private async Task<DiscountAnalysisDto> DiscountAnalysisAsync(
+        DateOnly from, DateOnly to, CancellationToken ct)
+    {
+        // Oy chegaralari: davrga TEGIB o'tgan oylarning hammasi.
+        var firstMonth = new DateOnly(from.Year, from.Month, 1);
+        var lastMonth = new DateOnly(to.Year, to.Month, 1);
+
+        var rows = await (from i in db.Invoices.AsNoTracking()
+                          join c in db.FeeCategories.AsNoTracking() on i.CategoryId equals c.Id
+                          where i.Discount > 0m
+                                && i.Status != InvoiceStatus.Void
+                                && i.PeriodMonth >= firstMonth && i.PeriodMonth <= lastMonth
+                          group new { i.Discount } by new { c.Code, c.Name } into g
+                          select new
+                          {
+                              g.Key.Code,
+                              g.Key.Name,
+                              Count = g.Count(),
+                              Total = g.Sum(x => x.Discount),
+                          })
+                         .ToListAsync(ct);
+
+        var total = rows.Sum(r => r.Total);
+        var count = rows.Sum(r => r.Count);
+
+        var breakdown = rows
+            .OrderByDescending(r => r.Total)
+            .Select(r => new DiscountBreakdownRowDto(
+                r.Code, r.Name, r.Count, r.Total,
+                total == 0m ? 0m : decimal.Round(r.Total * 100m / total, 1)))
+            .ToList();
+
+        return new DiscountAnalysisDto(
+            total, count,
+            count == 0 ? 0m : decimal.Round(total / count, 2),
+            breakdown);
     }
 
     // =====================================================================

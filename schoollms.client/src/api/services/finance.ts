@@ -56,3 +56,26 @@ export async function getSalaryReport(from?: string, to?: string): Promise<Salar
   })
   return data
 }
+
+/**
+ * Maosh hisoboti — .xlsx (mijoz, 2026-09-19: "yuklab olish csv emas excel
+ * fayl uchun bo'lsin"). Fayl serverda yig'iladi, ya'ni ekrandagi raqamning
+ * o'zi tushadi va yakun qatori ham bor.
+ */
+export async function downloadSalaryReport(from: string, to: string): Promise<void> {
+  const res = await api.get('/admin/finance/salary-report/export', {
+    params: { from, to },
+    responseType: 'blob',
+  })
+
+  const url = URL.createObjectURL(res.data as Blob)
+  const a = document.createElement('a')
+  a.href = url
+  const cd = (res.headers['content-disposition'] as string | undefined) ?? ''
+  const m = cd.match(/filename="?([^"]+)"?/)
+  a.download = m?.[1] ?? 'oqituvchilar-maoshi.xlsx'
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  URL.revokeObjectURL(url)
+}

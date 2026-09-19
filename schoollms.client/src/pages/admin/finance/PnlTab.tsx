@@ -17,7 +17,7 @@
  * toifa xarajatning yarmini yeyayotganini ko'rsatadi.
  */
 import { useState } from 'react'
-import { Download, FileSpreadsheet, TrendingDown, TrendingUp, Wallet } from 'lucide-react'
+import { ChevronRight, FileSpreadsheet, TrendingDown, TrendingUp, Wallet } from 'lucide-react'
 import { useAsync } from '@/hooks/useAsync'
 import {
   downloadProfitLoss,
@@ -33,7 +33,7 @@ import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { StatCard } from '@/components/ui/StatCard'
 import { monthShortNames } from '@/config/constants'
-import { cn, exportToCsv, formatDate, formatMoney } from '@/lib/utils'
+import { cn, formatDate, formatMoney } from '@/lib/utils'
 import { ReportState } from './ReportState'
 import { LedgerDetailsModal, type LedgerDetailsRequest } from './LedgerDetailsModal'
 import { accountLabel, formatSignedMoney, signClass } from './reportLabels'
@@ -47,7 +47,9 @@ interface Props {
 type Mode = 'period' | 'year'
 
 export function PnlTab({ from, to }: Props) {
-  const [mode, setMode] = useState<Mode>('period')
+  // EduSchool'da P&L faqat YIL bo'yicha ochiladi — birinchi ko'rinish ham shunday.
+  // "Davr" ko'rinishi qoldi: u bizniki, sana oralig'i uchun.
+  const [mode, setMode] = useState<Mode>('year')
   const [year, setYear] = useState(() => Number(to.slice(0, 4)))
 
   return (
@@ -110,21 +112,6 @@ function PnlPeriod({ from, to }: Props) {
 
   const isEmpty = !!data && data.revenueTotal === 0 && data.expenseTotal === 0
 
-  const handleExport = () => {
-    if (!data) return
-    exportToCsv(
-      `foyda-zarar_${data.from}_${data.to}.csv`,
-      ["Yo'nalish", 'Toifa', 'Summa'],
-      [
-        ...data.revenue.map((l) => ['Daromad', accountLabel(l.account), String(l.amount)]),
-        ...data.expense.map((l) => ['Xarajat', accountLabel(l.account), String(l.amount)]),
-        ['Jami', 'Daromad', String(data.revenueTotal)],
-        ['Jami', 'Xarajat', String(data.expenseTotal)],
-        ['Jami', 'Sof natija', String(data.net)],
-      ],
-    )
-  }
-
   // F5.06 — .xlsx, joriy DAVR bo'yicha (server qatorlari CSV bilan bir xil).
   const handleDownloadXlsx = async () => {
     if (!data) return
@@ -175,9 +162,6 @@ function PnlPeriod({ from, to }: Props) {
           </div>
 
           <div className="flex justify-end gap-2">
-            <Button variant="secondary" onClick={handleExport}>
-              <Download className="h-4 w-4" /> CSV
-            </Button>
             <Button variant="secondary" onClick={handleDownloadXlsx} disabled={exporting}>
               <FileSpreadsheet className="h-4 w-4" /> {exporting ? 'Tayyorlanmoqda...' : 'Excel'}
             </Button>
@@ -240,7 +224,7 @@ function LinesTable({
       </div>
       <div className="overflow-x-auto">
         <table className="w-full text-left text-sm">
-          <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
+          <thead className="whitespace-nowrap bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
             <tr>
               <th className="px-4 py-3">Toifa</th>
               <th className="px-4 py-3 text-right">Summa</th>
@@ -308,35 +292,15 @@ function PnlYear({ year }: { year: number }) {
   const { data, loading, error, refetch } = useAsync(() => getProfitLossMatrix(year), [year])
   const [details, setDetails] = useState<LedgerDetailsRequest | null>(null)
   const [exporting, setExporting] = useState(false)
+  /**
+   * Daromad va Xarajat yakunlari YIG'ILADI (EduSchool P&L da ham shunday):
+   * yakun qatoridagi uchburchakni bossangiz toifalar yashirinadi va
+   * ekranda faqat yakun, foyda va qoldiq qoladi.
+   */
+  const [openIncome, setOpenIncome] = useState(true)
+  const [openExpense, setOpenExpense] = useState(true)
 
   const isEmpty = !!data && data.revenueTotal === 0 && data.expenseTotal === 0
-
-  const handleExport = () => {
-    if (!data) return
-    exportToCsv(
-      `foyda-zarar_${data.year}.csv`,
-      ["Yo'nalish", 'Toifa', ...data.months, 'Jami'],
-      [
-        ...data.revenue.map((r) => [
-          'Daromad',
-          accountLabel(r.account),
-          ...r.months.map(String),
-          String(r.total),
-        ]),
-        ...data.expense.map((r) => [
-          'Xarajat',
-          accountLabel(r.account),
-          ...r.months.map(String),
-          String(r.total),
-        ]),
-        ['Jami', 'Daromad', ...data.revenueMonths.map(String), String(data.revenueTotal)],
-        ['Jami', 'Xarajat', ...data.expenseMonths.map(String), String(data.expenseTotal)],
-        ['Jami', 'Sof natija', ...data.netMonths.map(String), String(data.netTotal)],
-        ['Qoldiq', 'Oy boshida', ...data.startBalance.map(String), String(data.openingBalance)],
-        ['Qoldiq', 'Oy oxirida', ...data.endBalance.map(String), String(data.closingBalance)],
-      ],
-    )
-  }
 
   // F5.06 — .xlsx, joriy YIL bo'yicha, qoldiq qatorlari bilan.
   const handleDownloadXlsx = async () => {
@@ -401,9 +365,6 @@ function PnlYear({ year }: { year: number }) {
             </div>
 
             <div className="flex justify-end gap-2">
-              <Button variant="secondary" onClick={handleExport}>
-                <Download className="h-4 w-4" /> CSV
-              </Button>
               <Button variant="secondary" onClick={handleDownloadXlsx} disabled={exporting}>
                 <FileSpreadsheet className="h-4 w-4" /> {exporting ? 'Tayyorlanmoqda...' : 'Excel'}
               </Button>
@@ -412,7 +373,7 @@ function PnlYear({ year }: { year: number }) {
             <Card className="p-0">
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[56rem] text-left text-sm">
-                  <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
+                  <thead className="whitespace-nowrap bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
                     <tr>
                       <th className="sticky left-0 z-10 bg-slate-50 px-4 py-3">Toifa</th>
                       {data.months.map((m, i) => (
@@ -437,17 +398,20 @@ function PnlYear({ year }: { year: number }) {
                       values={data.revenueMonths}
                       total={data.revenueTotal}
                       tone="text-emerald-700"
+                      expanded={openIncome}
+                      onToggle={() => setOpenIncome((v) => !v)}
                       onOpen={(i) => openCell('revenue:*', 'Daromad — barcha toifalar', i)}
                     />
-                    {data.revenue.map((row) => (
-                      <MatrixRow
-                        key={row.account}
-                        row={row}
-                        months={data.months}
-                        tone="text-emerald-600"
-                        onOpen={(i) => openCell(row.account, accountLabel(row.account), i)}
-                      />
-                    ))}
+                    {openIncome &&
+                      data.revenue.map((row) => (
+                        <MatrixRow
+                          key={row.account}
+                          row={row}
+                          months={data.months}
+                          tone="text-emerald-600"
+                          onOpen={(i) => openCell(row.account, accountLabel(row.account), i)}
+                        />
+                      ))}
 
                     <SummaryRow
                       label="Xarajat"
@@ -455,17 +419,20 @@ function PnlYear({ year }: { year: number }) {
                       values={data.expenseMonths}
                       total={data.expenseTotal}
                       tone="text-red-700"
+                      expanded={openExpense}
+                      onToggle={() => setOpenExpense((v) => !v)}
                       onOpen={(i) => openCell('expense:*', 'Xarajat — barcha toifalar', i)}
                     />
-                    {data.expense.map((row) => (
-                      <MatrixRow
-                        key={row.account}
-                        row={row}
-                        months={data.months}
-                        tone="text-red-600"
-                        onOpen={(i) => openCell(row.account, accountLabel(row.account), i)}
-                      />
-                    ))}
+                    {openExpense &&
+                      data.expense.map((row) => (
+                        <MatrixRow
+                          key={row.account}
+                          row={row}
+                          months={data.months}
+                          tone="text-red-600"
+                          onOpen={(i) => openCell(row.account, accountLabel(row.account), i)}
+                        />
+                      ))}
 
                     <tr className="border-t-2 border-slate-200 bg-slate-50/70 font-semibold">
                       <td className="sticky left-0 z-10 bg-slate-50/70 px-4 py-2.5 text-slate-800">
@@ -536,13 +503,18 @@ function MatrixRow({
   )
 }
 
-/** Yakun qatori (Daromad / Xarajat) — u ham ochiladi, guruh bo'yicha. */
+/**
+ * Yakun qatori (Daromad / Xarajat). Ikki ishi bor: raqami bosilsa jurnal
+ * satrlari ochiladi, nomi bosilsa ostidagi toifalar yig'iladi.
+ */
 function SummaryRow({
   label,
   months,
   values,
   total,
   tone,
+  expanded,
+  onToggle,
   onOpen,
 }: {
   label: string
@@ -550,11 +522,25 @@ function SummaryRow({
   values: number[]
   total: number
   tone: string
+  expanded: boolean
+  onToggle: () => void
   onOpen: (monthIndex: number | null) => void
 }) {
   return (
     <tr className="border-t border-slate-200 bg-slate-50/60 font-semibold">
-      <td className="sticky left-0 z-10 bg-slate-50/60 px-4 py-2.5 text-slate-800">{label}</td>
+      <td className="sticky left-0 z-10 bg-slate-50/60 px-4 py-2.5 text-slate-800">
+        <button
+          type="button"
+          onClick={onToggle}
+          title={expanded ? 'Toifalarni yig\u2018ish' : 'Toifalarni ochish'}
+          className="flex items-center gap-1.5 text-slate-800"
+        >
+          <ChevronRight
+            className={cn('h-4 w-4 text-slate-400 transition-transform', expanded && 'rotate-90')}
+          />
+          {label}
+        </button>
+      </td>
       {values.map((value, i) => (
         <MatrixCell key={months[i]} value={value} tone={tone} onOpen={() => onOpen(i)} />
       ))}

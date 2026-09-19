@@ -22,6 +22,12 @@ interface PaymentSplitModalProps {
   amount: number
   method: PaymentMethod
   note: string
+  /**
+   * Shaklda tanlangan sana — "YYYY-MM-DD". Bugun bo'lsa ham yuboriladi:
+   * server uchun bugungi sana hozirgi lahza bilan bir xil natija beradi
+   * (`AcceptPaymentRequest.ReceivedOn`).
+   */
+  receivedOn: string
   onClose: () => void
   onAccepted: (payment: Payment) => void
 }
@@ -61,6 +67,7 @@ export function PaymentSplitModal({
   amount,
   method,
   note,
+  receivedOn,
   onClose,
   onAccepted,
 }: PaymentSplitModalProps) {
@@ -146,6 +153,7 @@ export function PaymentSplitModal({
         method,
         note: note.trim() || undefined,
         allocations,
+        receivedOn,
       })
       onAccepted(payment)
     } catch (err) {

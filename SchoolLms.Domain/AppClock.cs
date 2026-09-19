@@ -71,6 +71,23 @@ public static class AppClock
     public static DateOnly LocalDateOf(DateTimeOffset instant) =>
         DateOnly.FromDateTime(ToLocal(instant));
 
+    /// <summary>
+    /// Berilgan MAKTAB SANASIGA tushadigan lahza — bugungi soat-daqiqa bilan
+    /// (masalan 14:30 da yozilgan uch kun oldingi kirim → o'sha kunning
+    /// 14:30 i). Kassa kirimini va to'lovni orqadagi sana bilan yozish uchun
+    /// (mijoz, 2026-09-18: "oldingi sana uchun tanlash mumkin bo'lsin").
+    ///
+    /// <para>
+    /// Butun KUN ayiriladi, chunki Toshkent mintaqasida yozgi vaqt yo'q
+    /// (ofset doim +5) — shuning uchun lahzadan N kun ayirish mahalliy
+    /// sanani aynan N kunga suradi va soatni o'zgartirmaydi. Natija
+    /// <see cref="LocalDateOf"/> dan o'tkazilganda <paramref name="localDate"/>
+    /// ni qaytaradi — kunlik kesim va jurnal sanasi shunga tayanadi.
+    /// </para>
+    /// </summary>
+    public static DateTimeOffset InstantOn(DateOnly localDate) =>
+        NowInstant.AddDays(localDate.DayNumber - Today.DayNumber);
+
     /// <summary>"yyyy-MM-ddTHH:mm:ss" — saqlash/ko'rsatish uchun standart ISO satr (mintaqa: UTC+5).</summary>
     public static string Iso() => Now.ToString("yyyy-MM-ddTHH:mm:ss");
 }

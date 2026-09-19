@@ -67,9 +67,10 @@ public class FinanceReportsTests(ApiFixture fixture, ITestOutputHelper output) :
     // F5.06 — `Pnl` ning o'sha ruxsat darvozasidan o'tadi (ichkaridan uni
     // chaqiradi), shuning uchun u ham RUXSAT testlarida `AllReports` qatorida.
     private const string PnlExport = "/api/admin/finance/pnl/export";
+    private const string DebtorsExport = "/api/admin/finance/debtors/export";
 
     private static readonly string[] AllReports =
-        [Debtors, Pnl, CashFlow, CollectionRate, ArrearsPivot, ArrearsPivotExport, PnlExport];
+        [Debtors, Pnl, CashFlow, CollectionRate, ArrearsPivot, ArrearsPivotExport, PnlExport, DebtorsExport];
 
     // =====================================================================
     //  1. RUXSAT — SPEC §4.3
@@ -588,6 +589,55 @@ public class FinanceReportsTests(ApiFixture fixture, ITestOutputHelper output) :
         // Teskari davr — export ham `ProfitLoss` bilan bir xil xatoni beradi (400, 500 emas).
         var invalid = await new FinanceReportsController(db).ProfitLossExport(to, from);
         Assert.IsType<BadRequestObjectResult>(invalid);
+    }
+
+    /// <summary>
+    /// Qarzdorlar XLSX eksporti (mijoz, 2026-09-19: "yuklab olish csv emas
+    /// excel fayl uchun bo'lsin"): faylning har qatori ekrandagi AYNAN o'sha
+    /// raqam — qayta hisoblanmaydi, faqat qayta shaklga solinadi. Toifa
+    /// ustunlari ham ekrandagi qoida bo'yicha: qarzi bor toifa chiqadi.
+    /// </summary>
+    [Fact]
+    public async Task Qarzdorlar_export_xlsx_ekrandagi_qatorga_teng()
+    {
+        await using var db = await NewBillingDbAsync("debtors-export");
+        var (cashierId, shiftId) = await SeedCashDeskAsync(db);
+
+        var tuition = await CategoryIdAsync(db, "tuition");
+        var bus = await CategoryIdAsync(db, "bus");
+
+        var debtor = "st-export-1";
+        db.Students.Add(NewStudent(debtor, "Eksport Alisher", "5-A"));
+
+        var tuitionInvoice = NewInvoice(debtor, tuition, new DateOnly(2025, 9, 1), 1_000_000m);
+        var busInvoice = NewInvoice(debtor, bus, new DateOnly(2025, 9, 1), 300_000m);
+        db.Invoices.AddRange(tuitionInvoice, busInvoice);
+        await db.SaveChangesAsync();
+
+        await PayAsync(db, debtor, cashierId, shiftId, 400_000m, [(tuitionInvoice.Id, 400_000m)]);
+
+        var expected = await new FinanceReportQueries(db).DebtorsAsync(new DebtorReportQuery());
+        var row = Assert.Single(expected);
+
+        var response = await new FinanceReportsController(db).DebtorsExport(null, null, null);
+        var file = Assert.IsType<FileContentResult>(response);
+        Assert.Equal(
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            file.ContentType);
+
+        var rows = ReadXlsxRows(file.FileContents);
+        var line = Assert.Single(rows, r => r[0] == "Eksport Alisher");
+
+        Assert.Equal("5-A", line[1]);
+        // Toifa ustunlari: o'qish 600 000, avtobus 300 000 — ekrandagi bilan bir xil.
+        Assert.Equal(
+            row.ByCategory.Single(c => c.CategoryCode == "tuition").Debt,
+            ParseAmount(line[3]));
+        Assert.Equal(
+            row.ByCategory.Single(c => c.CategoryCode == "bus").Debt,
+            ParseAmount(line[4]));
+        // Jami qarz — ByCategory yig'indisiga teng (hisobot qoidasi).
+        Assert.Equal(row.Debt, ParseAmount(line[5]));
     }
 
     // =====================================================================

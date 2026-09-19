@@ -97,12 +97,23 @@ export interface CashBoxInPayload {
    * EduSchool shaklidagi "Tranzaksiya turi *" talabi.
    */
   transactionTypeId?: string
+  /**
+   * Kirim qaysi KUN bilan yozilishi — "YYYY-MM-DD" (ixtiyoriy; bo'lmasa
+   * bugun). Mijoz so'radi (2026-09-18): "oldingi sana uchun tanlash mumkin
+   * bo'lsin". Server chegaralaydi: kelajak yo'q, bir yildan uzoq orqaga ham
+   * yo'q (`CashBoxPayInRequest.Date`).
+   */
+  date?: string
 }
 
 export interface CashBoxOutPayload {
   amount: number
   method: PaymentMethod
   note?: string
+  /** Chiqim turi (`transactionTypes.ts`, kind `out`) — serverda `out` ekani tekshiriladi. */
+  transactionTypeId?: string
+  /** Qaysi kun bilan yozilishi — "YYYY-MM-DD" (`CashBoxInPayload.date` bilan bir xil qoida). */
+  date?: string
 }
 
 export interface CashBoxTransferPayload {
@@ -110,6 +121,7 @@ export interface CashBoxTransferPayload {
   amount: number
   method: PaymentMethod
   note?: string
+  date?: string
 }
 
 export interface CashBoxExchangePayload {
@@ -117,6 +129,7 @@ export interface CashBoxExchangePayload {
   fromMethod: PaymentMethod
   toMethod: PaymentMethod
   note?: string
+  date?: string
 }
 
 export async function cashBoxIn(id: string, payload: CashBoxInPayload): Promise<void> {
@@ -140,8 +153,16 @@ export async function cashBoxExchange(id: string, payload: CashBoxExchangePayloa
    ======================================================================== */
 
 /** Backend'dan qanday kelishi hali aniq emas — noma'lum qiymat ham ko'rsatiladi. */
-export type CashTransactionKind = 'in' | 'out' | 'transfer' | 'exchange' | string
-export type CashTransactionStatus = 'completed' | 'cancelled' | string
+/**
+ * Server AYNAN shu qiymatlarni yuboradi (`CashBoxTransactionKind.cs`):
+ * `pay_in` / `pay_out` / `transfer` / `exchange`. Ilgari bu yerda `in`/`out`
+ * yozilgan edi va jadvalda yorliq o'rniga xom `pay_in` chiqib, "Tranzaksiya"
+ * filtri esa hech qachon mos kelmasdi.
+ */
+export type CashTransactionKind = 'pay_in' | 'pay_out' | 'transfer' | 'exchange' | string
+
+/** Server: `posted` | `cancelled` | `reversal` (`CashBoxService.DisplayStatus`). */
+export type CashTransactionStatus = 'posted' | 'cancelled' | 'reversal' | string
 
 export interface CashBoxTransactionRow {
   id: string
@@ -155,6 +176,12 @@ export interface CashBoxTransactionRow {
   status: CashTransactionStatus
   /** Tanlangan tranzaksiya turining nomi (bo'lsa) — hozircha faqat Kirimda. */
   transactionTypeName: string | null
+  /** Kassir yozgan izoh (jadvaldagi "Izoh" ustuni). */
+  note: string | null
+  /** Bekor qilish sababi — bekor qilingan qatorda va stornoning o'zida. */
+  cancelReason: string | null
+  /** Yozuv lahzasi (ISO) — jadvalda sana yonidagi soat va chek uchun. */
+  createdAt: string
 }
 
 export interface CashBoxTransactionsResult {

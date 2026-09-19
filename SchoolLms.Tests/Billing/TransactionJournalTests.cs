@@ -263,7 +263,12 @@ public class TransactionJournalTests(ApiFixture fixture) : IAsyncLifetime
         var stornoed = Assert.Single(page.Rows, r => r.Status == TransactionStatus.Reversed);
         Assert.Equal(-200_000m, stornoed.Amount);
         Assert.Equal(0m, stornoed.SettledAmount);
-        Assert.Contains("Xato yozilgan", stornoed.Note ?? string.Empty, StringComparison.Ordinal);
+        // Storno sababi endi O'Z ustunida ("Sabab", `CancelReason`) — ilgari u
+        // izohga "Storno: ..." bo'lib qo'shilardi va jadvalda ikkala ustunda
+        // bir xil matn turardi (2026-09-18, EduSchool jurnali bilan
+        // solishtirilgandan keyin). Izohning O'ZI esa tegilmagan.
+        Assert.Equal("Xato yozilgan", stornoed.CancelReason);
+        Assert.Equal("Test chiqimi", stornoed.Note);
     }
 
     // =====================================================================

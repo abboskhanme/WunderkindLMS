@@ -1046,6 +1046,67 @@ public class PaymentsTests(ApiFixture fixture)
         typeof(PaymentsController).GetMethods(
             BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly);
 
+    // -----------------------------------------------------------------
+    //  Orqadagi sana bilan to'lov (mijoz, 2026-09-18)
+    // -----------------------------------------------------------------
+
+    /// <summary>
+    /// "Oldingi sana uchun tanlash mumkin bo'lsin" — <c>receivedOn</c>
+    /// berilganda to'lov O'SHA kun bilan yoziladi: <c>received_at</c> ham,
+    /// IKKALA jurnal qatorining sanasi ham o'sha kun. Chek raqami, summa va
+    /// taqsimot esa hech o'zgarmaydi.
+    /// </summary>
+    [Fact]
+    public async Task Tolov_tanlangan_oldingi_sana_bilan_qabul_qilinadi()
+    {
+        var world = await NewWorldAsync();
+        var invoice = await NewInvoiceAsync(world.StudentId, "tuition", 400_000m);
+        var fiveDaysAgo = AppClock.Today.AddDays(-5);
+
+        var response = await world.Client.PostAsJsonAsync("/api/cash/payments", new
+        {
+            studentId = world.StudentId,
+            amount = 400_000m,
+            method = PaymentMethod.Cash,
+            allocations = new[] { new { invoiceId = invoice, amount = 400_000m } },
+            receivedOn = fiveDaysAgo.ToString("yyyy-MM-dd"),
+        });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var dto = (await response.Content.ReadFromJsonAsync<PaymentDto>())!;
+        Assert.Equal(fiveDaysAgo, AppClock.LocalDateOf(dto.ReceivedAt));
+        Assert.True(dto.ReceiptNo > 0);
+        Assert.Equal(400_000m, dto.Amount);
+
+        await using var db = NewDb();
+        var entries = await db.LedgerEntries.AsNoTracking()
+            .Where(e => e.RefId == dto.Id).ToListAsync();
+        Assert.Equal(2, entries.Count);
+        Assert.All(entries, e => Assert.Equal(fiveDaysAgo, e.EntryDate));
+    }
+
+    /// <summary>Kelajakdagi sana — 400, va bitta ham pul qatori yozilmaydi.</summary>
+    [Fact]
+    public async Task Kelajakdagi_sana_bilan_tolov_400()
+    {
+        var world = await NewWorldAsync();
+        var invoice = await NewInvoiceAsync(world.StudentId, "tuition", 100_000m);
+
+        var response = await world.Client.PostAsJsonAsync("/api/cash/payments", new
+        {
+            studentId = world.StudentId,
+            amount = 100_000m,
+            method = PaymentMethod.Cash,
+            allocations = new[] { new { invoiceId = invoice, amount = 100_000m } },
+            receivedOn = AppClock.Today.AddDays(1).ToString("yyyy-MM-dd"),
+        });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+
+        await using var db = NewDb();
+        Assert.False(await db.Payments.AsNoTracking().AnyAsync(p => p.StudentId == world.StudentId));
+    }
+
     // =================================================================
     //  Yordamchilar
     // =================================================================

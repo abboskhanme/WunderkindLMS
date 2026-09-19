@@ -138,6 +138,12 @@ export interface AcceptPaymentPayload {
   note?: string
   /** Bo'sh qoldirilsa pul avans (taqsimlanmagan qoldiq) bo'lib qoladi. */
   allocations: AllocationInput[]
+  /**
+   * To'lov qaysi KUN qabul qilingani — "YYYY-MM-DD" (ixtiyoriy; bo'lmasa
+   * bugun). Chek raqami va taqsimot o'zgarmaydi, faqat `received_at` va
+   * jurnal sanasi o'sha kunga tushadi (`AcceptPaymentRequest.ReceivedOn`).
+   */
+  receivedOn?: string
 }
 
 /**

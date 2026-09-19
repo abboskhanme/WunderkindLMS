@@ -1,6 +1,7 @@
 import {
   AlertTriangle,
   Ban,
+  Printer,
   Receipt,
   RefreshCw,
   Search,
@@ -31,6 +32,8 @@ interface Props {
   onToggleSelect: (id: string) => void
   onToggleSelectAll: () => void
   onCancelRow: (row: CashBoxTransactionRow) => void
+  /** Chek oynasini ochish — qator uchun bosiladigan qog'oz. */
+  onReceiptRow: (row: CashBoxTransactionRow) => void
 }
 
 /**
@@ -58,17 +61,25 @@ export function CashLedger({
   onToggleSelect,
   onToggleSelectAll,
   onCancelRow,
+  onReceiptRow,
 }: Props) {
   const allSelected = rows.length > 0 && rows.every((r) => selected.has(r.id))
   const methodEntries = Object.entries(totalsByMethod)
 
   return (
-    <div className="space-y-4">
-      {/* --- Usul kesimidagi yig'indi — nechta bo'lsa, shuncha; sig'masa yonga suriladi --- */}
-      <div className="flex gap-3 overflow-x-auto pb-1">
+    // `min-w-0` — bu blok sahifadagi grid ustuni (`CashierPage`,
+    // `lg:grid-cols-[...420px_1fr]`). Usiz jadvalning eng kichik eni ustunni
+    // kengaytirib yuboradi va o'ng chekka (oxirgi karta, oxirgi ustun) ekrandan
+    // chiqib ketadi; endi jadval O'Z ichida yonga suriladi (`DataTable`da
+    // `overflow-x-auto` bor), kartalar esa ekranga sig'adi.
+    <div className="min-w-0 space-y-4">
+      {/* --- Usul kesimidagi yig'indi — kartalar eni bo'yicha teng taqsimlanadi
+          (mijoz, 2026-09-18: "siqilib qolmasin"). `auto-fit` tufayli usullar
+          soni nechta bo'lsa, shuncha ustun chiqadi va qator to'liq to'ladi. --- */}
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(120px,1fr))] gap-3">
         {methodEntries.map(([m, sum]) => (
-          <Card key={m} className="w-36 shrink-0 p-3">
-            <p className="truncate text-xs font-medium uppercase tracking-wide text-slate-400">
+          <Card key={m} className="p-3">
+            <p className="text-xs font-medium uppercase leading-tight tracking-wide text-slate-400">
               {methodLabels[m as PaymentMethod] ?? m}
             </p>
             <p className="mt-1 text-base font-semibold tabular-nums text-slate-800">{formatSum(sum)}</p>
@@ -117,7 +128,14 @@ export function CashLedger({
           // yozilmaydi.
           <DataTable
             pageKey="cashier.ledger"
-            columns={ledgerColumns(allSelected, onToggleSelectAll, selected, onToggleSelect, onCancelRow)}
+            columns={ledgerColumns(
+              allSelected,
+              onToggleSelectAll,
+              selected,
+              onToggleSelect,
+              onCancelRow,
+              onReceiptRow,
+            )}
             rows={rows}
             getRowId={(r) => r.id}
             loading={loading}
@@ -150,6 +168,7 @@ function ledgerColumns(
   selected: Set<string>,
   onToggleSelect: (id: string) => void,
   onCancelRow: (row: CashBoxTransactionRow) => void,
+  onReceiptRow: (row: CashBoxTransactionRow) => void,
 ): DataTableColumn<CashBoxTransactionRow>[] {
   return [
     {
@@ -184,7 +203,11 @@ function ledgerColumns(
       id: 'date',
       header: 'Sana',
       cellClassName: 'whitespace-nowrap',
-      cell: (row) => <span className="text-slate-500">{formatDateTime(row.date)}</span>,
+      // Sana + SOAT (`createdAt`, yozuv lahzasi): bitta kunda o'nlab qator
+      // bo'ladi va kassir "qaysi biri meniki" ni faqat vaqt bilan ajratadi.
+      // `row.date` esa kunlik filtr bilan bir xil manba — ikkalasi ham
+      // serverda bitta lahzadan hisoblanadi.
+      cell: (row) => <span className="text-slate-500">{formatDateTime(row.createdAt)}</span>,
     },
     {
       id: 'who',
@@ -236,7 +259,7 @@ function ledgerColumns(
       id: 'status',
       header: 'Holati',
       cell: (row) => (
-        <StatusPill tone={row.status === 'cancelled' ? 'danger' : 'success'}>
+        <StatusPill tone={row.status === 'posted' ? 'success' : 'danger'}>
           {statusLabel(row.status)}
         </StatusPill>
       ),
@@ -253,13 +276,53 @@ function ledgerColumns(
       cell: (row) => <span className="text-slate-600">{row.who}</span>,
     },
     {
+      // IZOH va SABAB — EduSchool kassa ro'yxatida ham shu ikki ustun bor
+      // (2026-09-18 da o'qildi). Ilgari kassir yozgan izoh ekranda UMUMAN
+      // ko'rinmasdi (faqat audit jurnalida qolardi), bekor qilingan qatorning
+      // sababi ham shunday edi. Uzun matn kesiladi, to'lig'i hoverda.
+      id: 'note',
+      header: 'Izoh',
+      cell: (row) =>
+        row.note ? (
+          <span className="block max-w-[14rem] truncate text-slate-600" title={row.note}>
+            {row.note}
+          </span>
+        ) : (
+          <span className="text-slate-300">—</span>
+        ),
+    },
+    {
+      id: 'cancelReason',
+      header: 'Sabab',
+      cell: (row) =>
+        row.cancelReason ? (
+          <span className="block max-w-[14rem] truncate text-red-600" title={row.cancelReason}>
+            {row.cancelReason}
+          </span>
+        ) : (
+          <span className="text-slate-300">—</span>
+        ),
+    },
+    {
       id: 'actions',
       header: 'Amal',
       alwaysVisible: true,
       headerClassName: 'text-right',
-      cellClassName: 'text-right',
-      cell: (row) =>
-        row.status !== 'cancelled' && (
+      cellClassName: 'text-right whitespace-nowrap',
+      cell: (row) => (
+        <span className="inline-flex items-center gap-1">
+          {/* Chek — har qanday qator uchun, bekor qilingani uchun ham
+              (o'sha qog'oz "nima uchun bekor qilindi" ni ham ko'rsatadi). */}
+          <button
+            type="button"
+            title="Chek"
+            aria-label="Chekni ochish"
+            onClick={() => onReceiptRow(row)}
+            className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
+          >
+            <Printer className="h-4 w-4" />
+          </button>
+          {row.status !== 'cancelled' && (
           <button
             type="button"
             title="Tranzaksiyani bekor qilish"
@@ -269,7 +332,9 @@ function ledgerColumns(
           >
             <Ban className="h-4 w-4" />
           </button>
-        ),
+          )}
+        </span>
+      ),
     },
   ]
 }

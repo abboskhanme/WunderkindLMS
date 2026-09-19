@@ -89,6 +89,9 @@ public class SalaryAccessTests(ApiFixture fixture)
             $"/api/admin/teachers/{teacherId}/salary-history",
             $"/api/admin/teachers/{teacherId}/salary-ledger",
             "/api/admin/finance/salary-report",
+            // .xlsx nusxasi ham o'sha darvozadan o'tadi (2026-09-19): eksport
+            // hisobotning boshqa shakli, boshqa ruxsati emas.
+            "/api/admin/finance/salary-report/export",
         ];
 
         using var staff = await fixture.Api.ClientAsAsync(Roles.Staff, "teachers", "finance");

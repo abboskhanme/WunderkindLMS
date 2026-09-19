@@ -300,6 +300,46 @@ public class TransactionTypesTests(ApiFixture fixture)
         Assert.Equal("transaction_type_kind_mismatch", (await payIn.Content.ReadFromJsonAsync<ErrorBody>())!.Code);
     }
 
+    // =====================================================================
+    //  5.1. Chiqimga bog'lash — `CashBoxService.PayOutAsync` (2026-09-18:
+    //       chiqim shakli ham kirimdagidek "Tranzaksiya turi" so'raydi)
+    // =====================================================================
+
+    [Fact]
+    public async Task Chiqimda_togri_turdagi_id_qabul_qilinadi_va_jurnalda_nomi_korinadi()
+    {
+        var admin = await fixture.Api.ClientAsAsync(Roles.Admin);
+        var type = await CreateAsync(admin, "out", $"Chiqimga bog'langan {Tag()}");
+
+        var boxResponse = await admin.PostAsJsonAsync(Boxes, new { name = $"PayOut wiring kassa {Tag()}" });
+        var box = (await boxResponse.Content.ReadFromJsonAsync<CashBoxDto>())!;
+        Assert.Equal(HttpStatusCode.OK,
+            (await admin.PostAsJsonAsync($"{Boxes}/{box.Id}/in",
+                new { amount = 100_000m, method = PaymentMethod.Cash })).StatusCode);
+
+        var payOut = await admin.PostAsJsonAsync($"{Boxes}/{box.Id}/out",
+            new { amount = 30_000m, method = PaymentMethod.Cash, transactionTypeId = type.Id });
+
+        Assert.Equal(HttpStatusCode.OK, payOut.StatusCode);
+        var row = (await payOut.Content.ReadFromJsonAsync<CashBoxTransactionRowDto>())!;
+        Assert.Equal(type.Name, row.TransactionTypeName);
+    }
+
+    [Fact]
+    public async Task Chiqimda_kirim_turidagi_id_rad_etiladi()
+    {
+        var admin = await fixture.Api.ClientAsAsync(Roles.Admin);
+        var inType = await CreateAsync(admin, "in", $"Kirim turi {Tag()}");
+        var boxResponse = await admin.PostAsJsonAsync(Boxes, new { name = $"Chiqim mos kelmas {Tag()}" });
+        var box = (await boxResponse.Content.ReadFromJsonAsync<CashBoxDto>())!;
+
+        var payOut = await admin.PostAsJsonAsync($"{Boxes}/{box.Id}/out",
+            new { amount = 10_000m, method = PaymentMethod.Cash, transactionTypeId = inType.Id });
+
+        Assert.Equal(HttpStatusCode.BadRequest, payOut.StatusCode);
+        Assert.Equal("transaction_type_kind_mismatch", (await payOut.Content.ReadFromJsonAsync<ErrorBody>())!.Code);
+    }
+
     [Fact]
     public async Task Kirimda_faolsiz_tur_rad_etiladi()
     {

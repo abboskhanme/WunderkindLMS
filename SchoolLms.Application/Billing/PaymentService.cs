@@ -302,7 +302,9 @@ public sealed class PaymentService(
         // raqamda teshik qoldirmasin (SPEC §4.2, uzluksizlik — endi KASSA
         // bo'yicha, smena bo'yicha emas).
         var receiptNo = await boxes.NextReceiptNoAsync(cashBoxId, ct);
-        var receivedAt = AppClock.NowInstant;
+        // Sana — ixtiyoriy (izoh: `AcceptPaymentRequest.ReceivedOn`). Jurnal
+        // qatorlari ham shu lahzadan sana oladi (pastda `LocalDateOf`).
+        var receivedAt = ResolveReceivedInstant(request.ReceivedOn);
 
         var payment = new Payment
         {
@@ -844,6 +846,29 @@ public sealed class PaymentService(
             ? value
             : throw PaymentException.Invalid("invalid_amount",
                 $"{what} tiyin aniqligida (2 kasr) bo'lishi shart: {value}.");
+
+    /// <summary>
+    /// Tanlangan sanani to'lov lahzasiga o'giradi (<c>null</c> — hozir).
+    /// Chegaralar kassa kirimi bilan BIR XIL (<see cref="CashBoxService.MaxBackdateDays"/>):
+    /// kelajak yo'q, bir yildan uzoq orqaga ham yo'q — izoh:
+    /// <see cref="AcceptPaymentRequest.ReceivedOn"/>.
+    /// </summary>
+    private static DateTimeOffset ResolveReceivedInstant(DateOnly? date)
+    {
+        if (date is not { } picked) return AppClock.NowInstant;
+
+        var today = AppClock.Today;
+        if (picked > today)
+            throw PaymentException.Invalid("future_date",
+                "Kelajakdagi sana bilan to'lov yozib bo'lmaydi — eng kechi bugun.");
+
+        if (today.DayNumber - picked.DayNumber > CashBoxService.MaxBackdateDays)
+            throw PaymentException.Invalid("date_too_old",
+                $"Sana juda eski: eng ko'pi bilan {CashBoxService.MaxBackdateDays} kun "
+                + "orqaga yozish mumkin.");
+
+        return AppClock.InstantOn(picked);
+    }
 
     /// <summary>Maktab kunining boshlanish lahzasi (kalendar kuni bo'yicha filtr uchun).</summary>
     private static DateTimeOffset StartOfSchoolDay(DateOnly day) =>

@@ -295,9 +295,17 @@ public record AllocationRequest(Guid InvoiceId, decimal Amount);
 /// Pul QAYSI kassaga tushishi (kassalar modeli, 2026-09 — "smena" o'rnini
 /// bosadi). <c>null</c> = SUKUT (default) kassa.
 /// </param>
+/// <param name="ReceivedOn">
+/// To'lov QAYSI KUN qabul qilingani (ixtiyoriy; <c>null</c> — bugun). Mijoz
+/// so'radi (2026-09-18): "oldingi sana uchun tanlash mumkin bo'lsin".
+/// Chek raqami va taqsimot o'zgarmaydi — faqat <c>received_at</c> lahzasi va
+/// shu bilan jurnal sanasi o'sha kunga tushadi. Kelajak sana va bir yildan
+/// uzoq orqaga yozish rad etiladi (<c>future_date</c>, <c>date_too_old</c>).
+/// </param>
 public record AcceptPaymentRequest(
     string StudentId, decimal Amount, string Method, string? Note,
-    List<AllocationRequest> Allocations, Guid? CashBoxId = null);
+    List<AllocationRequest> Allocations, Guid? CashBoxId = null,
+    DateOnly? ReceivedOn = null);
 
 /// <summary>
 /// Storno. Sabab MAJBURIY (SPEC §4.3). Tasdiqlovchi JWT'dan; kassir bu

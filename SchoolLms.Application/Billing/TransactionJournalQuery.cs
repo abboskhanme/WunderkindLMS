@@ -180,6 +180,17 @@ public record TransactionJournalFilter(
 /// <param name="Status"><see cref="TransactionStatus"/>.</param>
 /// <param name="ReversalOf">Storno qatorida — bekor qilingan to'lov id'si.</param>
 /// <param name="ReversedBy">Storno qilingan to'lovda — storno qatori id'si.</param>
+/// <param name="CashBoxName">
+/// Pul QAYSI kassaga tushgani (to'lov va storno uchun; chiqim kassaga
+/// bog'lanmaydi — u yerda <c>null</c>). Kassa ekranidagi jadval bilan bir xil
+/// ustun: jurnalda "qaysi kassa" ko'rinmasa, kunlik yakunni kassa bo'yicha
+/// solishtirib bo'lmaydi.
+/// </param>
+/// <param name="CancelReason">
+/// Bekor qilish SABABI — kassa jadvalidagi "Sabab" ustuni bilan bir xil
+/// qoida: storno qilingan qatorda storno qatorining izohi, stornoning
+/// o'zida esa o'z izohi.
+/// </param>
 public record TransactionRowDto(
     Guid Id,
     string Kind,
@@ -202,7 +213,9 @@ public record TransactionRowDto(
     string? Note,
     string Status,
     Guid? ReversalOf,
-    Guid? ReversedBy);
+    Guid? ReversedBy,
+    string? CashBoxName = null,
+    string? CancelReason = null);
 
 /// <summary>Filtr bo'yicha (sahifa bo'yicha EMAS) yakun.</summary>
 /// <param name="TotalIn">Σ kirim — storno qilinmagan to'lovlar.</param>
@@ -520,7 +533,11 @@ public sealed class TransactionJournalQuery(IAppDbContext db)
             .Select(p => new PaymentRaw(
                 p.Id, p.ReceiptNo, p.StudentId, p.Amount, p.Method,
                 p.CashierId, p.Note, p.ReceivedAt, p.ReversalOf,
-                db.Payments.Where(r => r.ReversalOf == p.Id).Select(r => (Guid?)r.Id).FirstOrDefault()))
+                db.Payments.Where(r => r.ReversalOf == p.Id).Select(r => (Guid?)r.Id).FirstOrDefault(),
+                p.CashBoxId,
+                // Storno qatorining izohi — AYNAN bekor qilish sababi
+                // (`PaymentService.ReverseAsync` uni shu yerga yozadi).
+                db.Payments.Where(r => r.ReversalOf == p.Id).Select(r => r.Note).FirstOrDefault()))
             .ToListAsync(ct);
         if (raw.Count == 0) return [];
 
@@ -568,6 +585,15 @@ public sealed class TransactionJournalQuery(IAppDbContext db)
             .Select(u => new { u.Id, u.FullName })
             .ToDictionaryAsync(u => u.Id, u => u.FullName, StringComparer.Ordinal, ct);
 
+        // Kassa nomi — id emas, NOM ko'rsatiladi (kassir/o'quvchi ustunlari kabi).
+        var boxIds = raw.Select(p => p.CashBoxId).Where(x => x is not null).Select(x => x!.Value)
+            .Distinct().ToList();
+        var boxNames = boxIds.Count == 0
+            ? new Dictionary<Guid, string>()
+            : await db.CashBoxes.AsNoTracking()
+                .Where(b => boxIds.Contains(b.Id))
+                .ToDictionaryAsync(b => b.Id, b => b.Name, ct);
+
         var categories = await (from a in db.PaymentAllocations.AsNoTracking()
                                 join i in db.Invoices.AsNoTracking() on a.InvoiceId equals i.Id
                                 join c in db.FeeCategories.AsNoTracking() on i.CategoryId equals c.Id
@@ -610,7 +636,11 @@ public sealed class TransactionJournalQuery(IAppDbContext db)
                     ? TransactionStatus.Reversed
                     : TransactionStatus.Active,
                 p.ReversalOf,
-                p.ReversedBy);
+                p.ReversedBy,
+                p.CashBoxId is null ? null : boxNames.GetValueOrDefault(p.CashBoxId.Value),
+                // Stornoning o'zida izoh AYNAN sabab, shuning uchun u "Sabab"
+                // ustuniga chiqadi (kassa jadvalidagi qoida bilan bir xil).
+                isReversal ? p.Note : p.ReversalNote);
         })];
     }
 
@@ -678,9 +708,10 @@ public sealed class TransactionJournalQuery(IAppDbContext db)
             // hali tushmagan bo'lsa — yozgan odam.
             var actorId = settlement?.CreatedBy ?? e.CreatedBy;
 
-            var note = reversal?.Memo is { } reason
-                ? string.IsNullOrWhiteSpace(e.Note) ? $"Storno: {reason}" : $"{e.Note} · Storno: {reason}"
-                : e.Note;
+            // Storno sababi endi O'Z ustunida ("Sabab") — izohga qo'shib
+            // yozilmaydi, aks holda ikkala ustunda bir xil matn turardi.
+            var note = e.Note;
+            var cancelReason = reversal?.Memo;
 
             return new TransactionRowDto(
                 e.Id,
@@ -709,7 +740,11 @@ public sealed class TransactionJournalQuery(IAppDbContext db)
                 note,
                 status,
                 null,
-                null);
+                null,
+                // Chiqim kassaga bog'lanmaydi (bizda chiqim `expenses`
+                // jadvalida, `cash_box_id` ustuni yo'q) — "Kassa" ustuni bo'sh.
+                null,
+                cancelReason);
         })];
     }
 
@@ -717,5 +752,5 @@ public sealed class TransactionJournalQuery(IAppDbContext db)
     private sealed record PaymentRaw(
         Guid Id, long ReceiptNo, string StudentId, decimal Amount, string Method,
         string CashierId, string? Note, DateTimeOffset ReceivedAt,
-        Guid? ReversalOf, Guid? ReversedBy);
+        Guid? ReversalOf, Guid? ReversedBy, Guid? CashBoxId, string? ReversalNote);
 }

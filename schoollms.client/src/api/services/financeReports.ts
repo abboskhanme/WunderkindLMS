@@ -157,6 +157,36 @@ export async function getDebtors(filters: DebtorFilters = {}): Promise<DebtorRow
   }
 }
 
+/**
+ * Qarzdorlar ro'yxatini XLSX qilib yuklab oladi (mijoz, 2026-09-19: "yuklab
+ * olish csv emas excel fayl uchun bo'lsin").
+ *
+ * Fayl SERVERDA yig'iladi (`/debtors/export`) — ekran bilan bir xil filtr,
+ * bir xil ustunlar. Brauzerda CSV yasash usuli tashlandi: Excel "so'm" li
+ * matnni son deb o'qimasdi va formulalar ishlamasdi.
+ *
+ * Yuklash P&L eksporti bilan bir xil yo'l: `blob` → vaqtinchalik havola →
+ * bosish. Sabab — endpoint JWT talab qiladi, oddiy `<a href>` esa sarlavha
+ * yubormaydi va 401 oladi.
+ */
+export async function exportDebtorsXlsx(filters: DebtorFilters = {}): Promise<void> {
+  const res = await api.get('/admin/finance/debtors/export', {
+    params: clean({ ...filters }),
+    responseType: 'blob',
+  })
+
+  const url = URL.createObjectURL(res.data as Blob)
+  const a = document.createElement('a')
+  a.href = url
+  const cd = (res.headers['content-disposition'] as string | undefined) ?? ''
+  const m = cd.match(/filename="?([^"]+)"?/)
+  a.download = m?.[1] ?? 'qarzdorlar.xlsx'
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  URL.revokeObjectURL(url)
+}
+
 /* =========================================================================
    2) P&L — GET /api/admin/finance/pnl
    ========================================================================= */

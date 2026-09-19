@@ -106,7 +106,14 @@ export const methodLabels: Record<PaymentMethod, string> = {
  * eksportni komponent faylida xato deb hisoblaydi (Fast Refresh buziladi).
  * Backend hali to'liq ulanmagan — noma'lum tur ham o'ziga o'zi ko'rinadi.
  */
+/**
+ * Kalitlar — SERVER yuboradigan qiymatlar (`CashBoxTransactionKind`):
+ * `pay_in`/`pay_out`/`transfer`/`exchange`. Qisqa `in`/`out` ham qoldirilgan:
+ * amal oynasi (`CashBoxActionModal`) rejimlarni shu qisqa nom bilan ataydi.
+ */
 const kindLabels: Record<string, string> = {
+  pay_in: 'Kirim',
+  pay_out: 'Chiqim',
   in: 'Kirim',
   out: 'Chiqim',
   transfer: "Ko'chirish",
@@ -117,9 +124,12 @@ export function kindLabel(kind: string): string {
   return kindLabels[kind] ?? kind
 }
 
+/** Server: `posted` | `cancelled` | `reversal` (`CashBoxService.DisplayStatus`). */
 const statusLabels: Record<string, string> = {
+  posted: 'Bajarildi',
   completed: 'Bajarildi',
   cancelled: 'Bekor qilindi',
+  reversal: 'Storno',
 }
 
 export function statusLabel(status: string): string {

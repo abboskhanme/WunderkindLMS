@@ -61,9 +61,8 @@ import {
   paymentMethodLabel,
   signClass,
 } from './reportLabels'
+import { DatePicker } from '@/components/ui/DatePicker'
 
-const control =
-  'rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-brand-400'
 
 /** SPEC §4.3: moliya hisobotlari faqat admin va direktorga ochiq. */
 const ALLOWED_ROLES = ['admin', 'superadmin']
@@ -132,12 +131,11 @@ export function CashDayPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <input
-            type="date"
+          <DatePicker
             value={date}
-            onChange={(e) => selectDate(e.target.value)}
-            aria-label="Kun"
-            className={control}
+            onChange={(value: string) => selectDate(value)}
+            ariaLabel="Kun"
+            className="w-40"
           />
           <Button variant="ghost" onClick={() => selectDate(todayStr)} disabled={date === todayStr}>
             Bugun
@@ -186,7 +184,14 @@ export function CashDayPage() {
       </div>
 
       {/* --- Hozir kassada kim turibdi --- */}
-      {data && <OpenShifts day={data} />}
+      {/* OCHIQ SMENA KARTALARI OLIB TASHLANDI (mijoz, 2026-09-18): "bizni
+          tizimda smena degan tushuncha umuman bo'lmasin butunlay olib tashla,
+          shunchaki kassa degan narsa bo'lsin xolos". Kassa ekrani allaqachon
+          smenasiz ishlaydi (`CashierPage`), shu sahifada esa "Ochiq · javonda
+          bo'lishi kerak" kartalari qolib ketgan edi va bitta tizimda ikki xil
+          model ko'rinardi. Server javobidagi `openShifts` maydoni TEGILMADI —
+          u eski, smena orqali yozilgan qatorlar uchun hamon to'g'ri
+          (tarixiy ma'lumot), shunchaki endi ekranga chizilmaydi. */}
 
       <ReportState loading={day.loading} error={day.error} onRetry={day.refetch}>
         {data && (
@@ -266,51 +271,6 @@ export function CashDayPage() {
  * smenaning naqd tushumi; karta va o'tkazma SANALMAYDI, chunki ular bankka
  * tushadi (SPEC §8.1 Q13). Raqamni server beradi.
  */
-function OpenShifts({ day }: { day: CashDay }) {
-  if (day.openShifts.length === 0) {
-    return (
-      <Card className="border-slate-200 bg-slate-50/70">
-        <p className="text-sm text-slate-500">Hozir kassada faol kassir yo'q.</p>
-      </Card>
-    )
-  }
-
-  return (
-    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-      {day.openShifts.map((shift) => (
-        <Card key={shift.shiftId} className="border-emerald-200 bg-emerald-50/50">
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <p className="truncate font-medium text-slate-800">{shift.cashierName}</p>
-              <p className="mt-0.5 text-xs text-slate-500">
-                {formatDateTime(shift.openedAt)} dan beri kassada · {shift.paymentsCount} ta to'lov
-              </p>
-            </div>
-            <span className="shrink-0 rounded-md bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700">
-              Ochiq
-            </span>
-          </div>
-
-          <div className="mt-3 grid grid-cols-3 gap-2">
-            <Figure label="Ochilish" value={formatMoney(shift.openingFloat)} />
-            <Figure label="Naqd tushum" value={formatMoney(shift.cashSoFar)} />
-            <Figure
-              label="Javonda bo'lishi kerak"
-              value={formatMoney(shift.expectedCashSoFar)}
-              valueClass="text-emerald-700"
-            />
-          </div>
-
-          <p className="mt-2 text-xs text-slate-400">
-            Naqdsiz (karta / o'tkazma / onlayn): {formatMoney(shift.nonCashSoFar)} — bankka tushadi,
-            kassada sanalmaydi.
-          </p>
-        </Card>
-      ))}
-    </div>
-  )
-}
-
 /** Naqd va bank alohida: ochilish → kirim → chiqim → yopilish. */
 function AccountsCard({ accounts, total }: { accounts: CashDayAccount[]; total: CashDayAccount }) {
   return (
@@ -323,7 +283,7 @@ function AccountsCard({ accounts, total }: { accounts: CashDayAccount[]; total: 
       </div>
       <div className="overflow-x-auto">
         <table className="w-full text-left text-sm">
-          <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
+          <thead className="whitespace-nowrap bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
             <tr>
               <th className="px-4 py-3">Hisob</th>
               <th className="px-4 py-3 text-right">Kun boshi</th>
@@ -560,7 +520,7 @@ function MovementsCard({ day }: { day: CashDay }) {
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm">
-            <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
+            <thead className="whitespace-nowrap bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
               <tr>
                 <th className="px-4 py-3">Vaqt</th>
                 <th className="px-4 py-3">Nima</th>
@@ -632,23 +592,6 @@ function movementSubtitle(m: CashDayMovement): string {
   if (typeof m.receiptNo === 'number') parts.push(`Chek №${m.receiptNo}`)
   if (m.actorName) parts.push(m.actorName)
   return parts.join(' · ')
-}
-
-function Figure({
-  label,
-  value,
-  valueClass = 'text-slate-800',
-}: {
-  label: string
-  value: string
-  valueClass?: string
-}) {
-  return (
-    <div className="rounded-xl bg-white/70 p-2">
-      <p className="text-[11px] font-medium uppercase tracking-wide text-slate-400">{label}</p>
-      <p className={cn('mt-0.5 text-sm font-semibold', valueClass)}>{value}</p>
-    </div>
-  )
 }
 
 export default CashDayPage

@@ -19,7 +19,7 @@
  */
 import { useCallback, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Download, FileSpreadsheet, Users, Wallet, CalendarRange, AlertTriangle } from 'lucide-react'
+import { FileSpreadsheet, Users, Wallet, CalendarRange, AlertTriangle } from 'lucide-react'
 import { useAsync } from '@/hooks/useAsync'
 import {
   downloadArrearsPivot,
@@ -35,9 +35,10 @@ import { useAuth } from '@/context/auth-context'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { StatCard } from '@/components/ui/StatCard'
-import { cn, exportToCsv, formatMoney } from '@/lib/utils'
+import { cn, formatMoney } from '@/lib/utils'
 import { formatMonth } from '@/config/constants'
 import { ReportState } from './ReportState'
+import { MonthPicker } from '@/components/ui/DatePicker'
 
 const control =
   'rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-brand-400'
@@ -189,29 +190,6 @@ export function ArrearsPage() {
 
   const debtorCount = useMemo(() => visible.filter((r) => r.total.toBePaid > 0).length, [visible])
 
-  const handleExport = useCallback(() => {
-    exportToCsv(
-      `qarzdorlik-${fromMonth}_${toMonth}.csv`,
-      [
-        '№',
-        "O'quvchi",
-        'Telefon',
-        'Sinf',
-        ...(splitByCategory ? ['Toifa'] : []),
-        ...months.map((m) => formatMonth(m)),
-        'Jami qoldiq',
-      ],
-      visible.map((row, i) => [
-        String(i + 1),
-        row.fullName,
-        row.parentPhone,
-        row.className,
-        ...(splitByCategory ? [row.categoryName ?? ''] : []),
-        ...months.map((m) => (row.cells[m] === undefined ? '' : String(row.cells[m].toBePaid))),
-        String(row.total.toBePaid),
-      ]),
-    )
-  }, [visible, months, fromMonth, toMonth, splitByCategory])
 
   if (!allowed) {
     return (
@@ -232,22 +210,20 @@ export function ArrearsPage() {
       </div>
 
       <Card className="flex flex-wrap items-center gap-3 p-4">
-        <input
-          type="month"
+        <MonthPicker
           value={fromMonth}
           max={toMonth}
-          onChange={(e) => setFromMonth(e.target.value)}
-          aria-label="Birinchi oy"
-          className={control}
+          onChange={(value: string) => setFromMonth(value)}
+          ariaLabel="Birinchi oy"
+          className="w-44"
         />
         <span className="text-slate-400">—</span>
-        <input
-          type="month"
+        <MonthPicker
           value={toMonth}
           min={fromMonth}
-          onChange={(e) => setToMonth(e.target.value)}
-          aria-label="Oxirgi oy"
-          className={control}
+          onChange={(value: string) => setToMonth(value)}
+          ariaLabel="Oxirgi oy"
+          className="w-44"
         />
 
         {/* F13.01 — ko'p tanlovli sinf: ctrl/cmd+bosish bilan bir nechtasi. */}
@@ -338,9 +314,6 @@ export function ArrearsPage() {
           Toifalar bo'yicha ajratish
         </label>
 
-        <Button variant="secondary" onClick={handleExport} disabled={visible.length === 0}>
-          <Download className="h-4 w-4" /> CSV
-        </Button>
         <Button variant="secondary" onClick={handleDownload} disabled={exporting || rows.length === 0}>
           <FileSpreadsheet className="h-4 w-4" /> {exporting ? 'Tayyorlanmoqda...' : 'Excel'}
         </Button>
@@ -414,7 +387,7 @@ export function ArrearsPage() {
 
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
-              <thead>
+              <thead className="whitespace-nowrap">
                 <tr className="border-b border-slate-100 text-left text-xs uppercase tracking-wide text-slate-400">
                   <th className="sticky left-0 z-10 bg-white px-4 py-2 font-medium">
                     № · O'quvchi

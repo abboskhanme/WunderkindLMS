@@ -54,9 +54,20 @@ export const paymentMethodLabels: Record<PaymentMethod, string> = {
   online: 'Onlayn',
 }
 
+/**
+ * CHIQIM qatorida "usul" o'rnida PUL HISOBI turadi (`cash` / `bank`) —
+ * `TransactionRowDto.Method` izohi. Ekranda ular ham o'zbekcha bo'lishi
+ * kerak: jurnalda "bank" degan xom kod qolib ketgandi (mijoz, 2026-09-19:
+ * "bazi narsalar inglizcha bo'lib qolibdi").
+ */
+const settlementLabels: Record<string, string> = {
+  cash: 'Naqd',
+  bank: 'Bank',
+}
+
 /** Noma'lum usul kelsa ham ekran buzilmasin. */
 export function paymentMethodLabel(method: string): string {
-  return paymentMethodLabels[method as PaymentMethod] ?? method
+  return paymentMethodLabels[method as PaymentMethod] ?? settlementLabels[method] ?? method
 }
 
 /** "2026-09-01" → "Sen 2026" */

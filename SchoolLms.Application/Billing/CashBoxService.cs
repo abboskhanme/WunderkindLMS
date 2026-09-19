@@ -65,18 +65,41 @@ public record UpdateCashBoxRequest(
 /// Berilsa — <see cref="TransactionType.Kind"/> <c>'in'</c> va faol bo'lishi
 /// tekshiriladi (<c>RequireTransactionTypeAsync</c>).
 /// </summary>
+/// <param name="Date">
+/// Kirim QAYSI KUN bilan yozilishi (ixtiyoriy; <c>null</c> — bugun). Mijoz
+/// so'radi (2026-09-18): "oldingi sana uchun tanlash mumkin bo'lsin" — kassir
+/// kechagi yoki o'tgan haftadagi pulni keyin kiritsa, u o'sha kunning
+/// hisobotiga tushishi kerak. Ikki chegara:
+/// KELAJAK — YO'Q (<c>future_date</c>), va eng ko'pi bilan
+/// <see cref="CashBoxService.MaxBackdateDays"/> kun orqaga
+/// (<c>date_too_old</c> — "2026" o'rniga "2025" terib yuborishdan himoya).
+/// Orqaga yozilgan qator auditda alohida belgilanadi.
+/// </param>
 public record CashBoxPayInRequest(
     decimal Amount, string Method, string? Note = null, string? StudentId = null,
-    Guid? TransactionTypeId = null);
+    Guid? TransactionTypeId = null, DateOnly? Date = null);
 
 /// <summary>Chiqim (Chiqim tugmasi).</summary>
-public record CashBoxPayOutRequest(decimal Amount, string Method, string? Note = null);
+/// <param name="TransactionTypeId">
+/// Chiqim turi (ixtiyoriy backend'da, MAJBURIY ekranda — kirim bilan bir xil
+/// sabab: <see cref="CashBoxPayInRequest"/> izohi). Berilsa
+/// <see cref="TransactionType.Kind"/> <c>'out'</c> va faol bo'lishi
+/// tekshiriladi — kirim turini chiqimga yopishtirib bo'lmaydi.
+/// </param>
+/// <param name="Date">Chiqim qaysi kun bilan yozilishi — <see cref="CashBoxPayInRequest.Date"/> bilan bir xil qoida.</param>
+public record CashBoxPayOutRequest(
+    decimal Amount, string Method, string? Note = null,
+    Guid? TransactionTypeId = null, DateOnly? Date = null);
 
 /// <summary>Ko'chirish (Ko'chirish tugmasi) — bitta kassadan ikkinchisiga.</summary>
-public record CashBoxTransferRequest(Guid ToBoxId, decimal Amount, string Method, string? Note = null);
+/// <param name="Date">Qaysi kun bilan yozilishi — <see cref="CashBoxPayInRequest.Date"/> bilan bir xil qoida.</param>
+public record CashBoxTransferRequest(
+    Guid ToBoxId, decimal Amount, string Method, string? Note = null, DateOnly? Date = null);
 
 /// <summary>Ayirboshlash (Ayirboshlash tugmasi) — bitta kassa ichida usuldan usulga.</summary>
-public record CashBoxExchangeRequest(decimal Amount, string FromMethod, string ToMethod, string? Note = null);
+/// <param name="Date">Qaysi kun bilan yozilishi — <see cref="CashBoxPayInRequest.Date"/> bilan bir xil qoida.</param>
+public record CashBoxExchangeRequest(
+    decimal Amount, string FromMethod, string ToMethod, string? Note = null, DateOnly? Date = null);
 
 /// <summary>Amalni bekor qilish. Sabab majburiy — u qarshi qatorning izohiga tushadi.</summary>
 public record CancelCashBoxTransactionRequest(string Reason);
@@ -91,10 +114,29 @@ public record CancelCashBoxTransactionRequest(string Reason);
 /// dan HAL QILINGAN, id emas: jadvaldagi boshqa "kim"/"shartnoma raqami"
 /// ustunlari kabi ko'rsatiladigan qiymat. <c>null</c> = tur ko'rsatilmagan.
 /// </param>
+/// <param name="Note">
+/// Kassir yozgan izoh. Jadvalda ALOHIDA ustun (EduSchool kassa ro'yxatida ham
+/// "IZOH" ustuni bor, 2026-09-18 da o'qildi): izoh yozilsa-yu ko'rinmasa, uni
+/// faqat audit jurnalidan topish mumkin bo'lardi.
+/// </param>
+/// <param name="CancelReason">
+/// Bekor qilish SABABI (EduSchool'dagi "SABAB" ustuni). Bekor qilingan
+/// qatorda — uni bekor qilgan storno qatorining izohi; stornoning O'ZIDA —
+/// o'z izohi (u yerda izoh AYNAN sabab: <c>CancelTransactionAsync</c>).
+/// Oddiy qatorda <c>null</c>.
+/// </param>
+/// <param name="CreatedAt">
+/// Yozuv LAHZASI — jadvalda sana yonida SOAT ko'rsatiladi ("18.09.2026 |
+/// 09:00", EduSchool kassa ro'yxatidagi kabi) va chekka ham shu tushadi.
+/// <see cref="Date"/> shu lahzaning maktab mintaqasidagi kuni, ya'ni ikkalasi
+/// bir manbadan — kunlik filtr bilan chek ustidagi vaqt hech qachon
+/// ajralmaydi.
+/// </param>
 public record CashBoxTransactionRowDto(
     Guid Id, int No, DateOnly Date, string Who, string? ContractNo,
     decimal Amount, string Kind, string Method, string Status,
-    string? TransactionTypeName);
+    string? TransactionTypeName, string? Note = null, string? CancelReason = null,
+    DateTimeOffset CreatedAt = default);
 
 /// <summary>Kassa harakatlari ro'yxati uchun filtr.</summary>
 public record CashBoxTransactionsQuery(
@@ -149,6 +191,16 @@ public sealed class CashBoxService(IAppDbContext db) : ICashBoxService
     private const int MoneyScale = 2;
 
     private const int MaxRows = 2000;
+
+    /// <summary>
+    /// Kirimni eng ko'pi bilan shuncha kun ORQAGA yozish mumkin (bir yil).
+    /// Chegara TERISH XATOSIGA qarshi: "18.09.2026" o'rniga "18.09.2025"
+    /// terilsa, pul yopilgan yilning hisobotiga tushib ketardi va buni faqat
+    /// yillik solishtiruvda sezish mumkin bo'lardi. Mijozning haqiqiy ehtiyoji
+    /// — kecha/o'tgan hafta unutilgan kirimni kiritish, shuning uchun bir yil
+    /// ortig'i bilan yetadi.
+    /// </summary>
+    public const int MaxBackdateDays = 366;
 
     /// <summary><c>audit_log.entity_type</c> — kassa kataloq yozuvlari.</summary>
     public const string AuditEntityCashBox = "CashBox";
@@ -379,6 +431,9 @@ public sealed class CashBoxService(IAppDbContext db) : ICashBoxService
             ? await RequireTransactionTypeAsync(typeId, TransactionTypeKind.In, ct)
             : null;
 
+        // Sana — ixtiyoriy, `null` bo'lsa hozir (izoh: `CashBoxPayInRequest.Date`).
+        var createdAt = ResolveEntryInstant(request.Date);
+
         await using var tx = await db.BeginTransactionAsync(ct);
         await LockBoxAsync(boxId, ct);
         await RequireActiveBoxAsync(boxId, ct);
@@ -393,7 +448,7 @@ public sealed class CashBoxService(IAppDbContext db) : ICashBoxService
             Note = note,
             Status = CashBoxTransactionStatus.Posted,
             CreatedBy = actorId,
-            CreatedAt = AppClock.NowInstant,
+            CreatedAt = createdAt,
             TransactionTypeId = transactionType?.Id,
         };
         db.CashBoxTransactions.Add(row);
@@ -402,6 +457,7 @@ public sealed class CashBoxService(IAppDbContext db) : ICashBoxService
             AuditEntityCashBoxTransaction, row.Id.ToString("D"), "create",
             $"Kassaga kirim: {AuditService.Money(amount)} so'm ({method})"
             + (transactionType is null ? "" : $" — {transactionType.Name}")
+            + BackdateNote(createdAt)
             + (note is null ? "" : $" — {note}"),
             actorId: actorId, actorName: await actors.OfAsync(actorId, ct), after: Snapshot(row)));
 
@@ -444,6 +500,13 @@ public sealed class CashBoxService(IAppDbContext db) : ICashBoxService
         var method = RequireMethod(request.Method);
         var note = Trim(request.Note);
 
+        // Chiqim turi — kirimdagidek ixtiyoriy, lekin berilsa `out` bo'lishi shart.
+        TransactionType? transactionType = request.TransactionTypeId is { } typeId
+            ? await RequireTransactionTypeAsync(typeId, TransactionTypeKind.Out, ct)
+            : null;
+
+        var createdAt = ResolveEntryInstant(request.Date);
+
         await using var tx = await db.BeginTransactionAsync(ct);
         await LockBoxAsync(boxId, ct);
         await RequireActiveBoxAsync(boxId, ct);
@@ -457,13 +520,16 @@ public sealed class CashBoxService(IAppDbContext db) : ICashBoxService
             Note = note,
             Status = CashBoxTransactionStatus.Posted,
             CreatedBy = actorId,
-            CreatedAt = AppClock.NowInstant,
+            CreatedAt = createdAt,
+            TransactionTypeId = transactionType?.Id,
         };
         db.CashBoxTransactions.Add(row);
 
         db.AuditLogs.Add(AuditService.Entry(
             AuditEntityCashBoxTransaction, row.Id.ToString("D"), "create",
             $"Kassadan chiqim: {AuditService.Money(amount)} so'm ({method})"
+            + (transactionType is null ? "" : $" — {transactionType.Name}")
+            + BackdateNote(createdAt)
             + (note is null ? "" : $" — {note}"),
             actorId: actorId, actorName: await actors.OfAsync(actorId, ct), after: Snapshot(row)));
 
@@ -497,6 +563,8 @@ public sealed class CashBoxService(IAppDbContext db) : ICashBoxService
         if (toBoxId == fromBoxId)
             throw BillingRuleException.Invalid("transfer_same_box", "Kassa o'ziga o'tkazma qila olmaydi.");
 
+        var transferAt = ResolveEntryInstant(request.Date);
+
         await using var tx = await db.BeginTransactionAsync(ct);
 
         var (first, second) = fromBoxId.CompareTo(toBoxId) <= 0
@@ -521,7 +589,7 @@ public sealed class CashBoxService(IAppDbContext db) : ICashBoxService
             Note = note,
             Status = CashBoxTransactionStatus.Posted,
             CreatedBy = actorId,
-            CreatedAt = AppClock.NowInstant,
+            CreatedAt = transferAt,
             TransferToBoxId = toBoxId,
         };
         db.CashBoxTransactions.Add(row);
@@ -552,6 +620,8 @@ public sealed class CashBoxService(IAppDbContext db) : ICashBoxService
             throw BillingRuleException.Invalid("exchange_same_method",
                 "Ayirboshlash ikkita HAR XIL usul talab qiladi.");
 
+        var exchangeAt = ResolveEntryInstant(request.Date);
+
         await using var tx = await db.BeginTransactionAsync(ct);
         await LockBoxAsync(boxId, ct);
         await RequireActiveBoxAsync(boxId, ct);
@@ -566,7 +636,7 @@ public sealed class CashBoxService(IAppDbContext db) : ICashBoxService
             Note = note,
             Status = CashBoxTransactionStatus.Posted,
             CreatedBy = actorId,
-            CreatedAt = AppClock.NowInstant,
+            CreatedAt = exchangeAt,
         };
         db.CashBoxTransactions.Add(row);
 
@@ -857,11 +927,18 @@ public sealed class CashBoxService(IAppDbContext db) : ICashBoxService
                 .ToDictionaryAsync(t => t.Id, t => t.Name, ct);
 
         // "Bekor qilindi" — shu qatorlardan qay biri boshqasining stornosi
-        // (`reversal_of`) ekanligi.
-        var reversedIds = await db.CashBoxTransactions.AsNoTracking()
+        // (`reversal_of`) ekanligi. Storno qatorining IZOHI — bekor qilish
+        // sababi (`CancelTransactionAsync` uni shu yerga yozadi), shuning
+        // uchun id bilan birga izoh ham olinadi: jadvaldagi "Sabab" ustuni.
+        var reversals = await db.CashBoxTransactions.AsNoTracking()
             .Where(t => t.ReversalOf != null && ids.Contains(t.ReversalOf.Value))
-            .Select(t => t.ReversalOf!.Value)
+            .Select(t => new { Original = t.ReversalOf!.Value, t.Note })
             .ToListAsync(ct);
+
+        var reversedIds = reversals.Select(x => x.Original).ToList();
+        var cancelReasons = reversals
+            .GroupBy(x => x.Original)
+            .ToDictionary(g => g.Key, g => g.Select(x => x.Note).FirstOrDefault(n => n is not null));
 
         return [.. rows.Select((r, idx) => new CashBoxTransactionRowDto(
             r.Id,
@@ -873,7 +950,15 @@ public sealed class CashBoxService(IAppDbContext db) : ICashBoxService
             r.Kind,
             r.Method,
             DisplayStatus(r, reversedIds.Contains(r.Id)),
-            r.TransactionTypeId is null ? null : typeNames.GetValueOrDefault(r.TransactionTypeId.Value)))];
+            r.TransactionTypeId is null ? null : typeNames.GetValueOrDefault(r.TransactionTypeId.Value),
+            // Stornoning o'z izohi AYNAN bekor qilish sababi, shuning uchun u
+            // faqat "Sabab" ustunida chiqadi — ikkala ustunda bir xil matn
+            // turmasin.
+            r.Status == CashBoxTransactionStatus.Reversal ? null : r.Note,
+            r.Status == CashBoxTransactionStatus.Reversal
+                ? r.Note
+                : cancelReasons.GetValueOrDefault(r.Id),
+            r.CreatedAt))];
     }
 
     /// <summary>
@@ -961,6 +1046,39 @@ public sealed class CashBoxService(IAppDbContext db) : ICashBoxService
         if (value <= 0m)
             throw BillingRuleException.Invalid("invalid_amount", "Summa musbat bo'lishi shart.");
         return value;
+    }
+
+    /// <summary>
+    /// Tanlangan sanani yozuv lahzasiga o'giradi (<c>null</c> — hozir).
+    /// Chegaralar: kelajak YO'Q va <see cref="MaxBackdateDays"/> kundan uzoq orqaga
+    /// ham yo'q — izoh: <see cref="CashBoxPayInRequest.Date"/>.
+    /// </summary>
+    private static DateTimeOffset ResolveEntryInstant(DateOnly? date)
+    {
+        if (date is not { } picked) return AppClock.NowInstant;
+
+        var today = AppClock.Today;
+        if (picked > today)
+            throw BillingRuleException.Invalid("future_date",
+                "Kelajakdagi sana bilan yozib bo'lmaydi — eng kechi bugun.");
+
+        var daysBack = today.DayNumber - picked.DayNumber;
+        if (daysBack > MaxBackdateDays)
+            throw BillingRuleException.Invalid("date_too_old",
+                $"Sana juda eski: eng ko'pi bilan {MaxBackdateDays} kun orqaga yozish mumkin.");
+
+        return AppClock.InstantOn(picked);
+    }
+
+    /// <summary>
+    /// Orqadagi sana AUDITDA ko'rinadi: qator qaysi kunga tushgani hisobotdan
+    /// o'qiladi, lekin uni KIM va QACHON o'sha kun bilan yozgani faqat audit
+    /// yozuvidan bilinadi. Bugungi yozuvga hech narsa qo'shilmaydi.
+    /// </summary>
+    private static string BackdateNote(DateTimeOffset createdAt)
+    {
+        var day = AppClock.LocalDateOf(createdAt);
+        return day == AppClock.Today ? string.Empty : $" — {day:dd.MM.yyyy} sanasi bilan";
     }
 
     private static void RequireActor(string? actorId)

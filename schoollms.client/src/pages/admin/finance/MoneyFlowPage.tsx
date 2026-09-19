@@ -28,6 +28,7 @@ import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { Loader } from '@/components/ui/Loader'
 import { StatCard } from '@/components/ui/StatCard'
+import { DatePicker } from '@/components/ui/DatePicker'
 
 /**
  * Halqa — FAQAT shu yerda, dinamik import orqali. Statik `import` qilinsa
@@ -37,8 +38,6 @@ const MoneyFlowRing = lazy(() =>
   import('@/components/charts/MoneyFlowRing').then((m) => ({ default: m.MoneyFlowRing })),
 )
 
-const control =
-  'rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-brand-400'
 
 const today = new Date().toISOString().slice(0, 10)
 const yearStart = `${today.slice(0, 4)}-01-01`
@@ -105,22 +104,20 @@ export function MoneyFlowPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <input
-            type="date"
+          <DatePicker
             value={from}
             max={to}
-            onChange={(e) => setFrom(e.target.value)}
-            aria-label="Boshlanish sanasi"
-            className={control}
+            onChange={(value: string) => setFrom(value)}
+            ariaLabel="Boshlanish sanasi"
+            className="w-40"
           />
           <span className="text-slate-400">—</span>
-          <input
-            type="date"
+          <DatePicker
             value={to}
             min={from}
-            onChange={(e) => setTo(e.target.value)}
-            aria-label="Tugash sanasi"
-            className={control}
+            onChange={(value: string) => setTo(value)}
+            ariaLabel="Tugash sanasi"
+            className="w-40"
           />
           <Button variant="secondary" onClick={load} disabled={status === 'loading'}>
             <RefreshCw className="h-4 w-4" />

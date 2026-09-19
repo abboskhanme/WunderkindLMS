@@ -81,6 +81,147 @@ public sealed class FinanceStatementsController(AppDbContext db) : ControllerBas
     }
 
     /// <summary>
+    /// <c>GET /api/admin/finance/dashboard/export?from&amp;to</c> — "Moliya
+    /// hisobotlari" ekranining eksporti, .xlsx (§2.4 F4.05).
+    ///
+    /// <para>
+    /// Mijoz, 2026-09-19: "yuklab olish csv emas excel fayl uchun bo'lsin".
+    /// Ekranda beshta blok bor, shuning uchun kitobda ham beshta varaq:
+    /// <b>Umumiy</b> (KPI va qoldiq), <b>Kunlar</b>, <b>Toifalar</b>,
+    /// <b>To'lov usullari</b> va <b>Chegirmalar</b>. Raqamlar
+    /// <see cref="Dashboard"/> dan olinadi — ekrandagining aynan o'zi.
+    /// </para>
+    /// </summary>
+    /// <param name="from">Davr boshi.</param>
+    /// <param name="to">Davr oxiri.</param>
+    /// <param name="ct">Bekor qilish belgisi.</param>
+    [HttpGet("dashboard/export")]
+    public async Task<ActionResult> DashboardExport(
+        [FromQuery] DateOnly? from,
+        [FromQuery] DateOnly? to,
+        CancellationToken ct = default)
+    {
+        var result = await Dashboard(from, to, ct);
+        if (result.Result is not OkObjectResult ok || ok.Value is not FinanceDashboardDto d)
+            return result.Result ?? StatusCode(500);
+
+        // 1) Umumiy — KPI, o'zgarish foizi va qoldiqlar.
+        string[] kpiHeaders = ["Ko'rsatkich", "Joriy davr", "Oldingi davr", "O'zgarish, %"];
+        IReadOnlyList<ExcelExport.XlsxCell> openingRow =
+        [
+            ExcelExport.XlsxCell.Of("Davr boshidagi qoldiq"),
+            ExcelExport.XlsxCell.Num(d.OpeningBalance),
+        ];
+
+        List<IReadOnlyList<ExcelExport.XlsxCell>> kpiRows =
+        [
+            KpiRow("Kirim", d.Inflow),
+            KpiRow("Chiqim", d.Outflow),
+            KpiRow("Sof", d.Net),
+            openingRow,
+        ];
+
+        IReadOnlyList<ExcelExport.XlsxCell> kpiTotals =
+        [
+            ExcelExport.XlsxCell.Of("Davr oxiridagi qoldiq"),
+            ExcelExport.XlsxCell.Num(d.ClosingBalance),
+        ];
+
+        // 2) Kunlar — grafikning o'sha ustunlari.
+        string[] dayHeaders = ["Sana", "Kirim", "Chiqim", "Sof"];
+        var dayRows = d.Days.Select(x => (IReadOnlyList<ExcelExport.XlsxCell>)
+        [
+            ExcelExport.XlsxCell.Of(x.Date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)),
+            ExcelExport.XlsxCell.Num(x.Inflow),
+            ExcelExport.XlsxCell.Num(x.Outflow),
+            ExcelExport.XlsxCell.Num(x.Net),
+        ]).ToList();
+
+        // 3) Toifalar — ekrandagi bo'lim × toifa jadvali.
+        string[] catHeaders = ["Bo'lim", "Toifa", "Kirim", "Chiqim", "Sof"];
+        var catRows = new List<IReadOnlyList<ExcelExport.XlsxCell>>();
+        foreach (var section in d.Sections)
+        {
+            catRows.AddRange(section.Rows.Select(r => (IReadOnlyList<ExcelExport.XlsxCell>)
+            [
+                ExcelExport.XlsxCell.Of(section.Label),
+                ExcelExport.XlsxCell.Of(r.Label),
+                ExcelExport.XlsxCell.Num(r.Total.Inflow),
+                ExcelExport.XlsxCell.Num(r.Total.Outflow),
+                ExcelExport.XlsxCell.Num(r.Total.Amount),
+            ]));
+
+            catRows.Add(
+            [
+                ExcelExport.XlsxCell.Of(section.Label),
+                ExcelExport.XlsxCell.Of("Jami"),
+                ExcelExport.XlsxCell.Num(section.Total.Inflow),
+                ExcelExport.XlsxCell.Num(section.Total.Outflow),
+                ExcelExport.XlsxCell.Num(section.Total.Amount),
+            ]);
+        }
+
+        // 4) To'lov usullari — faqat to'lovlar (chiqimda usul saqlanmaydi).
+        string[] methodHeaders = ["Usul", "Kirim", "Chiqim", "Sof", "Soni"];
+        var methodRows = d.Methods.Select(m => (IReadOnlyList<ExcelExport.XlsxCell>)
+        [
+            ExcelExport.XlsxCell.Of(m.Label),
+            ExcelExport.XlsxCell.Num(m.Inflow),
+            ExcelExport.XlsxCell.Num(m.Outflow),
+            ExcelExport.XlsxCell.Num(m.Amount),
+            ExcelExport.XlsxCell.Num(m.Count),
+        ]).ToList();
+
+        IReadOnlyList<ExcelExport.XlsxCell> methodTotals =
+        [
+            ExcelExport.XlsxCell.Of("Jami"),
+            ExcelExport.XlsxCell.Num(d.MethodsTotal.Inflow),
+            ExcelExport.XlsxCell.Num(d.MethodsTotal.Outflow),
+            ExcelExport.XlsxCell.Num(d.MethodsTotal.Amount),
+            ExcelExport.XlsxCell.Num(d.MethodsTotal.Count),
+        ];
+
+        // 5) Chegirmalar — toifa kesimi (qoida kesimi emas, izoh DiscountAnalysisDto da).
+        string[] discountHeaders = ["Toifa", "Hisob-fakturalar", "Chegirma", "Ulush, %"];
+        var discountRows = d.Discounts.Rows.Select(r => (IReadOnlyList<ExcelExport.XlsxCell>)
+        [
+            ExcelExport.XlsxCell.Of(r.CategoryName),
+            ExcelExport.XlsxCell.Num(r.InvoiceCount),
+            ExcelExport.XlsxCell.Num(r.Total),
+            ExcelExport.XlsxCell.Num(r.Share),
+        ]).ToList();
+
+        IReadOnlyList<ExcelExport.XlsxCell> discountTotals =
+        [
+            ExcelExport.XlsxCell.Of("Jami"),
+            ExcelExport.XlsxCell.Num(d.Discounts.AppliedCount),
+            ExcelExport.XlsxCell.Num(d.Discounts.Total),
+            ExcelExport.XlsxCell.Of(null),
+        ];
+
+        var bytes = ExcelExport.BuildTables(
+        [
+            new ExcelExport.TableSpec("Umumiy", kpiHeaders, kpiRows, kpiTotals),
+            new ExcelExport.TableSpec("Kunlar", dayHeaders, dayRows),
+            new ExcelExport.TableSpec("Toifalar", catHeaders, catRows),
+            new ExcelExport.TableSpec("To'lov usullari", methodHeaders, methodRows, methodTotals),
+            new ExcelExport.TableSpec("Chegirmalar", discountHeaders, discountRows, discountTotals),
+        ]);
+
+        return File(bytes, XlsxMime,
+            $"moliya-hisoboti_{d.From:yyyy-MM-dd}_{d.To:yyyy-MM-dd}.xlsx");
+    }
+
+    /// <summary>KPI qatori: joriy, oldingi va o'zgarish foizi (bo'sh bo'lishi mumkin).</summary>
+    private static IReadOnlyList<ExcelExport.XlsxCell> KpiRow(string label, FinanceKpiDto kpi) =>
+        [
+            ExcelExport.XlsxCell.Of(label),
+            ExcelExport.XlsxCell.Num(kpi.Current),
+            ExcelExport.XlsxCell.Num(kpi.Previous),
+            ExcelExport.XlsxCell.Num(kpi.ChangePercent),
+        ];
+
+    /// <summary>
     /// <c>GET /api/admin/finance/pnl/matrix?year=2026</c> — yil × oy P&amp;L
     /// (§2.5 F5.01, F5.02): daromad va chiqim qatorlari, sof natija va oy
     /// boshidagi / oxiridagi pul qoldig'i.
@@ -224,6 +365,105 @@ public sealed class FinanceStatementsController(AppDbContext db) : ControllerBas
         {
             return BadRequest(new { message = invalid.Message });
         }
+    }
+
+    /// <summary>
+    /// <c>GET /api/admin/finance/cashflow/export?from&amp;to&amp;account</c> —
+    /// pul oqimi eksporti, .xlsx (§2.7 F7.04).
+    ///
+    /// <para>
+    /// Mijoz, 2026-09-19: "yuklab olish csv emas excel fayl uchun bo'lsin".
+    /// Ikki varaq, chunki ekranda ham ikki jadval bor: <b>Oylar</b> (qoldiq,
+    /// kirim, chiqim, sof) va <b>Toifalar</b> (bo'lim × oy).
+    /// </para>
+    ///
+    /// <para>
+    /// Ikkalasi ham BITTA so'rovdan chiqadi (<see cref="CashFlowStatement"/>),
+    /// ya'ni faylda ekrandagi raqamning AYNAN o'zi turadi — bu yerda hech
+    /// narsa qayta hisoblanmaydi.
+    /// </para>
+    /// </summary>
+    /// <param name="from">Davr boshi.</param>
+    /// <param name="to">Davr oxiri.</param>
+    /// <param name="account">Faqat <c>cash</c> yoki faqat <c>bank</c>. Berilmasa — ikkovi.</param>
+    /// <param name="ct">Bekor qilish belgisi.</param>
+    [HttpGet("cashflow/export")]
+    public async Task<ActionResult> CashFlowExport(
+        [FromQuery] DateOnly? from,
+        [FromQuery] DateOnly? to,
+        [FromQuery] string? account,
+        CancellationToken ct = default)
+    {
+        var result = await CashFlowStatement(from, to, account, ct);
+
+        // So'rov o'zi 400 qaytargan bo'lsa (davr teskari yoki juda keng) —
+        // o'sha xatoni AYNAN o'zi bilan qaytaramiz (P&L eksporti bilan bir xil naqsh).
+        if (result.Result is not OkObjectResult ok || ok.Value is not CashFlowStatementDto st)
+            return result.Result ?? StatusCode(500);
+
+        // 1-varaq — oylar kesimi (ekrandagi birinchi jadval).
+        string[] monthHeaders = ["Oy", "Boshlang'ich qoldiq", "Kirim", "Chiqim", "Sof", "Yakuniy qoldiq"];
+        var monthRows = st.Months.Select((m, i) => (IReadOnlyList<ExcelExport.XlsxCell>)
+        [
+            ExcelExport.XlsxCell.Of(m),
+            ExcelExport.XlsxCell.Num(st.Opening[i]),
+            ExcelExport.XlsxCell.Num(st.MonthTotals[i].Inflow),
+            ExcelExport.XlsxCell.Num(st.MonthTotals[i].Outflow),
+            ExcelExport.XlsxCell.Num(st.MonthTotals[i].Amount),
+            ExcelExport.XlsxCell.Num(st.Closing[i]),
+        ]).ToList();
+
+        IReadOnlyList<ExcelExport.XlsxCell> monthTotals =
+        [
+            ExcelExport.XlsxCell.Of("Jami"),
+            ExcelExport.XlsxCell.Num(st.OpeningBalance),
+            ExcelExport.XlsxCell.Num(st.Total.Inflow),
+            ExcelExport.XlsxCell.Num(st.Total.Outflow),
+            ExcelExport.XlsxCell.Num(st.Total.Amount),
+            ExcelExport.XlsxCell.Num(st.ClosingBalance),
+        ];
+
+        // 2-varaq — toifalar kesimi (ekrandagi ikkinchi jadval).
+        string[] catHeaders = ["Bo'lim", "Toifa", .. st.Months, "Jami"];
+        var catRows = new List<IReadOnlyList<ExcelExport.XlsxCell>>();
+        foreach (var section in st.Sections)
+        {
+            foreach (var row in section.Rows)
+                catRows.Add(
+                [
+                    ExcelExport.XlsxCell.Of(section.Label),
+                    ExcelExport.XlsxCell.Of(row.Label),
+                    .. row.Months.Select(c => ExcelExport.XlsxCell.Num(c.Amount)),
+                    ExcelExport.XlsxCell.Num(row.Total.Amount),
+                ]);
+
+            // Bo'lim yakuni — ekranda ham har bo'limning o'z yakuni bor.
+            catRows.Add(
+            [
+                ExcelExport.XlsxCell.Of(section.Label),
+                ExcelExport.XlsxCell.Of("Jami"),
+                .. section.Months.Select(c => ExcelExport.XlsxCell.Num(c.Amount)),
+                ExcelExport.XlsxCell.Num(section.Total.Amount),
+            ]);
+        }
+
+        IReadOnlyList<ExcelExport.XlsxCell> catTotals =
+        [
+            ExcelExport.XlsxCell.Of("Sof oqim"),
+            ExcelExport.XlsxCell.Of(null),
+            .. st.MonthTotals.Select(c => ExcelExport.XlsxCell.Num(c.Amount)),
+            ExcelExport.XlsxCell.Num(st.Total.Amount),
+        ];
+
+        var bytes = ExcelExport.BuildTables(
+        [
+            new ExcelExport.TableSpec("Oylar", monthHeaders, monthRows, monthTotals),
+            new ExcelExport.TableSpec("Toifalar", catHeaders, catRows, catTotals),
+        ]);
+
+        var suffix = st.Account is { Length: > 0 } a ? $"_{a}" : string.Empty;
+        return File(bytes, XlsxMime,
+            $"pul-oqimi_{st.From:yyyy-MM-dd}_{st.To:yyyy-MM-dd}{suffix}.xlsx");
     }
 
     /// <summary>

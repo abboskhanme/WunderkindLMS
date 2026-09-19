@@ -107,7 +107,7 @@ export function YearlyExpectationTab() {
             <Card className="p-0">
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[52rem] text-left text-sm">
-                  <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
+                  <thead className="whitespace-nowrap bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
                     <tr>
                       <th className="px-4 py-3">Oy</th>
                       <th className="px-4 py-3 text-right">Reja (sof)</th>

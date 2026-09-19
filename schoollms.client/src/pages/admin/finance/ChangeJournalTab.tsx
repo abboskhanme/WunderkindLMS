@@ -14,6 +14,7 @@ import { Button } from '@/components/ui/Button'
 import { cn, exportToCsv } from '@/lib/utils'
 import { changeKindClass, changeKindLabel, changeKindLabels, formatSignedMoney, signClass } from './reportLabels'
 import { ReportState } from './ReportState'
+import { formatDate } from '@/lib/utils'
 
 interface Props {
   /** "YYYY-MM" */
@@ -97,7 +98,7 @@ export function ChangeJournalTab({ month }: Props) {
           <Card className="p-0">
             <div className="overflow-x-auto">
               <table className="w-full min-w-[56rem] text-left text-sm">
-                <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
+                <thead className="whitespace-nowrap bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
                   <tr>
                     <th className="px-4 py-3">Sana</th>
                     <th className="px-4 py-3">Turi</th>
@@ -112,7 +113,7 @@ export function ChangeJournalTab({ month }: Props) {
                 <tbody className="divide-y divide-slate-100">
                   {data.rows.map((r, i) => (
                     <tr key={`${r.date}-${r.kind}-${r.studentId}-${i}`} className="hover:bg-slate-50/60 align-top">
-                      <td className="whitespace-nowrap px-4 py-2.5 text-slate-500">{r.date}</td>
+                      <td className="whitespace-nowrap px-4 py-2.5 text-slate-500">{formatDate(r.date)}</td>
                       <td className="px-4 py-2.5">
                         <span
                           className={cn(

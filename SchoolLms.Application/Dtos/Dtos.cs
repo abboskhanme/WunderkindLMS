@@ -985,9 +985,15 @@ public record SubmitResultDto(bool Completed, int? Score, int? CorrectCount, int
 
 /* ---------- Attendance ---------- */
 public record ReasonCountDto(string Name, int Count);
+/// <param name="Marked">
+/// Davomat shu dars uchun BELGILANGANMI (`daily_attendance_marks`). Hisobotda
+/// kerak: yo'qlar soni 0 bo'lgan dars "hammasi keldi" ni ham, "hali hech kim
+/// belgilamagan" ni ham bildirishi mumkin edi — zavuch uchun bu ikkisi
+/// butunlay boshqa narsa (izoh: `SchoolLms.Domain/DailyAttendance.cs`).
+/// </param>
 public record SubjectAttendanceDto(
     string SubjectId, string SubjectName, int Period, int Total, int Present, int Absent,
-    List<ReasonCountDto> Reasons);
+    List<ReasonCountDto> Reasons, bool Marked = false);
 public record DailyAttendanceDto(int Total, List<SubjectAttendanceDto> Subjects);
 public record StudentStatusDto(StudentDto Student, bool Absent, string? ReasonName);
 

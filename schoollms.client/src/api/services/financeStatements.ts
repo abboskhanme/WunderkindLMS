@@ -193,6 +193,26 @@ export interface FinanceDashboard {
   sections: CashFlowSection[]
   methods: FinanceMethodRow[]
   methodsTotal: FinanceMethodRow
+  /** Chegirmalar tahlili — EduSchool hisobot ekranidagi blok (2026-09-18). */
+  discounts: DiscountAnalysis
+}
+
+/** Chegirma tahlilining bitta qatori — TOIFA kesimida (server izohi: nega nom emas). */
+export interface DiscountBreakdownRow {
+  categoryCode: string
+  categoryName: string
+  invoiceCount: number
+  total: number
+  /** Umumiy chegirmadagi ulushi, foizda. */
+  share: number
+}
+
+export interface DiscountAnalysis {
+  total: number
+  /** Chegirma qo'llangan hisob-fakturalar soni. */
+  appliedCount: number
+  average: number
+  rows: DiscountBreakdownRow[]
 }
 
 /* =========================================================================
@@ -278,6 +298,56 @@ export async function downloadProfitLossMatrix(year: number): Promise<void> {
   const cd = (res.headers['content-disposition'] as string | undefined) ?? ''
   const m = cd.match(/filename="?([^"]+)"?/)
   a.download = m?.[1] ?? `foyda-zarar_${year}.xlsx`
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  URL.revokeObjectURL(url)
+}
+
+/**
+ * "Moliya hisobotlari" ekrani — .xlsx (§2.4 F4.05). Besh varaq: Umumiy,
+ * Kunlar, Toifalar, To'lov usullari, Chegirmalar.
+ */
+export async function downloadFinanceDashboard(from: string, to: string): Promise<void> {
+  const res = await api.get('/admin/finance/dashboard/export', {
+    params: { from, to },
+    responseType: 'blob',
+  })
+
+  const url = URL.createObjectURL(res.data as Blob)
+  const a = document.createElement('a')
+  a.href = url
+  const cd = (res.headers['content-disposition'] as string | undefined) ?? ''
+  const m = cd.match(/filename="?([^"]+)"?/)
+  a.download = m?.[1] ?? `moliya-hisoboti_${from}_${to}.xlsx`
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  URL.revokeObjectURL(url)
+}
+
+/**
+ * Pul oqimi — .xlsx (§2.7 F7.04). Ikki varaq: "Oylar" va "Toifalar",
+ * ya'ni ekrandagi ikkala jadval ham bitta faylda.
+ *
+ * @param account faqat `cash` yoki faqat `bank`; berilmasa — ikkovi.
+ */
+export async function downloadCashFlow(
+  from: string,
+  to: string,
+  account?: 'cash' | 'bank',
+): Promise<void> {
+  const res = await api.get('/admin/finance/cashflow/export', {
+    params: { from, to, account },
+    responseType: 'blob',
+  })
+
+  const url = URL.createObjectURL(res.data as Blob)
+  const a = document.createElement('a')
+  a.href = url
+  const cd = (res.headers['content-disposition'] as string | undefined) ?? ''
+  const m = cd.match(/filename="?([^"]+)"?/)
+  a.download = m?.[1] ?? `pul-oqimi_${from}_${to}.xlsx`
   document.body.appendChild(a)
   a.click()
   a.remove()

@@ -1,21 +1,26 @@
 /**
- * "AMAL QO'SHISH" — qarzdor bilan ishlash oynasi
+ * "IZOH QO'SHISH" — qarzdor bilan ishlash oynasi
  * (docs/modules/existing-module-gaps.md §3.5).
  *
- * Bitta oynada ikkita narsa: YANGI amal formasi va shu o'quvchining butun
- * TARIXI. Ular ataylab birga — administrator "yana bir marta qo'ng'iroq
- * qilaymi" degan qarorni oldingi suhbatlarni ko'rib qabul qiladi.
+ * FAQAT IZOH (mijoz, 2026-09-19: "shunchaki izoh yozilsa yetadi qolgan
+ * qismlari kerakmas"). Ilgari bu yerda holat tanlash va "va'da qilingan
+ * to'lov sanasi" ham bor edi — ikkalasi olib tashlandi, ro'yxatdagi "Va'da"
+ * ustuni o'rnini ham izoh egalladi.
  *
- * UCHTA QOIDA EKRANDA HAM KO'RINADI:
- *   1. Izoh MAJBURIY — izohsiz amal "kimdir nimadir qildi" degani.
- *   2. Joriy holat SAQLANMAYDI — u eng oxirgi amalniki. Shuning uchun
- *      "holatni o'zgartirish" degan alohida tugma YO'Q: holat yangi amal
- *      bilan birga qo'yiladi.
- *   3. Amal O'CHIRILMAYDI — "O'chirish" tugmasi serverda `deleted_at`
- *      qo'yadi. Tugma yonidagi izoh ham shuni aytadi.
+ * SERVER KONTRAKTI TEGILMAGAN: `addDebtorAction` hamon `statusId` va
+ * `promisedOn` ni qabul qiladi, bu yerdan shunchaki `null` ketadi. Sabab —
+ * eski yozuvlar (holati va va'dasi bor amallar) o'z ma'nosini yo'qotmasin
+ * va kerak bo'lsa maydonlar qaytarilsin.
  *
- * Pul bu yerda HISOBLANMAYDI: qarz summasi chaqiruvchidan (qarzdorlar
- * ro'yxatidan) tayyor holda keladi va faqat ko'rsatiladi.
+ * SAQLANGACH OYNA YOPILADI va chaqiruvchi yashil xabar ko'rsatadi
+ * (`onSaved`). Ilgari oyna ochiq qolib, "saqlandimi yoki yo'qmi" degan savol
+ * tug'dirardi.
+ *
+ * TARIX o'sha joyida qoladi: administrator "yana bir marta qo'ng'iroq
+ * qilaymi" degan qarorni oldingi yozuvlarni ko'rib qabul qiladi. Amal
+ * O'CHIRILMAYDI — "O'chirish" serverda `deleted_at` qo'yadi.
+ *
+ * Pul bu yerda HISOBLANMAYDI: qarz summasi chaqiruvchidan tayyor keladi.
  */
 import { useState } from 'react'
 import { AlertTriangle, CalendarClock, Trash2, User } from 'lucide-react'
@@ -24,11 +29,10 @@ import {
   addDebtorAction,
   deleteDebtorAction,
   getDebtorActions,
-  getDebtorStatuses,
 } from '@/api/services/debtorWorkflow'
 import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
-import { Input, Select, Textarea } from '@/components/ui/Input'
+import { Textarea } from '@/components/ui/Input'
 import { Loader } from '@/components/ui/Loader'
 import { cn, formatMoney } from '@/lib/utils'
 import { formatDateTime } from './reportLabels'
@@ -40,8 +44,11 @@ interface Props {
   /** Serverdan kelgan joriy qarz (so'm) — faqat ko'rsatish uchun. */
   debt: number
   onClose: () => void
-  /** Ro'yxatni yangilash — yangi amal ro'yxat ustunlarini o'zgartiradi. */
-  onSaved: () => void
+  /**
+   * Izoh saqlandi: ro'yxat yangilanadi va chaqiruvchi yashil xabar
+   * ko'rsatadi. Oynani ham CHAQIRUVCHI yopadi (`setActing(null)`).
+   */
+  onSaved: (studentName: string) => void
 }
 
 export function DebtorActionModal({
@@ -52,12 +59,9 @@ export function DebtorActionModal({
   onClose,
   onSaved,
 }: Props) {
-  const statuses = useAsync(() => getDebtorStatuses(), [])
   const history = useAsync(() => getDebtorActions(studentId), [studentId])
 
   const [comment, setComment] = useState('')
-  const [statusId, setStatusId] = useState('')
-  const [promisedOn, setPromisedOn] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -70,14 +74,13 @@ export function DebtorActionModal({
     try {
       await addDebtorAction(studentId, {
         comment: comment.trim(),
-        statusId: statusId || null,
-        promisedOn: promisedOn || null,
+        // Holat va va'da ish oqimidan olib tashlandi (fayl boshidagi izoh).
+        statusId: null,
+        promisedOn: null,
       })
       setComment('')
-      setStatusId('')
-      setPromisedOn('')
       history.refetch()
-      onSaved()
+      onSaved(studentName)
     } catch (e) {
       setError(e instanceof Error ? e.message : "Saqlab bo'lmadi.")
     } finally {
@@ -90,7 +93,7 @@ export function DebtorActionModal({
     try {
       await deleteDebtorAction(id)
       history.refetch()
-      onSaved()
+      onSaved(studentName)
     } catch (e) {
       setError(e instanceof Error ? e.message : "O'chirib bo'lmadi.")
     }
@@ -103,14 +106,14 @@ export function DebtorActionModal({
       open
       onClose={onClose}
       size="lg"
-      title={`Amal qo'shish — ${studentName}`}
+      title={`Izoh — ${studentName}`}
       footer={
         <>
           <Button variant="secondary" onClick={onClose} disabled={saving}>
             Yopish
           </Button>
           <Button onClick={submit} disabled={!canSave}>
-            {saving ? 'Saqlanmoqda...' : 'Amalni saqlash'}
+            {saving ? 'Saqlanmoqda...' : 'Saqlash'}
           </Button>
         </>
       }
@@ -127,48 +130,13 @@ export function DebtorActionModal({
         {/* ---- Yangi amal ---- */}
         <div className="space-y-3">
           <Textarea
-            label="Nima qilindi"
+            label="Izoh"
             required
             rows={3}
             value={comment}
             onChange={(e) => setComment(e.target.value)}
             placeholder="Masalan: onasiga qo'ng'iroq qilindi, oylik olgach to'lashini aytdi"
           />
-
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <Select
-              label="Holat"
-              value={statusId}
-              onChange={(e) => setStatusId(e.target.value)}
-              disabled={statuses.loading}
-            >
-              <option value="">O'zgartirilmasin</option>
-              {(statuses.data ?? []).map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name}
-                </option>
-              ))}
-            </Select>
-
-            <Input
-              label="Va'da qilingan to'lov sanasi"
-              type="date"
-              value={promisedOn}
-              onChange={(e) => setPromisedOn(e.target.value)}
-            />
-          </div>
-
-          {statusId && (
-            <p className="text-xs text-slate-400">
-              {(statuses.data ?? []).find((s) => s.id === statusId)?.hint ??
-                "Bu amaldan keyin o'quvchining joriy holati shu bo'ladi."}
-            </p>
-          )}
-
-          <p className="text-xs text-slate-400">
-            Va'da sanasi o'tib ketsa va qarz hali yopilmagan bo'lsa — bu "buzilgan va'da"
-            bo'lib direktor paneliga chiqadi.
-          </p>
 
           {error && (
             <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>
@@ -177,7 +145,7 @@ export function DebtorActionModal({
 
         {/* ---- Tarix ---- */}
         <div>
-          <h4 className="mb-2 text-sm font-semibold text-slate-700">Amallar tarixi</h4>
+          <h4 className="mb-2 text-sm font-semibold text-slate-700">Izohlar tarixi</h4>
 
           {history.loading && <Loader label="Yuklanmoqda..." />}
           {history.error && (
@@ -186,7 +154,7 @@ export function DebtorActionModal({
 
           {!history.loading && !history.error && actions.length === 0 && (
             <p className="rounded-lg bg-slate-50 px-3 py-3 text-sm text-slate-400">
-              Hali birorta amal yozilmagan. Birinchisini yuqorida qo'shing.
+              Hali birorta izoh yozilmagan. Birinchisini yuqorida qo'shing.
             </p>
           )}
 

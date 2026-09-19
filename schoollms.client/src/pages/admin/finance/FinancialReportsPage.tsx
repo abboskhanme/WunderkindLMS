@@ -26,27 +26,35 @@
 import { useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { ArrowDownRight, ArrowUpRight, BarChart3, Download, TrendingUp, Wallet } from 'lucide-react'
+import {
+  ArrowDownRight,
+  ArrowUpRight,
+  BarChart3,
+  FileSpreadsheet,
+  TrendingUp,
+  Wallet,
+} from 'lucide-react'
 import { useAsync } from '@/hooks/useAsync'
 import {
+  downloadFinanceDashboard,
   getFinanceDashboard,
   type CashFlowCategoryRow,
   type CashFlowSection,
   type FinanceDashboard,
   type FinanceMethodRow,
+  type DiscountAnalysis,
 } from '@/api/services/financeStatements'
 import { useAuth } from '@/context/auth-context'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { StatCard } from '@/components/ui/StatCard'
 import { DailyCashChart } from '@/components/charts/DailyCashChart'
-import { cn, exportToCsv, formatDate, formatMoney } from '@/lib/utils'
+import { cn, formatDate, formatMoney } from '@/lib/utils'
 import { ReportState } from './ReportState'
 import { LedgerDetailsModal, type LedgerDetailsRequest } from './LedgerDetailsModal'
 import { formatSignedMoney, signClass } from './reportLabels'
+import { DatePicker } from '@/components/ui/DatePicker'
 
-const control =
-  'rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-brand-400'
 
 /** SPEC §4.3: moliya hisobotlari faqat admin va direktorga ochiq. */
 const ALLOWED_ROLES = ['admin', 'superadmin']
@@ -71,6 +79,7 @@ export function FinancialReportsPage() {
   const to = params.get('to') || todayStr
 
   const [chartMode, setChartMode] = useState<'bar' | 'line'>('bar')
+  const [exporting, setExporting] = useState(false)
   const [details, setDetails] = useState<LedgerDetailsRequest | null>(null)
 
   const { data, loading, error, refetch } = useAsync<FinanceDashboard | null>(
@@ -82,21 +91,19 @@ export function FinancialReportsPage() {
     setParams({ from: nextFrom, to: nextTo }, { replace: true })
   }
 
-  const handleExport = () => {
+  /**
+   * Excel (mijoz, 2026-09-19: "yuklab olish csv emas excel fayl uchun
+   * bo'lsin"). Fayl serverda yig'iladi: ekrandagi beshala blok ham beshta
+   * varaq bo'lib tushadi, ilgari esa faqat toifalar jadvali ketardi.
+   */
+  const handleExport = async () => {
     if (!data) return
-    exportToCsv(
-      `moliya-hisoboti_${from}_${to}.csv`,
-      ["Bo'lim", 'Toifa', 'Kirim', 'Chiqim', 'Sof'],
-      data.sections.flatMap((section) =>
-        section.rows.map((row) => [
-          section.label,
-          row.label,
-          String(row.total.inflow),
-          String(row.total.outflow),
-          String(row.total.amount),
-        ]),
-      ),
-    )
+    setExporting(true)
+    try {
+      await downloadFinanceDashboard(from, to)
+    } finally {
+      setExporting(false)
+    }
   }
 
   const period = useMemo(() => `${formatDate(from)} — ${formatDate(to)}`, [from, to])
@@ -121,23 +128,21 @@ export function FinancialReportsPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <input
-            type="date"
+          <DatePicker
             value={from}
-            onChange={(e) => setPeriod(e.target.value, to)}
-            aria-label="Davr boshi"
-            className={control}
+            onChange={(value: string) => setPeriod(value, to)}
+            ariaLabel="Davr boshi"
+            className="w-40"
           />
           <span className="text-slate-400">—</span>
-          <input
-            type="date"
+          <DatePicker
             value={to}
-            onChange={(e) => setPeriod(from, e.target.value)}
-            aria-label="Davr oxiri"
-            className={control}
+            onChange={(value: string) => setPeriod(from, value)}
+            ariaLabel="Davr oxiri"
+            className="w-40"
           />
-          <Button variant="secondary" onClick={handleExport} disabled={!data}>
-            <Download className="h-4 w-4" /> CSV
+          <Button variant="secondary" onClick={handleExport} disabled={exporting || !data}>
+            <FileSpreadsheet className="h-4 w-4" /> {exporting ? 'Tayyorlanmoqda...' : 'Excel'}
           </Button>
         </div>
       </div>
@@ -236,6 +241,8 @@ export function FinancialReportsPage() {
                   })
                 }
               />
+
+              <DiscountsCard discounts={data.discounts} />
             </div>
           </div>
         )}
@@ -344,6 +351,65 @@ function SectionCard({
         ))}
       </ul>
     </Card>
+  )
+}
+
+/**
+ * Chegirmalar tahlili — EduSchool hisobot ekranida ham shu blok bor
+ * (2026-09-18 da o'qildi): jami chegirma, necha marta qo'llangani, o'rtachasi
+ * va ulushlari.
+ *
+ * KESIM TOIFA BO'YICHA, CHEGIRMA NOMI BO'YICHA EMAS — sabab serverda
+ * (`DiscountAnalysisDto` izohi): hisob-faktura qaysi chegirma qoidasidan
+ * kelganini saqlaydigan ustun yo'q, taxmin qilish esa pul hisobotida
+ * yaramaydi.
+ */
+function DiscountsCard({ discounts }: { discounts: DiscountAnalysis }) {
+  return (
+    <Card className="p-0">
+      <div className="border-b border-slate-100 p-4">
+        <h2 className="font-semibold text-slate-800">Chegirmalar tahlili</h2>
+        <p className="text-xs text-slate-400">
+          Davr hisob-fakturalaridagi chegirma — toifalar kesimida
+        </p>
+      </div>
+
+      <div className="grid grid-cols-3 gap-3 border-b border-slate-100 p-4">
+        <Figure label="Jami chegirma" value={formatMoney(discounts.total)} />
+        <Figure label="Qo'llanishlar" value={String(discounts.appliedCount)} />
+        <Figure label="O'rtacha" value={formatMoney(discounts.average)} />
+      </div>
+
+      {discounts.rows.length === 0 ? (
+        <p className="p-4 text-sm text-slate-400">Bu davrda chegirma qo'llanmagan.</p>
+      ) : (
+        <ul className="divide-y divide-slate-100">
+          {discounts.rows.map((row) => (
+            <li key={row.categoryCode} className="flex items-center justify-between gap-3 px-4 py-2.5">
+              <span className="min-w-0">
+                <span className="block truncate font-medium text-slate-700">{row.categoryName}</span>
+                <span className="block text-xs text-slate-400">
+                  {row.invoiceCount} ta · ulushi {row.share}%
+                </span>
+              </span>
+              <span className="shrink-0 text-sm font-semibold tabular-nums text-slate-800">
+                {formatMoney(row.total)}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Card>
+  )
+}
+
+/** Kichik ko'rsatkich — chegirma blokidagi uchta raqam. */
+function Figure({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-xl bg-slate-50 p-3">
+      <p className="text-[11px] font-medium uppercase tracking-wide text-slate-400">{label}</p>
+      <p className="mt-0.5 truncate text-sm font-semibold text-slate-800">{value}</p>
+    </div>
   )
 }
 

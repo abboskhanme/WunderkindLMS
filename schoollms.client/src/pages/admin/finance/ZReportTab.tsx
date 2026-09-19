@@ -31,9 +31,8 @@ import { StatCard } from '@/components/ui/StatCard'
 import { cn, formatDate, formatMoney } from '@/lib/utils'
 import { ReportState } from './ReportState'
 import { formatDateTime, formatSignedMoney, paymentMethodLabel } from './reportLabels'
+import { DatePicker } from '@/components/ui/DatePicker'
 
-const control =
-  'rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-brand-400'
 
 const todayStr = new Date().toISOString().slice(0, 10)
 
@@ -61,11 +60,10 @@ export function ZReportTab() {
     <div className="space-y-6">
       <Card className="flex flex-wrap items-center gap-3 p-4">
         <span className="text-sm font-medium text-slate-600">Kun:</span>
-        <input
-          type="date"
+        <DatePicker
           value={date}
-          onChange={(e) => setDate(e.target.value)}
-          className={control}
+          onChange={(value: string) => setDate(value)}
+          className="w-40"
         />
         <Button variant="ghost" onClick={() => setDate(todayStr)} disabled={date === todayStr}>
           Bugun
@@ -126,7 +124,7 @@ export function ZReportTab() {
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-left text-sm">
-                <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
+                <thead className="whitespace-nowrap bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
                   <tr>
                     <th className="px-4 py-3">Kassir</th>
                     <th className="px-4 py-3">Ochilgan</th>
@@ -261,7 +259,7 @@ function ZReportModal({ shift, onClose }: { shift: CashShift; onClose: () => voi
                 <p className="text-sm text-slate-400">Bu smenada to'lov yo'q</p>
               ) : (
                 <table className="w-full text-left text-sm">
-                  <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
+                  <thead className="whitespace-nowrap bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
                     <tr>
                       <th className="px-3 py-2">Usul</th>
                       <th className="px-3 py-2 text-right">Soni</th>
@@ -296,7 +294,7 @@ function ZReportModal({ shift, onClose }: { shift: CashShift; onClose: () => voi
                 <p className="text-sm text-slate-400">Taqsimlangan to'lov yo'q</p>
               ) : (
                 <table className="w-full text-left text-sm">
-                  <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
+                  <thead className="whitespace-nowrap bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
                     <tr>
                       <th className="px-3 py-2">Toifa</th>
                       <th className="px-3 py-2 text-right">Summa</th>
@@ -322,7 +320,7 @@ function ZReportModal({ shift, onClose }: { shift: CashShift; onClose: () => voi
                 Kassadan chiqqan naqd
               </h4>
               <table className="w-full text-left text-sm">
-                <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
+                <thead className="whitespace-nowrap bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
                   <tr>
                     <th className="px-3 py-2">Sabab</th>
                     <th className="px-3 py-2 text-right">Soni</th>
