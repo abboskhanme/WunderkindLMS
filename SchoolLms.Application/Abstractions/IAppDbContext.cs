@@ -31,6 +31,9 @@ public interface IAppDbContext
     DbSet<ScheduleTemplate> ScheduleTemplates { get; }
     DbSet<WeekAssignment> WeekAssignments { get; }
     DbSet<AbsenceReason> AbsenceReasons { get; }
+
+    /// <summary>Kunlik davomat belgilangani — izoh: <see cref="DailyAttendanceMark"/>.</summary>
+    DbSet<DailyAttendanceMark> DailyAttendanceMarks { get; }
     DbSet<QuarterPeriod> Quarters { get; }
     DbSet<LessonTime> LessonTimes { get; }
     DbSet<Holiday> Holidays { get; }

@@ -14,6 +14,7 @@ import { Card } from '@/components/ui/Card'
 import { StatCard } from '@/components/ui/StatCard'
 import { Loader } from '@/components/ui/Loader'
 import { SubjectAttendanceModal } from './SubjectAttendanceModal'
+import { DatePicker } from '@/components/ui/DatePicker'
 
 const control =
   'rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 outline-none focus:border-brand-400'
@@ -86,7 +87,7 @@ export function AttendancePage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-xl font-semibold text-slate-800">Davomat</h1>
+        <h1 className="text-xl font-semibold text-slate-800">Kunlik davomat</h1>
         <p className="text-sm text-slate-400">Sinf va guruh bo'yicha kunlik davomat hisoboti</p>
       </div>
 
@@ -110,11 +111,10 @@ export function AttendancePage() {
               >
                 <ChevronLeft className="h-4 w-4" />
               </button>
-              <input
-                type="date"
+              <DatePicker
                 value={date}
-                onChange={(e) => setDate(e.target.value)}
-                className={control}
+                onChange={(value: string) => setDate(value)}
+                className="w-40"
               />
               <button
                 onClick={() => setDate(addDaysISO(date, 1))}
@@ -157,7 +157,7 @@ export function AttendancePage() {
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-sm">
-                  <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
+                  <thead className="whitespace-nowrap bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
                     <tr>
                       <th className="w-12 px-4 py-3">Dars</th>
                       <th className="px-4 py-3">Fan</th>
@@ -165,6 +165,7 @@ export function AttendancePage() {
                       <th className="px-4 py-3 text-center">Keldi</th>
                       <th className="px-4 py-3 text-center">Kelmadi</th>
                       <th className="px-4 py-3">Sabablar</th>
+                      <th className="px-4 py-3">Holat</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -195,6 +196,20 @@ export function AttendancePage() {
                             ))}
                             {s.reasons.length === 0 && <span className="text-slate-300">—</span>}
                           </div>
+                        </td>
+                        {/* Belgilandi/belgilanmadi — "0 ta yo'q" bilan "hali
+                            belgilanmagan" ni ajratadi (mas'ul xodim ekrani
+                            yozadigan belgi). */}
+                        <td className="whitespace-nowrap px-4 py-3">
+                          {s.marked ? (
+                            <span className="rounded-md bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">
+                              Belgilandi
+                            </span>
+                          ) : (
+                            <span className="rounded-md bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-500">
+                              Belgilanmagan
+                            </span>
+                          )}
                         </td>
                       </tr>
                     ))}

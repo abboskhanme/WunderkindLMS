@@ -30,6 +30,9 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<ScheduleTemplate> ScheduleTemplates => Set<ScheduleTemplate>();
     public DbSet<WeekAssignment> WeekAssignments => Set<WeekAssignment>();
     public DbSet<AbsenceReason> AbsenceReasons => Set<AbsenceReason>();
+
+    /// <summary>Kunlik davomat belgilangani — izoh: <see cref="DailyAttendanceMark"/>.</summary>
+    public DbSet<DailyAttendanceMark> DailyAttendanceMarks => Set<DailyAttendanceMark>();
     public DbSet<QuarterPeriod> Quarters => Set<QuarterPeriod>();
     public DbSet<LessonTime> LessonTimes => Set<LessonTime>();
     public DbSet<Holiday> Holidays => Set<Holiday>();
@@ -225,6 +228,13 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
             .OnDelete(DeleteBehavior.Cascade);
         b.Entity<AssignmentSubmission>().HasIndex(x => new { x.AssignmentId, x.StudentId }).IsUnique();
         b.Entity<AssignmentSubmission>().HasIndex(x => x.StudentId);
+
+        // Davomat belgisi — bir sinfning bir DARSI uchun bitta qator (izoh:
+        // `DailyAttendance.cs`). Unikal indeks qayta saqlashda yangi qator
+        // qo'shilib ketishiga yo'l qo'ymaydi; ro'yxat sana bo'yicha o'qiladi,
+        // shuning uchun kalit (date, class_id, ...) tartibida.
+        b.Entity<DailyAttendanceMark>()
+            .HasIndex(m => new { m.Date, m.ClassId, m.SubjectId, m.Period }).IsUnique();
 
         // Foydalanuvchi sozlamalari va qurilma tokenlari
         b.Entity<UserSettings>().HasKey(s => s.UserId);

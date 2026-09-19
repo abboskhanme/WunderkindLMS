@@ -76,6 +76,16 @@ public class AttendanceController(AppDbContext db) : ControllerBase
                         && e.ReasonId != null && e.OwnerKind == owner.Kind)
             .ToListAsync();
 
+        // Qaysi dars BELGILANGANI — mas'ul xodim ekranidan ("Davomat
+        // belgilash") keladi. Yo'qsiz dars bo'sh ko'rinadi, shuning uchun
+        // "belgilandi" ni faqat shu jadval ayta oladi.
+        var markedLessons = (await db.DailyAttendanceMarks.AsNoTracking()
+                .Where(m => m.ClassId == classId && m.Date == date)
+                .Select(m => new { m.SubjectId, m.Period })
+                .ToListAsync())
+            .Select(m => $"{m.SubjectId}|{m.Period}")
+            .ToHashSet();
+
         var result = new List<SubjectAttendanceDto>();
         foreach (var l in dayLessons)
         {
@@ -87,7 +97,8 @@ public class AttendanceController(AppDbContext db) : ControllerBase
             var absent = subjEntries.Count(e => !lateReasonIds.Contains(e.ReasonId!));
             result.Add(new SubjectAttendanceDto(
                 l.SubjectId, subjects.GetValueOrDefault(l.SubjectId, ""), l.Period,
-                total, total - absent, absent, reasonCounts));
+                total, total - absent, absent, reasonCounts,
+                markedLessons.Contains($"{l.SubjectId}|{l.Period}")));
         }
 
         return new DailyAttendanceDto(total, result);
@@ -140,4 +151,53 @@ public class AttendanceController(AppDbContext db) : ControllerBase
                 e?.ReasonId is null ? null : reasons.GetValueOrDefault(e.ReasonId));
         }).ToList();
     }
+
+    // =====================================================================
+    //  KUNLIK DAVOMAT BELGILASH — bitta mas'ul xodim, barcha sinflar
+    //  (mijoz, 2026-09-18). Mantiq `DailyAttendanceService` da; u yerdagi
+    //  fayl boshidagi izoh nima uchun jurnalga yozilishini tushuntiradi.
+    //
+    //  RUXSAT: sinfning o'zi emas, BUTUN kun — shuning uchun alohida yangi
+    //  ruxsat o'ylab topilmadi: kontrollerning mavjud `attendance` ruxsati
+    //  yetadi. Mas'ul xodimga aynan shu bitta ruxsat beriladi va u davomat
+    //  menyusidan boshqa hech narsani ko'rmaydi.
+    // =====================================================================
+
+    /// <summary>Kunning sinflar ro'yxati: qaysi biri belgilangan, qaysi biri qolgan.</summary>
+    [HttpGet("daily/overview")]
+    public async Task<ActionResult<DailyAttendanceOverviewDto>> DailyOverview(
+        [FromQuery] string date, CancellationToken ct)
+        => await new DailyAttendanceService(db).OverviewAsync(Today(date), ct);
+
+    /// <summary>Bitta sinfning kuni — o'quvchilar va joriy belgilar.</summary>
+    [HttpGet("daily/class")]
+    public async Task<ActionResult<DailyAttendanceClassDayDto>> DailyClass(
+        [FromQuery] string classId, [FromQuery] string date, CancellationToken ct)
+    {
+        var day = await new DailyAttendanceService(db).ClassDayAsync(classId, Today(date), ct);
+        return day is null ? NotFound(new { message = "Sinf topilmadi." }) : day;
+    }
+
+    /// <summary>
+    /// Kunni saqlash: belgilanganlar yo'q, qolganlari keldi. Xodim JWT'dan
+    /// olinadi — so'rov tanasida "kim belgiladi" maydoni YO'Q.
+    /// </summary>
+    [HttpPost("daily")]
+    public async Task<IActionResult> SaveDaily(SaveDailyAttendanceRequest req, CancellationToken ct)
+    {
+        var error = await new DailyAttendanceService(db).SaveAsync(req, CurrentUserId(), ct);
+        if (error is not null) return BadRequest(new { message = error });
+
+        var day = await new DailyAttendanceService(db).ClassDayAsync(req.ClassId, req.Date, ct);
+        return Ok(day);
+    }
+
+    /// <summary>Sana berilmasa — bugun (maktab mintaqasi bo'yicha).</summary>
+    private static string Today(string? date) =>
+        string.IsNullOrWhiteSpace(date) ? AppClock.Today.ToString("yyyy-MM-dd") : date;
+
+    private string CurrentUserId() =>
+        User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
+        ?? User.FindFirst("sub")?.Value
+        ?? "";
 }

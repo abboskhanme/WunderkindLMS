@@ -18,6 +18,13 @@ export interface SubjectAttendance {
   present: number
   absent: number
   reasons: { name: string; count: number }[]
+  /**
+   * Davomat shu dars uchun belgilanganmi ("Davomat belgilash" ekranidan).
+   * Yo'qlar soni 0 bo'lgan dars "hammasi keldi" ni ham, "hali hech kim
+   * belgilamagan" ni ham bildirishi mumkin — zavuch uchun bu ikkisi boshqa
+   * narsa (server izohi: `SubjectAttendanceDto.Marked`).
+   */
+  marked?: boolean
 }
 
 export interface DailyAttendance {

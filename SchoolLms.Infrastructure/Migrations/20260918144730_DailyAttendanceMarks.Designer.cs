@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using SchoolLms.Infrastructure.Data;
@@ -12,9 +13,11 @@ using SchoolLms.Infrastructure.Data;
 namespace SchoolLms.Infrastructure.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260918144730_DailyAttendanceMarks")]
+    partial class DailyAttendanceMarks
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -1426,21 +1429,12 @@ namespace SchoolLms.Infrastructure.Migrations
                         .HasColumnType("text")
                         .HasColumnName("marked_by");
 
-                    b.Property<int>("Period")
-                        .HasColumnType("integer")
-                        .HasColumnName("period");
-
-                    b.Property<string>("SubjectId")
-                        .IsRequired()
-                        .HasColumnType("text")
-                        .HasColumnName("subject_id");
-
                     b.HasKey("Id")
                         .HasName("pk_daily_attendance_marks");
 
-                    b.HasIndex("Date", "ClassId", "SubjectId", "Period")
+                    b.HasIndex("Date", "ClassId")
                         .IsUnique()
-                        .HasDatabaseName("ix_daily_attendance_marks_date_class_id_subject_id_period");
+                        .HasDatabaseName("ix_daily_attendance_marks_date_class_id");
 
                     b.ToTable("daily_attendance_marks", (string)null);
                 });

@@ -21,6 +21,7 @@ import { addDaysISO } from '@/lib/weeks'
 import { Card } from '@/components/ui/Card'
 import { StatCard } from '@/components/ui/StatCard'
 import { Loader } from '@/components/ui/Loader'
+import { DatePicker } from '@/components/ui/DatePicker'
 
 const control =
   'rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 outline-none focus:border-brand-400'
@@ -117,18 +118,16 @@ export function AttendanceAnalyticsPage() {
           ))}
         </select>
         <div className="flex items-center gap-2">
-          <input
-            type="date"
+          <DatePicker
             value={from}
-            onChange={(e) => setFrom(e.target.value)}
-            className={control}
+            onChange={(value: string) => setFrom(value)}
+            className="w-40"
           />
           <span className="text-slate-400">—</span>
-          <input
-            type="date"
+          <DatePicker
             value={to}
-            onChange={(e) => setTo(e.target.value)}
-            className={control}
+            onChange={(value: string) => setTo(value)}
+            className="w-40"
           />
         </div>
         <div className="flex w-fit gap-1 rounded-lg bg-slate-100 p-1">
@@ -236,7 +235,7 @@ export function AttendanceAnalyticsPage() {
             ) : (
               <div className="mt-3 overflow-x-auto">
                 <table className="w-full min-w-[820px] text-left text-sm">
-                  <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
+                  <thead className="whitespace-nowrap bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
                     <tr>
                       <th className="px-4 py-3">Sinf</th>
                       <th className="px-4 py-3 text-center">O'quvchi</th>
@@ -296,13 +295,12 @@ export function AttendanceAnalyticsPage() {
                 >
                   ‹
                 </button>
-                <input
-                  type="date"
+                <DatePicker
                   value={day}
                   min={from}
                   max={to}
-                  onChange={(e) => setDay(e.target.value)}
-                  className={control}
+                  onChange={(value: string) => setDay(value)}
+                  className="w-40"
                 />
                 <button
                   onClick={() => setDay(addDaysISO(day, 1))}
@@ -317,7 +315,7 @@ export function AttendanceAnalyticsPage() {
             ) : (
               <div className="mt-3 overflow-x-auto">
                 <table className="w-full min-w-[720px] text-left text-sm">
-                  <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
+                  <thead className="whitespace-nowrap bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
                     <tr>
                       <th className="px-4 py-3">Dars</th>
                       <th className="px-4 py-3">Vaqti</th>
