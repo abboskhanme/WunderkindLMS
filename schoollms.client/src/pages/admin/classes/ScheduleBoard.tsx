@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { AlertTriangle, Plus } from 'lucide-react'
-import type { ScheduleLesson, ScheduleTemplate, Subject, Teacher } from '@/types'
+import type { ScheduleLesson, ScheduleTemplate, SchoolSettings, Subject, Teacher } from '@/types'
 import { getSubjects } from '@/api/services/subjects'
 import { getTeachers } from '@/api/services/teachers'
+import { getSettings } from '@/api/services/settings'
 import {
   setTemplateCell,
   clearTemplateSlot,
@@ -14,8 +15,11 @@ import {
 import { weekDays, schedulePeriods } from '@/config/constants'
 import { Card } from '@/components/ui/Card'
 import { Loader } from '@/components/ui/Loader'
+import { Toast } from '@/components/ui/Toast'
+import { PeriodCell, PeriodHead } from '@/components/schedule/PeriodCell'
+import { periodTimeMap } from '@/components/schedule/periodTimes'
 import { cn } from '@/lib/utils'
-import { LessonEditorPanel, type SlotTarget } from './LessonEditorPanel'
+import { LessonSlotModal, type SlotTarget } from './LessonSlotModal'
 
 interface Props {
   /** Eganing id'si — sinf id'si yoki o'quv guruhi id'si (§2.1.4) */
@@ -34,11 +38,27 @@ function tint(hex: string, alpha: number): string | undefined {
   return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`
 }
 
-/** Bitta jadval variantining (template) haftalik gridi + yonidagi inline tahrir paneli */
+/* ==========================================================================
+   JADVAL YARATISH TO'RI
+
+   Mijoz, 2026-09-19: "dars jadvali yaratish qismida ham boshqa dars
+   jadvallari kabi jadval bo'lsin, katakchalarni bosganda modal window
+   ochilib kerakli narsalar tanlansin."
+
+   Shuning uchun bu to'r ko'rish ekranlaridagi to'rning AYNAN o'zi: chapda
+   dars raqami va uning qo'ng'iroq vaqti (`PeriodCell`), tepada hafta
+   kunlari, katakda fan va o'qituvchi. Yagona farqi — bu yerda katak
+   bosiladi va tahrir oynasi ochiladi.
+
+   NEGA O'NTA QATOR: ko'rish ekranlarida bo'sh qatorlar kesiladi, bu yerda
+   esa YO'Q — bo'sh katak aynan "yangi dars qo'shish" tugmasi. Sozlamada 6
+   ta dars vaqti turgan bo'lsa ham, 7-darsni shu yerdan qo'yib bo'ladi.
+   ========================================================================== */
 export function ScheduleBoard({ classId, template }: Props) {
   const ownerKind = template.ownerKind ?? 'class'
   const [subjects, setSubjects] = useState<Subject[]>([])
   const [teachers, setTeachers] = useState<Teacher[]>([])
+  const [settings, setSettings] = useState<SchoolSettings | null>(null)
   const [occupiedSlots, setOccupiedSlots] = useState<OccupiedSlots>({})
   const [lessons, setLessons] = useState<ScheduleLesson[]>(template.lessons)
   const [loading, setLoading] = useState(true)
@@ -49,6 +69,8 @@ export function ScheduleBoard({ classId, template }: Props) {
    * saqlanganday ko'rinib qolardi.
    */
   const [saveError, setSaveError] = useState<string | null>(null)
+  /** Saqlandi/o'chirildi xabari — davomat ekranidagi kabi. */
+  const [toast, setToast] = useState<string | null>(null)
   /**
    * Shu eganing o'quvchilari boshqa egada (guruhda) band bo'ladigan soatlar —
    * FAQAT KO'RSATISH. Guruh darslari o'chiq bo'lsa server bo'sh ro'yxat beradi.
@@ -59,12 +81,14 @@ export function ScheduleBoard({ classId, template }: Props) {
     Promise.all([
       getSubjects(),
       getTeachers(),
+      getSettings(),
       getOccupiedSlots(template.id),
       getPupilOverlay(classId).catch(() => [] as PupilOverlaySlot[]),
     ])
-      .then(([s, t, occ, ov]) => {
+      .then(([s, t, st, occ, ov]) => {
         setSubjects(s)
         setTeachers(t)
+        setSettings(st)
         setOccupiedSlots(occ)
         setOverlay(ov)
       })
@@ -78,12 +102,15 @@ export function ScheduleBoard({ classId, template }: Props) {
     setSelected(null)
   }, [template.id, template.lessons])
 
+  /** Dars raqami -> qo'ng'iroq vaqti ("Sozlamalar → Dars vaqtlari"). */
+  const periodTimes = useMemo(() => periodTimeMap(settings), [settings])
+
   const subjectName = (sid: string) => subjects.find((s) => s.id === sid)?.name ?? ''
   /** F-3: jadval katakchasini bo'yaydigan rang — fanda ko'rsatilmagan bo'lsa null. */
   const subjectColor = (sid: string) => subjects.find((s) => s.id === sid)?.color ?? null
   const teacherName = (tid: string) => teachers.find((t) => t.id === tid)?.fullName ?? ''
   /**
-   * Tahrir panelidagi fan tanlovi FAQAT faol fanlarni ko'rsatadi (F-3: "must
+   * Tahrir oynasidagi fan tanlovi FAQAT faol fanlarni ko'rsatadi (F-3: "must
    * disappear from pickers for NEW rows") — lekin joriy katakda ALLAQACHON
    * tanlangan (endi faolsizlantirilgan bo'lishi mumkin) fan ro'yxatdan
    * TUSHIB QOLMAYDI, aks holda mavjud darsni tahrirlashda tanlov bo'sh
@@ -107,13 +134,14 @@ export function ScheduleBoard({ classId, template }: Props) {
     const before = lessons
     setSaveError(null)
     setLessons((prev) => [...prev.filter((l) => !(l.day === day && l.period === period)), ...next])
-    // Panel ochiqligicha qoladi — saqlangan holatni ko'rsatib turamiz.
-    setSelected({ day, period, lessons: next })
+    // Oyna yopiladi — mijoz aynan shuni so'radi: tanlandi, qo'yildi, ketdi.
+    setSelected(null)
+    setToast(`${weekDays[day]} · ${period}-dars saqlandi`)
     setTemplateCell(classId, template.id, day, period, next).catch((e) => {
       // Rad etildi — ekrandagi optimistik holatni QAYTARAMIZ, aks holda
       // foydalanuvchi saqlanmagan darsni saqlangan deb o'ylardi.
       setLessons(before)
-      setSelected({ day, period, lessons: before.filter((l) => l.day === day && l.period === period) })
+      setToast(null)
       setSaveError(message(e, "Darsni saqlab bo'lmadi"))
     })
   }
@@ -122,12 +150,18 @@ export function ScheduleBoard({ classId, template }: Props) {
     const before = lessons
     setSaveError(null)
     setLessons((prev) => prev.filter((l) => !(l.day === day && l.period === period)))
-    setSelected({ day, period, lessons: [] })
+    setSelected(null)
+    setToast(`${weekDays[day]} · ${period}-dars tozalandi`)
     clearTemplateSlot(classId, template.id, day, period).catch((e) => {
       setLessons(before)
-      setSelected({ day, period, lessons: before.filter((l) => l.day === day && l.period === period) })
+      setToast(null)
       setSaveError(message(e, "Darsni o'chirib bo'lmadi"))
     })
+  }
+
+  const timeLabel = (period: number) => {
+    const t = periodTimes.get(period)
+    return t ? `${t.start}–${t.end}` : null
   }
 
   return (
@@ -138,18 +172,18 @@ export function ScheduleBoard({ classId, template }: Props) {
           <p className="text-sm text-red-700">{saveError}</p>
         </div>
       )}
-      <div className="flex flex-col gap-4 xl:flex-row xl:items-start">
-      <Card className="min-w-0 flex-1 p-0">
+
+      <Card className="p-0">
         {loading ? (
           <Loader label="Yuklanmoqda..." />
         ) : (
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto p-4">
             <table className="w-full border-separate border-spacing-0 text-sm">
               <thead>
-                <tr className="bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
-                  <th className="w-12 px-3 py-3 text-center">№</th>
+                <tr className="whitespace-nowrap bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
+                  <PeriodHead />
                   {weekDays.map((d) => (
-                    <th key={d} className="min-w-[120px] px-3 py-3 text-left font-medium">
+                    <th key={d} className="min-w-[120px] px-2 py-2 text-left font-medium">
                       {d}
                     </th>
                   ))}
@@ -158,18 +192,13 @@ export function ScheduleBoard({ classId, template }: Props) {
               <tbody>
                 {schedulePeriods.map((period) => (
                   <tr key={period}>
-                    <td className="px-3 py-1.5 text-center align-top">
-                      <div className="mt-2 inline-flex h-7 w-7 items-center justify-center rounded-lg bg-slate-100 text-sm font-semibold text-slate-500">
-                        {period}
-                      </div>
-                    </td>
+                    <PeriodCell period={period} time={periodTimes.get(period)} />
                     {weekDays.map((_, day) => {
                       const slotLessons = lessonsAt(day, period)
                       const slotOverlay = overlayAt(day, period)
                       const isSplit =
                         slotLessons.length > 1 ||
                         (slotLessons.length === 1 && (slotLessons[0].subGroup ?? 0) > 0)
-                      const isSelected = selected?.day === day && selected?.period === period
                       // F-3: butun katak faqat BO'LINMAGAN darsda bo'yaladi — bo'lingan
                       // katakda G1/G2 nishonlari allaqachon o'z rangini tashiydi va katak
                       // foni ular bilan to'qnashib ketardi.
@@ -179,9 +208,14 @@ export function ScheduleBoard({ classId, template }: Props) {
                           : null
                       const soleTint = soleColor ? tint(soleColor, 0.14) : undefined
                       return (
-                        <td key={day} className="px-1.5 py-1.5 align-top">
+                        <td key={day} className="px-1 py-1 align-top">
                           <button
                             type="button"
+                            title={
+                              slotLessons.length > 0
+                                ? 'Tahrirlash uchun bosing'
+                                : 'Dars qo‘yish uchun bosing'
+                            }
                             onClick={() => setSelected({ day, period, lessons: slotLessons })}
                             style={
                               soleTint
@@ -189,11 +223,13 @@ export function ScheduleBoard({ classId, template }: Props) {
                                 : undefined
                             }
                             className={cn(
-                              'flex min-h-[60px] w-full flex-col justify-center rounded-lg border p-2 text-left transition-colors',
+                              'flex min-h-[52px] w-full flex-col justify-center rounded-lg border p-2 text-left transition-colors',
                               slotLessons.length > 0
-                                ? cn('hover:border-brand-300', !soleTint && 'border-brand-100 bg-brand-50')
-                                : 'border-dashed border-slate-200 text-slate-300 hover:bg-slate-50',
-                              isSelected && 'ring-2 ring-brand-400 ring-offset-1',
+                                ? cn(
+                                    'hover:border-brand-300',
+                                    !soleTint && 'border-brand-100 bg-brand-50',
+                                  )
+                                : 'border-dashed border-slate-200 text-slate-300 hover:border-brand-300 hover:bg-brand-50/40 hover:text-brand-400',
                             )}
                           >
                             {slotLessons.length === 0 ? (
@@ -269,18 +305,19 @@ export function ScheduleBoard({ classId, template }: Props) {
         )}
       </Card>
 
-      <div className="w-full shrink-0 xl:sticky xl:top-4 xl:w-[340px]">
-        <LessonEditorPanel
-          slot={selected}
-          subjects={pickableSubjects}
-          teachers={teachers}
-          occupiedSlots={occupiedSlots}
-          ownerKind={ownerKind}
-          onSave={handleSave}
-          onClear={handleClear}
-        />
-      </div>
-      </div>
+      <LessonSlotModal
+        slot={selected}
+        subjects={pickableSubjects}
+        teachers={teachers}
+        occupiedSlots={occupiedSlots}
+        timeLabel={selected ? timeLabel(selected.period) : null}
+        ownerKind={ownerKind}
+        onClose={() => setSelected(null)}
+        onSave={handleSave}
+        onClear={handleClear}
+      />
+
+      <Toast message={toast} onClose={() => setToast(null)} />
     </div>
   )
 }

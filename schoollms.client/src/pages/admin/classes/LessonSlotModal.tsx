@@ -1,10 +1,25 @@
 import { useEffect, useState } from 'react'
-import { Trash2, Users, User, CalendarClock, AlertTriangle } from 'lucide-react'
+import { AlertTriangle, Trash2, User, Users } from 'lucide-react'
 import type { LessonOwnerKind, ScheduleLesson, Subject, Teacher } from '@/types'
+import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
 import { Select } from '@/components/ui/Input'
 import { weekDays } from '@/config/constants'
 import { cn } from '@/lib/utils'
+
+/* ==========================================================================
+   KATAK OYNASI — jadvalga dars qo'yish
+
+   Mijoz, 2026-09-19: "katakchalarni bosganda modal window ochilib kerakli
+   narsalar tanlansin, jadvallar qo'yilsin, hozirgi holati menga yoqmadi
+   tushunarsiz ekan."
+
+   Ilgari bu forma jadvalning YONIDA turardi: jadval siqilib qolardi va
+   qaysi katak tahrirlanayotgani ko'rinmasdi. Endi katak bosiladi — oyna
+   ochiladi, fan va o'qituvchi tanlanadi, saqlanadi va oyna yopiladi.
+   Mantiq o'zgarmadi: bo'linish (1/2-guruh), o'qituvchi bandligi tekshiruvi
+   va "Tozalash" o'sha-o'sha.
+   ========================================================================== */
 
 export interface SlotTarget {
   day: number
@@ -33,6 +48,8 @@ interface Props {
   teachers: Teacher[]
   /** Boshqa template'lardagi o'qituvchi band soatlari — ziddiyat aniqlash uchun. */
   occupiedSlots: OccupiedSlots
+  /** Shu soatning qo'ng'iroq vaqti, sozlamalarda bo'lsa ("08:30–09:15"). */
+  timeLabel?: string | null
   /**
    * Tahrirlanayotgan jadval kimniki — sinfnikimi yoki o'quv guruhinikimi.
    * Guruhda sinf ichidagi 1/2-guruhga bo'linish YO'Q (guruhning o'zi
@@ -40,6 +57,7 @@ interface Props {
    * tugmasi ko'rsatilmaydi — server ham uni rad etadi.
    */
   ownerKind?: LessonOwnerKind
+  onClose: () => void
   /** Yangi to'liq holatni saqlash: 1 ta = butun sinf, 2 ta (G1+G2) = bo'lingan. */
   onSave: (day: number, period: number, lessons: ScheduleLesson[]) => void
   onClear: (day: number, period: number) => void
@@ -52,17 +70,14 @@ interface Row {
 
 const emptyRow: Row = { subjectId: '', teacherId: '' }
 
-/**
- * Jadval yonidagi inline tahrir paneli.
- * Fan + o'qituvchi tanlanadi. Tanlangan o'qituvchi shu soatda boshqa sinfda
- * band bo'lsa — ogohlantirish ko'rsatiladi va saqlash bloklanadi.
- */
-export function LessonEditorPanel({
+export function LessonSlotModal({
   slot,
   subjects,
   teachers,
   occupiedSlots,
+  timeLabel,
   ownerKind = 'class',
+  onClose,
   onSave,
   onClear,
 }: Props) {
@@ -96,27 +111,23 @@ export function LessonEditorPanel({
     }
   }, [slot])
 
-  if (!slot) {
-    return (
-      <div className="rounded-2xl border border-dashed border-slate-200 bg-white p-6 text-center text-sm text-slate-400">
-        <CalendarClock className="mx-auto mb-2 h-6 w-6 text-slate-300" />
-        Soatni tanlash uchun jadvaldagi katakni bosing.
-      </div>
-    )
-  }
-
   const teachersFor = (subjectId: string) =>
     subjectId ? teachers.filter((t) => t.subjectIds.includes(subjectId)) : []
 
   /** Berilgan o'qituvchi joriy (day, period) da boshqa template'da band ekanligini aniqlaydi. */
   const conflictOf = (teacherId: string) => {
-    if (!teacherId) return null
+    if (!teacherId || !slot) return null
     return (
       occupiedSlots[teacherId]?.find((s) => s.day === slot.day && s.period === slot.period) ?? null
     )
   }
 
-  const updateRow = (row: Row, setter: (r: Row) => void, key: 'subjectId' | 'teacherId', val: string) => {
+  const updateRow = (
+    row: Row,
+    setter: (r: Row) => void,
+    key: 'subjectId' | 'teacherId',
+    val: string,
+  ) => {
     if (key === 'subjectId') {
       const next: Row = { subjectId: val, teacherId: '' }
       if (val && row.teacherId && teachersFor(val).some((t) => t.id === row.teacherId))
@@ -130,44 +141,72 @@ export function LessonEditorPanel({
   const wholeConflict = conflictOf(whole.teacherId)
   const g1Conflict = conflictOf(g1.teacherId)
   const g2Conflict = conflictOf(g2.teacherId)
-  const hasAnyConflict =
-    mode === 'whole' ? !!wholeConflict : !!g1Conflict || !!g2Conflict
+  const hasAnyConflict = mode === 'whole' ? !!wholeConflict : !!g1Conflict || !!g2Conflict
+
+  const hasLesson = (slot?.lessons.length ?? 0) > 0
+  const canSave =
+    !hasAnyConflict && (mode === 'whole' ? !!whole.subjectId : !!g1.subjectId || !!g2.subjectId)
 
   const handleSave = () => {
-    if (hasAnyConflict) return
+    if (!slot || !canSave) return
     if (mode === 'whole') {
-      if (!whole.subjectId) return
       onSave(slot.day, slot.period, [
-        { day: slot.day, period: slot.period, subjectId: whole.subjectId, teacherId: whole.teacherId, subGroup: 0 },
+        {
+          day: slot.day,
+          period: slot.period,
+          subjectId: whole.subjectId,
+          teacherId: whole.teacherId,
+          subGroup: 0,
+        },
       ])
     } else {
       const out: ScheduleLesson[] = []
       if (g1.subjectId)
-        out.push({ day: slot.day, period: slot.period, subjectId: g1.subjectId, teacherId: g1.teacherId, subGroup: 1 })
+        out.push({
+          day: slot.day,
+          period: slot.period,
+          subjectId: g1.subjectId,
+          teacherId: g1.teacherId,
+          subGroup: 1,
+        })
       if (g2.subjectId)
-        out.push({ day: slot.day, period: slot.period, subjectId: g2.subjectId, teacherId: g2.teacherId, subGroup: 2 })
+        out.push({
+          day: slot.day,
+          period: slot.period,
+          subjectId: g2.subjectId,
+          teacherId: g2.teacherId,
+          subGroup: 2,
+        })
       if (out.length === 0) return
       onSave(slot.day, slot.period, out)
     }
   }
 
-  const hasLesson = slot.lessons.length > 0
-  const canSave =
-    !hasAnyConflict &&
-    (mode === 'whole' ? !!whole.subjectId : !!g1.subjectId || !!g2.subjectId)
-
   return (
-    <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm">
-      {/* Qaysi soat yaratilayotgani */}
-      <div className="mb-4 rounded-xl bg-brand-50 px-4 py-3">
-        <p className="text-[11px] font-medium uppercase tracking-wide text-brand-500">
-          {hasLesson ? 'Tahrirlanmoqda' : 'Yaratilmoqda'}
-        </p>
-        <p className="text-base font-semibold text-brand-700">
-          {weekDays[slot.day]} · {slot.period}-dars
-        </p>
-      </div>
-
+    <Modal
+      open={!!slot}
+      onClose={onClose}
+      title={
+        slot
+          ? `${weekDays[slot.day]} · ${slot.period}-dars${timeLabel ? ` · ${timeLabel}` : ''}`
+          : ''
+      }
+      footer={
+        <>
+          {hasLesson && slot && (
+            <Button variant="danger" onClick={() => onClear(slot.day, slot.period)}>
+              <Trash2 className="h-4 w-4" /> Tozalash
+            </Button>
+          )}
+          <Button variant="secondary" onClick={onClose}>
+            Bekor qilish
+          </Button>
+          <Button onClick={handleSave} disabled={!canSave}>
+            {hasLesson ? 'Saqlash' : 'Qo‘yish'}
+          </Button>
+        </>
+      }
+    >
       <div className="space-y-4">
         {/* Rejim tanlovi — o'quv guruhi jadvalida bo'linish yo'q (Props izohiga qarang) */}
         {ownerKind === 'class' && (
@@ -232,23 +271,11 @@ export function LessonEditorPanel({
           </div>
         )}
 
-        <div className="flex flex-col gap-2">
-          <Button onClick={handleSave} disabled={!canSave} className="w-full">
-            {hasLesson ? 'Saqlash' : 'Yaratish'}
-          </Button>
-          {hasLesson && (
-            <Button variant="danger" onClick={() => onClear(slot.day, slot.period)} className="w-full">
-              <Trash2 className="h-4 w-4" /> Tozalash
-            </Button>
-          )}
-        </div>
-
         <p className="text-xs text-slate-400">
-          Saqlagandan so'ng boshqa katakni bosib keyingi soatni yarataverasiz — panel ochiqligicha
-          qoladi. Bo'lingan dars faqat tegishli guruh o'quvchilariga ko'rinadi.
+          Bo'lingan dars faqat tegishli guruh o'quvchilariga ko'rinadi.
         </p>
       </div>
-    </div>
+    </Modal>
   )
 }
 

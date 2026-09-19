@@ -243,10 +243,28 @@ export function ClassSchedulePage() {
                   </div>
                 </div>
               ))}
+              {/*
+                Bo'sh holat — shunchaki "yo'q" deb qo'yish ekranni boshi
+                berk qilardi: bu yerdan qayerga borishni ayta oladigan
+                yagona joy shu (mijoz, 2026-09-19: "tushunarsiz ekan").
+              */}
               {templates.length === 0 && (
-                <p className="py-6 text-center text-sm text-slate-400">
-                  Hali jadval yaratilmagan
-                </p>
+                <div className="py-8 text-center">
+                  <p className="text-sm text-slate-500">Hali jadval yaratilmagan</p>
+                  <p className="mt-1 text-xs text-slate-400">
+                    Jadval yarating — keyin uning katakchalariga dars qo'yasiz va haftalarga
+                    biriktirasiz.
+                  </p>
+                  <Button
+                    className="mx-auto mt-4"
+                    onClick={() => {
+                      setEditingTpl(null)
+                      setNameOpen(true)
+                    }}
+                  >
+                    <Plus className="h-4 w-4" /> Jadval yaratish
+                  </Button>
+                </div>
               )}
             </div>
           </Card>
@@ -378,6 +396,7 @@ export function ClassSchedulePage() {
       <TemplateNameModal
         open={nameOpen}
         initialName={editingTpl?.name}
+        defaultName={templates.length === 0 ? 'Asosiy jadval' : undefined}
         onClose={() => {
           setNameOpen(false)
           setEditingTpl(null)

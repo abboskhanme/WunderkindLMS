@@ -6,6 +6,7 @@ import { getSettings } from '@/api/services/settings'
 import { Card } from '@/components/ui/Card'
 import { Loader } from '@/components/ui/Loader'
 import { cn } from '@/lib/utils'
+import { formatDate } from '@/lib/utils'
 
 const MONTHS = [
   'Yanvar', 'Fevral', 'Mart', 'Aprel', 'May', 'Iyun',
@@ -185,7 +186,9 @@ export function HolidaysPage() {
               <div className="space-y-2">
                 {yearHolidays.map((h) => (
                   <div key={h.date} className="flex items-center gap-2">
-                    <span className="w-[88px] shrink-0 text-xs font-medium text-slate-600">{h.date}</span>
+                    <span className="w-[88px] shrink-0 whitespace-nowrap text-xs font-medium text-slate-600">
+                      {formatDate(h.date)}
+                    </span>
                     <input
                       value={h.name}
                       onChange={(e) => rename(h.date, e.target.value)}

@@ -41,7 +41,7 @@ export function TemplateEditorPage() {
             {template ? template.name : 'Jadval'}
           </h1>
           <p className="text-sm text-slate-400">
-            {owner ? `${owner.subtitle} · ` : ''}soatni bosing, yon paneldan fan va o'qituvchi tanlab yarating
+            {owner ? `${owner.subtitle} · ` : ''}katakni bosing — fan va o'qituvchi tanlash oynasi ochiladi
           </p>
         </div>
       </div>

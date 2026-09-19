@@ -7,17 +7,31 @@ interface Props {
   open: boolean
   /** Tahrirlashda joriy nom, yangida bo'sh */
   initialName?: string
+  /**
+   * YANGI jadval uchun oldindan to'ldirib qo'yiladigan nom. Birinchi
+   * jadvalda "Asosiy jadval" turadi: nom o'ylab topish sahifadan
+   * jadvalgacha bo'lgan yo'lda ortiqcha to'siq edi (mijoz, 2026-09-19:
+   * "hozirgi holati menga yoqmadi tushunarsiz ekan"). Maydon baribir
+   * tanlangan holda ochiladi — boshqacha nom yozmoqchi bo'lsa, yozadi.
+   */
+  defaultName?: string
   onClose: () => void
   onSubmit: (name: string) => void
 }
 
-export function TemplateNameModal({ open, initialName, onClose, onSubmit }: Props) {
+export function TemplateNameModal({
+  open,
+  initialName,
+  defaultName,
+  onClose,
+  onSubmit,
+}: Props) {
   const [name, setName] = useState('')
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- modal ochilganda nom maydonini sinxronlash (maqsadli)
-    if (open) setName(initialName ?? '')
-  }, [open, initialName])
+    if (open) setName(initialName ?? defaultName ?? '')
+  }, [open, initialName, defaultName])
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()

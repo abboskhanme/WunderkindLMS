@@ -21,6 +21,7 @@ import { Button } from '@/components/ui/Button'
 import { Loader } from '@/components/ui/Loader'
 import { Modal } from '@/components/ui/Modal'
 import { TeacherSalaryDetailModal } from './TeacherSalaryDetailModal'
+import { MonthPicker } from '@/components/ui/DatePicker'
 
 const rateFields = [
   { key: 'oliy', label: 'Oliy toifa' },
@@ -142,11 +143,10 @@ function SalaryCalcView() {
         </div>
         <label className="flex items-center gap-2 text-sm text-slate-600">
           <span className="font-medium">Oy:</span>
-          <input
-            type="month"
+          <MonthPicker
             value={month}
-            onChange={(e) => setMonth(e.target.value)}
-            className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 outline-none focus:border-brand-400"
+            onChange={(value: string) => setMonth(value)}
+            className="w-44"
           />
         </label>
       </div>
@@ -215,7 +215,7 @@ function SalaryCalcView() {
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm">
-            <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
+            <thead className="whitespace-nowrap bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
               <tr>
                 <th className="w-10 px-4 py-3">
                   <input
@@ -253,7 +253,11 @@ function SalaryCalcView() {
                     />
                   </td>
                   <td className="px-2 py-3 text-slate-400">{i + 1}</td>
-                  <td className="px-4 py-3 font-medium text-slate-800">{t.fullName}</td>
+                  <td className="px-4 py-3 font-medium text-slate-800">
+                      <span className="block max-w-[14rem] truncate" title={t.fullName}>
+                        {t.fullName}
+                      </span>
+                    </td>
                   <td className="px-4 py-3">
                     {t.category ? (
                       <span className="rounded-md bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-700">

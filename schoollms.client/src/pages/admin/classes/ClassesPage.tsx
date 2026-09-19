@@ -206,7 +206,7 @@ export function ClassesPage() {
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
-              <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
+              <thead className="whitespace-nowrap bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
                 <tr>
                   <th className="w-10 px-4 py-3">#</th>
                   <th className="px-4 py-3">Sinf nomi</th>
@@ -226,7 +226,11 @@ export function ClassesPage() {
                     className="cursor-pointer hover:bg-slate-50/60"
                   >
                     <td className="px-4 py-3 text-slate-400">{i + 1}</td>
-                    <td className="px-4 py-3 font-medium text-slate-800">{c.name}</td>
+                    <td className="px-4 py-3 font-medium text-slate-800">
+                      <span className="block max-w-[14rem] truncate" title={c.name}>
+                        {c.name}
+                      </span>
+                    </td>
                     <td className="px-4 py-3">
                       <span
                         className={cn(
@@ -370,7 +374,7 @@ function ArchivedTable({
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-left text-sm">
-        <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
+        <thead className="whitespace-nowrap bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
           <tr>
             <th className="w-10 px-4 py-3">#</th>
             <th className="px-4 py-3">Sinf nomi</th>
@@ -384,7 +388,11 @@ function ArchivedTable({
           {items.map((c, i) => (
             <tr key={c.id} className="hover:bg-slate-50/60">
               <td className="px-4 py-3 text-slate-400">{i + 1}</td>
-              <td className="px-4 py-3 font-medium text-slate-800">{c.name}</td>
+              <td className="px-4 py-3 font-medium text-slate-800">
+                      <span className="block max-w-[14rem] truncate" title={c.name}>
+                        {c.name}
+                      </span>
+                    </td>
               <td className="px-4 py-3">
                 <span
                   className={cn(
