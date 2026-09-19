@@ -253,7 +253,11 @@ export function DataTable<T>({
           <Loader label="Yuklanmoqda..." />
         ) : (
           <table className="w-full text-left text-sm">
-            <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
+            {/* Sarlavhalar BIR QATORDA (mijoz, 2026-09-18: "tagma tag tushib
+                qoladigan holat bo'lmasin") — "TRANZAKSIYA TURI" kabi uzun
+                nomlar ikkiga bo'linmasin. Jadval baribir yuqoridagi
+                `overflow-x-auto` ichida, ya'ni sig'masa yonga suriladi. */}
+            <thead className="whitespace-nowrap bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
               <tr>
                 {renderColumns.map((c) => (
                   <th key={c.id} className={cn('px-4 py-3', c.headerClassName)}>

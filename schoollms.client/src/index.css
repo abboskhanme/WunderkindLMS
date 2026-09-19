@@ -47,3 +47,86 @@ body {
   scrollbar-width: thin;
   scrollbar-color: #cbd2e0 transparent;
 }
+
+/* ==========================================================================
+   Bosma (print) — kassa cheki
+   --------------------------------------------------------------------------
+   Kassa tranzaksiyasi cheki (`CashTransactionReceipt.tsx`) bosilganda
+   qog'ozga FAQAT chekning o'zi tushishi kerak: yon menyu, modal ramkasi,
+   tugmalar va sahifaning qolgan qismi emas. Buni "hammasini yashirib,
+   kerakligini qaytarish" usuli bilan qilamiz — chek modal ichida, ya'ni
+   DOM daraxtining ichkarisida turadi, shuning uchun uning OTA-BOBOLARI
+   ko'rinadigan bo'lib qoladi, lekin o'zlarining boshqa bolalari
+   yashiriladi.
+   ========================================================================== */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+
+  .cash-receipt,
+  .cash-receipt * {
+    visibility: visible;
+  }
+
+  .cash-receipt {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    max-width: none;
+    border: 0;
+    padding: 0;
+  }
+}
+
+/* ==========================================================================
+   Xabar oynachasi (toast) — chiqishi
+   --------------------------------------------------------------------------
+   `components/ui/Toast.tsx` uchun: pastdan yumshoq ko'tarilib chiqadi.
+   Kutubxona qo'shmaslik uchun bitta keyframe yetarli. Harakatni o'chirib
+   qo'ygan foydalanuvchida (`prefers-reduced-motion`) animatsiya bo'lmaydi —
+   oynacha shunchaki paydo bo'ladi.
+   ========================================================================== */
+/* Telefon: TEPADAN tushadi. Oynacha `-translate-x-1/2` bilan markazlashgani
+   uchun animatsiya ham X bo'yicha o'sha siljishni saqlab qolishi kerak —
+   aks holda chiqish paytida chapga sakrab ketadi. */
+@keyframes toast-in-top {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -8px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
+/* Kompyuter: o'ng tepadan tushadi — u yerda gorizontal markazlash yo'q,
+   shuning uchun faqat Y bo'yicha siljiydi. */
+@keyframes toast-in-corner {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.toast-in {
+  animation: toast-in-top 160ms ease-out;
+}
+
+@media (min-width: 640px) {
+  .toast-in {
+    animation: toast-in-corner 160ms ease-out;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toast-in {
+    animation: none;
+  }
+}
