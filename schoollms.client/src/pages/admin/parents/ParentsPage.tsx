@@ -237,7 +237,7 @@ export function ParentsPage() {
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
-              <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
+              <thead className="whitespace-nowrap bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
                 <tr>
                   <th className="w-8 px-2 py-3"></th>
                   <th className="px-4 py-3">Vasiy F.I.SH</th>
@@ -315,7 +315,7 @@ export function ParentsPage() {
                           <td colSpan={8} className="px-4 py-3">
                             <div className="rounded-lg border border-slate-200 bg-white">
                               <table className="w-full text-sm">
-                                <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
+                                <thead className="whitespace-nowrap bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
                                   <tr>
                                     <th className="px-3 py-2 text-left">Farzand</th>
                                     <th className="px-3 py-2 text-left">Sinf</th>

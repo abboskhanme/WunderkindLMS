@@ -117,7 +117,7 @@ export function TeacherAppPage() {
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
-              <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
+              <thead className="whitespace-nowrap bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
                 <tr>
                   <th className="px-4 py-3">F.I.SH</th>
                   <th className="px-4 py-3">Telefon</th>
@@ -130,7 +130,11 @@ export function TeacherAppPage() {
               <tbody className="divide-y divide-slate-100">
                 {filtered.map((r) => (
                   <tr key={r.teacherId} className="hover:bg-slate-50/60">
-                    <td className="px-4 py-3 font-medium text-slate-800">{r.fullName}</td>
+                    <td className="px-4 py-3 font-medium text-slate-800">
+                      <span className="block max-w-[14rem] truncate" title={r.fullName}>
+                        {r.fullName}
+                      </span>
+                    </td>
                     <td className="px-4 py-3 text-slate-600">{r.phone || '—'}</td>
                     <td className="px-4 py-3">
                       {r.isActivated ? (

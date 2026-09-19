@@ -4,9 +4,9 @@ import { getTeacherSalary } from '@/api/services/teacher'
 import { formatMoney, cn } from '@/lib/utils'
 import { Card } from '@/components/ui/Card'
 import { Loader } from '@/components/ui/Loader'
+import { DatePicker } from '@/components/ui/DatePicker'
+import { formatDate } from '@/lib/utils'
 
-const control =
-  'rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-brand-400'
 
 const statusLabel: Record<MonthStatus, string> = {
   paid: "To'langan",
@@ -44,9 +44,17 @@ export function TeacherSalaryPage() {
 
       <Card className="flex flex-wrap items-center gap-3">
         <label className="text-sm text-slate-500">Davr:</label>
-        <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className={control} />
+        <DatePicker
+          value={from}
+          onChange={(value: string) => setFrom(value)}
+          className="w-40"
+        />
         <span className="text-slate-400">—</span>
-        <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className={control} />
+        <DatePicker
+          value={to}
+          onChange={(value: string) => setTo(value)}
+          className="w-40"
+        />
       </Card>
 
       {loading ? (
@@ -72,7 +80,7 @@ export function TeacherSalaryPage() {
             <p className="border-b border-slate-100 px-4 py-3 font-semibold text-slate-800">Oylar bo'yicha</p>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
-                <thead>
+                <thead className="whitespace-nowrap">
                   <tr className="bg-slate-50 text-left text-xs uppercase text-slate-400">
                     <th className="px-4 py-2 font-medium">Oy</th>
                     <th className="px-4 py-2 font-medium">Hisoblangan</th>
@@ -117,7 +125,7 @@ export function TeacherSalaryPage() {
                     <p className="font-medium text-slate-700">{formatMoney(p.amount)}</p>
                     {p.note && <p className="text-xs text-slate-400">{p.note}</p>}
                   </div>
-                  <span className="text-xs text-slate-400">{p.date}</span>
+                  <span className="whitespace-nowrap text-xs text-slate-400">{formatDate(p.date)}</span>
                 </div>
               ))}
             </div>

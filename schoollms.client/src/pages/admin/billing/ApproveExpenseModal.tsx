@@ -25,6 +25,7 @@ import { Button } from '@/components/ui/Button'
 import { Select } from '@/components/ui/Input'
 import { formatMoney } from '@/lib/utils'
 import { Notice } from './BillingUi'
+import { formatDate } from '@/lib/utils'
 
 const methods: PaymentMethod[] = ['cash', 'card', 'transfer', 'online']
 
@@ -70,7 +71,7 @@ export function ApproveExpenseModal({ expense, busy, error, onClose, onConfirm }
               {formatMoney(expense.amount)} — {financeCategoryLabel(expense.category)}
             </p>
             <p className="text-slate-500">
-              {expense.onDate} · yozgan: {expense.createdByName}
+              {formatDate(expense.onDate)} · yozgan: {expense.createdByName}
             </p>
             {expense.note && <p className="mt-1 text-slate-500">{expense.note}</p>}
           </div>

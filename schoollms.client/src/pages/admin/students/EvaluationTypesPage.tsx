@@ -95,7 +95,7 @@ export function EvaluationTypesPage() {
         <Card className="p-0">
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
-              <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
+              <thead className="whitespace-nowrap bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
                 <tr>
                   <th className="w-10 px-4 py-3">#</th>
                   <th className="px-4 py-3">Nomi</th>

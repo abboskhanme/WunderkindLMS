@@ -150,7 +150,7 @@ export function AdjustmentsPage({ kind }: Props) {
         >
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
-              <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
+              <thead className="whitespace-nowrap bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
                 <tr>
                   <th className="px-4 py-3">Xodim</th>
                   <th className="px-4 py-3">Sabab</th>
@@ -172,7 +172,11 @@ export function AdjustmentsPage({ kind }: Props) {
                         {row.employeeKind === 'teacher' ? "O'qituvchi" : 'Xodim'}
                       </div>
                     </td>
-                    <td className="px-4 py-3 text-slate-600">{row.reasonName}</td>
+                    <td className="px-4 py-3 text-slate-600">
+                      <span className="block max-w-[14rem] truncate" title={row.reasonName}>
+                        {row.reasonName}
+                      </span>
+                    </td>
                     <td className="px-4 py-3 font-medium text-slate-800">
                       {formatMoney(row.amount)}
                     </td>

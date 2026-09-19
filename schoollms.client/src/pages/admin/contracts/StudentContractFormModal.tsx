@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/Button'
 import { Input, Textarea } from '@/components/ui/Input'
 import { Modal } from '@/components/ui/Modal'
 import { cn } from '@/lib/utils'
+import { DatePicker } from '@/components/ui/DatePicker'
 
 interface Props {
   open: boolean
@@ -236,17 +237,15 @@ export function StudentContractFormModal({
             onChange={(e) => setNumber(e.target.value)}
             placeholder="raqamsiz — qoralama"
           />
-          <Input
+          <DatePicker
             label="Imzo sanasi"
-            type="date"
             value={signedOn}
-            onChange={(e) => setSignedOn(e.target.value)}
+            onChange={(value: string) => setSignedOn(value)}
           />
-          <Input
+          <DatePicker
             label="Tugash sanasi"
-            type="date"
             value={endsOn}
-            onChange={(e) => setEndsOn(e.target.value)}
+            onChange={(value: string) => setEndsOn(value)}
           />
         </div>
 

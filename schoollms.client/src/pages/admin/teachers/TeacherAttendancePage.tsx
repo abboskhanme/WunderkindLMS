@@ -16,6 +16,8 @@ import { cn } from '@/lib/utils'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Loader } from '@/components/ui/Loader'
+import { DatePicker } from '@/components/ui/DatePicker'
+import { MonthPicker } from '@/components/ui/DatePicker'
 
 // Bo'sh → keldi → kelmadi → kechikdi → bo'sh
 const CYCLE: Record<string, string> = { '': 'present', present: 'absent', absent: 'late', late: '' }
@@ -162,11 +164,10 @@ function DashboardSection() {
               className="w-52 rounded-lg border border-slate-200 bg-white py-2 pl-8 pr-3 text-sm text-slate-700 outline-none focus:border-brand-400"
             />
           </div>
-          <input
-            type="date"
+          <DatePicker
             value={date}
-            onChange={(e) => setDate(e.target.value)}
-            className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 outline-none focus:border-brand-400"
+            onChange={(value: string) => setDate(value)}
+            className="w-40"
           />
           <Button onClick={onSync} disabled={syncing}>
             <RefreshCw className={cn('h-4 w-4', syncing && 'animate-spin')} />
@@ -210,7 +211,7 @@ function DashboardSection() {
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm">
-            <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
+            <thead className="whitespace-nowrap bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
               <tr>
                 <th className="px-3 py-2">O'qituvchi</th>
                 <th className="px-3 py-2 text-center">Kirish</th>
@@ -378,11 +379,10 @@ function MonthlyGrid() {
             Katakni bosing: Keldi → Kelmadi → Kechikdi → bo'sh. Sarlavhani bossangiz — kun hammaga "Keldi" / tozalash.
           </p>
         </div>
-        <input
-          type="month"
+        <MonthPicker
           value={month}
-          onChange={(e) => setMonth(e.target.value)}
-          className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 outline-none focus:border-brand-400"
+          onChange={(value: string) => setMonth(value)}
+          className="w-44"
         />
       </div>
 
@@ -396,7 +396,7 @@ function MonthlyGrid() {
         <>
           <div className="overflow-x-auto">
             <table className="w-full border-separate border-spacing-0 text-sm">
-              <thead>
+              <thead className="whitespace-nowrap">
                 <tr className="bg-slate-50 text-slate-400">
                   <th className="sticky left-0 z-10 bg-slate-50 px-3 py-2 text-left text-xs font-medium uppercase">
                     F.I.SH

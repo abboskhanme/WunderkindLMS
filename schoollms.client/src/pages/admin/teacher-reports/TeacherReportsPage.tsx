@@ -80,7 +80,7 @@ export function TeacherReportsPage() {
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
-              <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
+              <thead className="whitespace-nowrap bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
                 <tr>
                   <th className="px-4 py-3">O'qituvchi</th>
                   <th className="px-4 py-3 text-center">Reja</th>
@@ -162,7 +162,7 @@ export function TeacherReportsPage() {
 
             <div className="overflow-x-auto rounded-xl border border-slate-100">
               <table className="w-full text-left text-sm">
-                <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
+                <thead className="whitespace-nowrap bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
                   <tr>
                     <th className="px-3 py-2">Sinf</th>
                     <th className="px-3 py-2">Fan</th>

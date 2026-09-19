@@ -23,6 +23,7 @@ import { Loader } from '@/components/ui/Loader'
 import { formatDate, cn } from '@/lib/utils'
 import { CertificateFormModal } from './CertificateFormModal'
 import { CertificateResultsTab } from './CertificateResultsTab'
+import { DatePicker } from '@/components/ui/DatePicker'
 
 type Tab = 'list' | 'results'
 
@@ -276,19 +277,17 @@ export function CertificatesPage() {
                 </option>
               ))}
             </select>
-            <input
-              type="date"
+            <DatePicker
               value={from}
-              onChange={(e) => setFrom(e.target.value)}
+              onChange={(value: string) => setFrom(value)}
               title="Berilgan sana — dan"
-              className={control}
+              className="w-40"
             />
-            <input
-              type="date"
+            <DatePicker
               value={to}
-              onChange={(e) => setTo(e.target.value)}
+              onChange={(value: string) => setTo(value)}
               title="Berilgan sana — gacha"
-              className={control}
+              className="w-40"
             />
             <label className="inline-flex cursor-pointer items-center gap-1.5 whitespace-nowrap text-sm text-slate-600">
               <input
@@ -312,7 +311,7 @@ export function CertificatesPage() {
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-left text-sm">
-                <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
+                <thead className="whitespace-nowrap bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
                   <tr>
                     <th className="px-4 py-3">O'quvchi</th>
                     <th className="px-4 py-3">Sinf</th>
@@ -329,7 +328,11 @@ export function CertificatesPage() {
                 <tbody className="divide-y divide-slate-100">
                   {rows.map((r) => (
                     <tr key={r.id} className="hover:bg-slate-50/60">
-                      <td className="px-4 py-3 font-medium text-slate-800">{r.studentName}</td>
+                      <td className="px-4 py-3 font-medium text-slate-800">
+                      <span className="block max-w-[14rem] truncate" title={r.studentName}>
+                        {r.studentName}
+                      </span>
+                    </td>
                       <td className="px-4 py-3 text-slate-500">{r.className || '—'}</td>
                       <td className="px-4 py-3 text-slate-600">{r.typeName}</td>
                       <td className="px-4 py-3 text-slate-500">

@@ -7,6 +7,7 @@ import { Input, Select } from '@/components/ui/Input'
 import { PhotoUpload } from '@/components/ui/PhotoUpload'
 import { genderOptions, teacherPermissions, teacherCategories } from '@/config/constants'
 import { cn, randomPassword } from '@/lib/utils'
+import { DatePicker } from '@/components/ui/DatePicker'
 
 interface Props {
   open: boolean
@@ -115,11 +116,10 @@ export function TeacherFormModal({ open, onClose, onSubmit, initial, subjects, c
           onChange={(url) => update('photoUrl', url)}
         />
         <div className="grid grid-cols-2 gap-4">
-          <Input
+          <DatePicker
             label="Tug'ilgan kun"
-            type="date"
             value={form.birthDate}
-            onChange={(e) => update('birthDate', e.target.value)}
+            onChange={(value: string) => update('birthDate', value)}
           />
           <Select
             label="Jinsi"
@@ -174,11 +174,10 @@ export function TeacherFormModal({ open, onClose, onSubmit, initial, subjects, c
           </Select>
         </div>
         <div>
-          <Input
+          <DatePicker
             label="Maosh qaysi kundan hisoblansin"
-            type="date"
             value={form.salaryStartDate ?? ''}
-            onChange={(e) => update('salaryStartDate', e.target.value)}
+            onChange={(value: string) => update('salaryStartDate', value)}
           />
           <p className="mt-1 text-xs text-slate-400">
             Oylik maosh — <b>dars jadvali</b> va toifaning bir soat narxidan <b>avtomatik</b> hisoblanadi

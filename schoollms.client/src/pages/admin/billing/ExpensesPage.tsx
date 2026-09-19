@@ -51,14 +51,15 @@ import { billingErrorMessage, isEndpointMissing } from '@/api/services/billingEr
 import { expenseCategories, financeCategoryLabel } from '@/config/constants'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
-import { Input, Select } from '@/components/ui/Input'
+import { Select } from '@/components/ui/Input'
 import { Modal } from '@/components/ui/Modal'
-import { formatMoney } from '@/lib/utils'
+import { formatDate, formatMoney } from '@/lib/utils'
 import { AsyncBlock, BillingGuard, Notice, PendingQueue, StatusPill } from './BillingUi'
 import { useBillingAccess } from './access'
 import { ApproveExpenseModal } from './ApproveExpenseModal'
 import { ExpenseFormModal } from './ExpenseFormModal'
 import { ReasonModal } from './ReasonModal'
+import { DatePicker } from '@/components/ui/DatePicker'
 
 const today = () => new Date().toISOString().slice(0, 10)
 const monthStart = () => `${new Date().toISOString().slice(0, 7)}-01`
@@ -357,7 +358,7 @@ function ExpensesView() {
         >
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
-              <thead className="bg-amber-100/60 text-xs uppercase tracking-wide text-amber-800">
+              <thead className="whitespace-nowrap bg-amber-100/60 text-xs uppercase tracking-wide text-amber-800">
                 <tr>
                   <th className="px-4 py-2">Sana</th>
                   <th className="px-4 py-2">Toifa</th>
@@ -370,15 +371,19 @@ function ExpensesView() {
               <tbody className="divide-y divide-amber-100">
                 {pending.map((row) => (
                   <tr key={row.id}>
-                    <td className="px-4 py-3 text-slate-600">{row.onDate}</td>
-                    <td className="px-4 py-3 font-medium text-slate-800">
+                    <td className="whitespace-nowrap px-4 py-3 text-slate-600">{formatDate(row.onDate)}</td>
+                    <td className="whitespace-nowrap px-4 py-3 font-medium text-slate-800">
                       {financeCategoryLabel(row.category)}
                     </td>
-                    <td className="px-4 py-3 text-right font-semibold tabular-nums text-slate-800">
+                    <td className="whitespace-nowrap px-4 py-3 text-right font-semibold tabular-nums text-slate-800">
                       {formatMoney(row.amount)}
                     </td>
-                    <td className="px-4 py-3 text-slate-600">{row.note || '—'}</td>
-                    <td className="px-4 py-3 text-slate-600">{row.createdByName}</td>
+                    <td className="px-4 py-3 text-slate-600">
+                      <span className="block max-w-[14rem] truncate" title={row.note ?? ''}>
+                        {row.note || '—'}
+                      </span>
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-3 text-slate-600">{row.createdByName}</td>
                     <td className="px-4 py-3">{renderActions(row)}</td>
                   </tr>
                 ))}
@@ -398,8 +403,16 @@ function ExpensesView() {
       {/* ---- Filtrlar ---- */}
       <Card>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-          <Input label="Sanadan" type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
-          <Input label="Sanagacha" type="date" value={to} onChange={(e) => setTo(e.target.value)} />
+          <DatePicker
+            label="Sanadan"
+            value={from}
+            onChange={(value: string) => setFrom(value)}
+          />
+          <DatePicker
+            label="Sanagacha"
+            value={to}
+            onChange={(value: string) => setTo(value)}
+          />
           <Select
             label="Toifa bo'yicha"
             value={category}
@@ -434,7 +447,7 @@ function ExpensesView() {
         >
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
-              <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
+              <thead className="whitespace-nowrap bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
                 <tr>
                   <th className="px-4 py-3">Sana</th>
                   <th className="px-4 py-3">Toifa</th>
@@ -453,35 +466,52 @@ function ExpensesView() {
                   const reversed = expenseState(row) === 'reversed'
                   return (
                     <tr key={row.id} className="hover:bg-slate-50/60">
-                      <td className="px-4 py-3 text-slate-600">{row.onDate}</td>
+                      <td className="whitespace-nowrap px-4 py-3 text-slate-600">{formatDate(row.onDate)}</td>
                       <td className="px-4 py-3">
                         <span className="flex items-center gap-3">
                           <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-100 text-slate-500">
                             <Wallet className="h-4 w-4" />
                           </span>
-                          <span className="font-medium text-slate-800">
+                          <span className="whitespace-nowrap font-medium text-slate-800">
                             {financeCategoryLabel(row.category)}
                           </span>
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-slate-600">{row.teacherName ?? '—'}</td>
+                      <td className="whitespace-nowrap px-4 py-3 text-slate-600">
+                        <span className="block max-w-[13rem] truncate" title={row.teacherName ?? ''}>
+                          {row.teacherName ?? '—'}
+                        </span>
+                      </td>
                       <td
-                        className={`px-4 py-3 text-right tabular-nums ${
+                        className={`whitespace-nowrap px-4 py-3 text-right tabular-nums ${
                           reversed ? 'text-slate-400 line-through' : 'font-medium text-slate-800'
                         }`}
                       >
                         {formatMoney(row.amount)}
                       </td>
                       <td className="px-4 py-3 text-slate-600">
-                        {row.note || '—'}
+                        <span className="block max-w-[14rem] truncate" title={row.note ?? ''}>
+                          {row.note || '—'}
+                        </span>
                         {row.reversalReason && (
-                          <span className="block text-xs text-red-600">
+                          <span
+                            className="block max-w-[14rem] truncate text-xs text-red-600"
+                            title={row.reversalReason}
+                          >
                             Storno sababi: {row.reversalReason}
                           </span>
                         )}
                       </td>
-                      <td className="px-4 py-3 text-slate-600">{row.createdByName}</td>
-                      <td className="px-4 py-3 text-slate-600">{row.approvedByName ?? '—'}</td>
+                      <td className="whitespace-nowrap px-4 py-3 text-slate-600">
+                        <span className="block max-w-[11rem] truncate" title={row.createdByName}>
+                          {row.createdByName}
+                        </span>
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-3 text-slate-600">
+                        <span className="block max-w-[11rem] truncate" title={row.approvedByName ?? ''}>
+                          {row.approvedByName ?? '—'}
+                        </span>
+                      </td>
                       <td className="px-4 py-3">
                         {row.attachmentCount > 0 ? (
                           <button

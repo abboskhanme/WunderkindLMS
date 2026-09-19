@@ -79,6 +79,7 @@ import { ClassRosterPage } from '@/pages/admin/classes/ClassRosterPage'
 import { CertificateTypesPage } from '@/pages/admin/certificates/CertificateTypesPage'
 import { HarakatlarPage } from '@/pages/admin/discipline/HarakatlarPage'
 import { AttendanceAnalyticsPage } from '@/pages/admin/attendance/AttendanceAnalyticsPage'
+import { DailyMarkingPage } from '@/pages/admin/attendance/DailyMarkingPage'
 import { TurnstileAnalyticsPage } from '@/pages/admin/turnstile/TurnstileAnalyticsPage'
 import { TurnstileFlowPage } from '@/pages/admin/turnstile/TurnstileFlowPage'
 import { DailyAttendanceReportPage } from '@/pages/admin/turnstile/DailyAttendanceReportPage'
@@ -154,6 +155,9 @@ export default function App() {
           <Route path="certificates/types" element={<RequirePerm perm="students"><CertificateTypesPage /></RequirePerm>} />
           <Route path="attendance" element={<RequirePerm perm="attendance"><AttendancePage /></RequirePerm>} />
           <Route path="attendance/analytics" element={<RequirePerm perm="attendance"><AttendanceAnalyticsPage /></RequirePerm>} />
+          {/* Davomat BELGILASH — mas'ul xodim ekrani (mijoz, 2026-09-18).
+              Ruxsat o'sha `attendance`: xodimga shu bitta ruxsat beriladi. */}
+          <Route path="attendance/mark" element={<RequirePerm perm="attendance"><DailyMarkingPage /></RequirePerm>} />
           <Route path="locations" element={<RequirePerm perm="students"><LocationPage /></RequirePerm>} />
           <Route path="parents" element={<RequirePerm perm="students"><ParentsPage /></RequirePerm>} />
           <Route path="app/teachers" element={<RequirePerm perm="app"><TeacherAppPage /></RequirePerm>} />

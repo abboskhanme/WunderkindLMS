@@ -20,6 +20,7 @@ import { formatMoney } from '@/lib/utils'
 import { Notice } from './BillingUi'
 import { StudentSelect } from './StudentSelect'
 import type { StudentOption } from './useStudents'
+import { DatePicker } from '@/components/ui/DatePicker'
 
 const today = () => new Date().toISOString().slice(0, 10)
 
@@ -200,19 +201,17 @@ export function DiscountFormModal({
         />
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <Input
+          <DatePicker
             label="Boshlanish sanasi"
             required
-            type="date"
             value={startsOn}
-            onChange={(e) => setStartsOn(e.target.value)}
+            onChange={(value: string) => setStartsOn(value)}
           />
           <div>
-            <Input
+            <DatePicker
               label="Tugash sanasi"
-              type="date"
               value={endsOn}
-              onChange={(e) => setEndsOn(e.target.value)}
+              onChange={(value: string) => setEndsOn(value)}
             />
             <p className="mt-1 text-xs text-slate-400">Bo'sh = muddatsiz.</p>
           </div>

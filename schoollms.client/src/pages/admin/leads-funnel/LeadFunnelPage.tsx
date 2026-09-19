@@ -244,7 +244,11 @@ export function LeadFunnelPage() {
                   <tbody className="divide-y divide-slate-100">
                     {funnel.losses.map((l) => (
                       <tr key={l.stageId}>
-                        <td className="px-5 py-3 font-medium text-slate-800">{l.title}</td>
+                        <td className="px-5 py-3 font-medium text-slate-800">
+                      <span className="block max-w-[14rem] truncate" title={l.title}>
+                        {l.title}
+                      </span>
+                    </td>
                         <td className="px-5 py-3 text-center text-slate-600">{l.count}</td>
                         <td className="px-5 py-3 text-center text-slate-500">{l.sharePercent}%</td>
                       </tr>

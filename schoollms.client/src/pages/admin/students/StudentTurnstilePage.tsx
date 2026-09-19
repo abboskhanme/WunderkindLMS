@@ -13,6 +13,7 @@ import { cn } from '@/lib/utils'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Loader } from '@/components/ui/Loader'
+import { DatePicker } from '@/components/ui/DatePicker'
 
 const today = () => {
   const d = new Date()
@@ -148,11 +149,10 @@ export function StudentTurnstilePage() {
                 </option>
               ))}
             </select>
-            <input
-              type="date"
+            <DatePicker
               value={date}
-              onChange={(e) => setDate(e.target.value)}
-              className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 outline-none focus:border-brand-400"
+              onChange={(value: string) => setDate(value)}
+              className="w-40"
             />
             <Button onClick={onSync} disabled={syncing}>
               <RefreshCw className={cn('h-4 w-4', syncing && 'animate-spin')} />
@@ -188,7 +188,7 @@ export function StudentTurnstilePage() {
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
-              <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
+              <thead className="whitespace-nowrap bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
                 <tr>
                   <th className="w-12 px-3 py-2 text-center">№</th>
                   <th className="px-3 py-2">F.I.SH</th>

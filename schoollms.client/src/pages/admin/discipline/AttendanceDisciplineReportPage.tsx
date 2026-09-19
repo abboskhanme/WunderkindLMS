@@ -21,6 +21,7 @@ import { Button } from '@/components/ui/Button'
 import { Loader } from '@/components/ui/Loader'
 import { StatCard } from '@/components/ui/StatCard'
 import { cn, exportToCsv } from '@/lib/utils'
+import { DatePicker } from '@/components/ui/DatePicker'
 
 const control =
   'rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-brand-400'
@@ -98,14 +99,17 @@ export function AttendanceDisciplineReportPage() {
 
       <Card className="flex flex-wrap items-center gap-3 p-4">
         <span className="text-sm font-medium text-slate-600">Davr:</span>
-        <input
-          type="date"
+        <DatePicker
           value={from}
-          onChange={(e) => setFrom(e.target.value)}
-          className={control}
+          onChange={(value: string) => setFrom(value)}
+          className="w-40"
         />
         <span className="text-slate-400">—</span>
-        <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className={control} />
+        <DatePicker
+          value={to}
+          onChange={(value: string) => setTo(value)}
+          className="w-40"
+        />
         <select
           value={classId}
           onChange={(e) => setClassId(e.target.value)}
@@ -188,7 +192,7 @@ export function AttendanceDisciplineReportPage() {
               </div>
               <div className="mt-3 overflow-x-auto">
                 <table className="w-full text-left text-sm">
-                  <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
+                  <thead className="whitespace-nowrap bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
                     <tr>
                       <th className="px-5 py-3">Sinf</th>
                       <th className="px-5 py-3 text-center">O'quvchi</th>
@@ -253,7 +257,7 @@ export function AttendanceDisciplineReportPage() {
               </div>
               <div className="mt-3 overflow-x-auto">
                 <table className="w-full text-left text-sm">
-                  <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
+                  <thead className="whitespace-nowrap bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
                     <tr>
                       <th className="px-5 py-3">O'quvchi</th>
                       <th className="px-5 py-3">Sinf</th>
@@ -276,7 +280,11 @@ export function AttendanceDisciplineReportPage() {
                     ) : (
                       report.students.map((s) => (
                         <tr key={s.studentId} className="hover:bg-slate-50/60">
-                          <td className="px-5 py-3 font-medium text-slate-800">{s.fullName}</td>
+                          <td className="px-5 py-3 font-medium text-slate-800">
+                      <span className="block max-w-[14rem] truncate" title={s.fullName}>
+                        {s.fullName}
+                      </span>
+                    </td>
                           <td className="px-5 py-3 text-slate-500">{s.className}</td>
                           <td className="px-5 py-3 text-center text-slate-600">{s.absences}</td>
                           <td className="px-5 py-3 text-center text-slate-600">{s.lates}</td>
@@ -320,7 +328,7 @@ export function AttendanceDisciplineReportPage() {
                 </h2>
                 <div className="mt-3 overflow-x-auto">
                   <table className="w-full text-left text-sm">
-                    <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
+                    <thead className="whitespace-nowrap bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
                       <tr>
                         <th className="px-5 py-3">Sabab</th>
                         <th className="px-5 py-3">Manba</th>
@@ -332,7 +340,11 @@ export function AttendanceDisciplineReportPage() {
                     <tbody className="divide-y divide-slate-100">
                       {report.reasons.map((r) => (
                         <tr key={`${r.kind}-${r.reasonId}-${r.pointsEach}`}>
-                          <td className="px-5 py-3 font-medium text-slate-800">{r.name}</td>
+                          <td className="px-5 py-3 font-medium text-slate-800">
+                      <span className="block max-w-[14rem] truncate" title={r.name}>
+                        {r.name}
+                      </span>
+                    </td>
                           <td className="px-5 py-3 text-slate-500">
                             {r.kind === 'attendance' ? 'Jurnal davomati' : "Qo'lda kiritilgan"}
                           </td>

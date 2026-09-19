@@ -145,7 +145,11 @@ export function AssignmentScoresPage() {
                   className="cursor-pointer border-b border-slate-100 transition-colors hover:bg-brand-50/50"
                 >
                   <td className="px-4 py-2.5 text-slate-400">{i + 1}</td>
-                  <td className="px-4 py-2.5 font-medium text-slate-700">{row.fullName}</td>
+                  <td className="px-4 py-2.5 font-medium text-slate-700">
+                      <span className="block max-w-[14rem] truncate" title={row.fullName}>
+                        {row.fullName}
+                      </span>
+                    </td>
                   <td className="px-4 py-2.5 text-slate-500">{row.className}</td>
                   <td className="px-4 py-2.5 text-right">
                     {row.gradedCount > 0 ? (

@@ -21,6 +21,7 @@ import { formatMoney } from '@/lib/utils'
 import { Notice } from './BillingUi'
 import { StudentSelect } from './StudentSelect'
 import type { StudentOption } from './useStudents'
+import { DatePicker } from '@/components/ui/DatePicker'
 
 /** Toifaga qarab "tafsilot" maydonining nomi va namunasi. */
 function detailHint(code: string | undefined): { label: string; placeholder: string } {
@@ -240,13 +241,12 @@ export function SubscriptionFormModal({
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
-            <Input
+            <DatePicker
               label="Boshlanish sanasi"
               required
-              type="date"
               value={editing && initial ? initial.startsOn : startsOn}
               disabled={editing}
-              onChange={(e) => setStartsOn(e.target.value)}
+              onChange={(value: string) => setStartsOn(value)}
             />
             {editing && (
               <p className="mt-1 text-xs text-slate-400">
@@ -255,11 +255,10 @@ export function SubscriptionFormModal({
             )}
           </div>
           <div>
-            <Input
+            <DatePicker
               label="Tugash sanasi"
-              type="date"
               value={endsOn}
-              onChange={(e) => setEndsOn(e.target.value)}
+              onChange={(value: string) => setEndsOn(value)}
             />
             <p className="mt-1 text-xs text-slate-400">
               Bo'sh qoldirilsa — muddatsiz, har oy hisoblanadi.

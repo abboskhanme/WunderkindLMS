@@ -13,6 +13,7 @@ import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
 import { Input, Select, Textarea } from '@/components/ui/Input'
 import { cn } from '@/lib/utils'
+import { DatePicker } from '@/components/ui/DatePicker'
 
 interface Props {
   editing: Certificate | null
@@ -280,19 +281,17 @@ export function CertificateFormModal({
 
           <div />
 
-          <Input
+          <DatePicker
             label="Berilgan sana"
             required
-            type="date"
             value={issuedOn}
-            onChange={(e) => setIssuedOn(e.target.value)}
+            onChange={(value: string) => setIssuedOn(value)}
           />
 
-          <Input
+          <DatePicker
             label="Amal qilish muddati"
-            type="date"
             value={expiresOn}
-            onChange={(e) => setExpiresOn(e.target.value)}
+            onChange={(value: string) => setExpiresOn(value)}
           />
         </div>
 

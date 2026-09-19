@@ -7,6 +7,7 @@ import type { CertificateType, IssuingTeacher } from '@/api/services/certificate
 import { genderLabels } from '@/config/constants'
 import { cn } from '@/lib/utils'
 import { StatusChip } from './StatusChip'
+import { DatePicker } from '@/components/ui/DatePicker'
 
 /**
  * O'quvchilar ro'yxatining filtr paneli — §2.3.1 dagi filtrlar ro'yxati.
@@ -417,17 +418,15 @@ export function StudentListFilters({
 
           <Field label="Qabul sanasi">
             <div className="flex items-center gap-2">
-              <input
-                type="date"
+              <DatePicker
                 value={filter.enrolledFrom ?? ''}
-                onChange={(e) => onChange({ enrolledFrom: text(e.target.value) })}
-                className={cn(control, 'w-full')}
+                onChange={(value: string) => onChange({ enrolledFrom: text(value) })}
+                className="w-full"
               />
-              <input
-                type="date"
+              <DatePicker
                 value={filter.enrolledTo ?? ''}
-                onChange={(e) => onChange({ enrolledTo: text(e.target.value) })}
-                className={cn(control, 'w-full')}
+                onChange={(value: string) => onChange({ enrolledTo: text(value) })}
+                className="w-full"
               />
             </div>
           </Field>
@@ -435,17 +434,15 @@ export function StudentListFilters({
           {archived && (
             <Field label="Arxiv sanasi">
               <div className="flex items-center gap-2">
-                <input
-                  type="date"
+                <DatePicker
                   value={filter.archivedFrom ?? ''}
-                  onChange={(e) => onChange({ archivedFrom: text(e.target.value) })}
-                  className={cn(control, 'w-full')}
+                  onChange={(value: string) => onChange({ archivedFrom: text(value) })}
+                  className="w-full"
                 />
-                <input
-                  type="date"
+                <DatePicker
                   value={filter.archivedTo ?? ''}
-                  onChange={(e) => onChange({ archivedTo: text(e.target.value) })}
-                  className={cn(control, 'w-full')}
+                  onChange={(value: string) => onChange({ archivedTo: text(value) })}
+                  className="w-full"
                 />
               </div>
             </Field>

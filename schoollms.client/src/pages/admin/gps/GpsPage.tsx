@@ -14,6 +14,7 @@ import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Loader } from '@/components/ui/Loader'
 import { Modal } from '@/components/ui/Modal'
+import { DatePicker } from '@/components/ui/DatePicker'
 
 const defaultIcon = new L.Icon({
   iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
@@ -215,11 +216,10 @@ export function GpsPage() {
                       <RouteIcon className="h-3.5 w-3.5" />
                       {showRoute ? "Yo'nalishni yashirish" : "Yo'nalishni ko'rsatish"}
                     </button>
-                    <input
-                      type="date"
+                    <DatePicker
                       value={date}
-                      onChange={(e) => setDate(e.target.value)}
-                      className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 outline-none focus:border-brand-400"
+                      onChange={(value: string) => setDate(value)}
+                      className="w-40"
                     />
                   </div>
                 )}
@@ -296,7 +296,7 @@ export function GpsPage() {
                   <Card className="p-0">
                     <div className="overflow-x-auto">
                       <table className="w-full text-left text-sm">
-                        <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
+                        <thead className="whitespace-nowrap bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
                           <tr>
                             <th className="px-4 py-2.5">#</th>
                             <th className="px-4 py-2.5">Kelgan</th>

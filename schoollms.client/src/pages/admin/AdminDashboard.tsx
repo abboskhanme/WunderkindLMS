@@ -218,7 +218,7 @@ function AttendanceByPeriodCard({ rows }: { rows: AttendanceByPeriod[] }) {
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full min-w-[640px] text-sm">
-            <thead>
+            <thead className="whitespace-nowrap">
               <tr className="border-b border-slate-100 text-left text-xs uppercase tracking-wide text-slate-400">
                 <th className="pb-2 pr-3 font-medium">Dars vaqti</th>
                 <th className="pb-2 pr-3 font-medium">O'quvchilar</th>
@@ -305,7 +305,7 @@ function AbsentStudentsCard({ rows }: { rows: AbsentStudent[] }) {
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full min-w-[560px] text-sm">
-            <thead>
+            <thead className="whitespace-nowrap">
               <tr className="border-b border-slate-100 text-left text-xs uppercase tracking-wide text-slate-400">
                 <th className="pb-2 pr-3 font-medium">O'quvchi</th>
                 <th className="pb-2 pr-3 font-medium">Sinf</th>
@@ -316,7 +316,11 @@ function AbsentStudentsCard({ rows }: { rows: AbsentStudent[] }) {
             <tbody>
               {shown.slice(0, 20).map((r) => (
                 <tr key={r.studentId} className="border-b border-slate-50 last:border-0">
-                  <td className="py-2 pr-3 text-slate-700">{r.fullName}</td>
+                  <td className="py-2 pr-3 text-slate-700">
+                      <span className="block max-w-[14rem] truncate" title={r.fullName}>
+                        {r.fullName}
+                      </span>
+                    </td>
                   <td className="py-2 pr-3 text-slate-500">{r.className || '—'}</td>
                   <td className="py-2 pr-3 font-medium tabular-nums text-red-600">
                     {r.missedDays} kun

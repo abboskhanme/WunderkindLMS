@@ -50,6 +50,7 @@ import { Button } from '@/components/ui/Button'
 import { Input, Select, Textarea } from '@/components/ui/Input'
 import { formatMoney } from '@/lib/utils'
 import { Notice } from './BillingUi'
+import { DatePicker } from '@/components/ui/DatePicker'
 
 const today = () => new Date().toISOString().slice(0, 10)
 
@@ -191,13 +192,12 @@ export function ExpenseFormModal({
     >
       <form id="expense-form" onSubmit={handleSubmit} className="space-y-4">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <Input
+          <DatePicker
             label="Sana"
             required
-            type="date"
             value={onDate}
             max={today()}
-            onChange={(e) => setOnDate(e.target.value)}
+            onChange={(value: string) => setOnDate(value)}
           />
           <Select
             label="Toifa"

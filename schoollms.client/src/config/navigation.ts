@@ -181,7 +181,7 @@ export const navByRole: Record<Role, NavItem[]> = {
         // Bayram kunlari SOZLAMALAR bo'limiga ("Umumiy sozlamalar") ko'chdi —
         // mijoz qoidasi: ishchi bo'limlar ichida sozlama turmaydi.
         // Eski manzillar (`/admin/settings/quarters` va h.k.) ishlashda qoladi.
-        { label: 'Sinf jadvali', to: '/admin/schedule', end: true, group: 'JADVAL' },
+        { label: 'Dars jadvali', to: '/admin/schedule', end: true, group: 'JADVAL' },
         { label: "O'qituvchi jadvali", to: '/admin/schedule/teachers', group: 'JADVAL' },
         { label: 'Dars jadvali yaratish', to: '/admin/schedule/manage', group: 'JADVAL' },
       ],
@@ -197,6 +197,9 @@ export const navByRole: Record<Role, NavItem[]> = {
       icon: CalendarCheck,
       perm: 'attendance',
       children: [
+        // Belgilash BIRINCHI: mas'ul xodim bu bo'limga har kuni AYNAN shu ish
+        // uchun kiradi (mijoz, 2026-09-18), hisobot esa keyin o'qiladi.
+        { label: 'Davomat belgilash', to: '/admin/attendance/mark', group: 'DAVOMAT' },
         { label: 'Kunlik davomat', to: '/admin/attendance', end: true, group: 'DAVOMAT' },
         { label: 'Davomat analitikasi', to: '/admin/attendance/analytics', group: 'DAVOMAT' },
       ],

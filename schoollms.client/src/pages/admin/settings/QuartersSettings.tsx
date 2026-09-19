@@ -6,11 +6,10 @@ import { cn } from '@/lib/utils'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Loader } from '@/components/ui/Loader'
+import { DatePicker } from '@/components/ui/DatePicker'
 
 type Status = 'idle' | 'saving' | 'saved'
 
-const control =
-  'rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-brand-400'
 
 /**
  * O'quv yilida har doim 4 ta chorak bo'ladi — bazada yo'q (yoki kam) bo'lsa ham
@@ -81,18 +80,16 @@ export function QuartersSettings() {
               className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-100 p-2"
             >
               <span className="w-20 text-sm font-medium text-slate-600">{q.quarter}-chorak</span>
-              <input
-                type="date"
+              <DatePicker
                 value={q.startDate}
-                onChange={(e) => updateQuarter(i, 'startDate', e.target.value)}
-                className={control}
+                onChange={(value: string) => updateQuarter(i, 'startDate', value)}
+                className="w-40"
               />
               <span className="text-slate-400">—</span>
-              <input
-                type="date"
+              <DatePicker
                 value={q.endDate}
-                onChange={(e) => updateQuarter(i, 'endDate', e.target.value)}
-                className={control}
+                onChange={(value: string) => updateQuarter(i, 'endDate', value)}
+                className="w-40"
               />
               <label
                 className={cn(

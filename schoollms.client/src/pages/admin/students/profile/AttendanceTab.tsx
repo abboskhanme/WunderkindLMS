@@ -5,6 +5,8 @@ import { getStudentAttendanceRange } from '@/api/services/studentProfile'
 import { Loader } from '@/components/ui/Loader'
 import { cn, formatDate } from '@/lib/utils'
 import { ProfileEmpty, ProfileError, ProfileSection } from './ProfileUi'
+import { DatePicker } from '@/components/ui/DatePicker'
+import { MonthPicker } from '@/components/ui/DatePicker'
 
 /**
  * Kartochkaning "Davomat" tab'i — docs/modules/students-parity.md §2.3
@@ -104,26 +106,23 @@ export function AttendanceTab({ studentId }: { studentId: string }) {
         ))}
       </div>
       {mode === 'month' ? (
-        <input
-          type="month"
+        <MonthPicker
           value={month}
-          onChange={(e) => setMonth(e.target.value)}
-          className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 outline-none focus:border-brand-400"
+          onChange={(value: string) => setMonth(value)}
+          className="w-44"
         />
       ) : (
         <>
-          <input
-            type="date"
+          <DatePicker
             value={from}
-            onChange={(e) => setFrom(e.target.value)}
-            className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 outline-none focus:border-brand-400"
+            onChange={(value: string) => setFrom(value)}
+            className="w-40"
           />
           <span className="text-sm text-slate-400">—</span>
-          <input
-            type="date"
+          <DatePicker
             value={to}
-            onChange={(e) => setTo(e.target.value)}
-            className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 outline-none focus:border-brand-400"
+            onChange={(value: string) => setTo(value)}
+            className="w-40"
           />
         </>
       )}
@@ -200,7 +199,7 @@ export function AttendanceTab({ studentId }: { studentId: string }) {
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-left text-sm">
-                <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
+                <thead className="whitespace-nowrap bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
                   <tr>
                     <th className="px-3 py-2">Fan</th>
                     <th className="px-3 py-2 text-center">O'tilgan</th>

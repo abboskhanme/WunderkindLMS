@@ -241,7 +241,7 @@ export function TurnstileAnalyticsPage() {
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
-              <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
+              <thead className="whitespace-nowrap bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
                 <tr>
                   <th className="px-4 py-3">F.I.SH</th>
                   <th className="px-4 py-3">Sinf</th>
@@ -256,7 +256,11 @@ export function TurnstileAnalyticsPage() {
               <tbody className="divide-y divide-slate-100">
                 {report.rows.map((r) => (
                   <tr key={r.studentId} className="hover:bg-slate-50/60">
-                    <td className="px-4 py-3 font-medium text-slate-800">{r.fullName}</td>
+                    <td className="px-4 py-3 font-medium text-slate-800">
+                      <span className="block max-w-[14rem] truncate" title={r.fullName}>
+                        {r.fullName}
+                      </span>
+                    </td>
                     <td className="px-4 py-3 text-slate-500">{r.className || '—'}</td>
                     <td className="px-4 py-3 text-center text-slate-600">{r.daysEntered}</td>
                     <td className={cn('px-4 py-3 text-center', r.daysMissed > 0 ? 'font-medium text-rose-600' : 'text-slate-300')}>
@@ -331,7 +335,7 @@ export function TurnstileAnalyticsPage() {
           <>
             <div className="overflow-x-auto">
               <table className="w-full text-left text-sm">
-                <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
+                <thead className="whitespace-nowrap bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
                   <tr>
                     <th className="px-4 py-3">Sana</th>
                     <th className="px-4 py-3">F.I.SH</th>
@@ -347,7 +351,11 @@ export function TurnstileAnalyticsPage() {
                   {violations.items.map((v) => (
                     <tr key={`${v.studentId}-${v.date}-${v.type}`} className="hover:bg-slate-50/60">
                       <td className="px-4 py-3 text-slate-500">{shortDate(v.date)}</td>
-                      <td className="px-4 py-3 font-medium text-slate-800">{v.fullName}</td>
+                      <td className="px-4 py-3 font-medium text-slate-800">
+                      <span className="block max-w-[14rem] truncate" title={v.fullName}>
+                        {v.fullName}
+                      </span>
+                    </td>
                       <td className="px-4 py-3 text-slate-500">{v.className || '—'}</td>
                       <td className="px-4 py-3">
                         <span

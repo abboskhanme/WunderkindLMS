@@ -238,7 +238,7 @@ function DebtSection({ data }: { data: PortalFinance }) {
 
       <div className="overflow-x-auto">
         <table className="w-full text-left text-sm">
-          <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
+          <thead className="whitespace-nowrap bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
             <tr>
               <th className="px-3 py-2">Oy</th>
               <th className="px-3 py-2">Toifa</th>
@@ -379,7 +379,7 @@ function CategoryTable({
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-left text-sm">
-        <thead className="bg-white text-xs uppercase tracking-wide text-slate-400">
+        <thead className="whitespace-nowrap bg-white text-xs uppercase tracking-wide text-slate-400">
           <tr>
             <th className="px-4 py-2">Toifa</th>
             <th className="px-4 py-2 text-right">Summa</th>

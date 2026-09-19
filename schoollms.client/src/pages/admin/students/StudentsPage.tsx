@@ -534,12 +534,17 @@ export function StudentsPage({ initialTab = 'active' }: { initialTab?: Tab } = {
           </div>
         )}
 
+        {/*
+          Har bir qator BIR QATOR bo'lib o'qilsin: kataklar tagma-tag tushmaydi
+          (`whitespace-nowrap`), uzun matn "..." bilan kesiladi (to'lig'i `title`da),
+          jadval sig'masa esa shu quti ichida yonboshiga suriladi — sahifa emas.
+        */}
         {loading ? (
           <Loader label="Yuklanmoqda..." />
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
-              <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
+              <thead className="whitespace-nowrap bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
                 <tr>
                   <th className="w-10 px-4 py-3">
                     <input
@@ -583,21 +588,31 @@ export function StudentsPage({ initialTab = 'active' }: { initialTab?: Tab } = {
                         className="h-4 w-4 accent-brand-600"
                       />
                     </td>
-                    <td className="px-2 py-3 text-slate-400">{(page.page - 1) * page.pageSize + i + 1}</td>
-                    <td className="px-4 py-3 font-medium text-slate-800">{s.fullName}</td>
+                    <td className="whitespace-nowrap px-2 py-3 text-slate-400">
+                      {(page.page - 1) * page.pageSize + i + 1}
+                    </td>
+                    <td className="px-4 py-3 font-medium text-slate-800">
+                      <span className="block max-w-[15rem] truncate" title={s.fullName}>
+                        {s.fullName}
+                      </span>
+                    </td>
                     <td className="px-4 py-3">
-                      <span className="rounded-md bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
+                      <span className="whitespace-nowrap rounded-md bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
                         {s.className}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-slate-600">{genderLabels[s.gender]}</td>
-                    <td className="px-4 py-3 text-slate-600">
+                    <td className="whitespace-nowrap px-4 py-3 text-slate-600">{genderLabels[s.gender]}</td>
+                    <td className="whitespace-nowrap px-4 py-3 text-slate-600">
                       {formatDate(s.birthDate)}
                       {s.age !== null && <span className="ml-1 text-xs text-slate-400">({s.age})</span>}
                     </td>
-                    <td className="px-4 py-3 text-slate-600">{s.phone ?? '—'}</td>
-                    <td className="px-4 py-3 text-slate-600">{s.parentFullName}</td>
-                    <td className="px-4 py-3 text-slate-600">{s.parentPhone}</td>
+                    <td className="whitespace-nowrap px-4 py-3 text-slate-600">{s.phone ?? '—'}</td>
+                    <td className="px-4 py-3 text-slate-600">
+                      <span className="block max-w-[13rem] truncate" title={s.parentFullName}>
+                        {s.parentFullName}
+                      </span>
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-3 text-slate-600">{s.parentPhone}</td>
                     <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                       {statuses.length === 0 ? (
                         <span className="text-slate-300">—</span>
@@ -606,7 +621,7 @@ export function StudentsPage({ initialTab = 'active' }: { initialTab?: Tab } = {
                           {s.statusName ? (
                             <StatusChip name={s.statusName} color={s.statusColor} />
                           ) : (
-                            <span className="rounded-md border border-dashed border-slate-200 px-2 py-0.5 text-xs text-slate-400">
+                            <span className="whitespace-nowrap rounded-md border border-dashed border-slate-200 px-2 py-0.5 text-xs text-slate-400">
                               Holat yo'q
                             </span>
                           )}
@@ -627,7 +642,7 @@ export function StudentsPage({ initialTab = 'active' }: { initialTab?: Tab } = {
                         </div>
                       )}
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="whitespace-nowrap px-4 py-3">
                       <span
                         className={cn(
                           'font-medium',
@@ -638,16 +653,15 @@ export function StudentsPage({ initialTab = 'active' }: { initialTab?: Tab } = {
                       </span>
                     </td>
                     {tab === 'archived' && (
-                      <td className="px-4 py-3 text-slate-600">
+                      <td className="whitespace-nowrap px-4 py-3 text-slate-600">
                         {s.archivedAt ? formatDate(s.archivedAt) : '—'}
                       </td>
                     )}
                     {tab === 'archived' && (
-                      <td
-                        className="max-w-[18rem] truncate px-4 py-3 text-slate-600"
-                        title={s.archiveReason ?? ''}
-                      >
-                        {s.archiveReason || '—'}
+                      <td className="px-4 py-3 text-slate-600">
+                        <span className="block max-w-[18rem] truncate" title={s.archiveReason ?? ''}>
+                          {s.archiveReason || '—'}
+                        </span>
                       </td>
                     )}
                     <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>

@@ -49,6 +49,7 @@ import { StatCard } from '@/components/ui/StatCard'
 import { BillingGuard, Notice, StatusPill } from './BillingUi'
 import { useBillingAccess } from './access'
 import { VoidInvoiceModal } from './VoidInvoiceModal'
+import { MonthPicker } from '@/components/ui/DatePicker'
 
 const control =
   'rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-brand-400'
@@ -294,18 +295,16 @@ function InvoicesView() {
 
       <Card className="p-0">
         <div className="flex flex-wrap items-center gap-3 border-b border-slate-100 p-4">
-          <input
-            type="month"
+          <MonthPicker
             value={filters.fromMonth}
-            onChange={(e) => set({ fromMonth: e.target.value })}
-            className={control}
+            onChange={(value: string) => set({ fromMonth: value })}
+            className="w-44"
           />
           <span className="text-sm text-slate-400">—</span>
-          <input
-            type="month"
+          <MonthPicker
             value={filters.toMonth}
-            onChange={(e) => set({ toMonth: e.target.value })}
-            className={control}
+            onChange={(value: string) => set({ toMonth: value })}
+            className="w-44"
           />
           <select
             value={filters.className}
@@ -376,7 +375,10 @@ function InvoicesView() {
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
-              <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
+              {/* Bir qator — bir satr (mijoz, 2026-09-18). Uzun ism "..." bilan
+                  kesiladi, to'lig'i hoverda; sig'masa jadval o'z qutisida
+                  yonga suriladi. */}
+              <thead className="whitespace-nowrap bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
                 <tr>
                   <th className="px-4 py-3">O'quvchi</th>
                   <th className="px-4 py-3">Sinf</th>
@@ -398,17 +400,21 @@ function InvoicesView() {
                     key={row.id}
                     className={cn('hover:bg-slate-50/60', row.status === 'void' && 'text-slate-400')}
                   >
-                    <td className="px-4 py-3 font-medium text-slate-800">{row.studentName}</td>
+                    <td className="px-4 py-3 font-medium text-slate-800">
+                      <span className="block max-w-[14rem] truncate" title={row.studentName}>
+                        {row.studentName}
+                      </span>
+                    </td>
                     <td className="px-4 py-3">
                       {data.classNames[row.studentId] ? (
-                        <span className="rounded-md bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
+                        <span className="whitespace-nowrap rounded-md bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
                           {data.classNames[row.studentId]}
                         </span>
                       ) : (
                         <span className="text-slate-400">—</span>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-slate-600">{row.categoryName}</td>
+                    <td className="whitespace-nowrap px-4 py-3 text-slate-600">{row.categoryName}</td>
                     <td className="whitespace-nowrap px-4 py-3 text-slate-600">
                       {formatMonth(row.periodMonth.slice(0, 7))}
                     </td>

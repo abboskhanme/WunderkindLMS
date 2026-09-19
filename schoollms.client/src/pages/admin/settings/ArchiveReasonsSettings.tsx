@@ -112,7 +112,7 @@ export function ArchiveReasonsSettings() {
 
       <div className="overflow-x-auto">
         <table className="w-full text-left text-sm">
-          <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
+          <thead className="whitespace-nowrap bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
             <tr>
               <th className="w-16 px-4 py-3">Tartib</th>
               <th className="px-4 py-3">Sabab</th>
@@ -126,8 +126,10 @@ export function ArchiveReasonsSettings() {
               <tr key={r.id} className={cn('hover:bg-slate-50/60', !r.isActive && 'text-slate-400')}>
                 <td className="px-4 py-3 text-slate-400">{r.position}</td>
                 <td className={cn('px-4 py-3 font-medium', r.isActive ? 'text-slate-800' : 'text-slate-400')}>
-                  {r.name}
-                </td>
+                      <span className="block max-w-[14rem] truncate" title={r.name}>
+                        {r.name}
+                      </span>
+                    </td>
                 <td className="px-4 py-3 text-slate-600">{r.usedBy} ta o'quvchi</td>
                 <td className="px-4 py-3">
                   <span

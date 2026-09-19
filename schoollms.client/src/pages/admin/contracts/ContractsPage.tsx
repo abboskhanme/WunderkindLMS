@@ -294,7 +294,7 @@ function SendPanel({ target }: { target: Target }) {
 
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm">
-            <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
+            <thead className="whitespace-nowrap bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
               <tr>
                 <th className="w-10 px-4 py-3">
                   <input
@@ -323,7 +323,11 @@ function SendPanel({ target }: { target: Target }) {
                       className="h-4 w-4 accent-brand-600 disabled:cursor-not-allowed"
                     />
                   </td>
-                  <td className="px-4 py-3 font-medium text-slate-800">{r.name}</td>
+                  <td className="px-4 py-3 font-medium text-slate-800">
+                      <span className="block max-w-[14rem] truncate" title={r.name}>
+                        {r.name}
+                      </span>
+                    </td>
                   <td className="px-4 py-3 text-slate-500">{r.sub}</td>
                   <td className="px-4 py-3">
                     {r.registered ? (

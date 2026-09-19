@@ -8,6 +8,7 @@ import {
 import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
 import { Input, Textarea } from '@/components/ui/Input'
+import { DatePicker } from '@/components/ui/DatePicker'
 
 interface Props {
   open: boolean
@@ -143,17 +144,15 @@ export function AttachContractModal({ open, onClose, students, onDone }: Props) 
             placeholder="masalan 142"
           />
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-            <Input
+            <DatePicker
               label="Imzo sanasi"
-              type="date"
               value={signedOn}
-              onChange={(e) => setSignedOn(e.target.value)}
+              onChange={(value: string) => setSignedOn(value)}
             />
-            <Input
+            <DatePicker
               label="Tugash sanasi (ixtiyoriy)"
-              type="date"
               value={endsOn}
-              onChange={(e) => setEndsOn(e.target.value)}
+              onChange={(value: string) => setEndsOn(value)}
             />
           </div>
           <Textarea

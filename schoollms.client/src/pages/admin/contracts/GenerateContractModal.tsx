@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/Button'
 import { Input, Select, Textarea } from '@/components/ui/Input'
 import { Loader } from '@/components/ui/Loader'
 import { Modal } from '@/components/ui/Modal'
+import { DatePicker } from '@/components/ui/DatePicker'
 
 interface Props {
   open: boolean
@@ -144,17 +145,15 @@ export function GenerateContractModal({
               value={number}
               onChange={(e) => setNumber(e.target.value)}
             />
-            <Input
+            <DatePicker
               label="Imzo sanasi"
-              type="date"
               value={signedOn}
-              onChange={(e) => setSignedOn(e.target.value)}
+              onChange={(value: string) => setSignedOn(value)}
             />
-            <Input
+            <DatePicker
               label="Tugash sanasi"
-              type="date"
               value={endsOn}
-              onChange={(e) => setEndsOn(e.target.value)}
+              onChange={(value: string) => setEndsOn(value)}
             />
           </div>
 

@@ -145,7 +145,11 @@ export function AdjustmentReasonsModal({ open, kind, onClose, onChanged }: Props
                 )}
                 {rows.map((row) => (
                   <tr key={row.id} className="hover:bg-slate-50/60">
-                    <td className="px-3 py-2 font-medium text-slate-800">{row.name}</td>
+                    <td className="px-3 py-2 font-medium text-slate-800">
+                      <span className="block max-w-[14rem] truncate" title={row.name}>
+                        {row.name}
+                      </span>
+                    </td>
                     <td className="px-3 py-2">
                       <button type="button" onClick={() => toggleActive(row)}>
                         {row.isActive

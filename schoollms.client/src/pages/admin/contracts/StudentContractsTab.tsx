@@ -23,6 +23,7 @@ import { Loader } from '@/components/ui/Loader'
 import { cn } from '@/lib/utils'
 import { GenerateContractModal } from './GenerateContractModal'
 import { StudentContractFormModal } from './StudentContractFormModal'
+import { DatePicker } from '@/components/ui/DatePicker'
 
 /**
  * O'quvchi shartnomalari reyestri — docs/modules/students-parity.md §2.10 (K-1).
@@ -192,21 +193,19 @@ export function StudentContractsTab() {
           <option value="uploaded">{contractSourceLabels.uploaded}</option>
         </Select>
 
-        <Input
+        <DatePicker
           label="Imzo sanasi (dan)"
-          type="date"
           value={from}
-          onChange={(e) => {
-            setFrom(e.target.value)
+          onChange={(value: string) => {
+            setFrom(value)
             resetPage()
           }}
         />
-        <Input
+        <DatePicker
           label="Imzo sanasi (gacha)"
-          type="date"
           value={to}
-          onChange={(e) => {
-            setTo(e.target.value)
+          onChange={(value: string) => {
+            setTo(value)
             resetPage()
           }}
         />
@@ -232,7 +231,7 @@ export function StudentContractsTab() {
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
-              <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
+              <thead className="whitespace-nowrap bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
                 <tr>
                   <th className="px-4 py-3">Raqam</th>
                   <th className="px-4 py-3">O'quvchi</th>
@@ -250,7 +249,11 @@ export function StudentContractsTab() {
                     <td className="px-4 py-3 font-medium text-slate-800">
                       {row.number ? `№ ${row.number}` : '—'}
                     </td>
-                    <td className="px-4 py-3 text-slate-700">{row.studentName}</td>
+                    <td className="px-4 py-3 text-slate-700">
+                      <span className="block max-w-[14rem] truncate" title={row.studentName}>
+                        {row.studentName}
+                      </span>
+                    </td>
                     <td className="px-4 py-3 text-slate-500">{row.className || '—'}</td>
                     <td className="px-4 py-3 text-slate-500">{row.signedOn ?? '—'}</td>
                     <td className="px-4 py-3 text-slate-500">{row.endsOn ?? '—'}</td>

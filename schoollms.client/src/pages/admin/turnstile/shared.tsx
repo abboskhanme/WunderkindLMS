@@ -1,4 +1,5 @@
 import { cn } from '@/lib/utils'
+import { DatePicker } from '@/components/ui/DatePicker'
 
 /**
  * Turniket hisobotlarining umumiy KOMPONENTLARI (#11, #12, #13).
@@ -38,12 +39,11 @@ interface DateInputProps {
 
 export function DateInput({ value, onChange, title }: DateInputProps) {
   return (
-    <input
-      type="date"
+    <DatePicker
       value={value}
       title={title}
-      onChange={(e) => onChange(e.target.value)}
-      className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 outline-none focus:border-brand-400"
+      onChange={(value: string) => onChange(value)}
+      className="w-40"
     />
   )
 }

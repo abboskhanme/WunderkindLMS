@@ -15,6 +15,7 @@ import { cn } from '@/lib/utils'
 import { Card } from '@/components/ui/Card'
 import { Loader } from '@/components/ui/Loader'
 import { StatCard } from '@/components/ui/StatCard'
+import { DatePicker } from '@/components/ui/DatePicker'
 
 const control =
   'rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-brand-400'
@@ -187,18 +188,16 @@ export function HarakatlarPage() {
         {/* Filtrlar */}
         <div className="space-y-3 border-b border-slate-100 p-4">
           <div className="flex flex-wrap items-center gap-2">
-            <input
-              type="date"
+            <DatePicker
               value={filters.from}
-              onChange={(e) => set({ from: e.target.value })}
-              className={control}
+              onChange={(value: string) => set({ from: value })}
+              className="w-40"
             />
             <span className="text-sm text-slate-400">—</span>
-            <input
-              type="date"
+            <DatePicker
               value={filters.to}
-              onChange={(e) => set({ to: e.target.value })}
-              className={control}
+              onChange={(value: string) => set({ to: value })}
+              className="w-40"
             />
             <div className="flex items-center gap-1">
               {[
@@ -299,7 +298,7 @@ export function HarakatlarPage() {
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
-              <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
+              <thead className="whitespace-nowrap bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
                 <tr>
                   <th className="px-4 py-3">Sana</th>
                   <th className="px-4 py-3">F.I.SH</th>
@@ -316,13 +315,21 @@ export function HarakatlarPage() {
                     <td className="whitespace-nowrap px-4 py-3 text-slate-500">
                       {formatWhen(row.createdAt)}
                     </td>
-                    <td className="px-4 py-3 font-medium text-slate-800">{row.fullName}</td>
+                    <td className="px-4 py-3 font-medium text-slate-800">
+                      <span className="block max-w-[14rem] truncate" title={row.fullName}>
+                        {row.fullName}
+                      </span>
+                    </td>
                     <td className="px-4 py-3">
                       <span className="rounded-md bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
                         {row.className}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-slate-700">{row.reasonName}</td>
+                    <td className="px-4 py-3 text-slate-700">
+                      <span className="block max-w-[14rem] truncate" title={row.reasonName}>
+                        {row.reasonName}
+                      </span>
+                    </td>
                     <td className="px-4 py-3 text-center">
                       <span
                         className={cn(

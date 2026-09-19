@@ -120,7 +120,7 @@ export function CertificateResultsTab({ scoredTypes, classNames }: Props) {
           <Card className="p-0">
             <div className="overflow-x-auto">
               <table className="w-full text-left text-sm">
-                <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
+                <thead className="whitespace-nowrap bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
                   <tr>
                     <th className="w-10 px-4 py-3">#</th>
                     <th className="px-4 py-3">O'quvchi</th>
@@ -135,7 +135,11 @@ export function CertificateResultsTab({ scoredTypes, classNames }: Props) {
                   {data.rows.map((r, i) => (
                     <tr key={r.studentId} className="hover:bg-slate-50/60">
                       <td className="px-4 py-3 text-slate-400">{i + 1}</td>
-                      <td className="px-4 py-3 font-medium text-slate-800">{r.studentName}</td>
+                      <td className="px-4 py-3 font-medium text-slate-800">
+                      <span className="block max-w-[14rem] truncate" title={r.studentName}>
+                        {r.studentName}
+                      </span>
+                    </td>
                       <td className="px-4 py-3 text-slate-500">{r.className || '—'}</td>
                       <td
                         className={cn(

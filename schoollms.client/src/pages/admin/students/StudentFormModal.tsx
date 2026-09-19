@@ -17,6 +17,7 @@ import { Button } from '@/components/ui/Button'
 import { Input, Select } from '@/components/ui/Input'
 import { genderOptions } from '@/config/constants'
 import { randomPassword, cn } from '@/lib/utils'
+import { DatePicker } from '@/components/ui/DatePicker'
 
 interface Props {
   open: boolean
@@ -444,12 +445,11 @@ export function StudentFormModal({ open, onClose, onSubmit, initial }: Props) {
             />
           </div>
           <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
-            <Input
+            <DatePicker
               label="Tug'ilgan kun"
-              type="date"
               max={today}
               value={form.birthDate}
-              onChange={(e) => update('birthDate', e.target.value)}
+              onChange={(value: string) => update('birthDate', value)}
             />
             <Select
               label="Jinsi"
@@ -704,11 +704,10 @@ export function StudentFormModal({ open, onClose, onSubmit, initial }: Props) {
                 ))}
               </Select>
             )}
-            <Input
+            <DatePicker
               label="Maktabga kelgan sana"
-              type="date"
               value={form.enrollmentDate}
-              onChange={(e) => update('enrollmentDate', e.target.value)}
+              onChange={(value: string) => update('enrollmentDate', value)}
             />
           </div>
           <label className="mt-3 flex items-center gap-2 text-sm text-slate-600">

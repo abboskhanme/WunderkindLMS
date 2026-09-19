@@ -29,11 +29,12 @@ import { canVoid } from '@/api/services/invoices'
 import { billingErrorMessage } from '@/api/services/billingError'
 import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
-import { Input, Textarea } from '@/components/ui/Input'
+import { Textarea } from '@/components/ui/Input'
 import { Loader } from '@/components/ui/Loader'
 import { formatMoney } from '@/lib/utils'
 import { formatMonth } from '@/config/constants'
 import { Notice } from './BillingUi'
+import { DatePicker } from '@/components/ui/DatePicker'
 
 const MIN_REASON = 3
 
@@ -148,13 +149,12 @@ export function EndSubscriptionModal({
           </p>
         </div>
 
-        <Input
+        <DatePicker
           label="Tugash sanasi"
           required
-          type="date"
           min={subscription.startsOn}
           value={endsOn}
-          onChange={(e) => setEndsOn(e.target.value)}
+          onChange={(value: string) => setEndsOn(value)}
         />
 
         <p className="text-sm text-slate-500">
