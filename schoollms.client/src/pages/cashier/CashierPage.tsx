@@ -500,6 +500,8 @@ export function CashierPage() {
     method: PaymentMethod
     note: string
     receivedOn: string
+    /** Kirim QAYSI kassada bosilgan — to'lov o'sha kassaga yoziladi (mijoz, 2026-09-22). */
+    cashBoxId: string
   } | null>(null)
   const [receipt, setReceipt] = useState<Payment | null>(null)
 
@@ -832,6 +834,7 @@ export function CashierPage() {
           method={splitDraft.method}
           note={splitDraft.note}
           receivedOn={splitDraft.receivedOn}
+          cashBoxId={splitDraft.cashBoxId}
           onClose={() => setSplitDraft(null)}
           onAccepted={(payment) => {
             setSplitDraft(null)
@@ -1144,6 +1147,7 @@ interface IncomeFormProps {
     method: PaymentMethod
     note: string
     receivedOn: string
+    cashBoxId: string
   }) => void
   /** Oddiy kassa kirimi yozilgach. */
   onDone: () => void
@@ -1269,7 +1273,7 @@ function IncomeForm({
     // O'quvchi to'lovi — pul hisob-fakturalarga taqsimlanadi, yozuvni
     // taqsimot oynasi yozadi (`acceptPayment`).
     if (studentMode && student) {
-      onStudentSubmit({ amount, method, note: note.trim(), receivedOn: date })
+      onStudentSubmit({ amount, method, note: note.trim(), receivedOn: date, cashBoxId: box.id })
       return
     }
 

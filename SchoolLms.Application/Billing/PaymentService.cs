@@ -426,9 +426,13 @@ public sealed class PaymentService(
                 "To'lovning jurnal yozuvi topilmadi — storno jurnalni nomutanosib "
                 + "qoldirardi. Moliya mas'uliga murojaat qiling.");
 
-        // Storno qatori QAYSI kassaga qaytishi — so'rovda ko'rsatilgan, aks
-        // holda SUKUT kassa ("smena" endi yo'q — mijoz javobi, 2026-09).
-        var box = cashBoxId ?? await CashBoxService.DefaultBoxIdAsync(db, ct);
+        // Storno qatori QAYSI kassaga qaytishi — so'rovda ko'rsatilgan, aks holda
+        // PULNI OLGAN kassaning O'ZI (mijoz, 2026-09-22: "birniki birinikiga
+        // o'tmasin"). Ilgari bu yerda SUKUT kassa turardi: "Turdali aka" da olingan
+        // to'lovni storno qilish "Mirzoulug'bek" dan minus qilardi va ikkala kassa
+        // ham jimgina noto'g'ri bo'lib qolardi. Asl to'lovda kassa bo'lmasa (eski,
+        // "smena" davridagi qator) — sukut kassa, oxirgi chora sifatida.
+        var box = cashBoxId ?? original.CashBoxId ?? await CashBoxService.DefaultBoxIdAsync(db, ct);
         await RequireActiveBoxAsync(box, ct);
 
         await using var tx = await db.BeginTransactionAsync(ct);

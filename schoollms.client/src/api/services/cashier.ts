@@ -144,6 +144,12 @@ export interface AcceptPaymentPayload {
    * jurnal sanasi o'sha kunga tushadi (`AcceptPaymentRequest.ReceivedOn`).
    */
   receivedOn?: string
+  /**
+   * To'lov QAYSI kassada olindi. Berilmasa server sukutdagi kassaga yozadi —
+   * ya'ni ikkinchi kassirning puli birinchisining kassasida ko'rinardi
+   * (mijoz, 2026-09-22). Kirim oynasi har doim o'zi ochilgan kassani yuboradi.
+   */
+  cashBoxId?: string
 }
 
 /**

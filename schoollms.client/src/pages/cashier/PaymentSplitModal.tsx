@@ -28,6 +28,8 @@ interface PaymentSplitModalProps {
    * (`AcceptPaymentRequest.ReceivedOn`).
    */
   receivedOn: string
+  /** Kirim oynasi qaysi kassada ochilgan — to'lov AYNAN o'sha kassaga yoziladi. */
+  cashBoxId: string
   onClose: () => void
   onAccepted: (payment: Payment) => void
 }
@@ -68,6 +70,7 @@ export function PaymentSplitModal({
   method,
   note,
   receivedOn,
+  cashBoxId,
   onClose,
   onAccepted,
 }: PaymentSplitModalProps) {
@@ -154,6 +157,7 @@ export function PaymentSplitModal({
         note: note.trim() || undefined,
         allocations,
         receivedOn,
+        cashBoxId,
       })
       onAccepted(payment)
     } catch (err) {

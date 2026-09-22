@@ -118,6 +118,37 @@ public class CashBoxLedgerSourcesTests(ApiFixture fixture)
     // =====================================================================
 
     /// <summary>
+    /// Storno so'rovida kassa KO'RSATILMASA — pul ASL kassaga qaytadi, sukutdagi
+    /// kassaga emas (mijoz, 2026-09-22: "birniki birinikiga o'tmasin"). Ilgari
+    /// bu yerda sukut kassa turardi va bitta storno ikkita kassani birdan
+    /// noto'g'ri qilib qo'yardi: birida ortiqcha pul, ikkinchisida yetishmovchilik.
+    /// </summary>
+    [Fact]
+    public async Task Storno_kassa_korsatilmasa_asl_kassaga_qaytadi()
+    {
+        var (_, admin) = await ActorAsync(Roles.Admin);
+        var (_, cashier) = await ActorAsync(Roles.Cashier);
+        var box = await CreateBoxAsync(admin);
+        var student = await NewStudentAsync();
+
+        var payment = await PayAsync(cashier, student.Id, box.Id, 250_000m, PaymentMethod.Cash);
+        Assert.Equal(250_000m, (await GetBoxAsync(admin, box.Id)).Balance);
+
+        // `cashBoxId` ATAYLAB yuborilmaydi.
+        var reverse = await admin.PostAsJsonAsync(
+            $"/api/admin/payments/{payment.Id}/reverse", new { reason = "Xato kiritildi" });
+        Assert.Equal(HttpStatusCode.OK, reverse.StatusCode);
+
+        Assert.Equal(0m, (await GetBoxAsync(admin, box.Id)).Balance);
+
+        // Ikkala qator ham SHU kassaning jurnalida — storno boshqa kassaga ketmagan.
+        var page = await LedgerAsync(admin, box.Id);
+        Assert.Equal(2, page.Rows.Count);
+        Assert.Contains(page.Rows, r => r.Id == payment.Id && r.Status == CashBoxRowStatus.Cancelled);
+        Assert.Contains(page.Rows, r => r.Id != payment.Id && r.Status == CashBoxRowStatus.Reversal);
+    }
+
+    /// <summary>
     /// Storno qilingan to'lov balansni OSHIRMAYDI (sof 0), lekin jurnalda
     /// IKKALA qator ham turadi: asli "bekor qilindi", stornoning o'zi
     /// "storno" holatida — ekrandagi "HOLATI" ustuni shu ikkisini ajratadi.
