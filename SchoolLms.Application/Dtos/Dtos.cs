@@ -395,10 +395,29 @@ public record UnreadCountDto(int UnreadCount);
 /// <param name="CreditCount">Avansi bor (qoldig'i musbat) o'quvchilar — "haqdorlar".</param>
 /// <param name="DebtorCount">Qarzdor (qoldig'i manfiy) o'quvchilar.</param>
 /// <param name="PaidAtLeastOnceCount">Hech bo'lmasa bitta to'lov qilganlar.</param>
+/// <param name="ActiveCount">Sinfda o'qiyotgan faol o'quvchilar (jami − sinfsiz).</param>
+/// <param name="LeftFromClassCount">
+/// Sinfdan CHIQARILGAN va boshqa sinfga qo'yilmagan faol o'quvchilar: hozir sinfsiz,
+/// lekin kamida bitta yopilgan <c>class_memberships</c> yozuvi bor. Ko'chirilgan bola
+/// bu yerga tushmaydi — uning yangi sinfda faol a'zoligi bor.
+/// </param>
+/// <param name="WaitingCount">Qabul qilingan, sinfi hali hal qilinmagan (sinfsiz va
+/// <c>target_grade</c> ko'rsatilgan) o'quvchilar.</param>
+/// <param name="FirstPaymentThisMonthCount">Birinchi (storno bo'lmagan) to'lovi joriy oyga
+/// to'g'ri kelgan o'quvchilar.</param>
 public record AdminStatsDto(
     int StudentsCount, int TeachersCount, double AverageGrade, double? AttendanceRate,
     int UnassignedCount, int ClassesCount, int ArchivedCount,
-    int CreditCount, int DebtorCount, int PaidAtLeastOnceCount);
+    int CreditCount, int DebtorCount, int PaidAtLeastOnceCount,
+    int ActiveCount = 0, int LeftFromClassCount = 0, int WaitingCount = 0,
+    int FirstPaymentThisMonthCount = 0, int MaleCount = 0, int FemaleCount = 0);
+
+/// <summary>Bitta sinfdagi faol o'quvchilar — bosh sahifadagi "Sinflar kesimi" va
+/// "Kontingent tarkibi" vidjetlari uchun.</summary>
+/// <param name="Capacity">Sinf sig'imi; ko'rsatilmagan bo'lsa null.</param>
+public record ClassHeadcountDto(
+    string ClassId, string ClassName, int Grade, int StudentsCount, int MaleCount, int FemaleCount,
+    int? Capacity);
 
 /// <summary>Bitta dars soati kesimidagi davomat (bosh sahifadagi jadval va diagramma).</summary>
 /// <param name="Period">Dars raqami (1..10).</param>
@@ -416,7 +435,8 @@ public record ClassPerformanceItemDto(string ClassId, string ClassName, double A
 public record TopClassDto(string Id, string Name, int StudentsCount, double AverageGrade);
 public record AdminDashboardDto(
     AdminStatsDto Stats, List<ClassPerformanceItemDto> ClassPerformance, List<TopClassDto> TopClasses,
-    List<AttendanceByPeriodDto> AttendanceByPeriod, List<AbsentStudentDto> AbsentStudents);
+    List<AttendanceByPeriodDto> AttendanceByPeriod, List<AbsentStudentDto> AbsentStudents,
+    List<ClassHeadcountDto>? ClassHeadcounts = null);
 
 /* ---------- Class performance / rating ---------- */
 public record SubjectDto(string Id, string Name);

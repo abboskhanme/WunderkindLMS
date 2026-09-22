@@ -60,6 +60,27 @@ export interface AdminStats {
   debtorCount: number
   /** Hech bo'lmasa bitta to'lov qilganlar */
   paidAtLeastOnceCount: number
+  /** Sinfda o'qiyotganlar (jami − sinfsiz) */
+  activeCount: number
+  /** Sinfdan chiqarilgan va boshqa sinfga qo'yilmaganlar (ko'chirilganlar emas) */
+  leftFromClassCount: number
+  /** Qabul qilingan, sinfi hali hal qilinmagan (sinfsiz + mo'ljaldagi sinf) */
+  waitingCount: number
+  /** Birinchi to'lovi joriy oyga to'g'ri kelganlar */
+  firstPaymentThisMonthCount: number
+  maleCount: number
+  femaleCount: number
+}
+
+/** Bitta sinfdagi faol o'quvchilar — "Sinflar kesimi" / "Kontingent tarkibi" */
+export interface ClassHeadcount {
+  classId: string
+  className: string
+  grade: number
+  studentsCount: number
+  maleCount: number
+  femaleCount: number
+  capacity: number | null
 }
 
 /** Bitta dars soati kesimidagi davomat — bosh sahifadagi jadval va diagramma */
@@ -108,6 +129,7 @@ export interface AdminDashboard {
   attendanceByPeriod: AttendanceByPeriod[]
   /** Oxirgi 30 kunda eng ko'p sababsiz qoldirganlar */
   absentStudents: AbsentStudent[]
+  classHeadcounts?: ClassHeadcount[] | null
 }
 
 /* ---------- Lidlar (maktabga qiziqqanlar) ---------- */

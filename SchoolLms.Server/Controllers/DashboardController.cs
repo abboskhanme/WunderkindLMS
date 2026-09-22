@@ -139,10 +139,46 @@ public class DashboardController(AppDbContext db) : ControllerBase
             .Distinct()
             .CountAsync();
 
+        // ---- Vidjetlar paneli (2026-09-22): EduSchool'dagi qolgan hisoblar ----
+        var unassignedIds = students
+            .Where(s => string.IsNullOrWhiteSpace(s.ClassName) || !classNames.Contains(s.ClassName))
+            .Select(s => s.Id).ToList();
+        var leftFromClass = unassignedIds.Count == 0 ? 0 : await db.ClassMemberships.AsNoTracking()
+            .Where(m => m.LeftOn != null && unassignedIds.Contains(m.StudentId))
+            .Select(m => m.StudentId).Distinct().CountAsync();
+        var unassignedSet = unassignedIds.ToHashSet(StringComparer.Ordinal);
+        var waiting = students.Count(s => unassignedSet.Contains(s.Id) && s.TargetGrade != null);
+
+        var today = AppClock.Today;
+        var monthStart = AppClock.InstantOn(new DateOnly(today.Year, today.Month, 1));
+        var firstPaymentThisMonth = await db.Payments.AsNoTracking()
+            .Where(p => p.ReversalOf == null)
+            .GroupBy(p => p.StudentId)
+            .Where(g => g.Min(p => p.ReceivedAt) >= monthStart)
+            .CountAsync();
+
         var stats = new AdminStatsDto(
             studentsCount, teachersCount, AvgGrade(entries), Rate(totalOpp, totalAbs),
             unassigned, classes.Count, archivedCount,
-            creditCount, debtorCount, paidAtLeastOnce);
+            creditCount, debtorCount, paidAtLeastOnce,
+            ActiveCount: studentsCount - unassigned,
+            LeftFromClassCount: leftFromClass,
+            WaitingCount: waiting,
+            FirstPaymentThisMonthCount: firstPaymentThisMonth,
+            MaleCount: students.Count(s => s.Gender == "male"),
+            FemaleCount: students.Count(s => s.Gender == "female"));
+
+        var classHeadcounts = classes
+            .Where(c => !c.IsArchived)
+            .Select(c =>
+            {
+                var mine = students.Where(s => s.ClassName == c.Name).ToList();
+                return new ClassHeadcountDto(
+                    c.Id, c.Name, c.Grade, mine.Count,
+                    mine.Count(s => s.Gender == "male"), mine.Count(s => s.Gender == "female"),
+                    c.Capacity);
+            })
+            .ToList();
 
         var topClasses = classes
             .Select(c => new TopClassDto(
@@ -157,7 +193,8 @@ public class DashboardController(AppDbContext db) : ControllerBase
         return new AdminDashboardDto(
             stats, classPerformance, topClasses,
             AttendanceByPeriod(students, entries, lateReasonIds, groupSizes),
-            await AbsentStudentsAsync(students, lateReasonIds));
+            await AbsentStudentsAsync(students, lateReasonIds),
+            classHeadcounts);
     }
 
     /// <summary>

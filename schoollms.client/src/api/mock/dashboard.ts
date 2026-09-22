@@ -13,6 +13,12 @@ export const adminDashboardMock: AdminDashboard = {
     creditCount: 51,
     debtorCount: 29,
     paidAtLeastOnceCount: 1180,
+    activeCount: 1210,
+    leftFromClassCount: 12,
+    waitingCount: 4,
+    firstPaymentThisMonthCount: 18,
+    maleCount: 640,
+    femaleCount: 610,
   },
   classPerformance: [
     { classId: '1', className: '5-A', averageGrade: 4.5, attendanceRate: 97 },
