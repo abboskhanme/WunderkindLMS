@@ -16,6 +16,8 @@ import {
   Building2,
   BookOpen,
   ShieldAlert,
+  Newspaper,
+  UserRoundCheck,
 } from 'lucide-react'
 import type { Role } from '@/types'
 
@@ -205,6 +207,18 @@ export const navByRole: Record<Role, NavItem[]> = {
       ],
     },
     {
+      // EduSchool'da #10 (MENU-PARITY.md). Nomzod — bu lid (admission-and-testing.md §2.2);
+      // o'quvchiga aylantirilgach lid o'chadi, imtihon natijasi esa qoladi.
+      label: 'Qabul',
+      to: '/admin/admission/candidates',
+      icon: UserRoundCheck,
+      perm: 'admission',
+      children: [
+        { label: 'Nomzodlar', to: '/admin/admission/candidates', end: true, group: 'QABUL' },
+        { label: 'Test bazasi', to: '/admin/admission/banks', group: 'QABUL' },
+      ],
+    },
+    {
       label: 'HR',
       to: '/admin/teachers',
       icon: GraduationCap,
@@ -255,10 +269,27 @@ export const navByRole: Record<Role, NavItem[]> = {
       ],
     },
     {
+      // EduSchool'da #16 — Xulq-atvordan keyin, Sozlamalardan oldin (MENU-PARITY.md).
+      // Hozircha qog'ozda o'tkaziladi, natija qo'lda kiritiladi (EduSchool ham shunday).
+      label: 'Blok Test',
+      to: '/admin/exams/list',
+      icon: ClipboardCheck,
+      perm: 'exams',
+      children: [
+        { label: 'Imtihonlar', to: '/admin/exams/list', group: 'BLOK TEST' },
+        { label: 'Imtihon turi', to: '/admin/exams/types', group: 'BLOK TEST' },
+        { label: 'Natijalar', to: '/admin/exams/results', group: 'BLOK TEST' },
+      ],
+    },
+    {
       label: 'Sozlamalar',
       to: '/admin/settings/school',
       icon: Settings,
-      perm: 'settings',
+      // BO'LIM DARAJASIDA `perm` YO'Q — ATAYLAB. `Sidebar.tsx` ota-yozuv
+      // `canSee` dan o'tmasa BOLALARINI ham yashiradi, shuning uchun faqat
+      // `marketing` ruxsati bor xodim `settings` gate ortida qolib ketardi.
+      // Ruxsat har bir bolaga ko'chirildi; 2026-09-17 da O'quv bo'limida
+      // aynan shu nuqson shunday tuzatilgan (MENU-PARITY.md).
       children: [
         // EduSchool'ning Sozlamalar menyusi AYNAN to'rtta yozuvdan iborat
         // (mijoz ko'rsatgan ekran, 2026-09-18). Har biri — ichida bo'limlari
@@ -266,10 +297,13 @@ export const navByRole: Record<Role, NavItem[]> = {
         // Eski manzillar (`/admin/settings/telegram` va h.k.) ishlashda
         // qoladi — hub qo'shimcha yo'l, almashtiruvchi emas.
         { label: 'Moliya sozlamalari', to: '/admin/billing/settings', roles: ['admin', 'superadmin'], group: 'SOZLAMALAR' },
-        { label: 'Integratsiyalar', to: '/admin/settings/integrations', group: 'SOZLAMALAR' },
-        { label: 'Umumiy sozlamalar', to: '/admin/settings/general', group: 'SOZLAMALAR' },
-        // `Sotuv va marketing` ATAYLAB yo'q: u EduSchool'ning CRM sozlamasi,
-        // bizda uning o'rni Lidlar taxtasi — CLAUDE.md uni himoyalaydi.
+        { label: 'Integratsiyalar', to: '/admin/settings/integrations', perm: 'settings', group: 'SOZLAMALAR' },
+        { label: 'Umumiy sozlamalar', to: '/admin/settings/general', perm: 'settings', group: 'SOZLAMALAR' },
+        // Sotuv va marketing — EduSchool'da ham Sozlamalar ichida, `Umumiy
+        // sozlamalar` dan keyin. Ariza formasi lid yaratadi, taxtaning O'ZI
+        // esa tegilmaydi (CLAUDE.md). Spetsifikatsiya:
+        // docs/modules/sales-marketing.md §6.4.
+        { label: 'Sotuv va marketing', to: '/admin/marketing/arizalar', perm: 'marketing', group: 'SOZLAMALAR' },
         //
         // `Yangi o'quv yiliga o'tish` ham bu yerda emas: u sozlama emas,
         // yiliga bir marta bajariladigan va ORQAGA QAYTMAYDIGAN amal
@@ -316,8 +350,14 @@ export const navByRole: Record<Role, NavItem[]> = {
     { label: 'Xabarlar', to: '/teacher/messages', icon: MessageSquare, perm: 'messages' },
     { label: 'Maosh', to: '/teacher/salary', icon: Wallet, perm: 'salary' },
   ],
-  student: [{ label: 'Bosh sahifa', to: '/student', icon: LayoutDashboard }],
-  parent: [{ label: 'Bosh sahifa', to: '/parent', icon: LayoutDashboard }],
+  student: [
+    { label: 'Bosh sahifa', to: '/student', icon: LayoutDashboard },
+    { label: 'Yangiliklar', to: '/student/yangiliklar', icon: Newspaper },
+  ],
+  parent: [
+    { label: 'Bosh sahifa', to: '/parent', icon: LayoutDashboard },
+    { label: 'Yangiliklar', to: '/parent/yangiliklar', icon: Newspaper },
+  ],
   // Superadmin admin bilan bir xil nav'ni ishlatadi (qo'shimcha menyusiz, faqat ruxsat farqli)
   superadmin: [],
   // Xodim ham admin nav'ini ishlatadi — Sidebar uni permissions bo'yicha filtrlaydi

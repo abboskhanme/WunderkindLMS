@@ -2,6 +2,7 @@ using System.Net;
 using Npgsql;
 using SchoolLms.Application.Services;
 using SchoolLms.Domain;
+using SchoolLms.Infrastructure.Auth;
 using SchoolLms.Infrastructure.Data;
 using SchoolLms.Tests.Fixtures;
 
@@ -169,6 +170,114 @@ public class AnalyticsReportsTests(ApiFixture fixture) : IAsyncLifetime
         Assert.Equal(3, fifth.Total);
         Assert.Equal(0, fifth.ReachedFinalCount);
         Assert.Equal(0, fifth.ConversionPercent);
+    }
+
+    /// <summary>
+    /// Manba kesimi (sales-marketing.md §2.7, SM-13): qo'lda kiritilganlar bitta qator,
+    /// ariza formasidan kelganlar — har bir ariza o'z nomi bilan alohida qator. Qo'lda
+    /// kiritilganlar birinchi turadi.
+    /// </summary>
+    [Fact]
+    public async Task Voronka_manba_kesimi_qolda_va_har_bir_ariza_boyicha()
+    {
+        await using var db = NewDb();
+        var (s1, _, s3) = await ThreeStagesAsync(db);
+        var qabul = await AddSurveyAsync(db, "qabul-2027", "Qabul 2027");
+        var tadbir = await AddSurveyAsync(db, "ochiq-kun", "Ochiq eshiklar kuni");
+
+        await AddLeadsAsync(db, s1, 2, grade: 1);
+        await AddSurveyLeadsAsync(db, qabul, s1, 2);
+        await AddSurveyLeadsAsync(db, qabul, s3, 1);
+        await AddSurveyLeadsAsync(db, tadbir, s1, 1);
+
+        var funnel = await LeadFunnelQuery.BuildAsync(db);
+
+        Assert.Equal(6, funnel.TotalLeads);
+        Assert.Equal(3, funnel.Sources.Count);
+
+        var manual = funnel.Sources[0];
+        Assert.Equal(LeadSource.Manual, manual.Source);
+        Assert.Null(manual.SurveyId);
+        Assert.Equal(LeadFunnelQuery.ManualSourceLabel, manual.Label);
+        Assert.Equal(2, manual.Total);
+
+        var q = Assert.Single(funnel.Sources, x => x.SurveyId == qabul);
+        Assert.Equal(LeadSource.Survey, q.Source);
+        Assert.Equal("Qabul 2027", q.Label);
+        Assert.Equal(3, q.Total);
+        Assert.Equal(1, q.ReachedFinalCount);
+        Assert.Equal(33.3, q.ConversionPercent);
+
+        var t = Assert.Single(funnel.Sources, x => x.SurveyId == tadbir);
+        Assert.Equal(1, t.Total);
+        Assert.Equal(0, t.ReachedFinalCount);
+    }
+
+    /// <summary>
+    /// O'quvchiga aylangan lid doskadan (va <c>leads</c> dan) o'chadi, son esa
+    /// <c>lead_conversions</c> da qoladi (2026-09-22): "Jami lidlar" = doskadagilar +
+    /// aylanganlar. Doskada birorta lidi qolmagan ariza ham manba kesimida ko'rinadi.
+    /// </summary>
+    [Fact]
+    public async Task Voronka_oquvchiga_aylanganlarni_jami_va_manbada_sanaydi()
+    {
+        await using var db = NewDb();
+        var (s1, _, _) = await ThreeStagesAsync(db);
+        var qabul = await AddSurveyAsync(db, "qabul-2027", "Qabul 2027");
+        await AddLeadsAsync(db, s1, 2, grade: 1);
+        db.LeadConversions.AddRange(
+            new LeadConversion { Source = LeadSource.Manual },
+            new LeadConversion { Source = LeadSource.Manual },
+            new LeadConversion { Source = LeadSource.Manual },
+            new LeadConversion { Source = LeadSource.Survey, SurveyId = qabul });
+        await db.SaveChangesAsync();
+
+        var funnel = await LeadFunnelQuery.BuildAsync(db);
+
+        Assert.Equal(2, funnel.TotalLeads);      // doskada
+        Assert.Equal(4, funnel.EnrolledCount);   // o'quvchiga aylangan
+        Assert.Equal(6, funnel.AllTimeLeads);
+        Assert.Equal(66.7, funnel.EnrolledPercent);
+
+        var manual = Assert.Single(funnel.Sources, x => x.Source == LeadSource.Manual);
+        Assert.Equal(2, manual.Total);
+        Assert.Equal(3, manual.EnrolledCount);
+        Assert.Equal(60, manual.EnrolledPercent);
+
+        var q = Assert.Single(funnel.Sources, x => x.SurveyId == qabul);
+        Assert.Equal("Qabul 2027", q.Label);
+        Assert.Equal(0, q.Total);
+        Assert.Equal(1, q.EnrolledCount);
+
+        var filtered = await LeadFunnelQuery.BuildAsync(db, surveyId: qabul);
+        Assert.Equal(0, filtered.TotalLeads);
+        Assert.Equal(1, filtered.EnrolledCount);
+    }
+
+    /// <summary>
+    /// <c>surveyId</c> filtri voronkani faqat shu ariza lidlaridan quradi — qo'lda
+    /// kiritilganlar ham, boshqa arizaniklar ham sanalmaydi.
+    /// </summary>
+    [Fact]
+    public async Task Voronka_ariza_filtri_faqat_shu_ariza_lidlarini_sanaydi()
+    {
+        await using var db = NewDb();
+        var (s1, s2, _) = await ThreeStagesAsync(db);
+        var qabul = await AddSurveyAsync(db, "qabul-2027", "Qabul 2027");
+        var boshqa = await AddSurveyAsync(db, "boshqa", "Boshqa");
+
+        await AddLeadsAsync(db, s1, 4, grade: 1);
+        await AddSurveyLeadsAsync(db, qabul, s1, 1);
+        await AddSurveyLeadsAsync(db, qabul, s2, 1);
+        await AddSurveyLeadsAsync(db, boshqa, s1, 3);
+
+        var funnel = await LeadFunnelQuery.BuildAsync(db, surveyId: qabul);
+
+        Assert.Equal(2, funnel.TotalLeads);
+        Assert.Equal(2, funnel.Stages[0].ReachedCount);
+        Assert.Equal(1, funnel.Stages[1].ReachedCount);
+        var only = Assert.Single(funnel.Sources);
+        Assert.Equal(qabul, only.SurveyId);
     }
 
     // =====================================================================
@@ -376,6 +485,34 @@ public class AnalyticsReportsTests(ApiFixture fixture) : IAsyncLifetime
         db.LeadStages.AddRange(s1, s2, s3);
         await db.SaveChangesAsync();
         return (s1.Id, s2.Id, s3.Id);
+    }
+
+    /// <summary>Ariza formasi — <c>surveys.created_by</c> foydalanuvchiga FK, shuning uchun u ham yaratiladi.</summary>
+    private static async Task<Guid> AddSurveyAsync(AppDbContext db, string slug, string name)
+    {
+        var user = new AppUser { FullName = "Marketing", Role = Roles.Admin, Email = $"funnel.{Guid.NewGuid():N}" };
+        user.SetInitialPassword("Test-" + Guid.NewGuid().ToString("N")[..10]);
+        db.Users.Add(user);
+        var survey = new Survey { Slug = slug, Name = name, CreatedBy = user.Id, CreatedAt = DateTimeOffset.UtcNow };
+        db.Surveys.Add(survey);
+        await db.SaveChangesAsync();
+        return survey.Id;
+    }
+
+    private static async Task AddSurveyLeadsAsync(AppDbContext db, Guid surveyId, string stageId, int count)
+    {
+        for (var i = 0; i < count; i++)
+            db.Leads.Add(new Lead
+            {
+                FullName = $"Ariza lidi {i}",
+                ParentFullName = "Ota-ona",
+                ParentPhone = "+998900000001",
+                TargetGrade = 1,
+                Stage = stageId,
+                Source = LeadSource.Survey,
+                SurveyId = surveyId,
+            });
+        await db.SaveChangesAsync();
     }
 
     private static async Task AddLeadsAsync(AppDbContext db, string stageId, int count, int grade)

@@ -1373,4 +1373,16 @@ public class StudentPortalController(
         }
         return NoContent();
     }
+
+    /// <summary>
+    /// Maktab yangiliklari lentasi (sales-marketing.md §5.5). Auditoriya ROLDAN:
+    /// o'quvchi — <c>for_student</c>; ota-ona va portalni ichkaridan ko'rayotgan
+    /// admin — <c>for_parent</c>.
+    /// </summary>
+    [HttpGet("news")]
+    public async Task<ActionResult<IReadOnlyList<NewsFeedDto>>> News([FromQuery] int? take, CancellationToken ct)
+    {
+        var audience = User.IsInRole(Roles.Student) ? NewsFeedAudience.Student : NewsFeedAudience.Parent;
+        return Ok(await NewsFeedQuery.ListAsync(db, audience, take, ct));
+    }
 }

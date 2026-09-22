@@ -64,13 +64,23 @@ public class FinanceReportsTests(ApiFixture fixture, ITestOutputHelper output) :
     // F13.05 — o'sha ruxsat darvozasidan o'tadi (`ArrearsPivot` ni ichkaridan
     // chaqiradi), shuning uchun RUXSAT testlarida ham `AllReports` qatorida.
     private const string ArrearsPivotExport = "/api/admin/finance/arrears-pivot/export";
+
+    /// <summary>
+    /// HTTP-yuzasi testlari uchun oyma-oy qarzdorlikni BO'SH sinfga cheklaydi.
+    /// Bu testlar ruxsat va JSON shaklini tekshiradi, hisob-kitobni emas (u alohida
+    /// bazali testlarda). Filtrsiz so'rov umumiy test bazasidagi BARCHA o'quvchini
+    /// oladi va boshqa test sinflari yaratgan o'quvchilar 600 tadan
+    /// (<c>FinanceReportQueries.MaxArrearsStudents</c>) oshgan kuni 400 qaytaradi —
+    /// ya'ni natija bu test sinfiga aloqasi yo'q holatga bog'liq bo'lib qolardi.
+    /// </summary>
+    private const string ArrearsScope = "className=__http_surface_probe__";
     // F5.06 — `Pnl` ning o'sha ruxsat darvozasidan o'tadi (ichkaridan uni
     // chaqiradi), shuning uchun u ham RUXSAT testlarida `AllReports` qatorida.
     private const string PnlExport = "/api/admin/finance/pnl/export";
     private const string DebtorsExport = "/api/admin/finance/debtors/export";
 
     private static readonly string[] AllReports =
-        [Debtors, Pnl, CashFlow, CollectionRate, ArrearsPivot, ArrearsPivotExport, PnlExport, DebtorsExport];
+        [Debtors, Pnl, CashFlow, CollectionRate, $"{ArrearsPivot}?{ArrearsScope}", $"{ArrearsPivotExport}?{ArrearsScope}", PnlExport, DebtorsExport];
 
     // =====================================================================
     //  1. RUXSAT — SPEC §4.3
@@ -956,7 +966,7 @@ public class FinanceReportsTests(ApiFixture fixture, ITestOutputHelper output) :
     {
         using var client = await fixture.Api.ClientAsAsync(Roles.Admin);
 
-        var ok = await client.GetAsync($"{ArrearsPivot}?fromMonth=2025-09&toMonth=2025-10");
+        var ok = await client.GetAsync($"{ArrearsPivot}?fromMonth=2025-09&toMonth=2025-10&{ArrearsScope}");
         Assert.True(ok.IsSuccessStatusCode, $"{(int)ok.StatusCode} {ok.StatusCode}");
 
         using var body = JsonDocument.Parse(await ok.Content.ReadAsStringAsync());
@@ -1160,7 +1170,7 @@ public class FinanceReportsTests(ApiFixture fixture, ITestOutputHelper output) :
         using var client = await fixture.Api.ClientAsAsync(Roles.Admin);
 
         var response = await client.GetAsync(
-            $"{ArrearsPivotExport}?fromMonth=2025-09&toMonth=2025-10");
+            $"{ArrearsPivotExport}?fromMonth=2025-09&toMonth=2025-10&{ArrearsScope}");
         Assert.True(response.IsSuccessStatusCode, $"{(int)response.StatusCode} {response.StatusCode}");
         Assert.Equal(
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

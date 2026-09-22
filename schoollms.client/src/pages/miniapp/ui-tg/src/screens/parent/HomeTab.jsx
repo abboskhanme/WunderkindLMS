@@ -27,6 +27,7 @@ import {
   getAnnouncements, getAttendance, getBilling, getDashboard, getPickup, requestPickup,
 } from '../../lib/parentApi'
 import { AsyncBlock, balanceShort, gradeTone, monthLabel } from './shared'
+import { NewsCard } from './NewsCard'
 import { todayISO } from '../../lib/weeks'
 
 export function HomeTab({ child, onOpenTab, showGrades = true }) {
@@ -87,6 +88,10 @@ export function HomeTab({ child, onOpenTab, showGrades = true }) {
             <PickupCard childId={child.id} initial={pickup} />
 
             <AnnouncementsCard items={announcements} />
+
+            {/* School news, under the announcements block (§3.4). It loads
+                itself, so it does not join the five requests above. */}
+            <NewsCard />
           </>
         )
       }}

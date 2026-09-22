@@ -225,7 +225,43 @@ builder.Services.AddRateLimiter(options =>
                 Window = TimeSpan.FromMinutes(1),
                 QueueLimit = 0,
             }));
+
+    // Ommaviy ariza formasi (`/ariza/{slug}`, sales-marketing.md §2.5). Topshirish:
+    // 10 daqiqada 5 ta — uch farzandli oilaga yetadi, skriptga esa yo'q. Oyna
+    // daqiqa emas, 10 daqiqa: bitta 4G NAT ortida butun bir ko'p qavatli uy
+    // turishi mumkin. O'qish (sahifa ochilishi) alohida va yumshoq.
+    options.AddPolicy("survey", httpContext =>
+        System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey: PublicFormPartition(httpContext),
+            factory: _ => new System.Threading.RateLimiting.FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 5,
+                Window = TimeSpan.FromMinutes(10),
+                QueueLimit = 0,
+            }));
+    options.AddPolicy("survey-read", httpContext =>
+        System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey: PublicFormPartition(httpContext),
+            factory: _ => new System.Threading.RateLimiting.FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 60,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0,
+            }));
 });
+
+// Ommaviy forma uchun chastota kaliti. IPv6 manzil /64 prefiksi bo'yicha: bitta
+// abonentga odatda butun /64 beriladi va har bir manzil alohida "savat" bo'lsa,
+// cheklovni manzil almashtirib aylanib o'tish mumkin edi. IPv4 — o'z holicha.
+static string PublicFormPartition(HttpContext ctx)
+{
+    var ip = ctx.Connection.RemoteIpAddress;
+    if (ip is null) return "unknown";
+    if (ip.IsIPv4MappedToIPv6) ip = ip.MapToIPv4();
+    return ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6
+        ? Convert.ToHexString(ip.GetAddressBytes(), 0, 8) + "/64"
+        : ip.ToString();
+}
 
 // Real-time guruh chati (SignalR)
 builder.Services.AddSignalR();
@@ -264,6 +300,14 @@ builder.Services.AddScoped<SchoolLms.Application.Services.ContractService>();
 
 // Turniket/FaceID integratsiyasi — o'qituvchilar davomatini avtomatik yuklash
 builder.Services.AddScoped<SchoolLms.Application.Services.TurnstileService>();
+
+// ---------- Savdo va marketing (docs/modules/sales-marketing.md) ----------
+// Ommaviy ariza → lid. Qolgan xizmatlar (SurveyService, NewsService,
+// SurveySubmissionQuery, NewsFeedQuery) statik — ro'yxatga olish shart emas.
+builder.Services.AddScoped<SchoolLms.Application.Services.SurveySubmissionService>();
+// Yangilik e'lon qilinganda Telegram tarqatmasi (§3.3 N4, N6).
+builder.Services.AddScoped<SchoolLms.Application.Services.INewsTelegramNotifier,
+                           SchoolLms.Application.Services.NewsTelegramNotifier>();
 
 // ---------- Moliya (Faza 1) ----------
 // Oylik hisoblashning YAGONA egasi — `BillingAccrualService` (pastda). Eski
@@ -558,6 +602,20 @@ app.MapFallback(async ctx =>
         ctx.Response.ContentType = "text/html; charset=utf-8";
         ctx.Response.Headers.CacheControl = "no-cache";
         await ctx.Response.SendFileAsync(miniIndex);
+        return;
+    }
+
+    // Ommaviy ariza formasi: HAR QANDAY hostda SPA `index.html`. Havola maktabning
+    // apex domeniga (Instagram bio, Telegram post) qo'yiladi, u yerda esa pastdagi
+    // qoida `landing.html` berardi — havola jimgina bosh sahifaga aylanib qolardi.
+    // docs/modules/sales-marketing.md D2.
+    if (path.StartsWith("/ariza/", StringComparison.OrdinalIgnoreCase))
+    {
+        var spaIndex = Path.Combine(webRoot, "index.html");
+        if (!File.Exists(spaIndex)) { ctx.Response.StatusCode = StatusCodes.Status404NotFound; return; }
+        ctx.Response.ContentType = "text/html; charset=utf-8";
+        ctx.Response.Headers.CacheControl = "no-cache";
+        await ctx.Response.SendFileAsync(spaIndex);
         return;
     }
 

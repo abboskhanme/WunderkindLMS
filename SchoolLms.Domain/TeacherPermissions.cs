@@ -12,6 +12,14 @@ public static class TeacherPermissions
     public const string Messages = "messages";
     public const string Salary = "salary";
 
+    /// <summary>
+    /// Seasonal assessment entry — <c>/teacher/seasonal-marks</c>, limited to the
+    /// (class, subject) pairs the teacher teaches (admission-and-testing.md §4.2).
+    /// Existing teachers receive it from the <c>AdmissionAndExams</c> migration's
+    /// back-fill; new teachers get it through <see cref="All"/>.
+    /// </summary>
+    public const string SeasonalMarks = "seasonalMarks";
+
     /// <summary>Barcha mavjud bo'lim kalitlari (yangi o'qituvchi uchun standart — hammasi ochiq).</summary>
-    public static readonly string[] All = { Journal, Assignments, Schedule, Messages, Salary };
+    public static readonly string[] All = { Journal, Assignments, Schedule, Messages, Salary, SeasonalMarks };
 }

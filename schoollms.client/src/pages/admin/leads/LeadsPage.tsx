@@ -26,6 +26,7 @@ import { LeadCardContent } from './LeadCard'
 import { LeadFormModal, type LeadFormValues } from './LeadFormModal'
 import { LeadDetailModal } from './LeadDetailModal'
 import { StageFormModal } from './StageFormModal'
+import { LeadEnrolModal } from '@/pages/admin/leads-enrol/LeadEnrolModal'
 
 export function LeadsPage() {
   const [leads, setLeads] = useState<Lead[]>([])
@@ -35,6 +36,8 @@ export function LeadsPage() {
 
   // modallar
   const [detailLead, setDetailLead] = useState<Lead | null>(null)
+  /** Lid → o'quvchi: shu lid uchun o'quvchi formasi ochiq. */
+  const [enrolLead, setEnrolLead] = useState<Lead | null>(null)
   const [leadFormOpen, setLeadFormOpen] = useState(false)
   const [editingLead, setEditingLead] = useState<Lead | null>(null)
   const [stageFormOpen, setStageFormOpen] = useState(false)
@@ -202,6 +205,15 @@ export function LeadsPage() {
         onClose={() => setDetailLead(null)}
         onEdit={handleLeadEdit}
         onDelete={handleLeadDelete}
+        onEnrol={(lead) => {
+          setDetailLead(null)
+          setEnrolLead(lead)
+        }}
+      />
+      <LeadEnrolModal
+        lead={enrolLead}
+        onClose={() => setEnrolLead(null)}
+        onEnrolled={(leadId) => setLeads((prev) => prev.filter((l) => l.id !== leadId))}
       />
       <LeadFormModal
         open={leadFormOpen}

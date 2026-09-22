@@ -73,6 +73,9 @@ export const teacherPermissions: { key: string; label: string }[] = [
  */
 export const adminPermissions: { key: string; label: string }[] = [
   { key: 'leads', label: 'Lidlar' },
+  { key: 'marketing', label: 'Sotuv va marketing' },
+  { key: 'admission', label: 'Qabul' },
+  { key: 'exams', label: 'Blok Test' },
   { key: 'students', label: "O'quvchilar" },
   { key: 'teachers', label: "O'qituvchilar" },
   { key: 'attendance', label: 'Davomat' },

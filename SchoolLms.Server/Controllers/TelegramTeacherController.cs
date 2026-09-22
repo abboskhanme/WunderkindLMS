@@ -334,4 +334,9 @@ public sealed class TelegramTeacherController(
     /// </summary>
     private Task<bool> TeachesAsync(string teacherId, string classId, string subjectId, CancellationToken ct) =>
         TeacherOwnerAccess.TeachesAsync(db, teacherId, classId, subjectId, ct);
+
+    /// <summary>Maktab yangiliklari — xodim auditoriyasi (sales-marketing.md §5.5).</summary>
+    [HttpGet("news")]
+    public async Task<ActionResult<IReadOnlyList<NewsFeedDto>>> News([FromQuery] int? take, CancellationToken ct) =>
+        Ok(await NewsFeedQuery.ListAsync(db, NewsFeedAudience.Employee, take, ct));
 }

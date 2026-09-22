@@ -112,6 +112,62 @@ export async function getAnnouncements(childId, channel) {
   return [...rows].sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
 }
 
+/* ------------------------------------------------------------ yangiliklar */
+
+/**
+ * How many items one call asks for. §5.5 caps `take` at 50; the card shows
+ * three and `Barchasi` reveals the rest, so 20 is the whole of what the card
+ * can ever need (§3.4).
+ */
+const NEWS_TAKE = 20
+
+/**
+ * `NewsFeedDto[]`, newest first.
+ *
+ * The contract does not pin the envelope down, so both shapes are accepted —
+ * a bare array and `{ rows: [...] }` (the admin list uses the latter). Sorting
+ * here as well as on the server costs nothing and keeps the card honest about
+ * "newest first" whichever way the rows arrive.
+ */
+function newsRows(body) {
+  const rows = Array.isArray(body) ? body : (body?.rows ?? [])
+  return [...rows].sort((a, b) => (String(a.publishedAt) < String(b.publishedAt) ? 1 : -1))
+}
+
+/**
+ * Published school news for this reader (§5.5).
+ *
+ * TWO ENDPOINTS, ONE CONTRACT. `/tg/parent/news` is the Mini App's own reader
+ * and it is parent-gated; this same panel also serves PUPIL accounts
+ * (`ParentPanel` is rendered for `role === 'student'` too), and for them that
+ * endpoint answers 403. `/student/news` accepts both roles and picks the
+ * audience from the caller's own role, so it is a fallback, not a second
+ * feature.
+ *
+ * A MISSING ENDPOINT IS AN EMPTY FEED, not an error: until the reader
+ * endpoints are deployed, an error card on the Bosh tab would tell every
+ * parent that something is broken when nothing is. Every other status still
+ * throws — a 500 must not be disguised as "no news".
+ */
+export async function getNews(take = NEWS_TAKE) {
+  const query = `?take=${take}`
+
+  try {
+    return newsRows(await api.get('/tg/parent/news' + query))
+  } catch (e) {
+    const retryAsPupil =
+      e instanceof ApiError && (e.status === 403 || e.status === 404 || e.status === 405)
+    if (!retryAsPupil) throw e
+  }
+
+  try {
+    return newsRows(await api.get('/student/news' + query))
+  } catch (e) {
+    if (e instanceof ApiError && (e.status === 404 || e.status === 405)) return []
+    throw e
+  }
+}
+
 /* -------------------------------------------------- Farzandni olib ketish */
 
 /** Bugungi pickup so'rovi holati (yo'q bo'lsa — `null`). */

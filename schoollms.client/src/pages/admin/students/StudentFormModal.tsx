@@ -25,6 +25,13 @@ interface Props {
   onSubmit: (values: StudentPayload) => void
   /** Tahrirlash uchun mavjud o'quvchi, qo'shish uchun null */
   initial?: Student | null
+  /**
+   * Yangi o'quvchi formasini oldindan to'ldirish (masalan lid → o'quvchi).
+   * Faqat `initial` yo'q bo'lganda ishlatiladi.
+   */
+  prefill?: Partial<StudentPayload> | null
+  /** Sarlavhani almashtirish — sukut bo'yicha "Yangi o'quvchi" / "O'quvchini tahrirlash". */
+  title?: string
 }
 
 /**
@@ -93,6 +100,23 @@ const empty: StudentPayload = {
 }
 
 /** "Familiya Ism Sharifi" stringidan parts. Eski yozuvlarni tahrirda taqsimlaymiz. */
+/**
+ * Oldindan to'ldirishda faqat to'liq ism berilgan bo'lsa (masalan lid), forma
+ * ko'rsatadigan Familiya / Ism / Sharifi qismlari undan yig'iladi — tahrirdagi
+ * eski o'quvchilar bilan bir xil qoida.
+ */
+function withNameParts(f: StudentPayload): StudentPayload {
+  const s = f.lastName || f.firstName || f.middleName ? null : splitFullName(f.fullName ?? '')
+  const p = f.parentLastName || f.parentFirstName || f.parentMiddleName
+    ? null
+    : splitFullName(f.parentFullName ?? '')
+  return {
+    ...f,
+    ...(s && { lastName: s.last, firstName: s.first, middleName: s.middle }),
+    ...(p && { parentLastName: p.last, parentFirstName: p.first, parentMiddleName: p.middle }),
+  }
+}
+
 function splitFullName(full: string): { last: string; first: string; middle: string } {
   const parts = (full ?? '').trim().split(/\s+/).filter(Boolean)
   return {
@@ -114,7 +138,7 @@ function hasPhone(value: string | null | undefined): boolean {
   return (value ?? '').replace(/\D/g, '').length >= 7
 }
 
-export function StudentFormModal({ open, onClose, onSubmit, initial }: Props) {
+export function StudentFormModal({ open, onClose, onSubmit, initial, prefill, title }: Props) {
   const [form, setForm] = useState<StudentPayload>(empty)
   const [classNames, setClassNames] = useState<string[]>([])
   /** S-9 — sinfi hali yo'q: sinf tanlovi o'rniga mo'ljaldagi sinf darajasi ko'rsatiladi. */
@@ -249,7 +273,7 @@ export function StudentFormModal({ open, onClose, onSubmit, initial }: Props) {
       void loadCard(initial.id)
     } else {
       /* eslint-disable react-hooks/set-state-in-effect -- yangi forma boshlash (maqsadli) */
-      setForm(empty)
+      setForm(prefill ? withNameParts({ ...empty, ...prefill }) : empty)
       setSaved([])
       setPrimaryRelation('parent')
       setPrimaryNote('')
@@ -257,7 +281,7 @@ export function StudentFormModal({ open, onClose, onSubmit, initial }: Props) {
       setNoClassYet(false)
       /* eslint-enable react-hooks/set-state-in-effect */
     }
-  }, [open, initial, loadCard])
+  }, [open, initial, loadCard, prefill])
 
   // Yangi o'quvchida sinf tanlanmagan bo'lsa, birinchi sinfni standart qilamiz
   // (S-9 — "sinfi hali yo'q" belgilangan bo'lsa TEGILMAYDI, u sinfsiz qoladi).
@@ -410,7 +434,7 @@ export function StudentFormModal({ open, onClose, onSubmit, initial }: Props) {
       open={open}
       onClose={onClose}
       size="lg"
-      title={initial ? "O'quvchini tahrirlash" : "Yangi o'quvchi"}
+      title={title ?? (initial ? "O'quvchini tahrirlash" : "Yangi o'quvchi")}
       footer={
         <>
           <Button variant="secondary" onClick={onClose}>

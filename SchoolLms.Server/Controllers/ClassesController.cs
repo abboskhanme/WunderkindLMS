@@ -262,6 +262,15 @@ public class ClassesController(AppDbContext db, AuditService audit) : Controller
                 message = $"Bu sinfda {studentCount} ta o'quvchi bor — sinfni o'chirib bo'lmaydi. " +
                           "Avval o'quvchilarni boshqa sinfga o'tkazing yoki arxivlang.",
             });
+        // admission-and-testing.md §5.14: `seasonal_marks.class_id` is ON DELETE
+        // RESTRICT — a class with marks would otherwise fail below as a 500.
+        var seasonalMarks = await db.SeasonalMarks.CountAsync(m => m.ClassId == cls.Id);
+        if (seasonalMarks > 0)
+            return BadRequest(new
+            {
+                message = $"Bu sinfda {seasonalMarks} ta mavsumiy baholash yozuvi bor — sinfni o'chirib bo'lmaydi. "
+                          + "Avval ularni o'chiring yoki sinfni arxivlang.",
+            });
         // G-11: sinf biror O'QUV GURUHINI boqayotgan bo'lsa — o'chirib bo'lmaydi.
         // `study_group_classes.class_id` FK'si RESTRICT, ya'ni o'chirish baribir
         // 23503 bilan yiqilardi; bu yerda uni O'ZBEKCHA tushuntirib rad etamiz.

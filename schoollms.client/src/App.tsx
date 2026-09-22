@@ -66,6 +66,19 @@ import { CashDayPage } from '@/pages/admin/finance/CashDayPage'
 import { FinancialReportsPage } from '@/pages/admin/finance/FinancialReportsPage'
 import { DebtorStatusesPage } from '@/pages/admin/finance/DebtorStatusesPage'
 import { LeadFunnelPage } from '@/pages/admin/leads-funnel/LeadFunnelPage'
+import { SurveysPage } from '@/pages/admin/marketing/SurveysPage'
+import { SubmissionsPage } from '@/pages/admin/marketing/SubmissionsPage'
+import { NewsPage } from '@/pages/admin/marketing/NewsPage'
+import { SurveyPage } from '@/pages/public/SurveyPage'
+import { PortalNewsPage } from '@/pages/portal/PortalNewsPage'
+import { CandidatesPage } from '@/pages/admin/admission/CandidatesPage'
+import { CandidateCardPage } from '@/pages/admin/admission/CandidateCardPage'
+import { BanksPage } from '@/pages/admin/admission/BanksPage'
+import { BankDetailPage } from '@/pages/admin/admission/BankDetailPage'
+import { ExamsPage } from '@/pages/admin/exams/ExamsPage'
+import { ExamTypesPage } from '@/pages/admin/exams/ExamTypesPage'
+import { ResultsPage } from '@/pages/admin/exams/ResultsPage'
+import { ResultEntryPage } from '@/pages/admin/exams/ResultEntryPage'
 import { AttendanceDisciplineReportPage } from '@/pages/admin/discipline/AttendanceDisciplineReportPage'
 import { CertificatesPage } from '@/pages/admin/certificates/CertificatesPage'
 import { GroupsPage } from '@/pages/admin/groups/GroupsPage'
@@ -97,6 +110,9 @@ export default function App() {
     <Routes>
       {/* Ochiq sahifa */}
       <Route path="/login" element={<LoginPage />} />
+      {/* Ommaviy ariza formasi — tizimga kirmagan ota-ona uchun; o'z to'liq ekrani bor.
+          Server `/ariza/` ni HAR QANDAY hostda shu SPA'ga beradi (sales-marketing.md D2). */}
+      <Route path="/ariza/:slug" element={<SurveyPage />} />
 
       <Route path="/" element={<RootRedirect />} />
 
@@ -183,6 +199,19 @@ export default function App() {
           {/* Sozlamalar EduSchool tuzilishida: to'rtta sahifa, har biri ichida bo'limlar. */}
           <Route path="settings/integrations" element={<RequirePerm perm="settings"><IntegrationsSettingsPage /></RequirePerm>} />
           <Route path="settings/general" element={<RequirePerm perm="settings"><GeneralSettingsPage /></RequirePerm>} />
+          {/* Sotuv va marketing — ariza formalari, topshirilganlar, yangiliklar. */}
+          <Route path="marketing/arizalar" element={<RequirePerm perm="marketing"><SurveysPage /></RequirePerm>} />
+          <Route path="marketing/topshirilganlar" element={<RequirePerm perm="marketing"><SubmissionsPage /></RequirePerm>} />
+          <Route path="marketing/yangiliklar" element={<RequirePerm perm="marketing"><NewsPage /></RequirePerm>} />
+          {/* Qabul va Blok Test (admission-and-testing.md). */}
+          <Route path="admission/candidates" element={<RequirePerm perm="admission"><CandidatesPage /></RequirePerm>} />
+          <Route path="admission/candidates/:leadId" element={<RequirePerm perm="admission"><CandidateCardPage /></RequirePerm>} />
+          <Route path="admission/banks" element={<RequirePerm perm="admission"><BanksPage /></RequirePerm>} />
+          <Route path="admission/banks/:bankId" element={<RequirePerm perm="admission"><BankDetailPage /></RequirePerm>} />
+          <Route path="exams/list" element={<RequirePerm perm="exams"><ExamsPage /></RequirePerm>} />
+          <Route path="exams/types" element={<RequirePerm perm="exams"><ExamTypesPage /></RequirePerm>} />
+          <Route path="exams/results" element={<RequirePerm perm="exams"><ResultsPage /></RequirePerm>} />
+          <Route path="exams/results/:examId/entry" element={<RequirePerm perm="exams"><ResultEntryPage /></RequirePerm>} />
           <Route path="finance/bonus" element={<RequirePerm perm="finance"><AdjustmentsPage kind="bonus" /></RequirePerm>} />
           <Route path="finance/penalty" element={<RequirePerm perm="finance"><AdjustmentsPage kind="penalty" /></RequirePerm>} />
           <Route path="billing/subscriptions" element={<RequirePerm perm="finance"><SubscriptionsPage /></RequirePerm>} />
@@ -219,11 +248,13 @@ export default function App() {
       <Route element={<ProtectedRoute role="parent" />}>
         <Route path="/parent" element={<AppLayout />}>
           <Route index element={<FinanceView />} />
+          <Route path="yangiliklar" element={<PortalNewsPage />} />
         </Route>
       </Route>
       <Route element={<ProtectedRoute role="student" />}>
         <Route path="/student" element={<AppLayout />}>
           <Route index element={<FinanceView />} />
+          <Route path="yangiliklar" element={<PortalNewsPage />} />
         </Route>
       </Route>
 

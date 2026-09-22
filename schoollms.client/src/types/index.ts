@@ -1421,7 +1421,7 @@ export interface LmsProgressReport {
 /* ---------- Bildirishnomalar (topbar qo'ng'irog'i) ---------- */
 
 /** Bildirishnoma turi — ikonka va rangni belgilaydi. */
-export type NotificationKind = 'suggestion' | 'complaint' | 'pickup' | 'chat' | 'birthday'
+export type NotificationKind = 'suggestion' | 'complaint' | 'pickup' | 'chat' | 'birthday' | 'survey' | 'news'
 
 export interface NotificationItem {
   id: string

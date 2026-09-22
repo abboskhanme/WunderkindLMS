@@ -225,6 +225,41 @@ public interface IAppDbContext
     /// </summary>
     DbSet<TransactionType> TransactionTypes { get; }
 
+    /// <summary>
+    /// Savdo va marketing (<c>docs/modules/sales-marketing.md</c> §4) — ommaviy
+    /// ariza formasi va yangiliklar lentasi. Moliyaviy EMAS: to'liq CRUD,
+    /// birorta <c>REVOKE</c> yo'q (<c>sales_marketing_guards.sql</c>).
+    /// </summary>
+    DbSet<Survey> Surveys { get; }
+    DbSet<SurveySubmission> SurveySubmissions { get; }
+    DbSet<NewsItem> News { get; }
+
+    /// <summary>
+    /// Lid → o'quvchi statistikasi. Aylantirilgan lid o'chiriladi (mijoz qarori,
+    /// 2026-09-22), bu yerda esa faqat SON qoladi — shaxsiy ma'lumotsiz.
+    /// </summary>
+    DbSet<LeadConversion> LeadConversions { get; }
+
+    /// <summary>
+    /// Admission, block test and seasonal assessment
+    /// (<c>docs/modules/admission-and-testing.md</c> §5): one question bank, one
+    /// delivery engine, one scoring engine. Not financial — full CRUD
+    /// (<c>exam_guards.sql</c>). <see cref="QuestionOptions"/> carries the answer
+    /// key: anything served to a candidate is projected onto a DTO without it (§7.7).
+    /// </summary>
+    DbSet<QuestionBank> QuestionBanks { get; }
+    DbSet<Question> Questions { get; }
+    DbSet<QuestionOption> QuestionOptions { get; }
+    DbSet<ExamType> ExamTypes { get; }
+    DbSet<Exam> Exams { get; }
+    DbSet<ExamSection> ExamSections { get; }
+    DbSet<ExamParticipant> ExamParticipants { get; }
+    DbSet<ExamSectionScore> ExamSectionScores { get; }
+    DbSet<ExamInvitation> ExamInvitations { get; }
+    DbSet<ExamAttempt> ExamAttempts { get; }
+    DbSet<ExamAnswer> ExamAnswers { get; }
+    DbSet<SeasonalMark> SeasonalMarks { get; }
+
     int SaveChanges();
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 

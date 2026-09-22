@@ -9,10 +9,11 @@
  * keladi (`GET /api/admin/leads/funnel`).
  */
 import { useMemo, useState } from 'react'
-import { Filter, Target, TrendingDown, Users, XCircle } from 'lucide-react'
+import { Filter, GraduationCap, Target, TrendingDown, Users, XCircle } from 'lucide-react'
 import { useAsync } from '@/hooks/useAsync'
 import { getLeadFunnel } from '@/api/services/leadFunnel'
 import { getStages } from '@/api/services/stages'
+import { getSurveys } from '@/api/services/surveys'
 import { Card } from '@/components/ui/Card'
 import { Loader } from '@/components/ui/Loader'
 import { StatCard } from '@/components/ui/StatCard'
@@ -46,9 +47,13 @@ export function LeadFunnelPage() {
   const [lost, setLost] = useState<string[]>(readLost)
   const [pickerOpen, setPickerOpen] = useState(false)
 
+  /** Ariza formasi filtri (sales-marketing.md §2.7). Bo'sh — barcha lidlar. */
+  const [surveyId, setSurveyId] = useState('')
+
   const lostKey = lost.join(',')
   const stagesQ = useAsync(() => getStages(), [])
-  const funnelQ = useAsync(() => getLeadFunnel(lost), [lostKey])
+  const surveysQ = useAsync(() => getSurveys(true), [])
+  const funnelQ = useAsync(() => getLeadFunnel(lost, surveyId), [lostKey, surveyId])
 
   const funnel = funnelQ.data
   const maxReached = useMemo(
@@ -75,24 +80,40 @@ export function LeadFunnelPage() {
             Lidlar bosqichma-bosqich qanday siljiyapti va qayerda to'xtab qolyapti
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => setPickerOpen((v) => !v)}
-          className={cn(
-            'inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm transition',
-            pickerOpen
-              ? 'border-brand-300 bg-brand-50 text-brand-700'
-              : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50',
+        <div className="flex flex-wrap items-center gap-2">
+          {(surveysQ.data?.length ?? 0) > 0 && (
+            <select
+              value={surveyId}
+              onChange={(e) => setSurveyId(e.target.value)}
+              className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-600 focus:border-brand-300 focus:outline-none"
+            >
+              <option value="">Barcha lidlar</option>
+              {surveysQ.data?.map((s) => (
+                <option key={s.id} value={s.id}>
+                  Ariza: {s.name}
+                </option>
+              ))}
+            </select>
           )}
-        >
-          <Filter className="h-4 w-4" />
-          Yo'qotish ustunlari
-          {lost.length > 0 && (
-            <span className="rounded bg-rose-100 px-1.5 text-xs font-medium text-rose-700">
-              {lost.length}
-            </span>
-          )}
-        </button>
+          <button
+            type="button"
+            onClick={() => setPickerOpen((v) => !v)}
+            className={cn(
+              'inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm transition',
+              pickerOpen
+                ? 'border-brand-300 bg-brand-50 text-brand-700'
+                : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50',
+            )}
+          >
+            <Filter className="h-4 w-4" />
+            Yo'qotish ustunlari
+            {lost.length > 0 && (
+              <span className="rounded bg-rose-100 px-1.5 text-xs font-medium text-rose-700">
+                {lost.length}
+              </span>
+            )}
+          </button>
+        </div>
       </div>
 
       {pickerOpen && (
@@ -126,10 +147,10 @@ export function LeadFunnelPage() {
 
       <Card className="border-amber-200/70 bg-amber-50/60">
         <p className="text-sm text-amber-900">
-          <b>Bu — hozirgi holat surati.</b> Lidda na yaratilgan vaqt, na bosqich o'zgarishi
-          tarixi saqlanadi, shuning uchun "shu oyda nechta lid kirdi" va "bosqichda o'rtacha
-          necha kun turdi" degan raqamlarni chiqarib bo'lmaydi. "Yetib kelgan" soni lid faqat
-          oldinga siljiydi degan taxminga tayanadi.
+          <b>Bu — hozirgi holat surati.</b> Bosqich o'zgarishi tarixi saqlanmaydi, shuning
+          uchun "bosqichda o'rtacha necha kun turdi" degan raqamni chiqarib bo'lmaydi; lid
+          yaratilgan vaqti esa faqat 21.09.2026 dan beri yoziladi. "Yetib kelgan" soni lid
+          faqat oldinga siljiydi degan taxminga tayanadi.
         </p>
       </Card>
 
@@ -142,15 +163,26 @@ export function LeadFunnelPage() {
       ) : (
         funnel && (
           <>
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
               <StatCard
                 label="Jami lidlar"
-                value={funnel.totalLeads}
+                value={funnel.allTimeLeads}
                 icon={Users}
                 hint={
-                  funnel.orphanCount > 0
-                    ? `${funnel.orphanCount} ta lid ustunsiz qolgan`
-                    : 'Barchasi ustunga biriktirilgan'
+                  `Doskada ${funnel.totalLeads}` +
+                  (funnel.orphanCount > 0 ? ` · ${funnel.orphanCount} tasi ustunsiz` : '')
+                }
+              />
+              <StatCard
+                label="O'quvchiga aylandi"
+                value={funnel.enrolledCount}
+                icon={GraduationCap}
+                iconBg="bg-violet-50"
+                iconColor="text-violet-600"
+                hint={
+                  funnel.enrolledPercent === null
+                    ? 'Jami lidlardan'
+                    : `Jami lidlarning ${funnel.enrolledPercent}%`
                 }
               />
               <StatCard
@@ -263,10 +295,7 @@ export function LeadFunnelPage() {
                 <h2 className="px-5 pt-5 text-sm font-semibold uppercase tracking-wide text-slate-400">
                   Sinflar kesimi
                 </h2>
-                <p className="px-5 pb-3 pt-1 text-xs text-slate-400">
-                  Lidda "qayerdan bildi" (manba) maydoni yo'q, shuning uchun kesim maqsadli
-                  sinf bo'yicha.
-                </p>
+                <div className="pb-3" />
                 <div className="overflow-x-auto">
                   <table className="w-full text-left text-sm">
                     <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
@@ -295,6 +324,56 @@ export function LeadFunnelPage() {
                           <td className="px-5 py-3 text-center text-slate-600">{g.lostCount}</td>
                           <td className="px-5 py-3 text-center text-slate-500">
                             {g.conversionPercent === null ? '—' : `${g.conversionPercent}%`}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </Card>
+            )}
+
+            {funnel.sources.length > 0 && (
+              <Card className="p-0">
+                <h2 className="px-5 pt-5 text-sm font-semibold uppercase tracking-wide text-slate-400">
+                  Manba kesimi
+                </h2>
+                <p className="px-5 pb-3 pt-1 text-xs text-slate-400">
+                  Doskada qo'lda kiritilgan lidlar va ommaviy ariza formalaridan kelganlar.
+                  "Jami" — hozir doskada turganlar; o'quvchiga aylanganlar doskadan chiqadi va
+                  alohida sanaladi.
+                </p>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-sm">
+                    <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
+                      <tr>
+                        <th className="px-5 py-3">Manba</th>
+                        <th className="px-5 py-3 text-center">Jami</th>
+                        <th className="px-5 py-3 text-center">Voronkada</th>
+                        <th className="px-5 py-3 text-center">Oxirgi bosqich</th>
+                        <th className="px-5 py-3 text-center">Yo'qotilgan</th>
+                        <th className="px-5 py-3 text-center">Konversiya</th>
+                        <th className="px-5 py-3 text-center">O'quvchi bo'ldi</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {funnel.sources.map((s) => (
+                        <tr key={`${s.source}:${s.surveyId ?? ''}`}>
+                          <td className="px-5 py-3 font-medium text-slate-800">{s.label}</td>
+                          <td className="px-5 py-3 text-center text-slate-600">{s.total}</td>
+                          <td className="px-5 py-3 text-center text-slate-600">{s.inFunnelCount}</td>
+                          <td className="px-5 py-3 text-center text-slate-600">
+                            {s.reachedFinalCount}
+                          </td>
+                          <td className="px-5 py-3 text-center text-slate-600">{s.lostCount}</td>
+                          <td className="px-5 py-3 text-center text-slate-500">
+                            {s.conversionPercent === null ? '—' : `${s.conversionPercent}%`}
+                          </td>
+                          <td className="px-5 py-3 text-center text-slate-600">
+                            {s.enrolledCount}
+                            {s.enrolledPercent !== null && (
+                              <span className="ml-1 text-slate-400">({s.enrolledPercent}%)</span>
+                            )}
                           </td>
                         </tr>
                       ))}

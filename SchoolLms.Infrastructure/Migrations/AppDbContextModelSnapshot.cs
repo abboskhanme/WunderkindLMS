@@ -1893,6 +1893,588 @@ namespace SchoolLms.Infrastructure.Migrations
                     b.ToTable("evaluation_types", (string)null);
                 });
 
+            modelBuilder.Entity("SchoolLms.Domain.Exam", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasColumnType("text")
+                        .HasColumnName("id");
+
+                    b.Property<DateTime?>("ClosesAt")
+                        .HasColumnType("timestamp without time zone")
+                        .HasColumnName("closes_at");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp without time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("CreatedByUserId")
+                        .HasColumnType("text")
+                        .HasColumnName("created_by_user_id");
+
+                    b.Property<string>("Delivery")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("delivery");
+
+                    b.Property<string>("ExamDate")
+                        .HasColumnType("text")
+                        .HasColumnName("exam_date");
+
+                    b.Property<string>("ExamTypeId")
+                        .HasColumnType("text")
+                        .HasColumnName("exam_type_id");
+
+                    b.Property<int?>("Grade")
+                        .HasColumnType("integer")
+                        .HasColumnName("grade");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("kind");
+
+                    b.Property<DateTime?>("OpensAt")
+                        .HasColumnType("timestamp without time zone")
+                        .HasColumnName("opens_at");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("text")
+                        .HasDefaultValue("draft")
+                        .HasColumnName("status");
+
+                    b.Property<int?>("TimeLimitMin")
+                        .HasColumnType("integer")
+                        .HasColumnName("time_limit_min");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("title");
+
+                    b.HasKey("Id")
+                        .HasName("pk_exams");
+
+                    b.HasIndex("CreatedByUserId")
+                        .HasDatabaseName("ix_exams_created_by_user_id");
+
+                    b.HasIndex("ExamDate")
+                        .HasDatabaseName("ix_exams_exam_date");
+
+                    b.HasIndex("ExamTypeId")
+                        .HasDatabaseName("ix_exams_exam_type_id");
+
+                    b.HasIndex("Kind", "Status")
+                        .HasDatabaseName("ix_exams_kind_status");
+
+                    b.ToTable("exams", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_exams_delivery", "delivery in ('online','manual')");
+
+                            t.HasCheckConstraint("ck_exams_grade", "grade is null or grade between 0 and 11");
+
+                            t.HasCheckConstraint("ck_exams_kind", "kind in ('admission','block')");
+
+                            t.HasCheckConstraint("ck_exams_online_window", "delivery <> 'online' or status in ('draft','cancelled') or (opens_at is not null and closes_at is not null and time_limit_min is not null)");
+
+                            t.HasCheckConstraint("ck_exams_status", "status in ('draft','published','closed','cancelled')");
+
+                            t.HasCheckConstraint("ck_exams_time_limit_min", "time_limit_min is null or time_limit_min >= 1");
+
+                            t.HasCheckConstraint("ck_exams_title", "btrim(title) <> ''");
+
+                            t.HasCheckConstraint("ck_exams_window_order", "opens_at is null or closes_at > opens_at");
+                        });
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.ExamAnswer", b =>
+                {
+                    b.Property<string>("AttemptId")
+                        .HasColumnType("text")
+                        .HasColumnName("attempt_id");
+
+                    b.Property<string>("QuestionId")
+                        .HasColumnType("text")
+                        .HasColumnName("question_id");
+
+                    b.Property<DateTime?>("AnsweredAt")
+                        .HasColumnType("timestamp without time zone")
+                        .HasColumnName("answered_at");
+
+                    b.Property<int>("Order")
+                        .HasColumnType("integer")
+                        .HasColumnName("order");
+
+                    b.Property<string>("SectionId")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("section_id");
+
+                    b.Property<string>("SelectedOptionId")
+                        .HasColumnType("text")
+                        .HasColumnName("selected_option_id");
+
+                    b.HasKey("AttemptId", "QuestionId")
+                        .HasName("pk_exam_answers");
+
+                    b.HasIndex("QuestionId")
+                        .HasDatabaseName("ix_exam_answers_question_id");
+
+                    b.HasIndex("SectionId")
+                        .HasDatabaseName("ix_exam_answers_section_id");
+
+                    b.HasIndex("SelectedOptionId")
+                        .HasDatabaseName("ix_exam_answers_selected_option_id");
+
+                    b.HasIndex("AttemptId", "Order")
+                        .IsUnique()
+                        .HasDatabaseName("ux_exam_answers_attempt_order");
+
+                    b.ToTable("exam_answers", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_exam_answers_answered", "(selected_option_id is null) = (answered_at is null)");
+                        });
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.ExamAttempt", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasColumnType("text")
+                        .HasColumnName("id");
+
+                    b.Property<bool>("AbuseFlagged")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("abuse_flagged");
+
+                    b.Property<int>("AnsweredCount")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("answered_count");
+
+                    b.Property<DateTime>("DeadlineAt")
+                        .HasColumnType("timestamp without time zone")
+                        .HasColumnName("deadline_at");
+
+                    b.Property<string>("DeviceLabel")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("device_label");
+
+                    b.Property<string>("DeviceSessionHash")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("device_session_hash");
+
+                    b.Property<string>("FinishReason")
+                        .HasColumnType("text")
+                        .HasColumnName("finish_reason");
+
+                    b.Property<DateTime?>("FinishedAt")
+                        .HasColumnType("timestamp without time zone")
+                        .HasColumnName("finished_at");
+
+                    b.Property<string>("FirstIp")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("first_ip");
+
+                    b.Property<string>("InvitationId")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("invitation_id");
+
+                    b.Property<string>("ParticipantId")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("participant_id");
+
+                    b.Property<DateTime>("StartedAt")
+                        .HasColumnType("timestamp without time zone")
+                        .HasColumnName("started_at");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("text")
+                        .HasDefaultValue("in_progress")
+                        .HasColumnName("status");
+
+                    b.Property<string>("UserAgent")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("user_agent");
+
+                    b.HasKey("Id")
+                        .HasName("pk_exam_attempts");
+
+                    b.HasIndex("InvitationId")
+                        .HasDatabaseName("ix_exam_attempts_invitation_id");
+
+                    b.HasIndex("ParticipantId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_exam_attempts_participant");
+
+                    b.HasIndex("Status", "DeadlineAt")
+                        .HasDatabaseName("ix_exam_attempts_status_deadline");
+
+                    b.ToTable("exam_attempts", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_exam_attempts_answered_count", "answered_count >= 0");
+
+                            t.HasCheckConstraint("ck_exam_attempts_finish_reason", "finish_reason is null or finish_reason in ('manual','timer','admin')");
+
+                            t.HasCheckConstraint("ck_exam_attempts_finished", "(status = 'finished') = (finished_at is not null) and (finished_at is null) = (finish_reason is null)");
+
+                            t.HasCheckConstraint("ck_exam_attempts_status", "status in ('in_progress','finished')");
+                        });
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.ExamInvitation", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasColumnType("text")
+                        .HasColumnName("id");
+
+                    b.Property<DateTime?>("FirstOpenedAt")
+                        .HasColumnType("timestamp without time zone")
+                        .HasColumnName("first_opened_at");
+
+                    b.Property<DateTime>("IssuedAt")
+                        .HasColumnType("timestamp without time zone")
+                        .HasColumnName("issued_at");
+
+                    b.Property<string>("IssuedByUserId")
+                        .HasColumnType("text")
+                        .HasColumnName("issued_by_user_id");
+
+                    b.Property<string>("ParticipantId")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("participant_id");
+
+                    b.Property<DateTime?>("RevokedAt")
+                        .HasColumnType("timestamp without time zone")
+                        .HasColumnName("revoked_at");
+
+                    b.Property<string>("RevokedByUserId")
+                        .HasColumnType("text")
+                        .HasColumnName("revoked_by_user_id");
+
+                    b.Property<string>("TokenHash")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("token_hash");
+
+                    b.Property<string>("TokenHint")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("token_hint");
+
+                    b.Property<DateTime>("ValidFrom")
+                        .HasColumnType("timestamp without time zone")
+                        .HasColumnName("valid_from");
+
+                    b.Property<DateTime>("ValidUntil")
+                        .HasColumnType("timestamp without time zone")
+                        .HasColumnName("valid_until");
+
+                    b.HasKey("Id")
+                        .HasName("pk_exam_invitations");
+
+                    b.HasIndex("IssuedByUserId")
+                        .HasDatabaseName("ix_exam_invitations_issued_by_user_id");
+
+                    b.HasIndex("RevokedByUserId")
+                        .HasDatabaseName("ix_exam_invitations_revoked_by_user_id");
+
+                    b.HasIndex("TokenHash")
+                        .IsUnique()
+                        .HasDatabaseName("ux_exam_invitations_token_hash");
+
+                    b.HasIndex("ValidUntil")
+                        .HasDatabaseName("ix_exam_invitations_valid_until");
+
+                    b.HasIndex(new[] { "ParticipantId" }, "ix_exam_invitations_participant")
+                        .HasDatabaseName("ix_exam_invitations_participant");
+
+                    b.HasIndex(new[] { "ParticipantId" }, "ux_exam_invitations_live")
+                        .IsUnique()
+                        .HasDatabaseName("ux_exam_invitations_live")
+                        .HasFilter("revoked_at is null");
+
+                    b.ToTable("exam_invitations", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_exam_invitations_window", "valid_until > valid_from");
+                        });
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.ExamParticipant", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasColumnType("text")
+                        .HasColumnName("id");
+
+                    b.Property<string>("ClassId")
+                        .HasColumnType("text")
+                        .HasColumnName("class_id");
+
+                    b.Property<int?>("CorrectCount")
+                        .HasColumnType("integer")
+                        .HasColumnName("correct_count");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp without time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("ExamId")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("exam_id");
+
+                    b.Property<string>("LeadId")
+                        .HasColumnType("text")
+                        .HasColumnName("lead_id");
+
+                    b.Property<decimal?>("MaxPoints")
+                        .HasPrecision(8, 2)
+                        .HasColumnType("numeric(8,2)")
+                        .HasColumnName("max_points");
+
+                    b.Property<string>("ParticipantKind")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("participant_kind");
+
+                    b.Property<decimal?>("Percent")
+                        .HasPrecision(5, 2)
+                        .HasColumnType("numeric(5,2)")
+                        .HasColumnName("percent");
+
+                    b.Property<int?>("QuestionCount")
+                        .HasColumnType("integer")
+                        .HasColumnName("question_count");
+
+                    b.Property<DateTime?>("ScoredAt")
+                        .HasColumnType("timestamp without time zone")
+                        .HasColumnName("scored_at");
+
+                    b.Property<string>("ScoredByUserId")
+                        .HasColumnType("text")
+                        .HasColumnName("scored_by_user_id");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("text")
+                        .HasDefaultValue("assigned")
+                        .HasColumnName("status");
+
+                    b.Property<string>("StudentId")
+                        .HasColumnType("text")
+                        .HasColumnName("student_id");
+
+                    b.Property<decimal?>("TotalPoints")
+                        .HasPrecision(8, 2)
+                        .HasColumnType("numeric(8,2)")
+                        .HasColumnName("total_points");
+
+                    b.HasKey("Id")
+                        .HasName("pk_exam_participants");
+
+                    b.HasIndex("ClassId")
+                        .HasDatabaseName("ix_exam_participants_class_id");
+
+                    b.HasIndex("LeadId")
+                        .HasDatabaseName("ix_exam_participants_lead");
+
+                    b.HasIndex("ScoredByUserId")
+                        .HasDatabaseName("ix_exam_participants_scored_by_user_id");
+
+                    b.HasIndex("StudentId")
+                        .HasDatabaseName("ix_exam_participants_student");
+
+                    b.HasIndex("ExamId", "LeadId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_exam_participants_exam_lead")
+                        .HasFilter("lead_id is not null");
+
+                    b.HasIndex("ExamId", "Status")
+                        .HasDatabaseName("ix_exam_participants_exam_status");
+
+                    b.HasIndex("ExamId", "StudentId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_exam_participants_exam_student")
+                        .HasFilter("student_id is not null");
+
+                    b.ToTable("exam_participants", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_exam_participants_kind", "participant_kind in ('lead','student')");
+
+                            t.HasCheckConstraint("ck_exam_participants_lead_pointer", "participant_kind = 'lead' or lead_id is null");
+
+                            t.HasCheckConstraint("ck_exam_participants_percent", "percent is null or percent between 0 and 100");
+
+                            t.HasCheckConstraint("ck_exam_participants_points", "total_points is null or (total_points >= 0 and (max_points is null or total_points <= max_points))");
+
+                            t.HasCheckConstraint("ck_exam_participants_status", "status in ('assigned','in_progress','finished','absent','cancelled')");
+
+                            t.HasCheckConstraint("ck_exam_participants_student_pointer", "(participant_kind = 'student') = (student_id is not null)");
+                        });
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.ExamSection", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasColumnType("text")
+                        .HasColumnName("id");
+
+                    b.Property<string>("BankId")
+                        .HasColumnType("text")
+                        .HasColumnName("bank_id");
+
+                    b.Property<string>("ExamId")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("exam_id");
+
+                    b.Property<decimal>("MaxScore")
+                        .HasPrecision(6, 2)
+                        .HasColumnType("numeric(6,2)")
+                        .HasColumnName("max_score");
+
+                    b.Property<int>("Order")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("order");
+
+                    b.Property<decimal?>("PointsPerCorrect")
+                        .HasPrecision(6, 2)
+                        .HasColumnType("numeric(6,2)")
+                        .HasColumnName("points_per_correct");
+
+                    b.Property<int?>("QuestionCount")
+                        .HasColumnType("integer")
+                        .HasColumnName("question_count");
+
+                    b.Property<string>("SubjectId")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("subject_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_exam_sections");
+
+                    b.HasIndex("BankId")
+                        .HasDatabaseName("ix_exam_sections_bank_id");
+
+                    b.HasIndex("SubjectId")
+                        .HasDatabaseName("ix_exam_sections_subject_id");
+
+                    b.HasIndex("ExamId", "Order")
+                        .HasDatabaseName("ix_exam_sections_exam_order");
+
+                    b.HasIndex("ExamId", "SubjectId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_exam_sections_exam_subject");
+
+                    b.ToTable("exam_sections", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_exam_sections_max_score", "max_score >= 0");
+
+                            t.HasCheckConstraint("ck_exam_sections_points_per_correct", "points_per_correct is null or points_per_correct > 0");
+
+                            t.HasCheckConstraint("ck_exam_sections_question_count", "question_count is null or question_count >= 1");
+                        });
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.ExamSectionScore", b =>
+                {
+                    b.Property<string>("ParticipantId")
+                        .HasColumnType("text")
+                        .HasColumnName("participant_id");
+
+                    b.Property<string>("SectionId")
+                        .HasColumnType("text")
+                        .HasColumnName("section_id");
+
+                    b.Property<int?>("CorrectCount")
+                        .HasColumnType("integer")
+                        .HasColumnName("correct_count");
+
+                    b.Property<decimal>("MaxPoints")
+                        .HasPrecision(8, 2)
+                        .HasColumnType("numeric(8,2)")
+                        .HasColumnName("max_points");
+
+                    b.Property<decimal>("Points")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(8, 2)
+                        .HasColumnType("numeric(8,2)")
+                        .HasDefaultValue(0m)
+                        .HasColumnName("points");
+
+                    b.Property<int?>("QuestionCount")
+                        .HasColumnType("integer")
+                        .HasColumnName("question_count");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp without time zone")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("ParticipantId", "SectionId")
+                        .HasName("pk_exam_section_scores");
+
+                    b.HasIndex("SectionId")
+                        .HasDatabaseName("ix_exam_section_scores_section_id");
+
+                    b.ToTable("exam_section_scores", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_exam_section_scores_points", "points >= 0 and points <= max_points");
+                        });
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.ExamType", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasColumnType("text")
+                        .HasColumnName("id");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp without time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("text")
+                        .HasDefaultValue("")
+                        .HasColumnName("description");
+
+                    b.Property<bool>("IsActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("is_active");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("name");
+
+                    b.HasKey("Id")
+                        .HasName("pk_exam_types");
+
+                    b.ToTable("exam_types", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_exam_types_name", "btrim(name) <> ''");
+                        });
+                });
+
             modelBuilder.Entity("SchoolLms.Domain.Expense", b =>
                 {
                     b.Property<Guid>("Id")
@@ -2493,10 +3075,21 @@ namespace SchoolLms.Infrastructure.Migrations
                         .HasColumnType("text")
                         .HasColumnName("id");
 
+                    b.Property<string>("AdmissionStatus")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("text")
+                        .HasDefaultValue("none")
+                        .HasColumnName("admission_status");
+
                     b.Property<string>("BirthDate")
                         .IsRequired()
                         .HasColumnType("text")
                         .HasColumnName("birth_date");
+
+                    b.Property<DateTime?>("CreatedAt")
+                        .HasColumnType("timestamp without time zone")
+                        .HasColumnName("created_at");
 
                     b.Property<string>("FullName")
                         .IsRequired()
@@ -2522,10 +3115,21 @@ namespace SchoolLms.Infrastructure.Migrations
                         .HasColumnType("text")
                         .HasColumnName("parent_phone");
 
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("text")
+                        .HasDefaultValue("manual")
+                        .HasColumnName("source");
+
                     b.Property<string>("Stage")
                         .IsRequired()
                         .HasColumnType("text")
                         .HasColumnName("stage");
+
+                    b.Property<Guid?>("SurveyId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("survey_id");
 
                     b.Property<int>("TargetGrade")
                         .HasColumnType("integer")
@@ -2534,7 +3138,65 @@ namespace SchoolLms.Infrastructure.Migrations
                     b.HasKey("Id")
                         .HasName("pk_leads");
 
-                    b.ToTable("leads", (string)null);
+                    b.HasIndex("AdmissionStatus")
+                        .HasDatabaseName("ix_leads_admission_status");
+
+                    b.HasIndex("SurveyId")
+                        .HasDatabaseName("ix_leads_survey")
+                        .HasFilter("survey_id is not null");
+
+                    b.HasIndex("Source", "CreatedAt")
+                        .IsDescending(false, true)
+                        .HasDatabaseName("ix_leads_source");
+
+                    b.ToTable("leads", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_leads_admission_status", "admission_status in ('none','invited','testing','tested','accepted','rejected')");
+
+                            t.HasCheckConstraint("ck_leads_source", "source in ('manual','survey')");
+
+                            t.HasCheckConstraint("ck_leads_source_survey", "(source = 'survey') = (survey_id is not null)");
+                        });
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.LeadConversion", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<DateTimeOffset>("ConvertedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("converted_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("text")
+                        .HasDefaultValue("manual")
+                        .HasColumnName("source");
+
+                    b.Property<Guid?>("SurveyId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("survey_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_lead_conversions");
+
+                    b.HasIndex("SurveyId")
+                        .HasDatabaseName("ix_lead_conversions_survey_id");
+
+                    b.HasIndex("Source", "SurveyId")
+                        .HasDatabaseName("ix_lead_conversions_source");
+
+                    b.ToTable("lead_conversions", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_lead_conversions_source", "source in ('manual','survey')");
+                        });
                 });
 
             modelBuilder.Entity("SchoolLms.Domain.LeadStage", b =>
@@ -2929,6 +3591,111 @@ namespace SchoolLms.Infrastructure.Migrations
                         .HasDatabaseName("ix_lms_topics_module_id_order");
 
                     b.ToTable("lms_topics", (string)null);
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.NewsItem", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<string>("AuthorId")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("author_id");
+
+                    b.Property<string>("AuthorName")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("author_name");
+
+                    b.Property<string>("Body")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("body");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("deleted_at");
+
+                    b.Property<bool>("ForEmployee")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("for_employee");
+
+                    b.Property<bool>("ForParent")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("for_parent");
+
+                    b.Property<bool>("ForStudent")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("for_student");
+
+                    b.Property<string>("ImageUrl")
+                        .HasColumnType("text")
+                        .HasColumnName("image_url");
+
+                    b.Property<DateTimeOffset?>("PublishedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("published_at");
+
+                    b.Property<int>("TelegramRecipientCount")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("telegram_recipient_count");
+
+                    b.Property<DateTimeOffset?>("TelegramSentAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("telegram_sent_at");
+
+                    b.Property<int>("TelegramSentCount")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("telegram_sent_count");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("title");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id")
+                        .HasName("pk_news");
+
+                    b.HasIndex("AuthorId")
+                        .HasDatabaseName("ix_news_author_id");
+
+                    b.HasIndex("PublishedAt")
+                        .IsDescending()
+                        .HasDatabaseName("ix_news_feed")
+                        .HasFilter("deleted_at is null");
+
+                    b.ToTable("news", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_news_audience", "for_employee or for_parent or for_student");
+
+                            t.HasCheckConstraint("ck_news_body", "btrim(body) <> ''");
+
+                            t.HasCheckConstraint("ck_news_title", "btrim(title) <> ''");
+                        });
                 });
 
             modelBuilder.Entity("SchoolLms.Domain.Payment", b =>
@@ -3335,6 +4102,161 @@ namespace SchoolLms.Infrastructure.Migrations
                     b.ToTable("quarters", (string)null);
                 });
 
+            modelBuilder.Entity("SchoolLms.Domain.Question", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasColumnType("text")
+                        .HasColumnName("id");
+
+                    b.Property<string>("BankId")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("bank_id");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp without time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("ImageUrl")
+                        .HasColumnType("text")
+                        .HasColumnName("image_url");
+
+                    b.Property<int>("Order")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("order");
+
+                    b.Property<string>("Text")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("text");
+
+                    b.HasKey("Id")
+                        .HasName("pk_questions");
+
+                    b.HasIndex("BankId", "Order")
+                        .HasDatabaseName("ix_questions_bank_order");
+
+                    b.ToTable("questions", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_questions_text", "btrim(text) <> ''");
+                        });
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.QuestionBank", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasColumnType("text")
+                        .HasColumnName("id");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp without time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("CreatedByUserId")
+                        .HasColumnType("text")
+                        .HasColumnName("created_by_user_id");
+
+                    b.Property<int>("Grade")
+                        .HasColumnType("integer")
+                        .HasColumnName("grade");
+
+                    b.Property<bool>("IsArchived")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("is_archived");
+
+                    b.Property<decimal?>("PointsPerCorrect")
+                        .HasPrecision(6, 2)
+                        .HasColumnType("numeric(6,2)")
+                        .HasColumnName("points_per_correct");
+
+                    b.Property<int?>("QuestionsPerTest")
+                        .HasColumnType("integer")
+                        .HasColumnName("questions_per_test");
+
+                    b.Property<string>("SubjectId")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("subject_id");
+
+                    b.Property<int?>("TimeLimitMin")
+                        .HasColumnType("integer")
+                        .HasColumnName("time_limit_min");
+
+                    b.HasKey("Id")
+                        .HasName("pk_question_banks");
+
+                    b.HasIndex("CreatedByUserId")
+                        .HasDatabaseName("ix_question_banks_created_by_user_id");
+
+                    b.HasIndex("SubjectId")
+                        .HasDatabaseName("ix_question_banks_subject_id");
+
+                    b.HasIndex("Grade", "SubjectId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_question_banks_live")
+                        .HasFilter("not is_archived");
+
+                    b.ToTable("question_banks", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_question_banks_grade", "grade between 0 and 11");
+
+                            t.HasCheckConstraint("ck_question_banks_points_per_correct", "points_per_correct is null or points_per_correct > 0");
+
+                            t.HasCheckConstraint("ck_question_banks_questions_per_test", "questions_per_test is null or questions_per_test >= 1");
+
+                            t.HasCheckConstraint("ck_question_banks_time_limit_min", "time_limit_min is null or time_limit_min between 1 and 600");
+                        });
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.QuestionOption", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasColumnType("text")
+                        .HasColumnName("id");
+
+                    b.Property<bool>("IsCorrect")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("is_correct");
+
+                    b.Property<int>("Order")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("order");
+
+                    b.Property<string>("QuestionId")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("question_id");
+
+                    b.Property<string>("Text")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("text");
+
+                    b.HasKey("Id")
+                        .HasName("pk_question_options");
+
+                    b.HasIndex("QuestionId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_question_options_one_correct")
+                        .HasFilter("is_correct");
+
+                    b.HasIndex("QuestionId", "Order")
+                        .HasDatabaseName("ix_question_options_question_order");
+
+                    b.ToTable("question_options", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_question_options_text", "btrim(text) <> ''");
+                        });
+                });
+
             modelBuilder.Entity("SchoolLms.Domain.Room", b =>
                 {
                     b.Property<Guid>("Id")
@@ -3525,6 +4447,12 @@ namespace SchoolLms.Infrastructure.Migrations
                         .IsRequired()
                         .HasColumnType("text")
                         .HasColumnName("address");
+
+                    b.Property<bool>("AdmissionShowAnswersToCandidate")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("admission_show_answers_to_candidate");
 
                     b.Property<bool>("ArchiveOnlyNonDebtorStudents")
                         .ValueGeneratedOnAdd()
@@ -3761,6 +4689,113 @@ namespace SchoolLms.Infrastructure.Migrations
                         .HasName("pk_school_year_archives");
 
                     b.ToTable("school_year_archives", (string)null);
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.SeasonalMark", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasColumnType("text")
+                        .HasColumnName("id");
+
+                    b.Property<string>("ClassId")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("class_id");
+
+                    b.Property<string>("Comment")
+                        .HasColumnType("text")
+                        .HasColumnName("comment");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp without time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("CreatedByUserId")
+                        .HasColumnType("text")
+                        .HasColumnName("created_by_user_id");
+
+                    b.Property<int?>("Month")
+                        .HasColumnType("integer")
+                        .HasColumnName("month");
+
+                    b.Property<string>("PeriodKey")
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("text")
+                        .HasColumnName("period_key")
+                        .HasComputedColumnSql("case period_kind when 'monthly' then 'M:' || year::text || '-' || lpad(month::text, 2, '0') when 'quarterly' then 'Q:' || year::text || '-' || quarter::text else 'Y:' || year::text end", true);
+
+                    b.Property<string>("PeriodKind")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("period_kind");
+
+                    b.Property<int?>("Quarter")
+                        .HasColumnType("integer")
+                        .HasColumnName("quarter");
+
+                    b.Property<decimal?>("Score")
+                        .HasPrecision(5, 2)
+                        .HasColumnType("numeric(5,2)")
+                        .HasColumnName("score");
+
+                    b.Property<string>("StudentId")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("student_id");
+
+                    b.Property<string>("SubjectId")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("subject_id");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp without time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<int>("Year")
+                        .HasColumnType("integer")
+                        .HasColumnName("year");
+
+                    b.HasKey("Id")
+                        .HasName("pk_seasonal_marks");
+
+                    b.HasIndex("CreatedByUserId")
+                        .HasDatabaseName("ix_seasonal_marks_created_by_user_id");
+
+                    b.HasIndex("PeriodKey")
+                        .HasDatabaseName("ix_seasonal_marks_period_key");
+
+                    b.HasIndex("SubjectId")
+                        .HasDatabaseName("ix_seasonal_marks_subject_id");
+
+                    b.HasIndex("ClassId", "SubjectId", "PeriodKey")
+                        .HasDatabaseName("ix_seasonal_marks_class_subject_period");
+
+                    b.HasIndex("StudentId", "SubjectId", "PeriodKey")
+                        .IsUnique()
+                        .HasDatabaseName("ux_seasonal_marks_student_subject_period");
+
+                    b.ToTable("seasonal_marks", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_seasonal_marks_comment", "comment is null or char_length(btrim(comment)) >= 3");
+
+                            t.HasCheckConstraint("ck_seasonal_marks_month", "month is null or month between 1 and 12");
+
+                            t.HasCheckConstraint("ck_seasonal_marks_month_kind", "(period_kind = 'monthly') = (month is not null)");
+
+                            t.HasCheckConstraint("ck_seasonal_marks_not_empty", "score is not null or comment is not null");
+
+                            t.HasCheckConstraint("ck_seasonal_marks_period_kind", "period_kind in ('monthly','quarterly','yearly')");
+
+                            t.HasCheckConstraint("ck_seasonal_marks_quarter", "quarter is null or quarter between 1 and 4");
+
+                            t.HasCheckConstraint("ck_seasonal_marks_quarter_kind", "(period_kind = 'quarterly') = (quarter is not null)");
+
+                            t.HasCheckConstraint("ck_seasonal_marks_score", "score is null or (score >= 0 and score <= 100)");
+
+                            t.HasCheckConstraint("ck_seasonal_marks_year", "year between 2000 and 2100");
+                        });
                 });
 
             modelBuilder.Entity("SchoolLms.Domain.Student", b =>
@@ -4653,6 +5688,220 @@ namespace SchoolLms.Infrastructure.Migrations
                         });
                 });
 
+            modelBuilder.Entity("SchoolLms.Domain.Survey", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("created_by");
+
+                    b.Property<string>("ImageUrl")
+                        .HasColumnType("text")
+                        .HasColumnName("image_url");
+
+                    b.Property<bool>("IsActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("is_active");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("name");
+
+                    b.Property<string>("OfferUrl")
+                        .HasColumnType("text")
+                        .HasColumnName("offer_url");
+
+                    b.Property<bool>("ShowStudentFirstNameInput")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("show_student_first_name_input");
+
+                    b.Property<bool>("ShowStudentGenderInput")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("show_student_gender_input");
+
+                    b.Property<bool>("ShowStudentGradeInput")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("show_student_grade_input");
+
+                    b.Property<bool>("ShowStudentLastNameInput")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("show_student_last_name_input");
+
+                    b.Property<bool>("ShowStudentPhoneNumberInput")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("show_student_phone_number_input");
+
+                    b.Property<string>("Slug")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("slug");
+
+                    b.Property<string>("StageId")
+                        .HasColumnType("text")
+                        .HasColumnName("stage_id");
+
+                    b.Property<string>("Subtitle")
+                        .HasColumnType("text")
+                        .HasColumnName("subtitle");
+
+                    b.Property<string>("ThankYouText")
+                        .HasColumnType("text")
+                        .HasColumnName("thank_you_text");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id")
+                        .HasName("pk_surveys");
+
+                    b.HasIndex("CreatedBy")
+                        .HasDatabaseName("ix_surveys_created_by");
+
+                    b.HasIndex("StageId")
+                        .HasDatabaseName("ix_surveys_stage_id");
+
+                    b.HasIndex("IsActive", "CreatedAt")
+                        .IsDescending(false, true)
+                        .HasDatabaseName("ix_surveys_active");
+
+                    b.ToTable("surveys", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_surveys_name", "btrim(name) <> ''");
+
+                            t.HasCheckConstraint("ck_surveys_required_toggles", "show_student_gender_input and show_student_grade_input");
+
+                            t.HasCheckConstraint("ck_surveys_slug", "slug ~ '^[a-z0-9]+(-[a-z0-9]+)*$' and length(slug) between 3 and 60");
+                        });
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.SurveySubmission", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<string>("Ip")
+                        .HasColumnType("text")
+                        .HasColumnName("ip");
+
+                    b.Property<string>("LeadId")
+                        .HasColumnType("text")
+                        .HasColumnName("lead_id");
+
+                    b.Property<string>("ParentFirstName")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("parent_first_name");
+
+                    b.Property<string>("ParentLastName")
+                        .HasColumnType("text")
+                        .HasColumnName("parent_last_name");
+
+                    b.Property<string>("ParentPhone")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("parent_phone");
+
+                    b.Property<string>("ParentPhoneKey")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("parent_phone_key");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("text")
+                        .HasDefaultValue("lead")
+                        .HasColumnName("status");
+
+                    b.Property<string>("StudentFirstName")
+                        .HasColumnType("text")
+                        .HasColumnName("student_first_name");
+
+                    b.Property<string>("StudentGender")
+                        .HasColumnType("text")
+                        .HasColumnName("student_gender");
+
+                    b.Property<short?>("StudentGrade")
+                        .HasColumnType("smallint")
+                        .HasColumnName("student_grade");
+
+                    b.Property<string>("StudentLastName")
+                        .HasColumnType("text")
+                        .HasColumnName("student_last_name");
+
+                    b.Property<string>("StudentPhone")
+                        .HasColumnType("text")
+                        .HasColumnName("student_phone");
+
+                    b.Property<Guid>("SurveyId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("survey_id");
+
+                    b.Property<string>("UserAgent")
+                        .HasColumnType("text")
+                        .HasColumnName("user_agent");
+
+                    b.HasKey("Id")
+                        .HasName("pk_survey_submissions");
+
+                    b.HasIndex("LeadId")
+                        .HasDatabaseName("ix_survey_submissions_lead");
+
+                    b.HasIndex("SurveyId", "CreatedAt")
+                        .IsDescending(false, true)
+                        .HasDatabaseName("ix_survey_submissions_survey");
+
+                    b.HasIndex("SurveyId", "ParentPhoneKey", "CreatedAt")
+                        .IsDescending(false, false, true)
+                        .HasDatabaseName("ix_survey_submissions_dedupe");
+
+                    b.ToTable("survey_submissions", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_survey_submissions_gender", "student_gender is null or student_gender in ('male','female')");
+
+                            t.HasCheckConstraint("ck_survey_submissions_grade", "student_grade is null or student_grade between 0 and 11");
+
+                            t.HasCheckConstraint("ck_survey_submissions_parent", "btrim(parent_first_name) <> '' and btrim(parent_phone) <> ''");
+
+                            t.HasCheckConstraint("ck_survey_submissions_status", "status in ('lead','duplicate')");
+                        });
+                });
+
             modelBuilder.Entity("SchoolLms.Domain.Teacher", b =>
                 {
                     b.Property<string>("Id")
@@ -5458,6 +6707,164 @@ namespace SchoolLms.Infrastructure.Migrations
                         .HasConstraintName("fk_discounts_students_student_id");
                 });
 
+            modelBuilder.Entity("SchoolLms.Domain.Exam", b =>
+                {
+                    b.HasOne("SchoolLms.Domain.AppUser", null)
+                        .WithMany()
+                        .HasForeignKey("CreatedByUserId")
+                        .OnDelete(DeleteBehavior.SetNull)
+                        .HasConstraintName("fk_exams_users_created_by_user_id");
+
+                    b.HasOne("SchoolLms.Domain.ExamType", null)
+                        .WithMany()
+                        .HasForeignKey("ExamTypeId")
+                        .OnDelete(DeleteBehavior.SetNull)
+                        .HasConstraintName("fk_exams_exam_types_exam_type_id");
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.ExamAnswer", b =>
+                {
+                    b.HasOne("SchoolLms.Domain.ExamAttempt", null)
+                        .WithMany()
+                        .HasForeignKey("AttemptId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_exam_answers_exam_attempts_attempt_id");
+
+                    b.HasOne("SchoolLms.Domain.Question", null)
+                        .WithMany()
+                        .HasForeignKey("QuestionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_exam_answers_questions_question_id");
+
+                    b.HasOne("SchoolLms.Domain.ExamSection", null)
+                        .WithMany()
+                        .HasForeignKey("SectionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_exam_answers_exam_sections_section_id");
+
+                    b.HasOne("SchoolLms.Domain.QuestionOption", null)
+                        .WithMany()
+                        .HasForeignKey("SelectedOptionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_exam_answers_question_options_selected_option_id");
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.ExamAttempt", b =>
+                {
+                    b.HasOne("SchoolLms.Domain.ExamInvitation", null)
+                        .WithMany()
+                        .HasForeignKey("InvitationId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired()
+                        .HasConstraintName("fk_exam_attempts_exam_invitations_invitation_id");
+
+                    b.HasOne("SchoolLms.Domain.ExamParticipant", null)
+                        .WithMany()
+                        .HasForeignKey("ParticipantId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_exam_attempts_exam_participants_participant_id");
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.ExamInvitation", b =>
+                {
+                    b.HasOne("SchoolLms.Domain.AppUser", null)
+                        .WithMany()
+                        .HasForeignKey("IssuedByUserId")
+                        .OnDelete(DeleteBehavior.SetNull)
+                        .HasConstraintName("fk_exam_invitations_users_issued_by_user_id");
+
+                    b.HasOne("SchoolLms.Domain.ExamParticipant", null)
+                        .WithMany()
+                        .HasForeignKey("ParticipantId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_exam_invitations_exam_participants_participant_id");
+
+                    b.HasOne("SchoolLms.Domain.AppUser", null)
+                        .WithMany()
+                        .HasForeignKey("RevokedByUserId")
+                        .OnDelete(DeleteBehavior.SetNull)
+                        .HasConstraintName("fk_exam_invitations_users_revoked_by_user_id");
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.ExamParticipant", b =>
+                {
+                    b.HasOne("SchoolLms.Domain.SchoolClass", null)
+                        .WithMany()
+                        .HasForeignKey("ClassId")
+                        .OnDelete(DeleteBehavior.SetNull)
+                        .HasConstraintName("fk_exam_participants_classes_class_id");
+
+                    b.HasOne("SchoolLms.Domain.Exam", null)
+                        .WithMany()
+                        .HasForeignKey("ExamId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_exam_participants_exams_exam_id");
+
+                    b.HasOne("SchoolLms.Domain.Lead", null)
+                        .WithMany()
+                        .HasForeignKey("LeadId")
+                        .OnDelete(DeleteBehavior.SetNull)
+                        .HasConstraintName("fk_exam_participants_leads_lead_id");
+
+                    b.HasOne("SchoolLms.Domain.AppUser", null)
+                        .WithMany()
+                        .HasForeignKey("ScoredByUserId")
+                        .OnDelete(DeleteBehavior.SetNull)
+                        .HasConstraintName("fk_exam_participants_users_scored_by_user_id");
+
+                    b.HasOne("SchoolLms.Domain.Student", null)
+                        .WithMany()
+                        .HasForeignKey("StudentId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .HasConstraintName("fk_exam_participants_students_student_id");
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.ExamSection", b =>
+                {
+                    b.HasOne("SchoolLms.Domain.QuestionBank", null)
+                        .WithMany()
+                        .HasForeignKey("BankId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_exam_sections_question_banks_bank_id");
+
+                    b.HasOne("SchoolLms.Domain.Exam", null)
+                        .WithMany("Sections")
+                        .HasForeignKey("ExamId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_exam_sections_exams_exam_id");
+
+                    b.HasOne("SchoolLms.Domain.Subject", null)
+                        .WithMany()
+                        .HasForeignKey("SubjectId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_exam_sections_subjects_subject_id");
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.ExamSectionScore", b =>
+                {
+                    b.HasOne("SchoolLms.Domain.ExamParticipant", null)
+                        .WithMany()
+                        .HasForeignKey("ParticipantId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_exam_section_scores_exam_participants_participant_id");
+
+                    b.HasOne("SchoolLms.Domain.ExamSection", null)
+                        .WithMany()
+                        .HasForeignKey("SectionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_exam_section_scores_exam_sections_section_id");
+                });
+
             modelBuilder.Entity("SchoolLms.Domain.Expense", b =>
                 {
                     b.HasOne("SchoolLms.Domain.AppUser", null)
@@ -5544,6 +6951,24 @@ namespace SchoolLms.Infrastructure.Migrations
                         .HasConstraintName("fk_invoices_students_student_id");
                 });
 
+            modelBuilder.Entity("SchoolLms.Domain.Lead", b =>
+                {
+                    b.HasOne("SchoolLms.Domain.Survey", null)
+                        .WithMany()
+                        .HasForeignKey("SurveyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_leads_surveys_survey_id");
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.LeadConversion", b =>
+                {
+                    b.HasOne("SchoolLms.Domain.Survey", null)
+                        .WithMany()
+                        .HasForeignKey("SurveyId")
+                        .OnDelete(DeleteBehavior.SetNull)
+                        .HasConstraintName("fk_lead_conversions_surveys_survey_id");
+                });
+
             modelBuilder.Entity("SchoolLms.Domain.LedgerEntry", b =>
                 {
                     b.HasOne("SchoolLms.Domain.AppUser", null)
@@ -5606,6 +7031,16 @@ namespace SchoolLms.Infrastructure.Migrations
                         .HasConstraintName("fk_lms_topics_lms_modules_module_id");
 
                     b.Navigation("Module");
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.NewsItem", b =>
+                {
+                    b.HasOne("SchoolLms.Domain.AppUser", null)
+                        .WithMany()
+                        .HasForeignKey("AuthorId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_news_users_author_id");
                 });
 
             modelBuilder.Entity("SchoolLms.Domain.Payment", b =>
@@ -5696,6 +7131,42 @@ namespace SchoolLms.Infrastructure.Migrations
                         .HasConstraintName("fk_payroll_adjustments_adjustment_reasons_reason_id_kind");
                 });
 
+            modelBuilder.Entity("SchoolLms.Domain.Question", b =>
+                {
+                    b.HasOne("SchoolLms.Domain.QuestionBank", null)
+                        .WithMany()
+                        .HasForeignKey("BankId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_questions_question_banks_bank_id");
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.QuestionBank", b =>
+                {
+                    b.HasOne("SchoolLms.Domain.AppUser", null)
+                        .WithMany()
+                        .HasForeignKey("CreatedByUserId")
+                        .OnDelete(DeleteBehavior.SetNull)
+                        .HasConstraintName("fk_question_banks_users_created_by_user_id");
+
+                    b.HasOne("SchoolLms.Domain.Subject", null)
+                        .WithMany()
+                        .HasForeignKey("SubjectId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_question_banks_subjects_subject_id");
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.QuestionOption", b =>
+                {
+                    b.HasOne("SchoolLms.Domain.Question", null)
+                        .WithMany("Options")
+                        .HasForeignKey("QuestionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_question_options_questions_question_id");
+                });
+
             modelBuilder.Entity("SchoolLms.Domain.ScheduleLesson", b =>
                 {
                     b.HasOne("SchoolLms.Domain.ScheduleTemplate", null)
@@ -5704,6 +7175,36 @@ namespace SchoolLms.Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("fk_schedule_lesson_schedule_templates_template_id");
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.SeasonalMark", b =>
+                {
+                    b.HasOne("SchoolLms.Domain.SchoolClass", null)
+                        .WithMany()
+                        .HasForeignKey("ClassId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_seasonal_marks_classes_class_id");
+
+                    b.HasOne("SchoolLms.Domain.AppUser", null)
+                        .WithMany()
+                        .HasForeignKey("CreatedByUserId")
+                        .OnDelete(DeleteBehavior.SetNull)
+                        .HasConstraintName("fk_seasonal_marks_users_created_by_user_id");
+
+                    b.HasOne("SchoolLms.Domain.Student", null)
+                        .WithMany()
+                        .HasForeignKey("StudentId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_seasonal_marks_students_student_id");
+
+                    b.HasOne("SchoolLms.Domain.Subject", null)
+                        .WithMany()
+                        .HasForeignKey("SubjectId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_seasonal_marks_subjects_subject_id");
                 });
 
             modelBuilder.Entity("SchoolLms.Domain.Student", b =>
@@ -5929,6 +7430,38 @@ namespace SchoolLms.Infrastructure.Migrations
                         .HasConstraintName("fk_study_group_teachers_teachers_teacher_id");
                 });
 
+            modelBuilder.Entity("SchoolLms.Domain.Survey", b =>
+                {
+                    b.HasOne("SchoolLms.Domain.AppUser", null)
+                        .WithMany()
+                        .HasForeignKey("CreatedBy")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_surveys_users_created_by");
+
+                    b.HasOne("SchoolLms.Domain.LeadStage", null)
+                        .WithMany()
+                        .HasForeignKey("StageId")
+                        .OnDelete(DeleteBehavior.SetNull)
+                        .HasConstraintName("fk_surveys_lead_stages_stage_id");
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.SurveySubmission", b =>
+                {
+                    b.HasOne("SchoolLms.Domain.Lead", null)
+                        .WithMany()
+                        .HasForeignKey("LeadId")
+                        .OnDelete(DeleteBehavior.SetNull)
+                        .HasConstraintName("fk_survey_submissions_leads_lead_id");
+
+                    b.HasOne("SchoolLms.Domain.Survey", null)
+                        .WithMany()
+                        .HasForeignKey("SurveyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_survey_submissions_surveys_survey_id");
+                });
+
             modelBuilder.Entity("SchoolLms.Domain.TelegramAccount", b =>
                 {
                     b.HasOne("SchoolLms.Domain.AppUser", null)
@@ -5989,6 +7522,11 @@ namespace SchoolLms.Infrastructure.Migrations
                     b.Navigation("Questions");
                 });
 
+            modelBuilder.Entity("SchoolLms.Domain.Exam", b =>
+                {
+                    b.Navigation("Sections");
+                });
+
             modelBuilder.Entity("SchoolLms.Domain.LmsModule", b =>
                 {
                     b.Navigation("Topics");
@@ -6004,6 +7542,11 @@ namespace SchoolLms.Infrastructure.Migrations
                     b.Navigation("Materials");
 
                     b.Navigation("Progresses");
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.Question", b =>
+                {
+                    b.Navigation("Options");
                 });
 
             modelBuilder.Entity("SchoolLms.Domain.ScheduleTemplate", b =>

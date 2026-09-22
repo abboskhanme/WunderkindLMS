@@ -188,8 +188,24 @@ public sealed class ReceiptService(
     /// qisman unikal indeks bor — bittadan ortiq bo'la olmaydi).
     /// </para>
     /// </summary>
-    private async Task<DateTimeOffset?> CancelledAtAsync(Guid paymentId, CancellationToken ct)
+    private Task<DateTimeOffset?> CancelledAtAsync(Guid paymentId, CancellationToken ct) =>
+        CancelledAtAsync(db, paymentId, ct);
+
+    /// <summary>
+    /// "Bu chek bekor qilinganmi" savolining YAGONA ta'rifi — PDF ham, 58 mm
+    /// termal chek (<see cref="ReceiptPrintQuery"/>) ham shu metodni chaqiradi.
+    /// Ikkinchi nusxa yozilsa, bir kun ikki chek ikki xil javob berardi
+    /// (yuqoridagi izohga qarang: bu firibgarlikka qulay xato).
+    /// </summary>
+    /// <param name="db">Baza konteksti (faqat o'qiladi).</param>
+    /// <param name="paymentId">To'lov yoki storno qatori id'si.</param>
+    /// <param name="ct">Bekor qilish tokeni.</param>
+    /// <returns>Storno sanasi; to'lov kuchda bo'lsa null.</returns>
+    public static async Task<DateTimeOffset?> CancelledAtAsync(
+        IAppDbContext db, Guid paymentId, CancellationToken ct = default)
     {
+        ArgumentNullException.ThrowIfNull(db);
+
         var rows = await db.Payments.AsNoTracking()
             .Where(p => p.Id == paymentId || p.ReversalOf == paymentId)
             .Select(p => new { p.Id, p.ReversalOf, p.ReceivedAt })
@@ -228,7 +244,7 @@ public sealed class ReceiptService(
         var lines = payment.Allocations
             .OrderBy(a => a.PeriodMonth)
             .ThenBy(a => a.CategoryName, StringComparer.Ordinal)
-            .Select(a => new ReceiptLine(a.CategoryName, a.PeriodMonth, a.Amount))
+            .Select(a => new ReceiptLine(a.CategoryName, a.PeriodMonth, a.Amount, a.InvoiceId))
             .ToList();
 
         if (payment.Unallocated > 0m)

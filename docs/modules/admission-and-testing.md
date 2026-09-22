@@ -136,8 +136,16 @@ points at `leads.id`:
 
 ```
 leads.admission_status  text not null default 'none'
-leads.student_id        text null      -- set when the candidate enrols
 ```
+
+> **Changed 2026-09-22 (client decision, already built):** there is **no
+> `leads.student_id`**. `POST /api/admin/leads/{id}/enrol` exists (in
+> `StudentsController`) and **deletes the lead** on enrolment; only a statistic row
+> survives in `lead_conversions` (`converted_at`, `source`, `survey_id`). So
+> `enrolled` is never a stored `admission_status` — an enrolled candidate is simply
+> no longer a lead. Candidate history after enrolment (which exam, what score) must
+> therefore be kept on `exam_participants` with `lead_id` set to NULL on delete, not
+> on the lead. Do not re-add `student_id` to `leads`; do not rebuild the enrol endpoint.
 
 `admission_status ∈ { none, invited, testing, tested, accepted, rejected, enrolled }`.
 
@@ -876,6 +884,12 @@ machine-readable `code` (§7.5).
 
 `GET /api/admin/leads`, `POST`, `PUT /{id}`, `PATCH /{id}`, `DELETE /{id}` are
 **unchanged in path, body and response shape**. The board depends on them.
+
+> **Built 2026-09-22, with one change from this spec:** the lead is **deleted** on
+> enrolment (client decision) and only a statistic row survives in `lead_conversions`
+> (time + source). There is no `leads.student_id`. When this module is built,
+> `admission_status = 'enrolled'` therefore has no lead row to live on — read it from
+> `lead_conversions` / the student instead. See `docs/ASSUMPTIONS.md`, 2026-09-22.
 
 `POST /leads/{id}/enrol` creates the `Student` via the existing
 `StudentPayload` **[ours, `Dtos.cs:27`]**, sets `leads.student_id` and

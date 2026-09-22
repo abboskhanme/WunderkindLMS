@@ -439,3 +439,22 @@ has no Davomat section at all.
 
 The sidebar therefore reads EduSchool's sequence with Davomat inserted after
 Xabarlar, then Sozlamalar, then Future.
+
+## Sozlamalar — the fourth row (2026-09-21)
+
+EduSchool's Sozlamalar flyout has four rows; ours had three, with a comment saying *Sotuv va
+marketing* was deliberately absent. It is now present — **Savdo va marketing**, after *Umumiy
+sozlamalar*, EduSchool's position — so the flyout matches row for row. Its three screens (Arizalar,
+Topshirilgan arizalar, Yangiliklar) are reached through a section strip at the top of each one,
+not through three sidebar rows, for the same reason *Umumiy sozlamalar* is one row with sections.
+
+**The section-level `perm` moved to its children**, as the O'quv bo'limi pass did on 2026-09-17.
+`Sidebar.tsx` hides every child of a section whose own `perm` fails, so leaving
+`perm: 'settings'` on Sozlamalar would have hidden the new row from a member of staff who holds only
+the new `marketing` key. Nobody who could see Sozlamalar before loses anything: *Integratsiyalar*
+and *Umumiy sozlamalar* now carry `perm: 'settings'` themselves. Story is declined
+(`docs/modules/sales-marketing.md` §1.1), so there is no Story entry.
+
+One visible side effect, correct but worth recording: *Yangi o'quv yiliga o'tish* now shows for a
+member of staff who holds `academicYear` without `settings`. Its route and API were already gated
+on `academicYear` alone; before this change the section gate hid a screen the person could open.

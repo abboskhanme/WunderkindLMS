@@ -1145,7 +1145,7 @@ One table, ordered by value per hour. Hours are backend + frontend for one devel
 
 ### 7.1 Cheap and high value — do these first (**329 h** ≈ 4 weeks for one backend + one frontend developer working in parallel)
 
-**Progress (2026-09-17): every item except #8 (surveys → leads, 36 h) and #14 (news feed, 24 h) is done — about 269 h of the 329, ≈60 h left.** Wave 1 was read-only and ran in parallel; wave 2 was sequenced behind a single migration (`ParityWave2Schema`) and then ran three feature slices in parallel on top of it. #11's leads funnel is a current-state snapshot only: `leads` stores no created-at, source or stage history, so a real funnel needs a `lead_events` table first.
+**Progress (2026-09-21): all fourteen items are done.** #8 and #14 shipped together as the *Savdo va marketing* module (`docs/modules/sales-marketing.md`). (2026-09-17: every item except #8 and #14 was done — about 269 h of the 329.) Wave 1 was read-only and ran in parallel; wave 2 was sequenced behind a single migration (`ParityWave2Schema`) and then ran three feature slices in parallel on top of it. #11's leads funnel is a current-state snapshot only: `leads` stores no created-at, source or stage history, so a real funnel needs a `lead_events` table first.
 
 "Cheap" here means: **no new subsystem, and in most cases no new table** — a screen over data
 the database already holds. Not one of these fourteen items requires a decision from the
@@ -1160,13 +1160,13 @@ client before it can start, and not one of them touches a financial write path.
 | 5 | ✅ **Certificates register** — **shipped 2026-09-16** | 2.3 | 30 | Frequently asked for; two small tables; no interaction with anything fragile. |
 | 6 | ✅ **Kassa kuni dashboard** (`fin-map` equivalent) — **shipped 2026-09-16** (`/api/admin/finance/cash-day` + `/calendar` → `CashDayPage.tsx`) | 3.2 | 44 | Reads only. The cashier and director open it every day. |
 | 7 | ✅ **Turnstile analytics + entrance/exit stats** — **shipped 2026-09-16** (`/api/admin/turnstile-analytics/*`) | 4 (#11, #12) | 26 | Events already ingested; we currently show a live feed and nothing historical. |
-| 8 | **Surveys → leads** (public form) | 5.2 | 36 | The only item that brings money in. Feeds the leads funnel. |
+| 8 | ✅ **Surveys → leads** (public form) — **shipped 2026-09-21** (`/ariza/:slug` → `POST /api/public/surveys/{slug}`, admin under *Sozlamalar → Savdo va marketing*, source breakdown on the funnel page) | 5.2 | 36 | The only item that brings money in. Feeds the leads funnel. |
 | 9 | **Show reversals explicitly in the student month history** | 3.4 | 4 | The history itself already exists (`StudentLedger.cs` + `PaymentHistoryModal.tsx`); only storno rows are invisible. |
 | 10 | ✅ **Discipline: parent notification + rating filters/stats/export** — filters, stats and export shipped 2026-09-16; the **Telegram** parent notification shipped 2026-09-17 (off on every reason until the school switches one on) | 6.3 | 19 | Completes #3. |
 | 11 | ◑ By-subject attainment pivot **shipped 2026-09-16** (`/admin/grades-report/subjects`); **discipline attendance report** (~12 h) and **leads funnel** (~12 h, new page — the board stays frozen) remain | 4 (#3, #6, #9) | 34 | Three small reports over existing data. Leads funnel is a **new page**; the board stays frozen. |
 | 12 | ✅ **Archive-reason catalogue + bulk archive** — **shipped 2026-09-17** | 2.2 | 8 | Small, and it makes the archive list analysable. |
 | 13 | ✅ **Four general-settings flags** — **shipped 2026-09-17**, each one enforced, not just stored | 5.5 | 6 | One column and one switch each. `archive_only_non_debtor_students` is a money-integrity rule. |
-| 14 | **News feed** | 5.2 | 24 | Replaces "broadcast and hope" with something that has a history. |
+| 14 | ✅ **News feed** — **shipped 2026-09-21** (admin composer, publish also sends over Telegram with counts recorded, feed in the Mini App and the parent/student portal) | 5.2 | 24 | Replaces "broadcast and hope" with something that has a history. |
 
 ### 7.2 Expensive — schedule deliberately, do not drift into
 

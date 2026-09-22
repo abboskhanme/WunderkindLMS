@@ -8,7 +8,7 @@
  * bitta qatori o'zgaradi. EKRANLAR HECH QACHON `api` NI TO'G'RIDAN-TO'G'RI
  * CHAQIRMAYDI, shuning uchun ko'chirish narxi shu fayl bilan cheklanadi.
  */
-import { api } from './api'
+import { api, ApiError } from './api'
 
 /** Endpoint prefiksi. `/tg/teacher` ga o'tganda faqat shu qator o'zgaradi. */
 const BASE = '/teacher'
@@ -22,6 +22,12 @@ function qs(params) {
   const s = p.toString()
   return s ? `?${s}` : ''
 }
+
+/**
+ * How many news items one call asks for. §5.5 caps `take` at 50; the card
+ * shows three and `Barchasi` reveals the rest (§3.4).
+ */
+const NEWS_TAKE = 20
 
 /** Kanal nomi yo'lga tushadi: "5-A" ham, "__xodimlar__" ham xavfsiz kodlanadi. */
 const channelPath = (name) => `${BASE}/chat/${encodeURIComponent(name)}`
@@ -73,6 +79,31 @@ export const teacherApi = {
 
   /** O'quv yili bo'yicha maosh daftari: oylar, to'lovlar, qoldiq. */
   salary: () => api.get(`${BASE}/salary`),
+
+  /* ---------- yangiliklar ---------- */
+
+  /**
+   * Published news for employees — §5.5 `GET /api/tg/teacher/news`.
+   *
+   * NOT UNDER `BASE`. Every other call in this file still goes to the teacher
+   * portal (`/api/teacher/...`); the news reader is a Mini App endpoint and
+   * lives on the `/api/tg/teacher` prefix, so it is written out in full here
+   * and a later move of `BASE` leaves it alone.
+   *
+   * A MISSING ENDPOINT IS AN EMPTY FEED (404/405): until the reader endpoints
+   * are deployed, an error card on the Bugun tab would report a fault that
+   * does not exist. Any other status still throws.
+   */
+  news: async (take = NEWS_TAKE) => {
+    try {
+      const body = await api.get(`/tg/teacher/news${qs({ take })}`)
+      const rows = Array.isArray(body) ? body : (body?.rows ?? [])
+      return [...rows].sort((a, b) => (String(a.publishedAt) < String(b.publishedAt) ? 1 : -1))
+    } catch (e) {
+      if (e instanceof ApiError && (e.status === 404 || e.status === 405)) return []
+      throw e
+    }
+  },
 
   /* ---------- xabarlar ---------- */
 

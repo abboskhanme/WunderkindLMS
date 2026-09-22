@@ -45,7 +45,15 @@ namespace SchoolLms.Application.Billing;
 /// <param name="CategoryName">Toifa nomi (o'zbekcha): "Maktab to'lovi", "Avtobus", ...</param>
 /// <param name="PeriodMonth">Qaysi oy uchun. null = oyga bog'lanmagan (avans, qaytarish).</param>
 /// <param name="Amount">Shu qatorga tushgan summa.</param>
-public sealed record ReceiptLine(string CategoryName, DateOnly? PeriodMonth, decimal Amount);
+/// <param name="InvoiceId">
+/// Qaysi hisob-fakturaga (abonement oyi) tushgan. null = avans / qaytarish qatori.
+/// PDF buni chizmaydi; 58 mm termal chek (<see cref="ReceiptPrintQuery"/>) shu id
+/// orqali "to'liq yopildi / qoldi" holatini topadi — qatorlar ro'yxati ikkinchi
+/// marta yig'ilmasin deb (2026-09-22). Ixtiyoriy va oxirida: mavjud chaqiruvlar
+/// o'zgarishsiz qoladi.
+/// </param>
+public sealed record ReceiptLine(
+    string CategoryName, DateOnly? PeriodMonth, decimal Amount, Guid? InvoiceId = null);
 
 /// <summary>
 /// Chekda CHOP ETILADIGAN hamma narsa — boshqa hech narsa. Bu tip baza

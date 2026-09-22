@@ -21,6 +21,7 @@ import {
   AsyncBlock, channelSummaries, lessonOwnerTitle, lessonPairs, lessonProgress, lessonTimeState,
   nowHHmm,
 } from './shared'
+import { NewsCard } from './NewsCard'
 
 export function TodayTab({ profile, meta, onOpenAttendance }) {
   const perms = profile.permissions || []
@@ -166,6 +167,10 @@ export function TodayTab({ profile, meta, onOpenAttendance }) {
                 ))
               )}
             </Card>
+
+            {/* School news, after today's lessons (§3.4). It loads itself:
+                the feed can never take the day's schedule down with it. */}
+            <NewsCard />
 
             <div className="h-4" />
           </>

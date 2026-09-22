@@ -43,8 +43,7 @@ public record LeadFunnelLossDto(
     string StageId, string Title, string Color, int Count, double SharePercent);
 
 /// <summary>
-/// Sinf (maqsadli daraja) kesimi — <c>Lead.SourceId</c> kabi manba maydoni bazada
-/// YO'Q, shuning uchun manba o'rniga bor bo'lgan yagona mazmunli kesim.
+/// Sinf (maqsadli daraja) kesimi. Manba kesimi alohida — <see cref="LeadFunnelSourceDto"/>.
 /// </summary>
 /// <param name="TargetGrade">Lid qaysi sinfga kelmoqchi (0–11).</param>
 /// <param name="Total">Shu darajadagi barcha lidlar.</param>
@@ -57,6 +56,21 @@ public record LeadFunnelGradeDto(
     double? ConversionPercent);
 
 /// <summary>
+/// Manba kesimi (docs/modules/sales-marketing.md §2.7, SM-13): qo'lda kiritilgan lidlar
+/// bitta qator, ariza formasidan kelganlar — har bir ariza alohida qator.
+/// </summary>
+/// <param name="Source"><c>manual</c> | <c>survey</c> (<c>leads.source</c>).</param>
+/// <param name="SurveyId">Ariza id'si — faqat <c>survey</c> qatorida.</param>
+/// <param name="Label">Ekrandagi nom: "Qo'lda kiritilgan" yoki ariza nomi.</param>
+/// <param name="Total">Shu manbadan hozir doskada turgan lidlar.</param>
+/// <param name="EnrolledCount">Shu manbadan o'quvchiga aylangan (va doskadan o'chirilgan) lidlar.</param>
+/// <param name="EnrolledPercent">Enrolled / (Total + Enrolled), %. Ikkalasi 0 bo'lsa — null.</param>
+public record LeadFunnelSourceDto(
+    string Source, Guid? SurveyId, string Label,
+    int Total, int InFunnelCount, int ReachedFinalCount, int LostCount,
+    double? ConversionPercent, int EnrolledCount, double? EnrolledPercent);
+
+/// <summary>
 /// Buyurtmalar voronkasi (§4, #9). Bosqichlar ro'yxati va tartibi <c>LeadStage</c> dan
 /// olinadi — kodda qattiq yozilgan ro'yxat yo'q, mijoz ustunlarni o'zi o'zgartiradi.
 /// </summary>
@@ -65,12 +79,20 @@ public record LeadFunnelGradeDto(
 /// <param name="LostCount">"Yo'qotildi" deb belgilangan ustunlardagilar.</param>
 /// <param name="OrphanCount">Bosqichi o'chirilgan/noma'lum lidlar — hech qayerga qo'shilmaydi.</param>
 /// <param name="OverallConversionPercent">Oxirgi bosqich / birinchi bosqichga yetganlar (%).</param>
+/// <param name="EnrolledCount">
+/// O'quvchiga aylangan lidlar — ular doskadan (va <c>leads</c> dan) o'chiriladi,
+/// son esa <c>lead_conversions</c> da qoladi (mijoz qarori, 2026-09-22).
+/// </param>
+/// <param name="AllTimeLeads">Jami lidlar: doskadagilar + o'quvchiga aylanganlar.</param>
+/// <param name="EnrolledPercent">EnrolledCount / AllTimeLeads (%). Lid bo'lmasa — null.</param>
 public record LeadFunnelDto(
     int TotalLeads, int FunnelLeads, int LostCount, int OrphanCount,
     double? OverallConversionPercent,
     List<LeadFunnelStageDto> Stages,
     List<LeadFunnelLossDto> Losses,
-    List<LeadFunnelGradeDto> Grades);
+    List<LeadFunnelGradeDto> Grades,
+    List<LeadFunnelSourceDto> Sources,
+    int EnrolledCount, int AllTimeLeads, double? EnrolledPercent);
 
 /* ==========================================================================
    #6 — Davomat intizomi bo'yicha hisobot

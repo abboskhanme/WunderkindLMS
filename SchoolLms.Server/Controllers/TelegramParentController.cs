@@ -426,4 +426,9 @@ public sealed class TelegramParentController(
             b.ClassName == className
             || b.ClassName.StartsWith(className + " —")
             || b.ClassName.StartsWith("Barcha sinflar"));
+
+    /// <summary>Maktab yangiliklari — ota-ona auditoriyasi (sales-marketing.md §5.5).</summary>
+    [HttpGet("news")]
+    public async Task<ActionResult<IReadOnlyList<NewsFeedDto>>> News([FromQuery] int? take, CancellationToken ct) =>
+        Ok(await NewsFeedQuery.ListAsync(db, NewsFeedAudience.Parent, take, ct));
 }

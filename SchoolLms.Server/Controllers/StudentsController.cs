@@ -199,6 +199,60 @@ public class StudentsController(AppDbContext db, AuditService audit) : Controlle
     }
 
     /// <summary>
+    /// Lidni o'quvchiga aylantirish — doskadan to'g'ridan-to'g'ri sinfga
+    /// (admission-and-testing.md §6.1). O'quvchi AYNAN <see cref="Create"/> yo'lidan
+    /// yaratiladi (bir xil tekshiruvlar, tizim akkaunti, vasiylar), shuning uchun amal
+    /// shu controllerda turadi; manzil esa spetsifikatsiyadagi
+    /// <c>/api/admin/leads/{id}/enrol</c>.
+    ///
+    /// <para>
+    /// <b>Lid O'CHIRILADI</b> (mijoz qarori, 2026-09-22): uning ma'lumotlari endi o'quvchi
+    /// kartochkasida, lid sifatida saqlash ortiqcha. Lidlarning umumiy soni esa
+    /// <c>lead_conversions</c> da qoladi — faqat vaqt va manba, shaxsiy ma'lumotsiz.
+    /// O'quvchi, statistik qator, lidni o'chirish va audit — BITTA <c>SaveChanges</c> da:
+    /// o'quvchi yaratilib lid qolib ketgan (yoki aksincha) holat bo'lmaydi.
+    /// </para>
+    /// <para>
+    /// <b>Ikki ruxsat.</b> Controller darvozasi — <c>students</c> (o'quvchi yaratiladi);
+    /// xodimga qo'shimcha <c>leads</c> ham kerak, chunki lid o'chiriladi.
+    /// </para>
+    /// </summary>
+    [HttpPost("~/api/admin/leads/{leadId}/enrol")]
+    public async Task<ActionResult<LeadEnrolResultDto>> EnrolLead(string leadId, LeadEnrolPayload body)
+    {
+        if (User.IsInRole(Roles.Staff) && !User.HasClaim(AdminPermAttribute.ClaimType, "leads"))
+            return Forbid();
+
+        var lead = await db.Leads.FindAsync(leadId);
+        if (lead is null) return NotFound(new { message = "Lid topilmadi" });
+
+        var p = body.Student;
+        if (BadRelation(p.Guardians) is { } badRelation)
+            return BadRequest(new { message = badRelation });
+        if (BadLanguage(p.Language) is { } badLanguage)
+            return BadRequest(new { message = badLanguage });
+        if (BadTargetGradeRange(p.TargetGrade) is { } badRange)
+            return BadRequest(new { message = badRange });
+        if (string.IsNullOrWhiteSpace(p.ClassName) && p.TargetGrade is null)
+            return BadRequest(new { message = ClassOrTargetGradeMessage });
+
+        var student = AddStudent(p);
+        GuardianSync.MirrorPrimaryInput(student, p.Guardians);
+        db.LeadConversions.Add(new LeadConversion { Source = lead.Source, SurveyId = lead.SurveyId });
+        db.Leads.Remove(lead);
+        audit.Record(AuditService.EntityLead, lead.Id, "enrol",
+            $"Lid o'quvchiga aylantirildi va lidlardan o'chirildi → "
+            + (string.IsNullOrWhiteSpace(student.ClassName) ? "sinfsiz" : student.ClassName),
+            studentId: student.Id);
+        await db.SaveChangesAsync();
+
+        // Create bilan bir xil: vasiy qatori va bog'lanish (Mini App shu orqali ko'radi).
+        await GuardianSync.EnsureAsync(db, student);
+        await GuardianSync.ApplyAsync(db, student, p.Guardians);
+        return new LeadEnrolResultDto(ToDto(student, 0m));
+    }
+
+    /// <summary>
     /// §2.3 (S-8) — vasiylik turi ro'yxatdan tashqarimi. Tashqari bo'lsa
     /// tushunarli 400 qaytadi: bazadagi <c>ck_student_guardians_relation</c>
     /// ga borib 23514 bilan yiqilish foydalanuvchiga hech narsa aytmasdi.

@@ -207,6 +207,62 @@ export async function getReceiptPdf(paymentId: string): Promise<Blob> {
 }
 
 /**
+ * 58 mm termal chekning bitta qatori. Backend: `ReceiptPrintLineDto`.
+ * `*Text` maydonlari serverda formatlangan — brauzer ularni o'zgartirmay chop etadi.
+ */
+export interface ReceiptPrintLine {
+  /** `allocation` — abonement oyi, `advance` — avans, `refund` — storno'da qaytarilgan summa. */
+  kind: 'allocation' | 'advance' | 'refund'
+  invoiceId: string | null
+  categoryName: string
+  periodMonth: string | null
+  /** `2026-yil sentyabr`; oyga bog'lanmagan qatorda bo'sh satr. */
+  periodText: string
+  amount: number
+  amountText: string
+  /** Oyning CHOP ETILGAN paytdagi qoldig'i (serverda hisoblangan). */
+  remaining: number | null
+  isClosed: boolean | null
+  /** "to'liq yopildi" | "qoldi: …" | "hisob bekor qilingan" | null. */
+  statusText: string | null
+}
+
+/** 58 mm termal chek ma'lumoti. Backend: `ReceiptPrintDto` (`GET /api/receipts/{id}`). */
+export interface ReceiptPrint {
+  paymentId: string
+  receiptNo: number
+  schoolName: string
+  schoolAddress: string | null
+  schoolPhone: string | null
+  receivedAt: string
+  receivedAtText: string
+  studentId: string
+  studentName: string
+  className: string | null
+  lines: ReceiptPrintLine[]
+  total: number
+  totalText: string
+  method: string
+  methodText: string
+  cashierName: string
+  isReversal: boolean
+  cancelledAt: string | null
+  cancelledStamp: string | null
+  cancelledAtText: string | null
+  printedAt: string
+  printedAtText: string
+}
+
+/**
+ * 58 mm termal chek uchun JSON (2026-09-22). Faqat O'QIYDI; ruxsat PDF bilan
+ * bir xil (kassir — faqat o'z cheki, admin/direktor — hammasi).
+ */
+export async function getReceiptPrint(paymentId: string): Promise<ReceiptPrint> {
+  const res = await api.get<ReceiptPrint>(`/receipts/${paymentId}`)
+  return res.data
+}
+
+/**
  * Telegramga yuborish natijasi. Backend: `ReceiptDeliveryDto`.
  *
  * `delivered = false` — XATO EMAS: pul allaqachon qabul qilingan, ota-ona

@@ -1,15 +1,17 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using SchoolLms.Application.Abstractions;
 using SchoolLms.Application.Billing;
 using SchoolLms.Domain;
 
 namespace SchoolLms.Server.Controllers;
 
 /// <summary>
-/// To'lov cheki: PDF va Telegramga yuborish. Vazifa: P1-12. SPEC §4.7.
+/// To'lov cheki: PDF, 58 mm termal chek uchun JSON (2026-09-22) va Telegramga
+/// yuborish. Vazifa: P1-12. SPEC §4.7.
 ///
 /// <para>
-/// <b>RBAC.</b> Ikkala endpoint ham SPEC §4.3 jadvalining "To'lov qabul qilish
+/// <b>RBAC.</b> Uchala endpoint ham SPEC §4.3 jadvalining "To'lov qabul qilish
 /// va chek berish" qatoriga bog'langan
 /// (<see cref="FinanceAction.AcceptPayment"/> — kassir, admin, direktor).
 /// Ruxsat matritsada, bu yerda emas: yangi qoida kerak bo'lsa
@@ -33,9 +35,46 @@ namespace SchoolLms.Server.Controllers;
 [ApiController]
 [Authorize]
 [Route("api/receipts")]
-public class ReceiptsController(IReceiptService receipts, IPaymentService payments) : ControllerBase
+public class ReceiptsController(
+    IReceiptService receipts,
+    IPaymentService payments,
+    // 58 mm termal chek (2026-09-22): "yopildi / qoldi" holati hisob-fakturalar
+    // xizmatidan, sinf va storno holati bazadan o'qiladi. `IReceiptService` ga
+    // metod QO'SHILMADI — testlardagi soxta implementatsiyalar buzilmasin.
+    IInvoiceService invoices,
+    IAppDbContext db) : ControllerBase
 {
     private const string PdfMime = "application/pdf";
+
+    /// <summary>
+    /// 58 mm termal chek uchun ma'lumot (JSON). Brauzer uni yashirin iframe'da
+    /// ikki nusxada (maktab + ota-ona) chop etadi — PDF'ni saqlash/ochish shart
+    /// emas (mijoz so'rovi, 2026-09-22).
+    ///
+    /// <para>
+    /// Ichida: PDF chekdagi hamma narsa (qatorlar AYNAN <c>ReceiptService.BuildModel</c>
+    /// dan, matn <c>ReceiptText</c> dan) + har abonement oyi uchun "to'liq
+    /// yopildi" yoki "qoldi: …" (serverda hisoblangan <c>InvoiceDto.Remaining</c>,
+    /// chop etilgan paytdagi holat) + o'quvchining sinfi.
+    /// </para>
+    /// <para>
+    /// RBAC — PDF bilan AYNAN bir xil: <see cref="FinanceAction.AcceptPayment"/>
+    /// (kassir, admin, direktor) va kassir faqat o'z chekini ko'radi (F0.04,
+    /// boshqasiniki 404). Endpoint faqat O'QIYDI.
+    /// </para>
+    /// </summary>
+    [HttpGet("{paymentId:guid}")]
+    [FinanceRole(FinanceAction.AcceptPayment)]
+    [ProducesResponseType(StatusCodes.Status200OK, Type = typeof(ReceiptPrintDto))]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<ReceiptPrintDto>> Print(Guid paymentId, CancellationToken ct)
+    {
+        if (await ForbiddenForOtherCashierAsync(paymentId, ct) is { } forbidden) return forbidden;
+
+        var receipt = await ReceiptPrintQuery.GetAsync(paymentId, payments, invoices, db, ct);
+        if (receipt is null) return NotFound(new { message = "To'lov topilmadi" });
+        return receipt;
+    }
 
     /// <summary>
     /// Chek PDF'i. Ichida: maktab nomi, chek raqami, sana-vaqt (Toshkent),

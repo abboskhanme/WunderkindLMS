@@ -5,7 +5,9 @@ import {
   Cake,
   CheckCheck,
   Lightbulb,
+  ClipboardList,
   MessageSquare,
+  Newspaper,
   TriangleAlert,
   UserRoundCheck,
 } from 'lucide-react'
@@ -24,6 +26,8 @@ const kindStyle: Record<NotificationKind, { icon: LucideIcon; wrap: string }> = 
   pickup: { icon: UserRoundCheck, wrap: 'bg-emerald-50 text-emerald-600' },
   chat: { icon: MessageSquare, wrap: 'bg-blue-50 text-blue-600' },
   birthday: { icon: Cake, wrap: 'bg-violet-50 text-violet-600' },
+  survey: { icon: ClipboardList, wrap: 'bg-sky-50 text-sky-600' },
+  news: { icon: Newspaper, wrap: 'bg-slate-100 text-slate-600' },
 }
 
 /** "3 daqiqa oldin", "2 kun oldin" ko'rinishidagi nisbiy vaqt. */

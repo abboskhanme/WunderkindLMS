@@ -159,6 +159,32 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
     // sozlamalari ekrani. Konfiguratsiya: TransactionTypeModel.cs.
     public DbSet<TransactionType> TransactionTypes => Set<TransactionType>();
 
+    // Savdo va marketing (sales-marketing.md §4): ommaviy ariza formasi va
+    // yangiliklar. Konfiguratsiya: SalesMarketingModel.cs — `Lead` ning uchta
+    // yangi ustuni ham o'sha yerda.
+    public DbSet<Survey> Surveys => Set<Survey>();
+    public DbSet<SurveySubmission> SurveySubmissions => Set<SurveySubmission>();
+    public DbSet<NewsItem> News => Set<NewsItem>();
+    /// <summary>Lid → o'quvchi statistikasi (lid o'zi o'chiriladi, son qoladi).</summary>
+    public DbSet<LeadConversion> LeadConversions => Set<LeadConversion>();
+
+    // Admission, block test and seasonal assessment (admission-and-testing.md §5).
+    // Configuration: ExamModel.cs — `leads.admission_status` and
+    // `school_meta.admission_show_answers_to_candidate` are configured there too.
+    // Not financial: full CRUD for `app_rw` (exam_guards.sql).
+    public DbSet<QuestionBank> QuestionBanks => Set<QuestionBank>();
+    public DbSet<Question> Questions => Set<Question>();
+    public DbSet<QuestionOption> QuestionOptions => Set<QuestionOption>();
+    public DbSet<ExamType> ExamTypes => Set<ExamType>();
+    public DbSet<Exam> Exams => Set<Exam>();
+    public DbSet<ExamSection> ExamSections => Set<ExamSection>();
+    public DbSet<ExamParticipant> ExamParticipants => Set<ExamParticipant>();
+    public DbSet<ExamSectionScore> ExamSectionScores => Set<ExamSectionScore>();
+    public DbSet<ExamInvitation> ExamInvitations => Set<ExamInvitation>();
+    public DbSet<ExamAttempt> ExamAttempts => Set<ExamAttempt>();
+    public DbSet<ExamAnswer> ExamAnswers => Set<ExamAnswer>();
+    public DbSet<SeasonalMark> SeasonalMarks => Set<SeasonalMark>();
+
     /// <inheritdoc />
     public Task<Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction> BeginTransactionAsync(
         CancellationToken cancellationToken = default) =>
@@ -334,6 +360,20 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
         // ham shu yerda (o'zgarish qaysi migratsiyadan kelgan bo'lsa, o'sha
         // faylda turadi — yuqoridagi FinanceParityModel izohidagi qoida).
         TransactionTypeModel.Apply(b);
+
+        // ----- Savdo va marketing (sales-marketing.md §4) -----
+        // O'n birinchi alohida fayl. `leads` ning uchta yangi ustuni
+        // (`source`, `survey_id`, `created_at`) ham shu yerda — o'zgarish
+        // qaysi migratsiyadan kelgan bo'lsa, o'sha faylda turadi (yuqoridagi
+        // FinanceParityModel izohidagi qoida).
+        SalesMarketingModel.Apply(b);
+        LeadEnrolModel.Apply(b);
+
+        // ----- Admission, block test, seasonal assessment (admission-and-testing.md §5) -----
+        // Twelve tables plus `leads.admission_status` and one `school_meta` flag,
+        // all in ExamModel.cs (the rule above: a change lives in the file of the
+        // migration that introduced it).
+        ExamModel.Apply(b);
 
         // ----- PostgreSQL: vaqt turi -----
         // Tizim sanalarni Toshkent "devor soati" sifatida saqlaydi (AppClock.Now — Kind=Unspecified),

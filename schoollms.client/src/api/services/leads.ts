@@ -1,4 +1,5 @@
-import type { Lead } from '@/types'
+import type { Lead, Student } from '@/types'
+import type { StudentPayload } from './students'
 import { delay, uid } from '@/lib/utils'
 import { api, USE_MOCK } from '../client'
 import { leadsMock } from '../mock/leads'
@@ -45,4 +46,14 @@ export async function deleteLead(id: string): Promise<void> {
     return
   }
   await api.delete(`/admin/leads/${id}`)
+}
+
+/**
+ * Lidni o'quvchiga aylantirish — to'g'ridan-to'g'ri sinfga (admission-and-testing.md §6.1).
+ * Yuk oddiy "Yangi o'quvchi" formasi bilan bir xil. Lid serverda O'CHIRILADI
+ * (ma'lumotlari endi o'quvchida); lidlarning umumiy soni statistikada qoladi.
+ */
+export async function enrolLead(id: string, student: StudentPayload): Promise<Student> {
+  const { data } = await api.post<{ student: Student }>(`/admin/leads/${id}/enrol`, { student })
+  return data.student
 }

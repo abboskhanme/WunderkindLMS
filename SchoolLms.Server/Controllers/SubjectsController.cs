@@ -171,6 +171,12 @@ public partial class SubjectsController(AppDbContext db) : ControllerBase
         // (docs/modules/students-parity.md §2.7 Z-3; eski ustunning o'zi tegilmagan).
         await CountAsync(used, "sertifikat", db.CertificateSubjects.Where(cs => cs.SubjectId == id), ct);
         await CountAsync(used, "topshiriq", db.Assignments.Where(a => a.SubjectId == id), ct);
+        // admission-and-testing.md §5.14: these three are the first tables with a
+        // REAL foreign key onto `subjects` (ON DELETE RESTRICT) — without the count
+        // the delete below would fail as a 500 instead of this 409.
+        await CountAsync(used, "test bazasi", db.QuestionBanks.Where(b => b.SubjectId == id), ct);
+        await CountAsync(used, "imtihon fani", db.ExamSections.Where(s => s.SubjectId == id), ct);
+        await CountAsync(used, "mavsumiy baho", db.SeasonalMarks.Where(m => m.SubjectId == id), ct);
 
         if (used.Count > 0)
             return Conflict(new

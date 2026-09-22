@@ -30,12 +30,13 @@ public class LeadsController(AppDbContext db) : ControllerBase
     /// </para>
     /// </summary>
     [HttpGet("funnel")]
-    public async Task<ActionResult<LeadFunnelDto>> Funnel([FromQuery] string? lostStages)
+    public async Task<ActionResult<LeadFunnelDto>> Funnel(
+        [FromQuery] string? lostStages, [FromQuery] Guid? surveyId)
     {
         var lost = string.IsNullOrWhiteSpace(lostStages)
             ? null
             : lostStages.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        return await LeadFunnelQuery.BuildAsync(db, lost);
+        return await LeadFunnelQuery.BuildAsync(db, lost, surveyId);
     }
 
     [HttpPost]

@@ -778,6 +778,7 @@ cheapest possible fraud control, because the payer holds evidence the school can
 | 12 | **Gamification: points, auction, rewards** | **New** | 4 |
 | 13 | Global search (people, not menus) | Missing | 5 |
 | 14 | LMS, assignments, canteen, CRM, chat | Exists — port only | 0 |
+| 15 | Savdo va marketing: public enrolment form → lead, school news feed | Built 2026-09-21 — `docs/modules/sales-marketing.md` | — |
 
 ---
 

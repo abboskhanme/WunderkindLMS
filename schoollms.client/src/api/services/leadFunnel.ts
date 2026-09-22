@@ -47,6 +47,25 @@ export interface LeadFunnelGrade {
   conversionPercent: number | null
 }
 
+/**
+ * Manba kesimi (sales-marketing.md §2.7): qo'lda kiritilganlar bitta qator,
+ * ariza formasidan kelganlar — har bir ariza alohida qator.
+ */
+export interface LeadFunnelSource {
+  source: 'manual' | 'survey'
+  /** Faqat `survey` qatorida. */
+  surveyId: string | null
+  label: string
+  total: number
+  inFunnelCount: number
+  reachedFinalCount: number
+  lostCount: number
+  conversionPercent: number | null
+  /** Shu manbadan o'quvchiga aylangan (doskadan o'chirilgan) lidlar. */
+  enrolledCount: number
+  enrolledPercent: number | null
+}
+
 export interface LeadFunnel {
   totalLeads: number
   funnelLeads: number
@@ -57,6 +76,12 @@ export interface LeadFunnel {
   stages: LeadFunnelStage[]
   losses: LeadFunnelLoss[]
   grades: LeadFunnelGrade[]
+  sources: LeadFunnelSource[]
+  /** O'quvchiga aylangan lidlar — doskadan o'chirilgan, son statistikada qoladi. */
+  enrolledCount: number
+  /** Jami lidlar: doskadagilar + o'quvchiga aylanganlar. */
+  allTimeLeads: number
+  enrolledPercent: number | null
 }
 
 const EMPTY: LeadFunnel = {
@@ -68,6 +93,10 @@ const EMPTY: LeadFunnel = {
   stages: [],
   losses: [],
   grades: [],
+  sources: [],
+  enrolledCount: 0,
+  allTimeLeads: 0,
+  enrolledPercent: null,
 }
 
 /**
@@ -76,11 +105,13 @@ const EMPTY: LeadFunnel = {
  * @param lostStageIds Qaysi ustunlar "yo'qotildi" deb hisoblansin. Bazada bunday
  *   bayroq yo'q — tanlovni foydalanuvchi qiladi, server esa shu ro'yxatga qarab
  *   voronkani va sabab kesimini quradi.
+ * @param surveyId Faqat shu ariza formasidan kelgan lidlar. Bo'sh — hammasi.
  */
-export async function getLeadFunnel(lostStageIds: string[] = []): Promise<LeadFunnel> {
+export async function getLeadFunnel(lostStageIds: string[] = [], surveyId = ''): Promise<LeadFunnel> {
   if (USE_MOCK) return EMPTY
-  const { data } = await api.get<LeadFunnel>('/admin/leads/funnel', {
-    params: lostStageIds.length ? { lostStages: lostStageIds.join(',') } : undefined,
-  })
+  const params: Record<string, string> = {}
+  if (lostStageIds.length) params.lostStages = lostStageIds.join(',')
+  if (surveyId) params.surveyId = surveyId
+  const { data } = await api.get<LeadFunnel>('/admin/leads/funnel', { params })
   return data
 }

@@ -145,6 +145,38 @@ public class NotificationsController(AppDbContext db) : ControllerBase
             CreatedAt: now.Date,
             Link: "/admin/students/" + s.Id)));
 
+        // 5) Ommaviy formadan kelgan yangi arizalar (sales-marketing.md §3.3 N9).
+        //    Faqat lid yaratganlari: takroriy topshiriq yangi murojaat emas.
+        var sinceInstant = AppClock.NowInstant.AddDays(-ChatLookbackDays);
+        var submissions = await (
+            from x in db.SurveySubmissions
+            join sv in db.Surveys on x.SurveyId equals sv.Id
+            where x.CreatedAt >= sinceInstant && x.Status == SurveySubmissionStatus.Lead
+            orderby x.CreatedAt descending
+            select new { x.Id, x.ParentFirstName, x.ParentLastName, Survey = sv.Name, x.CreatedAt })
+            .Take(MaxItems).ToListAsync();
+        items.AddRange(submissions.Select(x => new NotificationDto(
+            Id: "survey:" + x.Id,
+            Kind: "survey",
+            Title: "Yangi ariza",
+            Text: Short($"{x.ParentFirstName} {x.ParentLastName}".Trim() + " · " + x.Survey),
+            CreatedAt: AppClock.ToLocal(x.CreatedAt),
+            Link: "/admin/marketing/topshirilganlar")));
+
+        // 6) E'lon qilingan yangiliklar (sales-marketing.md §3.3 N9).
+        var news = await db.News
+            .Where(n => n.PublishedAt != null && n.PublishedAt >= sinceInstant && n.DeletedAt == null)
+            .OrderByDescending(n => n.PublishedAt)
+            .Select(n => new { n.Id, n.Title, n.PublishedAt })
+            .Take(MaxItems).ToListAsync();
+        items.AddRange(news.Select(n => new NotificationDto(
+            Id: "news:" + n.Id,
+            Kind: "news",
+            Title: "Yangilik e'lon qilindi",
+            Text: Short(n.Title),
+            CreatedAt: AppClock.ToLocal(n.PublishedAt!.Value),
+            Link: "/admin/marketing/yangiliklar")));
+
         return items;
     }
 

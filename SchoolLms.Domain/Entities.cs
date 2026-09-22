@@ -338,6 +338,59 @@ public class Lead
     public string? Note { get; set; }
     /// <summary>Tegishli ustun (LeadStage) id'si.</summary>
     public string Stage { get; set; } = string.Empty;
+
+    // --- Savdo va marketing (sales-marketing.md §4.4) qo'shgan uchta ustun ---
+    // QO'SHIMCHA (additive): doskaning o'zi (dizayni muzlatilgan
+    // `pages/admin/leads/*`) ilgarigi maydonlarni chizishda davom etadi.
+    // Konfiguratsiya SalesMarketingModel.cs da — ustunni qaysi migratsiya
+    // qo'shgan bo'lsa, o'sha faylda turadi.
+
+    /// <summary>manual | survey — <see cref="LeadSource"/>. Bugungi har bir qator `manual`: ular haqiqatan ham doskada qo'lda kiritilgan.</summary>
+    public string Source { get; set; } = LeadSource.Manual;
+
+    /// <summary>
+    /// Qaysi arizadan kelgani (<see cref="Survey.Id"/>). <c>on delete restrict</c> —
+    /// <c>ck_leads_source_survey</c> bilan hech qachon qarama-qarshi bo'lib qolmasin
+    /// (arizada lid bo'lsa u arxivlanadi, o'chirilmaydi — D7).
+    /// </summary>
+    public Guid? SurveyId { get; set; }
+
+    /// <summary>
+    /// Lid yaratilgan vaqt. <b>NULLABLE va eski qatorlar NULL bo'lib qoladi</b>
+    /// (§4.4): <c>not null default now()</c> butun tarixni migratsiya
+    /// vaqti bilan tamg'alardi — fakt kabi o'qiladigan, lekin fakt bo'lmagan
+    /// son. <c>NULL</c> = "migratsiyadan oldin yaratilgan, aniq sanasi
+    /// noma'lum", va voronka o'sha qatorlarni yashirmasdan sanab ko'rsatadi.
+    ///
+    /// <para>
+    /// Yangi qator qiymatni SHU INITSIALIZATORDAN oladi (<see cref="Broadcast.CreatedAt"/>
+    /// naqshi), ya'ni birorta kontroller tahrirlanmaydi; bazadan o'qilgan
+    /// qator esa <c>NULL</c> ligicha qoladi — EF ustun qiymatini initsializator
+    /// ishlagandan KEYIN o'rnatadi.
+    /// </para>
+    ///
+    /// <para>
+    /// Tipi <c>DateTime?</c> (→ <c>timestamp without time zone</c>), yangi
+    /// jadvallardagi <c>DateTimeOffset</c> emas: bu ESKI entity va yonidagi
+    /// <see cref="Broadcast.CreatedAt"/> bilan bir xil semantikada turishi
+    /// kerak (§4 ning vaqt turi haqidagi ogohlantirishi).
+    /// </para>
+    /// </summary>
+    public DateTime? CreatedAt { get; set; } = AppClock.Now;
+
+    // --- Admission (admission-and-testing.md §2.2, §5.13) ---
+    // Additive, like the three columns above: `GET /api/admin/leads` returns it
+    // as one more JSON field, and the design-frozen board (`pages/admin/leads/*`)
+    // neither reads nor renders it. Mapping lives in ExamModel.cs — the file of
+    // the migration that adds the column.
+
+    /// <summary>
+    /// Where the lead is in the admission pipeline — <see cref="LeadAdmissionStatus"/>.
+    /// <c>none</c> for every ordinary lead (and every row that existed before
+    /// the <c>AdmissionAndExams</c> migration). Never <c>enrolled</c>: enrolment
+    /// deletes the lead (2026-09-22), so that state has no row to live on.
+    /// </summary>
+    public string AdmissionStatus { get; set; } = LeadAdmissionStatus.None;
 }
 
 /// <summary>Lid bosqichi (kanban ustuni).</summary>
@@ -925,6 +978,23 @@ public class SchoolMeta
     /// </para>
     /// </summary>
     public string ContractNumberMode { get; set; } = SchoolLms.Domain.ContractNumberMode.Auto;
+
+    // =======================================================================
+    //  Admission — admission-and-testing.md §5.13, §7.7.
+    // =======================================================================
+
+    /// <summary>
+    /// Whether the finished public entrance-test page shows the candidate the
+    /// per-question review with the correct answers (§7.7, open question 1).
+    ///
+    /// <para>
+    /// Default <b>false</b>, on purpose: successive candidates sit papers drawn
+    /// from one bank, so handing the key to each of them leaks the bank. When
+    /// false the server does not even project the questions into the result.
+    /// Turning it on is the school's explicit choice, not a migration's.
+    /// </para>
+    /// </summary>
+    public bool AdmissionShowAnswersToCandidate { get; set; }
 }
 
 /// <summary><see cref="SchoolMeta.ContractNumberMode"/> qiymatlari (K-6).</summary>

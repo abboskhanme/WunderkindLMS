@@ -41,6 +41,26 @@ types, lint, the client build and all 1504 backend tests pass, but no screen was
 
 ---
 
+## 1c. Closed on 2026-09-21 — Savdo va marketing
+
+The last two rows of `existing-module-gaps.md` §7.1 (#8 and #14). Spec: `modules/sales-marketing.md`.
+
+| Area | What changed |
+|---|---|
+| Ommaviy ariza formasi | Public `/ariza/:slug` page — works on the **apex** domain too (SPA fallback). A submission becomes a lead on the board (`source = survey`); the board's look is untouched. Rate limit 5 / 10 min, honeypot, a 2-second time trap, no third-party captcha |
+| Arizalar / Topshirilgan arizalar | Survey register + editor with live preview; submissions register with filters, detail drawer and **.xlsx** export |
+| Yangiliklar | Composer with live preview; publishing also sends one Telegram message per recipient (de-duplicated) and records the counts; feed in the Mini App (parent *Bosh*, teacher *Bugun*) and in the parent/student portal |
+| Voronka | *Manba kesimi* — manual vs each survey — and a survey filter |
+| Admin bell | "Yangi ariza" and "Yangilik e'lon qilindi" |
+| Menu | *Sozlamalar → Savdo va marketing*, the fourth row; new `marketing` permission key |
+
+Verified by machine: 1786 backend tests (282 new, incl. RBAC for every endpoint × 8 roles and the migration's
+`Down()`), client type-check clean, and an end-to-end API run on the local stack (create → public submit → lead
+→ export → funnel → bell; news publish → feed; `/ariza/` served on the apex host). **Not opened in a browser** —
+the Chrome extension was disconnected again.
+
+---
+
 ## 2. Whole modules EduSchool has and we do not
 
 Each one is a module, not a screen. They are listed with the doc that already prices them.
@@ -78,7 +98,7 @@ Theirs has eleven entries; ours keeps the equivalents in other menus (staff and 
   observations (`existing-module-gaps.md` §5.3).
 - **Xodimlar bo'sh vaqti**, **Ish jadvali**, **O'qituvchi dars qoldirish** — three small staff-time
   screens that only make sense together with HR *Tabel*.
-- **Savdo va marketing** — News and Surveys (Story declined). ~60 h, delivered through Telegram.
+- ~~**Savdo va marketing** — News and Surveys (Story declined).~~ **Built 2026-09-21** — see §1c.
 
 ### 3.3 Analitika
 Ours covers their analytics list with screens that live under the menu they belong to (attendance

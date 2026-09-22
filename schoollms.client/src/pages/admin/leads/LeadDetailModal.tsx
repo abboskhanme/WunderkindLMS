@@ -1,4 +1,4 @@
-import { Pencil, Trash2 } from 'lucide-react'
+import { GraduationCap, Pencil, Trash2 } from 'lucide-react'
 import type { Lead } from '@/types'
 import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
@@ -10,6 +10,8 @@ interface Props {
   onClose: () => void
   onEdit: (lead: Lead) => void
   onDelete: (lead: Lead) => void
+  /** Lidni o'quvchiga aylantirish (to'g'ridan-to'g'ri sinfga). Berilmasa tugma chiqmaydi. */
+  onEnrol?: (lead: Lead) => void
 }
 
 function Row({ label, value }: { label: string; value: string }) {
@@ -21,7 +23,7 @@ function Row({ label, value }: { label: string; value: string }) {
   )
 }
 
-export function LeadDetailModal({ lead, onClose, onEdit, onDelete }: Props) {
+export function LeadDetailModal({ lead, onClose, onEdit, onDelete, onEnrol }: Props) {
   return (
     <Modal
       open={!!lead}
@@ -36,6 +38,11 @@ export function LeadDetailModal({ lead, onClose, onEdit, onDelete }: Props) {
             <Button variant="secondary" onClick={onClose}>
               Yopish
             </Button>
+            {onEnrol && (
+              <Button variant="secondary" onClick={() => onEnrol(lead)}>
+                <GraduationCap className="h-4 w-4" /> O'quvchiga aylantirish
+              </Button>
+            )}
             <Button onClick={() => onEdit(lead)}>
               <Pencil className="h-4 w-4" /> Tahrirlash
             </Button>

@@ -89,6 +89,15 @@ public class AuditService(IAppDbContext db, IHttpContextAccessor http)
     /// <summary>Xulq-atvor bali (§6) — qo'lda qo'yilgan ball va uning sababi.</summary>
     public const string EntityDisciplinePoint = "DisciplinePoint";
 
+    /// <summary>Lid — hozircha faqat o'quvchiga aylantirish va o'chirish (<c>enrol</c>) yoziladi.</summary>
+    public const string EntityLead = "Lead";
+
+    /// <summary>Ommaviy ariza formasi (docs/modules/sales-marketing.md §5.2).</summary>
+    public const string EntitySurvey = "Survey";
+
+    /// <summary>Maktab yangiligi (docs/modules/sales-marketing.md §5.4).</summary>
+    public const string EntityNews = "News";
+
     /// <summary>Audit yozuvini joriy DbContext'ga qo'shadi (hali SaveChanges qilinmaydi).</summary>
     public void Record(
         string entityType, string entityId, string action, string summary,
