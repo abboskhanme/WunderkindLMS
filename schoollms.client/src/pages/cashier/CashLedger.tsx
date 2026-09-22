@@ -14,7 +14,7 @@ import { StatusPill } from '@/pages/admin/billing/BillingUi'
 import { cn } from '@/lib/utils'
 import { DataTable } from '@/components/table/DataTable'
 import type { DataTableColumn } from '@/components/table/DataTable'
-import { formatDateTime, formatSum, kindLabel, methodLabels, statusLabel } from './format'
+import { NATIVE_CASH_KINDS, formatDateTime, formatSum, kindLabel, methodLabels, statusLabel } from './format'
 
 interface Props {
   /** Usul kesimidagi yig'indi — QANCHA USUL BO'LSA, SHUNCHA kartochka (EduSchool skrinshotida 5 ta,
@@ -153,14 +153,14 @@ export function CashLedger({
  * KIM · SHARTNOMA RAQAM · MIQDOR · TRANZAKSIYA · HOLATI · TO'LOV USULI ·
  * KASSIR.
  *
- * KIM va KASSIR — bitta manbadan (`row.who`): backend `CashBoxTransactionRowDto.Who`
- * "kim yozgan"ni, ya'ni AMALNI BAJARGAN kassirni qaytaradi
- * (`CashBoxService.cs` izohi), o'quvchi/to'lovchi ISMI esa qatorda umuman
- * yo'q (faqat `contractNo` bor). Shuning uchun ikkala ustun bir xil qiymatni
- * ko'rsatadi — bu FABRIKATSIYA emas, mavjud yagona "kim" maydoni; agar mijoz
- * "Kim" ustuni to'lovchi (o'quvchi) ismini ko'rsatishini xohlasa, bu
- * backend'ga o'quvchi ismini qatorga qo'shishni talab qiladi (hisobotda
- * aytilgan).
+ * KIM — `row.who`. Kassaning O'Z amalida (kirim/chiqim/ko'chirish/ayirboshlash)
+ * bu amalni bajargan kassir; o'quvchi to'lovi va qaytarimida esa O'QUVCHI ismi
+ * (2026-09-22 dan beri ular ham shu jurnalda ko'rinadi).
+ *
+ * KASSIR — shuning uchun faqat kassaning o'z amallarida to'ldiriladi. To'lov
+ * qatorida u bo'sh turadi: DTO'da kassirning alohida maydoni yo'q va o'sha
+ * yerga o'quvchi ismini qo'yish — yolg'on bo'lardi. Maydon qo'shilgach
+ * to'ldiriladi (`docs/PENDING_WIRING.md`).
  */
 function ledgerColumns(
   allSelected: boolean,
@@ -273,7 +273,11 @@ function ledgerColumns(
       id: 'cashier',
       header: 'Kassir',
       // `row.who` bilan bir xil manba — izoh: shu funksiya boshidagi hujjat.
-      cell: (row) => <span className="text-slate-600">{row.who}</span>,
+      cell: (row) => (
+        <span className="text-slate-600">
+          {NATIVE_CASH_KINDS.includes(row.kind) ? row.who : '—'}
+        </span>
+      ),
     },
     {
       // IZOH va SABAB — EduSchool kassa ro'yxatida ham shu ikki ustun bor
@@ -322,7 +326,7 @@ function ledgerColumns(
           >
             <Printer className="h-4 w-4" />
           </button>
-          {row.status !== 'cancelled' && (
+          {row.status !== 'cancelled' && NATIVE_CASH_KINDS.includes(row.kind) && (
           <button
             type="button"
             title="Tranzaksiyani bekor qilish"

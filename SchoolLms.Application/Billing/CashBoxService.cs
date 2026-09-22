@@ -18,8 +18,21 @@ namespace SchoolLms.Application.Billing;
 //  (Exchange). Har biri BITTA `cash_box_transactions` qatori — sxema izohi
 //  (Domain/CashBoxes.cs) da "bitta qator, ikkita qulf" mantiqi tushuntirilgan.
 //
-//  BALANS HECH QACHON SAQLANMAYDI (SPEC §4.1) — <see cref="BalanceAsync"/>
-//  har safar `cash_box_transactions` dan hisoblaydi.
+//  BALANS HECH QACHON SAQLANMAYDI (SPEC §4.1) — u har safar hisoblanadi.
+//
+//  BALANS TO'RTTA MANBADAN YIG'ILADI, BITTASIDAN EMAS
+//  --------------------------------------------------
+//  Kassaning javonidagi pulni to'rtta jadval o'zgartiradi:
+//    1) `cash_box_transactions` — shu xizmatning to'rtta amali (manba tomoni);
+//    2) `cash_box_transactions` — KO'CHIRISHNING manzil tomoni;
+//    3) `payments`              — o'quvchi to'lovi (`cash_box_id`), chek
+//                                 raqami ham kassa bo'yicha uzluksiz;
+//    4) `expenses` / `student_refunds` — naqd chiqim va qaytarim.
+//  Ilgari (2026-09-22 gacha) faqat 1 va 2 sanalardi: kassir "Kirim" bosib
+//  o'quvchidan pul olardi, pul o'quvchining balansiga tushardi, Kassa ekrani
+//  esa "0 so'm" va "tranzaksiya yo'q" deb turaverardi. 3 va 4 ning o'qilishi
+//  `CashBoxExternalLedger.cs` da — u yerda nega va qanday ishorada
+//  hisoblanishi batafsil yozilgan. YOZISH yo'llari o'zgarmagan.
 //
 //  QULFLAR — "har qanday tekshir-va-yoz uchun pg_advisory_xact_lock":
 //    * bitta kassaga yozish (kirim/chiqim/ayirboshlash) — o'sha kassaning qulfi;
@@ -104,15 +117,28 @@ public record CashBoxExchangeRequest(
 /// <summary>Amalni bekor qilish. Sabab majburiy — u qarshi qatorning izohiga tushadi.</summary>
 public record CancelCashBoxTransactionRequest(string Reason);
 
-/// <summary>Kassa harakatlari ro'yxatining bitta qatori.</summary>
+/// <summary>
+/// Kassa jurnalining bitta qatori — kassa harakati (<c>cash_box_transactions</c>)
+/// YOKI o'sha kassaga biriktirilgan to'lov / chiqim / qaytarim
+/// (<see cref="CashBoxLedgerKind"/>, <c>CashBoxExternalLedger.cs</c>).
+/// </summary>
 /// <param name="No">Filtrlangan ro'yxat ichidagi tartib raqami (1-based; SAQLANMAYDI — faqat ko'rsatish uchun).</param>
-/// <param name="Who">Kim yozgan (users.id emas, ism).</param>
+/// <param name="Who">
+/// Jadvaldagi "KIM" ustuni. Kassa harakatida — amalni YOZGAN xodim (users.id
+/// emas, ism); o'quvchi to'lovi va qaytarimida — O'QUVCHINING ismi (pul kimdan
+/// keldi / kimga ketdi), chiqimda — chiqimni yozgan xodim.
+/// </param>
 /// <param name="ContractNo">Bog'liq o'quvchining shartnoma raqami (bo'lsa) — faqat <c>pay_in</c> + <c>studentId</c>.</param>
-/// <param name="Status">posted | cancelled | reversal — <see cref="CashBoxTransactionStatus"/> dan HISOBLANGAN.</param>
+/// <param name="Kind">
+/// <see cref="CashBoxTransactionKind"/> (bazadagi ustun) yoki
+/// <see cref="CashBoxLedgerKind"/> (hisoblangan — to'lov/chiqim/qaytarim).
+/// </param>
+/// <param name="Status">posted | cancelled | reversal — <see cref="CashBoxRowStatus"/>.</param>
 /// <param name="TransactionTypeName">
 /// Tanlangan tranzaksiya turining nomi (bo'lsa) — <see cref="CashBoxTransaction.TransactionTypeId"/>
 /// dan HAL QILINGAN, id emas: jadvaldagi boshqa "kim"/"shartnoma raqami"
 /// ustunlari kabi ko'rsatiladigan qiymat. <c>null</c> = tur ko'rsatilmagan.
+/// Chiqim qatorida — chiqim TOIFASINING o'zbekcha nomi.
 /// </param>
 /// <param name="Note">
 /// Kassir yozgan izoh. Jadvalda ALOHIDA ustun (EduSchool kassa ro'yxatida ham
@@ -132,11 +158,20 @@ public record CancelCashBoxTransactionRequest(string Reason);
 /// bir manbadan — kunlik filtr bilan chek ustidagi vaqt hech qachon
 /// ajralmaydi.
 /// </param>
+/// <param name="ReceiptNo">
+/// Chek raqami — FAQAT o'quvchi to'lovi qatorida (<see cref="CashBoxLedgerKind.StudentPayment"/>).
+/// U kassa bo'yicha uzluksiz (<c>ix_payments_cash_box_id_receipt_no</c>), ya'ni
+/// "shu kassaning 137-cheki" degan gap bir ma'noli. Kassa harakatlarida
+/// (kirim/chiqim/ko'chirish/ayirboshlash) chek raqami YO'Q — <c>null</c>.
+/// Jurnaldagi erkin qidiruv (<see cref="CashBoxTransactionsQuery.Q"/>) shu
+/// maydonni ham qamrab oladi: ekrandagi qidiruv maydoni "chek yoki shartnoma
+/// raqami" deb turibdi.
+/// </param>
 public record CashBoxTransactionRowDto(
     Guid Id, int No, DateOnly Date, string Who, string? ContractNo,
     decimal Amount, string Kind, string Method, string Status,
     string? TransactionTypeName, string? Note = null, string? CancelReason = null,
-    DateTimeOffset CreatedAt = default);
+    DateTimeOffset CreatedAt = default, long? ReceiptNo = null);
 
 /// <summary>Kassa harakatlari ro'yxati uchun filtr.</summary>
 public record CashBoxTransactionsQuery(
@@ -214,6 +249,14 @@ public sealed class CashBoxService(IAppDbContext db) : ICashBoxService
     private const string DefaultLockKey = "cash_box_default";
 
     private readonly ActorNames actors = new(db);
+
+    /// <summary>
+    /// Kassaga biriktirilgan, lekin <c>cash_box_transactions</c> dan
+    /// TASHQARIDAGI pul: o'quvchi to'lovi, naqd chiqim va qaytarim
+    /// (<c>CashBoxExternalLedger.cs</c> — nega kerakligi o'sha fayl boshida).
+    /// Balans ham, jurnal ham shu manbani QO'SHIB hisoblaydi.
+    /// </summary>
+    private readonly CashBoxExternalLedger external = new(db);
 
     /// <summary>
     /// Xom SQL uchun kontekstning o'zi — <see cref="IAppDbContext"/> da
@@ -739,12 +782,24 @@ public sealed class CashBoxService(IAppDbContext db) : ICashBoxService
     //  O'qish: ro'yxat va harakatlar jurnali
     // =====================================================================
 
+    /// <summary>
+    /// Jurnalning bitta qatori va uning kassaga TA'SIRI — birga. Yakunlar
+    /// aynan shu ro'yxatdan yig'iladi, ya'ni "ekranda turgan qator" bilan
+    /// "yig'indiga kirgan summa" hech qachon ajralib keta olmaydi.
+    /// </summary>
+    private sealed record LedgerLine(
+        CashBoxTransactionRowDto Dto,
+        IReadOnlyList<(string Method, decimal Delta)> ByMethod,
+        decimal In,
+        decimal Out);
+
     /// <inheritdoc />
     public async Task<CashBoxTransactionsPageDto> TransactionsAsync(
         CashBoxTransactionsQuery query, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(query);
 
+        // ---- 1. Kassaning O'Z harakatlari (`cash_box_transactions`) ----
         var q = db.CashBoxTransactions.AsNoTracking();
 
         // Bitta kassa so'ralsa — MANBA sifatida HAM, MANZIL sifatida HAM
@@ -752,57 +807,122 @@ public sealed class CashBoxService(IAppDbContext db) : ICashBoxService
         if (query.BoxId is { } boxId)
             q = q.Where(t => t.CashBoxId == boxId || t.TransferToBoxId == boxId);
 
-        if (query.From is { } from)
-        {
-            var lower = new DateTimeOffset(from.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero).AddDays(-1);
-            q = q.Where(t => t.CreatedAt >= lower);
-        }
-        if (query.To is { } to)
-        {
-            var upper = new DateTimeOffset(to.ToDateTime(TimeOnly.MaxValue), TimeSpan.Zero).AddDays(1);
-            q = q.Where(t => t.CreatedAt <= upper);
-        }
+        if (CashBoxDateWindow.Lower(query.From) is { } lower) q = q.Where(t => t.CreatedAt >= lower);
+        if (CashBoxDateWindow.Upper(query.To) is { } upper) q = q.Where(t => t.CreatedAt <= upper);
 
         var rows = await q.OrderByDescending(t => t.CreatedAt).Take(MaxRows).ToListAsync(ct);
+        rows = [.. rows.Where(t => CashBoxDateWindow.Covers(t.CreatedAt, query.From, query.To))];
 
-        if (query.From is { } exactFrom)
-            rows = [.. rows.Where(t => AppClock.LocalDateOf(t.CreatedAt) >= exactFrom)];
-        if (query.To is { } exactTo)
-            rows = [.. rows.Where(t => AppClock.LocalDateOf(t.CreatedAt) <= exactTo)];
+        var native = await ToRowDtosAsync(rows, ct);
 
-        var dtos = await ToRowDtosAsync(rows, ct);
+        // ---- 2. Shu kassaga biriktirilgan to'lov / chiqim / qaytarim ----
+        // Ular `cash_box_transactions` da YO'Q (`CashBoxExternalLedger.cs`),
+        // lekin kassirning javonidagi pul aynan shular bilan o'zgaradi.
+        var externals = await external.RowsAsync(query.BoxId, query.From, query.To, MaxRows, ct);
 
-        if (!string.IsNullOrWhiteSpace(query.Q))
-        {
-            var needle = query.Q.Trim();
-            dtos = [.. dtos.Where(r =>
-                r.Who.Contains(needle, StringComparison.OrdinalIgnoreCase)
-                || (r.ContractNo is not null && r.ContractNo.Contains(needle, StringComparison.OrdinalIgnoreCase)))];
-        }
+        // ---- 3. BITTA ro'yxat, vaqt bo'yicha ----
+        // Har manbadan ko'pi bilan `MaxRows` ta olindi; birlashtirilgach yana
+        // `MaxRows` ta qoladi (`TransactionJournalQuery` dagi "merge" naqshi).
+        //
+        // `native[i]` ↔ `rows[i]`: `ToRowDtosAsync` har qatorga AYNAN bitta
+        // DTO va AYNAN o'sha tartibda qaytaradi, shuning uchun qatorning
+        // kassaga ta'siri (`Contributions`) shu indeks orqali olinadi.
+        var lines = native
+            .Select((dto, i) => new LedgerLine(
+                dto, [.. Contributions(rows[i])], InOf(rows[i]), OutOf(rows[i])))
+            .Concat(externals.Select(LineOf))
+            .OrderByDescending(l => l.Dto.CreatedAt)
+            // Bir xil lahzali ikki qator har so'rovda joyini almashtirmasin:
+            // orqadagi sana bilan yozilganda bu haqiqiy ehtimol
+            // (`AppClock.InstantOn` faqat kun sonini suradi).
+            .ThenBy(l => l.Dto.Id)
+            .Take(MaxRows)
+            .ToList();
 
-        // Yakunlar — RO'YXATDAGI qatorlar (rows, filtr bilan kesilgan) ustidan,
-        // xom `CashBoxTransaction` yozuvlaridan hisoblanadi: `inTotal`/`outTotal`
-        // TURGA (kind) qarab (faqat pay_in/pay_out — ko'chirish va ayirboshlash
-        // maktab ichida neytral), `totalsByMethod` esa EKRANDA turgan
-        // qatorlarning o'z manba tomonidagi ta'siri (ko'rinadigan qatorlarning
-        // o'zi — ikkinchi tomon alohida kassaning o'z ro'yxatida ko'rinadi).
+        // ---- 4. Yakunlar — DAVR/KASSA bo'yicha, `q` dan OLDIN ----
+        // `inTotal`/`outTotal` TURGA qarab (ko'chirish va ayirboshlash maktab
+        // ichida neytral, shuning uchun ular faqat `totalsByMethod` ga ta'sir
+        // qiladi), `totalsByMethod` esa EKRANDA turgan qatorlarning o'z manba
+        // tomonidagi ta'siri (ko'chirishning ikkinchi tomoni manzil kassaning
+        // o'z ro'yxatida ko'rinadi). Erkin qidiruv (`q`) jadvalni torayadi,
+        // kartochkalardagi davr yakunini EMAS — ekrandagi izoh ham shunday
+        // va'da beradi.
         var totalsByMethod = new Dictionary<string, decimal>(StringComparer.Ordinal);
         foreach (var m in PaymentMethod.All) totalsByMethod[m] = 0m;
         decimal inTotal = 0m, outTotal = 0m;
 
-        foreach (var row in rows)
+        foreach (var line in lines)
         {
-            foreach (var (method, delta) in Contributions(row))
+            foreach (var (method, delta) in line.ByMethod)
                 totalsByMethod[method] = decimal.Round(totalsByMethod[method] + delta, MoneyScale);
 
-            var sign = row.ReversalOf is null ? 1m : -1m;
-            if (row.Kind == CashBoxTransactionKind.PayIn) inTotal += sign * row.Amount;
-            else if (row.Kind == CashBoxTransactionKind.PayOut) outTotal += sign * row.Amount;
+            inTotal += line.In;
+            outTotal += line.Out;
         }
+
+        // ---- 5. Erkin qidiruv: F.I.Sh., shartnoma raqami, chek raqami ----
+        if (!string.IsNullOrWhiteSpace(query.Q))
+        {
+            var needle = query.Q.Trim();
+            lines = [.. lines.Where(l => Matches(l.Dto, needle))];
+        }
+
+        // Tartib raqami — KO'RINADIGAN ro'yxat bo'yicha (DTO izohi: "filtrlangan
+        // ro'yxat ichidagi tartib raqami"), shuning uchun u eng oxirida qo'yiladi.
+        var dtos = lines.Select((l, i) => l.Dto with { No = i + 1 }).ToList();
 
         return new CashBoxTransactionsPageDto(
             dtos, totalsByMethod, decimal.Round(inTotal, MoneyScale), decimal.Round(outTotal, MoneyScale));
     }
+
+    /// <summary>Kassa harakatining "Jami kirim" ga qo'shadigan qismi (storno — manfiy).</summary>
+    private static decimal InOf(CashBoxTransaction row) =>
+        row.Kind == CashBoxTransactionKind.PayIn
+            ? (row.ReversalOf is null ? row.Amount : -row.Amount)
+            : 0m;
+
+    /// <summary>Kassa harakatining "Jami chiqim" ga qo'shadigan qismi (storno — manfiy).</summary>
+    private static decimal OutOf(CashBoxTransaction row) =>
+        row.Kind == CashBoxTransactionKind.PayOut
+            ? (row.ReversalOf is null ? row.Amount : -row.Amount)
+            : 0m;
+
+    /// <summary>
+    /// Tashqi qator (to'lov / chiqim / qaytarim) — jurnal qatoriga va uning
+    /// kassaga ta'siriga. Ishora manbada qo'yilgan
+    /// (<c>CashBoxExternalLedger</c>): to'lov +, chiqim va qaytarim −.
+    /// </summary>
+    private static LedgerLine LineOf(CashBoxExternalRow row) => new(
+        new CashBoxTransactionRowDto(
+            row.Id,
+            0,                                  // tartib raqami oxirida qo'yiladi
+            AppClock.LocalDateOf(row.At),
+            row.Who,
+            row.ContractNo,
+            row.Amount,
+            row.Kind,
+            row.Method,
+            row.Status,
+            row.TypeName,
+            row.Note,
+            row.CancelReason,
+            row.At,
+            row.ReceiptNo),
+        [(row.Method, row.Signed)],
+        row.Kind == CashBoxLedgerKind.StudentPayment ? row.Signed : 0m,
+        row.Kind == CashBoxLedgerKind.StudentPayment ? 0m : -row.Signed);
+
+    /// <summary>
+    /// Erkin qidiruv: ekrandagi maydon "chek yoki shartnoma raqami, F.I.Sh."
+    /// deb turibdi — uchalasi ham shu yerda tekshiriladi.
+    /// </summary>
+    private static bool Matches(CashBoxTransactionRowDto row, string needle) =>
+        row.Who.Contains(needle, StringComparison.OrdinalIgnoreCase)
+        || (row.ContractNo is not null
+            && row.ContractNo.Contains(needle, StringComparison.OrdinalIgnoreCase))
+        || (row.ReceiptNo is not null
+            && row.ReceiptNo.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                .Contains(needle, StringComparison.Ordinal));
 
     // =====================================================================
     //  Balans — HECH QACHON SAQLANMAYDI (SPEC §4.1), HAR SAFAR hisoblanadi
@@ -870,6 +990,12 @@ public sealed class CashBoxService(IAppDbContext db) : ICashBoxService
             .Select(t => new { CashBoxId = t.TransferToBoxId!.Value, t.Amount, t.Method, t.ReversalOf })
             .ToListAsync(ct);
 
+        // Uchinchi manba: o'quvchi to'lovi, naqd chiqim va qaytarim — ular
+        // `cash_box_transactions` ga YOZILMAYDI, lekin AYNAN shu kassaning
+        // javonidagi pulni o'zgartiradi (`CashBoxExternalLedger.cs`).
+        // Yig'indi BAZADA hisoblanadi: bu yerda qatorlarning o'zi kerak emas.
+        var externalTotals = await external.TotalsAsync(ids, ct);
+
         return [.. boxes.Select(box =>
         {
             var byMethod = new Dictionary<string, decimal>(StringComparer.Ordinal);
@@ -888,6 +1014,11 @@ public sealed class CashBoxService(IAppDbContext db) : ICashBoxService
                 var sign = t.ReversalOf is null ? 1m : -1m;
                 byMethod[t.Method] = decimal.Round(byMethod[t.Method] + sign * t.Amount, MoneyScale);
             }
+
+            // Ishorasi manbada qo'yilgan (to'lov +, chiqim/qaytarim −, storno
+            // teskari) — bu yerda faqat qo'shiladi.
+            foreach (var t in externalTotals.Where(t => t.BoxId == box.Id))
+                byMethod[t.Method] = decimal.Round(byMethod[t.Method] + t.Amount, MoneyScale);
 
             return new CashBoxDto(
                 box.Id, box.Name, box.ResponsibleUserId,
@@ -914,7 +1045,7 @@ public sealed class CashBoxService(IAppDbContext db) : ICashBoxService
             .Distinct().ToList();
         var contractNos = studentIds.Count == 0
             ? new Dictionary<string, string?>(StringComparer.Ordinal)
-            : await LatestContractNumbersAsync(studentIds, ct);
+            : await LatestContractNumbersAsync(db, studentIds, ct);
 
         // Tranzaksiya turi nomi — `Who`/`ContractNo` kabi, id emas, HAL
         // QILINGAN qiymat ko'rsatiladi (fayl boshidagi `CashBoxTransactionRowDto` izohi).
@@ -964,9 +1095,17 @@ public sealed class CashBoxService(IAppDbContext db) : ICashBoxService
     /// <summary>
     /// O'quvchining ENG SO'NGGI shartnoma raqami (bo'lsa). Ko'p bo'lsa —
     /// imzolangan sanasi bo'yicha eng yangisi, so'ng yaratilgan vaqti bo'yicha.
+    ///
+    /// <para>
+    /// <b>Ochiq (internal) va statik</b>, chunki jadvaldagi "SHARTNOMA RAQAMI"
+    /// ustunini kassa harakatlari ham, to'lov/qaytarim qatorlari ham
+    /// (<c>CashBoxExternalLedger</c>) to'ldiradi. "Eng so'nggi shartnoma"
+    /// qoidasining ikkinchi nusxasi — bir kun ikki ustun ikki xil raqam
+    /// ko'rsatadigan kun degani.
+    /// </para>
     /// </summary>
-    private async Task<Dictionary<string, string?>> LatestContractNumbersAsync(
-        List<string> studentIds, CancellationToken ct)
+    internal static async Task<Dictionary<string, string?>> LatestContractNumbersAsync(
+        IAppDbContext db, List<string> studentIds, CancellationToken ct)
     {
         var contracts = await db.StudentContracts.AsNoTracking()
             .Where(c => studentIds.Contains(c.StudentId))
@@ -989,9 +1128,9 @@ public sealed class CashBoxService(IAppDbContext db) : ICashBoxService
     /// bilan bir xil naqsh.
     /// </summary>
     private static string DisplayStatus(CashBoxTransaction row, bool hasReversal) =>
-        row.Status == CashBoxTransactionStatus.Reversal ? "reversal"
-        : hasReversal ? "cancelled"
-        : "posted";
+        row.Status == CashBoxTransactionStatus.Reversal ? CashBoxRowStatus.Reversal
+        : hasReversal ? CashBoxRowStatus.Cancelled
+        : CashBoxRowStatus.Posted;
 
     // =====================================================================
     //  Yordamchilar

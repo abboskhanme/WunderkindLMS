@@ -57,7 +57,16 @@ import {
 import { DatePicker } from '@/components/ui/DatePicker'
 
 /** Kassa harakati turlari — "Tranzaksiya turi" filtri shu ro'yxatdan (format.ts dagi kindLabel bilan bir xil to'rttasi). */
-const TRANSACTION_KINDS: CashBoxTransactionRow['kind'][] = ['pay_in', 'pay_out', 'transfer', 'exchange']
+const TRANSACTION_KINDS: CashBoxTransactionRow['kind'][] = [
+  'pay_in',
+  'pay_out',
+  'transfer',
+  'exchange',
+  // 2026-09-22: jurnal endi to'lov, xarajat va qaytarimni ham ko'rsatadi.
+  'student_payment',
+  'expense',
+  'refund',
+]
 
 /* ==========================================================================
    BU SAHIFADA TO'LOVNI TAHRIRLASH VA O'CHIRISH TUGMASI YO'Q — ATAYLAB.

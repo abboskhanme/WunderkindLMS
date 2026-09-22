@@ -110,7 +110,21 @@ export const methodLabels: Record<PaymentMethod, string> = {
  * Kalitlar — SERVER yuboradigan qiymatlar (`CashBoxTransactionKind`):
  * `pay_in`/`pay_out`/`transfer`/`exchange`. Qisqa `in`/`out` ham qoldirilgan:
  * amal oynasi (`CashBoxActionModal`) rejimlarni shu qisqa nom bilan ataydi.
+ *
+ * Oxirgi uchtasi — kassaning O'Z harakati EMAS, lekin o'sha kassaning
+ * javonidagi pulni o'zgartiradigan qatorlar (`CashBoxLedgerKind`, server):
+ * o'quvchining to'lovi (`payments`), naqd chiqim (`expenses`) va qaytarim
+ * (`student_refunds`). Ular jurnalda kassa harakatlari bilan bitta ro'yxatda,
+ * vaqt bo'yicha turadi.
  */
+/**
+ * Kassaning O'Z amallari — faqat shularni kassa ekranidan bekor qilsa bo'ladi.
+ * To'lov, xarajat va qaytarim boshqa hujjat: ularning storno'si o'z bo'limida,
+ * ikki bosqichli tasdiq bilan qilinadi (SPEC §4.5). Bu ro'yxatsiz "Bekor qilish"
+ * tugmasi ularga ham chiqib, 404 qaytarardi.
+ */
+export const NATIVE_CASH_KINDS = ['pay_in', 'pay_out', 'transfer', 'exchange']
+
 const kindLabels: Record<string, string> = {
   pay_in: 'Kirim',
   pay_out: 'Chiqim',
@@ -118,6 +132,9 @@ const kindLabels: Record<string, string> = {
   out: 'Chiqim',
   transfer: "Ko'chirish",
   exchange: 'Ayirboshlash',
+  student_payment: "O'quvchi to'lovi",
+  expense: 'Xarajat',
+  refund: 'Qaytarim',
 }
 
 export function kindLabel(kind: string): string {

@@ -1590,3 +1590,47 @@ registered with the bot — the exact same mechanism a teacher uses. There is no
 `app_users.phone` / direct chat-id column for a login account that is not also a teacher. If a
 director-only login (no teacher profile) needs this reminder, that is new schema, not a bug in
 this service — see the service's own header comment for the full reasoning.
+
+---
+
+## For the Kassa screen — three frontend follow-ups after the ledger read fix (2026-09-22)
+
+The Kassa balance and ledger now also carry the rows that live outside
+`cash_box_transactions` — pupil payments, cash expenses, refunds
+(`CashBoxExternalLedger.cs`, kinds `student_payment` / `expense` / `refund`). The frontend
+change this round was deliberately limited to the Uzbek labels in
+`schoollms.client/src/pages/cashier/format.ts`. Three things are therefore **not** wired:
+
+### 1. "Tranzaksiya" dropdown does not list the three new kinds
+
+`CashierPage.tsx` line ~60: `const TRANSACTION_KINDS = ['pay_in', 'pay_out', 'transfer', 'exchange']`.
+Add `'student_payment', 'expense', 'refund'` — `kindLabel()` already returns their Uzbek
+labels. **If skipped:** the rows show up correctly and "Barchasi" includes them; they just
+cannot be filtered for on their own.
+
+### 2. The row "Bekor qilish" (Ban) button is offered on rows it cannot cancel
+
+`CashLedger.tsx` shows the cancel button for every row whose status is not `cancelled`, and it
+calls `POST /admin/cash-boxes/transactions/{id}/cancel`. For a payment / expense / refund row
+that id is not a `cash_box_transactions` id, so the call returns **404 `transaction_not_found`**.
+Those documents are reversed through their own dual-control endpoints
+(`/admin/payments/{id}/reverse`, `/admin/expenses/{id}/reverse`) — a cashier may not reverse
+them at all (SPEC §4.5). The button should be hidden unless
+`row.kind` is one of the four `CashBoxTransactionKind` values. **If skipped:** a cashier who
+presses it gets a confusing "Amal topilmadi" instead of nothing.
+
+### 3. The receipt number has no column
+
+`CashBoxTransactionRowDto.ReceiptNo` (`receiptNo`) is now returned for pupil-payment rows and
+the server-side `q` search matches it, but neither `api/services/cashBoxes.ts` nor the ledger
+table declares it. Adding the field to `CashBoxTransactionRow` plus one `DataTable` column
+("Chek raqami") is the whole job.
+
+### 4. "KIM" and "KASSIR" are still one and the same column value
+
+`CashLedger.tsx` renders both columns from `row.who`, with a comment saying the backend only
+ever had one "who" (the operator). That is no longer true for the new kinds: `who` is now the
+**pupil** on payment and refund rows (what the screen was always meant to show under "KIM"),
+so the "KASSIR" column repeats the pupil's name there. Fixing it means adding a separate
+`cashierName` to the row DTO and pointing the second column at it — a server + client change,
+out of scope for the read fix.
