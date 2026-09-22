@@ -64,6 +64,10 @@ public class PublicSurveyController(SurveySubmissionService surveys) : Controlle
     /// </summary>
     [HttpPost("{slug}")]
     [EnableRateLimiting("survey")]
+    // Ariza — bir hovuch matn maydoni. 16 KB dan kattasi shubhasiz hujum:
+    // Kestrel'ning 30 MB sukuti bilan har bir satr xotirada normallashtirilardi
+    // (2026-09-22 audit). Naqsh: `ExamResultsController`, `StudentImportController`.
+    [RequestSizeLimit(16 * 1024)]
     public async Task<ActionResult<PublicSurveySubmitResultDto>> Submit(
         string slug, PublicSurveySubmitRequest req, CancellationToken ct)
     {

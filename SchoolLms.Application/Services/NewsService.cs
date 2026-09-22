@@ -421,7 +421,13 @@ public static class NewsService
         //    ketilmasin va hisoblagichlar saqlanmay qolmasin (aks holda "qayta e'lon"
         //    hammaga ikkinchi nusxa yuborardi). `MessagesController.SendBroadcast`
         //    ham `ct` uzatmaydi.
-        var delivery = sendTelegram
+        // Bir marta ketgan tarqatma QAYTA yubormaydi. `Unpublish` `published_at` ni
+        // tozalaydi, lekin `telegram_sent_at` ni ATAYLAB tegmasdan qoldiradi — busiz
+        // "e'londan qaytarish → qayta e'lon" har safar butun maktabga yangi xabar
+        // yuborardi va `marketing` ruxsati bor har kim buni cheksiz takrorlay olardi
+        // (2026-09-22 audit).
+        var alreadySent = row.TelegramSentAt is not null;
+        var delivery = sendTelegram && !alreadySent
             ? await notifier.SendAsync(row, CancellationToken.None)
             : NewsTelegramResult.NotSent;
 

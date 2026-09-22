@@ -425,16 +425,25 @@ using (var scope = app.Services.CreateScope())
 
 // ---------- Pipeline ----------
 
-// Cloudflare Tunnel / reverse-proxy orqasida: haqiqiy mijoz IP'si (X-Forwarded-For) va
-// HTTPS sxemasi (X-Forwarded-Proto) tiklanadi. Busiz login rate-limit hamma uchun bitta
-// IP'ga (tunnel) tushib qoladi va HTTPS-redirect tsikli yuzaga kelishi mumkin.
+// Reverse-proxy (Caddy) orqasida: haqiqiy mijoz IP'si (X-Forwarded-For) va HTTPS
+// sxemasi (X-Forwarded-Proto) tiklanadi. Busiz chastota chegaralari (login, telegram,
+// ommaviy ariza formasi) hamma uchun BITTA IP'ga tushib qoladi.
 // FAQAT prod'da yoqamiz (dev'da Vite proxy bu sarlavhalarni yubormaydi).
-// MUHIM: konteyner portini internetga OCHMANG — unga faqat cloudflared kirsin.
+//
+// ZANJIR: Internet → Cloudflare → Caddy → shu konteyner. Caddy `X-Forwarded-For` ni
+// AYNAN BITTA yozuv bilan qayta yozadi (`deploy/Caddyfile`, `header_up ... {client_ip}`),
+// shuning uchun bu yerda `ForwardLimit = 1` to'g'ri qiymat: eng o'ngdagi (yagona) yozuv
+// — haqiqiy tashrifchi. Ikkiga ko'tarish MUMKIN EMAS: u holda mijoz yuborgan qiymat
+// hukmga kirib, chegarani soxtalashtirish mumkin bo'lib qolardi (2026-09-22 audit).
+// MUHIM: konteyner portini internetga OCHMANG — unga faqat `proxy` xizmati kirsin.
 if (!app.Environment.IsDevelopment())
 {
     var fwd = new ForwardedHeadersOptions
     {
         ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto,
+        // Bitta bosqich — Caddy. Sukut ham 1, lekin bu qiymat xavfsizlik qaroridir,
+        // shuning uchun oshkor yozilgan.
+        ForwardLimit = 1,
     };
     // .NET 10: KnownNetworks eskirdi (ASPDEPR005) — o'rniga KnownIPNetworks.
     fwd.KnownIPNetworks.Clear();
