@@ -1,5 +1,6 @@
 import type { LucideIcon } from 'lucide-react'
 import {
+  FileBadge,
   CalendarCheck,
   FlaskConical,
   LayoutDashboard,
@@ -17,7 +18,6 @@ import {
   BookOpen,
   ShieldAlert,
   Newspaper,
-  UserRoundCheck,
 } from 'lucide-react'
 import type { Role } from '@/types'
 
@@ -72,18 +72,10 @@ export const navByRole: Record<Role, NavItem[]> = {
     // Sozlamalardan oldin qo'yilgan — shunda EduSchool ketma-ketligi
     // boshidan Xulq-atvorgacha uzilmay o'qiladi.
         { label: 'Bosh sahifa', to: '/admin', icon: LayoutDashboard },
-    {
-      label: 'Lidlar',
-      to: '/admin/leads',
-      icon: UserPlus,
-      perm: 'leads',
-      children: [
-        // Taxtaning O'ZI o'zgarmaydi (CLAUDE.md: dizayni muzlatilgan) — voronka
-        // yonidagi ALOHIDA sahifa, menyuda esa qo'shni yozuv.
-        { label: 'Doska', to: '/admin/leads', end: true },
-        { label: 'Voronka', to: '/admin/leads/funnel' },
-      ],
-    },
+    // Mijoz, 2026-09-22: "leadlar bo'limi uchun voronka kerakmas" — menyuda faqat
+    // doska, ichki ro'yxatsiz. `/admin/leads/funnel` sahifasi o'chirilmadi (manzil
+    // ishlaydi), faqat menyudan olindi; voronka bosh sahifada vidjet sifatida qoladi.
+    { label: 'Lidlar', to: '/admin/leads', icon: UserPlus, perm: 'leads' },
     {
       label: 'Moliya',
       to: '/admin/finance',
@@ -197,25 +189,28 @@ export const navByRole: Record<Role, NavItem[]> = {
       label: 'Davomat',
       to: '/admin/attendance',
       icon: CalendarCheck,
-      perm: 'attendance',
+      // Ruxsat bolalarda (2026-09-23): kechki/yotoqxona xodimi kunduzgi davomatni ko'rmasdan
+      // ham o'z bo'limini ko'rishi kerak. Bola qolmasa — bo'lim o'zi yashiriladi.
       children: [
         // Belgilash BIRINCHI: mas'ul xodim bu bo'limga har kuni AYNAN shu ish
         // uchun kiradi (mijoz, 2026-09-18), hisobot esa keyin o'qiladi.
-        { label: 'Davomat belgilash', to: '/admin/attendance/mark', group: 'DAVOMAT' },
-        { label: 'Kunlik davomat', to: '/admin/attendance', end: true, group: 'DAVOMAT' },
-        { label: 'Davomat analitikasi', to: '/admin/attendance/analytics', group: 'DAVOMAT' },
+        { label: 'Davomat belgilash', to: '/admin/attendance/mark', perm: 'attendance', group: 'DAVOMAT' },
+        { label: 'Kunlik davomat', to: '/admin/attendance', end: true, perm: 'attendance', group: 'DAVOMAT' },
+        { label: 'Davomat analitikasi', to: '/admin/attendance/analytics', perm: 'attendance', group: 'DAVOMAT' },
+        { label: 'Kechki dars', to: '/admin/attendance/boarding?session=evening', perm: 'attendanceEvening', group: 'KECHKI' },
+        { label: 'Yotoqxona', to: '/admin/attendance/boarding?session=dorm', perm: 'attendanceDorm', group: 'KECHKI' },
       ],
     },
     {
-      // EduSchool'da #10 (MENU-PARITY.md). Nomzod — bu lid (admission-and-testing.md §2.2);
-      // o'quvchiga aylantirilgach lid o'chadi, imtihon natijasi esa qoladi.
-      label: 'Qabul',
-      to: '/admin/admission/candidates',
-      icon: UserRoundCheck,
-      perm: 'admission',
+      // EduSchool'dagi "Imtihonlar" (mijoz, 2026-09-23). Sahifalar ilgari yozilgan, lekin
+      // menyuga ulanmagan edi ("parked"). "Baholash" (kiritish) ro'yxatning o'z tugmasidan ochiladi.
+      label: 'Imtihonlar',
+      to: '/admin/seasonal-marks',
+      icon: FileBadge,
+      perm: 'seasonalMarks',
       children: [
-        { label: 'Nomzodlar', to: '/admin/admission/candidates', end: true, group: 'QABUL' },
-        { label: 'Test bazasi', to: '/admin/admission/banks', group: 'QABUL' },
+        { label: 'Mavsumiy baholash', to: '/admin/seasonal-marks', end: true, group: 'BAHOLASH' },
+        { label: "Mavsumiy baholash (fanlar bo'yicha)", to: '/admin/seasonal-marks/by-subjects', group: 'BAHOLASH' },
       ],
     },
     {
@@ -242,6 +237,7 @@ export const navByRole: Record<Role, NavItem[]> = {
         { label: "Fanlar bo'yicha baholar", to: '/admin/grades-report/subjects', group: "O'QUV" },
         { label: 'Sinflar reytingi', to: '/admin/classes/rating', group: "O'QUV" },
         { label: "O'qituvchilar hisoboti", to: '/admin/teacher-reports', perm: 'teacherReports', group: 'XODIMLAR' },
+        { label: 'Mavsumiy baholash hisoboti', to: '/admin/seasonal-marks/report', perm: 'seasonalMarks', group: 'XODIMLAR' },
       ],
     },
     {
@@ -337,6 +333,10 @@ export const navByRole: Record<Role, NavItem[]> = {
         { label: "Ta'lim (LMS)", to: '/admin/lms', perm: 'app', group: 'ILOVA' },
         { label: 'Oshxona', to: '/admin/canteen', perm: 'app', group: 'ILOVA' },
         { label: "O'qituvchilar", to: '/admin/app/teachers', perm: 'app', group: 'ILOVA' },
+        // Qabul hozircha ishlatilmaydi (mijoz, 2026-09-23) — asosiy menyudan shu yerga ko'chdi.
+        // Sahifalar va manzillar o'zgarmagan.
+        { label: 'Nomzodlar', to: '/admin/admission/candidates', end: true, perm: 'admission', group: 'QABUL' },
+        { label: 'Test bazasi', to: '/admin/admission/banks', perm: 'admission', group: 'QABUL' },
       ],
     },
   ],

@@ -46,6 +46,13 @@ import { FeedbackPage } from '@/pages/admin/feedback/FeedbackPage'
 import { AcademicYearPage } from '@/pages/admin/academic-year/AcademicYearPage'
 import { SubjectsPage } from '@/pages/admin/subjects/SubjectsPage'
 import { JournalPage } from '@/pages/admin/journal/JournalPage'
+import { BoardingAttendancePage } from '@/pages/admin/attendance/BoardingAttendancePage'
+import { SeasonalMarksPage } from '@/pages/admin/seasonal-marks/SeasonalMarksPage'
+import { BySubjectsPage } from '@/pages/admin/seasonal-marks/BySubjectsPage'
+import { SeasonalEntryPage } from '@/pages/admin/seasonal-marks/SeasonalEntryPage'
+import { CoverageReportPage } from '@/pages/admin/seasonal-marks/CoverageReportPage'
+import { JournalClassesPage } from '@/pages/admin/journal/JournalClassesPage'
+import { JournalSubjectsPage } from '@/pages/admin/journal/JournalSubjectsPage'
 import { MessagesPage } from '@/pages/admin/messages/MessagesPage'
 import { AssignmentsPage } from '@/pages/admin/assignments/AssignmentsPage'
 import { AssignmentScoresPage } from '@/pages/admin/assignment-scores/AssignmentScoresPage'
@@ -122,11 +129,13 @@ export default function App() {
           <Route index element={<AdminDashboard />} />
           <Route path="leads" element={<RequirePerm perm="leads"><LeadsPage /></RequirePerm>} />
           <Route path="leads/funnel" element={<RequirePerm perm="leads"><LeadFunnelPage /></RequirePerm>} />
-          <Route path="students" element={<RequirePerm perm="students"><StudentsPage /></RequirePerm>} />
+          {/* `key` — ikki yo'l bitta komponent: menyudan o'tilganda sahifa qayta yaratilsin,
+              aks holda ichki "Faol/Arxiv" holati eski qolib, ro'yxat almashmasdi. */}
+          <Route path="students" element={<RequirePerm perm="students"><StudentsPage key="active" /></RequirePerm>} />
           <Route path="students/baholash" element={<RequirePerm perm="students"><StudentEvaluationPage /></RequirePerm>} />
           <Route path="students/baholash-turlari" element={<RequirePerm perm="students"><EvaluationTypesPage /></RequirePerm>} />
           <Route path="students/turniket" element={<RequirePerm perm="students"><StudentTurnstilePage /></RequirePerm>} />
-          <Route path="students/arxiv" element={<RequirePerm perm="students"><StudentsPage initialTab="archived" /></RequirePerm>} />
+          <Route path="students/arxiv" element={<RequirePerm perm="students"><StudentsPage key="archived" initialTab="archived" /></RequirePerm>} />
           <Route path="students/holatlar" element={<RequirePerm perm="students"><StudentStatusesPage /></RequirePerm>} />
           <Route path="students/turniket/analitika" element={<RequirePerm perm="students"><TurnstileAnalyticsPage /></RequirePerm>} />
           <Route path="students/turniket/kirish-chiqish" element={<RequirePerm perm="students"><TurnstileFlowPage /></RequirePerm>} />
@@ -138,6 +147,13 @@ export default function App() {
           <Route path="classes/rating" element={<RequirePerm perm="classes"><ClassRatingPage /></RequirePerm>} />
           <Route path="classes/:id" element={<RequirePerm perm="classes"><ClassDetailPage /></RequirePerm>} />
           <Route path="classes/:id/roster" element={<RequirePerm perm="classes"><ClassRosterPage /></RequirePerm>} />
+          {/* Kechki dars va yotoqxona davomati (2026-09-23). Ruxsat — sessiya bo'yicha, sahifa ichida. */}
+          <Route path="attendance/boarding" element={<BoardingAttendancePage />} />
+          {/* Imtihonlar — mavsumiy baholash (mijoz, 2026-09-23: menyuga ulandi). */}
+          <Route path="seasonal-marks" element={<RequirePerm perm="seasonalMarks"><SeasonalMarksPage /></RequirePerm>} />
+          <Route path="seasonal-marks/by-subjects" element={<RequirePerm perm="seasonalMarks"><BySubjectsPage /></RequirePerm>} />
+          <Route path="seasonal-marks/entry" element={<RequirePerm perm="seasonalMarks"><SeasonalEntryPage /></RequirePerm>} />
+          <Route path="seasonal-marks/report" element={<RequirePerm perm="seasonalMarks"><CoverageReportPage /></RequirePerm>} />
           <Route path="groups" element={<RequirePerm perm="classes"><GroupsPage /></RequirePerm>} />
           <Route path="groups/new" element={<RequirePerm perm="classes"><GroupFormPage /></RequirePerm>} />
           <Route path="groups/:id" element={<RequirePerm perm="classes"><GroupFormPage /></RequirePerm>} />
@@ -155,7 +171,10 @@ export default function App() {
           <Route path="schedule/manage/:id/template/:templateId" element={<RequirePerm perm="schedule"><TemplateEditorPage /></RequirePerm>} />
           <Route path="subjects" element={<RequirePerm perm="students"><SubjectsPage /></RequirePerm>} />
           <Route path="rooms" element={<RequirePerm perm="students"><RoomsPage /></RequirePerm>} />
-          <Route path="journal" element={<RequirePerm perm="journal"><JournalPage /></RequirePerm>} />
+          {/* Jurnal → sinf → fan (EduSchool oqimi, 2026-09-23). */}
+          <Route path="journal" element={<RequirePerm perm="journal"><JournalClassesPage /></RequirePerm>} />
+          <Route path="journal/:classId" element={<RequirePerm perm="journal"><JournalSubjectsPage /></RequirePerm>} />
+          <Route path="journal/:classId/:subjectId" element={<RequirePerm perm="journal"><JournalPage /></RequirePerm>} />
           <Route path="assignments" element={<RequirePerm perm="app"><AssignmentsPage /></RequirePerm>} />
           <Route path="assignment-scores" element={<RequirePerm perm="app"><AssignmentScoresPage /></RequirePerm>} />
           <Route path="lms" element={<RequirePerm perm="app"><LmsClassesPage /></RequirePerm>} />
@@ -178,7 +197,7 @@ export default function App() {
           <Route path="parents" element={<RequirePerm perm="students"><ParentsPage /></RequirePerm>} />
           <Route path="app/teachers" element={<RequirePerm perm="app"><TeacherAppPage /></RequirePerm>} />
           <Route path="canteen" element={<RequirePerm perm="app"><CanteenPage /></RequirePerm>} />
-          <Route path="finance" element={<RequirePerm perm="finance"><FinancePage /></RequirePerm>} />
+          <Route path="finance" element={<RequirePerm perm="finance"><FinancePage key="finance" /></RequirePerm>} />
           {/* Rol tekshiruvi sahifaning ichida (SPEC §4.3: faqat admin/direktor) */}
           <Route path="finance/money-flow" element={<Suspense fallback={<Loader label="Yuklanmoqda…" />}><MoneyFlowPage /></Suspense>} />
           {/* Rol tekshiruvi sahifaning ichida (SPEC §4.3: faqat admin/direktor) */}
@@ -192,10 +211,10 @@ export default function App() {
           <Route path="billing/settings" element={<RequirePerm perm="finance"><BillingSettingsPage /></RequirePerm>} />
           <Route path="finance/refunds" element={<RequirePerm perm="finance"><RefundsPage /></RequirePerm>} />
           {/* EduSchool'da alohida menyu yozuvi — bizda bitta sahifaning tablari. */}
-          <Route path="finance/debtors" element={<RequirePerm perm="finance"><FinancePage initialTab="debtors" /></RequirePerm>} />
-          <Route path="finance/pnl" element={<RequirePerm perm="finance"><FinancePage initialTab="pnl" /></RequirePerm>} />
+          <Route path="finance/debtors" element={<RequirePerm perm="finance"><FinancePage key="finance-debtors" initialTab="debtors" /></RequirePerm>} />
+          <Route path="finance/pnl" element={<RequirePerm perm="finance"><FinancePage key="finance-pnl" initialTab="pnl" /></RequirePerm>} />
           <Route path="finance/pnl-2" element={<RequirePerm perm="finance"><PnlExpectationPage /></RequirePerm>} />
-          <Route path="finance/cashflow" element={<RequirePerm perm="finance"><FinancePage initialTab="cashflow" /></RequirePerm>} />
+          <Route path="finance/cashflow" element={<RequirePerm perm="finance"><FinancePage key="finance-cashflow" initialTab="cashflow" /></RequirePerm>} />
           {/* Sozlamalar EduSchool tuzilishida: to'rtta sahifa, har biri ichida bo'limlar. */}
           <Route path="settings/integrations" element={<RequirePerm perm="settings"><IntegrationsSettingsPage /></RequirePerm>} />
           <Route path="settings/general" element={<RequirePerm perm="settings"><GeneralSettingsPage /></RequirePerm>} />
@@ -212,8 +231,8 @@ export default function App() {
           <Route path="exams/types" element={<RequirePerm perm="exams"><ExamTypesPage /></RequirePerm>} />
           <Route path="exams/results" element={<RequirePerm perm="exams"><ResultsPage /></RequirePerm>} />
           <Route path="exams/results/:examId/entry" element={<RequirePerm perm="exams"><ResultEntryPage /></RequirePerm>} />
-          <Route path="finance/bonus" element={<RequirePerm perm="finance"><AdjustmentsPage kind="bonus" /></RequirePerm>} />
-          <Route path="finance/penalty" element={<RequirePerm perm="finance"><AdjustmentsPage kind="penalty" /></RequirePerm>} />
+          <Route path="finance/bonus" element={<RequirePerm perm="finance"><AdjustmentsPage key="finance-bonus" kind="bonus" /></RequirePerm>} />
+          <Route path="finance/penalty" element={<RequirePerm perm="finance"><AdjustmentsPage key="finance-penalty" kind="penalty" /></RequirePerm>} />
           <Route path="billing/subscriptions" element={<RequirePerm perm="finance"><SubscriptionsPage /></RequirePerm>} />
           <Route path="billing/discounts" element={<RequirePerm perm="finance"><DiscountsPage /></RequirePerm>} />
           <Route path="billing/expenses" element={<RequirePerm perm="finance"><ExpensesPage /></RequirePerm>} />

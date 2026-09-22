@@ -89,6 +89,8 @@ export function DailyMarkingPage() {
   const [pending, setPending] = useState<Pending | null>(null)
   /** "Saqlash" bosildi — tasdiq oynasi ochiq (mijoz, 2026-09-19). */
   const [confirmSave, setConfirmSave] = useState(false)
+  /** "Saqlash" belgisizlar bilan bosildi — ular sariq bo'lib ko'rinadi. */
+  const [showUnmarked, setShowUnmarked] = useState(false)
   /** Saqlangandan keyingi yashil xabar (mijoz, 2026-09-19). */
   const [toast, setToast] = useState<string | null>(null)
 
@@ -128,12 +130,17 @@ export function DailyMarkingPage() {
     void loadOverview()
   }, [loadOverview])
 
-  /** Darsning joriy belgilarini qoralamaga oladi (belgisi yo'q — "keldi"). */
+  /**
+   * Darsning joriy belgilarini qoralamaga oladi. HALI BELGILANMAGAN dars — bo'sh qoralama:
+   * hech kim sukut bo'yicha "keldi" emas (mijoz, 2026-09-23), xodim har birini o'zi belgilaydi.
+   * Saqlangan darsda belgisi yo'q o'quvchi — "keldi" (server shunday saqlaydi).
+   */
   const draftOf = (data: DailyAttendanceClassDay, target: DailyAttendanceLesson | null) => {
     const next: Record<string, Mark> = {}
     // Bo'lingan darsda faqat O'SHA guruh belgilanadi (server ham shunday
     // yozadi) — qolgan yarim sinf boshqa xonada.
     const ids = target ? new Set(target.studentIds) : new Set(data.students.map((s) => s.studentId))
+    if (!target?.marked) return next
     for (const s of data.students) {
       if (!ids.has(s.studentId)) continue
       const reason = target?.marks[s.studentId]
@@ -158,6 +165,7 @@ export function DailyMarkingPage() {
       setLessonKey(target ? keyOf(target) : '')
       setDraft(draftOf(data, target))
       setDirty(false)
+      setShowUnmarked(false)
     } catch {
       setError("Sinf ma'lumotini yuklab bo'lmadi.")
     } finally {
@@ -166,6 +174,7 @@ export function DailyMarkingPage() {
   }
 
   const showLesson = (data: DailyAttendanceClassDay, key: string) => {
+    setShowUnmarked(false)
     setLessonKey(key)
     setDraft(draftOf(data, data.lessons.find((l) => keyOf(l) === key) ?? null))
     setDirty(false)
@@ -197,6 +206,7 @@ export function DailyMarkingPage() {
 
   const setMark = (studentId: string, mark: Mark) => {
     if (!allowed(mark)) return
+    setError(null)
     setDraft((prev) => ({ ...prev, [studentId]: mark }))
     setDirty(true)
     setSavedNote(null)
@@ -210,14 +220,16 @@ export function DailyMarkingPage() {
     setSavedNote(null)
   }
 
-  const counts = useMemo(() => {
+  // Oddiy hisob (kichik ro'yxat) — `lesson` har renderda hosil qilinadi, memo kerak emas.
+  const counts = (() => {
     const values = Object.values(draft)
     return {
       present: values.filter((v) => v === 'present').length,
       absent: values.filter((v) => v === 'absent').length,
       excused: values.filter((v) => v === 'excused').length,
+      unmarked: (lesson?.studentIds ?? []).filter((id) => !draft[id]).length,
     }
-  }, [draft])
+  })()
 
   const save = async () => {
     if (!day || !lesson || saving) return
@@ -429,11 +441,14 @@ export function DailyMarkingPage() {
 
             <ul className="divide-y divide-slate-100">
               {filtered.map((s, i) => {
-                const mark = draft[s.studentId] ?? 'present'
+                const mark: Mark | undefined = draft[s.studentId]
                 return (
                   <li
                     key={s.studentId}
-                    className="flex items-center justify-between gap-3 px-4 py-2"
+                    className={cn(
+                      'flex items-center justify-between gap-3 px-4 py-2',
+                      !mark && showUnmarked && 'bg-amber-50/70',
+                    )}
                   >
                     <span className="flex min-w-0 items-center gap-3">
                       <span className="w-5 shrink-0 text-xs text-slate-400">{i + 1}</span>
@@ -485,9 +500,24 @@ export function DailyMarkingPage() {
 
           <div className="flex flex-wrap items-center justify-between gap-3">
             <span className="text-sm text-slate-400">
-              {savedNote ?? (dirty ? "Saqlanmagan o'zgarish bor." : 'O’zgarish yo’q.')}
+              {counts.unmarked > 0 ? (
+                <span className="text-amber-600">{counts.unmarked} ta o'quvchi hali belgilanmagan</span>
+              ) : (
+                savedNote ?? (dirty ? "Saqlanmagan o'zgarish bor." : 'O’zgarish yo’q.')
+              )}
             </span>
-            <Button onClick={() => setConfirmSave(true)} disabled={saving}>
+            <Button
+              onClick={() => {
+                // Hamma belgilanmaguncha saqlanmaydi — belgisiz o'quvchi jimgina "keldi" bo'lib qolmasin.
+                if (counts.unmarked > 0) {
+                  setShowUnmarked(true)
+                  setError(`${counts.unmarked} ta o'quvchi belgilanmagan — avval hammasini belgilang.`)
+                  return
+                }
+                setConfirmSave(true)
+              }}
+              disabled={saving}
+            >
               {saving ? 'Saqlanmoqda...' : 'Saqlash'}
             </Button>
           </div>

@@ -80,6 +80,59 @@ public class AuthController(AppDbContext db, JwtTokenService jwt, ILogger<AuthCo
         }
 
         await db.SaveChangesAsync();
-        return new UserDto(user.Id, user.FullName, user.Role, user.Email, user.AvatarUrl);
+        // Ruxsatlar ham qaytadi: klient javobni `updateUser` bilan saqlaydi — ro'yxatsiz
+        // qaytsa, xodimning menyusi "hammasi ochiq" bo'lib ko'rinib qolardi.
+        return new UserDto(user.Id, user.FullName, user.Role, user.Email, user.AvatarUrl, await PermsFor(user));
+    }
+
+    /// <summary>Profil rasmi uchun ruxsat etilgan eng katta hajm.</summary>
+    private const long MaxAvatarBytes = 5 * 1024 * 1024;
+
+    private static readonly HashSet<string> AvatarExtensions =
+        new(StringComparer.OrdinalIgnoreCase) { ".jpg", ".jpeg", ".png", ".webp", ".heic" };
+
+    /// <summary>
+    /// O'z profil rasmini yuklash — tizimga kiradigan HAR QANDAY foydalanuvchi uchun
+    /// (mijoz, 2026-09-22: "barcha uchun profile image yuklash mumkin bo'lsin"). Faqat
+    /// rasm; parol so'ralmaydi, chunki rasm kirish ma'lumoti emas.
+    /// </summary>
+    [HttpPost("avatar")]
+    [Authorize]
+    [RequestSizeLimit(MaxAvatarBytes + 64 * 1024)]
+    public async Task<ActionResult<UserDto>> UploadAvatar(IFormFile file, [FromServices] IWebHostEnvironment env)
+    {
+        var id = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        var user = await db.Users.FindAsync(id);
+        if (user is null) return Unauthorized();
+
+        if (Application.Services.UploadGuard.Validate(file) is { } error)
+            return BadRequest(new { message = error });
+        if (!AvatarExtensions.Contains(System.IO.Path.GetExtension(file.FileName)))
+            return BadRequest(new { message = "Faqat rasm yuklash mumkin (jpg, png, webp, heic)" });
+        if (file.Length > MaxAvatarBytes)
+            return BadRequest(new { message = "Rasm 5 MB dan katta bo'lmasin" });
+
+        var dir = System.IO.Path.Combine(env.ContentRootPath, "uploads");
+        System.IO.Directory.CreateDirectory(dir);
+        var stored = Application.Services.UploadGuard.SafeName(file);
+        await using (var fs = System.IO.File.Create(System.IO.Path.Combine(dir, stored)))
+            await file.CopyToAsync(fs);
+
+        user.AvatarUrl = $"/uploads/{stored}";
+        await db.SaveChangesAsync();
+        return new UserDto(user.Id, user.FullName, user.Role, user.Email, user.AvatarUrl, await PermsFor(user));
+    }
+
+    /// <summary>Profil rasmini olib tashlash (fayl diskda qoladi — boshqa joyda ishlatilgan bo'lishi mumkin).</summary>
+    [HttpDelete("avatar")]
+    [Authorize]
+    public async Task<ActionResult<UserDto>> RemoveAvatar()
+    {
+        var id = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        var user = await db.Users.FindAsync(id);
+        if (user is null) return Unauthorized();
+        user.AvatarUrl = null;
+        await db.SaveChangesAsync();
+        return new UserDto(user.Id, user.FullName, user.Role, user.Email, user.AvatarUrl, await PermsFor(user));
     }
 }

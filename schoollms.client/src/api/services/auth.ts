@@ -69,3 +69,17 @@ export async function updateAccount(payload: UpdateAccountPayload): Promise<User
   const { data } = await api.put<User>('/auth/account', payload)
   return data
 }
+
+/** O'z profil rasmini yuklash (har qanday rol). Yangilangan foydalanuvchini qaytaradi. */
+export async function uploadAvatar(file: File): Promise<User> {
+  const form = new FormData()
+  form.append('file', file)
+  const { data } = await api.post<User>('/auth/avatar', form)
+  return data
+}
+
+/** O'z profil rasmini olib tashlash. */
+export async function removeAvatar(): Promise<User> {
+  const { data } = await api.delete<User>('/auth/avatar')
+  return data
+}

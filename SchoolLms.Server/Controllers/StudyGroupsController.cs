@@ -110,7 +110,8 @@ public class StudyGroupsController(AppDbContext db, AuditService audit) : Contro
             group.IsArchived, group.ArchivedAt,
             classes.GetValueOrDefault(group.Id, []),
             teachers.GetValueOrDefault(group.Id, []),
-            await MembersAsync(group.Id, includeHistory: false, ct));
+            await MembersAsync(group.Id, includeHistory: false, ct),
+            group.IsTrack);
     }
 
     /// <summary>
@@ -446,7 +447,8 @@ public class StudyGroupsController(AppDbContext db, AuditService audit) : Contro
             g.IsArchived, g.ArchivedAt,
             classes.GetValueOrDefault(g.Id, []),
             teachers.GetValueOrDefault(g.Id, []),
-            counts.GetValueOrDefault(g.Id)))];
+            counts.GetValueOrDefault(g.Id),
+            g.IsTrack))];
     }
 
     private async Task<Dictionary<Guid, List<StudyGroupClassRefDto>>> ClassesOfAsync(

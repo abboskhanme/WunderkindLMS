@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft, ArrowRightLeft, Search, Trash2, Users } from 'lucide-react'
+import { ArrowLeft, ArrowRightLeft, Lock, Search, Trash2, Users } from 'lucide-react'
 import type { SchoolClass, Subject, Teacher } from '@/types'
 import type { GroupCandidate, StudyGroupMember } from '@/api/services/groups'
 import { createGroup, getGroup, getGroupCandidates, updateGroup } from '@/api/services/groups'
@@ -53,8 +53,8 @@ export function GroupFormPage() {
   const [grades, setGrades] = useState<number[]>([])
   const [classIds, setClassIds] = useState<string[]>([])
   const [teacherIds, setTeacherIds] = useState<string[]>([])
-  const [gender, setGender] = useState('')
   const [isArchived, setIsArchived] = useState(false)
+  const [isTrack, setIsTrack] = useState(false)
 
   const [candidates, setCandidates] = useState<GroupCandidate[]>([])
   const [picked, setPicked] = useState<PickedStudent[]>([])
@@ -64,7 +64,8 @@ export function GroupFormPage() {
   /* ---------- Ma'lumotnomalar ---------- */
 
   useEffect(() => {
-    Promise.all([getSubjects(true), getClasses(), getTeachers()])
+    // Hamma faol fan — istalgan fanga guruh ochiladi (mijoz, 2026-09-23).
+    Promise.all([getSubjects(undefined, true), getClasses(), getTeachers()])
       .then(([s, c, t]) => {
         setSubjects(s)
         setClasses(c)
@@ -86,12 +87,14 @@ export function GroupFormPage() {
         setClassIds(g.classes.map((c) => c.id))
         setGrades([...new Set(g.classes.map((c) => c.grade))])
         setTeacherIds(g.teachers.map((t) => t.id))
-        setGender(g.gender ?? '')
         setIsArchived(g.isArchived)
+        setIsTrack(Boolean(g.isTrack))
         setPicked(g.members.map(toPicked))
       })
       .finally(() => setLoading(false))
   }, [id])
+
+  const selectedSubject = subjects.find((x) => x.id === subjectId)
 
   /* ---------- Chap panel ---------- */
 
@@ -103,10 +106,9 @@ export function GroupFormPage() {
     getGroupCandidates({
       classIds,
       subjectId,
-      gender: gender || null,
       excludeGroupId: id,
     }).then(setCandidates)
-  }, [subjectId, classIds, gender, id])
+  }, [subjectId, classIds, id])
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- ma'lumot kelganda formani to'ldiramiz (maqsadli, loyihadagi mavjud naqsh)
@@ -181,8 +183,6 @@ export function GroupFormPage() {
   const toggleClass = (cid: string) =>
     setClassIds((prev) => (prev.includes(cid) ? prev.filter((x) => x !== cid) : [...prev, cid]))
 
-  const toggleTeacher = (tid: string) =>
-    setTeacherIds((prev) => (prev.includes(tid) ? prev.filter((x) => x !== tid) : [...prev, tid]))
 
   /* ---------- Saqlash ---------- */
 
@@ -201,7 +201,7 @@ export function GroupFormPage() {
       return
     }
     if (teacherIds.length === 0) {
-      setError("Kamida bitta o'qituvchi tanlang")
+      setError("O'qituvchini tanlang")
       return
     }
 
@@ -210,9 +210,11 @@ export function GroupFormPage() {
       name: name.trim(),
       subjectId,
       classIds,
-      teacherIds,
-      gender: gender || null,
+      teacherIds: teacherIds.slice(0, 1),
+      // Jins bo'yicha ajratish maktabda yo'q (mijoz, 2026-09-23) — har doim aralash.
+      gender: null,
       studentIds: picked.map((p) => p.studentId),
+      isTrack,
     }
     try {
       const saved = isEdit ? await updateGroup(id!, payload) : await createGroup(payload)
@@ -233,7 +235,7 @@ export function GroupFormPage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          <Button variant="ghost" onClick={() => navigate('/admin/groups')}>
+          <Button title="Orqaga" aria-label="Orqaga" variant="ghost" onClick={() => navigate('/admin/groups')}>
             <ArrowLeft className="h-4 w-4" />
           </Button>
           <div>
@@ -260,23 +262,38 @@ export function GroupFormPage() {
 
       <Card className="space-y-4">
         <div className="grid gap-4 md:grid-cols-2">
+          {isEdit ? (
+            // Tahrirlashda fan QULFLANGAN — faol dropdown'ga o'xshamasin (mijoz: "ochilmayapti").
+            <div>
+              <span className="mb-1 block text-sm font-medium text-slate-600">Fan</span>
+              <div
+                className="flex h-[42px] items-center gap-2 rounded-lg border border-slate-200 bg-slate-100 px-3 text-sm text-slate-600"
+                title="Guruhning fanini o'zgartirib bo'lmaydi"
+              >
+                <Lock className="h-4 w-4 shrink-0 text-slate-400" />
+                <span className="truncate">{selectedSubject?.name ?? '—'}</span>
+              </div>
+            </div>
+          ) : (
           <Select
             label="Fan"
             required
             value={subjectId}
-            disabled={isEdit}
             onChange={(e) => {
               setSubjectId(e.target.value)
               setPicked([])
             }}
           >
             <option value="">Tanlang...</option>
-            {subjects.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name}
-              </option>
-            ))}
+            {[...subjects]
+              .sort((a, b) => a.name.localeCompare(b.name, 'uz'))
+              .map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                </option>
+              ))}
           </Select>
+          )}
 
           <Input
             label="Guruh nomi"
@@ -289,16 +306,11 @@ export function GroupFormPage() {
 
         {isEdit && (
           <p className="-mt-2 text-xs text-slate-400">
-            Guruhning fanini o'zgartirib bo'lmaydi — kerak bo'lsa yangi guruh oching.
+            Guruhning fanini o'zgartirib bo'lmaydi — boshqa fan uchun yangi guruh oching.
           </p>
         )}
 
-        {subjects.length === 0 && (
-          <p className="text-sm text-amber-700">
-            Guruhlarga bo'linadigan fan yo'q. Avval "Fanlar" bo'limida kerakli fanni
-            "guruhlarga bo'linadi" deb belgilang.
-          </p>
-        )}
+
 
         <div>
           <span className="mb-1 block text-sm font-medium text-slate-600">Sinf darajalari</span>
@@ -331,30 +343,46 @@ export function GroupFormPage() {
         <div className="grid gap-4 md:grid-cols-2">
           <div>
             <span className="mb-1 block text-sm font-medium text-slate-600">
-              O'qituvchilar <span className="text-red-500">*</span>
+              O'qituvchi <span className="text-red-500">*</span>
             </span>
-            <div className="flex max-h-32 flex-wrap gap-1.5 overflow-y-auto">
+            {/* Guruhga BITTA o'qituvchi (mijoz, 2026-09-23). Server ro'yxat qabul qiladi —
+                shu ro'yxat bitta elementli yuboriladi. */}
+            <select
+              value={teacherIds[0] ?? ''}
+              onChange={(e) => setTeacherIds(e.target.value ? [e.target.value] : [])}
+              className="h-[42px] w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100"
+              aria-label="O'qituvchi"
+            >
+              <option value="">O'qituvchi tanlang...</option>
               {teachers.map((t) => (
-                <Chip
-                  key={t.id}
-                  active={teacherIds.includes(t.id)}
-                  onClick={() => toggleTeacher(t.id)}
-                >
+                <option key={t.id} value={t.id}>
                   {t.fullName}
-                </Chip>
+                </option>
               ))}
-            </div>
+            </select>
+            {teacherIds.length > 1 && (
+              <p className="mt-1 text-xs text-amber-700">
+                Bu guruhda {teacherIds.length} ta o'qituvchi bor edi — saqlanganda faqat tanlangani qoladi.
+              </p>
+            )}
           </div>
+          {/* Yo'nalish guruhi (mijoz, 2026-09-23) — kechki dars va yotoqxona davomati sinf
+              o'rniga shu guruhlar bo'yicha chiqadi. */}
+          <label className="flex items-start gap-3 self-end rounded-xl border border-slate-200 p-3">
+            <input
+              type="checkbox"
+              checked={isTrack}
+              onChange={(e) => setIsTrack(e.target.checked)}
+              className="mt-0.5 h-4 w-4 accent-brand-600"
+            />
+            <span>
+              <span className="block text-sm font-medium text-slate-700">Yo'nalish guruhi</span>
+              <span className="block text-xs text-slate-400">
+                Kechki dars va yotoqxona davomati shu guruh bo'yicha olinadi (9–11-sinflar aralash).
+              </span>
+            </span>
+          </label>
 
-          <Select
-            label="Jins (ixtiyoriy)"
-            value={gender}
-            onChange={(e) => setGender(e.target.value)}
-          >
-            <option value="">Aralash</option>
-            <option value="male">O'g'il bolalar</option>
-            <option value="female">Qizlar</option>
-          </Select>
         </div>
       </Card>
 

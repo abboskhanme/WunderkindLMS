@@ -19,7 +19,9 @@ interface Props {
 export function ClassPerformanceChart({ data, metric }: Props) {
   const isGrade = metric === 'grade'
   const dataKey = isGrade ? 'averageGrade' : 'attendanceRate'
-  const color = isGrade ? '#1f47f5' : '#16a34a'
+  // Iliq ranglar (mijoz, 2026-09-22: "sovuq rang bo'lmasin"): baho — Wunderkind
+  // sarig'i, davomat — yashil.
+  const color = isGrade ? '#FFD006' : '#22a35a'
   const domain: [number, number] = isGrade ? [0, 5] : [0, 100]
   const unit = isGrade ? '' : '%'
   const label = isGrade ? "O'rtacha baho" : 'Davomat'

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { Check } from 'lucide-react'
 import type {
   SchoolClass,
   ScheduleTemplate,
@@ -175,24 +176,23 @@ export function TodaySchedule() {
                         key={i}
                         className={cn(
                           'flex items-center gap-2 rounded-md border px-2 py-1 text-sm',
-                          l.conducted
-                            ? 'border-emerald-200 bg-emerald-50'
-                            : 'border-red-200 bg-red-50',
+                          // Oq qator; o'tilgan dars — faqat yashil raqam va belgi.
+                          // Qizil yo'q: hali vaqti kelmagan dars "o'tilmagan" xato emas.
+                          'border-slate-100 bg-white',
                         )}
-                        title={l.conducted ? "Dars o'tildi" : "Dars o'tilmadi"}
+                        title={l.conducted ? "Dars o'tildi" : "Dars hali o'tilmagan"}
                       >
                         <span
                           className={cn(
                             'flex h-5 w-5 shrink-0 items-center justify-center rounded text-xs font-semibold',
-                            l.conducted ? 'bg-emerald-200 text-emerald-800' : 'bg-red-200 text-red-800',
+                            l.conducted ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500',
                           )}
                         >
                           {l.period}
                         </span>
                         <span
                           className={cn(
-                            'font-medium',
-                            l.conducted ? 'text-emerald-800' : 'text-red-800',
+                            'font-medium text-slate-800',
                           )}
                         >
                           {l.subjectName || '—'}
@@ -210,7 +210,10 @@ export function TodaySchedule() {
                           </span>
                         )}
                         {l.teacherName && (
-                          <span className="text-xs text-slate-500">· {l.teacherName}</span>
+                          <span className="truncate text-xs text-slate-500">· {l.teacherName}</span>
+                        )}
+                        {l.conducted && (
+                          <Check className="ml-auto h-4 w-4 shrink-0 text-emerald-600" aria-label="Dars o'tildi" />
                         )}
                       </li>
                     ))}

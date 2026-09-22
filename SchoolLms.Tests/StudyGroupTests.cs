@@ -101,11 +101,11 @@ public class StudyGroupTests(ApiFixture fixture)
      * ================================================================== */
 
     /// <summary>
-    /// Guruh faqat <c>is_groupable</c> fanga ochiladi. Bayroq o'chiq fanga
-    /// urinish — 400 va ekran nima qilish kerakligini aytadi.
+    /// Mijoz, 2026-09-23: "istalgan fanni guruhga biriktirish mumkin". Ilgari guruh faqat
+    /// <c>is_groupable</c> fanga ochilardi (G-9) — endi belgisiz fanga ham ochiladi.
     /// </summary>
     [Fact]
-    public async Task Guruhli_bolmagan_fanga_guruh_ochilmaydi()
+    public async Task Istalgan_fanga_guruh_ochiladi()
     {
         var w = await SeedAsync();
         using var admin = await fixture.Api.ClientAsAsync(Roles.Admin);
@@ -118,31 +118,23 @@ public class StudyGroupTests(ApiFixture fixture)
             teacherIds = new[] { w.Teacher },
         });
 
-        Assert.Equal(HttpStatusCode.BadRequest, res.StatusCode);
-        Assert.Contains("guruhlarga bo'linmaydi", await MessageAsync(res), StringComparison.Ordinal);
+        Assert.Equal(HttpStatusCode.OK, res.StatusCode);
     }
 
     /// <summary>
-    /// Fan formasidagi bayroq saqlanadi va <c>?groupable=true</c> filtri aynan
-    /// shu fanlarni qaytaradi (guruh formasining fan tanlovi shuni so'raydi).
-    /// Faol guruhi bor fandan bayroqni olib tashlab bo'lmaydi.
+    /// Belgi endi qulf emas: faol guruhi bor fanning belgisini olib tashlash ham mumkin
+    /// va guruh ishlashda davom etadi.
     /// </summary>
     [Fact]
-    public async Task Fan_bayrogi_saqlanadi_va_faol_guruh_uni_qulflaydi()
+    public async Task Fan_belgisi_guruhni_qulflamaydi()
     {
         var w = await SeedAsync();
         using var admin = await fixture.Api.ClientAsAsync(Roles.Admin);
-
-        var groupable = await admin.GetFromJsonAsync<List<JsonElement>>($"{Subjects}?groupable=true");
-        Assert.Contains(groupable!, s => s.GetProperty("id").GetString() == w.Subject);
-        Assert.DoesNotContain(groupable!, s => s.GetProperty("id").GetString() == w.PlainSubject);
-
         await CreateAsync(admin, w, "Qulf " + w.Tag, [w.StudentA]);
 
         var off = await admin.PutAsJsonAsync($"{Subjects}/{w.Subject}",
             new { name = "Ingliz tili " + w.Tag, isGroupable = false });
-        Assert.Equal(HttpStatusCode.Conflict, off.StatusCode);
-        Assert.Contains("faol o'quv guruhi", await MessageAsync(off), StringComparison.Ordinal);
+        Assert.Equal(HttpStatusCode.OK, off.StatusCode);
     }
 
     /// <summary>

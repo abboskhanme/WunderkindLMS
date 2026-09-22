@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Building2, DoorOpen, Eye, EyeOff, Layers, Pencil, Plus, Search, Trash2, Users } from 'lucide-react'
+import { Building2, DoorOpen, Eye, EyeOff, Pencil, Plus, Trash2, Users } from 'lucide-react'
 import type { BulkRoomsInput, Room, RoomKind, SaveRoomInput } from '@/api/services/rooms'
 import {
   createRoom,
@@ -7,14 +7,11 @@ import {
   deleteRoom,
   getRoomBuildings,
   getRooms,
-  importRoomsFromClasses,
   roomKindLabels,
-  roomKindOptions,
   updateRoom,
 } from '@/api/services/rooms'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
-import { Input, Select } from '@/components/ui/Input'
 import { Loader } from '@/components/ui/Loader'
 import { cn } from '@/lib/utils'
 import { BulkRoomsModal } from './BulkRoomsModal'
@@ -27,9 +24,8 @@ import { RoomFormModal } from './RoomFormModal'
  *
  * BU KATALOG, JADVAL EMAS. Xonani darsga biriktirish, bandlikni ko'rish va
  * to'qnashuvlarni tekshirish jadval modulida qo'shiladi; bu yerda faqat
- * xonaning o'zi bor. Sinf kartochkasidagi "Xona" erkin matni tegilmagan —
- * "Sinflardan ko'chirish" tugmasi o'sha matnlardan reyestrni bir marta
- * to'ldiradi.
+ * xonaning o'zi bor. Sinf kartochkasidagi "Xona" erkin matni tegilmagan.
+ * Filtrlar va "Sinflardan ko'chirish" olib tashlandi (mijoz, 2026-09-23).
  *
  * O'CHIRISH va FAOLSIZLANTIRISH — ikki xil amal. Sinf ko'rsatgan xona hamon
  * o'chirilmaydi (server 400 qaytaradi). Endi "faol emas" bayrog'i bor
@@ -51,27 +47,16 @@ export function RoomsPage() {
   const [rooms, setRooms] = useState<Room[]>([])
   const [buildings, setBuildings] = useState<string[]>([])
   const [loading, setLoading] = useState(true)
-  const [search, setSearch] = useState('')
-  const [building, setBuilding] = useState('')
-  const [kind, setKind] = useState<'' | RoomKind>('')
-  /** Sukut — "Barchasi": faollashtirilgan xona ro'yxatdan yo'qolib qolmasin. */
-  const [activeFilter, setActiveFilter] = useState<'' | 'active' | 'inactive'>('')
   const [formOpen, setFormOpen] = useState(false)
   const [editing, setEditing] = useState<Room | null>(null)
   const [bulkOpen, setBulkOpen] = useState(false)
-  const [importing, setImporting] = useState(false)
-  const [notice, setNotice] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
     try {
       const [list, buildingList] = await Promise.all([
-        getRooms({
-          search: search.trim() || undefined,
-          building: building || undefined,
-          kind: kind || undefined,
-          isActive: activeFilter === '' ? undefined : activeFilter === 'active',
-        }),
+        // Filtrlar olib tashlandi (mijoz, 2026-09-23) — hamma xona, faol ham, faolsiz ham.
+        getRooms({}),
         getRoomBuildings(),
       ])
       setRooms(list)
@@ -79,13 +64,11 @@ export function RoomsPage() {
     } finally {
       setLoading(false)
     }
-  }, [search, building, kind, activeFilter])
+  }, [])
 
-  // Debounce: filtr yozilayotganda har harfga so'rov ketmasin. setState bu
-  // yerda TO'G'RIDAN-TO'G'RI chaqirilmaydi (taymer orqali), shuning uchun
-  // house-qoidasidagi `set-state-in-effect` izohi kerak emas.
+  // setState TO'G'RIDAN-TO'G'RI chaqirilmaydi (taymer orqali) — `set-state-in-effect` izohi kerak emas.
   useEffect(() => {
-    const timer = setTimeout(load, 250)
+    const timer = setTimeout(load, 0)
     return () => clearTimeout(timer)
   }, [load])
 
@@ -116,25 +99,6 @@ export function RoomsPage() {
     const result = await createRoomsBulk(input)
     if (result.created.length > 0) await load()
     return result
-  }
-
-  const runImport = async () => {
-    if (!confirm("Sinf kartochkalaridagi xona nomlari reyestrga ko'chirilsinmi?")) return
-    setImporting(true)
-    setNotice(null)
-    try {
-      const result = await importRoomsFromClasses()
-      setNotice(
-        result.created.length > 0
-          ? `${result.created.length} ta xona qo'shildi`
-          : 'Yangi xona topilmadi — hammasi allaqachon reyestrda',
-      )
-      if (result.created.length > 0) await load()
-    } catch (err) {
-      setNotice(errorText(err, "Ko'chirib bo'lmadi"))
-    } finally {
-      setImporting(false)
-    }
   }
 
   const remove = async (room: Room) => {
@@ -181,61 +145,6 @@ export function RoomsPage() {
         </p>
       </div>
 
-      {/* Filtrlar */}
-      <Card className="flex flex-wrap items-end gap-3">
-        <div className="relative min-w-[200px] flex-1">
-          <Search className="absolute left-3 top-9 h-4 w-4 text-slate-400" />
-          <Input
-            label="Qidirish"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Nom yoki bino"
-            className="pl-9"
-          />
-        </div>
-        <div className="min-w-[160px]">
-          <Select label="Bino" value={building} onChange={(e) => setBuilding(e.target.value)}>
-            <option value="">Barchasi</option>
-            {buildings.map((b) => (
-              <option key={b} value={b}>
-                {b}
-              </option>
-            ))}
-          </Select>
-        </div>
-        <div className="min-w-[160px]">
-          <Select
-            label="Turi"
-            value={kind}
-            onChange={(e) => setKind(e.target.value as '' | RoomKind)}
-          >
-            <option value="">Barchasi</option>
-            {roomKindOptions.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </Select>
-        </div>
-        <div className="min-w-[160px]">
-          <Select
-            label="Holat"
-            value={activeFilter}
-            onChange={(e) => setActiveFilter(e.target.value as '' | 'active' | 'inactive')}
-          >
-            <option value="">Barchasi</option>
-            <option value="active">Faol</option>
-            <option value="inactive">Faol emas</option>
-          </Select>
-        </div>
-      </Card>
-
-      {notice && (
-        <Card className="border border-brand-200 bg-brand-50 py-3">
-          <p className="text-sm text-brand-700">{notice}</p>
-        </Card>
-      )}
-
       {loading && rooms.length === 0 ? (
         <Loader label="Yuklanmoqda..." />
       ) : (
@@ -245,10 +154,6 @@ export function RoomsPage() {
               {rooms.length} ta xona · jami {totalSeats} o'rin
             </p>
             <div className="flex flex-wrap gap-2">
-              <Button variant="secondary" onClick={runImport} disabled={importing}>
-                <Layers className="h-4 w-4" />
-                {importing ? "Ko'chirilmoqda..." : 'Sinflardan ko‘chirish'}
-              </Button>
               <Button variant="secondary" onClick={() => setBulkOpen(true)}>
                 <Building2 className="h-4 w-4" /> Bir nechta
               </Button>
@@ -349,8 +254,7 @@ export function RoomsPage() {
                 {rooms.length === 0 && (
                   <tr>
                     <td colSpan={8} className="px-4 py-12 text-center text-slate-400">
-                      Xona topilmadi. "Sinflardan ko'chirish" bilan mavjud nomlarni bir marta
-                      olib kelishingiz mumkin.
+                      Hali xona yo'q — "Yangi xona" yoki "Bir nechta" bilan qo'shing.
                     </td>
                   </tr>
                 )}

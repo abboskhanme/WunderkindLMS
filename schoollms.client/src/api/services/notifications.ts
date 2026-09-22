@@ -13,9 +13,21 @@ export async function getUnreadCount(): Promise<number> {
   return data.unreadCount
 }
 
-/** Hammasini o'qilgan deb belgilash. */
-export async function markNotificationsRead(): Promise<void> {
-  await api.post('/admin/notifications/read')
+/**
+ * O'qilgan deb belgilash. `ids` berilmasa — hammasi ("O'qildi" tugmasi); berilsa — faqat
+ * shular (bildirishnoma ochilganda). Ochilmaganlari "yangi" bo'lib qoladi va 1 kunlik
+ * o'chish muddati ular uchun boshlanmaydi.
+ */
+export async function markNotificationsRead(ids?: string[]): Promise<void> {
+  await api.post('/admin/notifications/read', ids?.length ? { ids } : undefined)
 }
 
 export type { NotificationItem }
+
+/**
+ * Tanlangan bildirishnomalarni o'chirish — faqat joriy foydalanuvchi uchun
+ * (voqeaning o'zi tegilmaydi). Bir martada ko'pi bilan 200 ta.
+ */
+export async function dismissNotifications(ids: string[]): Promise<void> {
+  await api.post('/admin/notifications/dismiss', { ids })
+}

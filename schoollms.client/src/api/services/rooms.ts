@@ -113,9 +113,3 @@ export async function createRoomsBulk(input: BulkRoomsInput): Promise<BulkRoomsR
   const { data } = await api.post<BulkRoomsResult>('/admin/rooms/multiple', input)
   return data
 }
-
-/** Sinflardagi erkin matnli xona nomlaridan reyestrni to'ldiradi (bir martalik). */
-export async function importRoomsFromClasses(): Promise<BulkRoomsResult> {
-  const { data } = await api.post<BulkRoomsResult>('/admin/rooms/import-from-classes')
-  return data
-}

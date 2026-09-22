@@ -57,7 +57,7 @@ export function ClassDetailPage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          <Link
+          <Link title="Orqaga" aria-label="Orqaga"
             to="/admin/classes"
             className="rounded-lg p-2 text-slate-500 transition-colors hover:bg-slate-100"
           >

@@ -5,6 +5,8 @@ export interface StaffPayload {
   fullName: string
   position: string
   newPassword?: string
+  /** undefined — o'zgarmaydi; '' — olib tashlanadi; '/uploads/…' — yangi rasm */
+  avatarUrl?: string
 }
 
 export async function getStaff(): Promise<Staff[]> {

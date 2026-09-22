@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { NotebookText, Check, Download, Upload } from 'lucide-react'
+import { NotebookText, Check, CheckCircle2, Download, Upload, ChevronRight } from 'lucide-react'
+import { Link, useParams } from 'react-router-dom'
 import type {
   AbsenceReason,
   JournalColumn,
@@ -23,6 +24,7 @@ import {
   getLessonNotes,
   setLessonNote,
   getQuarterGrades,
+  getJournalFormerStudents,
   setQuarterGrade,
   downloadTopicsTemplate,
   importTopics,
@@ -38,6 +40,9 @@ import { Button } from '@/components/ui/Button'
 import { Modal } from '@/components/ui/Modal'
 import { JournalCellModal } from './JournalCellModal'
 import { QuarterGradeModal } from './QuarterGradeModal'
+
+/** Admin jurnalidagi "Mavzu va uyga vazifa" paneli (hozircha yashirin — izoh render'da). */
+const SHOW_TOPICS_PANEL = false
 
 const control =
   'rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 outline-none focus:border-brand-400'
@@ -60,6 +65,12 @@ function avgColor(g: number): string {
 }
 
 export function JournalPage() {
+  /**
+   * EduSchool oqimi (2026-09-23): Jurnal → sinf → fan. `/admin/journal/:classId/:subjectId`
+   * dan ochilganda sinf va fan URL'dan olinadi va tanlovlar o'rnida yo'l ko'rsatkichi turadi.
+   */
+  const params = useParams<{ classId?: string; subjectId?: string }>()
+  const locked = Boolean(params.classId && params.subjectId)
   /**
    * Jurnal EGALARI — sinflar va (cut-over o'chirgichi yoqilgan bo'lsa) o'quv
    * guruhlari (docs/modules/students-parity.md §2.1.4, G-12). Ikkalasi ham
@@ -86,6 +97,8 @@ export function JournalPage() {
   const [entries, setEntries] = useState<JournalEntry[]>([])
   const [topics, setTopics] = useState<JournalTopic[]>([])
   const [quarterGrades, setQuarterGrades] = useState<QuarterGradeRow[]>([])
+  /** Jurnalda bahosi bor, lekin ro'yxatda endi yo'q o'quvchilar (arxiv / boshqa sinf). */
+  const [formerStudents, setFormerStudents] = useState<Student[]>([])
   const [dataLoading, setDataLoading] = useState(false)
 
   const [editing, setEditing] = useState<{ student: Student; date: string; period: number } | null>(
@@ -128,11 +141,12 @@ export function JournalPage() {
         setOwners(ow)
         setSubjects(subs)
         setReasons(settings.absenceReasons)
-        setClassId(ow[0]?.id ?? '')
+        setClassId(params.classId ?? ow[0]?.id ?? '')
         const { quarter: q } = getCurrentQuarterAndWeek(settings.quarters)
         setQuarter(q)
       })
       .finally(() => setLoading(false))
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- faqat birinchi ochilishda: URL'dagi sinf boshlang'ich tanlov
   }, [])
 
   useEffect(() => {
@@ -146,16 +160,17 @@ export function JournalPage() {
       setTemplates(tpls)
       const ids = [...new Set(tpls.flatMap((t) => t.lessons.map((l) => l.subjectId)))]
       // Guruhda jadval hali bo'lmasa — guruhning o'z fani tanlanadi.
-      setSubjectId(ids[0] ?? ownerSubjectId)
+      setSubjectId(locked && params.subjectId ? params.subjectId : (ids[0] ?? ownerSubjectId))
     })
     // Ro'yxat serverdan: sinfda — sinf nomi bo'yicha (bugungi qoida), guruhda — faol a'zolar.
     getJournalStudents(classId).then(setStudents)
     // Ega o'zgarsa guruh filtrini "Butun sinf"ga qaytaramiz.
     setGroupFilter(0)
-  }, [classId, owners])
+  }, [classId, owners, locked, params.subjectId])
 
   useEffect(() => {
     // Fan o'zgarsa ham guruh filtrini "Butun sinf"ga qaytaramiz.
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- fan almashganda filtrni tiklash (maqsadli)
     setGroupFilter(0)
   }, [subjectId])
 
@@ -166,6 +181,7 @@ export function JournalPage() {
       setEntries([])
       setTopics([])
       setQuarterGrades([])
+      setFormerStudents([])
       return
     }
     setDataLoading(true)
@@ -174,17 +190,24 @@ export function JournalPage() {
       getJournalEntries(classId, subjectId, quarter),
       getLessonNotes(classId, subjectId, quarter),
       getQuarterGrades(classId, subjectId, quarter),
+      getJournalFormerStudents(classId, subjectId, quarter).catch(() => [] as Student[]),
     ])
-      .then(([cols, ents, tps, qg]) => {
+      .then(([cols, ents, tps, qg, former]) => {
         setColumns(cols)
         setEntries(ents)
         setTopics(tps)
         setQuarterGrades(qg)
+        setFormerStudents(former)
       })
       .finally(() => setDataLoading(false))
   }, [classId, subjectId, quarter])
 
   const selectedOwner = owners.find((o) => o.id === classId) ?? null
+  const selectedOwnerLabel = selectedOwner
+    ? selectedOwner.kind === 'group'
+      ? `Guruh: ${selectedOwner.name}`
+      : `${selectedOwner.name}-sinf`
+    : ''
   const isGroupOwner = selectedOwner?.kind === 'group'
   // Ro'yxat serverdan keladi va allaqachon shu egaga tegishli.
   const allClassStudents = students
@@ -217,6 +240,7 @@ export function JournalPage() {
   const entryFor = (studentId: string, date: string, period: number) =>
     entries.find((e) => e.studentId === studentId && e.date === date && e.period === period) ?? null
   const reasonShort = (rid: string) => reasons.find((r) => r.id === rid)?.short ?? '?'
+  const reasonName = (rid: string) => reasons.find((r) => r.id === rid)?.name ?? reasonShort(rid)
   const reasonIsLate = (rid: string) => reasons.find((r) => r.id === rid)?.isLate ?? false
   const topicFor = (date: string, period: number, subGroup: number) =>
     topics.find((t) => t.date === date && t.period === period && (t.subGroup ?? 0) === subGroup)?.topic ?? ''
@@ -410,10 +434,27 @@ export function JournalPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-xl font-semibold text-slate-800">Jurnal</h1>
-        <p className="text-sm text-slate-400">Baholar, davomat va mavzular</p>
-      </div>
+      {locked ? (
+        <div>
+          <nav className="flex flex-wrap items-center gap-1 text-sm text-slate-400" aria-label="Yo'l">
+            <Link to="/admin/journal" className="hover:text-slate-700">
+              Jurnal
+            </Link>
+            <ChevronRight className="h-4 w-4" />
+            <Link to={`/admin/journal/${classId}`} className="hover:text-slate-700">
+              {selectedOwnerLabel}
+            </Link>
+          </nav>
+          <h1 className="mt-1 text-xl font-semibold text-slate-800">
+            {subjects.find((x) => x.id === subjectId)?.name ?? 'Jurnal'}
+          </h1>
+        </div>
+      ) : (
+        <div>
+          <h1 className="text-xl font-semibold text-slate-800">Jurnal</h1>
+          <p className="text-sm text-slate-400">Baholar, davomat va mavzular</p>
+        </div>
+      )}
 
       {loading ? (
         <Loader label="Yuklanmoqda..." />
@@ -421,6 +462,8 @@ export function JournalPage() {
         <>
           {/* Tanlovlar */}
           <div className="flex flex-wrap items-center gap-3">
+            {!locked && (
+            <>
             <select value={classId} onChange={(e) => setClassId(e.target.value)} className={control}>
               {owners.map((o) => (
                 <option key={o.id} value={o.id}>
@@ -444,6 +487,8 @@ export function JournalPage() {
                 ))
               )}
             </select>
+            </>
+            )}
             {/* Guruh filtri — sinf bo'lingan bo'lsa ko'rinadi (dropdown tanlovi) */}
             {classIsGrouped && (
               <select
@@ -464,23 +509,19 @@ export function JournalPage() {
                 <option value={2}>2-guruh</option>
               </select>
             )}
-            <div className="flex w-fit gap-1 rounded-lg bg-slate-100 p-1">
+            {/* Chorak — ro'yxatdan tanlanadi (mijoz, 2026-09-23). */}
+            <select
+              value={quarter}
+              onChange={(e) => setQuarter(Number(e.target.value))}
+              className={control}
+              aria-label="Chorak"
+            >
               {quarters.map((q) => (
-                <button
-                  key={q}
-                  type="button"
-                  onClick={() => setQuarter(q)}
-                  className={cn(
-                    'rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
-                    q === quarter
-                      ? 'bg-white text-brand-700 shadow-sm'
-                      : 'text-slate-500 hover:text-slate-700',
-                  )}
-                >
+                <option key={q} value={q}>
                   {q}-chorak
-                </button>
+                </option>
               ))}
-            </div>
+            </select>
             {reasons.length > 0 && (
               <div className="ml-auto flex flex-wrap items-center gap-2 text-xs text-slate-400">
                 {reasons.map((r) => (
@@ -533,215 +574,136 @@ export function JournalPage() {
               </p>
             </Card>
           ) : (
-            <div className="grid grid-cols-1 gap-6 xl:grid-cols-3 xl:items-start">
-              {/* Baholar jadvali (2/3) */}
-              <Card className="min-w-0 p-0 xl:col-span-2">
+            <div className="space-y-6">
+              {/* Jurnal jadvali — EduSchool tartibida (mijoz, 2026-09-23): №, F.I.SH, sana + soat,
+                  qutisiz qiymatlar (baho / ✓ keldi / sabab nomi), o'ngda qotirilgan O'rtacha.
+                  Ko'rinish (ranglar, shrift) — bizniki. Katak bosilsa tahrirlash oynasi ochiladi. */}
+              <Card className="min-w-0 overflow-hidden p-0">
                 <div className="overflow-x-auto">
-                  <table className="w-full border-separate border-spacing-0 text-sm">
+                  <table className="w-max min-w-full border-separate border-spacing-0 text-sm">
                     <thead>
-                      <tr className="bg-slate-50 text-slate-400">
-                        <th className="sticky left-0 z-10 bg-slate-50 px-3 py-2 text-left text-xs font-medium uppercase">
+                      <tr className="text-slate-500">
+                        <th className="sticky left-0 z-20 w-12 min-w-12 border-b border-slate-200 bg-slate-50 px-2 py-2 text-center text-xs font-medium">
+                          №
+                        </th>
+                        <th className="sticky left-12 z-20 min-w-[16rem] border-b border-r border-slate-200 bg-slate-50 px-3 py-2 text-left text-xs font-medium uppercase tracking-wide">
                           F.I.SH
                         </th>
                         {visibleColumns.map((c) => {
                           const sg = c.subGroup ?? 0
+                          const done = conductedFor(c.date, c.period, sg)
                           return (
-                          <th key={`${c.date}-${c.period}-${sg}`} className="px-1 py-2 text-center">
-                            <div className="text-[10px] font-normal text-slate-400">
-                              {weekdayShort(c.date)}
-                            </div>
-                            <div className="text-xs font-medium text-slate-500">
-                              {formatDate(c.date).slice(0, 5)}
-                            </div>
-                            <div className="text-[10px] text-slate-400">{c.period}-dars</div>
-                            {sg > 0 && (
-                              <div
-                                className={cn(
-                                  'mx-auto mt-0.5 inline-block rounded px-1 text-[10px] font-semibold',
-                                  sg === 1
-                                    ? 'bg-sky-100 text-sky-700'
-                                    : 'bg-violet-100 text-violet-700',
-                                )}
-                                title={`${sg}-guruh darsi`}
-                              >
-                                G{sg}
-                              </div>
-                            )}
-                            <button
-                              type="button"
-                              onClick={() => handleToggleConducted(c.date, c.period, sg)}
-                              title={conductedFor(c.date, c.period, sg) ? "Dars o'tildi" : "Dars o'tilmadi"}
-                              className={cn(
-                                'mx-auto mt-1 flex h-5 w-5 items-center justify-center rounded transition-colors',
-                                conductedFor(c.date, c.period, sg)
-                                  ? 'bg-emerald-100 text-emerald-600'
-                                  : 'bg-slate-100 text-slate-300 hover:text-slate-400',
-                              )}
+                            <th
+                              key={`${c.date}-${c.period}-${sg}`}
+                              className="min-w-[5.5rem] border-b border-l border-slate-100 bg-slate-50 px-2 py-2 text-center font-normal"
                             >
-                              <Check className="h-3.5 w-3.5" />
-                            </button>
-                          </th>
-                        )})}
-                        <th className="px-3 py-2 text-center text-xs font-medium uppercase">
+                              <div className="text-xs font-semibold tabular-nums text-slate-700">{formatDate(c.date)}</div>
+                              <div className="text-[10px] uppercase tracking-wide text-slate-400">
+                                {weekdayShort(c.date)} · {c.period}-soat
+                              </div>
+                              <div className="mt-1 flex items-center justify-center gap-1">
+                                {sg > 0 && (
+                                  <span
+                                    className={cn(
+                                      'rounded px-1 text-[10px] font-semibold',
+                                      sg === 1 ? 'bg-sky-100 text-sky-700' : 'bg-violet-100 text-violet-700',
+                                    )}
+                                    title={`${sg}-guruh darsi`}
+                                  >
+                                    G{sg}
+                                  </span>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={() => handleToggleConducted(c.date, c.period, sg)}
+                                  title={done ? "Dars o'tildi — bosib bekor qilish" : "Dars o'tilmadi — bosib belgilash"}
+                                  className={cn(
+                                    'flex h-5 w-5 items-center justify-center rounded-full transition-colors',
+                                    done ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-200/70 text-slate-400 hover:text-slate-500',
+                                  )}
+                                >
+                                  <Check className="h-3 w-3" />
+                                </button>
+                              </div>
+                            </th>
+                          )
+                        })}
+                        <th className="min-w-[4.5rem] border-b border-l border-slate-200 bg-slate-50 px-2 py-2 text-center text-xs font-medium uppercase tracking-wide">
                           Chorak
+                        </th>
+                        <th className="sticky right-0 z-20 min-w-[5rem] border-b border-l border-slate-200 bg-slate-50 px-2 py-2 text-center text-xs font-medium uppercase tracking-wide">
+                          O'rtacha
                         </th>
                       </tr>
                     </thead>
                     <tbody>
-                      {classStudents.map((s) => {
-                        const ssg = s.subGroup ?? 0
-                        const avg = quarterAvg(s.id, ssg)
-                        const qGrade = quarterGradeFor(s.id)
-                        return (
-                          <tr key={s.id} className="border-t border-slate-100 hover:bg-slate-50/40">
-                            <td className="sticky left-0 z-10 bg-white px-3 py-1.5 font-medium text-slate-800">
-                              <div className="flex items-center gap-1.5">
-                                <span>{s.fullName}</span>
-                                {ssg > 0 && (
-                                  <span
-                                    className={cn(
-                                      'rounded px-1 text-[10px] font-semibold',
-                                      ssg === 1
-                                        ? 'bg-sky-100 text-sky-700'
-                                        : 'bg-violet-100 text-violet-700',
-                                    )}
-                                    title={`${ssg}-guruh`}
-                                  >
-                                    G{ssg}
-                                  </span>
-                                )}
-                              </div>
-                            </td>
-                            {visibleColumns.map((c) => {
-                              const entry = entryFor(s.id, c.date, c.period)
-                              const colSg = c.subGroup ?? 0
-                              return (
-                                <td key={`${c.date}-${c.period}-${colSg}`} className="px-1 py-1 text-center">
-                                  {(() => {
-                                    const late = entry?.reasonId ? reasonIsLate(entry.reasonId) : false
-                                    return (
-                                      <button
-                                        type="button"
-                                        onClick={() => setEditing({ student: s, date: c.date, period: c.period })}
-                                        className={cn(
-                                          'relative flex h-9 w-11 items-center justify-center rounded-md border text-sm font-semibold transition-colors',
-                                          entry?.grade != null
-                                            ? late
-                                              ? 'border-amber-300 bg-amber-50'
-                                              : 'border-slate-200 bg-white'
-                                            : entry?.reasonId
-                                              ? late
-                                                ? 'border-amber-200 bg-amber-50'
-                                                : 'border-red-200 bg-red-50'
-                                              : 'border-slate-200 bg-slate-50 hover:border-brand-300 hover:bg-brand-50',
-                                        )}
-                                        title={entry?.reasonId ? reasonShort(entry.reasonId) : undefined}
-                                      >
-                                        {entry?.grade != null ? (
-                                          <span className={gradeColor(entry.grade)}>{entry.grade}</span>
-                                        ) : entry?.reasonId ? (
-                                          <span
-                                            className={cn(
-                                              'text-xs font-medium',
-                                              late ? 'text-amber-600' : 'text-red-600',
-                                            )}
-                                          >
-                                            {reasonShort(entry.reasonId)}
-                                          </span>
-                                        ) : null}
-                                        {/* Baho + kech kelgan bo'lsa — kichik sariq belgi */}
-                                        {entry?.grade != null && late && (
-                                          <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-amber-400" />
-                                        )}
-                                        {/* Uyga vazifa: chap-past (yashil=qildi, qizil=qilmadi) */}
-                                        {entry?.homework ? (
-                                          <span
-                                            title={entry.homework === 1 ? 'Uy vazifa: qildi' : 'Uy vazifa: qilmadi'}
-                                            className={cn(
-                                              'absolute -bottom-0.5 -left-0.5 h-2 w-2 rounded-sm',
-                                              entry.homework === 1 ? 'bg-emerald-500' : 'bg-red-500',
-                                            )}
-                                          />
-                                        ) : null}
-                                        {/* Xulq: o'ng-past (yashil=yaxshi, qizil=yomon) */}
-                                        {entry?.behavior ? (
-                                          <span
-                                            title={entry.behavior === 1 ? 'Xulq: yaxshi' : 'Xulq: yomon'}
-                                            className={cn(
-                                              'absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full',
-                                              entry.behavior === 1 ? 'bg-emerald-500' : 'bg-red-500',
-                                            )}
-                                          />
-                                        ) : null}
-                                        {/* O'zlashtirish foizi — katak ichida pastda */}
-                                        {entry?.mastery != null && (
-                                          <span
-                                            title={`O'zlashtirish: ${entry.mastery}%`}
-                                            className="absolute inset-x-0 bottom-0 text-center text-[8px] font-semibold leading-none text-brand-600"
-                                          >
-                                            {entry.mastery}%
-                                          </span>
-                                        )}
-                                      </button>
-                                    )
-                                  })()}
-                                </td>
-                              )
-                            })}
-                            <td className="px-3 py-1.5 text-center">
-                              <button
-                                type="button"
-                                onClick={() => setEditingQuarter(s)}
-                                title="Chorak bahosini belgilash"
-                                className="mx-auto flex h-9 min-w-[2.75rem] flex-col items-center justify-center rounded-md border border-slate-200 px-2 transition-colors hover:border-brand-300 hover:bg-brand-50"
-                              >
-                                {qGrade != null ? (
-                                  <>
-                                    <span className={cn('text-sm font-bold leading-none', gradeColor(qGrade))}>
-                                      {qGrade}
-                                    </span>
-                                    {avg != null && (
-                                      <span className="text-[10px] leading-tight text-slate-400">
-                                        ≈{avg.toFixed(1)}
-                                      </span>
-                                    )}
-                                  </>
-                                ) : avg != null ? (
-                                  <span className={cn('text-sm font-semibold', avgColor(avg))}>
-                                    {avg.toFixed(1)}
-                                  </span>
-                                ) : (
-                                  <span className="text-slate-300">—</span>
-                                )}
-                              </button>
-                            </td>
-                          </tr>
-                        )
-                      })}
+                      {classStudents.map((s, idx) => (
+                        <JournalRow
+                          key={s.id}
+                          index={idx + 1}
+                          student={s}
+                          columns={visibleColumns}
+                          entryFor={entryFor}
+                          conductedFor={conductedFor}
+                          reasonName={reasonName}
+                          reasonIsLate={reasonIsLate}
+                          avg={quarterAvg(s.id, s.subGroup ?? 0)}
+                          quarterGrade={quarterGradeFor(s.id)}
+                          onCell={(date, period) => setEditing({ student: s, date, period })}
+                          onQuarter={() => setEditingQuarter(s)}
+                        />
+                      ))}
                       {classStudents.length === 0 && (
                         <tr>
-                          <td
-                            colSpan={visibleColumns.length + 2}
-                            className="px-4 py-10 text-center text-slate-400"
-                          >
-                            {isGroupOwner
-                              ? "Bu guruhda o'quvchilar yo'q"
-                              : "Bu sinfda o'quvchilar yo'q"}
+                          <td colSpan={visibleColumns.length + 4} className="px-4 py-10 text-center text-slate-400">
+                            {isGroupOwner ? "Bu guruhda o'quvchilar yo'q" : "Bu sinfda o'quvchilar yo'q"}
                           </td>
                         </tr>
+                      )}
+                      {formerStudents.length > 0 && (
+                        <>
+                          <tr>
+                            <td
+                              colSpan={2}
+                              className="sticky left-0 z-10 border-t-2 border-slate-300 bg-slate-50 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500"
+                            >
+                              Arxivdagi va boshqa sinfga o'tgan o'quvchilar
+                            </td>
+                            <td colSpan={visibleColumns.length + 2} className="border-t-2 border-slate-300 bg-slate-50" />
+                          </tr>
+                          {formerStudents.map((s, idx) => (
+                            <JournalRow
+                              key={`former-${s.id}`}
+                              index={idx + 1}
+                              student={s}
+                              columns={visibleColumns}
+                              entryFor={entryFor}
+                              conductedFor={() => false}
+                              reasonName={reasonName}
+                              reasonIsLate={reasonIsLate}
+                              avg={quarterAvg(s.id, s.subGroup ?? 0)}
+                              quarterGrade={null}
+                              note={s.isArchived ? 'Arxivda' : s.className ? `Hozir: ${s.className}` : 'Sinfsiz'}
+                              muted
+                            />
+                          ))}
+                        </>
                       )}
                     </tbody>
                   </table>
                 </div>
               </Card>
 
-              {/* Mavzu va uyga vazifa (1/3) */}
-              <Card className="xl:col-span-1">
+              {/* Mavzu va uyga vazifa — mijoz, 2026-09-23: "bu bo'lim hozircha kerakmas bu yerda".
+                  O'chirilmadi, yashirildi: SHOW_TOPICS_PANEL = true qilinsa qaytadi. Mavzular
+                  o'qituvchi jurnalida va Excel importida ishlashda davom etadi. */}
+              {SHOW_TOPICS_PANEL && (
+              <Card>
                 <div className="mb-3 flex items-center gap-2">
                   <NotebookText className="h-4 w-4 text-brand-600" />
                   <h2 className="font-semibold text-slate-800">Mavzu va uyga vazifa</h2>
                 </div>
-                <div className="max-h-[34rem] space-y-3 overflow-y-auto pr-1">
+                <div className="grid max-h-[40rem] grid-cols-1 gap-3 overflow-y-auto pr-1 md:grid-cols-2 xl:grid-cols-3">
                   {visibleColumns.map((c) => {
                     const sg = c.subGroup ?? 0
                     return (
@@ -795,6 +757,7 @@ export function JournalPage() {
                   )})}
                 </div>
               </Card>
+              )}
             </div>
           )}
         </>
@@ -863,5 +826,165 @@ export function JournalPage() {
         )}
       </Modal>
     </div>
+  )
+}
+
+/* ==========================================================================
+   Jurnal qatori — asosiy ro'yxat va sobiq o'quvchilar uchun bitta ko'rinish
+   ========================================================================== */
+
+interface JournalRowProps {
+  index: number
+  student: Student
+  columns: JournalColumn[]
+  entryFor: (studentId: string, date: string, period: number) => JournalEntry | null
+  conductedFor: (date: string, period: number, subGroup: number) => boolean
+  reasonName: (reasonId: string) => string
+  reasonIsLate: (reasonId: string) => boolean
+  avg: number | null
+  quarterGrade: number | null
+  /** Berilmasa — qator faqat o'qish uchun (sobiq o'quvchi). */
+  onCell?: (date: string, period: number) => void
+  onQuarter?: () => void
+  /** Ism ostidagi izoh (masalan "Arxivda"). */
+  note?: string
+  muted?: boolean
+}
+
+function JournalRow({
+  index,
+  student: s,
+  columns,
+  entryFor,
+  conductedFor,
+  reasonName,
+  reasonIsLate,
+  avg,
+  quarterGrade,
+  onCell,
+  onQuarter,
+  note,
+  muted = false,
+}: JournalRowProps) {
+  const ssg = s.subGroup ?? 0
+  const cellBase = 'border-b border-l border-slate-100 p-0 text-center'
+  return (
+    <tr className={cn('group', muted && 'text-slate-400')}>
+      <td className="sticky left-0 z-10 w-12 border-b border-slate-100 bg-white px-2 py-2 text-center tabular-nums text-slate-400 group-hover:bg-slate-50">
+        {index}
+      </td>
+      <td className="sticky left-12 z-10 border-b border-r border-slate-200 bg-white px-3 py-2 group-hover:bg-slate-50">
+        <div className="flex items-center gap-1.5 whitespace-nowrap">
+          <span className={cn('font-medium', muted ? 'text-slate-500' : 'text-slate-800')}>{s.fullName}</span>
+          {ssg > 0 && (
+            <span
+              className={cn(
+                'rounded px-1 text-[10px] font-semibold',
+                ssg === 1 ? 'bg-sky-100 text-sky-700' : 'bg-violet-100 text-violet-700',
+              )}
+              title={`${ssg}-guruh`}
+            >
+              G{ssg}
+            </span>
+          )}
+        </div>
+        {note && <div className="text-[11px] text-slate-400">{note}</div>}
+      </td>
+      {columns.map((c) => {
+        const sg = c.subGroup ?? 0
+        const entry = entryFor(s.id, c.date, c.period)
+        const late = entry?.reasonId ? reasonIsLate(entry.reasonId) : false
+        // Katakda bitta qiymat: baho → sabab nomi → (dars o'tilgan bo'lsa) ✓ keldi.
+        const content =
+          entry?.grade != null ? (
+            <span className={cn('text-base font-semibold tabular-nums', muted ? '' : gradeColor(entry.grade))}>
+              {entry.grade}
+            </span>
+          ) : entry?.reasonId ? (
+            <span
+              className={cn(
+                'block truncate px-1 text-[11px] font-medium',
+                muted ? '' : late ? 'text-amber-600' : 'text-red-600',
+              )}
+              title={reasonName(entry.reasonId)}
+            >
+              {reasonName(entry.reasonId)}
+            </span>
+          ) : conductedFor(c.date, c.period, sg) ? (
+            <CheckCircle2 className="mx-auto h-5 w-5 text-emerald-500" aria-label="Keldi" />
+          ) : null
+        const marks = (
+          <>
+            {entry?.grade != null && late && (
+              <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-amber-400" title="Kech keldi" />
+            )}
+            {entry?.homework ? (
+              <span
+                title={entry.homework === 1 ? 'Uy vazifa: qildi' : 'Uy vazifa: qilmadi'}
+                className={cn(
+                  'absolute bottom-1 left-1.5 h-1.5 w-1.5 rounded-sm',
+                  entry.homework === 1 ? 'bg-emerald-500' : 'bg-red-500',
+                )}
+              />
+            ) : null}
+            {entry?.behavior ? (
+              <span
+                title={entry.behavior === 1 ? 'Xulq: yaxshi' : 'Xulq: yomon'}
+                className={cn(
+                  'absolute bottom-1 right-1.5 h-1.5 w-1.5 rounded-full',
+                  entry.behavior === 1 ? 'bg-emerald-500' : 'bg-red-500',
+                )}
+              />
+            ) : null}
+            {entry?.mastery != null && (
+              <span className="absolute inset-x-0 top-0.5 text-[8px] font-semibold leading-none text-brand-600">
+                {entry.mastery}%
+              </span>
+            )}
+          </>
+        )
+        return (
+          <td key={`${c.date}-${c.period}-${sg}`} className={cellBase}>
+            {onCell ? (
+              <button
+                type="button"
+                onClick={() => onCell(c.date, c.period)}
+                className="relative flex h-11 w-full items-center justify-center transition-colors hover:bg-brand-50/60"
+              >
+                {content}
+                {marks}
+              </button>
+            ) : (
+              <div className="relative flex h-11 w-full items-center justify-center">{content}</div>
+            )}
+          </td>
+        )
+      })}
+      <td className={cn(cellBase, 'border-l-slate-200')}>
+        {onQuarter ? (
+          <button
+            type="button"
+            onClick={onQuarter}
+            title="Chorak bahosini belgilash"
+            className="flex h-11 w-full items-center justify-center transition-colors hover:bg-brand-50/60"
+          >
+            {quarterGrade != null ? (
+              <span className={cn('text-base font-bold', gradeColor(quarterGrade))}>{quarterGrade}</span>
+            ) : (
+              <span className="text-slate-300">—</span>
+            )}
+          </button>
+        ) : (
+          <span className="text-slate-300">—</span>
+        )}
+      </td>
+      <td className="sticky right-0 z-10 border-b border-l border-slate-200 bg-white px-2 text-center group-hover:bg-slate-50">
+        {avg != null ? (
+          <span className={cn('text-sm font-semibold tabular-nums', muted ? '' : avgColor(avg))}>{avg.toFixed(1)}</span>
+        ) : (
+          <span className="text-slate-300">—</span>
+        )}
+      </td>
+    </tr>
   )
 }

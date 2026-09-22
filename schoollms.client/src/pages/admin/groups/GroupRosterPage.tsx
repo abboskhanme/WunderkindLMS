@@ -73,7 +73,7 @@ export function GroupRosterPage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          <Button variant="ghost" onClick={() => navigate('/admin/groups')}>
+          <Button title="Orqaga" aria-label="Orqaga" variant="ghost" onClick={() => navigate('/admin/groups')}>
             <ArrowLeft className="h-4 w-4" />
           </Button>
           <div>

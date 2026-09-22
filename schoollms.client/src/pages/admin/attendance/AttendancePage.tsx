@@ -105,7 +105,7 @@ export function AttendancePage() {
               ))}
             </select>
             <div className="flex items-center gap-1">
-              <button
+              <button title="Oldingi" aria-label="Oldingi"
                 onClick={() => setDate(addDaysISO(date, -1))}
                 className="rounded-lg border border-slate-200 p-2 text-slate-500 hover:bg-slate-50"
               >
@@ -116,7 +116,7 @@ export function AttendancePage() {
                 onChange={(value: string) => setDate(value)}
                 className="w-40"
               />
-              <button
+              <button title="Keyingi" aria-label="Keyingi"
                 onClick={() => setDate(addDaysISO(date, 1))}
                 className="rounded-lg border border-slate-200 p-2 text-slate-500 hover:bg-slate-50"
               >

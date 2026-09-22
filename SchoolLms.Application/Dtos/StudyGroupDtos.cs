@@ -39,7 +39,8 @@ public record StudyGroupListItemDto(
     DateTimeOffset? ArchivedAt,
     IReadOnlyList<StudyGroupClassRefDto> Classes,
     IReadOnlyList<StudyGroupTeacherRefDto> Teachers,
-    int MemberCount);
+    int MemberCount,
+    bool IsTrack = false);
 
 /// <summary>
 /// Guruhning to'liq kartochkasi — forma uchun. <paramref name="Members"/> —
@@ -55,7 +56,8 @@ public record StudyGroupDetailDto(
     DateTimeOffset? ArchivedAt,
     IReadOnlyList<StudyGroupClassRefDto> Classes,
     IReadOnlyList<StudyGroupTeacherRefDto> Teachers,
-    IReadOnlyList<StudyGroupMemberDto> Members);
+    IReadOnlyList<StudyGroupMemberDto> Members,
+    bool IsTrack = false);
 
 /// <summary>
 /// Guruhdagi bitta a'zolik yozuvi. <paramref name="LeftOn"/> null bo'lsa —
@@ -92,7 +94,9 @@ public record SaveStudyGroupRequest(
     IReadOnlyList<string> ClassIds,
     IReadOnlyList<string> TeacherIds,
     string? Gender = null,
-    IReadOnlyList<string>? StudentIds = null);
+    IReadOnlyList<string>? StudentIds = null,
+    // Yo'nalish guruhi (kechki/yotoqxona davomati). null — o'zgarmaydi (eski klientlar).
+    bool? IsTrack = null);
 
 /// <summary>
 /// Guruhni nusxalash (§2.1.1 — "Duplicate" qatori). Fan, sinflar va jins

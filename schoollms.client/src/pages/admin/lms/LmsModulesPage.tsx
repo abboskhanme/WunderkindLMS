@@ -87,7 +87,7 @@ export function LmsModulesPage() {
           </div>
 
           <div className="flex items-center gap-2">
-            <button
+            <button title="Orqaga" aria-label="Orqaga"
               type="button"
               onClick={() => navigate(`/admin/lms/${classId}`)}
               className="flex items-center gap-1 rounded-lg px-2 py-1 text-sm text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-700"

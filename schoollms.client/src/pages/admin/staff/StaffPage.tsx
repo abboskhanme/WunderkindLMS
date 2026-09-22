@@ -18,6 +18,8 @@ import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Loader } from '@/components/ui/Loader'
 import { Modal } from '@/components/ui/Modal'
+import { PhotoUpload } from '@/components/ui/PhotoUpload'
+import { UserAvatar } from '@/components/ui/UserAvatar'
 import { Input } from '@/components/ui/Input'
 import { CredentialsBox } from '@/components/ui/CredentialsBox'
 
@@ -60,13 +62,13 @@ export function StaffPage() {
 
   const openCreate = () => {
     setEditing(null)
-    setForm({ fullName: '', position: '' })
+    setForm({ fullName: '', position: '', avatarUrl: '' })
     setFormPerms(new Set())
     setFormOpen(true)
   }
   const openEdit = (s: Staff) => {
     setEditing(s)
-    setForm({ fullName: s.fullName, position: s.position })
+    setForm({ fullName: s.fullName, position: s.position, avatarUrl: s.avatarUrl ?? '' })
     setFormOpen(true)
   }
 
@@ -109,7 +111,8 @@ export function StaffPage() {
     deleteStaff(s.id).then(() => {
       setStaff((p) => p.filter((x) => x.id !== s.id))
       setDraft((d) => {
-        const { [s.id]: _, ...rest } = d
+        const rest = { ...d }
+        delete rest[s.id]
         return rest
       })
     })
@@ -150,7 +153,7 @@ export function StaffPage() {
         <div>
           <h1 className="text-xl font-semibold text-slate-800">Xodimlar va rollar</h1>
           <p className="text-sm text-slate-400">
-            O'qituvchi bo'lmagan ishchilar (kassir, administrator, ...)
+            Tizimdan foydalanadigan barcha xodimlar
             {canManageRoles ? ' — har biriga kerakli bo\'limlarni (rollarni) shu yerda belgilang.' : '.'}
           </p>
         </div>
@@ -174,11 +177,14 @@ export function StaffPage() {
             return (
               <Card key={s.id}>
                 <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
-                  <div>
+                  <div className="flex min-w-0 items-center gap-3">
+                    <UserAvatar fullName={s.fullName} avatarUrl={s.avatarUrl} className="h-10 w-10 text-sm" />
+                    <div className="min-w-0">
                     <p className="font-semibold text-slate-800">{s.fullName}</p>
                     <p className="text-xs text-slate-400">
                       {s.position || 'Xodim'} · <code>{s.login}</code>
                     </p>
+                    </div>
                   </div>
                   <div className="flex items-center gap-0.5">
                     <IconBtn icon={Eye} title="Login/parol" onClick={() => showCredentials(s)} />
@@ -261,6 +267,11 @@ export function StaffPage() {
         }
       >
         <form id="staff-form" onSubmit={handleSubmit} className="space-y-4">
+          <PhotoUpload
+            label="Profil rasmi"
+            value={form.avatarUrl || null}
+            onChange={(url) => setForm((f) => ({ ...f, avatarUrl: url ?? '' }))}
+          />
           <Input
             label="F.I.SH"
             required

@@ -155,7 +155,7 @@ export function CanteenPage() {
 
       {/* Sana navigatsiyasi */}
       <div className="flex items-center gap-2">
-        <button
+        <button title="Oldingi" aria-label="Oldingi"
           onClick={() => step(-1)}
           className="rounded-lg border border-slate-200 p-2 text-slate-500 hover:bg-slate-50"
         >
@@ -164,7 +164,7 @@ export function CanteenPage() {
         <span className="min-w-[160px] text-center text-sm font-medium text-slate-700">
           {navLabel()}
         </span>
-        <button
+        <button title="Keyingi" aria-label="Keyingi"
           onClick={() => step(1)}
           className="rounded-lg border border-slate-200 p-2 text-slate-500 hover:bg-slate-50"
         >

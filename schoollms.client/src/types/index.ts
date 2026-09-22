@@ -731,6 +731,8 @@ export interface Staff {
   login: string
   /** Ochiq admin bo'limlari (adminPermissions kalitlari) */
   permissions: string[]
+  /** Profil rasmi (`/uploads/…`) yoki null */
+  avatarUrl?: string | null
 }
 
 /** Taklif yoki shikoyat (ota-ona ilovasidan) */

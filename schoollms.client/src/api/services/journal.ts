@@ -81,6 +81,40 @@ export interface JournalOwner {
   subjectName: string | null
   /** Arxivlanmagan o'quvchilar soni */
   studentCount: number
+  /** Sinfning ta'lim tili (uz / ru ...); guruh uchun null */
+  language?: string | null
+  /** Sinf rahbari; belgilanmagan bo'lsa null */
+  homeroomTeacher?: string | null
+}
+
+/** Jurnal → sinf → fanlar ro'yxatining qatori. */
+export interface JournalSubject {
+  subjectId: string
+  subjectName: string
+  /** Shu sinfda shu fanni o'tadiganlar — dars jadvalidan */
+  teachers: string[]
+}
+
+/** Sinf (yoki guruh) fanlari va o'qituvchilari. */
+export async function getJournalSubjects(classId: string): Promise<JournalSubject[]> {
+  const { data } = await api.get<JournalSubject[]>('/admin/journal/subjects', { params: { classId } })
+  return data
+}
+
+/**
+ * Shu jurnalda bahosi bor, lekin hozir ro'yxatda yo'q o'quvchilar (arxivdagi yoki
+ * boshqa sinfga o'tgan) — jadval ostida alohida, faqat o'qish uchun.
+ */
+export async function getJournalFormerStudents(
+  classId: string,
+  subjectId: string,
+  quarter: number,
+): Promise<Student[]> {
+  if (USE_MOCK) return []
+  const { data } = await api.get<Student[]>('/admin/journal/former-students', {
+    params: { classId, subjectId, quarter },
+  })
+  return data
 }
 
 /** Jurnal uchun egalar ro'yxati: sinflar + (yoqilgan bo'lsa) o'quv guruhlari */

@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import { Search, Users, CheckCircle2, Circle, ChevronDown, Download, Pencil } from 'lucide-react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import type { GuardianRelation, GuardianRow, SchoolClass } from '@/types'
 import type { GuardianListFilter } from '@/api/services/parents'
 import { exportGuardianRows, getGuardianRows } from '@/api/services/parents'
@@ -64,7 +64,17 @@ export function ParentsPage() {
   const [editing, setEditing] = useState<GuardianRow | null>(null)
 
   /* ---- Filtrlar (§2.9.1) ---- */
-  const [search, setSearch] = useState('')
+  // `?q=` — yuqori paneldagi umumiy qidiruvdan kelganda ro'yxat o'sha ism bilan ochiladi.
+  const [searchParams] = useSearchParams()
+  const [search, setSearch] = useState(() => searchParams.get('q') ?? '')
+  // Sahifa ochiq turganda qidiruvdan boshqa natija tanlansa — URL o'zgaradi, komponent esa
+  // qayta yaratilmaydi. React'ning "prop o'zgarsa holatni moslash" naqshi (effektsiz).
+  const urlQ = searchParams.get('q') ?? ''
+  const [seenQ, setSeenQ] = useState(urlQ)
+  if (urlQ !== seenQ) {
+    setSeenQ(urlQ)
+    setSearch(urlQ)
+  }
   const [className, setClassName] = useState('')
   const [groupId, setGroupId] = useState('')
   const [relation, setRelation] = useState<'' | GuardianRelation>('')

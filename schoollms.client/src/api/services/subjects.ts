@@ -62,3 +62,16 @@ export async function deleteSubject(id: string): Promise<void> {
   }
   await api.delete(`/admin/subjects/${id}`)
 }
+
+/** Fan qayerlarda ishlatilayotgani — o'chirishdan oldin tasdiqlash oynasi so'raydi. */
+export interface SubjectUsage {
+  canDelete: boolean
+  /** "2 ta o'quv guruhi", "14 ta dars jadvali katagi" ... */
+  usedIn: string[]
+}
+
+export async function getSubjectUsage(id: string): Promise<SubjectUsage> {
+  if (USE_MOCK) return { canDelete: true, usedIn: [] }
+  const { data } = await api.get<SubjectUsage>(`/admin/subjects/${id}/usage`)
+  return data
+}

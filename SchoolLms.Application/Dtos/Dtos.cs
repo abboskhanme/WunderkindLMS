@@ -302,9 +302,16 @@ public record ConductedLessonDto(
 /// <param name="SubjectId">Guruhning fani; sinf uchun null.</param>
 /// <param name="SubjectName">Guruhning fan nomi; sinf uchun null.</param>
 /// <param name="StudentCount">Arxivlanmagan o'quvchilar soni.</param>
+/// <param name="Language">Sinfning ta'lim tili (uz / ru / en ...); guruh uchun null.</param>
+/// <param name="HomeroomTeacher">Sinf rahbari (o'qituvchilar ro'yxatidagi "sinf rahbari" belgisi); bo'lmasa null.</param>
 public record JournalOwnerDto(
     string Id, string Name, string Kind, int Grade,
-    string? SubjectId, string? SubjectName, int StudentCount);
+    string? SubjectId, string? SubjectName, int StudentCount,
+    string? Language = null, string? HomeroomTeacher = null);
+
+/// <summary>Jurnal → sinf → fanlar ro'yxatining bitta qatori (EduSchool oqimi, 2026-09-23).</summary>
+/// <param name="Teachers">Shu sinfda shu fanni o'tadigan o'qituvchilar — dars jadvalidan.</param>
+public record JournalSubjectDto(string SubjectId, string SubjectName, List<string> Teachers);
 public record SetLessonNoteRequest(
     string ClassId, string SubjectId, int Quarter, string Date, int Period, string Topic, string? Homework, bool Conducted,
     int SubGroup = 0);
@@ -370,6 +377,12 @@ public record SaveWeekAssignmentsRequest(int Quarter, List<WeekAssignmentDto> As
 public record NotificationDto(
     string Id, string Kind, string Title, string Text, DateTime CreatedAt, string Link,
     bool IsNew = false);
+
+/// <summary>Tanlangan bildirishnomalarni o'chirish so'rovi (id'lar — <c>NotificationDto.Id</c>).</summary>
+public record DismissNotificationsRequest(List<string>? Ids);
+
+/// <summary>O'qildi — <c>Ids</c> bo'sh bo'lsa hammasi, aks holda faqat shular.</summary>
+public record MarkNotificationsReadRequest(List<string>? Ids);
 
 /// <summary>Bildirishnomalar ro'yxati + o'qilmaganlar soni.</summary>
 public record NotificationListDto(List<NotificationDto> Items, int UnreadCount);
@@ -437,6 +450,10 @@ public record AdminDashboardDto(
     AdminStatsDto Stats, List<ClassPerformanceItemDto> ClassPerformance, List<TopClassDto> TopClasses,
     List<AttendanceByPeriodDto> AttendanceByPeriod, List<AbsentStudentDto> AbsentStudents,
     List<ClassHeadcountDto>? ClassHeadcounts = null);
+
+/// <summary>Fan qayerlarda ishlatilayotgani. <c>CanDelete</c> = hech qayerda.</summary>
+/// <param name="UsedIn">"2 ta o'quv guruhi", "14 ta dars jadvali katagi" ...</param>
+public record SubjectUsageDto(bool CanDelete, List<string> UsedIn);
 
 /* ---------- Class performance / rating ---------- */
 public record SubjectDto(string Id, string Name);
@@ -1165,8 +1182,11 @@ public record BranchPayload(
     string Name, string Address, double Latitude, double Longitude, int RadiusMeters);
 
 /// <summary>Xodim (o'qituvchi bo'lmagan ishchi) — admin akkaunti bilan.</summary>
-public record StaffDto(string Id, string FullName, string Position, string Login, List<string> Permissions);
-public record StaffPayload(string FullName, string Position, string? NewPassword = null);
+/// <param name="AvatarUrl">Profil rasmi (<c>/uploads/…</c>) — admin qo'yadi yoki xodimning o'zi.</param>
+public record StaffDto(string Id, string FullName, string Position, string Login, List<string> Permissions,
+    string? AvatarUrl = null);
+/// <param name="AvatarUrl">null — o'zgarmaydi; "" — olib tashlanadi; "/uploads/…" — yangi rasm.</param>
+public record StaffPayload(string FullName, string Position, string? NewPassword = null, string? AvatarUrl = null);
 /// <summary>Xodimning admin bo'lim ruxsatlari (faqat superadmin o'zgartiradi).</summary>
 public record SetStaffPermissionsRequest(List<string> Permissions);
 

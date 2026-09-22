@@ -54,7 +54,7 @@ export function GroupsPage() {
   }, [search, grades, subjectId, showArchived])
 
   useEffect(() => {
-    getSubjects(true).then(setSubjects)
+    getSubjects(undefined, true).then(setSubjects)
   }, [])
 
   useEffect(() => {
@@ -238,11 +238,12 @@ function groupColumns(
       header: 'Guruh',
       alwaysVisible: true,
       cell: (g) => (
+        // Jins bo'yicha ajratish maktabda yo'q (2026-09-23) — belgi ko'rsatilmaydi.
         <>
           <span className="font-medium text-slate-800">{g.name}</span>
-          {g.gender && (
-            <span className="ml-2 rounded-md bg-slate-100 px-1.5 py-0.5 text-[11px] text-slate-500">
-              {g.gender === 'male' ? "O'g'il bolalar" : 'Qizlar'}
+          {g.isTrack && (
+            <span className="ml-2 rounded-md bg-violet-50 px-1.5 py-0.5 text-[11px] font-medium text-violet-600">
+              Yo'nalish
             </span>
           )}
         </>

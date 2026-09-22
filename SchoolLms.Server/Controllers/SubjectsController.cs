@@ -111,18 +111,6 @@ public partial class SubjectsController(AppDbContext db) : ControllerBase
         var subject = await db.Subjects.FindAsync(id);
         if (subject is null) return NotFound();
 
-        if (subject.IsGroupable && !payload.IsGroupable)
-        {
-            var active = await db.StudyGroups.CountAsync(g => g.SubjectId == id && !g.IsArchived);
-            if (active > 0)
-                return Conflict(new
-                {
-                    message = $"Bu fan bo'yicha {active} ta faol o'quv guruhi bor — "
-                              + "\"guruhlarga bo'linadi\" belgisini olib tashlab bo'lmaydi. "
-                              + "Avval guruhlarni arxivlang.",
-                });
-        }
-
         var color = NormalizeColor(payload.Color);
         if (color is null && !string.IsNullOrWhiteSpace(payload.Color))
             return BadRequest(new { message = ColorMessage });
@@ -158,6 +146,36 @@ public partial class SubjectsController(AppDbContext db) : ControllerBase
         var subject = await db.Subjects.FindAsync([id], ct);
         if (subject is null) return NotFound();
 
+        var used = await UsageAsync(id, ct);
+        if (used.Count > 0)
+            return Conflict(new
+            {
+                message = $"\"{subject.Name}\" fani ishlatilmoqda ({string.Join(", ", used)}) — "
+                          + "uni o'chirib bo'lmaydi. Fan tarixiy yozuvlarning nomi; o'chirilsa "
+                          + "ular qaysi fandan ekani noma'lum bo'lib qoladi. Buning o'rniga fanni "
+                          + "faolsizlantiring — u yangi tanlovda ko'rinmay qoladi.",
+            });
+
+        db.Subjects.Remove(subject);
+        await db.SaveChangesAsync(ct);
+        return NoContent();
+    }
+
+    /// <summary>
+    /// Fan qayerlarda ishlatilayotgani — o'chirishdan OLDIN tasdiqlash oynasi so'raydi
+    /// (mijoz, 2026-09-23: "guruh yoki sinfga biriktirilgan bo'lsa o'chirish mumkin bo'lmasin").
+    /// <see cref="Delete"/> ham aynan shu ro'yxatni tekshiradi — oyna va server farq qilmaydi.
+    /// </summary>
+    [HttpGet("{id}/usage")]
+    public async Task<ActionResult<SubjectUsageDto>> Usage(string id, CancellationToken ct = default)
+    {
+        if (await db.Subjects.FindAsync([id], ct) is null) return NotFound();
+        var used = await UsageAsync(id, ct);
+        return new SubjectUsageDto(used.Count == 0, used);
+    }
+
+    private async Task<List<string>> UsageAsync(string id, CancellationToken ct)
+    {
         var used = new List<string>();
         await CountAsync(used, "o'quv guruhi", db.StudyGroups.Where(g => g.SubjectId == id), ct);
         await CountAsync(used, "dars jadvali katagi",
@@ -178,18 +196,7 @@ public partial class SubjectsController(AppDbContext db) : ControllerBase
         await CountAsync(used, "imtihon fani", db.ExamSections.Where(s => s.SubjectId == id), ct);
         await CountAsync(used, "mavsumiy baho", db.SeasonalMarks.Where(m => m.SubjectId == id), ct);
 
-        if (used.Count > 0)
-            return Conflict(new
-            {
-                message = $"\"{subject.Name}\" fani ishlatilmoqda ({string.Join(", ", used)}) — "
-                          + "uni o'chirib bo'lmaydi. Fan tarixiy yozuvlarning nomi; o'chirilsa "
-                          + "ular qaysi fandan ekani noma'lum bo'lib qoladi. Buning o'rniga fanni "
-                          + "faolsizlantiring — u yangi tanlovda ko'rinmay qoladi.",
-            });
-
-        db.Subjects.Remove(subject);
-        await db.SaveChangesAsync(ct);
-        return NoContent();
+        return used;
     }
 
     /// <summary>Bog'liqlikni sanaydi va topilsa ro'yxatga "N ta &lt;nom&gt;" qo'shadi.</summary>

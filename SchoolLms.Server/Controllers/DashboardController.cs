@@ -333,7 +333,8 @@ public class DashboardController(AppDbContext db) : ControllerBase
             .Where(x => x is not null)
             .Select(x => x!)
             .OrderByDescending(x => x.MissedDays)
-            .ThenBy(x => x.FullName, StringComparer.Ordinal)
-            .Take(50)];
+            .ThenBy(x => x.FullName, StringComparer.Ordinal)];
+        // Cheklov yo'q: bosh sahifa ro'yxatni sahifalab ko'rsatadi (20 tadan) —
+        // 50 ta bilan kesilsa, keyingi sahifalar jim chala qolardi.
     }
 }

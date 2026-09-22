@@ -81,177 +81,172 @@ export function JournalCellModal({
         </>
       }
     >
-      <p className="mb-4 text-sm text-slate-400">{dateLabel}</p>
+      {/* Tartibli, guruhlangan ko'rinish (mijoz, 2026-09-23: "sal tartibli bo'lsin"):
+          har bo'lim — kulrang blok, tanlovlar teng kenglikdagi segmentlar. Mantiq o'zgarmagan. */}
+      <p className="mb-4 inline-flex rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-500">
+        {dateLabel}
+      </p>
 
-      <div className="space-y-4">
-        <div>
-          <p className="mb-2 text-sm font-medium text-slate-600">Baho</p>
-          <div className="flex gap-2">
+      <div className="space-y-3">
+        <Section title="Baho">
+          <div className="grid grid-cols-5 gap-2">
             {grades.map((g) => (
               <button
                 key={g}
                 type="button"
                 onClick={() => setGrade((cur) => (cur === g ? null : g))}
                 className={cn(
-                  'flex h-10 w-10 items-center justify-center rounded-lg border text-sm font-semibold transition-colors',
-                  grade === g
-                    ? 'border-brand-500 bg-brand-600 text-white'
-                    : 'border-slate-200 text-slate-700 hover:bg-slate-50',
+                  'h-11 rounded-xl text-base font-semibold transition-colors',
+                  grade === g ? gradeActive(g) : 'bg-white text-slate-700 ring-1 ring-slate-200 hover:bg-slate-100',
                 )}
               >
                 {g}
               </button>
             ))}
           </div>
-        </div>
+        </Section>
 
-        {lateReasons.length > 0 && (
-          <div>
-            <p className="mb-2 text-sm font-medium text-slate-600">Kech keldi</p>
-            <div className="flex flex-wrap gap-2">
-              {lateReasons.map((r) => (
-                <button
-                  key={r.id}
-                  type="button"
-                  onClick={() => toggleReason(r.id)}
-                  className={cn(
-                    'rounded-lg border px-3 py-2 text-sm font-medium transition-colors',
-                    reasonId === r.id
-                      ? 'border-amber-400 bg-amber-50 text-amber-700'
-                      : 'border-slate-200 text-slate-700 hover:bg-slate-50',
-                  )}
-                >
-                  {r.name}
-                </button>
-              ))}
-            </div>
-            {selectedLate && (
-              <p className="mt-1.5 text-xs text-amber-600">
-                Kech kelgan — darsda qatnashgan, baho ham qo'yishingiz mumkin.
-              </p>
-            )}
-          </div>
-        )}
-
-        <div>
-          <p className="mb-2 text-sm font-medium text-slate-600">Davomat (kelmadi)</p>
-          {absentReasons.length === 0 ? (
+        <Section
+          title="Davomat"
+          hint={
+            selectedLate
+              ? "Kech kelgan — darsda qatnashgan, baho ham qo'yish mumkin."
+              : reasonId
+                ? undefined
+                : 'Hech biri tanlanmasa — keldi.'
+          }
+        >
+          {reasons.length === 0 ? (
             <p className="text-xs text-slate-400">Sabablar yo'q — Sozlamalarda qo'shing</p>
           ) : (
-            <div className="flex flex-wrap gap-2">
-              {absentReasons.map((r) => (
-                <button
-                  key={r.id}
-                  type="button"
-                  onClick={() => toggleReason(r.id)}
-                  className={cn(
-                    'rounded-lg border px-3 py-2 text-sm font-medium transition-colors',
-                    reasonId === r.id
-                      ? 'border-red-400 bg-red-50 text-red-600'
-                      : 'border-slate-200 text-slate-700 hover:bg-slate-50',
-                  )}
-                >
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+              <Chip active={reasonId == null} tone="green" onClick={() => setReasonId(null)}>
+                Keldi
+              </Chip>
+              {lateReasons.map((r) => (
+                <Chip key={r.id} active={reasonId === r.id} tone="amber" onClick={() => toggleReason(r.id)}>
                   {r.name}
-                </button>
+                </Chip>
+              ))}
+              {absentReasons.map((r) => (
+                <Chip key={r.id} active={reasonId === r.id} tone="red" onClick={() => toggleReason(r.id)}>
+                  {r.name}
+                </Chip>
               ))}
             </div>
           )}
+        </Section>
+
+        <div className="grid grid-cols-2 gap-3">
+          <Section title="Uyga vazifa">
+            <div className="grid grid-cols-2 gap-2">
+              <Chip active={homework === 1} tone="green" onClick={() => toggle(homework, setHomework, 1)}>
+                Qildi
+              </Chip>
+              <Chip active={homework === 2} tone="red" onClick={() => toggle(homework, setHomework, 2)}>
+                Qilmadi
+              </Chip>
+            </div>
+          </Section>
+          <Section title="Xulq">
+            <div className="grid grid-cols-2 gap-2">
+              <Chip active={behavior === 1} tone="green" onClick={() => toggle(behavior, setBehavior, 1)}>
+                Yaxshi
+              </Chip>
+              <Chip active={behavior === 2} tone="red" onClick={() => toggle(behavior, setBehavior, 2)}>
+                Yomon
+              </Chip>
+            </div>
+          </Section>
         </div>
 
-        {/* Uyga vazifa — har o'quvchiga (qildi/qilmadi) */}
-        <div>
-          <p className="mb-2 text-sm font-medium text-slate-600">Uyga vazifa</p>
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={() => toggle(homework, setHomework, 1)}
-              className={cn(
-                'rounded-lg border px-3 py-2 text-sm font-medium transition-colors',
-                homework === 1
-                  ? 'border-emerald-400 bg-emerald-50 text-emerald-700'
-                  : 'border-slate-200 text-slate-700 hover:bg-slate-50',
-              )}
-            >
-              Qildi
-            </button>
-            <button
-              type="button"
-              onClick={() => toggle(homework, setHomework, 2)}
-              className={cn(
-                'rounded-lg border px-3 py-2 text-sm font-medium transition-colors',
-                homework === 2
-                  ? 'border-red-400 bg-red-50 text-red-600'
-                  : 'border-slate-200 text-slate-700 hover:bg-slate-50',
-              )}
-            >
-              Qilmadi
-            </button>
-          </div>
-        </div>
-
-        {/* Xulq — har o'quvchiga (yaxshi/yomon) */}
-        <div>
-          <p className="mb-2 text-sm font-medium text-slate-600">Xulq</p>
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={() => toggle(behavior, setBehavior, 1)}
-              className={cn(
-                'rounded-lg border px-3 py-2 text-sm font-medium transition-colors',
-                behavior === 1
-                  ? 'border-emerald-400 bg-emerald-50 text-emerald-700'
-                  : 'border-slate-200 text-slate-700 hover:bg-slate-50',
-              )}
-            >
-              Yaxshi
-            </button>
-            <button
-              type="button"
-              onClick={() => toggle(behavior, setBehavior, 2)}
-              className={cn(
-                'rounded-lg border px-3 py-2 text-sm font-medium transition-colors',
-                behavior === 2
-                  ? 'border-red-400 bg-red-50 text-red-600'
-                  : 'border-slate-200 text-slate-700 hover:bg-slate-50',
-              )}
-            >
-              Yomon
-            </button>
-          </div>
-        </div>
-
-        {/* O'zlashtirish foizi — shu darsni necha % o'zlashtirdi */}
-        <div>
-          <p className="mb-2 text-sm font-medium text-slate-600">Darsni o'zlashtirish (%)</p>
+        <Section title="Darsni o'zlashtirish">
           <div className="flex items-center gap-2">
-            <input
-              type="number"
-              min={0}
-              max={100}
-              inputMode="numeric"
-              placeholder="0-100"
-              value={mastery}
-              onChange={(e) => {
-                const v = e.target.value
-                if (v === '') return setMastery('')
-                const n = Math.max(0, Math.min(100, Number(v)))
-                setMastery(Number.isNaN(n) ? '' : n)
-              }}
-              className="w-28 rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400"
-            />
-            <span className="text-sm text-slate-400">%</span>
-            {mastery !== '' && (
+            <div className="relative w-28">
+              <input
+                type="number"
+                min={0}
+                max={100}
+                inputMode="numeric"
+                placeholder="0–100"
+                value={mastery}
+                onChange={(e) => {
+                  const v = e.target.value
+                  if (v === '') return setMastery('')
+                  const n = Math.max(0, Math.min(100, Number(v)))
+                  setMastery(Number.isNaN(n) ? '' : n)
+                }}
+                className="h-10 w-full rounded-xl bg-white pl-3 pr-7 text-sm outline-none ring-1 ring-slate-200 focus:ring-brand-400"
+              />
+              <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-slate-400">%</span>
+            </div>
+            {[50, 75, 100].map((v) => (
               <button
+                key={v}
                 type="button"
-                onClick={() => setMastery('')}
-                className="text-xs text-slate-400 hover:text-slate-600"
+                onClick={() => setMastery(mastery === v ? '' : v)}
+                className={cn(
+                  'h-10 rounded-xl px-3 text-xs font-medium transition-colors',
+                  mastery === v ? 'bg-brand-600 text-white' : 'bg-white text-slate-600 ring-1 ring-slate-200 hover:bg-slate-100',
+                )}
               >
-                Tozalash
+                {v}%
               </button>
-            )}
+            ))}
           </div>
-        </div>
+        </Section>
       </div>
     </Modal>
   )
+}
+
+/* ---------- kichik qismlar ---------- */
+
+function Section({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) {
+  return (
+    <section className="rounded-2xl bg-slate-50 p-3">
+      <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400">{title}</p>
+      {children}
+      {hint && <p className="mt-2 text-xs text-slate-400">{hint}</p>}
+    </section>
+  )
+}
+
+const CHIP_TONES = {
+  green: 'bg-emerald-500 text-white ring-emerald-500',
+  amber: 'bg-amber-400 text-white ring-amber-400',
+  red: 'bg-red-500 text-white ring-red-500',
+} as const
+
+function Chip({
+  active,
+  tone,
+  onClick,
+  children,
+}: {
+  active: boolean
+  tone: keyof typeof CHIP_TONES
+  onClick: () => void
+  children: React.ReactNode
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        'h-10 truncate rounded-xl px-2 text-sm font-medium ring-1 transition-colors',
+        active ? CHIP_TONES[tone] : 'bg-white text-slate-700 ring-slate-200 hover:bg-slate-100',
+      )}
+    >
+      {children}
+    </button>
+  )
+}
+
+/** Tanlangan baho rangi — jadvaldagi baho ranglari bilan bir xil ma'noda. */
+function gradeActive(g: number): string {
+  if (g >= 5) return 'bg-emerald-500 text-white'
+  if (g === 4) return 'bg-brand-600 text-white'
+  if (g === 3) return 'bg-amber-400 text-white'
+  return 'bg-red-500 text-white'
 }

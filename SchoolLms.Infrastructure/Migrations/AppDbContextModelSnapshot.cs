@@ -494,6 +494,65 @@ namespace SchoolLms.Infrastructure.Migrations
                         });
                 });
 
+            modelBuilder.Entity("SchoolLms.Domain.BoardingAttendance", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateOnly>("Date")
+                        .HasColumnType("date")
+                        .HasColumnName("date");
+
+                    b.Property<DateTimeOffset>("MarkedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("marked_at");
+
+                    b.Property<string>("MarkedBy")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("marked_by");
+
+                    b.Property<DateTimeOffset?>("NotifiedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("notified_at");
+
+                    b.Property<string>("Session")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("session");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("status");
+
+                    b.Property<string>("StudentId")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("student_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_boarding_attendance");
+
+                    b.HasIndex("StudentId")
+                        .HasDatabaseName("ix_boarding_attendance_student_id");
+
+                    b.HasIndex("Date", "Session", "StudentId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_boarding_attendance_date_session_student_id");
+
+                    b.ToTable("boarding_attendance", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_boarding_attendance_session", "session in ('evening','dorm')");
+
+                            t.HasCheckConstraint("ck_boarding_attendance_status", "status in ('present','absent','excused')");
+                        });
+                });
+
             modelBuilder.Entity("SchoolLms.Domain.Branch", b =>
                 {
                     b.Property<string>("Id")
@@ -3698,6 +3757,31 @@ namespace SchoolLms.Infrastructure.Migrations
                         });
                 });
 
+            modelBuilder.Entity("SchoolLms.Domain.NotificationState", b =>
+                {
+                    b.Property<string>("UserId")
+                        .HasColumnType("text")
+                        .HasColumnName("user_id");
+
+                    b.Property<string>("NotificationId")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("notification_id");
+
+                    b.Property<DateTime?>("DismissedAt")
+                        .HasColumnType("timestamp without time zone")
+                        .HasColumnName("dismissed_at");
+
+                    b.Property<DateTime?>("ReadAt")
+                        .HasColumnType("timestamp without time zone")
+                        .HasColumnName("read_at");
+
+                    b.HasKey("UserId", "NotificationId")
+                        .HasName("pk_notification_states");
+
+                    b.ToTable("notification_states", (string)null);
+                });
+
             modelBuilder.Entity("SchoolLms.Domain.Payment", b =>
                 {
                     b.Property<Guid>("Id")
@@ -5511,6 +5595,10 @@ namespace SchoolLms.Infrastructure.Migrations
                         .HasDefaultValue(false)
                         .HasColumnName("is_archived");
 
+                    b.Property<bool>("IsTrack")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_track");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasColumnType("text")
@@ -6480,6 +6568,16 @@ namespace SchoolLms.Infrastructure.Migrations
                         .HasConstraintName("fk_billing_settings_users_updated_by");
                 });
 
+            modelBuilder.Entity("SchoolLms.Domain.BoardingAttendance", b =>
+                {
+                    b.HasOne("SchoolLms.Domain.Student", null)
+                        .WithMany()
+                        .HasForeignKey("StudentId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_boarding_attendance_students_student_id");
+                });
+
             modelBuilder.Entity("SchoolLms.Domain.CashBox", b =>
                 {
                     b.HasOne("SchoolLms.Domain.AppUser", null)
@@ -7041,6 +7139,16 @@ namespace SchoolLms.Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_news_users_author_id");
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.NotificationState", b =>
+                {
+                    b.HasOne("SchoolLms.Domain.AppUser", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_notification_states_users_user_id");
                 });
 
             modelBuilder.Entity("SchoolLms.Domain.Payment", b =>

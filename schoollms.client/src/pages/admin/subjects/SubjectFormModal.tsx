@@ -18,7 +18,6 @@ const PRESETS = ['#34C759', '#007AFF', '#FF9500', '#FF3B30', '#AF52DE', '#8E8E93
 
 export function SubjectFormModal({ open, onClose, onSubmit, initial }: Props) {
   const [name, setName] = useState('')
-  const [isGroupable, setIsGroupable] = useState(false)
   const [color, setColor] = useState('')
   const [isActive, setIsActive] = useState(true)
 
@@ -27,7 +26,6 @@ export function SubjectFormModal({ open, onClose, onSubmit, initial }: Props) {
     if (open) {
       // eslint-disable-next-line react-hooks/set-state-in-effect -- oyna ochilganda formani to'ldiramiz (maqsadli, loyihadagi mavjud naqsh)
       setName(initial?.name ?? '')
-      setIsGroupable(initial?.isGroupable ?? false)
       setColor(initial?.color ?? '')
       setIsActive(initial?.isActive ?? true)
     }
@@ -36,7 +34,8 @@ export function SubjectFormModal({ open, onClose, onSubmit, initial }: Props) {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     if (!name.trim()) return
-    onSubmit({ name: name.trim(), isGroupable, color: color.trim(), isActive })
+    // `isGroupable` endi ma'nosiz (istalgan fanga guruh ochiladi) — borini o'zgartirmay yuboramiz.
+    onSubmit({ name: name.trim(), isGroupable: initial?.isGroupable ?? false, color: color.trim(), isActive })
   }
 
   return (
@@ -70,21 +69,6 @@ export function SubjectFormModal({ open, onClose, onSubmit, initial }: Props) {
           ("Guruhlar" bo'limi). Bayroq YOQISH hech narsani o'zgartirmaydi —
           u faqat guruh formasidagi fan ro'yxatini ochadi.
         */}
-        <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-slate-200 px-3 py-2.5">
-          <input
-            type="checkbox"
-            className="mt-0.5 h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-400"
-            checked={isGroupable}
-            onChange={(e) => setIsGroupable(e.target.checked)}
-          />
-          <span>
-            <span className="block text-sm font-medium text-slate-700">Guruhlarga bo'linadi</span>
-            <span className="block text-xs text-slate-400">
-              Bu fan bo'yicha bir nechta sinfdan yig'iladigan o'quv guruhi ochish mumkin
-              bo'ladi. Faol guruhi bor fandan belgini olib tashlab bo'lmaydi.
-            </span>
-          </span>
-        </label>
 
         {/* F-3: jadval katakchasini bo'yaydigan rang. */}
         <div>

@@ -167,6 +167,8 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<NewsItem> News => Set<NewsItem>();
     /// <summary>Lid → o'quvchi statistikasi (lid o'zi o'chiriladi, son qoladi).</summary>
     public DbSet<LeadConversion> LeadConversions => Set<LeadConversion>();
+    public DbSet<NotificationState> NotificationStates => Set<NotificationState>();
+    public DbSet<BoardingAttendance> BoardingAttendance => Set<BoardingAttendance>();
 
     // Admission, block test and seasonal assessment (admission-and-testing.md §5).
     // Configuration: ExamModel.cs — `leads.admission_status` and
@@ -368,6 +370,8 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
         // FinanceParityModel izohidagi qoida).
         SalesMarketingModel.Apply(b);
         LeadEnrolModel.Apply(b);
+        NotificationStateModel.Apply(b);
+        BoardingAttendanceModel.Apply(b);
 
         // ----- Admission, block test, seasonal assessment (admission-and-testing.md §5) -----
         // Twelve tables plus `leads.admission_status` and one `school_meta` flag,

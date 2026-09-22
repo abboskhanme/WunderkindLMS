@@ -78,8 +78,6 @@ public class RoomTests(ApiFixture fixture)
         Assert.Equal(HttpStatusCode.Forbidden,
             (await client.PostAsJsonAsync($"{Url}/multiple", new { count = 2 })).StatusCode);
         Assert.Equal(HttpStatusCode.Forbidden,
-            (await client.PostAsJsonAsync($"{Url}/import-from-classes", new { })).StatusCode);
-        Assert.Equal(HttpStatusCode.Forbidden,
             (await client.PutAsJsonAsync($"{Url}/{Guid.NewGuid()}", new { name = "X" })).StatusCode);
         Assert.Equal(HttpStatusCode.Forbidden,
             (await client.DeleteAsync($"{Url}/{Guid.NewGuid()}")).StatusCode);
@@ -296,33 +294,17 @@ public class RoomTests(ApiFixture fixture)
         Assert.Equal(HttpStatusCode.NoContent, (await client.DeleteAsync($"{Url}/{id}")).StatusCode);
     }
 
-    /// <summary>Sinflardagi erkin matnli xona nomlaridan reyestrni to'ldirish (§2.6.3).</summary>
+    /// <summary>
+    /// "Sinflardan ko'chirish" olib tashlandi (mijoz, 2026-09-23) — endpoint endi yo'q va
+    /// sinflardagi xona matnidan reyestrga hech narsa qo'shilmaydi.
+    /// </summary>
     [Fact]
-    public async Task Sinflardan_kochirish()
+    public async Task Sinflardan_kochirish_olib_tashlangan()
     {
         using var client = await fixture.Api.ClientAsAsync(Roles.Admin);
-        var tag = Tag();
-        var roomName = $"Sinf-xona-{tag}";
-
-        await fixture.Api.WithDbAsync(async db =>
-        {
-            db.Classes.Add(new SchoolClass { Name = $"5-{tag[..4]}", Grade = 5, Room = roomName });
-            db.Classes.Add(new SchoolClass { Name = $"6-{tag[..4]}", Grade = 6, Room = roomName });
-            await db.SaveChangesAsync();
-        });
-
-        var first = await JsonAsync(await client.PostAsJsonAsync($"{Url}/import-from-classes", new { }));
-        var created = first.GetProperty("created").EnumerateArray().Select(e => e.Clone()).ToList();
-        Assert.Contains(created, r => r.GetProperty("name").GetString() == roomName);
-        // Ikki sinf bir xil xonani ko'rsatgan — reyestrga BITTA qator tushadi.
-        Assert.Single(created, r => r.GetProperty("name").GetString() == roomName);
-
-        // Ikkinchi marta — hech narsa qo'shilmaydi (idempotent).
-        var second = await JsonAsync(await client.PostAsJsonAsync($"{Url}/import-from-classes", new { }));
-        Assert.DoesNotContain(second.GetProperty("created").EnumerateArray(),
-            r => r.GetProperty("name").GetString() == roomName);
-        Assert.Contains(second.GetProperty("skipped").EnumerateArray(),
-            r => r.GetString() == roomName);
+        var res = await client.PostAsJsonAsync($"{Url}/import-from-classes", new { });
+        Assert.True(res.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.MethodNotAllowed,
+            $"Kutilgan 404/405, keldi {(int)res.StatusCode}");
     }
 
     // =====================================================================

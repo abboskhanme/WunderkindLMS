@@ -8,12 +8,17 @@ import {
   ClipboardList,
   MessageSquare,
   Newspaper,
+  Trash2,
   TriangleAlert,
   UserRoundCheck,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import type { NotificationItem, NotificationKind } from '@/types'
-import { getNotifications, markNotificationsRead } from '@/api/services/notifications'
+import {
+  dismissNotifications,
+  getNotifications,
+  markNotificationsRead,
+} from '@/api/services/notifications'
 import { cn } from '@/lib/utils'
 
 /** Ro'yxat qancha vaqtda bir yangilanadi (ms). */
@@ -50,6 +55,9 @@ export function NotificationsBell() {
   const [items, setItems] = useState<NotificationItem[]>([])
   const [unread, setUnread] = useState(0)
   const [loading, setLoading] = useState(false)
+  // Tanlash rejimi (mijoz, 2026-09-22): bittalab yoki hammasini belgilab o'chirish.
+  const [selecting, setSelecting] = useState(false)
+  const [selected, setSelected] = useState<Set<string>>(new Set())
   const panelRef = useRef<HTMLDivElement>(null)
 
   const load = useCallback(async () => {
@@ -64,11 +72,12 @@ export function NotificationsBell() {
 
   // Boshlang'ich yuklash + davriy yangilash + oynaga qaytilganda yangilash.
   useEffect(() => {
-    void load()
+    const first = window.setTimeout(() => void load(), 0)
     const timer = window.setInterval(() => void load(), POLL_MS)
     const onFocus = () => void load()
     window.addEventListener('focus', onFocus)
     return () => {
+      window.clearTimeout(first)
       window.clearInterval(timer)
       window.removeEventListener('focus', onFocus)
     }
@@ -95,6 +104,41 @@ export function NotificationsBell() {
     const next = !open
     setOpen(next)
     if (next) void load()
+    else stopSelecting()
+  }
+
+  const stopSelecting = () => {
+    setSelecting(false)
+    setSelected(new Set())
+  }
+
+  const toggleOne = (id: string) =>
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+
+  const allSelected = items.length > 0 && items.every((i) => selected.has(i.id))
+  const toggleAll = () => setSelected(allSelected ? new Set() : new Set(items.map((i) => i.id)))
+
+  /** Ro'yxatdan darhol olib tashlaydi; server rad etsa — qayta yuklaydi. */
+  const remove = async (ids: string[]) => {
+    if (ids.length === 0) return
+    const gone = new Set(ids)
+    const removedUnread = items.filter((i) => gone.has(i.id) && i.isNew).length
+    setItems((prev) => prev.filter((i) => !gone.has(i.id)))
+    setUnread((u) => Math.max(0, u - removedUnread))
+    setSelected(new Set())
+    setLoading(true)
+    try {
+      await dismissNotifications(ids)
+    } catch {
+      void load()
+    } finally {
+      setLoading(false)
+    }
   }
 
   const markAllRead = async () => {
@@ -111,17 +155,19 @@ export function NotificationsBell() {
   const openItem = async (item: NotificationItem) => {
     setOpen(false)
     navigate(item.link)
-    // Bosilgan element ko'rilgan hisoblanadi — nishonni ham tozalaymiz.
-    if (unread > 0) {
+    // Faqat BOSILGAN bildirishnoma o'qiladi — qolganlari "yangi" bo'lib qoladi
+    // (ilgari bitta bosish hammasini o'qilgan qilardi va 1 kundan keyin hammasi yo'qolardi).
+    if (item.isNew) {
       try {
-        await markNotificationsRead()
-        setItems((prev) => prev.map((i) => ({ ...i, isNew: false })))
-        setUnread(0)
+        await markNotificationsRead([item.id])
+        setItems((prev) => prev.map((i) => (i.id === item.id ? { ...i, isNew: false } : i)))
+        setUnread((u) => Math.max(0, u - 1))
       } catch {
         // Belgilash bo'lmasa ham o'tish amalga oshdi — keyingi yangilanishda tiklanadi.
       }
     }
   }
+
 
   return (
     <div className="relative" ref={panelRef}>
@@ -149,19 +195,31 @@ export function NotificationsBell() {
           <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
             <p className="text-sm font-semibold text-slate-700">
               Bildirishnomalar
-              {unread > 0 && <span className="ml-1.5 text-xs font-normal text-slate-400">{unread} yangi</span>}
+              {unread > 0 && (
+                <span className="ml-1.5 text-xs font-normal text-slate-400">{unread} yangi</span>
+              )}
             </p>
-            {unread > 0 && (
-              <button
-                onClick={markAllRead}
-                disabled={loading}
-                className="flex items-center gap-1 rounded-md px-1.5 py-1 text-xs text-brand-600 transition-colors hover:bg-brand-50 disabled:opacity-50"
-                title="Hammasini o'qilgan deb belgilash"
-              >
-                <CheckCheck className="h-3.5 w-3.5" />
-                O'qildi
-              </button>
-            )}
+            <div className="flex items-center gap-1">
+              {items.length > 0 && (
+                <button
+                  onClick={() => (selecting ? stopSelecting() : setSelecting(true))}
+                  className="rounded-md px-1.5 py-1 text-xs text-slate-500 transition-colors hover:bg-slate-100"
+                >
+                  {selecting ? 'Bekor qilish' : 'Tanlash'}
+                </button>
+              )}
+              {unread > 0 && !selecting && (
+                <button
+                  onClick={markAllRead}
+                  disabled={loading}
+                  className="flex items-center gap-1 rounded-md px-1.5 py-1 text-xs text-brand-600 transition-colors hover:bg-brand-50 disabled:opacity-50"
+                  title="Hammasini o'qilgan deb belgilash"
+                >
+                  <CheckCheck className="h-3.5 w-3.5" />
+                  O'qildi
+                </button>
+              )}
+            </div>
           </div>
 
           <div className="max-h-96 overflow-y-auto">
@@ -172,31 +230,99 @@ export function NotificationsBell() {
             ) : (
               items.map((item) => {
                 const { icon: Icon, wrap } = kindStyle[item.kind] ?? kindStyle.chat
+                const checked = selected.has(item.id)
                 return (
-                  <button
+                  <div
                     key={item.id}
-                    onClick={() => void openItem(item)}
                     className={cn(
-                      'flex w-full items-start gap-3 border-b border-slate-50 px-4 py-3 text-left transition-colors last:border-b-0 hover:bg-slate-50',
+                      'group relative flex items-start border-b border-slate-50 last:border-b-0',
                       item.isNew && 'bg-brand-50/40',
+                      checked && 'bg-slate-50',
                     )}
                   >
-                    <span className={cn('mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg', wrap)}>
-                      <Icon className="h-4 w-4" />
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <span className="flex items-center gap-1.5">
-                        <span className="truncate text-sm font-medium text-slate-700">{item.title}</span>
-                        {item.isNew && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-brand-500" />}
+                    {selecting && (
+                      <label className="flex shrink-0 cursor-pointer items-center self-stretch pl-4">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => toggleOne(item.id)}
+                          className="h-4 w-4 rounded border-slate-300 accent-brand-600"
+                          aria-label={`${item.title} — belgilash`}
+                        />
+                      </label>
+                    )}
+                    <button
+                      onClick={() => (selecting ? toggleOne(item.id) : void openItem(item))}
+                      className="flex min-w-0 flex-1 items-start gap-3 px-4 py-3 pr-10 text-left transition-colors hover:bg-slate-50"
+                    >
+                      <span
+                        className={cn(
+                          'mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg',
+                          wrap,
+                        )}
+                      >
+                        <Icon className="h-4 w-4" />
                       </span>
-                      <span className="mt-0.5 block break-words text-xs text-slate-500">{item.text}</span>
-                      <span className="mt-1 block text-[11px] text-slate-400">{timeAgo(item.createdAt)}</span>
-                    </span>
-                  </button>
+                      <span className="min-w-0 flex-1">
+                        <span className="flex items-center gap-1.5">
+                          <span className="truncate text-sm font-medium text-slate-700">
+                            {item.title}
+                          </span>
+                          {item.isNew && (
+                            <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-brand-500" />
+                          )}
+                        </span>
+                        <span className="mt-0.5 block break-words text-xs text-slate-500">
+                          {item.text}
+                        </span>
+                        <span className="mt-1 block text-[11px] text-slate-400">
+                          {timeAgo(item.createdAt)}
+                        </span>
+                      </span>
+                    </button>
+                    {!selecting && (
+                      <button
+                        onClick={() => void remove([item.id])}
+                        className="absolute right-2 top-3 rounded-md p-1.5 text-slate-300 opacity-0 transition hover:bg-red-50 hover:text-red-500 focus:opacity-100 group-hover:opacity-100"
+                        title="O'chirish"
+                        aria-label={`${item.title} — o'chirish`}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    )}
+                  </div>
                 )
               })
             )}
           </div>
+
+          {selecting ? (
+            <div className="flex items-center justify-between gap-2 border-t border-slate-100 px-4 py-2.5">
+              <label className="flex cursor-pointer items-center gap-2 text-xs text-slate-600">
+                <input
+                  type="checkbox"
+                  checked={allSelected}
+                  onChange={toggleAll}
+                  className="h-4 w-4 rounded border-slate-300 accent-brand-600"
+                />
+                Hammasini belgilash
+              </label>
+              <button
+                onClick={() => void remove([...selected])}
+                disabled={selected.size === 0 || loading}
+                className="flex items-center gap-1.5 rounded-lg bg-red-50 px-2.5 py-1.5 text-xs font-medium text-red-600 transition-colors hover:bg-red-100 disabled:opacity-40"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                O'chirish{selected.size > 0 ? ` (${selected.size})` : ''}
+              </button>
+            </div>
+          ) : (
+            items.length > 0 && (
+              <p className="border-t border-slate-100 px-4 py-2 text-center text-[11px] text-slate-400">
+                O'qilganlari 1 kundan keyin o'zi o'chadi
+              </p>
+            )
+          )}
         </div>
       )}
     </div>

@@ -1,19 +1,30 @@
-import { useEffect, useRef, useState } from 'react'
-import { ChevronDown, LogOut, Menu, Search, Settings } from 'lucide-react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { ChevronDown, LogOut, PanelLeftClose, PanelLeftOpen, Settings } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '@/context/auth-context'
-import { roleLabels } from '@/config/navigation'
 import { NotificationsBell } from './NotificationsBell'
+import { GlobalSearch } from './GlobalSearch'
+import { Modal } from '@/components/ui/Modal'
+import { UserAvatar } from '@/components/ui/UserAvatar'
+import { Toast } from '@/components/ui/Toast'
+import { AccountSettings } from '@/pages/admin/account/AccountSettings'
 
 interface TopbarProps {
+  /** Yon menyu hozir ochiqmi — tugma belgisi shunga qarab o'zgaradi. */
+  sidebarOpen: boolean
   onMenuClick: () => void
 }
 
-export function Topbar({ onMenuClick }: TopbarProps) {
+export function Topbar({ sidebarOpen, onMenuClick }: TopbarProps) {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
+  // Akkaunt sozlamalari — alohida sahifa emas, modal oyna (mijoz, 2026-09-22).
+  const [accountOpen, setAccountOpen] = useState(false)
+  const [toast, setToast] = useState<string | null>(null)
+  const closeToast = useCallback(() => setToast(null), [])
+  const closeAccount = useCallback(() => setAccountOpen(false), [])
 
   // Tashqariga bosilganda yoki Escape bosilganda profil menyusini yopamiz
   useEffect(() => {
@@ -42,53 +53,28 @@ export function Topbar({ onMenuClick }: TopbarProps) {
 
   const openAccount = () => {
     setMenuOpen(false)
-    navigate('/admin/account')
+    setAccountOpen(true)
   }
 
-  const initials = user.fullName
-    .split(' ')
-    .map((w) => w[0])
-    .slice(0, 2)
-    .join('')
-    .toUpperCase()
 
   return (
     <header className="flex h-16 items-center justify-between border-b border-slate-200 bg-white px-4 sm:px-6">
-      <div className="flex items-center gap-3">
+      {/* "Xush kelibsiz" yozuvi o'rniga — keng qidiruv maydoni (mijoz, 2026-09-22). */}
+      <div className="flex min-w-0 flex-1 items-center gap-3">
         <button
           onClick={onMenuClick}
           className="rounded-lg p-2 text-slate-500 transition-colors hover:bg-slate-100"
-          title="Menyu"
+          title={sidebarOpen ? 'Menyuni yig\'ish' : 'Menyuni ochish'}
+          aria-label={sidebarOpen ? 'Menyuni yig\'ish' : 'Menyuni ochish'}
+          aria-expanded={sidebarOpen}
         >
-          <Menu className="h-5 w-5" />
+          {/* Hamburger emas: bu tugma yon panelni yig'adi/ochadi, belgisi ham shuni ko'rsatadi. */}
+          {sidebarOpen ? <PanelLeftClose className="h-5 w-5" /> : <PanelLeftOpen className="h-5 w-5" />}
         </button>
-        <div className="leading-tight">
-          <p className="text-sm text-slate-400">Xush kelibsiz 👋</p>
-          <p className="font-semibold text-slate-800">{user.fullName}</p>
-        </div>
+        <GlobalSearch />
       </div>
 
-      <div className="flex items-center gap-3 sm:gap-4">
-        {/* Buyruq paneli (Ctrl+K) — desktopda keng tugma, mobil ekranda faqat ikona */}
-        <button
-          onClick={() => window.dispatchEvent(new Event('cmdk:open'))}
-          className="hidden items-center gap-2 rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-400 transition-colors hover:bg-slate-50 sm:flex"
-          title="Qidirish (Ctrl+K)"
-        >
-          <Search className="h-4 w-4" />
-          <span>Qidirish...</span>
-          <kbd className="rounded border border-slate-200 bg-slate-50 px-1.5 text-[10px] text-slate-400">
-            Ctrl K
-          </kbd>
-        </button>
-        <button
-          onClick={() => window.dispatchEvent(new Event('cmdk:open'))}
-          className="rounded-lg p-2 text-slate-500 transition-colors hover:bg-slate-100 sm:hidden"
-          title="Qidirish"
-        >
-          <Search className="h-5 w-5" />
-        </button>
-
+      <div className="ml-3 flex items-center gap-3 sm:gap-4">
         <NotificationsBell />
 
         {/* Profil — bosilganda akkaunt sozlamalari/chiqish menyusi ochiladi */}
@@ -100,12 +86,9 @@ export function Topbar({ onMenuClick }: TopbarProps) {
             aria-haspopup="menu"
             aria-expanded={menuOpen}
           >
-            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-brand-600 text-sm font-semibold text-white">
-              {initials}
-            </div>
+            <UserAvatar fullName={user.fullName} avatarUrl={user.avatarUrl} className="h-9 w-9 text-sm" />
             <div className="hidden text-left leading-tight sm:block">
               <p className="text-sm font-medium text-slate-700">{user.fullName}</p>
-              <p className="text-xs text-slate-400">{roleLabels[user.role]}</p>
             </div>
             <ChevronDown
               className={`hidden h-4 w-4 text-slate-400 transition-transform sm:block ${
@@ -122,7 +105,6 @@ export function Topbar({ onMenuClick }: TopbarProps) {
               <div className="border-b border-slate-100 px-4 py-3">
                 <p className="truncate text-sm font-medium text-slate-700">{user.fullName}</p>
                 {user.email && <p className="truncate text-xs text-slate-400">{user.email}</p>}
-                <p className="mt-0.5 text-xs text-slate-400">{roleLabels[user.role]}</p>
               </div>
               <button
                 role="menuitem"
@@ -144,6 +126,16 @@ export function Topbar({ onMenuClick }: TopbarProps) {
           )}
         </div>
       </div>
+      <Modal open={accountOpen} onClose={closeAccount} title="Akkaunt sozlamalari" size="sm">
+        <AccountSettings
+          bare
+          onSaved={() => {
+            setAccountOpen(false)
+            setToast('Akkaunt ma\'lumotlari saqlandi')
+          }}
+        />
+      </Modal>
+      <Toast message={toast} onClose={closeToast} />
     </header>
   )
 }

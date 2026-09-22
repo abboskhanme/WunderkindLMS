@@ -417,6 +417,8 @@ export function StudentsPage({ initialTab = 'active' }: { initialTab?: Tab } = {
             <button
               type="button"
               onClick={() => {
+                // URL ham almashadi — menyu, orqaga tugmasi va havola tab bilan mos bo'lsin.
+                if (tab !== 'active') navigate('/admin/students')
                 setTab('active')
                 clearSelection()
               }}
@@ -430,6 +432,7 @@ export function StudentsPage({ initialTab = 'active' }: { initialTab?: Tab } = {
             <button
               type="button"
               onClick={() => {
+                if (tab !== 'archived') navigate('/admin/students/arxiv')
                 setTab('archived')
                 clearSelection()
               }}

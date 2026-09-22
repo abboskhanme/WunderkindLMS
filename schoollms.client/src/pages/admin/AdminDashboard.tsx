@@ -27,6 +27,8 @@ import {
 } from '@/components/charts/ClassPerformanceChart'
 import { cn } from '@/lib/utils'
 import { TodaySchedule } from './TodaySchedule'
+import { Pager } from '@/components/ui/Pager'
+import { PAGE_SIZES } from '@/lib/pagination'
 import { useAuth } from '@/context/auth-context'
 import { useDashboardWidgets } from './dashboardWidgets'
 import { useBillingAccess } from './billing/access'
@@ -76,6 +78,9 @@ export function AdminDashboard() {
   // o'chirilgan, chunki u haqiqatdan ajralib ketgan edi.
   const classHeadcounts = data.classHeadcounts ?? []
 
+  // QAT'IY QOIDA (mijoz, 2026-09-22): har bir STAT karta — qaysi guruhdan bo'lishidan
+  // qat'i nazar — faqat shu yuqori qatorda chiqadi. Pastda faqat jadval va grafik
+  // bloklari turadi. Yangi karta qo'shilsa, u shu ro'yxatga qo'shiladi.
   const topCards = [
     on('students') && (
       <StatCard key="students" label="Jami o'quvchilar" value={stats.studentsCount.toLocaleString()} icon={Users} />
@@ -192,23 +197,6 @@ export function AdminDashboard() {
         iconColor="text-indigo-600"
       />
     ),
-  ].filter(Boolean)
-
-  // Panel tartibida — EduSchool ro'yxati bo'yicha.
-  const blocks = [
-    on('debtDynamics') && <DebtDynamicsCard key="debtDynamics" />,
-    on('monthlyFlow') && <MonthlyFlowCard key="monthlyFlow" />,
-    on('financialState') && <FinancialStateCard key="financialState" />,
-    on('debtState') && <DebtStateCard key="debtState" />,
-    on('coverage') && <CoverageCard key="coverage" stats={stats} />,
-    on('leadFunnel') && <LeadFunnelCard key="leadFunnel" />,
-    on('bonusPenalty') && <BonusPenaltyCard key="bonusPenalty" />,
-    on('contingent') && <ContingentCard key="contingent" stats={stats} classes={classHeadcounts} />,
-    on('gender') && <GenderCard key="gender" stats={stats} />,
-    on('classBreakdown') && <ClassBreakdownCard key="classBreakdown" classes={classHeadcounts} />,
-  ].filter(Boolean)
-
-  const bottomCards = [
     on('averageGrade') && (
       <StatCard
         key="averageGrade"
@@ -231,6 +219,21 @@ export function AdminDashboard() {
       />
     ),
   ].filter(Boolean)
+
+  // Panel tartibida — EduSchool ro'yxati bo'yicha.
+  const blocks = [
+    on('debtDynamics') && <DebtDynamicsCard key="debtDynamics" />,
+    on('monthlyFlow') && <MonthlyFlowCard key="monthlyFlow" />,
+    on('financialState') && <FinancialStateCard key="financialState" />,
+    on('debtState') && <DebtStateCard key="debtState" />,
+    on('coverage') && <CoverageCard key="coverage" stats={stats} />,
+    on('leadFunnel') && <LeadFunnelCard key="leadFunnel" />,
+    on('bonusPenalty') && <BonusPenaltyCard key="bonusPenalty" />,
+    on('contingent') && <ContingentCard key="contingent" stats={stats} classes={classHeadcounts} />,
+    on('gender') && <GenderCard key="gender" stats={stats} classes={classHeadcounts} />,
+    on('classBreakdown') && <ClassBreakdownCard key="classBreakdown" classes={classHeadcounts} />,
+  ].filter(Boolean)
+
 
   const showChart = on('classChart')
   const showTop = on('topClasses')
@@ -265,14 +268,21 @@ export function AdminDashboard() {
         <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">{topCards}</div>
       )}
 
-      {blocks.length > 0 && <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">{blocks}</div>}
+      {/* Masonry: bloklar balandligi har xil — ustunlarga zich terilsin, orada bo'shliq qolmasin. */}
+      {blocks.length > 0 && (
+        <div className="gap-4 xl:columns-2">
+          {blocks.map((b, i) => (
+            // Blokning o'z kaliti: vidjet o'chirilsa qolganlari qayta yuklanmasin.
+            <div key={(b as { key?: string | null }).key ?? i} className="mb-4 break-inside-avoid">
+              {b}
+            </div>
+          ))}
+        </div>
+      )}
 
       {on('attendanceByPeriod') && <AttendanceByPeriodCard rows={attendanceByPeriod} />}
       {on('absentStudents') && <AbsentStudentsCard rows={absentStudents} />}
 
-      {bottomCards.length > 0 && (
-        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">{bottomCards}</div>
-      )}
 
       {/* Bugungi dars jadvali (barcha sinflar) */}
       {on('todaySchedule') && <TodaySchedule />}
@@ -346,7 +356,7 @@ export function AdminDashboard() {
 function toggleBtn(active: boolean): string {
   return cn(
     'rounded-md px-3 py-1 font-medium transition-colors',
-    active ? 'bg-white text-brand-700 shadow-sm' : 'text-slate-500 hover:text-slate-700',
+    active ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700',
   )
 }
 
@@ -363,51 +373,55 @@ function toggleBtn(active: boolean): string {
  * yashirardi.
  */
 function AttendanceByPeriodCard({ rows }: { rows: AttendanceByPeriod[] }) {
-  const active = rows.filter((r) => r.expected > 0)
+  // EduSchool kabi: 10 ta dars soati DOIM ko'rinadi, darsi yo'q soat — 0 va 0%.
+  // Server har doim 1..10 ni qaytaradi; bo'sh kelsa ham jadval bo'sh qolmaydi.
+  const byPeriod = new Map(rows.map((r) => [r.period, r]))
+  const all = Array.from({ length: 10 }, (_, i) => {
+    const period = i + 1
+    return byPeriod.get(period) ?? { period, expected: 0, present: 0, absent: 0, unchecked: 0 }
+  })
 
   return (
     <Card>
       <h2 className="mb-3 font-semibold text-slate-800">Davomat analitikasi</h2>
-      {active.length === 0 ? (
-        <p className="py-6 text-center text-sm text-slate-400">
-          Bugun dars yo'q — davomat ham yo'q.
-        </p>
-      ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[640px] text-sm">
-            <thead className="whitespace-nowrap">
-              <tr className="border-b border-slate-100 text-left text-xs uppercase tracking-wide text-slate-400">
-                <th className="pb-2 pr-3 font-medium">Dars vaqti</th>
-                <th className="pb-2 pr-3 font-medium">O'quvchilar</th>
-                <th className="pb-2 pr-3 font-medium">Kelgan</th>
-                <th className="pb-2 pr-3 font-medium">Kelmagan</th>
-                <th className="pb-2 font-medium">Tekshirilmagan</th>
-              </tr>
-            </thead>
-            <tbody className="tabular-nums">
-              {active.map((r) => {
-                const pct = (n: number) =>
-                  r.expected > 0 ? `${Math.round((n / r.expected) * 100)}%` : '—'
-                return (
-                  <tr key={r.period} className="border-b border-slate-50 last:border-0">
-                    <td className="py-2 pr-3 font-medium text-slate-700">{r.period}-soat</td>
-                    <td className="py-2 pr-3 text-slate-600">{r.expected}</td>
-                    <td className="py-2 pr-3 text-emerald-700">
-                      {r.present} <span className="text-slate-400">· {pct(r.present)}</span>
-                    </td>
-                    <td className="py-2 pr-3 text-red-600">
-                      {r.absent} <span className="text-slate-400">· {pct(r.absent)}</span>
-                    </td>
-                    <td className={cn('py-2', r.unchecked > 0 ? 'text-amber-600' : 'text-slate-400')}>
-                      {r.unchecked} <span className="text-slate-400">· {pct(r.unchecked)}</span>
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
+      <div className="overflow-x-auto">
+        {/* table-fixed: 8 ta ustun teng kenglikda — raqamlar bir-birining ostida turadi. */}
+        <table className="w-full min-w-[760px] table-fixed text-sm">
+          <thead className="whitespace-nowrap">
+            <tr className="border-b border-slate-100 text-left text-xs uppercase tracking-wide text-slate-400">
+              <th className="truncate pb-2 pr-3 font-medium" title="Dars vaqti">Dars vaqti</th>
+              <th className="truncate pb-2 pr-3 font-medium" title="O'quvchilar soni">O'quvchilar soni</th>
+              <th className="truncate pb-2 pr-3 font-medium" title="Kelganlar soni">Kelganlar soni</th>
+              <th className="truncate pb-2 pr-3 font-medium" title="Kelganlar foizi">Kelganlar foizi</th>
+              <th className="truncate pb-2 pr-3 font-medium" title="Kelmaganlar soni">Kelmaganlar soni</th>
+              <th className="truncate pb-2 pr-3 font-medium" title="Kelmaganlar foizi">Kelmaganlar foizi</th>
+              <th className="truncate pb-2 pr-3 font-medium" title="Tekshirilmaganlar soni">Tekshirilmaganlar soni</th>
+              <th className="truncate pb-2 font-medium" title="Tekshirilmaganlar foizi">Tekshirilmaganlar foizi</th>
+            </tr>
+          </thead>
+          <tbody className="tabular-nums">
+            {all.map((r) => {
+              const pct = (n: number) => `${r.expected > 0 ? Math.round((n / r.expected) * 100) : 0}%`
+              const idle = r.expected === 0
+              return (
+                <tr
+                  key={r.period}
+                  className={cn('border-b border-slate-50 last:border-0', idle && 'text-slate-400')}
+                >
+                  <td className="py-2 pr-3 font-medium text-slate-700">{r.period}</td>
+                  <td className="py-2 pr-3">{r.expected}</td>
+                  <td className={cn('py-2 pr-3', !idle && 'text-emerald-700')}>{r.present}</td>
+                  <td className="py-2 pr-3">{pct(r.present)}</td>
+                  <td className={cn('py-2 pr-3', !idle && r.absent > 0 && 'text-red-600')}>{r.absent}</td>
+                  <td className="py-2 pr-3">{pct(r.absent)}</td>
+                  <td className={cn('py-2 pr-3', r.unchecked > 0 && 'text-amber-600')}>{r.unchecked}</td>
+                  <td className="py-2">{pct(r.unchecked)}</td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
     </Card>
   )
 }
@@ -431,6 +445,11 @@ function AbsentStudentsCard({ rows }: { rows: AbsentStudent[] }) {
   const [filter, setFilter] = useState<(typeof MISS_FILTERS)[number]['key']>('all')
   const min = MISS_FILTERS.find((f) => f.key === filter)!.min
   const shown = rows.filter((r) => r.missedDays >= min)
+  const [pageSize, setPageSize] = useState<number>(PAGE_SIZES[0])
+  const [page, setPage] = useState(1)
+  const lastPage = Math.max(1, Math.ceil(shown.length / pageSize))
+  const current = Math.min(page, lastPage)
+  const pageRows = shown.slice((current - 1) * pageSize, current * pageSize)
 
   return (
     <Card>
@@ -441,7 +460,10 @@ function AbsentStudentsCard({ rows }: { rows: AbsentStudent[] }) {
             <button
               key={f.key}
               type="button"
-              onClick={() => setFilter(f.key)}
+              onClick={() => {
+                setFilter(f.key)
+                setPage(1)
+              }}
               className={cn(
                 'rounded-lg px-3 py-1.5 text-xs font-medium transition-colors',
                 filter === f.key ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500',
@@ -461,7 +483,14 @@ function AbsentStudentsCard({ rows }: { rows: AbsentStudent[] }) {
         </p>
       ) : (
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[560px] text-sm">
+          {/* table-fixed: ism ustuni qolganlarini o'ngga surib yubormasin. */}
+          <table className="w-full min-w-[560px] table-fixed text-sm">
+            <colgroup>
+              <col className="w-[40%]" />
+              <col className="w-[20%]" />
+              <col className="w-[20%]" />
+              <col className="w-[20%]" />
+            </colgroup>
             <thead className="whitespace-nowrap">
               <tr className="border-b border-slate-100 text-left text-xs uppercase tracking-wide text-slate-400">
                 <th className="pb-2 pr-3 font-medium">O'quvchi</th>
@@ -471,10 +500,10 @@ function AbsentStudentsCard({ rows }: { rows: AbsentStudent[] }) {
               </tr>
             </thead>
             <tbody>
-              {shown.slice(0, 20).map((r) => (
+              {pageRows.map((r) => (
                 <tr key={r.studentId} className="border-b border-slate-50 last:border-0">
                   <td className="py-2 pr-3 text-slate-700">
-                      <span className="block max-w-[14rem] truncate" title={r.fullName}>
+                      <span className="block truncate" title={r.fullName}>
                         {r.fullName}
                       </span>
                     </td>
@@ -487,11 +516,19 @@ function AbsentStudentsCard({ rows }: { rows: AbsentStudent[] }) {
               ))}
             </tbody>
           </table>
-          {shown.length > 20 && (
-            <p className="pt-2 text-xs text-slate-400">
-              Yana {shown.length - 20} ta — to'liq ro'yxat davomat bo'limida.
-            </p>
-          )}
+          <div className="mt-2 -mx-5 -mb-5">
+            <Pager
+              total={shown.length}
+              page={current}
+              lastPage={lastPage}
+              pageSize={pageSize}
+              onPage={setPage}
+              onPageSize={(n) => {
+                setPageSize(n)
+                setPage(1)
+              }}
+            />
+          </div>
         </div>
       )}
     </Card>

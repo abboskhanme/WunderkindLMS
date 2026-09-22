@@ -1,9 +1,8 @@
 import { useEffect, useState } from 'react'
-import { Link2Off, Plus, Search } from 'lucide-react'
+import { Plus, Search } from 'lucide-react'
 import type { GuardianRelation, GuardianRow } from '@/types'
 import {
   attachGuardianChild,
-  detachGuardianChild,
   saveGuardian,
 } from '@/api/services/guardians'
 import { guardianRelations, relationLabel } from '@/api/services/studentGuardians'
@@ -93,18 +92,6 @@ export function GuardianEditModal({ open, guardian, onClose, onSaved }: Props) {
     }
   }
 
-  const handleDetach = async (studentId: string, name: string) => {
-    if (!confirm(`${name} shu vasiydan uzilsinmi?`)) return
-    setBusy(true)
-    try {
-      await detachGuardianChild(guardian.guardianId, studentId)
-      onSaved()
-    } catch {
-      alert("Uzib bo'lmadi")
-      setBusy(false)
-    }
-  }
-
   const attached = new Set(guardian.children.map((c) => c.studentId))
 
   return (
@@ -155,14 +142,7 @@ export function GuardianEditModal({ open, guardian, onClose, onSaved }: Props) {
                       {c.isPrimary && ' · asosiy vasiy'}
                     </div>
                   </div>
-                  <Button
-                    type="button"
-                    variant="danger"
-                    disabled={busy}
-                    onClick={() => handleDetach(c.studentId, c.fullName)}
-                  >
-                    <Link2Off className="h-4 w-4" /> Uzish
-                  </Button>
+                  {/* "Uzish" olib tashlandi (mijoz, 2026-09-23: "vasiyni uzish degan narsa bo'lmasin"). */}
                 </li>
               ))}
             </ul>

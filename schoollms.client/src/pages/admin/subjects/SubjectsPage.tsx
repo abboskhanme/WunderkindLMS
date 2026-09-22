@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Plus, Pencil, Trash2, BookOpen, Users } from 'lucide-react'
+import { Plus, Pencil, Trash2, BookOpen } from 'lucide-react'
 import type { Subject } from '@/types'
 import type { SubjectPayload } from '@/api/services/subjects'
 import {
@@ -7,12 +7,15 @@ import {
   createSubject,
   updateSubject,
   deleteSubject,
+  getSubjectUsage,
+  type SubjectUsage,
 } from '@/api/services/subjects'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Loader } from '@/components/ui/Loader'
 import { cn } from '@/lib/utils'
 import { SubjectFormModal } from './SubjectFormModal'
+import { Modal } from '@/components/ui/Modal'
 
 /**
  * Fanlar katalogi (students-parity.md §2.5, G-9/F-1/F-3).
@@ -57,16 +60,38 @@ export function SubjectsPage() {
     setEditing(null)
   }
 
+  // O'chirish — tasdiqlash oynasi bilan (mijoz, 2026-09-23). Oyna ochilishi bilan fan qayerda
+  // ishlatilayotgani so'raladi: guruh, dars jadvali, jurnal ... bo'lsa, o'chirish tugmasi
+  // umuman chiqmaydi — sababi yoziladi. Server ham aynan shu ro'yxat bilan rad etadi.
+  const [deleting, setDeleting] = useState<Subject | null>(null)
+  const [usage, setUsage] = useState<SubjectUsage | null>(null)
+  const [usageError, setUsageError] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+
   const handleDelete = (s: Subject) => {
-    if (!confirm(`"${s.name}" fanini o'chirasizmi?`)) return
-    deleteSubject(s.id)
-      .then(() => setSubjects((prev) => prev.filter((x) => x.id !== s.id)))
+    setDeleting(s)
+    setUsage(null)
+    setUsageError(null)
+    getSubjectUsage(s.id)
+      .then(setUsage)
+      .catch(() => setUsageError("Tekshirib bo'lmadi — qayta urinib ko'ring"))
+  }
+
+  const confirmDelete = () => {
+    if (!deleting) return
+    setBusy(true)
+    deleteSubject(deleting.id)
+      .then(() => {
+        setSubjects((prev) => prev.filter((x) => x.id !== deleting.id))
+        setDeleting(null)
+      })
       .catch((e) =>
-        alert(
+        setUsageError(
           (e as { response?: { data?: { message?: string } } })?.response?.data?.message ??
             "Fanni o'chirib bo'lmadi",
         ),
       )
+      .finally(() => setBusy(false))
   }
 
   return (
@@ -115,11 +140,6 @@ export function SubjectsPage() {
                     )}
                   </p>
                   <div className="mt-0.5 flex flex-wrap items-center gap-1">
-                    {s.isGroupable && (
-                      <span className="inline-flex items-center gap-1 rounded-md bg-brand-50 px-1.5 py-0.5 text-[11px] font-medium text-brand-600">
-                        <Users className="h-3 w-3" /> Guruhlarga bo'linadi
-                      </span>
-                    )}
                     {s.isActive === false && (
                       <span className="inline-flex items-center rounded-md bg-slate-100 px-1.5 py-0.5 text-[11px] font-medium text-slate-400">
                         Faol emas
@@ -146,6 +166,49 @@ export function SubjectsPage() {
           )}
         </div>
       )}
+
+      <Modal
+        open={Boolean(deleting)}
+        onClose={() => setDeleting(null)}
+        title="Fanni o'chirish"
+        size="sm"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setDeleting(null)}>
+              {usage && !usage.canDelete ? 'Yopish' : 'Bekor qilish'}
+            </Button>
+            {usage?.canDelete && (
+              <Button variant="danger" onClick={confirmDelete} disabled={busy}>
+                {busy ? "O'chirilmoqda..." : "O'chirish"}
+              </Button>
+            )}
+          </>
+        }
+      >
+        {!usage && !usageError ? (
+          <p className="py-4 text-center text-sm text-slate-400">Tekshirilmoqda...</p>
+        ) : usage && !usage.canDelete ? (
+          <div className="space-y-3 text-sm">
+            <p className="text-slate-700">
+              <b>"{deleting?.name}"</b> fanini o'chirib bo'lmaydi — u ishlatilmoqda:
+            </p>
+            <ul className="space-y-1 rounded-xl bg-amber-50 p-3 text-amber-800">
+              {usage.usedIn.map((u) => (
+                <li key={u}>• {u}</li>
+              ))}
+            </ul>
+            <p className="text-xs text-slate-400">
+              Kerak bo'lmasa, uni tahrirlab "Faol" belgisini olib tashlang — yangi tanlovlarda
+              ko'rinmay qoladi, eski yozuvlar esa saqlanadi.
+            </p>
+          </div>
+        ) : (
+          <p className="text-sm text-slate-700">
+            <b>"{deleting?.name}"</b> fanini o'chirasizmi? Bu amalni qaytarib bo'lmaydi.
+          </p>
+        )}
+        {usageError && <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{usageError}</p>}
+      </Modal>
 
       <SubjectFormModal
         open={formOpen}

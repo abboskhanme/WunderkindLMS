@@ -39,6 +39,8 @@ export interface StudyGroupListItem {
   teachers: StudyGroupTeacherRef[]
   /** FAOL a'zolar soni */
   memberCount: number
+  /** Yo'nalish guruhi — kechki dars va yotoqxona davomati shu guruhlar bo'yicha */
+  isTrack?: boolean
 }
 
 /** Guruhdagi bitta a'zolik. `leftOn` null = hozir ham guruhda. */
@@ -84,6 +86,8 @@ export interface SaveGroupPayload {
    * Berilmasa ro'yxatga umuman tegilmaydi.
    */
   studentIds?: string[]
+  /** Yo'nalish guruhi (kechki/yotoqxona davomati). Berilmasa — o'zgarmaydi. */
+  isTrack?: boolean
 }
 
 export interface GroupFilters {

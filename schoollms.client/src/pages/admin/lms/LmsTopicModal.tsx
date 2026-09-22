@@ -182,7 +182,7 @@ export function LmsTopicModal({ open, editing, saving, onClose, onSave }: Props)
                       <span className="truncate text-sm text-slate-700">{m.name}</span>
                       <span className="shrink-0 text-xs text-slate-400">{humanSize(m.size)}</span>
                     </div>
-                    <button
+                    <button title="O'chirish" aria-label="O'chirish"
                       type="button"
                       onClick={() => removeMaterial(m.id)}
                       className="shrink-0 text-slate-400 hover:text-red-500"

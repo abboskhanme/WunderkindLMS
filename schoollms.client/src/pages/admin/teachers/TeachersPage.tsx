@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { Plus, Search, Eye, Pencil, Trash2, Archive, RotateCcw, Download } from 'lucide-react'
 import type { Gender, SchoolClass, Subject, Teacher } from '@/types'
 import type { TeacherPayload } from '@/api/services/teachers'
@@ -38,8 +39,22 @@ export function TeachersPage() {
   const [classes, setClasses] = useState<SchoolClass[]>([])
   const [loading, setLoading] = useState(true)
 
-  const [tab, setTab] = useState<Tab>('active')
-  const [search, setSearch] = useState('')
+  // Qidiruvdan arxivdagi o'qituvchi tanlansa `?tab=archived` bilan keladi.
+  const [tab, setTab] = useState<Tab>(() =>
+    new URLSearchParams(window.location.search).get('tab') === 'archived' ? 'archived' : 'active',
+  )
+  // `?q=` — yuqori paneldagi umumiy qidiruvdan kelganda ro'yxat o'sha ism bilan ochiladi.
+  const [searchParams] = useSearchParams()
+  const [search, setSearch] = useState(() => searchParams.get('q') ?? '')
+  // Sahifa ochiq turganda qidiruvdan boshqa natija tanlansa — URL o'zgaradi, komponent esa
+  // qayta yaratilmaydi. React'ning "prop o'zgarsa holatni moslash" naqshi (effektsiz).
+  const urlQ = searchParams.get('q') ?? ''
+  const [seenQ, setSeenQ] = useState(urlQ)
+  if (urlQ !== seenQ) {
+    setSeenQ(urlQ)
+    setSearch(urlQ)
+    if (searchParams.get('tab') === 'archived') setTab('archived')
+  }
   const [genderFilter, setGenderFilter] = useState<'all' | Gender>('all')
   const [formOpen, setFormOpen] = useState(false)
   const [editing, setEditing] = useState<Teacher | null>(null)

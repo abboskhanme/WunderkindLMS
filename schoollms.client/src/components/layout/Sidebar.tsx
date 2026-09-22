@@ -5,7 +5,7 @@ import type { Role } from '@/types'
 import { useAuth } from '@/context/auth-context'
 import { useUnread } from '@/context/unread-context'
 import { getSchoolName } from '@/api/services/settings'
-import { navByRole, roleLabels, homeByRole, type NavChild, type NavItem } from '@/config/navigation'
+import { navByRole, homeByRole, type NavChild, type NavItem } from '@/config/navigation'
 import { cn } from '@/lib/utils'
 
 interface SidebarProps {
@@ -47,8 +47,12 @@ export function Sidebar({ open, onNavigate }: SidebarProps) {
   return (
     <aside
       className={cn(
-        'fixed inset-y-0 left-0 z-40 flex w-64 shrink-0 flex-col border-r border-slate-200 bg-white transition-transform duration-200',
-        open ? 'translate-x-0 lg:static lg:translate-x-0' : '-translate-x-full lg:hidden',
+        // Silliq kirib-chiqish (mijoz, 2026-09-22): kompyuterda panel `display:none`
+        // bilan keskin yo'qolmaydi — chapga suriladi va manfiy margin bilan joyini
+        // bo'shatadi, asosiy qism ham shu bilan birga kengayadi. Telefonda — ustma-ust.
+        'fixed inset-y-0 left-0 z-40 flex w-64 shrink-0 flex-col border-r border-slate-200 bg-white lg:static',
+        'transition-[transform,margin] duration-300 ease-in-out motion-reduce:transition-none',
+        open ? 'translate-x-0 lg:ml-0' : '-translate-x-full lg:-ml-64',
       )}
     >
       {/* Logo */}
@@ -58,7 +62,6 @@ export function Sidebar({ open, onNavigate }: SidebarProps) {
         </div>
         <div className="leading-tight">
           <p className="font-semibold text-slate-800">{schoolName || 'Wunderkind School'}</p>
-          <p className="text-xs text-slate-400">{roleLabels[role]}</p>
         </div>
       </div>
 

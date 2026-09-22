@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { Lead } from '@/types'
 import type { StudentPayload } from '@/api/services/students'
 import { enrolLead } from '@/api/services/leads'
 import { getClasses } from '@/api/services/classes'
 import { StudentFormModal } from '@/pages/admin/students/StudentFormModal'
+import { Toast } from '@/components/ui/Toast'
 
 interface Props {
   /** Aylantirilayotgan lid; `null` — modal yopiq. */
@@ -32,6 +33,11 @@ const errorText = (e: unknown, fallback: string) =>
  */
 export function LeadEnrolModal({ lead, onClose, onEnrolled }: Props) {
   const [classForGrade, setClassForGrade] = useState<string | null>(null)
+  // Mijoz, 2026-09-22: sinfga qo'shilgach yashil xabar, tepa o'ngda, 3 soniya.
+  // Shu komponentda: u doskada doim o'rnatilgan, shuning uchun modal yopilsa ham
+  // xabar ko'rinib turadi — muzlatilgan `LeadsPage.tsx` ga tegilmaydi.
+  const [toast, setToast] = useState<string | null>(null)
+  const closeToast = useCallback(() => setToast(null), [])
 
   useEffect(() => {
     if (!lead) return
@@ -70,17 +76,25 @@ export function LeadEnrolModal({ lead, onClose, onEnrolled }: Props) {
       .then(() => {
         onEnrolled(lead.id)
         onClose()
+        setToast(
+          values.className
+            ? `${values.fullName} ${values.className} sinfiga qo'shildi`
+            : `${values.fullName} o'quvchilar ro'yxatiga qo'shildi`,
+        )
       })
       .catch((err) => alert(errorText(err, "Lidni o'quvchiga aylantirib bo'lmadi")))
   }
 
   return (
-    <StudentFormModal
-      open={!!lead && prefill !== null}
-      onClose={onClose}
-      onSubmit={submit}
-      prefill={prefill}
-      title="Lidni o'quvchiga aylantirish"
-    />
+    <>
+      <StudentFormModal
+        open={!!lead && prefill !== null}
+        onClose={onClose}
+        onSubmit={submit}
+        prefill={prefill}
+        title="Lidni o'quvchiga aylantirish"
+      />
+      <Toast message={toast} onClose={closeToast} duration={3000} />
+    </>
   )
 }

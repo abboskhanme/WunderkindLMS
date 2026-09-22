@@ -1,10 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Upload, X, FileText, Loader2, Star, Link2Off, Send } from 'lucide-react'
+import { Upload, X, FileText, Loader2, Star, Send } from 'lucide-react'
 import type { GuardianRelation, Student, StudentGuardian, StudentGuardianInput } from '@/types'
 import type { StudentPayload } from '@/api/services/students'
 import { uploadAdminFile, getStudentCredentials } from '@/api/services/students'
 import {
-  detachGuardian,
   getStudentCard,
   guardianRelations,
   makeGuardianPrimary,
@@ -352,20 +351,6 @@ export function StudentFormModal({ open, onClose, onSubmit, initial, prefill, ti
     }
   }
 
-  /** Vasiyni uzish. Vasiy qatori o'chmaydi — uning boshqa farzandi bo'lishi mumkin. */
-  const handleDetach = async (g: StudentGuardian) => {
-    if (!initial) return
-    if (!confirm(`${g.fullName} shu o'quvchidan uzilsinmi?`)) return
-    setBusy(true)
-    try {
-      await detachGuardian(initial.id, g.guardianId)
-      await loadCard(initial.id, true)
-    } catch {
-      alert("Vasiyni uzib bo'lmadi (yagona vasiy bo'lishi mumkin)")
-      setBusy(false)
-    }
-  }
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     const last = (form.lastName ?? '').trim()
@@ -675,14 +660,7 @@ export function StudentFormModal({ open, onClose, onSubmit, initial, prefill, ti
                       >
                         <Star className="h-4 w-4" /> Asosiy qilish
                       </Button>
-                      <Button
-                        type="button"
-                        variant="danger"
-                        disabled={busy}
-                        onClick={() => handleDetach(g)}
-                      >
-                        <Link2Off className="h-4 w-4" /> Uzish
-                      </Button>
+                      {/* "Uzish" olib tashlandi (mijoz, 2026-09-23). */}
                     </>
                   )}
                 </li>

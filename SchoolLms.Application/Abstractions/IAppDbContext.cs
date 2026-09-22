@@ -239,6 +239,8 @@ public interface IAppDbContext
     /// 2026-09-22), bu yerda esa faqat SON qoladi — shaxsiy ma'lumotsiz.
     /// </summary>
     DbSet<LeadConversion> LeadConversions { get; }
+    DbSet<NotificationState> NotificationStates { get; }
+    DbSet<BoardingAttendance> BoardingAttendance { get; }
 
     /// <summary>
     /// Admission, block test and seasonal assessment

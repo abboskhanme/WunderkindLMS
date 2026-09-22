@@ -250,46 +250,8 @@ public class RoomsController(AppDbContext db) : ControllerBase
             created.Select(r => ToDto(r, 0)).ToList(), skipped);
     }
 
-    /// <summary>
-    /// Sinflardagi erkin matnli xona nomlaridan reyestrni to'ldiradi
-    /// (§2.6.3 "seeded from select distinct room from classes").
-    ///
-    /// <para>
-    /// Migratsiya buni QILMAGAN va ataylab: seed — bir martalik MA'MURIY amal,
-    /// migratsiya esa har muhitda (bo'sh test bazasida ham) yuradi. Shuning
-    /// uchun u tugma ortida va natijasi ko'rinadigan qilib qo'yilgan.
-    /// Sinflardagi matn O'ZGARMAYDI.
-    /// </para>
-    /// </summary>
-    [HttpPost("import-from-classes")]
-    public async Task<ActionResult<RoomImportResultDto>> ImportFromClasses(CancellationToken ct = default)
-    {
-        var names = (await db.Classes.AsNoTracking()
-                .Where(c => c.Room != null && c.Room != "")
-                .Select(c => c.Room!)
-                .Distinct().ToListAsync(ct))
-            .Select(n => n.Trim()).Where(n => n.Length > 0)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .OrderBy(n => n, StringComparer.OrdinalIgnoreCase)
-            .ToList();
-
-        var taken = (await db.Rooms.AsNoTracking().Select(r => r.Name).ToListAsync(ct))
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
-
-        var created = new List<Room>();
-        var skipped = new List<string>();
-        foreach (var name in names)
-        {
-            if (!taken.Add(name)) { skipped.Add(name); continue; }
-            created.Add(new Room { Name = name });
-        }
-
-        db.Rooms.AddRange(created);
-        await db.SaveChangesAsync(ct);
-
-        var withUsage = await WithUsageAsync(created, ct);
-        return new RoomImportResultDto(withUsage, skipped);
-    }
+    // "Sinflardan ko'chirish" (POST import-from-classes) olib tashlandi — mijoz, 2026-09-23:
+    // "sinflardan ko'chirish degan button va uni funksionalligi ham kerakmas".
 
     // =====================================================================
     //  Yordamchilar

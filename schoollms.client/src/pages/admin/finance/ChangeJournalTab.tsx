@@ -143,7 +143,7 @@ export function ChangeJournalTab({ month }: Props) {
                 {data.total === 0 ? "Yozuv yo'q" : `${data.rows.length} / ${data.total} ta`}
               </p>
               <div className="flex items-center gap-1">
-                <button
+                <button title="Oldingi" aria-label="Oldingi"
                   type="button"
                   disabled={page <= 1 || loading}
                   onClick={() => setPage((p) => Math.max(1, p - 1))}
@@ -154,7 +154,7 @@ export function ChangeJournalTab({ month }: Props) {
                 <span className="min-w-[70px] text-center text-xs text-slate-500">
                   {data.page} / {lastPage}
                 </span>
-                <button
+                <button title="Keyingi" aria-label="Keyingi"
                   type="button"
                   disabled={page >= lastPage || loading}
                   onClick={() => setPage((p) => p + 1)}

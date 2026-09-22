@@ -30,7 +30,7 @@ export function TemplateEditorPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-3">
-        <Link
+        <Link title="Orqaga" aria-label="Orqaga"
           to={`/admin/schedule/manage/${id}`}
           className="rounded-lg p-2 text-slate-500 transition-colors hover:bg-slate-100"
         >

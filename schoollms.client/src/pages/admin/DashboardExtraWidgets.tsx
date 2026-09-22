@@ -416,23 +416,65 @@ export function ContingentCard({ stats, classes }: { stats: AdminStats; classes:
   )
 }
 
-export function GenderCard({ stats }: { stats: AdminStats }) {
+export function GenderCard({ stats, classes }: { stats: AdminStats; classes: ClassHeadcount[] }) {
   if (typeof stats.maleCount !== 'number' || typeof stats.femaleCount !== 'number') {
     return <WidgetCard title="Jins bo'yicha" error="Server bu ma'lumotni hali bermayapti." />
   }
   const total = stats.maleCount + stats.femaleCount
   const male = pct(stats.maleCount, total)
+
+  // Sinf darajalari kesimida — qaysi parallelda muvozanat buzilganini ko'rsatadi.
+  const byGrade = new Map<number, { male: number; female: number }>()
+  for (const c of classes) {
+    const g = byGrade.get(c.grade) ?? { male: 0, female: 0 }
+    g.male += c.maleCount
+    g.female += c.femaleCount
+    byGrade.set(c.grade, g)
+  }
+  const grades = [...byGrade.entries()].sort((x, y) => x[0] - y[0])
+
   return (
     <WidgetCard title="Jins bo'yicha" hint="Faol o'quvchilar">
       <div className="grid grid-cols-2 gap-2">
         <Figure label="O'g'il bolalar" value={`${stats.maleCount} · ${male}%`} tone="text-sky-700" />
         <Figure label="Qiz bolalar" value={`${stats.femaleCount} · ${total > 0 ? 100 - male : 0}%`} tone="text-pink-600" />
       </div>
-      <div className="mt-3 flex h-2 overflow-hidden rounded-full bg-slate-100">
-        <div className="h-full bg-sky-500" style={{ width: `${male}%` }} />
-        <div className="h-full flex-1 bg-pink-400" style={{ opacity: total > 0 ? 1 : 0 }} />
-      </div>
+      <SplitBar male={stats.maleCount} female={stats.femaleCount} className="mt-3 h-2" />
+
+      {grades.length > 0 && (
+        <>
+          <p className="mt-5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+            Sinf darajalari bo'yicha
+          </p>
+          <ul className="mt-1">
+            {grades.map(([grade, g]) => (
+              <li key={grade} className="grid grid-cols-[6.5rem_1fr_4.5rem] items-center gap-3 py-1.5 text-sm">
+                <span className="text-slate-600">{grade === 0 ? 'Maktabgacha' : `${grade}-sinflar`}</span>
+                <SplitBar male={g.male} female={g.female} className="h-1.5" />
+                <span className="text-right tabular-nums text-slate-500">
+                  <span className="text-sky-700">{g.male}</span> / <span className="text-pink-600">{g.female}</span>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
     </WidgetCard>
+  )
+}
+
+/** O'g'il (ko'k) va qiz (pushti) ulushi bitta chiziqda. */
+function SplitBar({ male, female, className }: { male: number; female: number; className?: string }) {
+  const total = male + female
+  return (
+    <div className={cn('flex overflow-hidden rounded-full bg-slate-100', className)}>
+      {total > 0 && (
+        <>
+          <div className="h-full bg-sky-500" style={{ width: `${pct(male, total)}%` }} />
+          <div className="h-full flex-1 bg-pink-400" />
+        </>
+      )}
+    </div>
   )
 }
 
@@ -444,13 +486,12 @@ export function ClassBreakdownCard({ classes }: { classes: ClassHeadcount[] }) {
         <p className="py-6 text-center text-sm text-slate-400">Sinflar yo'q.</p>
       ) : (
         <div className="max-h-80 overflow-auto">
-          <table className="w-full text-sm">
+          <table className="w-full table-fixed text-sm">
             <thead className="sticky top-0 whitespace-nowrap bg-white">
               <tr className="border-b border-slate-100 text-left text-xs uppercase tracking-wide text-slate-400">
                 <th className="pb-2 pr-3 font-medium">Sinf</th>
                 <th className="pb-2 pr-3 font-medium">O'quvchi</th>
-                <th className="pb-2 pr-3 font-medium">O'g'il / qiz</th>
-                <th className="pb-2 font-medium">To'lganlik</th>
+                <th className="pb-2 font-medium">O'g'il / qiz</th>
               </tr>
             </thead>
             <tbody className="tabular-nums">
@@ -458,11 +499,8 @@ export function ClassBreakdownCard({ classes }: { classes: ClassHeadcount[] }) {
                 <tr key={c.classId} className="border-b border-slate-50 last:border-0">
                   <td className="py-2 pr-3 font-medium text-slate-700">{c.className}</td>
                   <td className="py-2 pr-3 text-slate-600">{c.studentsCount}</td>
-                  <td className="py-2 pr-3 text-slate-500">
-                    {c.maleCount} / {c.femaleCount}
-                  </td>
                   <td className="py-2 text-slate-500">
-                    {c.capacity ? `${pct(c.studentsCount, c.capacity)}% (${c.capacity})` : '—'}
+                    {c.maleCount} / {c.femaleCount}
                   </td>
                 </tr>
               ))}

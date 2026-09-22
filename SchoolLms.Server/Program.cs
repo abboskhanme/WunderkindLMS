@@ -305,6 +305,8 @@ builder.Services.AddScoped<SchoolLms.Application.Services.TurnstileService>();
 // Ommaviy ariza → lid. Qolgan xizmatlar (SurveyService, NewsService,
 // SurveySubmissionQuery, NewsFeedQuery) statik — ro'yxatga olish shart emas.
 builder.Services.AddScoped<SchoolLms.Application.Services.SurveySubmissionService>();
+// Kechki dars va yotoqxona davomati (2026-09-23).
+builder.Services.AddScoped<SchoolLms.Application.Services.BoardingAttendanceService>();
 // Yangilik e'lon qilinganda Telegram tarqatmasi (§3.3 N4, N6).
 builder.Services.AddScoped<SchoolLms.Application.Services.INewsTelegramNotifier,
                            SchoolLms.Application.Services.NewsTelegramNotifier>();

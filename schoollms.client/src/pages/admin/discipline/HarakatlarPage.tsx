@@ -372,7 +372,7 @@ export function HarakatlarPage() {
             {feed.total === 0 ? 'Yozuv yo\'q' : `${from}–${to} / ${feed.total} ta`}
           </p>
           <div className="flex items-center gap-1">
-            <button
+            <button title="Oldingi" aria-label="Oldingi"
               type="button"
               disabled={feed.page <= 1 || loading}
               onClick={() => setPage((p) => Math.max(1, p - 1))}
@@ -383,7 +383,7 @@ export function HarakatlarPage() {
             <span className="min-w-[70px] text-center text-xs text-slate-500">
               {feed.page} / {lastPage}
             </span>
-            <button
+            <button title="Keyingi" aria-label="Keyingi"
               type="button"
               disabled={feed.page >= lastPage || loading}
               onClick={() => setPage((p) => p + 1)}

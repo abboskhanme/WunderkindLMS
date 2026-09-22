@@ -340,7 +340,7 @@ export function AssignmentWizard({
                   </a>
                   <div className="flex shrink-0 items-center gap-2">
                     <span className="text-xs text-slate-400">{formatSize(m.size)}</span>
-                    <button
+                    <button title="O'chirish" aria-label="O'chirish"
                       type="button"
                       onClick={() => setMaterials((prev) => prev.filter((_, idx) => idx !== i))}
                       className="rounded p-1 text-slate-400 hover:bg-red-50 hover:text-red-600"
@@ -376,7 +376,7 @@ export function AssignmentWizard({
                         placeholder="Savol matni"
                         className={`${control} flex-1`}
                       />
-                      <button
+                      <button title="O'chirish" aria-label="O'chirish"
                         type="button"
                         onClick={() => removeQuestion(i)}
                         className="mt-1 rounded p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600"
@@ -407,7 +407,7 @@ export function AssignmentWizard({
                             className={`${control} flex-1`}
                           />
                           {q.options.length > 2 && (
-                            <button
+                            <button title="O'chirish" aria-label="O'chirish"
                               type="button"
                               onClick={() => removeOption(i, j)}
                               className="rounded p-1 text-slate-300 hover:text-red-600"

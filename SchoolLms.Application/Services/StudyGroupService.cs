@@ -53,10 +53,6 @@ public sealed class StudyGroupService(IAppDbContext db)
     public const string TeachersRequiredMessage = "Guruhga kamida bitta o'qituvchi tanlang";
     public const string ArchivedGroupMessage = "Arxivlangan guruhni o'zgartirib bo'lmaydi";
 
-    public const string SubjectNotGroupableMessage =
-        "Bu fan guruhlarga bo'linmaydi. Avval \"Fanlar\" bo'limida fanni "
-        + "\"guruhlarga bo'linadi\" deb belgilang.";
-
     public const string DuplicateNameMessage =
         "Shu fan bo'yicha bunday nomli faol guruh allaqachon bor — boshqa nom tanlang.";
 
@@ -96,7 +92,8 @@ public sealed class StudyGroupService(IAppDbContext db)
 
         var subject = await db.Subjects.FirstOrDefaultAsync(s => s.Id == req.SubjectId, ct);
         if (subject is null) return SubjectNotFoundMessage;
-        if (!subject.IsGroupable) return SubjectNotGroupableMessage;
+        // "Guruhlarga bo'linadi" talabi olib tashlandi (mijoz, 2026-09-23: "istalgan fanni
+        // guruhga biriktirish mumkin"). `subjects.is_groupable` ustuni qoladi, lekin tekshirilmaydi.
 
         if (req.Gender is not null and not "male" and not "female")
             return "Jins qiymati noto'g'ri (male yoki female)";
@@ -138,6 +135,7 @@ public sealed class StudyGroupService(IAppDbContext db)
             Name = req.Name.Trim(),
             SubjectId = req.SubjectId,
             Gender = req.Gender,
+            IsTrack = req.IsTrack ?? false,
             CreatedBy = userId,
         };
         db.StudyGroups.Add(group);
@@ -167,6 +165,7 @@ public sealed class StudyGroupService(IAppDbContext db)
 
         group.Name = req.Name.Trim();
         group.Gender = req.Gender;
+        if (req.IsTrack is { } track) group.IsTrack = track;
 
         // FARQNI yozamiz, "hammasini o'chirib qaytadan qo'shish" EMAS. O'chirish
         // va qo'shish bitta SaveChanges ichida bir xil birlamchi kalitga tushsa

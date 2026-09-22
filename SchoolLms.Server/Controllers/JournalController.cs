@@ -45,11 +45,18 @@ public class JournalController(AppDbContext db, FcmService fcm) : ControllerBase
             .Where(c => !c.IsArchived)
             .OrderBy(c => c.Grade).ThenBy(c => c.Name)
             .Select(c => new JournalOwnerDto(
-                c.Id, c.Name, LessonOwnerKind.Class, c.Grade, null, null, 0))
+                c.Id, c.Name, LessonOwnerKind.Class, c.Grade, null, null, 0, c.Language, null))
             .ToListAsync(ct);
+        // Sinf rahbari — o'qituvchi kartasidagi "sinf rahbari" maydoni (sinf NOMI bo'yicha).
+        var homeroom = (await db.Teachers.AsNoTracking()
+                .Where(t => !t.IsArchived && t.HomeroomClass != "")
+                .Select(t => new { t.HomeroomClass, t.FullName }).ToListAsync(ct))
+            .GroupBy(t => t.HomeroomClass, StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => string.Join(", ", g.Select(x => x.FullName)), StringComparer.Ordinal);
         result = [.. result.Select(o => o with
         {
             StudentCount = countByClassName.GetValueOrDefault(o.Name, 0),
+            HomeroomTeacher = homeroom.GetValueOrDefault(o.Name),
         })];
 
         if (!await LessonRoster.GroupLessonsEnabledAsync(db, ct)) return result;
@@ -70,6 +77,86 @@ public class JournalController(AppDbContext db, FcmService fcm) : ControllerBase
             g.SubjectId, subjectNames.GetValueOrDefault(g.SubjectId, ""),
             memberCounts.GetValueOrDefault(g.Id, 0))));
         return result;
+    }
+
+    /// <summary>
+    /// Sinf (yoki guruh) fanlari va ularni o'tadigan o'qituvchilar — Jurnal → sinf → fan
+    /// oqimining ikkinchi bosqichi (EduSchool kabi, 2026-09-23). Manba — dars jadvali
+    /// shablonlari: jurnal ustunlari ham aynan shulardan quriladi, ya'ni bu ro'yxatda
+    /// bor fan jurnalda ham bor.
+    /// </summary>
+    [HttpGet("subjects")]
+    public async Task<ActionResult<IEnumerable<JournalSubjectDto>>> Subjects(
+        [FromQuery] string classId, CancellationToken ct = default)
+    {
+        var owner = await LessonRoster.OwnerAsync(db, classId, ct);
+        if (owner is null) return new List<JournalSubjectDto>();
+
+        var lessons = await db.ScheduleTemplates.AsNoTracking()
+            .Where(t => t.ClassId == classId)
+            .SelectMany(t => t.Lessons.Select(l => new { l.SubjectId, l.TeacherId }))
+            .ToListAsync(ct);
+        var pairs = lessons.Where(l => l.SubjectId != "").ToList();
+
+        // O'quv guruhi: fani bitta, jadval hali bo'lmasa ham ro'yxat bo'sh qolmasin.
+        if (owner.IsGroup && Guid.TryParse(classId, out var gid))
+        {
+            var group = await db.StudyGroups.AsNoTracking().FirstOrDefaultAsync(g => g.Id == gid, ct);
+            if (group is not null)
+            {
+                var gTeachers = await db.StudyGroupTeachers.AsNoTracking()
+                    .Where(x => x.GroupId == gid).Select(x => x.TeacherId).ToListAsync(ct);
+                pairs.AddRange(gTeachers.DefaultIfEmpty("").Select(t => new { SubjectId = group.SubjectId, TeacherId = t }));
+            }
+        }
+
+        var subjectNames = await db.Subjects.AsNoTracking().ToDictionaryAsync(s => s.Id, s => s.Name, ct);
+        var teacherNames = await db.Teachers.AsNoTracking().ToDictionaryAsync(t => t.Id, t => t.FullName, ct);
+
+        return pairs
+            .Where(p => subjectNames.ContainsKey(p.SubjectId))
+            .GroupBy(p => p.SubjectId)
+            .Select(g => new JournalSubjectDto(
+                g.Key, subjectNames[g.Key],
+                [.. g.Select(p => teacherNames.GetValueOrDefault(p.TeacherId))
+                    .Where(n => !string.IsNullOrWhiteSpace(n)).Select(n => n!).Distinct().Order(StringComparer.Ordinal)]))
+            .OrderBy(x => x.SubjectName, StringComparer.Ordinal)
+            .ToList();
+    }
+
+    /// <summary>
+    /// Shu jurnalda (ega + fan + chorak) yozuvi bor, lekin hozir ro'yxatda YO'Q o'quvchilar —
+    /// arxivlanganlar va boshqa sinfga o'tganlar. EduSchool'dagi "Arxivdagi o'quvchilar" bo'limi:
+    /// ularning baholari yo'qolmaydi, faqat alohida, o'qish uchun ko'rsatiladi.
+    /// </summary>
+    [HttpGet("former-students")]
+    public async Task<ActionResult<IEnumerable<StudentDto>>> FormerStudents(
+        [FromQuery] string classId, [FromQuery] string subjectId, [FromQuery] int quarter,
+        CancellationToken ct = default)
+    {
+        var owner = await LessonRoster.OwnerAsync(db, classId, ct);
+        if (owner is null) return new List<StudentDto>();
+
+        var withEntries = await db.JournalEntries.AsNoTracking()
+            .Where(e => e.ClassId == classId && e.SubjectId == subjectId && e.Quarter == quarter)
+            .Select(e => e.StudentId).Distinct().ToListAsync(ct);
+        if (withEntries.Count == 0) return new List<StudentDto>();
+
+        var current = (await LessonRoster.ForLessonAsync(db, owner, 0, ct: ct))
+            .Select(s => s.Id).ToHashSet(StringComparer.Ordinal);
+        var formerIds = withEntries.Where(id => !current.Contains(id)).ToList();
+        if (formerIds.Count == 0) return new List<StudentDto>();
+
+        var students = await db.Students.AsNoTracking()
+            .Where(s => formerIds.Contains(s.Id))
+            .OrderBy(s => s.FullName).ToListAsync(ct);
+        return students.Select(s => new StudentDto(
+            s.Id, s.FullName, s.BirthDate, s.Address, s.Gender,
+            s.ParentFullName, s.ParentPhone, s.ClassName, s.EnrollmentDate, null,
+            s.SubGroup,
+            s.LastName, s.FirstName, s.MiddleName, s.BirthCertificateUrl,
+            s.ParentLastName, s.ParentFirstName, s.ParentMiddleName, s.ParentPassportUrl,
+            s.IsArchived, s.ArchivedAt, s.ArchiveReason)).ToList();
     }
 
     /// <summary>

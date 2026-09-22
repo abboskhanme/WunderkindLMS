@@ -101,6 +101,12 @@ public class StudyGroup
 
     public DateTimeOffset? ArchivedAt { get; set; }
 
+    /// <summary>
+    /// Yo'nalish guruhi (9–11-sinflar aralash, masalan "Aniq fanlar"). Kechki dars va yotoqxona
+    /// davomati sinf o'rniga shu guruhlar bo'yicha chiqadi (mijoz, 2026-09-23).
+    /// </summary>
+    public bool IsTrack { get; set; }
+
     /// <summary>Kim yaratgan (users.id) — JWT'dan (SPEC §4.4).</summary>
     public string CreatedBy { get; set; } = string.Empty;
 

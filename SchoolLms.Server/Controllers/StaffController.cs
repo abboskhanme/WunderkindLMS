@@ -35,6 +35,7 @@ public class StaffController(AppDbContext db) : ControllerBase
         if (string.IsNullOrWhiteSpace(p.FullName)) return BadRequest(new { message = "F.I.SH kerak" });
         var user = AccountFactory.CreateAccountFor(db, Roles.Staff, p.FullName.Trim());
         user.Position = (p.Position ?? "").Trim();
+        if (ApplyAvatar(user, p.AvatarUrl) is { } avatarError) return BadRequest(new { message = avatarError });
         if (!string.IsNullOrWhiteSpace(p.NewPassword))
         {
             if (p.NewPassword.Trim().Length < MinPasswordLength)
@@ -52,6 +53,7 @@ public class StaffController(AppDbContext db) : ControllerBase
         if (user is null || user.Role != Roles.Staff) return NotFound();
         user.FullName = p.FullName.Trim();
         user.Position = (p.Position ?? "").Trim();
+        if (ApplyAvatar(user, p.AvatarUrl) is { } avatarError) return BadRequest(new { message = avatarError });
         if (!string.IsNullOrWhiteSpace(p.NewPassword))
         {
             if (p.NewPassword.Trim().Length < MinPasswordLength)
@@ -108,5 +110,20 @@ public class StaffController(AppDbContext db) : ControllerBase
     }
 
     private static StaffDto ToDto(AppUser u) =>
-        new(u.Id, u.FullName, u.Position, u.Email, u.Permissions);
+        new(u.Id, u.FullName, u.Position, u.Email, u.Permissions, u.AvatarUrl);
+
+    /// <summary>
+    /// Rasm manzilini qo'llaydi. Faqat o'zimizning yuklangan fayl (<c>/uploads/…</c>) —
+    /// begona URL (kuzatuv pikseli, boshqa sayt) avatar sifatida ko'rsatilmasin.
+    /// </summary>
+    private static string? ApplyAvatar(AppUser user, string? url)
+    {
+        if (url is null) return null;
+        var v = url.Trim();
+        if (v.Length == 0) { user.AvatarUrl = null; return null; }
+        if (!v.StartsWith("/uploads/", StringComparison.Ordinal) || v.Contains("..") || v.Length > 300)
+            return "Rasm manzili noto'g'ri";
+        user.AvatarUrl = v;
+        return null;
+    }
 }
