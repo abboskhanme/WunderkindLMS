@@ -80,6 +80,7 @@ export function ReceiptPreview({ open, payment, onClose, autoPrint = true }: Rec
     // Telegram holati ham shu yerda tozalanadi: ikkalasining ham sababi bitta —
     // "oynada YANGI chek ochildi". Ikki alohida effekt bir xil qo'zg'atgichga
     // osilib turishi keyin biri unutilib qolishiga olib keladi.
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- yangi chek ochildi — oldingi PDF/Telegram holatini tiklaymiz (maqsadli)
     setTelegram({ status: 'idle' })
     setPdf({ status: 'loading' })
     getReceiptPdf(payment.id)

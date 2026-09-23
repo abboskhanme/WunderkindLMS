@@ -26,6 +26,7 @@ export function StudentViewModal({ student, onClose }: Props) {
 
   useEffect(() => {
     if (!student) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- tanlov bo'shaganda eski natijani tozalaymiz (maqsadli)
       setCredentials(null)
       return
     }

@@ -22,7 +22,6 @@ export function SubjectFormModal({ open, onClose, onSubmit, initial }: Props) {
   const [isActive, setIsActive] = useState(true)
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- modal ochilganda formani initial bilan sinxronlash (maqsadli)
     if (open) {
       // eslint-disable-next-line react-hooks/set-state-in-effect -- oyna ochilganda formani to'ldiramiz (maqsadli, loyihadagi mavjud naqsh)
       setName(initial?.name ?? '')

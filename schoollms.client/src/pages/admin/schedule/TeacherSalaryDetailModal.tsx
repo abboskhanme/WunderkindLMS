@@ -28,6 +28,7 @@ export function TeacherSalaryDetailModal({
 
   useEffect(() => {
     if (!teacherId) return
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- ma'lumotni qayta yuklaymiz, yangi so'rovdan oldin "yuklanmoqda" holati (maqsadli)
     setLoading(true)
     setData(null)
     getTeacherSalaryDetail(teacherId, month)

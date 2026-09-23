@@ -81,6 +81,7 @@ export function GpsPage() {
 
   // Tanlangan avtobus + sana → iz.
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- avtobus tanlanmasa izni tozalaymiz, tanlansa qayta yuklaymiz (maqsadli)
     if (!selectedId) { setTrack(null); return }
     setTrackLoading(true)
     getBusTrack(selectedId, date).then(setTrack).finally(() => setTrackLoading(false))
@@ -370,6 +371,7 @@ function BusFormModal({
 
   useEffect(() => {
     if (!open) return
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- oyna ochilganda formani tanlangan yozuv bilan sinxronlash (maqsadli)
     setForm(bus
       ? { name: bus.name, plateNumber: bus.plateNumber, driverName: bus.driverName,
           driverPhone: bus.driverPhone, deviceId: bus.deviceId, route: bus.route,

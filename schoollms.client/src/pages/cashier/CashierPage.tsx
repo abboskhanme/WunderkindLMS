@@ -188,6 +188,7 @@ export function CashierPage() {
   }, [])
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- ma'lumotni qayta yuklaymiz, yangi so'rovdan oldin "yuklanmoqda" holati (maqsadli)
     if (allowed) void loadBoxes()
   }, [allowed, loadBoxes])
 
@@ -513,6 +514,7 @@ export function CashierPage() {
 
   useEffect(() => {
     if (!student) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- tanlov bo'shaganda eski natijani tozalaymiz (maqsadli)
       setInvoices([])
       setInvoicesError(null)
       return
@@ -950,6 +952,7 @@ function StudentSearch({ selectedId, onSelect, bare = false }: StudentSearchProp
 
   useEffect(() => {
     if (tooShort) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- tanlov bo'shaganda eski natijani tozalaymiz (maqsadli)
       setResults([])
       setError(null)
       setLoading(false)

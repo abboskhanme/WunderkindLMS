@@ -34,7 +34,6 @@ export function ClassPointsModal({ open, classId, className, onClose, onDone }: 
     if (!open) return
     // eslint-disable-next-line react-hooks/set-state-in-effect -- oyna ochilganda oldingi tanlov tozalanadi (maqsadli, loyihadagi mavjud naqsh)
     setNote('')
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- oyna ochilganda oldingi tanlov tozalanadi (maqsadli)
     setError(null)
     getDisciplineReasons().then((all) => {
       const other = all.filter((r) => r.kind === 'other' && r.isActive)

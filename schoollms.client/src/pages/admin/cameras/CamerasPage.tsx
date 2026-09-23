@@ -21,6 +21,7 @@ function LivePlayer({ id, className }: { id: string; className?: string }) {
     const video = ref.current
     if (!video) return
     setFailed(false)
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- yangi oqim ulanishidan oldin xato holatini tozalaymiz (maqsadli)
     if (!Hls.isSupported()) { setFailed(true); return }
     const token = localStorage.getItem('token')
     const hls = new Hls({
@@ -250,6 +251,7 @@ function CameraFormModal({
 
   useEffect(() => {
     if (!open) return
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- oyna ochilganda formani tanlangan yozuv bilan sinxronlash (maqsadli)
     setForm(camera
       ? { name: camera.name, location: camera.location, rtspUrl: camera.rtspUrl,
           rtspSubUrl: camera.rtspSubUrl, retentionDays: camera.retentionDays,

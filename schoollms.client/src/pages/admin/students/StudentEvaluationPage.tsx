@@ -54,6 +54,7 @@ export function StudentEvaluationPage() {
 
   // Dastlab fanlar ro'yxatini olish uchun yuklaymiz (subjectsiz).
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- ma'lumotni qayta yuklaymiz, yangi so'rovdan oldin "yuklanmoqda" holati (maqsadli)
     load(undefined, undefined)
   }, [load])
 
@@ -61,6 +62,7 @@ export function StudentEvaluationPage() {
   useEffect(() => {
     if (!subjectId && board.subjects && board.subjects.length > 0) {
       const first = board.subjects[0].id
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- fanlar kelgach birinchi fanni avtomatik tanlaymiz (maqsadli)
       setSubjectId(first)
       load(board.month || undefined, first)
     }

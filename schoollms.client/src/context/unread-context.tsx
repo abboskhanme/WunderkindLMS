@@ -40,6 +40,7 @@ interface UnreadContextValue {
 
 const UnreadContext = createContext<UnreadContextValue | null>(null)
 
+// eslint-disable-next-line react-refresh/only-export-components -- hook o'z provayderi bilan bir faylda (auth-context kabi ajratilmagan)
 export function useUnread(): UnreadContextValue {
   const ctx = useContext(UnreadContext)
   if (!ctx) throw new Error('useUnread must be inside UnreadProvider')
@@ -63,7 +64,10 @@ export function UnreadProvider({ children }: { children: ReactNode }) {
 
   // userId ref — markRead barqaror callback bo'lishi uchun (useCallback deps yo'q)
   const userIdRef = useRef<string | null>(null)
-  userIdRef.current = user?.id ?? null
+  // Ref render paytida emas, effektda yangilanadi (react-hooks/refs).
+  useEffect(() => {
+    userIdRef.current = user?.id ?? null
+  }, [user])
 
   // Aktiv ChatPanel callbacklari (kanal → callback)
   const subscribersRef = useRef<Map<string, (msg: ChatMessage) => void>>(new Map())
@@ -127,7 +131,6 @@ export function UnreadProvider({ children }: { children: ReactNode }) {
       active = false
       conn?.stop().catch(() => {})
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- user ob'ekti login/logout da o'zgaradi
   }, [user])
 
   const markRead = useCallback((channel: string) => {

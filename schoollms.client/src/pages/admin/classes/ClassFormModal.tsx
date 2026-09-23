@@ -46,7 +46,6 @@ export function ClassFormModal({ open, onClose, onSubmit, initial }: Props) {
           }
         : empty,
     )
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- oyna ochilganda tozalanadi, quyida haqiqiy qiymat bilan to'ldiriladi (maqsadli)
     setHomeroomIds([])
     getTeachers().then(setTeachers)
     if (initial) {

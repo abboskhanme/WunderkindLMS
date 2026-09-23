@@ -6,7 +6,8 @@ import tseslint from 'typescript-eslint'
 import { defineConfig, globalIgnores } from 'eslint/config'
 
 export default defineConfig([
-  globalIgnores(['dist']),
+  // `ui-tg` — alohida Mini App loyihasi (o'z package.json va vite konfiguratsiyasi bor).
+  globalIgnores(['dist', 'src/pages/miniapp/ui-tg']),
   {
     files: ['**/*.{ts,tsx}'],
     extends: [

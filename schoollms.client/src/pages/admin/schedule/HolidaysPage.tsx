@@ -62,6 +62,7 @@ export function HolidaysPage() {
 
   const [year, setYear] = useState<number>(() => new Date().getFullYear())
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- tanlangan yil ro'yxatda qolmasa — birinchisiga o'tamiz (maqsadli)
     if (years.length && !years.includes(year)) setYear(years[0])
   }, [years, year])
 

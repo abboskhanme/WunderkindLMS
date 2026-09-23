@@ -80,11 +80,14 @@ function DashboardSection() {
       .finally(() => setLoading(false))
   }, [])
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- sana o'zgarganda ma'lumotni qayta yuklaymiz, yangi so'rovdan oldin "yuklanmoqda" holati (maqsadli)
   useEffect(() => load(date), [date, load])
 
   // Real-time: turniketdan yangi o'tish kelganda joriy kun dashboard'ini jonli yangilaymiz (SignalR).
   const reloadRef = useRef<() => void>(() => {})
-  reloadRef.current = () => load(date)
+  useEffect(() => {
+    reloadRef.current = () => load(date)
+  }, [date, load])
   useEffect(() => {
     let conn: HubConnection | null = null
     connectLiveTopic('turnstile', { turnstileChanged: () => reloadRef.current() })
@@ -293,6 +296,7 @@ function MonthlyGrid() {
       .finally(() => setLoading(false))
   }, [])
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- oy o'zgarganda ma'lumotni qayta yuklaymiz, yangi so'rovdan oldin "yuklanmoqda" holati (maqsadli)
   useEffect(() => load(month), [month, load])
 
   // Oydagi ish kunlari ("yyyy-MM-dd") — yakshanba (dam olish) chiqarib tashlanadi.

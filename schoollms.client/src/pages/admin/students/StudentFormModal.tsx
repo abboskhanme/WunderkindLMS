@@ -271,14 +271,12 @@ export function StudentFormModal({ open, onClose, onSubmit, initial, prefill, ti
       setNoClassYet(!initial.className)
       void loadCard(initial.id)
     } else {
-      /* eslint-disable react-hooks/set-state-in-effect -- yangi forma boshlash (maqsadli) */
       setForm(prefill ? withNameParts({ ...empty, ...prefill }) : empty)
       setSaved([])
       setPrimaryRelation('parent')
       setPrimaryNote('')
       setSecond(emptyGuardian)
       setNoClassYet(false)
-      /* eslint-enable react-hooks/set-state-in-effect */
     }
   }, [open, initial, loadCard, prefill])
 

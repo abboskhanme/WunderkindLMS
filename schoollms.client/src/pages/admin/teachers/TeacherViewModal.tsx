@@ -46,6 +46,7 @@ export function TeacherViewModal({ teacher, subjects, onClose }: Props) {
 
   useEffect(() => {
     if (!teacher) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- tanlov bo'shaganda eski natijani tozalaymiz (maqsadli)
       setCredentials(null)
       return
     }

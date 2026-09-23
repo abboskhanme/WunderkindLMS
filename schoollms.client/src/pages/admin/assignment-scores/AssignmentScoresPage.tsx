@@ -54,6 +54,7 @@ export function AssignmentScoresPage() {
 
   useEffect(() => {
     if (!classId) return
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- ma'lumotni qayta yuklaymiz, yangi so'rovdan oldin "yuklanmoqda" holati (maqsadli)
     setLoading(true)
     setSelected(null)
     getAssignmentScoreboard(classId)

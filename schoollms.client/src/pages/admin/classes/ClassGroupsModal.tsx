@@ -62,6 +62,7 @@ export function ClassGroupsModal({ open, classId, className, onClose }: Props) {
 
   useEffect(() => {
     if (!open || !classId) return
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- ma'lumotni qayta yuklaymiz, yangi so'rovdan oldin "yuklanmoqda" holati (maqsadli)
     setLoading(true)
     setError(null)
     getClassGroups(classId)

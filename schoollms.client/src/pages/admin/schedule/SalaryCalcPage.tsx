@@ -80,6 +80,7 @@ function SalaryCalcView() {
       .finally(() => setLoading(false))
   }, [])
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- oy o'zgarganda ma'lumotni qayta yuklaymiz, yangi so'rovdan oldin "yuklanmoqda" holati (maqsadli)
   useEffect(() => load(month), [month, load])
 
   // Joriy kiritilgan narxlar bo'yicha jonli qayta hisob (kelmagan kun darslari chegiriladi, ustama qo'shiladi).

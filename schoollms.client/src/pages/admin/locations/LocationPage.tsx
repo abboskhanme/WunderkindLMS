@@ -48,6 +48,7 @@ export function LocationPage() {
   const [classFilter, setClassFilter] = useState('all')
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- ma'lumotni qayta yuklaymiz, yangi so'rovdan oldin "yuklanmoqda" holati (maqsadli)
     setLoading(true)
     Promise.all([getStudentLocations(), getClasses()])
       .then(([r, c]) => {

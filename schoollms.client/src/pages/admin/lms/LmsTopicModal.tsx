@@ -33,6 +33,7 @@ export function LmsTopicModal({ open, editing, saving, onClose, onSave }: Props)
 
   useEffect(() => {
     if (open) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- oyna ochilganda formani tanlangan yozuv bilan sinxronlash (maqsadli)
       setTitle(editing?.title ?? '')
       setDescription(editing?.description ?? '')
       setVideoUrl(editing?.videoUrl ?? '')

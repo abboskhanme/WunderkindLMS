@@ -103,6 +103,7 @@ export function PaymentSplitModal({
   useEffect(() => {
     if (!open) return
     const controller = new AbortController()
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- ma'lumotni qayta yuklaymiz, yangi so'rovdan oldin "yuklanmoqda" holati (maqsadli)
     void load(controller.signal)
     return () => controller.abort()
   }, [open, load])

@@ -64,6 +64,7 @@ export function TeacherEvaluationPage() {
 
   // Sinf yoki fan o'zgarsa — eng so'nggi oy bilan yuklaymiz.
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- sinf yoki fan o'zgarganda ma'lumotni qayta yuklaymiz, yangi so'rovdan oldin "yuklanmoqda" holati (maqsadli)
     load(undefined, classId, subjectId)
   }, [classId, subjectId, load])
 

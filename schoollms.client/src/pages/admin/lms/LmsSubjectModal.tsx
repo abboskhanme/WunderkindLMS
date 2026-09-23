@@ -26,6 +26,7 @@ export function LmsSubjectModal({ open, editing, saving, onClose, onSave }: Prop
 
   useEffect(() => {
     if (open) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- oyna ochilganda formani tanlangan yozuv bilan sinxronlash (maqsadli)
       setTitle(editing?.title ?? '')
       setDescription(editing?.description ?? '')
       setUnlockMode(editing?.unlockMode ?? 'all')

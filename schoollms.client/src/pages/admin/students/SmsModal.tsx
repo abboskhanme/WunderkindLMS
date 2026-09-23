@@ -53,8 +53,8 @@ export function SmsModal({ open, onClose, recipients, filterScope }: Props) {
   const [confirmed, setConfirmed] = useState(false)
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- modal ochilganda holatni tozalaymiz (maqsadli)
     if (open) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- modal ochilganda holatni tozalaymiz (maqsadli)
       setMessage('')
       setError(null)
       setResult(null)
