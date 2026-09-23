@@ -46,6 +46,28 @@ function toIso(year: number, month: number, day: number): string {
   return `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
 }
 
+/**
+ * Qo'lda terilgan raqamlar → "kk.oo.yyyy" (nuqtalar o'zi qo'yiladi). Mijoz, 2026-09-23:
+ * "tug'ilgan kunini raqam bosish orqali ham kiritsa bo'ladigan qilish".
+ */
+function maskTyped(raw: string): string {
+  const digits = raw.replace(/\D/g, '').slice(0, 8)
+  if (digits.length <= 2) return digits
+  if (digits.length <= 4) return `${digits.slice(0, 2)}.${digits.slice(2)}`
+  return `${digits.slice(0, 2)}.${digits.slice(2, 4)}.${digits.slice(4)}`
+}
+
+/** "kk.oo.yyyy" → "YYYY-MM-DD", mavjud bo'lmagan kun (31.02) bo'lsa null. */
+function parseTyped(text: string): string | null {
+  const m = /^(\d{2})\.(\d{2})\.(\d{4})$/.exec(text)
+  if (!m) return null
+  const day = Number(m[1])
+  const month = Number(m[2]) - 1
+  const year = Number(m[3])
+  if (year < 1900 || month < 0 || month > 11 || day < 1 || day > daysInMonth(year, month)) return null
+  return toIso(year, month, day)
+}
+
 function todayIso(): string {
   const now = new Date()
   return toIso(now.getFullYear(), now.getMonth(), now.getDate())
@@ -101,6 +123,8 @@ export function DatePicker({
   title,
 }: DatePickerProps) {
   const [open, setOpen] = useState(false)
+  /** Terilayotgan matn; null — terilmayapti, maydon `value` ni ko'rsatadi. */
+  const [draft, setDraft] = useState<string | null>(null)
   const fieldRef = useRef<HTMLDivElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
 
@@ -206,6 +230,25 @@ export function DatePicker({
     setOpen(false)
   }
 
+  /** Klaviaturadan terish: to'liq va ruxsat etilgan sana bo'lsa — darhol qiymat bo'ladi. */
+  const type = (raw: string) => {
+    const text = maskTyped(raw)
+    setDraft(text)
+    if (text === '') {
+      onChange('')
+      return
+    }
+    const iso = parseTyped(text)
+    if (iso && !isDisabledDay(iso)) {
+      onChange(iso)
+      setViewYear(Number(iso.slice(0, 4)))
+      setViewMonth(Number(iso.slice(5, 7)) - 1)
+    }
+  }
+  // To'liq terilgan, lekin yaroqsiz yoki chegaradan tashqari sana — qizil chiziq.
+  const draftIso = draft !== null && draft.length === 10 ? parseTyped(draft) : undefined
+  const draftInvalid = draft !== null && draft.length === 10 && (draftIso === null || isDisabledDay(draftIso ?? ''))
+
   const blanks = leadingBlanks(viewYear, viewMonth)
   const total = daysInMonth(viewYear, viewMonth)
   const today = todayIso()
@@ -223,35 +266,43 @@ export function DatePicker({
     <div
       ref={fieldRef}
       id={id}
-      role="button"
-      tabIndex={disabled ? -1 : 0}
-      aria-label={ariaLabel ?? label}
       title={title}
-      aria-haspopup="dialog"
-      aria-expanded={open}
       aria-disabled={disabled}
-      onClick={() => !disabled && toggle()}
-      onKeyDown={(e) => {
-        if (disabled) return
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault()
-          toggle()
-        }
-      }}
+      // Maydonni bosish kalendarni ochadi; yozish esa ichidagi input'ga tushadi.
+      onClick={() => !disabled && !open && toggle()}
       className={cn(
-        'flex cursor-pointer items-center justify-between gap-2 rounded-lg border bg-white px-3 py-2 text-sm outline-none transition-colors',
+        'flex cursor-text items-center justify-between gap-2 rounded-lg border bg-white px-3 py-2 text-sm outline-none transition-colors focus-within:border-brand-400 focus-within:ring-2 focus-within:ring-brand-100',
         !hasOwnWidth && 'w-40',
-        invalid
+        invalid || draftInvalid
           ? 'border-red-300 focus:border-red-400 focus:ring-2 focus:ring-red-100'
           : 'border-slate-200 focus:border-brand-400 focus:ring-2 focus:ring-brand-100',
-        open && !invalid && 'border-brand-400 ring-2 ring-brand-100',
+        open && !invalid && !draftInvalid && 'border-brand-400 ring-2 ring-brand-100',
         disabled && 'cursor-not-allowed bg-slate-50 text-slate-400',
         className,
       )}
     >
-      <span className={cn('truncate tabular-nums', value ? 'text-slate-800' : 'text-slate-400')}>
-        {value ? display(value) : placeholder}
-      </span>
+      <input
+        type="text"
+        inputMode="numeric"
+        autoComplete="off"
+        disabled={disabled}
+        aria-label={ariaLabel ?? label}
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        aria-invalid={draftInvalid || invalid || undefined}
+        placeholder={placeholder}
+        value={draft ?? (value ? display(value) : '')}
+        onFocus={() => setDraft(value ? display(value) : '')}
+        onChange={(e) => type(e.target.value)}
+        onBlur={() => setDraft(null)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault()
+            setOpen(false)
+          }
+        }}
+        className="min-w-0 flex-1 bg-transparent tabular-nums text-slate-800 outline-none placeholder:text-slate-400 disabled:cursor-not-allowed"
+      />
 
       {clearable && value && !disabled ? (
         <button
@@ -266,7 +317,19 @@ export function DatePicker({
           <X className="h-3.5 w-3.5" />
         </button>
       ) : (
-        <CalendarGlyph className={cn('h-4 w-4 shrink-0', disabled ? 'text-slate-300' : 'text-slate-400')} />
+        <button
+          type="button"
+          tabIndex={-1}
+          aria-label="Kalendarni ochish"
+          disabled={disabled}
+          onClick={(e) => {
+            e.stopPropagation()
+            toggle()
+          }}
+          className="shrink-0 rounded-md p-0.5 transition-colors hover:bg-slate-100"
+        >
+          <CalendarGlyph className={cn('h-4 w-4', disabled ? 'text-slate-300' : 'text-slate-400')} />
+        </button>
       )}
     </div>
   )

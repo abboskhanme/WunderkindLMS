@@ -74,10 +74,11 @@ export function Sidebar({ open, onNavigate }: SidebarProps) {
       <nav className="flex-1 space-y-1 overflow-y-auto p-3">
         {items.map((item) =>
           item.children ? (
-            <NavGroup key={item.to} item={item} onNavigate={onNavigate} />
+            // `to` yakka emas: "Davomat" va "Future" guruhlari ikkalasi /admin/attendance ga qaraydi.
+            <NavGroup key={`${item.label}:${item.to}`} item={item} onNavigate={onNavigate} />
           ) : (
             <NavLink
-              key={item.to}
+              key={`${item.label}:${item.to}`}
               to={item.to}
               end={item.to === homeByRole[role]}
               onClick={onNavigate}
