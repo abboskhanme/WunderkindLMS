@@ -58,6 +58,8 @@ export interface StudentListPage {
 }
 
 /** Ro'yxat filtri. BARCHASI ixtiyoriy — bo'sh filtr bugungi ro'yxatning aynan o'zi. */
+export type StudentPlacement = 'inClass' | 'unassigned' | 'waiting' | 'leftFromClass'
+
 export interface StudentListFilter {
   state?: 'active' | 'archived' | 'all'
   search?: string
@@ -82,7 +84,11 @@ export interface StudentListFilter {
   archiveReasonId?: string
   ageFrom?: number
   ageTo?: number
-  balanceState?: 'debt' | 'paid'
+  balanceState?: 'debt' | 'paid' | 'credit'
+  /** Bosh sahifa kartalari bilan bir xil to'plamlar (server `Placement`). */
+  placement?: StudentPlacement
+  /** `ever` — kamida bitta to'lov qilganlar, `thisMonth` — birinchi to'lovi shu oyda. */
+  firstPayment?: 'ever' | 'thisMonth'
   minDebt?: number
   balanceFrom?: number
   balanceTo?: number

@@ -191,6 +191,39 @@ public sealed class StudentListQuery(IAppDbContext db)
                 : q.Where(s => !live.Any(d => d.StudentId == s.Id));
         }
 
+        // Bosh sahifa kartalari — `DashboardController` dagi hisob bilan bir xil ta'rif.
+        var classNames = classes.Select(c => c.Name).Distinct().ToList();
+        switch (Normalize(f.Placement))
+        {
+            case "inclass":
+                q = q.Where(s => classNames.Contains(s.ClassName));
+                break;
+            case "unassigned":
+                q = q.Where(s => !classNames.Contains(s.ClassName));
+                break;
+            case "waiting":
+                q = q.Where(s => !classNames.Contains(s.ClassName) && s.TargetGrade != null);
+                break;
+            case "leftfromclass":
+                q = q.Where(s => !classNames.Contains(s.ClassName)
+                                 && db.ClassMemberships.Any(m => m.StudentId == s.Id && m.LeftOn != null));
+                break;
+        }
+
+        var livePayments = db.Payments.AsNoTracking().Where(p => p.ReversalOf == null);
+        switch (Normalize(f.FirstPayment))
+        {
+            case "ever":
+                q = q.Where(s => livePayments.Any(p => p.StudentId == s.Id));
+                break;
+            case "thismonth":
+                var payToday = AppClock.Today;
+                var monthStart = AppClock.InstantOn(new DateOnly(payToday.Year, payToday.Month, 1));
+                q = q.Where(s => livePayments.Any(p => p.StudentId == s.Id)
+                                 && livePayments.Where(p => p.StudentId == s.Id).Min(p => p.ReceivedAt) >= monthStart);
+                break;
+        }
+
         var holders = CertificateService.HolderStudentIds(
             db, CertificateService.ParseIds(f.CertificateTypeIds), f.CertificateTeacherId);
         if (holders is not null) q = q.Where(s => holders.Contains(s.Id));
@@ -301,6 +334,7 @@ public sealed class StudentListQuery(IAppDbContext db)
         var balanceState = Normalize(f.BalanceState);
         if (balanceState == "debt") rows = rows.Where(r => r.Balance < 0);
         else if (balanceState == "paid") rows = rows.Where(r => r.Balance >= 0);
+        else if (balanceState == "credit") rows = rows.Where(r => r.Balance > 0);
 
         if (f.MinDebt is { } minDebt && minDebt > 0)
             rows = rows.Where(r => -r.Balance >= minDebt);

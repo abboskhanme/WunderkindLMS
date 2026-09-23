@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { StudentViewModal } from './StudentViewModal'
 import {
   Plus,
@@ -35,6 +35,7 @@ import {
   type StudentListPage,
   type StudentListRow,
   type StudentSortKey,
+  type StudentPlacement,
 } from '@/api/services/studentSearch'
 import { getStudentStatuses, setStudentStatus, type StudentStatusTag } from '@/api/services/studentStatuses'
 import { getArchiveReasons, type ArchiveReason } from '@/api/services/archiveReasons'
@@ -124,6 +125,20 @@ function toStudent(row: StudentListRow): Student {
   }
 }
 
+const PLACEMENTS: StudentPlacement[] = ['inClass', 'unassigned', 'waiting', 'leftFromClass']
+
+/** URL'dagi (bosh sahifa kartasidan kelgan) filtrlar — faqat taniqli qiymatlar olinadi. */
+function filterFromUrl(params: URLSearchParams): StudentListFilter {
+  const f: StudentListFilter = {}
+  const placement = params.get('placement')
+  if (placement && (PLACEMENTS as string[]).includes(placement)) f.placement = placement as StudentPlacement
+  const balance = params.get('balance')
+  if (balance === 'debt' || balance === 'paid' || balance === 'credit') f.balanceState = balance
+  const firstPayment = params.get('firstPayment')
+  if (firstPayment === 'ever' || firstPayment === 'thisMonth') f.firstPayment = firstPayment
+  return f
+}
+
 /**
  * Arxiv EduSchool'da alohida menyu yozuvi (`Arxiv o'quvchilar`), bizda esa
  * o'sha ro'yxatning tabi. Ikkovini bir joyda ushlab turish uchun sahifa
@@ -135,7 +150,16 @@ export function StudentsPage({ initialTab = 'active' }: { initialTab?: Tab } = {
   const navigate = useNavigate()
 
   const [tab, setTab] = useState<Tab>(initialTab)
-  const [filter, setFilter] = useState<StudentListFilter>({})
+  // Bosh sahifa kartalari shu ro'yxatni filtr bilan ochadi (`?placement=unassigned`).
+  const [searchParams] = useSearchParams()
+  const urlQuery = searchParams.toString()
+  const [filter, setFilter] = useState<StudentListFilter>(() => filterFromUrl(searchParams))
+  // Sahifa ochiq turganda boshqa karta/menyu bosilsa (URL o'zgarsa) — filtr ham shunga almashadi.
+  const [seenQuery, setSeenQuery] = useState(urlQuery)
+  if (seenQuery !== urlQuery) {
+    setSeenQuery(urlQuery)
+    setFilter(filterFromUrl(searchParams))
+  }
   const [sortBy, setSortBy] = useState<StudentSortKey | undefined>(undefined)
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc')
   const [pageNo, setPageNo] = useState(1)

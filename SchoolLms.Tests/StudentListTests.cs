@@ -198,6 +198,52 @@ public class StudentListTests(ApiFixture fixture)
         Assert.Equal(0m, page.TotalCredit);
     }
 
+    /// <summary>
+    /// Bosh sahifa kartalari (Aktiv / Sinfga qo'shilmagan / Kutayotgan / Sinfdan chiqarilgan)
+    /// ro'yxatni shu filtr bilan ochadi — to'plam dashboard ta'rifi bilan AYNAN bir xil bo'lishi shart.
+    /// </summary>
+    [Fact]
+    public async Task Sinfdagi_holat_filtri_dashboard_kartalari_bilan_bir_xil()
+    {
+        using var client = await fixture.Api.ClientAsAsync(Roles.Admin);
+        var tag = Tag();
+        var cls = new SchoolClass { Name = $"P-{tag}", Grade = 5 };
+        await fixture.Api.WithDbAsync(async db =>
+        {
+            db.Classes.Add(cls);
+            await db.SaveChangesAsync();
+        });
+
+        var inClass = await SeedAsync(tag, "Sinfda", className: cls.Name);
+        var noClass = await SeedAsync(tag, "Sinfsiz");               // mavjud bo'lmagan sinf nomi
+        var waiting = await SeedAsync(tag, "Kutayotgan");
+        var left = await SeedAsync(tag, "Chiqarilgan");
+        await fixture.Api.WithDbAsync(async db =>
+        {
+            var w = await db.Students.FindAsync(waiting);
+            w!.ClassName = "";
+            w.TargetGrade = 6;
+            var l = await db.Students.FindAsync(left);
+            l!.ClassName = "";
+            db.ClassMemberships.Add(new ClassMembership
+            {
+                StudentId = left,
+                ClassId = cls.Id,
+                JoinedOn = new DateOnly(2025, 9, 1),
+                LeftOn = new DateOnly(2026, 1, 10),
+            });
+            await db.SaveChangesAsync();
+        });
+
+        await AssertIdsAsync(client, $"{Search}?search={tag}&placement=inClass", inClass);
+        await AssertIdsAsync(client, $"{Search}?search={tag}&placement=unassigned", noClass, waiting, left);
+        await AssertIdsAsync(client, $"{Search}?search={tag}&placement=waiting", waiting);
+        await AssertIdsAsync(client, $"{Search}?search={tag}&placement=leftFromClass", left);
+        // Pul yo'q — to'lov qilganlar ham, haqdorlar ham bo'sh.
+        await AssertIdsAsync(client, $"{Search}?search={tag}&firstPayment=ever");
+        await AssertIdsAsync(client, $"{Search}?search={tag}&balanceState=credit");
+    }
+
     /// <summary>K-4 — shartnomasi bor / yo'q filtri va shartnoma raqami ustuni.</summary>
     [Fact]
     public async Task Shartnoma_filtri_va_raqam_ustuni()

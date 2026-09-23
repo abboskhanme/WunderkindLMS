@@ -131,9 +131,9 @@ export function TodayMoneyStat({ kind }: { kind: 'in' | 'out' }) {
   const { data, error } = useAsync(() => getFinanceDashboard(todayIso(), todayIso()), [])
   const value = error ? '—' : data ? formatMoney(kind === 'in' ? data.inflow.current : data.outflow.current) : '...'
   return kind === 'in' ? (
-    <StatCard label="Bugungi kirim" value={value} icon={ArrowDownCircle} iconBg="bg-emerald-50" iconColor="text-emerald-600" hint={error ?? undefined} />
+    <StatCard to="/admin/finance/reports" label="Bugungi kirim" value={value} icon={ArrowDownCircle} iconBg="bg-emerald-50" iconColor="text-emerald-600" hint={error ?? undefined} />
   ) : (
-    <StatCard label="Bugungi chiqim" value={value} icon={ArrowUpCircle} iconBg="bg-red-50" iconColor="text-red-600" hint={error ?? undefined} />
+    <StatCard to="/admin/finance/reports" label="Bugungi chiqim" value={value} icon={ArrowUpCircle} iconBg="bg-red-50" iconColor="text-red-600" hint={error ?? undefined} />
   )
 }
 
@@ -144,6 +144,7 @@ export function CashBalanceStat() {
   const total = active.reduce((s, b) => s + b.balance, 0)
   return (
     <StatCard
+      to="/cashier"
       label="Kassa balansi"
       value={error ? '—' : data ? formatMoney(total) : '...'}
       icon={Landmark}

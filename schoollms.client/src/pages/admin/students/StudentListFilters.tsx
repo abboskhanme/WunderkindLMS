@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Award, ChevronDown, Search, SlidersHorizontal, X } from 'lucide-react'
-import type { StudentListFilter } from '@/api/services/studentSearch'
+import type { StudentListFilter, StudentPlacement } from '@/api/services/studentSearch'
 import type { StudentStatusTag } from '@/api/services/studentStatuses'
 import type { ArchiveReason } from '@/api/services/archiveReasons'
 import type { CertificateType, IssuingTeacher } from '@/api/services/certificates'
@@ -139,13 +139,40 @@ export function StudentListFilters({
         <select
           value={filter.balanceState ?? ''}
           onChange={(e) =>
-            onChange({ balanceState: (text(e.target.value) as 'debt' | 'paid' | undefined) })
+            onChange({ balanceState: (text(e.target.value) as 'debt' | 'paid' | 'credit' | undefined) })
           }
           className={control}
         >
           <option value="">Barcha balans</option>
           <option value="debt">Qarzdorlar</option>
           <option value="paid">Qarzsizlar</option>
+          <option value="credit">Haqdorlar (avansi bor)</option>
+        </select>
+
+        {!archived && (
+          <select
+            value={filter.placement ?? ''}
+            onChange={(e) => onChange({ placement: text(e.target.value) as StudentPlacement | undefined })}
+            className={control}
+            title="Sinfdagi holati"
+          >
+            <option value="">Sinfli va sinfsiz</option>
+            <option value="inClass">Sinfda o'qiyotganlar</option>
+            <option value="unassigned">Sinfga qo'shilmaganlar</option>
+            <option value="waiting">Kutayotganlar</option>
+            <option value="leftFromClass">Sinfdan chiqarilganlar</option>
+          </select>
+        )}
+
+        <select
+          value={filter.firstPayment ?? ''}
+          onChange={(e) => onChange({ firstPayment: text(e.target.value) as 'ever' | 'thisMonth' | undefined })}
+          className={control}
+          title="To'lov qilganmi"
+        >
+          <option value="">Barcha to'lovlar</option>
+          <option value="ever">To'lov qilganlar</option>
+          <option value="thisMonth">Birinchi to'lovi shu oyda</option>
         </select>
 
         {statuses.length > 0 && (

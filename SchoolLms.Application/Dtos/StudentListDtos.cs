@@ -85,9 +85,24 @@ public sealed class StudentListFilter
 
     /// <summary>
     /// <c>debt</c> = qarzdorlar (qoldiq &lt; 0), <c>paid</c> = qarzsizlar
-    /// (qoldiq &gt;= 0). Bugungi ekrandagi "Balans" tanlovi bilan bir xil.
+    /// (qoldiq &gt;= 0), <c>credit</c> = haqdorlar (qoldiq &gt; 0). Bugungi ekrandagi "Balans" tanlovi bilan bir xil.
     /// </summary>
     public string? BalanceState { get; set; }
+
+    /// <summary>
+    /// Bosh sahifa kartalari bilan AYNAN bir xil to'plamlar (karta bosilganda shu ro'yxat ochiladi):
+    /// <c>inClass</c> = mavjud sinfda o'qiyotgan ("Aktiv o'quvchilar"),
+    /// <c>unassigned</c> = sinfi yo'q yoki sinfi o'chirilgan ("Sinfga qo'shilmagan"),
+    /// <c>waiting</c> = sinfsiz, lekin mo'ljaldagi darajasi bor ("Kutayotgan"),
+    /// <c>leftFromClass</c> = sinfsiz va yopilgan sinf a'zoligi bor ("Sinfdan chiqarilgan").
+    /// </summary>
+    public string? Placement { get; set; }
+
+    /// <summary>
+    /// <c>ever</c> = kamida bitta (bekor qilinmagan) to'lov qilganlar,
+    /// <c>thisMonth</c> = birinchi to'lovi shu oyda bo'lganlar ("Birinchi to'lov qilganlar").
+    /// </summary>
+    public string? FirstPayment { get; set; }
 
     /// <summary>Eng kam qarz (musbat son): faqat shu summadan ko'p qarzi borlar.</summary>
     public decimal? MinDebt { get; set; }

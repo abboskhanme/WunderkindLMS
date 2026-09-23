@@ -83,11 +83,18 @@ export function AdminDashboard() {
   // bloklari turadi. Yangi karta qo'shilsa, u shu ro'yxatga qo'shiladi.
   const topCards = [
     on('students') && (
-      <StatCard key="students" label="Jami o'quvchilar" value={stats.studentsCount.toLocaleString()} icon={Users} />
+      <StatCard
+        key="students"
+        to="/admin/students"
+        label="Jami o'quvchilar"
+        value={stats.studentsCount.toLocaleString()}
+        icon={Users}
+      />
     ),
     on('unassigned') && (
       <StatCard
         key="unassigned"
+        to="/admin/students?placement=unassigned"
         label="Sinfga qo'shilmagan"
         value={stats.unassignedCount}
         icon={UserMinus}
@@ -98,6 +105,7 @@ export function AdminDashboard() {
     on('leftFromClass') && (
       <StatCard
         key="leftFromClass"
+        to="/admin/students?placement=leftFromClass"
         label="Sinfdan chiqarilgan"
         value={num(stats.leftFromClassCount)}
         icon={UserX}
@@ -109,6 +117,7 @@ export function AdminDashboard() {
     on('classes') && (
       <StatCard
         key="classes"
+        to="/admin/classes"
         label="Jami sinflar"
         value={stats.classesCount}
         icon={School}
@@ -119,6 +128,7 @@ export function AdminDashboard() {
     on('active') && (
       <StatCard
         key="active"
+        to="/admin/students?placement=inClass"
         label="Aktiv o'quvchilar"
         value={num(stats.activeCount)}
         icon={UserCheck}
@@ -130,6 +140,7 @@ export function AdminDashboard() {
     on('waiting') && (
       <StatCard
         key="waiting"
+        to="/admin/students?placement=waiting"
         label="Kutayotgan o'quvchilar"
         value={num(stats.waitingCount)}
         icon={Hourglass}
@@ -141,6 +152,7 @@ export function AdminDashboard() {
     on('archived') && (
       <StatCard
         key="archived"
+        to="/admin/students/arxiv"
         label="Arxiv o'quvchilar"
         value={stats.archivedCount}
         icon={Archive}
@@ -151,6 +163,7 @@ export function AdminDashboard() {
     on('credit') && (
       <StatCard
         key="credit"
+        to="/admin/students?balance=credit"
         label="Haqdorlar"
         value={stats.creditCount}
         icon={Wallet}
@@ -162,6 +175,7 @@ export function AdminDashboard() {
     on('debtors') && (
       <StatCard
         key="debtors"
+        to="/admin/finance/debtors"
         label="Qarzdorlar"
         value={stats.debtorCount}
         icon={AlertTriangle}
@@ -172,6 +186,7 @@ export function AdminDashboard() {
     on('firstPayment') && (
       <StatCard
         key="firstPayment"
+        to="/admin/students?firstPayment=ever"
         label="Birinchi to'lov qilganlar"
         value={stats.paidAtLeastOnceCount}
         icon={BadgeCheck}
@@ -190,6 +205,7 @@ export function AdminDashboard() {
     on('teachers') && (
       <StatCard
         key="teachers"
+        to="/admin/teachers"
         label="O'qituvchilar"
         value={stats.teachersCount}
         icon={GraduationCap}
@@ -200,6 +216,7 @@ export function AdminDashboard() {
     on('averageGrade') && (
       <StatCard
         key="averageGrade"
+        to="/admin/grades-report/school"
         label="O'rtacha baho"
         value={stats.averageGrade.toFixed(1)}
         icon={Star}
@@ -211,6 +228,7 @@ export function AdminDashboard() {
     on('attendanceRate') && (
       <StatCard
         key="attendanceRate"
+        to="/admin/attendance/analytics"
         label="Umumiy davomat"
         value={stats.attendanceRate == null ? '—' : `${stats.attendanceRate}%`}
         icon={CalendarCheck}
