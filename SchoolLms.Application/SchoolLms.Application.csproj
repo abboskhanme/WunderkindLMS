@@ -42,10 +42,17 @@
          e'tiborsiz minor yangilanish o'zgartirib yuborishi mumkin emas.
          Litsenziya turi kodda: ReceiptDocument statik konstruktorida. -->
     <PackageReference Include="QuestPDF" Version="2026.8.0" />
+    <!-- Chekdagi QR kod (mijoz, 2026-09-24). QRCoder — MIT litsenziya, bepul, sof managed kod
+         (System.Drawing'ga bog'liq emas: PngByteQRCode). -->
+    <PackageReference Include="QRCoder" Version="1.6.0" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\SchoolLms.Domain\SchoolLms.Domain.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Chekdagi maktab logosi (mijoz bergan fayl, 2026-09-24) — PDF chizmasi uchun. -->
+    <EmbeddedResource Include="Billing/Assets/receipt-logo.jpg" LogicalName="SchoolLms.ReceiptLogo.jpg" />
+  </ItemGroup>
 </Project>

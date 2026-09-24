@@ -212,29 +212,9 @@ public sealed class PaymentService(
                 $"Noma'lum to'lov usuli: '{request.Method}'. "
                 + $"Ruxsat etilganlar: {string.Join(", ", PaymentMethod.All)}.");
 
-        var lines = request.Allocations ?? [];
-        var invoiceIds = new List<Guid>(lines.Count);
-        var allocated = 0m;
-        foreach (var line in lines)
-        {
-            var lineAmount = Money(line.Amount, "Taqsimot summasi");
-            if (lineAmount <= 0m)
-                throw PaymentException.Invalid("invalid_allocation_amount",
-                    "Taqsimotdagi har bir summa musbat bo'lishi shart.");
-            if (invoiceIds.Contains(line.InvoiceId))
-                throw PaymentException.Invalid("duplicate_invoice",
-                    "Bitta hisob-faktura taqsimotda ikki marta uchramasligi kerak — "
-                    + "qatorlarni birlashtiring.");
-            invoiceIds.Add(line.InvoiceId);
-            allocated += lineAmount;
-        }
-
-        // Taqsimlanmagan qoldiq RUXSAT ETILADI (avans, docs/ASSUMPTIONS.md Q15) —
-        // oshib ketishi esa yo'q. Bu tekshiruv ikkinchi qavat: birinchisi bazadagi
-        // `payment_allocations_total` trigger'i, u ilova chetlab o'tilsa ham ishlaydi.
-        if (allocated > amount)
-            throw PaymentException.Invalid("allocation_exceeds_amount",
-                $"Taqsimot yig'indisi ({allocated}) to'lov summasidan ({amount}) oshib ketdi.");
+        // TAQSIMOT KLIYENTDAN OLINMAYDI (mijoz, 2026-09-24): "to'lov ustuvorligi majburiy o'zgarmas ...
+        // eski oy to'lovlari yopilishi kerak". `request.Allocations` endi e'tiborga olinmaydi — pul
+        // qaysi qarzga tushishini FAQAT server hal qiladi (pastda, 4-qadam, `PlanAllocations`).
 
         // ---- 2. O'quvchi ----
         var student = await db.Students.AsNoTracking()
@@ -268,35 +248,24 @@ public sealed class PaymentService(
         // (id bo'yicha saralab) qulflanadi — ikkita to'lov bir xil ikkita
         // hisob-fakturaga TESKARI tartibda taqsimlasa ham qarama-qarshi
         // (deadlock) holat bo'lmasin.
-        foreach (var invoiceId in invoiceIds.OrderBy(id => id))
+        // Endi o'quvchining BARCHA ochiq hisob-fakturalari qulflanadi: qaysi biriga pul tushishini server
+        // qulf ostida o'zi hisoblaydi, shuning uchun parallel to'lov eski qoldiqni ko'rib qolmaydi.
+        var openIds = await db.Invoices.AsNoTracking()
+            .Where(i => i.StudentId == student.Id && i.Status != InvoiceStatus.Void)
+            .Select(i => i.Id).ToListAsync(ct);
+        foreach (var invoiceId in openIds.OrderBy(id => id))
             await ef.Database.ExecuteSqlRawAsync(InvoiceLockSql, [InvoiceService.VoidLockKey(invoiceId)], ct);
 
         // Qulf OSTIDA qayta o'qiladi — yuqoridagi izohga qarang.
         // Kuzatiladigan (tracked) holda o'qiymiz: status keyin shu obyektlarda yangilanadi.
-        var invoices = await db.Invoices.Where(i => invoiceIds.Contains(i.Id)).ToListAsync(ct);
-        var paidBefore = await PaidByInvoiceAsync(invoiceIds, ct);
-
-        foreach (var line in lines)
-        {
-            var invoice = invoices.FirstOrDefault(i => i.Id == line.InvoiceId)
-                ?? throw PaymentException.Invalid("invoice_not_found",
-                    $"Hisob-faktura topilmadi: {line.InvoiceId}.");
-
-            if (!string.Equals(invoice.StudentId, student.Id, StringComparison.Ordinal))
-                throw PaymentException.Invalid("invoice_other_student",
-                    "Hisob-faktura boshqa o'quvchiga tegishli. Bitta to'lov — bitta o'quvchi.");
-
-            if (invoice.Status == InvoiceStatus.Void)
-                throw PaymentException.Invalid("invoice_void",
-                    "Bekor qilingan (void) hisob-fakturaga pul taqsimlab bo'lmaydi.");
-
-            var remaining = invoice.Amount - invoice.Discount - paidBefore.GetValueOrDefault(invoice.Id);
-            if (line.Amount > remaining)
-                throw PaymentException.Invalid("allocation_exceeds_invoice",
-                    $"Hisob-fakturaga ({invoice.PeriodMonth:yyyy-MM}) qoldig'idan ({remaining}) "
-                    + $"ko'p summa ({line.Amount}) yo'naltirildi. Ortiqcha pul taqsimlanmagan "
-                    + "qoldiq (avans) bo'lib qolishi mumkin.");
-        }
+        var invoices = await db.Invoices
+            .Where(i => i.StudentId == student.Id && i.Status != InvoiceStatus.Void).ToListAsync(ct);
+        var paidBefore = await PaidByInvoiceAsync(invoices.Select(i => i.Id).ToList(), ct);
+        var codes = await CategoryCodesAsync(ct);
+        var lines = PlanAllocations(
+            invoices.Select(i => (i.Id, i.PeriodMonth, codes.GetValueOrDefault(i.CategoryId, FeeCategoryCode.Other),
+                i.Amount - i.Discount - paidBefore.GetValueOrDefault(i.Id))),
+            amount);
 
         // Chek raqami ham SHU tranzaksiyada olinadi: bekor qilingan so'rov
         // raqamda teshik qoldirmasin (SPEC §4.2, uzluksizlik — endi KASSA
@@ -571,26 +540,13 @@ public sealed class PaymentService(
 
         var paid = await PaidByInvoiceAsync(rows.Select(r => r.Id).ToList(), ct);
 
-        // TAQSIMLASH TARTIBI (mijoz qoidasi, 2026-09-18)
-        // --------------------------------------------------
-        //  1. Eng ESKI oy birinchi — qarz eskirmasin.
-        //  2. Oy ICHIDA: `tuition` (o'qish to'lovi) ENG OXIRI, qolganlari
-        //     qoldig'i bo'yicha KICHIGIDAN boshlab.
-        //
-        //  Nega: o'qish to'lovi eng katta summa. Uni birinchi yopsak, mayda
-        //  qarzlar (avtobus, ovqat, yotoqxona) uzuq-yuluq bo'lib qolaveradi va
-        //  ota-ona bir nechta ochiq qator ko'radi. Aksincha qilsak — mayda
-        //  qatorlar yopiladi, ochiq qolgani BITTA katta qator bo'ladi.
-        //
-        //  Ilgari tartib `c.Code` (alifbo) edi va `tuition` tasodifan oxirida
-        //  turardi; toifa kodi o'zgarsa qoida jimgina buzilardi. Endi u aniq.
+        // TAQSIMLASH TARTIBI — `PriorityOrder` (to'lovni qabul qilishda ham AYNAN shu tartib ishlaydi).
         var ordered = rows
             .Select(r => new { Row = r, Remaining = r.Payable - paid.GetValueOrDefault(r.Id) })
             .Where(x => x.Remaining > 0m)
             .OrderBy(x => x.Row.PeriodMonth)
-            .ThenBy(x => x.Row.CategoryCode == FeeCategoryCode.Tuition ? 1 : 0)
-            .ThenBy(x => x.Remaining)
-            .ThenBy(x => x.Row.CategoryCode, StringComparer.Ordinal)
+            .ThenBy(x => CategoryRank(x.Row.CategoryCode))
+            .ThenBy(x => x.Row.Id)
             .ToList();
 
         var left = decimal.Round(amount, MoneyScale);
@@ -614,6 +570,49 @@ public sealed class PaymentService(
     // -----------------------------------------------------------------
     //  Ichki yordamchilar
     // -----------------------------------------------------------------
+
+    /// <summary>
+    /// TO'LOV USTUVORLIGI — MAJBURIY, O'ZGARMAS (mijoz, 2026-09-24; 2026-09-18 dagi "o'qish eng oxiri"
+    /// qoidasining o'rniga): "abonimentlar ichidan eng birinchi o'quv to'lovi yopilsin, bunda vaqt bo'yicha
+    /// ... eski oy aboniment turidan qat'iy nazar eski oy to'lovlari yopilishi kerak".
+    /// <list type="number">
+    /// <item>Eng ESKI oy birinchi — toifasidan qat'iy nazar.</item>
+    /// <item>Oy ICHIDA: O'qish → Yotoqxona → Avtobus → Ovqat → Boshqa (mijoz tanlovi, 2026-09-24).</item>
+    /// </list>
+    /// Taklif (<see cref="SuggestAllocationAsync"/>), to'lovni qabul qilish (<see cref="AcceptAsync"/>) va
+    /// avansni yangi hisob-fakturaga yopish (<see cref="InvoiceService"/>) shu bitta qoidadan foydalanadi.
+    /// </summary>
+    public static int CategoryRank(string categoryCode) => categoryCode switch
+    {
+        FeeCategoryCode.Tuition => 0,
+        FeeCategoryCode.Dormitory => 1,
+        FeeCategoryCode.Bus => 2,
+        FeeCategoryCode.Meals => 3,
+        _ => 4,
+    };
+
+    /// <summary>
+    /// <paramref name="amount"/> ni ochiq qarzlarga <see cref="CategoryRank"/> tartibida taqsimlaydi.
+    /// Qarzdan ortgani taqsimlanmaydi — u avans bo'lib qoladi.
+    /// </summary>
+    public static List<AllocationRequest> PlanAllocations(
+        IEnumerable<(Guid Id, DateOnly PeriodMonth, string CategoryCode, decimal Remaining)> open, decimal amount)
+    {
+        var left = decimal.Round(amount, MoneyScale);
+        var plan = new List<AllocationRequest>();
+        foreach (var x in open.Where(x => x.Remaining > 0m)
+                     .OrderBy(x => x.PeriodMonth).ThenBy(x => CategoryRank(x.CategoryCode)).ThenBy(x => x.Id))
+        {
+            if (left <= 0m) break;
+            var part = Math.Min(x.Remaining, left);
+            plan.Add(new AllocationRequest(x.Id, part));
+            left -= part;
+        }
+        return plan;
+    }
+
+    private async Task<Dictionary<Guid, string>> CategoryCodesAsync(CancellationToken ct) =>
+        await db.FeeCategories.AsNoTracking().ToDictionaryAsync(c => c.Id, c => c.Code, ct);
 
     /// <summary>
     /// HAQIQIY taqsimotlar: storno qatorlarining o'zi (<c>reversal_of</c> to'la)

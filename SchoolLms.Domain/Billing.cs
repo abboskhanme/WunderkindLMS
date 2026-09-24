@@ -53,9 +53,8 @@ namespace SchoolLms.Domain;
 public static class FeeCategoryCode
 {
     /// <summary>
-    /// O'qish to'lovi. To'lovni taqsimlashda ATAYLAB ENG OXIRGI o'rinda turadi
-    /// (<see cref="SchoolLms.Application.Billing.PaymentService"/> dagi izoh):
-    /// u eng katta summa, shuning uchun mayda qarzlar avval yopiladi.
+    /// O'qish to'lovi. Oy ichida taqsimlashda BIRINCHI o'rinda turadi (mijoz, 2026-09-24) —
+    /// tartib: <see cref="SchoolLms.Application.Billing.PaymentService.CategoryRank"/>.
     /// </summary>
     public const string Tuition = "tuition";
     public const string Bus = "bus";
@@ -227,6 +226,14 @@ public class Payment
     public DateTimeOffset ReceivedAt { get; set; }
     /// <summary>Storno: qaysi to'lovni bekor qilmoqda. null = oddiy to'lov.</summary>
     public Guid? ReversalOf { get; set; }
+
+    /// <summary>
+    /// Chekdagi QR kodning O'ZGARMAS kaliti (mijoz, 2026-09-24): QR skanerlanganda
+    /// <c>/r/{token}</c> sahifasi shu to'lov haqida ma'lumot beradi. 128 bitli tasodifiy qiymat —
+    /// chek raqami yoki id'dan taxmin qilib bo'lmaydi, shuning uchun boshqa cheklar ochilmaydi.
+    /// Yaratilganda bir marta beriladi va hech qachon o'zgarmaydi (payments jadvaliga UPDATE yo'q).
+    /// </summary>
+    public string ReceiptToken { get; set; } = Guid.NewGuid().ToString("N");
 }
 
 /// <summary>

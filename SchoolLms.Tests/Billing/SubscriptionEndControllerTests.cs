@@ -136,8 +136,9 @@ public class SubscriptionEndControllerTests(ApiFixture fixture)
                 .Select(i => i.Id).SingleAsync();
         }
 
-        // Oktyabr oyiga to'lov — haqiqiy PaymentService orqali (kassa smenasi bilan).
-        await PayInvoiceAsync(studentId, octInvoiceId, 500_000m);
+        // Ikki oylik to'lov — haqiqiy PaymentService orqali. Ustuvorlik majburiy (2026-09-24): pul avval
+        // sentyabrni, keyin oktyabrni yopadi, shuning uchun oktyabrga 500 000 tushishi uchun 1 000 000 to'lanadi.
+        await PayInvoiceAsync(studentId, octInvoiceId, 1_000_000m);
 
         await using var check = NewDb();
         var service = new SubscriptionService(check, TestAudit(check), InvoicesFor(check));

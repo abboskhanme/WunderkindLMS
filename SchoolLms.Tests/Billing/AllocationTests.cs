@@ -340,9 +340,9 @@ public class AllocationTests(ApiFixture fixture) : IAsyncLifetime
     // =================================================================
 
     /// <summary>
-    /// IZOLYATSIYA: bir o'quvchining puli BOSHQASINING qarzini yopa olmaydi
-    /// (§8.1 Q14 — bitta to'lov, bitta o'quvchi). Rad etilishi kifoya emas:
-    /// bazada hech qanday iz qolmasligi ham tekshiriladi.
+    /// IZOLYATSIYA: bir o'quvchining puli BOSHQASINING qarzini yopa olmaydi (§8.1 Q14). Taqsimotni endi server
+    /// o'zi hisoblaydi (2026-09-24), shuning uchun kliyent begona hisob-fakturani so'rasa ham pul faqat
+    /// O'ZINING qarziga tushadi — begona hisob-fakturada hech qanday iz qolmaydi.
     /// </summary>
     [Fact]
     public async Task Boshqa_oquvchining_hisob_fakturasiga_pul_taqsimlanmaydi()
@@ -356,33 +356,26 @@ public class AllocationTests(ApiFixture fixture) : IAsyncLifetime
         await Invoices(db).AccrueMonthAsync(ThisMonth, world.ActorId);
         var theirs = await db.Invoices.AsNoTracking().SingleAsync(i => i.StudentId == stranger);
 
-        var ledgerBefore = await db.LedgerEntries.CountAsync();
-
-        var ex = await Assert.ThrowsAsync<PaymentException>(() => Payments(db).AcceptAsync(
+        await Payments(db).AcceptAsync(
             new AcceptPaymentRequest(
                 world.StudentId, 300_000m, PaymentMethod.Cash, null,
                 [new AllocationRequest(theirs.Id, 300_000m)]),
-            world.CashierId));
-
-        Assert.Equal("invoice_other_student", ex.Code);
-        Assert.Equal(PaymentError.Invalid, ex.Error);
+            world.CashierId);
 
         await using var check = NewDb();
-        Assert.Empty(await check.Payments.AsNoTracking().ToListAsync());
-        Assert.Empty(await check.PaymentAllocations.AsNoTracking().ToListAsync());
-        Assert.Equal(ledgerBefore, await check.LedgerEntries.CountAsync());
-
-        // O'zganing oyi tegilmagan; o'zimizniki ham ochiq qolgan.
+        var allocation = Assert.Single(await check.PaymentAllocations.AsNoTracking().ToListAsync());
+        Assert.Equal(mine, allocation.InvoiceId);
+        Assert.Equal(300_000m, allocation.Amount);
         Assert.Equal(InvoiceStatus.Open,
             (await check.Invoices.AsNoTracking().SingleAsync(i => i.Id == theirs.Id)).Status);
-        Assert.Equal(InvoiceStatus.Open,
+        Assert.Equal(InvoiceStatus.Partial,
             (await check.Invoices.AsNoTracking().SingleAsync(i => i.Id == mine)).Status);
+        await AssertLedgerBalancedAsync(check);
     }
 
     /// <summary>
-    /// Bitta hisob-faktura taqsimotda IKKI marta kelsa — rad. Aks holda
-    /// "qoldiqdan oshmasin" tekshiruvi har qatorni alohida ko'rib, jami esa
-    /// qoldiqdan oshib ketardi.
+    /// Kliyent bitta hisob-fakturani IKKI marta yuborsa ham — taqsimot serverda, qoldiqdan oshmaydi:
+    /// hisob-fakturaga roppa-rosa bir marta, uning qoldig'icha pul tushadi.
     /// </summary>
     [Fact]
     public async Task Takrorlangan_hisob_faktura_qatori_rad_etiladi()
@@ -391,26 +384,27 @@ public class AllocationTests(ApiFixture fixture) : IAsyncLifetime
         var world = await NewWorldAsync(db);
         var invoiceId = await OneMonthAsync(db, world, 500_000m);
 
-        var ex = await Assert.ThrowsAsync<PaymentException>(() => Payments(db).AcceptAsync(
+        await Payments(db).AcceptAsync(
             new AcceptPaymentRequest(
                 world.StudentId, 500_000m, PaymentMethod.Cash, null,
                 [
                     new AllocationRequest(invoiceId, 250_000m),
                     new AllocationRequest(invoiceId, 250_000m),
+                    new AllocationRequest(invoiceId, 500_000m),
                 ]),
-            world.CashierId));
-
-        Assert.Equal("duplicate_invoice", ex.Code);
+            world.CashierId);
 
         await using var check = NewDb();
-        Assert.Empty(await check.Payments.AsNoTracking().ToListAsync());
-        Assert.Equal(InvoiceStatus.Open,
+        var allocation = Assert.Single(await check.PaymentAllocations.AsNoTracking().ToListAsync());
+        Assert.Equal(500_000m, allocation.Amount);
+        Assert.Equal(InvoiceStatus.Paid,
             (await check.Invoices.AsNoTracking().SingleAsync(i => i.Id == invoiceId)).Status);
     }
 
     /// <summary>
-    /// Nol yoki manfiy summa — na to'lovda, na taqsimot qatorida. "0 so'mlik
-    /// to'lov" chek raqamini yeb, hisobotda ma'nosiz qator qoldirardi.
+    /// Nol yoki manfiy summa — to'lovda rad etiladi ("0 so'mlik to'lov" chek raqamini yeb, hisobotda ma'nosiz
+    /// qator qoldirardi). Kliyent yuborgan nol/manfiy taqsimot qatori esa endi e'tiborga olinmaydi — pulni
+    /// server qoidasi taqsimlaydi.
     /// </summary>
     [Theory]
     [InlineData(0)]
@@ -421,27 +415,28 @@ public class AllocationTests(ApiFixture fixture) : IAsyncLifetime
         var world = await NewWorldAsync(db);
         var invoiceId = await OneMonthAsync(db, world, 500_000m);
 
-        var ex = await Assert.ThrowsAsync<PaymentException>(() => Payments(db).AcceptAsync(
-            new AcceptPaymentRequest(
-                world.StudentId, 500_000m, PaymentMethod.Cash, null,
-                [new AllocationRequest(invoiceId, lineAmount)]),
-            world.CashierId));
-
-        Assert.Equal("invalid_allocation_amount", ex.Code);
-
         var zero = await Assert.ThrowsAsync<PaymentException>(() => Payments(db).AcceptAsync(
             new AcceptPaymentRequest(world.StudentId, 0m, PaymentMethod.Cash, null, []),
             world.CashierId));
         Assert.Equal("invalid_amount", zero.Code);
 
+        await Payments(db).AcceptAsync(
+            new AcceptPaymentRequest(
+                world.StudentId, 500_000m, PaymentMethod.Cash, null,
+                [new AllocationRequest(invoiceId, lineAmount)]),
+            world.CashierId);
+
         await using var check = NewDb();
-        Assert.Empty(await check.Payments.AsNoTracking().ToListAsync());
+        Assert.Single(await check.Payments.AsNoTracking().ToListAsync());
+        var allocation = Assert.Single(await check.PaymentAllocations.AsNoTracking().ToListAsync());
+        Assert.True(allocation.Amount > 0m);
+        Assert.Equal(500_000m, allocation.Amount);
     }
 
     /// <summary>
-    /// Bekor qilingan (<c>void</c>) oyga pul taqsimlab bo'lmaydi: uning qarzi
-    /// jurnalda allaqachon teskari yozilgan, ya'ni to'lov <c>receivable</c> ni
-    /// ikki marta kamaytirardi.
+    /// Bekor qilingan (<c>void</c>) oyga pul taqsimlanmaydi: uning qarzi jurnalda allaqachon teskari yozilgan,
+    /// ya'ni to'lov <c>receivable</c> ni ikki marta kamaytirardi. Kliyent aynan o'sha oyni so'rasa ham — server
+    /// unga tegmaydi, pul avans bo'lib qoladi.
     /// </summary>
     [Fact]
     public async Task Bekor_qilingan_oyga_pul_taqsimlanmaydi()
@@ -455,20 +450,55 @@ public class AllocationTests(ApiFixture fixture) : IAsyncLifetime
         var voided = await Invoices(db).VoidAsync(invoiceId, "Narx xato hisoblangan", directorId);
         Assert.Equal(InvoiceStatus.Void, voided.Status);
 
-        var ex = await Assert.ThrowsAsync<PaymentException>(() => Payments(db).AcceptAsync(
+        await Payments(db).AcceptAsync(
             new AcceptPaymentRequest(
                 world.StudentId, 500_000m, PaymentMethod.Cash, null,
                 [new AllocationRequest(invoiceId, 500_000m)]),
-            world.CashierId));
-
-        Assert.Equal("invoice_void", ex.Code);
+            world.CashierId);
 
         await using var check = NewDb();
         Assert.Empty(await check.PaymentAllocations.AsNoTracking().ToListAsync());
-        // Bekor qilingan oy qarzga kirmaydi va taklifda ham ko'rinmaydi.
+        // Bekor qilingan oy qarzga kirmaydi va taklifda ham ko'rinmaydi; pul avans.
         var card = await Invoices(check).ForStudentAsync(world.StudentId);
         Assert.Equal(0m, card!.Debt);
+        Assert.Equal(500_000m, card.Credit);
         Assert.Empty(await Payments(check).SuggestAllocationAsync(world.StudentId, 500_000m));
+        await AssertLedgerBalancedAsync(check);
+    }
+
+    /// <summary>
+    /// AVANS O'Z-O'ZIDAN YOPADI (mijoz, 2026-09-24): qarzsiz paytda to'langan pul avans bo'ladi, keyin oy
+    /// hisoblanganda yangi hisob-faktura shu avansdan avtomatik yopiladi — ustuvorlik bo'yicha (o'qish,
+    /// keyin avtobus). Jurnalda yangi pul yozuvi yo'q: faqat taqsimot qo'shiladi, sof balans o'zgarmaydi.
+    /// </summary>
+    [Fact]
+    public async Task Avans_yangi_oy_hisob_fakturasini_ustuvorlik_boyicha_avtomatik_yopadi()
+    {
+        await using var db = NewDb();
+        var world = await NewWorldAsync(db);
+
+        await Payments(db).AcceptAsync(
+            new AcceptPaymentRequest(world.StudentId, 700_000m, PaymentMethod.Cash, null, []),
+            world.CashierId);
+        Assert.Equal(700_000m, await new StudentBalanceQuery(db).AdvanceForAsync(world.StudentId));
+        var ledgerBefore = await db.LedgerEntries.CountAsync(e => e.RefType == LedgerRefType.Payment);
+
+        await AddSubscriptionAsync(db, world, BusCategory, 300_000m, ThisMonth);
+        await AddSubscriptionAsync(db, world, TuitionCategory, 500_000m, ThisMonth);
+        await Invoices(db).AccrueMonthAsync(ThisMonth, world.ActorId);
+
+        await using var check = NewDb();
+        var invoices = await check.Invoices.AsNoTracking().Where(i => i.StudentId == world.StudentId).ToListAsync();
+        var tuition = invoices.Single(i => i.CategoryId == TuitionCategory);
+        var bus = invoices.Single(i => i.CategoryId == BusCategory);
+        Assert.Equal(InvoiceStatus.Paid, tuition.Status);
+        Assert.Equal(InvoiceStatus.Partial, bus.Status);
+        Assert.Equal(200_000m, await check.PaymentAllocations.AsNoTracking()
+            .Where(a => a.InvoiceId == bus.Id).SumAsync(a => a.Amount));
+
+        Assert.Equal(0m, await new StudentBalanceQuery(check).AdvanceForAsync(world.StudentId));
+        Assert.Equal(-100_000m, await new StudentBalanceQuery(check).ForAsync(world.StudentId));
+        Assert.Equal(ledgerBefore, await check.LedgerEntries.CountAsync(e => e.RefType == LedgerRefType.Payment));
         await AssertLedgerBalancedAsync(check);
     }
 

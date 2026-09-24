@@ -411,6 +411,9 @@ public sealed class InvoiceService(IAppDbContext db, ILedgerService ledger) : II
                 new LedgerPosting(Accounts.RevenueFor(categoryCode), LedgerDirection.Credit, payable,
                     LedgerRefType.Invoice, invoice.Id, invoice.PeriodMonth, memo),
             ], actorId, ct);
+
+            // Avans bo'lsa, yangi qarz o'sha tranzaksiyaning o'zida yopiladi (mijoz, 2026-09-24).
+            await AdvanceAllocator.ApplyAsync(db, invoice.StudentId, ct);
         }
 
         await tx.CommitAsync(ct);

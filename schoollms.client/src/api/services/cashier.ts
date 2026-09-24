@@ -257,6 +257,9 @@ export interface ReceiptPrint {
   cancelledAtText: string | null
   printedAt: string
   printedAtText: string
+  /** Chek pastidagi QR: tekshirish sahifasi manzili va uning PNG rasmi (data URL). */
+  verifyUrl?: string | null
+  qrDataUrl?: string | null
 }
 
 /**

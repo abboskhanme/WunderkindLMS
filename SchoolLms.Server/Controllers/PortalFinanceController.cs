@@ -146,7 +146,8 @@ public sealed record PortalFinanceDto(
 public sealed class PortalFinanceController(
     AppDbContext db,
     TelegramService telegram,
-    ILogger<ReceiptService> receiptLogger) : ControllerBase
+    ILogger<ReceiptService> receiptLogger,
+    IConfiguration config) : ControllerBase
 {
     internal const string AllowedRoles =
         Roles.Student + ",parent," + Roles.Admin + "," + Roles.SuperAdmin + "," + Roles.Staff;
@@ -373,5 +374,5 @@ public sealed class PortalFinanceController(
 
     private IReceiptService Receipts => new ReceiptService(
         new PaymentService(db, new LedgerService(db)),
-        db, telegram, receiptLogger);
+        db, telegram, receiptLogger, config);
 }

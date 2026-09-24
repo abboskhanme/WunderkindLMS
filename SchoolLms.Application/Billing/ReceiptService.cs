@@ -38,8 +38,23 @@ public sealed class ReceiptService(
     IPaymentService payments,
     IAppDbContext db,
     TelegramService telegram,
-    ILogger<ReceiptService> logger) : IReceiptService
+    ILogger<ReceiptService> logger,
+    // Ixtiyoriy: berilmasa QR chizilmaydi (DI'siz yaratiladigan joylar va testlar buzilmasin).
+    IConfiguration? config = null) : IReceiptService
 {
+    /// <summary>
+    /// Chekdagi QR manzili: <c>{baseUrl}/r/{token}</c>. Asos berilmasa (sozlanmagan va so'rov yo'q — masalan
+    /// Telegram'ga yuborishda) QR chizilmaydi: noto'g'ri manzilli QR umuman yo'qligidan yomonroq.
+    /// </summary>
+    public static async Task<string?> VerifyUrlAsync(
+        IAppDbContext db, Guid paymentId, string? baseUrl, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(baseUrl)) return null;
+        var token = await db.Payments.AsNoTracking()
+            .Where(p => p.Id == paymentId).Select(p => p.ReceiptToken).FirstOrDefaultAsync(ct);
+        return string.IsNullOrWhiteSpace(token) ? null : ReceiptQr.VerifyUrl(baseUrl, token);
+    }
+
     /// <summary>Telegram javob bermasa, qayta urinishdan oldingi pauza (bir marta).</summary>
     private static readonly TimeSpan RetryDelay = TimeSpan.FromSeconds(2);
 
@@ -169,7 +184,8 @@ public sealed class ReceiptService(
         if (school is null)
             logger.LogWarning("SchoolMeta qatori yo'q — chekda maktab nomi o'rniga standart matn chiqadi.");
 
-        return (payment, BuildModel(payment, school, await CancelledAtAsync(paymentId, ct)));
+        return (payment, BuildModel(payment, school, await CancelledAtAsync(paymentId, ct),
+            await VerifyUrlAsync(db, paymentId, config?[ReceiptQr.BaseUrlKey], ct)));
     }
 
     /// <summary>
@@ -235,14 +251,16 @@ public sealed class ReceiptService(
     /// <param name="payment">To'lov (P1-11 DTO'si).</param>
     /// <param name="school">Maktab ma'lumoti; null bo'lsa standart nom ishlatiladi.</param>
     /// <param name="cancelledAt">Storno sanasi yoki null.</param>
-    public static ReceiptModel BuildModel(PaymentDto payment, SchoolMeta? school, DateTimeOffset? cancelledAt)
+    public static ReceiptModel BuildModel(
+        PaymentDto payment, SchoolMeta? school, DateTimeOffset? cancelledAt, string? verifyUrl = null)
     {
         ArgumentNullException.ThrowIfNull(payment);
 
-        // Har toifa ALOHIDA qatorda (P1-12 qabul mezoni). Tartib: avval oy,
-        // keyin toifa nomi — chekdan chekka bir xil bo'lsin.
+        // Har toifa ALOHIDA qatorda (P1-12 qabul mezoni). Tartib — to'lov ustuvorligi bilan bir xil
+        // (2026-09-24): avval oy, oy ichida O'qish → Yotoqxona → Avtobus → Ovqat → Boshqa.
         var lines = payment.Allocations
             .OrderBy(a => a.PeriodMonth)
+            .ThenBy(a => PaymentService.CategoryRank(a.CategoryCode))
             .ThenBy(a => a.CategoryName, StringComparer.Ordinal)
             .Select(a => new ReceiptLine(a.CategoryName, a.PeriodMonth, a.Amount, a.InvoiceId))
             .ToList();
@@ -266,7 +284,8 @@ public sealed class ReceiptService(
             Method: payment.Method,
             Total: payment.Amount,
             CashierName: payment.CashierName,
-            CancelledAt: cancelledAt);
+            CancelledAt: cancelledAt,
+            VerifyUrl: verifyUrl);
     }
 
     private static string? Trimmed(string? value) =>

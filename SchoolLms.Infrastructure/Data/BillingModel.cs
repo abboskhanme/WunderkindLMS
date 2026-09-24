@@ -169,6 +169,9 @@ internal static class BillingModel
             e.HasIndex(x => new { x.StudentId, x.ReceivedAt });
             // Z-hisobot: smena/kassir kesimi.
             e.HasIndex(x => new { x.CashierId, x.ReceivedAt });
+            // Chek QR kaliti — ilova o'zi beradi; SQL bilan kiritilgan qatorlar (import) uchun baza sukuti.
+            e.Property(x => x.ReceiptToken).HasDefaultValueSql("replace(gen_random_uuid()::text, '-', '')");
+            e.HasIndex(x => x.ReceiptToken).IsUnique();
 
             e.ToTable(t =>
             {

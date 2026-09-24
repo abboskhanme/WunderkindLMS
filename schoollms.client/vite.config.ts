@@ -53,7 +53,7 @@ export default defineConfig(({ command }): UserConfig => {
             server: {
                 host: true,
                 port: parseInt(env.DEV_SERVER_PORT || '5173'),
-                allowedHosts: ['.lvh.me', '.nip.io', '.localhost'],
+                allowedHosts: ['.lvh.me', '.nip.io', '.localhost', '.trycloudflare.com'],
                 // macOS + Docker: virtiofs inotify hodisalarini uzatmaydi,
                 // shuning uchun fayl kuzatuvi POLLING bilan ishlashi SHART
                 // (CLAUDE.md). Intervalni oshirish mumkin, o'chirish mumkin emas.
@@ -105,7 +105,7 @@ export default defineConfig(({ command }): UserConfig => {
             host: true,
             // Multi-tenant subdomenlar (dev'da *.lvh.me / *.nip.io 127.0.0.1'ga ishora qiladi).
             // Vite noma'lum Host sarlavhalarini bloklaydi — bularni ruxsat etamiz.
-            allowedHosts: ['.lvh.me', '.nip.io', '.localhost'],
+            allowedHosts: ['.lvh.me', '.nip.io', '.localhost', '.trycloudflare.com'],
             // Frontend so'rovlarini ASP.NET backendiga yo'naltiramiz.
             proxy: {
                 '^/api': {

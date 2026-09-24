@@ -69,8 +69,16 @@ body{width:${PAGE_WIDTH_MM}mm;padding:0 ${(PAGE_WIDTH_MM - CONTENT_WIDTH_MM) / 2
 .stamp b{display:block;font-size:15px;letter-spacing:1px}
 .stamp span{font-size:11px}
 .foot{margin-top:2mm;font-size:10px;text-align:center}
+.logo{display:block;margin:0 auto 1.5mm;width:40mm;height:auto}
+.qr{display:block;margin:2mm auto .5mm;width:30mm;height:30mm;image-rendering:pixelated}
+.qr-note{font-size:10px;text-align:center}
 .cut{margin-top:3mm;border-top:1px dashed #000;padding-top:.5mm;font-size:9px;text-align:center}
 `
+
+/** Chekdagi logo — `public/receipt-logo.jpg` (oq fonda qora, termal kallak uchun mos). */
+function logoUrl(): string {
+  return typeof window === 'undefined' ? '/receipt-logo.jpg' : `${window.location.origin}/receipt-logo.jpg`
+}
 
 /** HTML maxsus belgilarini qochiradi — ismlar va nomlar bazadan keladi. */
 export function escapeHtml(value: string | null | undefined): string {
@@ -102,7 +110,9 @@ function lineHtml(line: ReceiptPrintLine): string {
 function copyHtml(r: ReceiptPrint, label: string): string {
   const parts: string[] = []
 
-  parts.push(`<div class="center school">${escapeHtml(r.schoolName)}</div>`)
+  // Maktab logosi (2026-09-24) — nom logoning o'zida yozilgan, shuning uchun alohida nom qatori yo'q
+  // (mijoz: "logoda allaqachon bor yetadi"). Iframe `srcdoc` bo'lgani uchun manzil to'liq yoziladi.
+  parts.push(`<img class="logo" src="${escapeHtml(logoUrl())}" alt="${escapeHtml(r.schoolName)}">`)
   if (r.schoolAddress) parts.push(`<div class="center muted">${escapeHtml(r.schoolAddress)}</div>`)
   if (r.schoolPhone) parts.push(`<div class="center muted">Tel: ${escapeHtml(r.schoolPhone)}</div>`)
   parts.push(`<div class="center copy-label">${escapeHtml(label)}</div>`)
@@ -136,9 +146,16 @@ function copyHtml(r: ReceiptPrint, label: string): string {
   parts.push(row("To'lov turi", r.methodText))
   parts.push(row('Kassir', r.cashierName))
 
+  // QR — chekning PASTIDA (mijoz, 2026-09-24): skanerlansa to'lov ma'lumoti va holati ochiladi.
+  if (r.qrDataUrl) {
+    parts.push(`<img class="qr" src="${escapeHtml(r.qrDataUrl)}" alt="QR">`)
+    parts.push(`<div class="qr-note">Chekni tekshirish uchun skanerlang</div>`)
+  }
+
   // "Qoldi" — chop etilgan paytdagi holat, shuning uchun sana chekda turadi.
   parts.push(`<div class="foot">Chop etildi: ${escapeHtml(r.printedAtText)}</div>`)
-  parts.push(`<div class="cut">kesish chizig'i</div>`)
+  // Kesish uchun faqat uzuq chiziq — yozuvsiz (mijoz, 2026-09-24).
+  parts.push(`<div class="cut"></div>`)
 
   return `<section class="copy">${parts.join('')}</section>`
 }

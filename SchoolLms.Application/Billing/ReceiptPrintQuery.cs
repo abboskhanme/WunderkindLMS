@@ -88,7 +88,10 @@ public sealed record ReceiptPrintDto(
     string? CancelledAtText,
     // "Qoldi" qaysi lahzaga to'g'ri ekanini aytadi (pastdagi izoh).
     DateTimeOffset PrintedAt,
-    string PrintedAtText);
+    string PrintedAtText,
+    // Chek pastidagi QR (2026-09-24): tekshirish sahifasi manzili va uning PNG rasmi (data URL).
+    string? VerifyUrl = null,
+    string? QrDataUrl = null);
 
 /// <summary>
 /// 58 mm termal chekni yig'adi. Faqat O'QIYDI — hech narsa yozmaydi.
@@ -118,7 +121,8 @@ public static class ReceiptPrintQuery
         IPaymentService payments,
         IInvoiceService invoices,
         IAppDbContext db,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        string? verifyBaseUrl = null)
     {
         ArgumentNullException.ThrowIfNull(payments);
         ArgumentNullException.ThrowIfNull(invoices);
@@ -139,7 +143,9 @@ public static class ReceiptPrintQuery
             .Select(s => s.ClassName)
             .FirstOrDefaultAsync(ct);
 
-        return Build(payment, model, className, await InvoicesAsync(payment, invoices, ct), AppClock.NowInstant);
+        var receipt = Build(payment, model, className, await InvoicesAsync(payment, invoices, ct), AppClock.NowInstant);
+        var verifyUrl = await ReceiptService.VerifyUrlAsync(db, paymentId, verifyBaseUrl, ct);
+        return verifyUrl is null ? receipt : receipt with { VerifyUrl = verifyUrl, QrDataUrl = ReceiptQr.PngDataUrl(verifyUrl) };
     }
 
     /// <summary>

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { AlertTriangle, Inbox, RefreshCw, Sparkles } from 'lucide-react'
+import { AlertTriangle, Inbox, RefreshCw } from 'lucide-react'
 import type { AllocationSuggestion, Payment, PaymentMethod } from '@/types'
 import type { AllocationInput, CashierStudent } from '@/api/services/cashier'
 import {
@@ -12,7 +12,6 @@ import { Button } from '@/components/ui/Button'
 import { Loader } from '@/components/ui/Loader'
 import { Modal } from '@/components/ui/Modal'
 import { cn } from '@/lib/utils'
-import { MoneyInput } from './MoneyInput'
 import { formatPeriod, formatSum, formatSumWithUnit, methodLabels, parseSum } from './format'
 
 interface PaymentSplitModalProps {
@@ -37,7 +36,7 @@ interface PaymentSplitModalProps {
 /** Bitta taqsimot qatori: serverdan kelgan taklif + kassir kiritgan xom matn. */
 interface Line {
   suggestion: AllocationSuggestion
-  /** Xom matn — `MoneyInput` shu ko'rinishda saqlaydi. */
+  /** Server taklif qilgan summa, matn ko'rinishida. */
   raw: string
 }
 
@@ -51,17 +50,10 @@ interface Line {
  * yozilmaydi: pul formulasining ikkinchi nusxasi bir kun birinchisidan
  * ajralib ketadi, va buni faqat chekni ushlab turgan ota-ona sezadi.
  *
- * TAKLIF — MAJBURIY EMAS. Kassir har qatorni o'zgartira oladi (masalan
- * ota-ona "avval avtobusni yopaylik" desa). Ikki chegara qattiq:
- *   1) bitta qatorga hisob-faktura QOLDIG'IDAN ko'p yozib bo'lmaydi —
- *      backend baribir 400 `allocation_exceeds_invoice` qaytaradi;
- *   2) qatorlar yig'indisi TO'LOV SUMMASIDAN oshmaydi — kiritish paytida
- *      cheklab qo'yiladi, shuning uchun "Qoldiq" hisoblagichi manfiy
- *      qiymatga umuman tusha olmaydi.
- *
- * BU OYNADA TAHRIRLASH VA O'CHIRISH TUGMASI YO'Q: taqsimot qatori — hali
- * yozilmagan niyat, yozuv emas. Qatorni "olib tashlash" uchun summasi 0 ga
- * qo'yiladi va u so'rovga umuman kirmaydi.
+ * TAQSIMOT MAJBURIY VA O'ZGARMAS (mijoz, 2026-09-24; 2026-09-18 dagi "taklif — majburiy emas" o'rniga):
+ * avval eng eski oy, oy ichida O'qish → Yotoqxona → Avtobus → Ovqat → Boshqa. Jadval faqat KO'RSATADI —
+ * pul qaysi qarzga tushishini to'lovni qabul qilishda server o'zi, qulf ostida hisoblaydi
+ * (`PaymentService.PlanAllocations`), bu yerdan yuborilgan taqsimot e'tiborga olinmaydi.
  */
 export function PaymentSplitModal({
   open,
@@ -112,36 +104,7 @@ export function PaymentSplitModal({
   /** Manfiy bo'lishi MUMKIN EMAS: kiritish paytida yig'indi `amount` bilan cheklangan. */
   const remainder = Math.max(0, round2(amount - allocated))
 
-  const setLineValue = (invoiceId: string, raw: string) => {
-    setLines((prev) => {
-      const others = prev
-        .filter((l) => l.suggestion.invoiceId !== invoiceId)
-        .reduce((sum, l) => sum + (parseSum(l.raw) ?? 0), 0)
-
-      return prev.map((line) => {
-        if (line.suggestion.invoiceId !== invoiceId) return line
-        if (raw === '') return { ...line, raw: '' }
-
-        const typed = parseSum(raw)
-        if (typed === null) return { ...line, raw }
-
-        // Ikki chegara: hisob-faktura qoldig'i va to'lovning bo'sh qismi.
-        const cap = round2(Math.min(line.suggestion.remaining, Math.max(0, amount - others)))
-        const capped = Math.min(typed, cap)
-        return { ...line, raw: capped === 0 ? '0' : String(capped) }
-      })
-    })
-  }
-
-  const applySuggestion = () => {
-    setLines((prev) =>
-      prev.map((line) => ({
-        ...line,
-        raw: line.suggestion.suggested > 0 ? String(line.suggestion.suggested) : '',
-      })),
-    )
-  }
-
+  // Taqsimot o'zgartirilmaydi (mijoz, 2026-09-24): server uni o'zi hisoblaydi — bu yerda faqat ko'rsatiladi.
   const allocations: AllocationInput[] = lines
     .map((line) => ({ invoiceId: line.suggestion.invoiceId, amount: parseSum(line.raw) ?? 0 }))
     .filter((a) => a.amount > 0)
@@ -252,14 +215,13 @@ export function PaymentSplitModal({
                         <td className="px-4 py-2 text-right tabular-nums text-slate-600">
                           {formatSum(line.suggestion.remaining)}
                         </td>
-                        <td className="px-4 py-2">
-                          <MoneyInput
-                            value={line.raw}
-                            onValueChange={(raw) => setLineValue(line.suggestion.invoiceId, raw)}
-                            disabled={busy}
-                            placeholder="0"
-                            className={cn(full && 'border-emerald-300 bg-emerald-50/50')}
-                          />
+                        <td
+                          className={cn(
+                            'px-4 py-2 text-right font-semibold tabular-nums',
+                            full ? 'text-emerald-700' : value > 0 ? 'text-slate-800' : 'text-slate-300',
+                          )}
+                        >
+                          {formatSum(value)}
                         </td>
                       </tr>
                     )
@@ -269,9 +231,9 @@ export function PaymentSplitModal({
             </div>
 
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <Button variant="ghost" onClick={applySuggestion} disabled={busy}>
-                <Sparkles className="h-4 w-4" /> Taklifni qaytarish (eng eskidan)
-              </Button>
+              <p className="text-xs text-slate-500">
+                Tartib o'zgarmas: avval eng eski oy, oy ichida O'qish → Yotoqxona → Avtobus → Ovqat → Boshqa.
+              </p>
 
               <dl className="flex flex-wrap items-center gap-4 text-sm">
                 <Counter label="Taqsimlandi" value={formatSum(allocated)} />

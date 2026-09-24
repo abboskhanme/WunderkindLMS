@@ -16,7 +16,7 @@ import { ExpensesPage } from '@/pages/admin/billing/ExpensesPage'
 import { CashierPage } from '@/pages/cashier/CashierPage'
 import { FinanceView } from '@/pages/portal/FinanceView'
 import { LoginPage } from '@/pages/LoginPage'
-import { AdminDashboard } from '@/pages/admin/AdminDashboard'
+import { AdminHome } from '@/pages/admin/AdminHome'
 import { LeadsPage } from '@/pages/admin/leads/LeadsPage'
 import { StudentsPage } from '@/pages/admin/students/StudentsPage'
 import { StudentEvaluationPage } from '@/pages/admin/students/StudentEvaluationPage'
@@ -77,6 +77,7 @@ import { SurveysPage } from '@/pages/admin/marketing/SurveysPage'
 import { SubmissionsPage } from '@/pages/admin/marketing/SubmissionsPage'
 import { NewsPage } from '@/pages/admin/marketing/NewsPage'
 import { SurveyPage } from '@/pages/public/SurveyPage'
+import { ReceiptVerifyPage } from '@/pages/public/ReceiptVerifyPage'
 import { PortalNewsPage } from '@/pages/portal/PortalNewsPage'
 import { CandidatesPage } from '@/pages/admin/admission/CandidatesPage'
 import { CandidateCardPage } from '@/pages/admin/admission/CandidateCardPage'
@@ -120,13 +121,15 @@ export default function App() {
       {/* Ommaviy ariza formasi — tizimga kirmagan ota-ona uchun; o'z to'liq ekrani bor.
           Server `/ariza/` ni HAR QANDAY hostda shu SPA'ga beradi (sales-marketing.md D2). */}
       <Route path="/ariza/:slug" element={<SurveyPage />} />
+      {/* Chek QR kodi (2026-09-24) — login'siz. */}
+      <Route path="/r/:token" element={<ReceiptVerifyPage />} />
 
       <Route path="/" element={<RootRedirect />} />
 
       {/* Administrator paneli */}
       <Route element={<ProtectedRoute role="admin" />}>
         <Route path="/admin" element={<AppLayout />}>
-          <Route index element={<AdminDashboard />} />
+          <Route index element={<AdminHome />} />
           <Route path="leads" element={<RequirePerm perm="leads"><LeadsPage /></RequirePerm>} />
           <Route path="leads/funnel" element={<RequirePerm perm="leads"><LeadFunnelPage /></RequirePerm>} />
           {/* `key` — ikki yo'l bitta komponent: menyudan o'tilganda sahifa qayta yaratilsin,

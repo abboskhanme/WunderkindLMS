@@ -72,6 +72,7 @@ export const teacherPermissions: { key: string; label: string }[] = [
  * (Filiallar bu ro'yxatda yo'q — u faqat superadmin uchun.)
  */
 export const adminPermissions: { key: string; label: string }[] = [
+  { key: 'dashboard', label: 'Bosh sahifa' },
   { key: 'leads', label: 'Lidlar' },
   { key: 'marketing', label: 'Sotuv va marketing' },
   { key: 'admission', label: 'Qabul' },

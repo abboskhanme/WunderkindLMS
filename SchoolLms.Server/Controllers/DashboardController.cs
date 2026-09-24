@@ -23,6 +23,8 @@ namespace SchoolLms.Server.Controllers;
 /// </summary>
 [ApiController]
 [Authorize(Roles = "admin,superadmin,staff")]
+// Bosh sahifa ham ruxsat bilan (mijoz, 2026-09-24): xodim uni "dashboard" ruxsati bilangina O'QIY oladi.
+[AdminPerm("dashboard", GatedRead = true)]
 [Route("api/admin/dashboard")]
 public class DashboardController(AppDbContext db) : ControllerBase
 {

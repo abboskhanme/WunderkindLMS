@@ -88,7 +88,9 @@ public sealed record ReceiptModel(
     string Method,
     decimal Total,
     string CashierName,
-    DateTimeOffset? CancelledAt);
+    DateTimeOffset? CancelledAt,
+    // Chek pastidagi QR — to'lovni tekshirish sahifasi (2026-09-24). null = QR chizilmaydi.
+    string? VerifyUrl = null);
 
 /// <summary>
 /// Chekdagi barcha MATN — bitta joyda. Sof funksiyalar: bazasiz, holatsiz,
@@ -246,7 +248,12 @@ public sealed class ReceiptDocument(ReceiptModel model) : IDocument
     private void ComposeHeader(IContainer container) =>
         container.PaddingBottom(8).Column(col =>
         {
-            col.Item().Text(model.SchoolName).Bold().FontSize(15);
+            // Maktab logosi (2026-09-24). Nom logoning o'zida yozilgan — logo bo'lsa alohida nom qatori
+            // chiqmaydi (mijoz: "logoda allaqachon bor yetadi").
+            if (ReceiptQr.LogoJpeg is { } logo)
+                col.Item().PaddingBottom(4).Height(14, Unit.Millimetre).AlignLeft().Image(logo).FitHeight();
+            else
+                col.Item().Text(model.SchoolName).Bold().FontSize(15);
 
             if (!string.IsNullOrWhiteSpace(model.SchoolAddress))
                 col.Item().Text(model.SchoolAddress).FontSize(8).FontColor(Muted);
@@ -334,6 +341,14 @@ public sealed class ReceiptDocument(ReceiptModel model) : IDocument
     private void ComposeFooter(IContainer container) =>
         container.PaddingTop(8).Column(col =>
         {
+            // QR chekning PASTIDA (mijoz, 2026-09-24): skanerlansa to'lov ma'lumoti va holati ochiladi.
+            if (model.VerifyUrl is { } url)
+            {
+                col.Item().AlignCenter().Width(30, Unit.Millimetre).Image(ReceiptQr.Png(url));
+                col.Item().AlignCenter().Text("Chekni tekshirish uchun QR kodni skanerlang").FontSize(7).FontColor(Muted);
+                col.Item().PaddingBottom(4).AlignCenter().Text(url).FontSize(6).FontColor(Muted);
+            }
+
             col.Item().LineHorizontal(1).LineColor(Rule);
             col.Item().PaddingTop(4).Text(text =>
             {

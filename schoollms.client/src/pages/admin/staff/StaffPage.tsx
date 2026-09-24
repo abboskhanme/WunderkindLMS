@@ -94,7 +94,12 @@ export function StaffPage() {
         let created = await createStaff(form)
         // Yangi xodimga tanlangan rollarni darrov beramiz (faqat superadmin)
         if (canManageRoles && formPerms.size > 0) {
-          created = await setStaffPermissions(created.id, [...formPerms])
+          try {
+            created = await setStaffPermissions(created.id, [...formPerms])
+          } catch (err) {
+            // Xodim yaratildi, faqat ruxsatlar yozilmadi — jim o'tib ketmasin.
+            alert(permsErrorMessage(err))
+          }
         }
         setStaff((p) => [created, ...p])
         setDraft((d) => ({ ...d, [created.id]: new Set(created.permissions) }))
@@ -136,6 +141,7 @@ export function StaffPage() {
     setSavingPermsId(s.id)
     setStaffPermissions(s.id, perms)
       .then((u) => setStaff((p) => p.map((x) => (x.id === u.id ? u : x))))
+      .catch((err: unknown) => alert(permsErrorMessage(err)))
       .finally(() => setSavingPermsId(null))
   }
 
@@ -408,4 +414,12 @@ function IconBtn({
       <Icon className="h-4 w-4" />
     </button>
   )
+}
+
+/** Ruxsatni saqlash xatosi — ko'pincha rol o'zgargandan keyin eski sessiya (403): qayta kirish kerak. */
+function permsErrorMessage(err: unknown): string {
+  const status = (err as { response?: { status?: number } })?.response?.status
+  if (status === 403 || status === 401)
+    return "Ruxsatlarni saqlab bo'lmadi: sizning sessiyangizda superadmin huquqi yo'q. Tizimdan chiqib, qayta kiring."
+  return "Ruxsatlarni saqlab bo'lmadi. Qaytadan urinib ko'ring."
 }

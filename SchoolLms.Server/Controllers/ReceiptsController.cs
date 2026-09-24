@@ -42,7 +42,8 @@ public class ReceiptsController(
     // xizmatidan, sinf va storno holati bazadan o'qiladi. `IReceiptService` ga
     // metod QO'SHILMADI — testlardagi soxta implementatsiyalar buzilmasin.
     IInvoiceService invoices,
-    IAppDbContext db) : ControllerBase
+    IAppDbContext db,
+    IConfiguration config) : ControllerBase
 {
     private const string PdfMime = "application/pdf";
 
@@ -71,7 +72,11 @@ public class ReceiptsController(
     {
         if (await ForbiddenForOtherCashierAsync(paymentId, ct) is { } forbidden) return forbidden;
 
-        var receipt = await ReceiptPrintQuery.GetAsync(paymentId, payments, invoices, db, ct);
+        // QR asosi: sozlangan ochiq manzil (prod), bo'lmasa shu so'rovning o'z manzili (lokal/dev).
+        var baseUrl = config[ReceiptQr.BaseUrlKey] is { Length: > 0 } configured
+            ? configured
+            : $"{Request.Scheme}://{Request.Host}";
+        var receipt = await ReceiptPrintQuery.GetAsync(paymentId, payments, invoices, db, ct, baseUrl);
         if (receipt is null) return NotFound(new { message = "To'lov topilmadi" });
         return receipt;
     }

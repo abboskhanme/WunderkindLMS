@@ -71,7 +71,8 @@ export const navByRole: Record<Role, NavItem[]> = {
     // Bizda bor-u ularda yo'q uchtasi (Davomat, Keldi-ketdi, Ilova) OXIRIGA,
     // Sozlamalardan oldin qo'yilgan — shunda EduSchool ketma-ketligi
     // boshidan Xulq-atvorgacha uzilmay o'qiladi.
-        { label: 'Bosh sahifa', to: '/admin', icon: LayoutDashboard },
+    // Mijoz, 2026-09-24: "bosh sahifa ham role uchun ... bazilarga u sahifa uchun ham dostup bo'lmaydi".
+    { label: 'Bosh sahifa', to: '/admin', icon: LayoutDashboard, perm: 'dashboard' },
     // Mijoz, 2026-09-22: "leadlar bo'limi uchun voronka kerakmas" — menyuda faqat
     // doska, ichki ro'yxatsiz. `/admin/leads/funnel` sahifasi o'chirilmadi (manzil
     // ishlaydi), faqat menyudan olindi; voronka bosh sahifada vidjet sifatida qoladi.

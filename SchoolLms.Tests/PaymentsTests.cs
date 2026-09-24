@@ -293,8 +293,12 @@ public class PaymentsTests(ApiFixture fixture)
     //  Taqsimot invarianti — IKKALA yo'l (xizmat va baza)
     // -----------------------------------------------------------------
 
+    /// <summary>
+    /// Taqsimot endi SERVERDA (mijoz, 2026-09-24): kliyent summadan oshib ketadigan taqsimot yuborsa ham, pul
+    /// ustuvorlik bo'yicha taqsimlanadi va to'lov summasidan oshmaydi — o'qish to'lovi birinchi yopiladi.
+    /// </summary>
     [Fact]
-    public async Task Taqsimot_yigindisi_summadan_oshsa_xizmat_400_beradi()
+    public async Task Taqsimot_yigindisi_summadan_oshsa_server_ozi_ustuvorlik_boyicha_taqsimlaydi()
     {
         var world = await NewWorldAsync();
         var tuition = await NewInvoiceAsync(world.StudentId, "tuition", 500_000m);
@@ -312,12 +316,13 @@ public class PaymentsTests(ApiFixture fixture)
             },
         });
 
-        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-        var error = await response.Content.ReadFromJsonAsync<PaymentErrorDto>();
-        Assert.Equal("allocation_exceeds_amount", error?.Code);
-
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         await using var db = NewDb();
-        Assert.False(await db.Payments.AnyAsync(p => p.StudentId == world.StudentId));
+        var allocations = await db.PaymentAllocations.AsNoTracking()
+            .Where(a => a.InvoiceId == tuition || a.InvoiceId == bus).ToListAsync();
+        Assert.Equal(500_000m, allocations.Sum(a => a.Amount));
+        Assert.Equal(500_000m, allocations.Single(a => a.InvoiceId == tuition).Amount);
+        Assert.DoesNotContain(allocations, a => a.InvoiceId == bus);
     }
 
     /// <summary>
@@ -370,8 +375,12 @@ public class PaymentsTests(ApiFixture fixture)
             .Where(a => a.PaymentId == payment.Id).SumAsync(a => a.Amount));
     }
 
+    /// <summary>
+    /// Qarzdan ko'p to'lov: hisob-fakturaga faqat uning qoldig'i tushadi, ortgani avans bo'lib qoladi
+    /// (kliyent qoldiqdan ko'p taqsimot yuborsa ham).
+    /// </summary>
     [Fact]
-    public async Task Hisob_faktura_qoldigidan_ortiq_taqsimot_400_beradi()
+    public async Task Hisob_faktura_qoldigidan_ortiq_tolov_avans_bolib_qoladi()
     {
         var world = await NewWorldAsync();
         var tuition = await NewInvoiceAsync(world.StudentId, "tuition", 500_000m);
@@ -384,9 +393,11 @@ public class PaymentsTests(ApiFixture fixture)
             allocations = new[] { new { invoiceId = tuition, amount = 600_000m } },
         });
 
-        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-        var error = await response.Content.ReadFromJsonAsync<PaymentErrorDto>();
-        Assert.Equal("allocation_exceeds_invoice", error?.Code);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        await using var db = NewDb();
+        Assert.Equal(500_000m, await db.PaymentAllocations.AsNoTracking()
+            .Where(a => a.InvoiceId == tuition).SumAsync(a => a.Amount));
+        Assert.Equal(100_000m, await new StudentBalanceQuery(db).AdvanceForAsync(world.StudentId));
     }
 
     /// <summary>
@@ -399,7 +410,7 @@ public class PaymentsTests(ApiFixture fixture)
     /// hisob-faktura BIR XIL.
     /// </summary>
     [Fact]
-    public async Task Ikki_kassir_bir_vaqtda_bitta_hisob_fakturaga_tolov_yozsa_faqat_bittasi_otadi()
+    public async Task Ikki_kassir_bir_vaqtda_bitta_hisob_fakturaga_tolov_yozsa_ortiqcha_taqsimlanmaydi()
     {
         var (cashierA, clientA) = await ActorAsync(Roles.Cashier);
         await OpenShiftAsync(cashierA.Id);
@@ -422,13 +433,9 @@ public class PaymentsTests(ApiFixture fixture)
         // "ko'rmasdan" o'tib ketmasligi kerak.
         var results = await Task.WhenAll(PayAsync(clientA), PayAsync(clientB));
 
-        var statuses = results.Select(r => r.StatusCode).ToList();
-        Assert.Contains(HttpStatusCode.OK, statuses);
-        Assert.Contains(HttpStatusCode.BadRequest, statuses);
-
-        var failed = results.Single(r => r.StatusCode == HttpStatusCode.BadRequest);
-        var error = await failed.Content.ReadFromJsonAsync<PaymentErrorDto>();
-        Assert.Equal("allocation_exceeds_invoice", error?.Code);
+        // Taqsimot serverda, qulf ostida (2026-09-24): IKKALA to'lov ham qabul qilinadi, lekin ikkinchisi
+        // allaqachon kamaygan qoldiqni ko'radi — hisob-fakturaga 500 000 dan ortiq tushmaydi, qolgani avans.
+        Assert.All(results, r => Assert.Equal(HttpStatusCode.OK, r.StatusCode));
 
         // Bazada tekshiruv: hisob-fakturaga taqsimlangan yig'indi hisob-faktura
         // summasidan (500 000) OSHMAYDI — qulf yo'q bo'lganda shu yerda 600 000
@@ -438,6 +445,8 @@ public class PaymentsTests(ApiFixture fixture)
             .Where(a => a.InvoiceId == tuition)
             .SumAsync(a => a.Amount);
         Assert.True(allocated <= 500_000m, $"Hisob-fakturaga ortiqcha taqsimlandi: {allocated}");
+        Assert.Equal(500_000m, allocated);
+        Assert.Equal(100_000m, await new StudentBalanceQuery(db).AdvanceForAsync(studentId));
     }
 
     // -----------------------------------------------------------------
@@ -462,7 +471,7 @@ public class PaymentsTests(ApiFixture fixture)
     /// </para>
     /// </summary>
     [Fact]
-    public async Task Ikki_kassa_bir_vaqtda_bitta_hisob_fakturaga_tolasa_faqat_bittasi_otadi()
+    public async Task Ikki_kassa_bir_vaqtda_bitta_hisob_fakturaga_tolasa_ortiqcha_taqsimlanmaydi()
     {
         var studentId = await NewStudentAsync();
         var invoiceId = await NewInvoiceAsync(studentId, "tuition", 500_000m);
@@ -489,12 +498,13 @@ public class PaymentsTests(ApiFixture fixture)
             TryAcceptAsync(serviceA, request, cashierA.Id),
             TryAcceptAsync(serviceB, request, cashierB.Id));
 
-        Assert.Equal(1, results.Count(r => r.Success));
-        Assert.Single(results, r => !r.Success && r.Code == "allocation_exceeds_invoice");
+        // Ikkala to'lov ham o'tadi; qulf tufayli ikkinchisi qarzni yopilgan holda ko'radi va avans bo'ladi.
+        Assert.All(results, r => Assert.True(r.Success, r.Code));
 
         await using var db = NewDb();
-        Assert.Single(await db.Payments.AsNoTracking()
-            .Where(p => p.StudentId == studentId).ToListAsync());
+        Assert.Equal(2, (await db.Payments.AsNoTracking()
+            .Where(p => p.StudentId == studentId).ToListAsync()).Count);
+        Assert.Equal(500_000m, await new StudentBalanceQuery(db).AdvanceForAsync(studentId));
         Assert.Equal(500_000m, await db.PaymentAllocations.AsNoTracking()
             .Where(a => a.InvoiceId == invoiceId).SumAsync(a => a.Amount));
         Assert.Equal(InvoiceStatus.Paid,
@@ -879,41 +889,73 @@ public class PaymentsTests(ApiFixture fixture)
     }
 
     /// <summary>
-    /// Mijoz qoidasi (2026-09-18): bir oy ichida <b>o'qish to'lovi ENG OXIRI</b>,
-    /// qolgan toifalar qoldig'i bo'yicha kichigidan boshlab yopiladi.
-    ///
-    /// <para>
-    /// Nega test kerak: ilgari tartib toifa KODI bo'yicha alifboda edi va
-    /// <c>tuition</c> u yerda tasodifan oxirida turardi. Ya'ni to'g'ri natija
-    /// qoidadan emas, omaddan chiqardi — toifa kodi o'zgarsa jimgina buzilardi.
-    /// </para>
+    /// Mijoz qoidasi (2026-09-24, 2026-09-18 dagi "o'qish eng oxiri" o'rniga): bir oy ichida
+    /// <b>o'qish to'lovi BIRINCHI</b>, keyin Yotoqxona → Avtobus → Ovqat → Boshqa — summasidan qat'iy nazar.
     /// </summary>
     [Fact]
-    public async Task Bir_oyda_oqish_tolovi_eng_oxirida_yopiladi()
+    public async Task Bir_oyda_oqish_tolovi_birinchi_yopiladi()
     {
         var world = await NewWorldAsync();
-        // Ataylab shunday tanlangan: alifboda `meals` < `tuition` bo'lsa-da,
-        // hal qiluvchi narsa SUMMA emas, QOIDA — o'qish to'lovi oxirida.
         var tuition = await NewInvoiceAsync(world.StudentId, "tuition", 1_800_000m);
         var bus = await NewInvoiceAsync(world.StudentId, "bus", 450_000m);
         var meals = await NewInvoiceAsync(world.StudentId, "meals", 200_000m);
 
         var suggestion = await world.Client.GetFromJsonAsync<List<AllocationSuggestionDto>>(
-            $"/api/cash/payments/suggest-allocation?studentId={world.StudentId}&amount=700000");
+            $"/api/cash/payments/suggest-allocation?studentId={world.StudentId}&amount=2000000");
 
         Assert.NotNull(suggestion);
         Assert.Equal(3, suggestion.Count);
 
-        // Mayda qarzlar kichigidan boshlab: ovqat (200k), keyin avtobus (450k).
-        Assert.Equal(meals, suggestion[0].InvoiceId);
-        Assert.Equal(200_000m, suggestion[0].Suggested);
+        Assert.Equal(tuition, suggestion[0].InvoiceId);
+        Assert.Equal(1_800_000m, suggestion[0].Suggested);
         Assert.Equal(bus, suggestion[1].InvoiceId);
-        Assert.Equal(450_000m, suggestion[1].Suggested);
+        Assert.Equal(200_000m, suggestion[1].Suggested);
+        Assert.Equal(meals, suggestion[2].InvoiceId);
+        Assert.Equal(0m, suggestion[2].Suggested);
 
-        // O'qish to'lovi OXIRIDA va qolgan-qutgani unga tushadi.
-        Assert.Equal(tuition, suggestion[2].InvoiceId);
-        Assert.Equal(50_000m, suggestion[2].Suggested);
-        Assert.Equal(1_800_000m, suggestion[2].Remaining);
+        // Qabul qilishda ham AYNAN shu tartib — kliyent boshqacha so'rasa ham.
+        var response = await world.Client.PostAsJsonAsync("/api/cash/payments", new
+        {
+            studentId = world.StudentId,
+            amount = 2_000_000m,
+            method = PaymentMethod.Cash,
+            allocations = new[] { new { invoiceId = meals, amount = 200_000m } },
+        });
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        await using var db = NewDb();
+        var byInvoice = await db.PaymentAllocations.AsNoTracking()
+            .Where(a => a.InvoiceId == tuition || a.InvoiceId == bus || a.InvoiceId == meals)
+            .GroupBy(a => a.InvoiceId).Select(g => new { g.Key, Sum = g.Sum(a => a.Amount) })
+            .ToDictionaryAsync(x => x.Key, x => x.Sum);
+        Assert.Equal(1_800_000m, byInvoice[tuition]);
+        Assert.Equal(200_000m, byInvoice[bus]);
+        Assert.False(byInvoice.ContainsKey(meals));
+    }
+
+    /// <summary>Eng eski oy — toifasidan qat'iy nazar — o'qish to'lovidan ham oldin yopiladi.</summary>
+    [Fact]
+    public async Task Eski_oyning_avtobusi_yangi_oyning_oqishidan_oldin_yopiladi()
+    {
+        var world = await NewWorldAsync();
+        var bus = await NewInvoiceAsync(world.StudentId, "bus", 300_000m, monthOffset: -1);
+        var tuition = await NewInvoiceAsync(world.StudentId, "tuition", 1_000_000m);
+
+        var response = await world.Client.PostAsJsonAsync("/api/cash/payments", new
+        {
+            studentId = world.StudentId,
+            amount = 500_000m,
+            method = PaymentMethod.Cash,
+            allocations = Array.Empty<object>(),
+        });
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        await using var db = NewDb();
+        var byInvoice = await db.PaymentAllocations.AsNoTracking()
+            .Where(a => a.InvoiceId == bus || a.InvoiceId == tuition)
+            .GroupBy(a => a.InvoiceId).Select(g => new { g.Key, Sum = g.Sum(a => a.Amount) })
+            .ToDictionaryAsync(x => x.Key, x => x.Sum);
+        Assert.Equal(300_000m, byInvoice[bus]);
+        Assert.Equal(200_000m, byInvoice[tuition]);
     }
 
     [Fact]

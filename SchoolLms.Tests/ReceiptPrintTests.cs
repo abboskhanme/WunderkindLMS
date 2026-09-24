@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Net;
 using System.Net.Http.Json;
 using Microsoft.EntityFrameworkCore;
@@ -264,6 +265,93 @@ public class ReceiptPrintTests(ApiFixture fixture)
         var refund = Assert.Single(reversal.Lines);
         Assert.Equal(ReceiptPrintQuery.KindRefund, refund.Kind);
         Assert.Equal(ReceiptText.RefundLine, refund.CategoryName);
+    }
+
+    // ===================================================================
+    //  QR kod (mijoz, 2026-09-24): o'zgarmas, skanerlansa to'lov ma'lumoti ochiladi
+    // ===================================================================
+
+    /// <summary>
+    /// Termal chekda QR bor: <c>/r/{32 belgili token}</c> manzili va PNG rasmi. Chek qayta olinganda QR
+    /// AYNAN o'sha — token to'lovga bir marta beriladi va o'zgarmaydi.
+    /// </summary>
+    [Fact]
+    public async Task Chekda_ozgarmas_QR_kod_bor()
+    {
+        var (_, client) = await ClientAsync(Roles.Cashier);
+        var studentId = await NewStudentAsync();
+        var tuition = await NewInvoiceAsync(studentId, "tuition", 200_000m);
+        var payment = await AcceptAsync(client, studentId, 200_000m, (tuition, 200_000m));
+
+        var first = await client.GetFromJsonAsync<ReceiptPrintDto>($"/api/receipts/{payment.Id}");
+        var second = await client.GetFromJsonAsync<ReceiptPrintDto>($"/api/receipts/{payment.Id}");
+
+        Assert.NotNull(first?.VerifyUrl);
+        Assert.Matches("/r/[0-9a-f]{32}$", first.VerifyUrl);
+        Assert.StartsWith("data:image/png;base64,", first.QrDataUrl, StringComparison.Ordinal);
+        Assert.Equal(first.VerifyUrl, second?.VerifyUrl);
+        Assert.Equal(first.QrDataUrl, second?.QrDataUrl);
+    }
+
+    /// <summary>
+    /// QR ochadigan sahifa login'siz ishlaydi va chekdagi ma'lumotni beradi; noto'g'ri yoki begona token — 404.
+    /// Storno qilingandan keyin o'sha QR "bekor qilingan" holatini ko'rsatadi.
+    /// </summary>
+    [Fact]
+    public async Task QR_sahifasi_loginsiz_ochiladi_va_holatni_korsatadi()
+    {
+        var (_, cashier) = await ClientAsync(Roles.Cashier);
+        var studentId = await NewStudentAsync();
+        var tuition = await NewInvoiceAsync(studentId, "tuition", 300_000m);
+        var payment = await AcceptAsync(cashier, studentId, 300_000m, (tuition, 300_000m));
+        var receipt = await cashier.GetFromJsonAsync<ReceiptPrintDto>($"/api/receipts/{payment.Id}");
+        var token = receipt!.VerifyUrl![^32..];
+
+        using var anonymous = fixture.Api.AnonymousClient();
+        var ok = await anonymous.GetAsync($"/api/public/receipts/{token}");
+        Assert.Equal(HttpStatusCode.OK, ok.StatusCode);
+        var body = await ok.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal(payment.ReceiptNo, body.GetProperty("receiptNo").GetInt64());
+        Assert.Equal("valid", body.GetProperty("status").GetString());
+        Assert.Equal(ReceiptText.Money(300_000m), body.GetProperty("totalText").GetString());
+        Assert.False(body.TryGetProperty("studentId", out _));
+
+        Assert.Equal(HttpStatusCode.NotFound, (await anonymous.GetAsync($"/api/public/receipts/{new string('0', 32)}")).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await anonymous.GetAsync($"/api/public/receipts/{payment.Id}")).StatusCode);
+
+        var (_, admin) = await ClientAsync(Roles.Admin);
+        var reverse = await admin.PostAsJsonAsync($"/api/admin/payments/{payment.Id}/reverse", new { reason = "QR testi" });
+        Assert.Equal(HttpStatusCode.OK, reverse.StatusCode);
+
+        var after = await (await anonymous.GetAsync($"/api/public/receipts/{token}")).Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("cancelled", after.GetProperty("status").GetString());
+    }
+
+    /// <summary>PDF chek QR bilan ham, QR'siz ham chiziladi; QR va logo qo'shilgach fayl kattaradi.</summary>
+    [Fact]
+    public void Pdf_chek_QR_va_logo_bilan_chiziladi()
+    {
+        var model = new ReceiptModel("Wunderkind", "Manzil", "+998", 7, AppClock.NowInstant, "Test O'quvchi",
+            [new ReceiptLine("O'qish to'lovi", new DateOnly(2026, 10, 1), 100_000m)], PaymentMethod.Cash, 100_000m,
+            "Kassir", null);
+        var plain = new ReceiptDocument(model).Render();
+        var withQr = new ReceiptDocument(model with { VerifyUrl = "https://lms.example.uz/r/" + new string('a', 32) }).Render();
+
+        Assert.NotNull(ReceiptQr.LogoJpeg);
+        Assert.True(plain.Length > 0);
+        Assert.True(withQr.Length > plain.Length);
+    }
+
+    /// <summary>SQL bilan (importda) kiritilgan to'lov ham baza sukuti orqali o'z tokenini oladi.</summary>
+    [Fact]
+    public async Task Sql_bilan_kiritilgan_tolov_ham_token_oladi()
+    {
+        await fixture.Api.WithDbAsync(async db =>
+        {
+            var tokens = await db.Payments.AsNoTracking().Select(p => p.ReceiptToken).ToListAsync();
+            Assert.All(tokens, t => Assert.Matches("^[0-9a-f]{32}$", t));
+            Assert.Equal(tokens.Count, tokens.Distinct().Count());
+        });
     }
 
     // ===================================================================

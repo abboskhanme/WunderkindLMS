@@ -31,6 +31,8 @@ services:
       # Bo'sh qiymat = har qanday host ilovani ochadi (landing sahifa emas).
       App__Host: ""
       Tenancy__RootDomain: ""
+      # Chek QR kodi ichidagi manzil (2026-09-24): {asos}/r/{token}. Telegram'ga yuboriladigan PDF ham shuni ishlatadi.
+      Receipts__PublicBaseUrl: "https://lms.wunderkindedu.uz"
 
   # ── PROKSI ── Caddy: 80/443 ni tinglaydi, Cloudflare'dan kelgan trafikni backend'ga uzatadi.
   proxy:

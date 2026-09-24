@@ -9,7 +9,7 @@
  * "xato" kabi emas, SABABI bilan ko'rsatiladi: "menyu hali kiritilmagan".
  */
 import { Fragment, useState } from 'react'
-import { UtensilsCrossed } from 'lucide-react'
+import { UtensilsCrossed, X } from 'lucide-react'
 import { Badge, Card, EmptyState, Row, Stepper } from '../../components/ui'
 import { useAsync } from '../../lib/useAsync'
 import { dayMonth, weekdayName } from '../../lib/format'
@@ -121,30 +121,72 @@ function DayMenu({ day, isToday }) {
               {meal.label}
             </p>
             <div>
-              {dishes.map((dish) => (
-                <Row
-                  key={dish.id}
-                  lead={
-                    dish.imageUrl ? (
-                      <img
-                        src={dish.imageUrl}
-                        alt=""
-                        className="h-11 w-11 shrink-0 rounded-xl object-cover"
-                      />
-                    ) : (
+              {dishes.map((dish) =>
+                dish.imageUrl ? (
+                  <PhotoDish key={dish.id} dish={dish} />
+                ) : (
+                  <Row
+                    key={dish.id}
+                    lead={
                       <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-brand/25 text-brand-ink">
                         <UtensilsCrossed className="h-5 w-5" />
                       </div>
-                    )
-                  }
-                  title={dish.name}
-                  subtitle={dish.ingredients}
-                />
-              ))}
+                    }
+                    title={dish.name}
+                    subtitle={dish.ingredients}
+                  />
+                ),
+              )}
             </div>
           </Fragment>
         )
       })}
     </Card>
+  )
+}
+
+/**
+ * Rasmli taom — rasm katta ko'rinadi, bosilganda to'liq ekranda asl sifatida ochiladi (mijoz, 2026-09-24:
+ * "tiniq va sifatli rasm asosiysi ... ota ona ham ko'radi"). Ro'yxatda brauzer rasmni kichraytirib
+ * ko'rsatadi, lekin fayl asl hajmida yuklanadi — kattalashtirganda ham tiniq qoladi.
+ */
+function PhotoDish({ dish }) {
+  const [open, setOpen] = useState(false)
+  const show = () => {
+    haptic('light')
+    setOpen(true)
+  }
+  return (
+    <div className="border-t border-slate-100 px-4 py-3 first:border-t-0">
+      <button type="button" onClick={show} className="block w-full overflow-hidden rounded-2xl bg-slate-100">
+        <img src={dish.imageUrl} alt={dish.name} loading="lazy" className="aspect-[16/10] w-full object-cover" />
+      </button>
+      <p className="mt-2 text-[15px] font-semibold leading-snug">{dish.name}</p>
+      {dish.ingredients && <p className="mt-0.5 text-[13px] text-slate-500">{dish.ingredients}</p>}
+      {open && <PhotoViewer dish={dish} onClose={() => setOpen(false)} />}
+    </div>
+  )
+}
+
+/** To'liq ekran — rasm butunligicha (kesilmasdan), qora fonda. Fonga yoki × ga bosilsa yopiladi. */
+function PhotoViewer({ dish, onClose }) {
+  return (
+    <div
+      role="dialog"
+      aria-label={dish.name}
+      onClick={onClose}
+      className="fixed inset-0 z-50 flex flex-col bg-black/95 pb-[var(--tg-safe-bottom)]"
+    >
+      <div className="flex items-center justify-between gap-3 px-4 py-3 text-white">
+        <p className="min-w-0 truncate text-[15px] font-semibold">{dish.name}</p>
+        <button type="button" onClick={onClose} aria-label="Yopish" className="rounded-full bg-white/15 p-2">
+          <X className="h-5 w-5" />
+        </button>
+      </div>
+      <div className="flex min-h-0 flex-1 items-center justify-center px-2">
+        <img src={dish.imageUrl} alt={dish.name} className="max-h-full max-w-full object-contain" />
+      </div>
+      {dish.ingredients && <p className="px-4 py-3 text-center text-[13px] text-white/75">{dish.ingredients}</p>}
+    </div>
   )
 }

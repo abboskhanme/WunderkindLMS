@@ -20,6 +20,8 @@ export function DishFormModal({ open, title, initial, onClose, onSubmit }: Props
   const [ingredients, setIngredients] = useState('')
   const [imageUrl, setImageUrl] = useState<string | undefined>(undefined)
   const [uploading, setUploading] = useState(false)
+  // Sifat ogohlantirishi — rasm baribir saqlanadi, faqat xiralashishi haqida aytiladi.
+  const [qualityNote, setQualityNote] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -28,6 +30,7 @@ export function DishFormModal({ open, title, initial, onClose, onSubmit }: Props
     setName(initial?.name ?? '')
     setIngredients(initial?.ingredients ?? '')
     setImageUrl(initial?.imageUrl)
+    setQualityNote(null)
   }, [open, initial])
 
   // Rasmni SERVERGA yuklaymiz va /uploads/... URL'ini saqlaymiz (base64 EMAS) — shunda mobil
@@ -36,6 +39,7 @@ export function DishFormModal({ open, title, initial, onClose, onSubmit }: Props
   const onFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
+    setQualityNote(await imageQualityNote(file))
     setUploading(true)
     try {
       const up = await uploadAdminFile(file)
@@ -93,11 +97,14 @@ export function DishFormModal({ open, title, initial, onClose, onSubmit }: Props
               <img
                 src={imageUrl}
                 alt=""
-                className="h-32 w-full max-w-xs rounded-lg object-cover"
+                className="aspect-[16/10] w-full max-w-sm rounded-lg object-cover"
               />
               <button
                 type="button"
-                onClick={() => setImageUrl(undefined)}
+                onClick={() => {
+                  setImageUrl(undefined)
+                  setQualityNote(null)
+                }}
                 className="absolute right-2 top-2 rounded-full bg-slate-900/60 p-1 text-white hover:bg-slate-900"
               >
                 <X className="h-4 w-4" />
@@ -108,7 +115,7 @@ export function DishFormModal({ open, title, initial, onClose, onSubmit }: Props
               type="button"
               onClick={() => fileRef.current?.click()}
               disabled={uploading}
-              className="flex h-32 w-full max-w-xs flex-col items-center justify-center gap-1 rounded-lg border-2 border-dashed border-slate-200 text-slate-400 transition-colors hover:border-brand-300 hover:text-brand-600 disabled:opacity-60"
+              className="flex aspect-[16/10] w-full max-w-sm flex-col items-center justify-center gap-1 rounded-lg border-2 border-dashed border-slate-200 text-slate-400 transition-colors hover:border-brand-300 hover:text-brand-600 disabled:opacity-60"
             >
               <ImagePlus className="h-6 w-6" />
               <span className="text-sm">{uploading ? 'Yuklanmoqda…' : 'Rasm yuklash'}</span>
@@ -117,12 +124,45 @@ export function DishFormModal({ open, title, initial, onClose, onSubmit }: Props
           <input
             ref={fileRef}
             type="file"
-            accept="image/*"
+            accept="image/jpeg,image/png,image/webp"
             onChange={onFile}
             className="hidden"
           />
+          {qualityNote ? (
+            <p className="mt-1 text-xs text-amber-600">{qualityNote}</p>
+          ) : (
+            <p className="mt-1 text-xs text-slate-400">
+              Ota-onalar rasmni telefonda to'liq ekranda ko'radi — kamida {MIN_SIDE} px, tiniq JPG/PNG/WEBP. Rasm
+              siqilmasdan, asl sifatida saqlanadi.
+            </p>
+          )}
         </div>
       </form>
     </Modal>
   )
+}
+
+/** Ota-ona telefonida to'liq ekranda tiniq ko'rinishi uchun rasmning uzun tomoni kamida shuncha bo'lsin. */
+const MIN_SIDE = 1000
+
+/** Rasm o'lchami past bo'lsa ogohlantirish matni, aks holda `null`. O'qib bo'lmasa — jim o'tadi. */
+function imageQualityNote(file: File): Promise<string | null> {
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(file)
+    const img = new Image()
+    img.onload = () => {
+      URL.revokeObjectURL(url)
+      const side = Math.max(img.naturalWidth, img.naturalHeight)
+      resolve(
+        side < MIN_SIDE
+          ? `Rasm kichik (${img.naturalWidth}×${img.naturalHeight} px) — telefonda xira ko'rinishi mumkin. Kamida ${MIN_SIDE} px li rasm tavsiya etiladi.`
+          : null,
+      )
+    }
+    img.onerror = () => {
+      URL.revokeObjectURL(url)
+      resolve(null)
+    }
+    img.src = url
+  })
 }
