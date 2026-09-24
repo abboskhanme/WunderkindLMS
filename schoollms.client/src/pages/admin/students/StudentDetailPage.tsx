@@ -5,6 +5,7 @@ import {
   GraduationCap, History, KeyRound, MapPin, MessageSquare, Pencil, Phone,
   RotateCcw, ShieldAlert, User, Users, Wallet,
 } from 'lucide-react'
+import { useAuth } from '@/context/auth-context'
 import type { Credentials, Student } from '@/types'
 import { getStudentNotebook, type StudentNotebook } from '@/api/services/studentNotebook'
 import { getStudentCard, type StudentCard } from '@/api/services/studentProfile'
@@ -34,6 +35,8 @@ import { MembershipsTab } from '@/pages/admin/students/profile/MembershipsTab'
 import { OverviewTab } from '@/pages/admin/students/profile/OverviewTab'
 import { ProfileError } from '@/pages/admin/students/profile/ProfileUi'
 import { TimetableTab } from '@/pages/admin/students/profile/TimetableTab'
+import { CASH_DESK_ROLES } from '@/pages/cashier/cashDeskRoles'
+import { StudentPaymentModal } from '@/pages/cashier/StudentPaymentModal'
 
 /**
  * O'quvchi kartochkasi — docs/modules/students-parity.md §2.3 (S-10).
@@ -97,6 +100,11 @@ export function StudentDetailPage() {
   const [archiveTargets, setArchiveTargets] = useState<Student[]>([])
   const [passwordOpen, setPasswordOpen] = useState(false)
   const [credentials, setCredentials] = useState<Credentials | null>(null)
+  const [payOpen, setPayOpen] = useState(false)
+  // To'lovdan keyin "To'lovlar" tab'i qaytadan yuklanishi uchun.
+  const [financeKey, setFinanceKey] = useState(0)
+  const { user } = useAuth()
+  const canTakePayment = user !== null && CASH_DESK_ROLES.includes(user.role)
 
   const load = useCallback(() => {
     if (!id) return
@@ -272,6 +280,11 @@ export function StudentDetailPage() {
               ))}
             </select>
           )}
+          {canTakePayment && !archived && (
+            <Button onClick={() => setPayOpen(true)} className="px-5 py-2.5 text-base">
+              <Wallet className="h-5 w-5" /> To'lov qilish
+            </Button>
+          )}
           <Button variant="secondary" onClick={() => setTab('contracts')}>
             <FileSignature className="h-4 w-4" /> Shartnoma
           </Button>
@@ -326,7 +339,7 @@ export function StudentDetailPage() {
         hal qilinadi (`/api/student/billing` egani JWT'dan aniqlaydi;
         `studentId` faqat admin/xodim uchun ishlaydi).
       */}
-      {tab === 'finance' && <FinanceView studentId={data.id} embedded />}
+      {tab === 'finance' && <FinanceView key={financeKey} studentId={data.id} embedded />}
 
       {tab === 'memberships' && <MembershipsTab studentId={data.id} />}
 
@@ -355,6 +368,24 @@ export function StudentDetailPage() {
       {tab === 'activity' && <ActivityTab studentId={data.id} />}
 
       {/* ---------- Oynalar ---------- */}
+      {payOpen && (
+        <StudentPaymentModal
+          open
+          student={{
+            id: data.id,
+            fullName: data.fullName,
+            className: data.className,
+            parentFullName: data.parentFullName ?? '',
+            parentPhone: card?.phone || data.parentPhone || '',
+          }}
+          onClose={() => setPayOpen(false)}
+          onPaid={() => {
+            setPayOpen(false)
+            setFinanceKey((n) => n + 1)
+            setBanner("To'lov qabul qilindi")
+          }}
+        />
+      )}
       <StudentFormModal
         open={editOpen}
         onClose={() => setEditOpen(false)}

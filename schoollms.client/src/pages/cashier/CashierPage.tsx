@@ -44,6 +44,7 @@ import { CashBoxActionModal } from './CashBoxActionModal'
 import type { CashBoxActionMode } from './CashBoxCard'
 import { CashLedger } from './CashLedger'
 import { CashTransactionReceipt } from './CashTransactionReceipt'
+import { CASH_DESK_ROLES } from './cashDeskRoles'
 import {
   formatDateTime,
   formatPeriod,
@@ -94,8 +95,6 @@ const TRANSACTION_KINDS: CashBoxTransactionRow['kind'][] = [
    (mijoz screenshot yubordi), ko'rinish esa o'zimiznikicha qoladi.
    ========================================================================== */
 
-/** Kassaga kira oladigan rollar (SPEC §4.3, `FinanceAction.AcceptPayment`). */
-const CASH_DESK_ROLES: Role[] = ['cashier', 'admin', 'superadmin']
 
 /**
  * Kassa qo'shish/tahrirlash — faqat boshqaruvchi. Kirim/chiqim/ko'chirish/
@@ -1155,6 +1154,10 @@ interface IncomeFormProps {
   /** Oddiy kassa kirimi yozilgach. */
   onDone: () => void
   onCancel: () => void
+  /** Turlar yuklanganda "O'quvchi oylik to'lovi" tanlansin (o'quvchi profilidan ochilganda). */
+  preferStudentType?: boolean
+  /** O'quvchini almashtirib bo'lmaydi — "O'zgartirish" tugmasi ko'rinmaydi. */
+  lockStudent?: boolean
 }
 
 /**
@@ -1200,7 +1203,7 @@ interface IncomeFormProps {
  * Bu FORMA — mijoz talab qilgan haqiqiy sirtki qatlam — uni majburiy qiladi
  * (pastga: `canSubmit`).
  */
-function IncomeForm({
+export function IncomeForm({
   box,
   student,
   onSelectStudent,
@@ -1213,6 +1216,8 @@ function IncomeForm({
   onStudentSubmit,
   onDone,
   onCancel,
+  preferStudentType = false,
+  lockStudent = false,
 }: IncomeFormProps) {
   const [amountRaw, setAmountRaw] = useState('')
   const [method, setMethod] = useState<PaymentMethod>('cash')
@@ -1233,9 +1238,11 @@ function IncomeForm({
     getTransactionTypes('in')
       .then((rows) => {
         if (!alive) return
-        const active = rows.filter((t) => t.isActive)
+        // Profildan ochilganda faqat o'quvchi to'lovi turlari: boshqa tur o'quvchisiz kassa kirimiga aylanardi.
+        const active = rows.filter((t) => t.isActive && (!lockStudent || isStudentTuitionType(t)))
         setTypes(active)
-        setTransactionTypeId((current) => current || active[0]?.id || '')
+        const preferred = preferStudentType ? active.find((t) => isStudentTuitionType(t)) : undefined
+        setTransactionTypeId((current) => current || preferred?.id || active[0]?.id || '')
       })
       .catch((err: unknown) => {
         if (alive) setTypesError(financeErrorMessage(err, "Tranzaksiya turlarini yuklab bo'lmadi."))
@@ -1246,7 +1253,7 @@ function IncomeForm({
     return () => {
       alive = false
     }
-  }, [])
+  }, [preferStudentType, lockStudent])
 
   const selectedType = types.find((t) => t.id === transactionTypeId)
   const studentMode = isStudentTuitionType(selectedType)
@@ -1357,9 +1364,11 @@ function IncomeForm({
                         </p>
                       </div>
                     )}
-                    <Button variant="ghost" type="button" onClick={onClearStudent} disabled={busy}>
-                      O'zgartirish
-                    </Button>
+                    {!lockStudent && (
+                      <Button variant="ghost" type="button" onClick={onClearStudent} disabled={busy}>
+                        O'zgartirish
+                      </Button>
+                    )}
                   </div>
                 </div>
               </div>
