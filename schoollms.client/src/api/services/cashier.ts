@@ -266,8 +266,9 @@ export interface ReceiptPrint {
  * 58 mm termal chek uchun JSON (2026-09-22). Faqat O'QIYDI; ruxsat PDF bilan
  * bir xil (kassir — faqat o'z cheki, admin/direktor — hammasi).
  */
-export async function getReceiptPrint(paymentId: string): Promise<ReceiptPrint> {
-  const res = await api.get<ReceiptPrint>(`/receipts/${paymentId}`)
+export async function getReceiptPrint(paymentId: string, original = false): Promise<ReceiptPrint> {
+  // `original` — qayta chop etish: birinchi chek bilan AYNAN bir xil ("qoldi" va "Chop etildi" to'lov paytidagi).
+  const res = await api.get<ReceiptPrint>(`/receipts/${paymentId}`, { params: original ? { original: true } : undefined })
   return res.data
 }
 

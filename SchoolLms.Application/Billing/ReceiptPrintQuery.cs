@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using SchoolLms.Application.Abstractions;
 using SchoolLms.Application.Dtos.Billing;
+using SchoolLms.Application.Services;
 using SchoolLms.Domain;
 
 namespace SchoolLms.Application.Billing;
@@ -122,7 +123,8 @@ public static class ReceiptPrintQuery
         IInvoiceService invoices,
         IAppDbContext db,
         CancellationToken ct = default,
-        string? verifyBaseUrl = null)
+        string? verifyBaseUrl = null,
+        bool originalCopy = false)
     {
         ArgumentNullException.ThrowIfNull(payments);
         ArgumentNullException.ThrowIfNull(invoices);
@@ -143,7 +145,16 @@ public static class ReceiptPrintQuery
             .Select(s => s.ClassName)
             .FirstOrDefaultAsync(ct);
 
-        var receipt = Build(payment, model, className, await InvoicesAsync(payment, invoices, ct), AppClock.NowInstant);
+        var invoiceRows = await InvoicesAsync(payment, invoices, ct);
+        var printedAt = AppClock.NowInstant;
+        if (originalCopy)
+        {
+            // QAYTA CHOP — birinchi chek bilan AYNAN bir xil (mijoz, 2026-09-25): "qoldi" to'lov paytidagi holatdan,
+            // "Chop etildi" — to'lov yozilgan lahza.
+            invoiceRows = await AsOfPaymentAsync(db, paymentId, invoiceRows, ct);
+            printedAt = await OriginalPrintedAtAsync(db, paymentId, payment.ReceivedAt, ct);
+        }
+        var receipt = Build(payment, model, className, invoiceRows, printedAt);
         var verifyUrl = await ReceiptService.VerifyUrlAsync(db, paymentId, verifyBaseUrl, ct);
         return verifyUrl is null ? receipt : receipt with { VerifyUrl = verifyUrl, QrDataUrl = ReceiptQr.PngDataUrl(verifyUrl) };
     }
@@ -204,6 +215,47 @@ public static class ReceiptPrintQuery
                 : null,
             PrintedAt: printedAt,
             PrintedAtText: ReceiptText.DateTime(printedAt));
+    }
+
+    /// <summary>
+    /// Hisob-fakturalar qoldig'i SHU TO'LOV paytidagi holatda: shu to'lov va undan oldingi (o'sha paytda storno
+    /// qilinmagan) to'lovlarning taqsimotlari hisobga olinadi, keyingilari — yo'q. Keyinroq bekor qilingan oy o'sha
+    /// paytda ochiq edi, shuning uchun "void" ham hisobga olinmaydi.
+    /// </summary>
+    private static async Task<IReadOnlyCollection<InvoiceDto>> AsOfPaymentAsync(
+        IAppDbContext db, Guid paymentId, IReadOnlyCollection<InvoiceDto> rows, CancellationToken ct)
+    {
+        if (rows.Count == 0) return rows;
+        var at = await db.Payments.AsNoTracking().Where(p => p.Id == paymentId).Select(p => p.ReceivedAt).FirstAsync(ct);
+        var ids = rows.Select(i => i.Id).ToList();
+        var paid = await (
+                from a in db.PaymentAllocations.AsNoTracking()
+                join p in db.Payments.AsNoTracking() on a.PaymentId equals p.Id
+                where ids.Contains(a.InvoiceId) && p.ReversalOf == null && p.ReceivedAt <= at
+                      && !db.Payments.Any(r => r.ReversalOf == p.Id && r.ReceivedAt <= at)
+                group a by a.InvoiceId into g
+                select new { InvoiceId = g.Key, Total = g.Sum(x => x.Amount) })
+            .ToDictionaryAsync(x => x.InvoiceId, x => x.Total, ct);
+        return [.. rows.Select(i => i with
+        {
+            Paid = paid.GetValueOrDefault(i.Id),
+            Remaining = i.Payable - paid.GetValueOrDefault(i.Id),
+            Status = i.Status == InvoiceStatus.Void ? InvoiceStatus.Open : i.Status,
+        })];
+    }
+
+    /// <summary>Birinchi chek chiqqan lahza — to'lovning audit yozuvi (Toshkent vaqti), bo'lmasa qabul vaqti.</summary>
+    private static async Task<DateTimeOffset> OriginalPrintedAtAsync(
+        IAppDbContext db, Guid paymentId, DateTimeOffset fallback, CancellationToken ct)
+    {
+        var id = paymentId.ToString("D");
+        var raw = await db.AuditLogs.AsNoTracking()
+            .Where(l => l.EntityType == AuditService.EntityPayment && l.EntityId == id && l.Action == "create")
+            .Select(l => l.Timestamp).FirstOrDefaultAsync(ct);
+        return DateTime.TryParse(raw, System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.None, out var local)
+            ? new DateTimeOffset(DateTime.SpecifyKind(local, DateTimeKind.Unspecified), TimeSpan.FromHours(5))
+            : fallback;
     }
 
     private static ReceiptPrintLineDto ToLine(ReceiptLine line, IReadOnlyDictionary<Guid, InvoiceDto> invoices)

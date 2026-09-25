@@ -68,7 +68,8 @@ public class ReceiptsController(
     [FinanceRole(FinanceAction.AcceptPayment)]
     [ProducesResponseType(StatusCodes.Status200OK, Type = typeof(ReceiptPrintDto))]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<ActionResult<ReceiptPrintDto>> Print(Guid paymentId, CancellationToken ct)
+    public async Task<ActionResult<ReceiptPrintDto>> Print(
+        Guid paymentId, CancellationToken ct, [FromQuery] bool original = false)
     {
         if (await ForbiddenForOtherCashierAsync(paymentId, ct) is { } forbidden) return forbidden;
 
@@ -76,7 +77,8 @@ public class ReceiptsController(
         var baseUrl = config[ReceiptQr.BaseUrlKey] is { Length: > 0 } configured
             ? configured
             : $"{Request.Scheme}://{Request.Host}";
-        var receipt = await ReceiptPrintQuery.GetAsync(paymentId, payments, invoices, db, ct, baseUrl);
+        // `original=true` — profilidan qayta chop etish: birinchi chek bilan bir xil (2026-09-25).
+        var receipt = await ReceiptPrintQuery.GetAsync(paymentId, payments, invoices, db, ct, baseUrl, original);
         if (receipt is null) return NotFound(new { message = "To'lov topilmadi" });
         return receipt;
     }

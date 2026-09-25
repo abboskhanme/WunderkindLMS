@@ -22,7 +22,7 @@
  */
 import { useState } from 'react'
 import {
-  AlertTriangle, CalendarClock, FileText, Loader2, RefreshCw,
+  AlertTriangle, CalendarClock, FileText, Loader2, Printer, RefreshCw,
   ReceiptText, TrendingDown, Wallet, ChevronDown, ChevronRight,
 } from 'lucide-react'
 import {
@@ -30,6 +30,8 @@ import {
   type PortalCategoryLine, type PortalFinance, type PortalInvoiceStatus,
   type PortalMonth, type PortalPayment, type PortalPaymentMethod,
 } from '@/api/services/portalFinance'
+import { getReceiptPrint } from '@/api/services/cashier'
+import { printThermalReceipt } from '@/lib/thermalReceipt'
 import { useAsync } from '@/hooks/useAsync'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
@@ -118,6 +120,20 @@ export function FinanceView({ studentId, embedded = false }: Props) {
       .finally(() => setBusyReceipt(null))
   }
 
+  /**
+   * Qayta chop etish (mijoz, 2026-09-25) — faqat o'quvchi kartochkasida (`embedded`, admin/kassir): birinchi marta
+   * qanday chiqqan bo'lsa AYNAN shunday, 2 nusxada (maktab + ota-ona) 58 mm termal chek.
+   */
+  const [busyPrint, setBusyPrint] = useState<string | null>(null)
+  function handlePrint(paymentId: string) {
+    setBusyPrint(paymentId)
+    setReceiptError(null)
+    getReceiptPrint(paymentId, true)
+      .then((receipt) => printThermalReceipt(receipt))
+      .catch(() => setReceiptError("Chekni chop etib bo'lmadi. Birozdan so'ng qayta urinib ko'ring."))
+      .finally(() => setBusyPrint(null))
+  }
+
   if (loading) return <Loader label="Moliya ma'lumoti yuklanmoqda..." />
 
   if (error) {
@@ -176,6 +192,8 @@ export function FinanceView({ studentId, embedded = false }: Props) {
             payments={data.payments}
             busyReceipt={busyReceipt}
             onReceipt={handleReceipt}
+            busyPrint={busyPrint}
+            onPrint={embedded ? handlePrint : undefined}
           />
         </>
       )}
@@ -471,10 +489,15 @@ function PaymentsSection({
   payments,
   busyReceipt,
   onReceipt,
+  busyPrint,
+  onPrint,
 }: {
   payments: PortalPayment[]
   busyReceipt: string | null
   onReceipt: (paymentId: string) => void
+  busyPrint: string | null
+  /** Faqat o'quvchi kartochkasida (admin/kassir) — ota-ona portalida yo'q. */
+  onPrint?: (paymentId: string) => void
 }) {
   return (
     <Card>
@@ -495,6 +518,8 @@ function PaymentsSection({
               payment={payment}
               busy={busyReceipt === payment.paymentId}
               onReceipt={onReceipt}
+              printing={busyPrint === payment.paymentId}
+              onPrint={onPrint}
             />
           ))}
         </div>
@@ -507,10 +532,14 @@ function PaymentRow({
   payment,
   busy,
   onReceipt,
+  printing,
+  onPrint,
 }: {
   payment: PortalPayment
   busy: boolean
   onReceipt: (paymentId: string) => void
+  printing: boolean
+  onPrint?: (paymentId: string) => void
 }) {
   const reversed = payment.reversal !== null
 
@@ -548,15 +577,22 @@ function PaymentRow({
           )}
         </div>
 
-        <Button
-          variant="secondary"
-          onClick={() => onReceipt(payment.paymentId)}
-          disabled={busy}
-          className="shrink-0"
-        >
-          {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
-          Chek (PDF)
-        </Button>
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
+          {onPrint && (
+            <Button onClick={() => onPrint(payment.paymentId)} disabled={printing} title="Birinchi chek kabi, 2 nusxada">
+              {printing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Printer className="h-4 w-4" />}
+              Chop etish
+            </Button>
+          )}
+          <Button
+            variant="secondary"
+            onClick={() => onReceipt(payment.paymentId)}
+            disabled={busy}
+          >
+            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
+            Chek (PDF)
+          </Button>
+        </div>
       </div>
 
       {/* Nima uchun to'langani — oy va toifa kesimida */}

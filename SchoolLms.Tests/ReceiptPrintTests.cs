@@ -327,6 +327,34 @@ public class ReceiptPrintTests(ApiFixture fixture)
         Assert.Equal("cancelled", after.GetProperty("status").GetString());
     }
 
+    /// <summary>
+    /// Qayta chop etish (<c>?original=true</c>) birinchi chek bilan bir xil: keyinroq shu oyga yana to'lov bo'lsa ham
+    /// "qoldi" to'lov paytidagicha, QR o'sha. Oddiy (hozirgi) chekda esa oy endi "to'liq yopildi".
+    /// </summary>
+    [Fact]
+    public async Task Qayta_chop_etilgan_chek_birinchisi_bilan_bir_xil()
+    {
+        var (_, client) = await ClientAsync(Roles.Cashier);
+        var studentId = await NewStudentAsync();
+        var tuition = await NewInvoiceAsync(studentId, "tuition", 500_000m);
+
+        var first = await AcceptAsync(client, studentId, 300_000m, (tuition, 300_000m));
+        var original = await client.GetFromJsonAsync<ReceiptPrintDto>($"/api/receipts/{first.Id}");
+        await AcceptAsync(client, studentId, 200_000m, (tuition, 200_000m));
+
+        var now = await client.GetFromJsonAsync<ReceiptPrintDto>($"/api/receipts/{first.Id}");
+        var reprint = await client.GetFromJsonAsync<ReceiptPrintDto>($"/api/receipts/{first.Id}?original=true");
+
+        Assert.Equal(ReceiptPrintQuery.ClosedLabel, Assert.Single(now!.Lines).StatusText);
+        var line = Assert.Single(reprint!.Lines);
+        Assert.Equal(ReceiptPrintQuery.RemainingLabel(200_000m), line.StatusText);
+        Assert.Equal(Assert.Single(original!.Lines).StatusText, line.StatusText);
+        Assert.Equal(original.VerifyUrl, reprint.VerifyUrl);
+        Assert.Equal(original.QrDataUrl, reprint.QrDataUrl);
+        Assert.Equal(original.TotalText, reprint.TotalText);
+        Assert.True(Math.Abs((reprint.PrintedAt - original.PrintedAt).TotalMinutes) < 2);
+    }
+
     /// <summary>PDF chek QR bilan ham, QR'siz ham chiziladi; QR va logo qo'shilgach fayl kattaradi.</summary>
     [Fact]
     public void Pdf_chek_QR_va_logo_bilan_chiziladi()
