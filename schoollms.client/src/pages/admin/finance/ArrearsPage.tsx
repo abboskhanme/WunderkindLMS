@@ -17,6 +17,7 @@
  * bitta ko'rinishga qo'shish maktabda bo'lmagan oyni "to'langan" qilib
  * ko'rsatardi.
  */
+import { hasFinanceAccess } from '@/pages/admin/billing/access'
 import { useCallback, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { FileSpreadsheet, Users, Wallet, CalendarRange, AlertTriangle } from 'lucide-react'
@@ -45,7 +46,7 @@ const control =
   'rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-brand-400'
 
 /** SPEC §4.3: moliya hisobotlari faqat admin va direktorga ochiq. */
-const ALLOWED_ROLES = ['admin', 'superadmin']
+// Moliya — admin/direktor yoki rolida "Moliya" ruxsati bor xodim (Boshqaruv → Rollar).
 
 /** O'quv yili sentyabrda boshlanadi — server sukuti ham shunday. */
 const ACADEMIC_YEAR_START_MONTH = 9
@@ -77,7 +78,7 @@ type SortBy = 'class' | 'debt'
 
 export function ArrearsPage() {
   const { user } = useAuth()
-  const allowed = user !== null && ALLOWED_ROLES.includes(user.role)
+  const allowed = hasFinanceAccess(user)
 
   const [fromMonth, setFromMonth] = useState(academicYearStart)
   const [toMonth, setToMonth] = useState(currentMonth)

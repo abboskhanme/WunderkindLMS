@@ -1,3 +1,4 @@
+import { hasFinanceAccess } from '@/pages/admin/billing/access'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import {
@@ -10,7 +11,7 @@ import {
   ShieldOff,
   Wallet,
 } from 'lucide-react'
-import type { AllocationSuggestion, Payment, PaymentMethod, Role, SchoolClass } from '@/types'
+import type { AllocationSuggestion, Payment, PaymentMethod, SchoolClass } from '@/types'
 import type { CashierStudent } from '@/api/services/cashier'
 import {
   MIN_SEARCH_LENGTH,
@@ -101,7 +102,7 @@ const TRANSACTION_KINDS: CashBoxTransactionRow['kind'][] = [
  * Kassa qo'shish/tahrirlash — faqat boshqaruvchi. Kirim/chiqim/ko'chirish/
  * ayirboshlash kassirga ham ochiq: bular kassirning kundalik ishi.
  */
-const CASH_BOX_MANAGE_ROLES: Role[] = ['admin', 'superadmin']
+// Moliya — admin/direktor yoki rolida "Moliya" ruxsati bor xodim (Boshqaruv → Rollar).
 
 const METHODS: PaymentMethod[] = ['cash', 'card', 'transfer', 'online']
 
@@ -162,7 +163,7 @@ const MIN_ENTRY_DATE = () => {
 export function CashierPage() {
   const { user } = useAuth()
   const allowed = canUseCashDesk(user)
-  const canManageBoxes = user !== null && CASH_BOX_MANAGE_ROLES.includes(user.role)
+  const canManageBoxes = hasFinanceAccess(user)
 
   /* ---- Kassalar ---- */
   const [boxes, setBoxes] = useState<CashBox[]>([])

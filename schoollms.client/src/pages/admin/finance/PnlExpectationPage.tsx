@@ -27,6 +27,7 @@
  * AYNAN bir manbadan (`ProfitLossAsync`), shuning uchun ikkovi hech qachon
  * kelisha olmay qolmaydi.
  */
+import { hasFinanceAccess } from '@/pages/admin/billing/access'
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Download, FlaskConical, TrendingDown, TrendingUp, Users, Wallet } from 'lucide-react'
@@ -47,7 +48,7 @@ import { PlannedExpenseTab } from './PlannedExpenseTab'
 import { MonthPicker } from '@/components/ui/DatePicker'
 
 /** SPEC §4.3: moliya hisobotlari faqat admin va direktorga ochiq. */
-const ALLOWED_ROLES = ['admin', 'superadmin']
+// Moliya — admin/direktor yoki rolida "Moliya" ruxsati bor xodim (Boshqaruv → Rollar).
 
 /** Joriy oy, "YYYY-MM". */
 function currentMonth(): string {
@@ -162,7 +163,7 @@ const monthTabs: Tab[] = ['expectation', 'dynamics', 'changes']
 
 export function PnlExpectationPage() {
   const { user } = useAuth()
-  const allowed = user !== null && ALLOWED_ROLES.includes(user.role)
+  const allowed = hasFinanceAccess(user)
 
   const [tab, setTab] = useState<Tab>('expectation')
   const [month, setMonth] = useState(currentMonth)

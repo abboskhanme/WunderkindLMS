@@ -1,6 +1,7 @@
+import { hasFinanceAccess } from '@/pages/admin/billing/access'
 import { useCallback, useEffect, useState } from 'react'
 import { FileSpreadsheet, History } from 'lucide-react'
-import type { Role, SalaryReportRow } from '@/types'
+import type { SalaryReportRow } from '@/types'
 import { downloadSalaryReport, getSalaryReport } from '@/api/services/finance'
 import { formatMoney, cn } from '@/lib/utils'
 import { Card } from '@/components/ui/Card'
@@ -76,7 +77,7 @@ const periodTabs: string[] = ['teachers', 'pnl', 'cashflow']
  * 403 beradi. Ruxsati yo'q odamga tugma CHIZILMAYDI — 403 ni ekranda
  * ko'rsatish emas.
  */
-const reportRoles: Role[] = ['admin', 'superadmin']
+// Moliya — admin/direktor yoki rolida "Moliya" ruxsati bor xodim (Boshqaruv → Rollar).
 
 /** Qoldiq/qarz summasini belgisiga qarab ranglash */
 function balanceClass(v: number): string {
@@ -91,7 +92,7 @@ function balanceClass(v: number): string {
  */
 export function FinancePage({ initialTab }: { initialTab?: Tab } = {}) {
   const { user } = useAuth()
-  const canSeeReports = !!user && reportRoles.includes(user.role)
+  const canSeeReports = hasFinanceAccess(user)
 
   // Ruxsati yo'q xodim uchun yagona ochiq tab — maosh hisoboti.
   const [tab, setTab] = useState<Tab>(canSeeReports ? (initialTab ?? 'pnl') : 'teachers')

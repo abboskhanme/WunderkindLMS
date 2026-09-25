@@ -23,6 +23,7 @@
  * beradi (hamma kassir, bank, chiqimlar, maosh). Kassirning o'z kuni unga
  * "Mening smenam" ekranida ochiq.
  */
+import { hasFinanceAccess } from '@/pages/admin/billing/access'
 import { useCallback, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
@@ -65,14 +66,14 @@ import { DatePicker } from '@/components/ui/DatePicker'
 
 
 /** SPEC §4.3: moliya hisobotlari faqat admin va direktorga ochiq. */
-const ALLOWED_ROLES = ['admin', 'superadmin']
+// Moliya — admin/direktor yoki rolida "Moliya" ruxsati bor xodim (Boshqaruv → Rollar).
 
 const todayStr = new Date().toISOString().slice(0, 10)
 
 export function CashDayPage() {
   const { user } = useAuth()
   const navigate = useNavigate()
-  const allowed = user !== null && ALLOWED_ROLES.includes(user.role)
+  const allowed = hasFinanceAccess(user)
 
   const [date, setDate] = useState(todayStr)
   const [month, setMonth] = useState(todayStr.slice(0, 7))

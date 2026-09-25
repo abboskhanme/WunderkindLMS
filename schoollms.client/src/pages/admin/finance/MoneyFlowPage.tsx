@@ -14,6 +14,7 @@
  * zaxira ko'rinish bo'ladi, (3) ekran o'quvchi (screen reader) uchun
  * ma'lumotning matnli manbai.
  */
+import { hasFinanceAccess } from '@/pages/admin/billing/access'
 import { Suspense, lazy, useCallback, useEffect, useState } from 'react'
 import { AlertCircle, RefreshCw, TrendingDown, TrendingUp, Wallet } from 'lucide-react'
 import {
@@ -43,13 +44,13 @@ const today = new Date().toISOString().slice(0, 10)
 const yearStart = `${today.slice(0, 4)}-01-01`
 
 /** SPEC §4.3: moliya hisobotlari faqat admin va direktorga ochiq. */
-const ALLOWED_ROLES = ['admin', 'superadmin']
+// Moliya — admin/direktor yoki rolida "Moliya" ruxsati bor xodim (Boshqaruv → Rollar).
 
 type Status = 'loading' | 'ready' | 'error'
 
 export function MoneyFlowPage() {
   const { user } = useAuth()
-  const allowed = user !== null && ALLOWED_ROLES.includes(user.role)
+  const allowed = hasFinanceAccess(user)
 
   const [from, setFrom] = useState(yearStart)
   const [to, setTo] = useState(today)

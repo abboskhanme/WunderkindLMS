@@ -16,6 +16,7 @@
  * serverdan keladi; yakun BUTUN FILTR bo'yicha, ko'rinib turgan sahifa
  * bo'yicha emas.
  */
+import { hasFinanceAccess } from '@/pages/admin/billing/access'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import {
@@ -75,7 +76,7 @@ const control =
 const PAGE_SIZE = 50
 
 /** SPEC §4.3 — hisobot admin va direktorniki. */
-const ALLOWED_ROLES = ['admin', 'superadmin']
+// Moliya — admin/direktor yoki rolida "Moliya" ruxsati bor xodim (Boshqaruv → Rollar).
 
 const EMPTY: TransactionPage = {
   rows: [],
@@ -154,7 +155,7 @@ function categoryText(row: TransactionRow): string {
 
 export function TransactionsPage() {
   const { user } = useAuth()
-  const allowed = user !== null && ALLOWED_ROLES.includes(user.role)
+  const allowed = hasFinanceAccess(user)
 
   // Faqat BIR MARTA o'qiladi — havoladan kelgan `from`/`to` ni boshlang'ich
   // filtrga aylantiradi (F8.01). Keyingi navigatsiya URL bilan sinxron emas,

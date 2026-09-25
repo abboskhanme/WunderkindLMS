@@ -23,6 +23,7 @@
  *
  * RUXSAT (SPEC §4.3): faqat `admin` va `superadmin`; kassir 403 oladi.
  */
+import { hasFinanceAccess } from '@/pages/admin/billing/access'
 import { useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { useSearchParams } from 'react-router-dom'
@@ -57,7 +58,7 @@ import { DatePicker } from '@/components/ui/DatePicker'
 
 
 /** SPEC §4.3: moliya hisobotlari faqat admin va direktorga ochiq. */
-const ALLOWED_ROLES = ['admin', 'superadmin']
+// Moliya — admin/direktor yoki rolida "Moliya" ruxsati bor xodim (Boshqaruv → Rollar).
 
 const todayStr = new Date().toISOString().slice(0, 10)
 const monthStart = `${todayStr.slice(0, 7)}-01`
@@ -71,7 +72,7 @@ const sectionTone: Record<string, string> = {
 
 export function FinancialReportsPage() {
   const { user } = useAuth()
-  const allowed = user !== null && ALLOWED_ROLES.includes(user.role)
+  const allowed = hasFinanceAccess(user)
 
   // "Kassa kuni" dan kelgan havola davrni o'zi beradi (§2.8 F8.01).
   const [params, setParams] = useSearchParams()

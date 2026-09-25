@@ -29,6 +29,42 @@ public class FinanceByRoleTests(ApiFixture fixture)
         Assert.Equal(HttpStatusCode.OK, created.StatusCode);
     }
 
+    /// <summary>
+    /// Moliya menyusidagi har bir ekran o'qiydigan API — "finance" ruxsatli xodimga
+    /// ochiq (403/401 emas). Ilgari menyu ochilsa ham ma'lumot kelmasdi (2026-09-25).
+    /// </summary>
+    [Theory]
+    [InlineData("/api/admin/finance/salary-report")]
+    [InlineData("/api/admin/finance/transactions")]
+    [InlineData("/api/admin/billing/invoices")]
+    [InlineData("/api/admin/finance/pnl")]
+    [InlineData("/api/admin/finance/pnl/expectation")]
+    [InlineData("/api/admin/finance/pnl/matrix")]
+    [InlineData("/api/admin/finance/cashflow")]
+    [InlineData("/api/admin/finance/cashflow/statement")]
+    [InlineData("/api/admin/finance/dashboard")]
+    [InlineData("/api/admin/finance/debtors")]
+    [InlineData("/api/admin/finance/debtors/workflow")]
+    [InlineData("/api/admin/finance/debtor-statuses")]
+    [InlineData("/api/admin/finance/collection-rate")]
+    [InlineData("/api/admin/finance/arrears-pivot")]
+    [InlineData("/api/admin/finance/cash-day")]
+    [InlineData("/api/admin/finance/cash-day/calendar")]
+    [InlineData("/api/admin/finance/money-flow")]
+    [InlineData("/api/admin/expenses")]
+    [InlineData("/api/admin/billing/discounts")]
+    [InlineData("/api/admin/billing/settings")]
+    public async Task Moliya_ekranlari_malumoti_moliya_ruxsatli_xodimga_ochiq(string url)
+    {
+        using var staff = await fixture.Api.ClientAsAsync(Roles.Staff, "finance");
+
+        var status = (await staff.GetAsync(url)).StatusCode;
+
+        Assert.NotEqual(HttpStatusCode.Forbidden, status);
+        Assert.NotEqual(HttpStatusCode.Unauthorized, status);
+        Assert.True((int)status < 500, $"{url} → {(int)status}");
+    }
+
     [Fact]
     public async Task Moliya_ruxsatisiz_xodim_kira_olmaydi()
     {
