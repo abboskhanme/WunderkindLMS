@@ -72,6 +72,7 @@ body{width:${PAGE_WIDTH_MM}mm;padding:0 ${(PAGE_WIDTH_MM - CONTENT_WIDTH_MM) / 2
 .logo{display:block;margin:0 auto 1.5mm;width:40mm;height:auto}
 .qr{display:block;margin:2mm auto .5mm;width:30mm;height:30mm;image-rendering:pixelated}
 .qr-note{font-size:10px;text-align:center}
+.slogan{margin-top:2mm;font-size:12px;font-weight:700;text-align:center;line-height:1.35}
 .cut{margin-top:3mm;border-top:1px dashed #000;padding-top:.5mm;font-size:9px;text-align:center}
 `
 
@@ -151,6 +152,9 @@ function copyHtml(r: ReceiptPrint, label: string): string {
     parts.push(`<img class="qr" src="${escapeHtml(r.qrDataUrl)}" alt="QR">`)
     parts.push(`<div class="qr-note">Chekni tekshirish uchun skanerlang</div>`)
   }
+
+  // Maktab shiori (mijoz, 2026-09-25) — PDF chekda ham aynan shu (`ReceiptText.SloganLine1/2`).
+  parts.push(`<div class="slogan">Biz shunchaki o'qitmaymiz<br>Biz liderlarni tarbiyalaymiz!</div>`)
 
   // "Qoldi" — chop etilgan paytdagi holat, shuning uchun sana chekda turadi.
   parts.push(`<div class="foot">Chop etildi: ${escapeHtml(r.printedAtText)}</div>`)

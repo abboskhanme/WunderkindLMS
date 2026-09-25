@@ -62,8 +62,20 @@ public sealed class ReceiptService(
     /// <exception cref="KeyNotFoundException">Bunday to'lov yo'q (controller buni 404 ga o'giradi).</exception>
     public async Task<byte[]> RenderPdfAsync(Guid paymentId, CancellationToken ct = default)
     {
-        var (_, model) = await LoadAsync(paymentId, ct);
-        return new ReceiptDocument(model).Render();
+        _ = await LoadAsync(paymentId, ct); // yo'q to'lov — KeyNotFoundException (404)
+        return await RenderThermalPdfAsync(paymentId, ct);
+    }
+
+    /// <summary>
+    /// PDF — 58 mm termal chek bilan bir xil (2026-09-25). Ma'lumot termal chek JSON'idan
+    /// (<see cref="ReceiptPrintQuery"/>), shuning uchun kassada chop etilgan chek bilan qator-qator mos.
+    /// </summary>
+    private async Task<byte[]> RenderThermalPdfAsync(Guid paymentId, CancellationToken ct)
+    {
+        var receipt = await ReceiptPrintQuery.GetAsync(
+            paymentId, payments, new InvoiceService(db, new LedgerService(db)), db, ct, config?[ReceiptQr.BaseUrlKey])
+            ?? throw new KeyNotFoundException($"To'lov topilmadi: {paymentId}.");
+        return new ThermalReceiptPdf(receipt).Render();
     }
 
     /// <inheritdoc />
@@ -107,7 +119,7 @@ public sealed class ReceiptService(
                 return false;
             }
 
-            var pdf = new ReceiptDocument(model).Render();
+            var pdf = await RenderThermalPdfAsync(paymentId, ct);
             var fileName = ReceiptText.FileName(payment.ReceiptNo);
             var caption = Caption(payment, model);
 

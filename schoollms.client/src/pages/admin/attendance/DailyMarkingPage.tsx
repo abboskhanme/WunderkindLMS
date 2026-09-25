@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { AlertTriangle, CheckCircle2, Search } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, ListChecks, Search } from 'lucide-react'
 import type {
   DailyAttendanceClassDay,
   DailyAttendanceLesson,
@@ -65,6 +65,42 @@ const MARKS: Mark[] = ['present', 'absent', 'excused']
 const MARK_LETTER: Record<Mark, string> = { present: 'K', absent: 'Y', excused: 'S' }
 const MARK_TITLE: Record<Mark, string> = { present: 'Keldi', absent: 'Kelmadi', excused: 'Sababli' }
 
+/**
+ * "Barcha darslar" — sinfning shu kundagi HAMMA soati bitta ro'yxatda (mijoz, 2026-09-25: "hamshira bir kunda
+ * bir marta davomat qiladi ... sinfni tanlab bittada barcha darslar uchun davomat qilish"). Belgi har bir darsga
+ * alohida yoziladi (server tomoni o'zgarmagan): bo'lingan darsda faqat o'sha guruh o'quvchilari.
+ */
+const ALL_KEY = 'ALL'
+
+function allLessonsOf(data: DailyAttendanceClassDay): DailyAttendanceLesson | null {
+  if (data.lessons.length === 0) return null
+  const ids = [...new Set(data.lessons.flatMap((l) => l.studentIds))]
+  const marked = data.lessons.filter((l) => l.marked)
+  return {
+    subjectId: '',
+    subjectName: 'Barcha darslar',
+    period: 0,
+    subGroup: 0,
+    startTime: data.lessons[0].startTime,
+    endTime: data.lessons[data.lessons.length - 1].endTime,
+    // Hammasi belgilangan bo'lsagina "belgilangan": aks holda xodim har birini qaytadan belgilaydi.
+    marked: marked.length === data.lessons.length,
+    markedByName: null,
+    markedAt: null,
+    absentCount: 0,
+    lateCount: 0,
+    studentIds: ids,
+    // Qaysidir darsda yo'q bo'lgan o'quvchi — yo'q ko'rinadi.
+    marks: Object.assign({}, ...marked.map((l) => l.marks)) as Record<string, string>,
+  }
+}
+
+/** Sarlavha matni: "3-dars · Matematika" yoki "Barcha darslar (5 ta)". */
+function lessonTitle(l: DailyAttendanceLesson, total: number): string {
+  if (l.period === 0) return `Barcha darslar (${total} ta)`
+  return `${l.period}-dars · ${l.subjectName}${l.subGroup > 0 ? ` · ${l.subGroup}-guruh` : ''}`
+}
+
 /** Tasdiq oynasi nima uchun ochilgani: boshqa sinf yoki boshqa dars. */
 type Pending = { kind: 'class'; id: string } | { kind: 'lesson'; key: string }
 
@@ -104,7 +140,9 @@ export function DailyMarkingPage() {
     (m === 'absent' ? !!day?.absentReasonId : !!day?.excusedReasonId)
 
   const keyOf = (l: DailyAttendanceLesson) => `${l.subjectId}|${l.period}|${l.subGroup}`
-  const lesson = day?.lessons.find((l) => keyOf(l) === lessonKey) ?? null
+  const allMode = lessonKey === ALL_KEY
+  const lesson = !day ? null : allMode ? allLessonsOf(day) : (day.lessons.find((l) => keyOf(l) === lessonKey) ?? null)
+  const lessonCount = day?.lessons.length ?? 0
   const currentClass = overview?.classes.find((c) => c.classId === classId) ?? null
 
   const loadOverview = useCallback(async () => {
@@ -176,7 +214,7 @@ export function DailyMarkingPage() {
   const showLesson = (data: DailyAttendanceClassDay, key: string) => {
     setShowUnmarked(false)
     setLessonKey(key)
-    setDraft(draftOf(data, data.lessons.find((l) => keyOf(l) === key) ?? null))
+    setDraft(draftOf(data, key === ALL_KEY ? allLessonsOf(data) : (data.lessons.find((l) => keyOf(l) === key) ?? null)))
     setDirty(false)
     setError(null)
     setSavedNote(null)
@@ -243,14 +281,33 @@ export function DailyMarkingPage() {
           reasonId: m === 'absent' ? day.absentReasonId : day.excusedReasonId,
         }))
 
-      const updated = await saveDailyAttendance(
-        day.classId,
-        date,
-        lesson.subjectId,
-        lesson.period,
-        lesson.subGroup,
-        marks,
-      )
+      const targets = allMode ? day.lessons : [lesson]
+      let updated: DailyAttendanceClassDay | null = null
+      let done = 0
+      try {
+        // Ketma-ket: har bir dars o'z so'rovi bilan (server tomoni o'zgarmagan). Bo'lingan darsga faqat
+        // o'sha guruh o'quvchilarining belgisi ketadi.
+        for (const t of targets) {
+          const ids = new Set(t.studentIds)
+          updated = await saveDailyAttendance(
+            day.classId,
+            date,
+            t.subjectId,
+            t.period,
+            t.subGroup,
+            marks.filter((m) => ids.has(m.studentId)),
+          )
+          done++
+        }
+      } catch (err) {
+        if (done > 0) await loadOverview()
+        throw done > 0
+          ? Object.assign(new Error('partial'), {
+              response: { data: { message: `${done}/${targets.length} dars saqlandi, qolganini saqlab bo'lmadi — qaytadan urinib ko'ring.` } },
+            })
+          : err
+      }
+      if (!updated) return
       // SAQLANGACH SINFDAN CHIQAMIZ (mijoz, 2026-09-19: "saqlangach bu
       // sinfdan chiqishi kerak"). Ilgari ekran o'zi keyingi soatga o'tardi va
       // xodim qaysi darsni belgilayotganini yo'qotib qo'yardi — endi tanlov
@@ -260,8 +317,8 @@ export function DailyMarkingPage() {
       setLessonKey('')
       setDraft({})
       setDirty(false)
-      setSavedNote(`${updated.className} · ${lesson.period}-dars saqlandi.`)
-      setToast(`${updated.className} · ${lesson.period}-dars · ${lesson.subjectName} — davomat saqlandi`)
+      setSavedNote(`${updated.className} · ${lessonTitle(lesson, targets.length)} saqlandi.`)
+      setToast(`${updated.className} · ${lessonTitle(lesson, targets.length)} — davomat saqlandi`)
 
       await loadOverview()
     } catch (err: unknown) {
@@ -279,9 +336,10 @@ export function DailyMarkingPage() {
     // `lesson` emas, `lessonKey` — bog'liqlik SODDA qiymat bo'lsin: hosila
     // obyektga bog'lanish React Compiler'ning memoizatsiyasini buzadi
     // (`react-hooks/preserve-manual-memoization`).
-    const current = day.lessons.find(
-      (l) => `${l.subjectId}|${l.period}|${l.subGroup}` === lessonKey,
-    )
+    const current =
+      lessonKey === ALL_KEY
+        ? allLessonsOf(day)
+        : day.lessons.find((l) => `${l.subjectId}|${l.period}|${l.subGroup}` === lessonKey)
     const ids = current ? new Set(current.studentIds) : null
     const mine = ids ? day.students.filter((s) => ids.has(s.studentId)) : day.students
     const q = query.trim().toLowerCase()
@@ -344,6 +402,11 @@ export function DailyMarkingPage() {
           >
             {!day && <option value="">Avval sinfni tanlang</option>}
             {day?.lessons.length === 0 && <option value="">Bu kunda dars yo'q</option>}
+            {day && day.lessons.length > 1 && (
+              <option value={ALL_KEY}>
+                Barcha darslar ({day.lessons.length} ta){day.lessons.every((l) => l.marked) ? ' ✓' : ''}
+              </option>
+            )}
             {day?.lessons.map((l) => (
               <option key={keyOf(l)} value={keyOf(l)}>
                 {l.period}-dars · {l.subjectName}
@@ -355,6 +418,12 @@ export function DailyMarkingPage() {
             ))}
           </Select>
         </div>
+
+        {day && day.lessons.length > 1 && !allMode && (
+          <Button variant="secondary" className="mt-4 w-full whitespace-nowrap sm:w-auto" onClick={() => pickLesson(ALL_KEY)}>
+            <ListChecks className="h-4 w-4 shrink-0" /> Barcha darslar ({day.lessons.length})
+          </Button>
+        )}
 
         {day && (
           <>
@@ -393,11 +462,10 @@ export function DailyMarkingPage() {
         <>
           <Card className="p-0">
             {/* --- Sarlavha: butun ustunni belgilaydigan uchta tugma --- */}
-            <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-4 py-3">
-              <div className="min-w-0">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-4 py-3">
+              <div className="min-w-0 flex-1">
                 <p className="truncate font-semibold text-slate-800">
-                  {day.className} · {lesson.period}-dars · {lesson.subjectName}
-                  {lesson.subGroup > 0 ? ` · ${lesson.subGroup}-guruh` : ''}
+                  {day.className} · {lessonTitle(lesson, lessonCount)}
                 </p>
                 <p className="text-xs text-slate-400">
                   {counts.present} keldi · {counts.absent} kelmadi · {counts.excused} sababli
@@ -551,8 +619,14 @@ export function DailyMarkingPage() {
         {day && lesson && (
           <div className="space-y-2 text-sm text-slate-600">
             <p className="font-medium text-slate-800">
-              {day.className} · {lesson.period}-dars · {lesson.subjectName}
+              {day.className} · {lessonTitle(lesson, lessonCount)}
             </p>
+            {allMode && (
+              <p className="text-xs text-slate-500">
+                Belgilar {lessonCount} ta darsning hammasiga yoziladi — oldin belgilangan darslar ham shu belgilar
+                bilan yangilanadi.
+              </p>
+            )}
             <p>
               <span className="text-emerald-600">{counts.present} keldi</span> ·{' '}
               <span className="text-red-600">{counts.absent} kelmadi</span> ·{' '}

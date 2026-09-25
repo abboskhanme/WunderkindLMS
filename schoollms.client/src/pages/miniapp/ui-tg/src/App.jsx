@@ -11,9 +11,12 @@ import { TeacherPanel } from './screens/TeacherPanel'
 import { ParentPanel } from './screens/ParentPanel'
 import { LinkScreen } from './screens/LinkScreen'
 import { BrowserLogin } from './screens/BrowserLogin'
+import { StaffPortal } from './screens/StaffPortal'
 
 const TEACHER_ROLES = ['teacher']
 const PARENT_ROLES = ['parent', 'student']
+// Veb-panelda ishlaydiganlar — Mini App ularni panelga parolsiz o'tkazadi (2026-09-25).
+const PANEL_ROLES = ['staff', 'admin', 'superadmin', 'cashier']
 
 function Shell() {
   const { status, user, error, retry, adoptSession } = useSession()
@@ -30,6 +33,7 @@ function Shell() {
 
   if (TEACHER_ROLES.includes(user.role)) return <TeacherPanel user={user} />
   if (PARENT_ROLES.includes(user.role)) return <ParentPanel user={user} />
+  if (PANEL_ROLES.includes(user.role)) return <StaffPortal user={user} />
 
   // Admin, kassir va xodim uchun Mini App yo'q — ular veb-panelda ishlaydi.
   // Jimgina bo'sh ekran ko'rsatishdan ko'ra sababini aytgan ma'qul.

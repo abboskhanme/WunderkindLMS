@@ -152,6 +152,33 @@ public sealed class TelegramLinkService(IAppDbContext db)
         return (LinkCodeResult.Ok, user);
     }
 
+    /// <summary>
+    /// Login va parol tekshirilgandan keyin bevosita bog'lash (kodsiz). Bitta Telegram — bitta akkaunt; bitta
+    /// akkauntga esa bir nechta Telegram bog'lanishi mumkin.
+    /// </summary>
+    public async Task<LinkCodeResult> LinkDirectAsync(AppUser user, TelegramWebAppUser tgUser, CancellationToken ct = default)
+    {
+        var existing = await db.TelegramAccounts.FirstOrDefaultAsync(a => a.TelegramUserId == tgUser.Id, ct);
+        if (existing is not null)
+            return existing.UserId == user.Id ? LinkCodeResult.Ok : LinkCodeResult.TelegramAlreadyLinked;
+        // Bitta hisobga bir nechta Telegram mumkin (mijoz, 2026-09-25) — login va parolni bilgan istalgan
+        // Telegram'dan kiriladi.
+
+        var now = AppClock.Now;
+        db.TelegramAccounts.Add(new TelegramAccount
+        {
+            TelegramUserId = tgUser.Id,
+            UserId = user.Id,
+            Username = tgUser.Username,
+            DisplayName = tgUser.DisplayName,
+            LinkedByUserId = user.Id,
+            LinkedAt = now,
+            LastSeenAt = now,
+        });
+        await db.SaveChangesAsync(ct);
+        return LinkCodeResult.Ok;
+    }
+
     /// <summary>Telegram id bo'yicha bog'langan akkaunt (yo'q bo'lsa null).</summary>
     public async Task<TelegramAccount?> FindAsync(long telegramUserId, CancellationToken ct = default) =>
         await db.TelegramAccounts.FirstOrDefaultAsync(a => a.TelegramUserId == telegramUserId, ct);

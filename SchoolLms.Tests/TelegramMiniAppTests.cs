@@ -375,6 +375,42 @@ public class TelegramMiniAppTests(ApiFixture fixture)
     private static long _nextTelegramId = 700_000_000;
     private static int _nextPhone;
 
+    /// <summary>
+    /// Birinchi kirish login va parol bilan (2026-09-25): noto'g'ri parol — 401 va bog'lanish yo'q; to'g'ri parol —
+    /// Telegram bog'lanadi va token beriladi; keyin <c>/api/tg/auth</c> parolsiz kiradi. Ikkinchi Telegram ham o'sha
+    /// login bilan kira oladi (2026-09-25: bitta hisobga bir nechta Telegram).
+    /// </summary>
+    [Fact]
+    public async Task Xodim_login_parol_bilan_bir_marta_bogalanadi_keyin_parolsiz_kiradi()
+    {
+        var (staff, password) = await fixture.Api.SeedUserAsync(Roles.Staff, permissions: ["attendance"]);
+        var telegramId = NewTelegramId();
+        var initData = TelegramInitData.Sign(InitFields(telegramId), BotToken);
+        using var anonymous = AnonymousClient();
+
+        var wrong = await anonymous.PostAsJsonAsync("/api/tg/link-login", new { initData, login = staff.Email, password = "noto'g'ri" });
+        Assert.Equal(HttpStatusCode.Unauthorized, wrong.StatusCode);
+        await fixture.Api.WithDbAsync(async db =>
+            Assert.False(await db.TelegramAccounts.AnyAsync(a => a.TelegramUserId == telegramId)));
+
+        var ok = await anonymous.PostAsJsonAsync("/api/tg/link-login", new { initData, login = staff.Email, password });
+        Assert.Equal(HttpStatusCode.OK, ok.StatusCode);
+        using (var body = JsonDocument.Parse(await ok.Content.ReadAsStringAsync()))
+        {
+            Assert.Equal("staff", body.RootElement.GetProperty("user").GetProperty("role").GetString());
+            Assert.False(string.IsNullOrEmpty(body.RootElement.GetProperty("token").GetString()));
+        }
+
+        var reauth = await anonymous.PostAsJsonAsync("/api/tg/auth", new { initData });
+        Assert.Equal(HttpStatusCode.OK, reauth.StatusCode);
+
+        var otherInit = TelegramInitData.Sign(InitFields(NewTelegramId()), BotToken);
+        var second = await anonymous.PostAsJsonAsync("/api/tg/link-login", new { initData = otherInit, login = staff.Email, password });
+        Assert.Equal(HttpStatusCode.OK, second.StatusCode);
+        await fixture.Api.WithDbAsync(async db =>
+            Assert.Equal(2, await db.TelegramAccounts.CountAsync(a => a.UserId == staff.Id)));
+    }
+
     private static long NewTelegramId() => Interlocked.Increment(ref _nextTelegramId);
 
     /// <summary>Har testga o'z raqami — vasiylardagi `phone_key` unikal.</summary>

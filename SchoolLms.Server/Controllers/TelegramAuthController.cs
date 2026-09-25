@@ -126,6 +126,53 @@ public sealed class TelegramAuthController(
     /// kimligini isbotlamaydi.
     /// </para>
     /// </summary>
+    /// <summary>
+    /// Birinchi kirish login va parol bilan (mijoz, 2026-09-25: "telegramdan kirsa ham login paroli saqlanadimi
+    /// ... har safar parol termasligi kerak"). Parol to'g'ri bo'lsa, Telegram akkaunti shu foydalanuvchiga
+    /// bog'lanadi va token beriladi; keyingi ochilishlarda <c>/api/tg/auth</c> uni imzo bo'yicha o'zi taniydi.
+    /// Kimligi — imzolangan <c>initData</c> (yoki bog'lash chiptasi); parol taxminiga qarshi <c>login</c> chegarasi.
+    /// </summary>
+    [HttpPost("link-login")]
+    [AllowAnonymous]
+    [EnableRateLimiting("login")]
+    public async Task<ActionResult<TgAuthResponse>> LinkByLogin(TgLoginLinkRequest req, CancellationToken ct)
+    {
+        var check = VerifyForLink(req is null ? null : new TgLinkRequest("", req.InitData));
+        if (check.Error is not null) return check.Error;
+        var tgUser = check.User!;
+
+        var login = (req!.Login ?? "").Trim();
+        var user = login.Length == 0 ? null : await db.Users.FirstOrDefaultAsync(u => u.Email == login, ct);
+        if (user is null || !PasswordHasher.Verify(req.Password ?? "", user.PasswordHash))
+        {
+            logger.LogWarning("Telegram orqali muvaffaqiyatsiz login: login={Login}, tg={TelegramUserId}", login, tgUser.Id);
+            return Unauthorized(new { code = "invalid_credentials", message = "Login yoki parol noto'g'ri" });
+        }
+
+        if (await SessionFactory.IsBlockedAsync(db, user, ct))
+            return Unauthorized(new { code = "account_blocked", message = "Akkaunt arxivlangan yoki to'xtatilgan" });
+
+        switch (await Links.LinkDirectAsync(user, tgUser, ct))
+        {
+            case LinkCodeResult.TelegramAlreadyLinked:
+                return Conflict(new
+                {
+                    code = "telegram_already_linked",
+                    message = "Bu Telegram akkaunti allaqachon boshqa foydalanuvchiga bog'langan",
+                });
+            case LinkCodeResult.UserAlreadyLinked:
+                return Conflict(new
+                {
+                    code = "user_already_linked",
+                    message = "Bu foydalanuvchiga boshqa Telegram akkaunti bog'langan. Almashtirish uchun maktab administratoriga murojaat qiling.",
+                });
+        }
+
+        ClearLinkTicket();
+        var session = await SessionFactory.IssueAsync(db, jwt, user, ct);
+        return Ok(new TgAuthResponse("ok", session.Token, session.User, Profile(tgUser), null));
+    }
+
     [HttpPost("link")]
     [AllowAnonymous]
     [EnableRateLimiting("telegram")]
@@ -233,10 +280,11 @@ public sealed class TelegramAuthController(
         var uid = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
         if (uid is null) return Unauthorized();
 
-        var account = await db.TelegramAccounts.FirstOrDefaultAsync(a => a.UserId == uid, ct);
-        if (account is null) return NotFound(new { message = "Telegram bog'lanishi topilmadi" });
+        // Hisobga bir nechta Telegram bog'lanishi mumkin — "uzish" hammasini uzadi.
+        var accounts = await db.TelegramAccounts.Where(a => a.UserId == uid).ToListAsync(ct);
+        if (accounts.Count == 0) return NotFound(new { message = "Telegram bog'lanishi topilmadi" });
 
-        db.TelegramAccounts.Remove(account);
+        db.TelegramAccounts.RemoveRange(accounts);
         await db.SaveChangesAsync(ct);
         return NoContent();
     }

@@ -33,6 +33,12 @@ public record TgAuthRequest(string InitData);
 /// </summary>
 public record TgLinkRequest(string Code, string? InitData = null);
 
+/// <summary>
+/// `POST /api/tg/link-login` — birinchi marta login va parol bilan kirish (mijoz, 2026-09-25). Telegram akkaunti
+/// shu foydalanuvchiga bog'lanadi, keyingi ochilishlarda parol so'ralmaydi.
+/// </summary>
+public record TgLoginLinkRequest(string Login, string Password, string? InitData = null);
+
 /// <summary>Imzosi tekshirilgan Telegram foydalanuvchisi (bog'lash ekranida ko'rsatiladi).</summary>
 public record TgTelegramUserDto(string Id, string DisplayName, string? Username);
 

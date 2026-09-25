@@ -106,7 +106,9 @@ internal static class GuardianModel
             // bitta Telegram id'ga. Aks holda "kim kimning nomidan kirdi" savoli
             // ko'p javobli bo'lardi.
             e.HasIndex(x => x.TelegramUserId).IsUnique();
-            e.HasIndex(x => x.UserId).IsUnique();
+            // Bitta hisobga bir nechta Telegram (mijoz, 2026-09-25: "login parol bilan istalgan telegramidan kira
+            // oladigan bo'lib tursin") — unikal emas.
+            e.HasIndex(x => x.UserId);
 
             // Akkaunt o'chsa bog'lanish ham ketadi — bog'lanish akkauntsiz ma'nosiz.
             e.HasOne<AppUser>().WithMany().HasForeignKey(x => x.UserId)

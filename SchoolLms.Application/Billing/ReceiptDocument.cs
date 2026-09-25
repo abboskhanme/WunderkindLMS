@@ -111,6 +111,13 @@ public static class ReceiptText
     /// <summary>Taqsimlanmagan qoldiq qatori (oldindan to'lov).</summary>
     public const string AdvanceLine = "Avans (keyingi oylarga)";
 
+    /// <summary>Chek oxiridagi maktab shiori (mijoz, 2026-09-25) — termal chekda ham aynan shu matn.</summary>
+    public const string SloganLine1 = "Biz shunchaki o'qitmaymiz";
+    public const string SloganLine2 = "Biz liderlarni tarbiyalaymiz!";
+
+    /// <summary>QR ostidagi izoh.</summary>
+    public const string QrNote = "Chekni tekshirish uchun skanerlang";
+
     /// <summary>Storno chekidagi qaytarilgan summa qatori.</summary>
     public const string RefundLine = "Qaytarilgan summa";
 
