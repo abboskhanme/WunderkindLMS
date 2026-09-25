@@ -106,7 +106,7 @@ export function StudentListFilters({
           <input
             value={filter.search ?? ''}
             onChange={(e) => onChange({ search: e.target.value })}
-            placeholder="F.I.SH yoki ota-ona bo'yicha qidirish..."
+            placeholder="F.I.SH, ota-ona yoki telefon bo'yicha qidirish..."
             className={cn(control, 'w-full pl-9')}
           />
         </div>
@@ -157,8 +157,8 @@ export function StudentListFilters({
             title="Sinfdagi holati"
           >
             <option value="">Sinfli va sinfsiz</option>
-            <option value="inClass">Sinfda o'qiyotganlar</option>
-            <option value="unassigned">Sinfga qo'shilmaganlar</option>
+            <option value="inClass">Sinfli (sinfda o'qiyotganlar)</option>
+            <option value="unassigned">Sinfsiz (sinfga qo'shilmaganlar)</option>
             <option value="waiting">Kutayotganlar</option>
             <option value="leftFromClass">Sinfdan chiqarilganlar</option>
           </select>

@@ -118,10 +118,22 @@ public sealed class StudentListQuery(IAppDbContext db)
         var search = (f.Search ?? "").Trim().ToLowerInvariant();
         if (search.Length > 0)
         {
-            // Bugungi ekran AYNAN shu ikki maydon bo'yicha qidiradi
-            // (F.I.SH va ota-ona F.I.SH) — kengaytirilmadi.
-            q = q.Where(s => s.FullName.ToLower().Contains(search)
-                             || s.ParentFullName.ToLower().Contains(search));
+            // F.I.SH va ota-ona F.I.SH; matn TELEFONGA o'xshasa (faqat raqam va
+            // + - ( ) bo'sh joy, kamida 3 raqam) — o'quvchi yoki ota-ona telefoni.
+            // Telefon "+998 97 666 66 66" ko'rinishida saqlanadi, shuning uchun
+            // raqamlar ajratgichlarsiz solishtiriladi ("97666" ham topadi).
+            var digits = PhoneUtil.DigitsOnly(search);
+            var phoneLike = digits.Length >= 3 && search.All(ch => char.IsDigit(ch) || " +-()".Contains(ch));
+            if (phoneLike)
+            {
+                q = q.Where(s => s.ParentPhone.Replace(" ", "").Replace("-", "").Replace("(", "").Replace(")", "").Contains(digits)
+                                 || (s.Phone != null && s.Phone.Replace(" ", "").Replace("-", "").Replace("(", "").Replace(")", "").Contains(digits)));
+            }
+            else
+            {
+                q = q.Where(s => s.FullName.ToLower().Contains(search)
+                                 || s.ParentFullName.ToLower().Contains(search));
+            }
         }
 
         if (!string.IsNullOrWhiteSpace(f.ClassName))

@@ -145,6 +145,49 @@ public class StudentListTests(ApiFixture fixture)
         await AssertIdsAsync(client, $"{Search}?search={tag}&grades=5&gender=male", b);
     }
 
+    /// <summary>
+    /// "Sinfli / sinfsiz" (placement): sinfsiz — sinf nomi haqiqiy sinfga mos
+    /// kelmaydigan o'quvchi. Ilgari frontend bu parametrni umuman yubormasdi.
+    /// </summary>
+    [Fact]
+    public async Task Sinfli_va_sinfsiz_filtri_toraytiradi()
+    {
+        using var client = await fixture.Api.ClientAsAsync(Roles.Admin);
+        var tag = Tag();
+        var (five, _) = await SeedClassesAsync(tag);
+
+        var inClass = await SeedAsync(tag, "Sinfli", className: five);
+        var noClass = await SeedAsync(tag, "Sinfsiz");
+
+        await AssertIdsAsync(client, $"{Search}?search={tag}&placement=inClass", inClass);
+        await AssertIdsAsync(client, $"{Search}?search={tag}&placement=unassigned", noClass);
+        await AssertIdsAsync(client, $"{Search}?search={tag}", inClass, noClass);
+    }
+
+    /// <summary>
+    /// Telefon bo'yicha qidiruv: formatlangan raqam ajratgichlarsiz topiladi;
+    /// matnda harf bo'lsa telefon qidirilmaydi (ism bo'yicha qidiruv o'zgarmaydi).
+    /// </summary>
+    [Fact]
+    public async Task Telefon_boyicha_qidiradi()
+    {
+        using var client = await fixture.Api.ClientAsAsync(Roles.Admin);
+        var tag = Tag();
+        // Har test uchun takrorlanmas raqam — umumiy bazada boshqa qator topilmasin.
+        var local = $"9{Random.Shared.Next(10_000_000, 99_999_999)}";
+        var id = await SeedAsync(tag, "Telefonli");
+        await fixture.Api.WithDbAsync(async db =>
+        {
+            var st = await db.Students.FirstAsync(x => x.Id == id);
+            st.ParentPhone = $"+998 {local[..2]} {local[2..5]} {local[5..7]} {local[7..]}";
+            await db.SaveChangesAsync();
+        });
+
+        await AssertIdsAsync(client, $"{Search}?search={local}", id);
+        await AssertIdsAsync(client, $"{Search}?search={Uri.EscapeDataString($"{local[..2]} {local[2..5]} {local[5..7]}")}", id);
+        await AssertIdsAsync(client, $"{Search}?search={Uri.EscapeDataString("+998" + local)}", id);
+    }
+
     [Fact]
     public async Task Yosh_qabul_sanasi_va_holat_filtrlari_toraytiradi()
     {

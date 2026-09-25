@@ -161,6 +161,10 @@ export function studentFilterParams(filter: StudentListFilter): URLSearchParams 
   put('hasSubscription', filter.hasSubscription)
   put('categoryId', filter.categoryId)
   put('hasDiscount', filter.hasDiscount)
+  // Ilgari bu ikkisi so'rovga tushmasdi — panel va bosh sahifa kartalari tanlagan
+  // "sinfli / sinfsiz" va "birinchi to'lov" filtrlari jimgina e'tiborsiz qolardi.
+  put('placement', filter.placement)
+  put('firstPayment', filter.firstPayment)
   put('certificateTypeIds', filter.certificateTypeIds)
   put('certificateTeacherId', filter.certificateTeacherId)
   put('enrolledFrom', filter.enrolledFrom)
