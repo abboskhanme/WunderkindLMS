@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using SchoolLms.Infrastructure.Data;
@@ -12,9 +13,11 @@ using SchoolLms.Infrastructure.Data;
 namespace SchoolLms.Infrastructure.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260925123106_FeeCategoryMonthlyAmount")]
+    partial class FeeCategoryMonthlyAmount
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -51,42 +54,6 @@ namespace SchoolLms.Infrastructure.Migrations
                         .HasName("pk_absence_reasons");
 
                     b.ToTable("absence_reasons", (string)null);
-                });
-
-            modelBuilder.Entity("SchoolLms.Domain.AccessRole", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid")
-                        .HasColumnName("id");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp without time zone")
-                        .HasColumnName("created_at");
-
-                    b.Property<string>("Description")
-                        .IsRequired()
-                        .HasColumnType("text")
-                        .HasColumnName("description");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasColumnType("text")
-                        .HasColumnName("name");
-
-                    b.PrimitiveCollection<List<string>>("Permissions")
-                        .IsRequired()
-                        .HasColumnType("text[]")
-                        .HasColumnName("permissions");
-
-                    b.HasKey("Id")
-                        .HasName("pk_access_roles");
-
-                    b.HasIndex("Name")
-                        .IsUnique()
-                        .HasDatabaseName("ix_access_roles_name");
-
-                    b.ToTable("access_roles", (string)null);
                 });
 
             modelBuilder.Entity("SchoolLms.Domain.AdjustmentReason", b =>
@@ -141,10 +108,6 @@ namespace SchoolLms.Infrastructure.Migrations
                         .HasColumnType("text")
                         .HasColumnName("id");
 
-                    b.Property<Guid?>("AccessRoleId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("access_role_id");
-
                     b.Property<string>("AvatarUrl")
                         .HasColumnType("text")
                         .HasColumnName("avatar_url");
@@ -193,9 +156,6 @@ namespace SchoolLms.Infrastructure.Migrations
 
                     b.HasKey("Id")
                         .HasName("pk_users");
-
-                    b.HasIndex("AccessRoleId")
-                        .HasDatabaseName("ix_users_access_role_id");
 
                     b.HasIndex("Email")
                         .IsUnique()
@@ -6605,15 +6565,6 @@ namespace SchoolLms.Infrastructure.Migrations
                         {
                             t.HasCheckConstraint("ck_week_assignments_owner_kind", "owner_kind in ('class','group')");
                         });
-                });
-
-            modelBuilder.Entity("SchoolLms.Domain.AppUser", b =>
-                {
-                    b.HasOne("SchoolLms.Domain.AccessRole", null)
-                        .WithMany()
-                        .HasForeignKey("AccessRoleId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .HasConstraintName("fk_users_access_roles_access_role_id");
                 });
 
             modelBuilder.Entity("SchoolLms.Domain.AssignmentMaterial", b =>

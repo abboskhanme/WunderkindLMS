@@ -72,6 +72,12 @@ public class FeeCategory
     public string Name { get; set; } = string.Empty;
     /// <summary>false = yangi obuna/hisob-faktura ochib bo'lmaydi (tarix qoladi).</summary>
     public bool IsActive { get; set; } = true;
+    /// <summary>
+    /// Abonementning o'zgarmas oylik narxi (so'm). Belgilangan bo'lsa, yangi obuna
+    /// AYNAN shu summa bilan ochiladi — o'quvchi kartochkasida qo'lda yozilmaydi.
+    /// null = narx belgilanmagan (masalan, <c>tuition</c> — narxi sinfdan olinadi).
+    /// </summary>
+    public decimal? MonthlyAmount { get; set; }
 }
 
 /// <summary>

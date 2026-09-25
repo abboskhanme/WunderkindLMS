@@ -1,3 +1,4 @@
+import type { AbsenceReason } from '@/types'
 import { api } from '../client'
 
 /* ==========================================================================
@@ -72,9 +73,11 @@ export interface DailyAttendanceClassDay {
   /** QIZIL tugma yozadigan sabab (katalogdan — server hal qiladi). */
   absentReasonId: string | null
   absentReasonName: string | null
-  /** SARIQ tugma yozadigan sabab. */
+  /** SARIQ tugma yozadigan sabab (sukut — o'quvchida boshqasi tanlanmagan bo'lsa). */
   excusedReasonId: string | null
   excusedReasonName: string | null
+  /** Katalogdagi BARCHA davomat sabablari — sariq belgida aniq sabab shu ro'yxatdan tanlanadi. */
+  reasons: AbsenceReason[]
 }
 
 export interface DailyAttendanceMarkInput {

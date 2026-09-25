@@ -247,7 +247,9 @@ export const navByRole: Record<Role, NavItem[]> = {
       icon: Building2,
       children: [
         { label: 'Filiallar', to: '/admin/boshqaruv/branches', roles: ['superadmin'], group: 'TASHKILOT' },
-        { label: 'Xodimlar va rollar', to: '/admin/boshqaruv/staff', perm: 'staff', group: 'TASHKILOT' },
+        // Mijoz, 2026-09-25: xodimlar va rollar alohida — ruxsat rolga beriladi, xodimga rol biriktiriladi.
+        { label: 'Xodimlar', to: '/admin/boshqaruv/staff', perm: 'staff', group: 'TASHKILOT' },
+        { label: 'Rollar', to: '/admin/boshqaruv/roles', perm: 'staff', group: 'TASHKILOT' },
         { label: 'Avtobus-gps', to: '/admin/boshqaruv/gps', perm: 'gps', group: 'KUZATUV' },
         { label: 'Kameralar', to: '/admin/boshqaruv/cameras', perm: 'cameras', group: 'KUZATUV' },
         { label: 'Taklif va shikoyatlar', to: '/admin/boshqaruv/feedback', perm: 'feedback', group: 'FIKR' },

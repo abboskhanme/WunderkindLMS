@@ -30,7 +30,7 @@ export function AdminHome() {
   return (
     <div className="flex flex-col items-center gap-2 py-24 text-center">
       <p className="font-medium text-slate-700">Sizga hali bo'lim ochilmagan</p>
-      <p className="max-w-sm text-sm text-slate-500">Tizim egasi (superadmin) Xodimlar va rollar bo'limida ruxsat bergach, bo'limlar shu yerda paydo bo'ladi.</p>
+      <p className="max-w-sm text-sm text-slate-500">Tizim egasi (superadmin) Boshqaruv → Rollar orqali sizga rol biriktirgach, bo'limlar shu yerda paydo bo'ladi.</p>
     </div>
   )
 }

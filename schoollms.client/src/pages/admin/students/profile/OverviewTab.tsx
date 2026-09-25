@@ -15,6 +15,7 @@ import { genderLabels } from '@/config/constants'
 import { cn, formatDate } from '@/lib/utils'
 import { StatCard } from '@/components/ui/StatCard'
 import { ProfileEmpty, ProfileSection } from './ProfileUi'
+import { formatPhone } from '@/lib/phone'
 
 /**
  * Kartochkaning "Umumiy" tab'i — docs/modules/students-parity.md §2.3 (S-10:
@@ -201,12 +202,12 @@ export function OverviewTab({ data, card }: Props) {
           <InfoRow icon={Users} label="Guruh" value={data.subGroup === 0 ? 'Butun sinf' : `${data.subGroup}-guruh`} />
           <InfoRow icon={GraduationCap} label="Sinf rahbari" value={data.homeroomTeacher || '—'} />
           <InfoRow icon={User} label="Ota-ona" value={data.parentFullName || '—'} />
-          <InfoRow icon={Phone} label="Ota-ona telefoni" value={data.parentPhone || '—'} />
+          <InfoRow icon={Phone} label="Ota-ona telefoni" value={formatPhone(data.parentPhone) || '—'} />
           {/*
             §2.3 (S-8) — o'quvchining O'Z telefoni, o'qish tili va logini.
             Kartochka so'rovidan keladi; eski javobda bo'lmasa qator chiqmaydi.
           */}
-          {card && <InfoRow icon={Phone} label="O'quvchi telefoni" value={card.phone || '—'} />}
+          {card && <InfoRow icon={Phone} label="O'quvchi telefoni" value={formatPhone(card.phone) || '—'} />}
           {card && (
             <InfoRow
               icon={Languages}

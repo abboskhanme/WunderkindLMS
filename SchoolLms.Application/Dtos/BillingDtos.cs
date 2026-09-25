@@ -49,10 +49,13 @@ namespace SchoolLms.Application.Dtos.Billing;
 /* ---------- Ma'lumotnoma: to'lov toifalari ---------- */
 
 /// <summary>To'lov toifasi (SPEC §3.7). Beshtasi migratsiyada seed qilingan.</summary>
-public record FeeCategoryDto(Guid Id, string Code, string Name, bool IsActive);
+public record FeeCategoryDto(Guid Id, string Code, string Name, bool IsActive, decimal? MonthlyAmount = null);
 
-/// <summary>Toifa yaratish/tahrirlash. `Code` yaratilgandan keyin o'zgarmaydi.</summary>
-public record FeeCategoryRequest(string Code, string Name, bool IsActive);
+/// <summary>
+/// Toifa yaratish/tahrirlash. `Code` yaratilgandan keyin o'zgarmaydi.
+/// `MonthlyAmount` — abonementning o'zgarmas oylik narxi; null = belgilanmagan.
+/// </summary>
+public record FeeCategoryRequest(string Code, string Name, bool IsActive, decimal? MonthlyAmount = null);
 
 /* ---------- Obunalar (o'quvchi nimaga yozilgan va qancha) ---------- */
 

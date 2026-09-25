@@ -23,6 +23,7 @@ import { Button } from '@/components/ui/Button'
 import { Loader } from '@/components/ui/Loader'
 import { cn } from '@/lib/utils'
 import { StudentContractsTab } from './StudentContractsTab'
+import { formatPhone } from '@/lib/phone'
 
 type Target = 'parent' | 'staff'
 
@@ -135,14 +136,14 @@ function SendPanel({ target }: { target: Target }) {
     ? staff.map((s) => ({
         key: s.teacherId,
         name: s.fullName,
-        sub: s.phone || '—',
+        sub: formatPhone(s.phone) || '—',
         registered: s.registered,
         lastNumber: s.lastNumber,
       }))
     : parents.map((p) => ({
         key: p.key,
         name: p.parentName || '(nomsiz)',
-        sub: `${p.phone || '—'} · ${p.children.join(', ')}`,
+        sub: `${formatPhone(p.phone) || '—'} · ${p.children.join(', ')}`,
         registered: p.registered,
         lastNumber: p.lastNumber,
       }))

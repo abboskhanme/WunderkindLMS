@@ -5,6 +5,7 @@ import { getTeacherAppUsers } from '@/api/services/parents'
 import { Card } from '@/components/ui/Card'
 import { Loader } from '@/components/ui/Loader'
 import { cn } from '@/lib/utils'
+import { formatPhone } from '@/lib/phone'
 
 const control =
   'rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-brand-400'
@@ -135,7 +136,7 @@ export function TeacherAppPage() {
                         {r.fullName}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-slate-600">{r.phone || '—'}</td>
+                    <td className="px-4 py-3 text-slate-600">{formatPhone(r.phone) || '—'}</td>
                     <td className="px-4 py-3">
                       {r.isActivated ? (
                         <span className="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">

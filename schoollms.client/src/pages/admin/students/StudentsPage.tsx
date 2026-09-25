@@ -62,6 +62,7 @@ import { StudentListFilters } from './StudentListFilters'
 import { StudentImportModal } from './StudentImportModal'
 import { StudentCommentsModal } from './StudentCommentsModal'
 import { StatusChip } from './StatusChip'
+import { formatPhone } from '@/lib/phone'
 
 /**
  * O'quvchilar ro'yxati — docs/modules/students-parity.md §2.3 (S-1..S-7, K-4)
@@ -335,7 +336,7 @@ export function StudentsPage({ initialTab = 'active' }: { initialTab?: Tab } = {
         formatDate(s.birthDate),
         s.address,
         s.parentFullName,
-        s.parentPhone,
+        formatPhone(s.parentPhone),
         s.statusName ?? '',
         formatMoney(s.balance),
       ]),
@@ -633,13 +634,13 @@ export function StudentsPage({ initialTab = 'active' }: { initialTab?: Tab } = {
                       {formatDate(s.birthDate)}
                       {s.age !== null && <span className="ml-1 text-xs text-slate-400">({s.age})</span>}
                     </td>
-                    <td className="whitespace-nowrap px-4 py-3 text-slate-600">{s.phone ?? '—'}</td>
+                    <td className="whitespace-nowrap px-4 py-3 text-slate-600">{formatPhone(s.phone) || '—'}</td>
                     <td className="px-4 py-3 text-slate-600">
                       <span className="block max-w-[13rem] truncate" title={s.parentFullName}>
                         {s.parentFullName}
                       </span>
                     </td>
-                    <td className="whitespace-nowrap px-4 py-3 text-slate-600">{s.parentPhone}</td>
+                    <td className="whitespace-nowrap px-4 py-3 text-slate-600">{formatPhone(s.parentPhone)}</td>
                     <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                       {statuses.length === 0 ? (
                         <span className="text-slate-300">—</span>

@@ -1,4 +1,5 @@
 import type { ReceiptPrint, ReceiptPrintLine } from '@/api/services/cashier'
+import { formatPhone } from '@/lib/phone'
 
 /* ==========================================================================
    58 mm termal chek — brauzerdan to'g'ridan-to'g'ri chop etish (2026-09-22)
@@ -115,7 +116,7 @@ function copyHtml(r: ReceiptPrint, label: string): string {
   // (mijoz: "logoda allaqachon bor yetadi"). Iframe `srcdoc` bo'lgani uchun manzil to'liq yoziladi.
   parts.push(`<img class="logo" src="${escapeHtml(logoUrl())}" alt="${escapeHtml(r.schoolName)}">`)
   if (r.schoolAddress) parts.push(`<div class="center muted">${escapeHtml(r.schoolAddress)}</div>`)
-  if (r.schoolPhone) parts.push(`<div class="center muted">Tel: ${escapeHtml(r.schoolPhone)}</div>`)
+  if (r.schoolPhone) parts.push(`<div class="center muted">Tel: ${escapeHtml(formatPhone(r.schoolPhone))}</div>`)
   parts.push(`<div class="center copy-label">${escapeHtml(label)}</div>`)
   parts.push('<div class="rule"></div>')
 

@@ -20,6 +20,7 @@ import { Loader } from '@/components/ui/Loader'
 import { useAuth } from '@/context/auth-context'
 import { cn, formatDate, formatMoney } from '@/lib/utils'
 import { messageTemplates as TEMPLATES, messageTokens as TOKENS } from '@/config/messageTemplates'
+import { formatPhone } from '@/lib/phone'
 
 type Scope = 'class' | 'group' | 'all' | 'selected'
 
@@ -35,7 +36,7 @@ function fill(text: string, p: TelegramParent): string {
     .replace(/\{qarzdorlik\}/gi, debt)
     .replace(/\{balans\}/gi, p.balance === null ? '—' : formatMoney(p.balance))
     .replace(/\{ota[-_]ona\}/gi, p.parentName || 'Ota-ona')
-    .replace(/\{telefon\}/gi, p.phone)
+    .replace(/\{telefon\}/gi, formatPhone(p.phone))
 }
 
 /** Ota-onalarga Telegram bot orqali e'lon yuborish: qamrov + andoza + o'rinbosarlar + tarix. */

@@ -10,6 +10,7 @@ import { searchStudents, type StudentListRow } from '@/api/services/studentSearc
 import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
 import { Input, Select } from '@/components/ui/Input'
+import { PhoneInput } from '@/components/ui/PhoneInput'
 import { cn } from '@/lib/utils'
 
 interface Props {
@@ -114,12 +115,7 @@ export function GuardianEditModal({ open, guardian, onClose, onSaved }: Props) {
       <div className="space-y-5">
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
           <Input label="F.I.SH" value={fullName} onChange={(e) => setFullName(e.target.value)} />
-          <Input
-            label="Telefon raqami"
-            placeholder="+998 90 123 45 67"
-            value={phone}
-            onChange={(e) => setPhone(e.target.value)}
-          />
+          <PhoneInput label="Telefon raqami" value={phone} onChange={setPhone} />
         </div>
 
         <div className="rounded-xl border border-slate-200 bg-slate-50/40 p-3">

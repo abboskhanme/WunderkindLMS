@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using SchoolLms.Application.Abstractions;
+using SchoolLms.Application.Dtos;
 using SchoolLms.Domain;
 
 namespace SchoolLms.Application.Services;
@@ -93,13 +94,21 @@ public record DailyAttendanceStudentDto(string StudentId, string FullName);
 /// Ekran bitta so'rov bilan hammasini oladi va soatdan soatga darrov o'tadi.
 /// </summary>
 /// <param name="AbsentReasonId">Ekrandagi QIZIL tugma yozadigan sabab.</param>
-/// <param name="ExcusedReasonId">Ekrandagi SARIQ tugma yozadigan sabab.</param>
+/// <param name="ExcusedReasonId">Ekrandagi SARIQ tugma yozadigan sabab (sukut).</param>
+/// <param name="Reasons">
+/// Katalogdagi BARCHA davomat sabablari. Sariq belgi qo'yilgan o'quvchiga aniq
+/// sabab (Kasal, Oilaviy sabab, Kech qoldi ...) shu ro'yxatdan tanlanadi —
+/// ilgari ekran faqat ikkita sababni bilardi, qolganlari chiqmasdi va
+/// tanlanmasdi (mijoz, 2026-09-25). Ro'yxat shu endpointning o'zida keladi:
+/// ekran `attendance` ruxsati bilan ishlaydi, sozlamalar bo'limiga bog'lanmaydi.
+/// </param>
 public record DailyAttendanceClassDayDto(
     string ClassId, string ClassName, string Date,
     IReadOnlyList<DailyAttendanceStudentDto> Students,
     IReadOnlyList<DailyAttendanceLessonDto> Lessons,
     string? AbsentReasonId, string? AbsentReasonName,
-    string? ExcusedReasonId, string? ExcusedReasonName);
+    string? ExcusedReasonId, string? ExcusedReasonName,
+    IReadOnlyList<AbsenceReasonDto> Reasons);
 
 /// <summary>Bitta o'quvchining belgisi (saqlashda).</summary>
 public record DailyAttendanceMarkInput(string StudentId, string? ReasonId);
@@ -233,9 +242,15 @@ public sealed class DailyAttendanceService(IAppDbContext db)
 
         var (absent, excused) = await ResolveReasons(ct);
 
+        var catalog = await db.AbsenceReasons.AsNoTracking()
+            .OrderBy(r => r.IsLate).ThenBy(r => r.Name)
+            .Select(r => new AbsenceReasonDto(r.Id, r.Name, r.Short, r.IsLate))
+            .ToListAsync(ct);
+
         return new DailyAttendanceClassDayDto(
             cls.Id, cls.Name, date, students, lessonDtos,
-            absent?.Id, absent?.Name, excused?.Id, excused?.Name);
+            absent?.Id, absent?.Name, excused?.Id, excused?.Name,
+            catalog);
     }
 
     /// <summary>

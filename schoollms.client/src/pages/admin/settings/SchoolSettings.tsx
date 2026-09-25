@@ -15,6 +15,7 @@ import {
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
+import { PhoneInput } from '@/components/ui/PhoneInput'
 import { Loader } from '@/components/ui/Loader'
 
 const empty: SchoolInfo = {
@@ -153,7 +154,7 @@ export function SchoolSettings() {
             onChange={(e) => update('director', e.target.value)}
           />
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <Input label="Telefon" value={form.phone} onChange={(e) => update('phone', e.target.value)} />
+            <PhoneInput label="Telefon" value={form.phone} onChange={(v) => update('phone', v)} />
             <Input
               label="Email"
               type="email"

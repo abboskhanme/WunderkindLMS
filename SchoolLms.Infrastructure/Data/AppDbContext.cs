@@ -12,6 +12,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
 {
     // Maktab ma'lumotlari
     public DbSet<AppUser> Users => Set<AppUser>();
+    public DbSet<AccessRole> AccessRoles => Set<AccessRole>();
     public DbSet<Student> Students => Set<Student>();
     public DbSet<Teacher> Teachers => Set<Teacher>();
     public DbSet<TeacherAttendance> TeacherAttendances => Set<TeacherAttendance>();
@@ -197,6 +198,12 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
         // Login (Email) unikal — DB darajasidagi unique indeks TOCTOU poyga holatida ham dublikatni
         // bloklaydi (parallel ro'yxatdan o'tish login'ni buzmasin).
         b.Entity<AppUser>().HasIndex(u => u.Email).IsUnique();
+
+        // Staff access roles: name is unique; a role with members cannot be deleted
+        // (the controller refuses first, RESTRICT is the last line).
+        b.Entity<AccessRole>().HasIndex(r => r.Name).IsUnique();
+        b.Entity<AppUser>().HasOne<AccessRole>().WithMany()
+            .HasForeignKey(u => u.AccessRoleId).OnDelete(DeleteBehavior.Restrict);
 
         // Eski (Faza 0) pul maydonlari uchun aniqlik. Yangi moliya jadvallari
         // numeric(14,2) da — BillingModel.cs ga qarang.

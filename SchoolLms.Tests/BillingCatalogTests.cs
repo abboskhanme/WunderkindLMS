@@ -167,6 +167,54 @@ public class BillingCatalogTests(ApiFixture fixture)
         Assert.Equal(SubscriptionDefaultSource.None, second.Source);
     }
 
+    /// <summary>
+    /// Toifaga o'zgarmas narx berilgan bo'lsa (abonement): taklif shu narx, obuna
+    /// so'rovdagi summadan qat'i nazar SHU narx bilan ochiladi, keyin summani
+    /// qo'lda boshqa qiymatga o'zgartirib bo'lmaydi — faqat toifa narxiga tenglashadi.
+    /// </summary>
+    [Fact]
+    public async Task Narxi_belgilangan_toifada_summa_ozgarmas()
+    {
+        var actor = await NewUserAsync();
+        var student = await NewStudentAsync();
+
+        // Umumiy seed toifalariga narx qo'yilmaydi — parallel testlarga ta'sir qilardi.
+        var category = new FeeCategory
+        {
+            Code = $"club_{Guid.NewGuid():N}"[..20],
+            Name = "To'garak",
+            MonthlyAmount = 300_000m,
+        };
+        await using (var seed = NewDb())
+        {
+            seed.FeeCategories.Add(category);
+            await seed.SaveChangesAsync();
+        }
+
+        await using var db = NewDb();
+        var service = Subscriptions(db);
+
+        var suggestion = await service.DefaultAmountAsync(student.Id, category.Id);
+        Assert.Equal(300_000m, suggestion.MonthlyAmount);
+        Assert.Equal(SubscriptionDefaultSource.CategoryPrice, suggestion.Source);
+
+        var created = await service.CreateAsync(
+            new CreateSubscriptionRequest(student.Id, category.Id, 999_000m, null, new DateOnly(2026, 9, 1), null),
+            actor);
+        Assert.Equal(300_000m, created.MonthlyAmount);
+
+        var ex = await Assert.ThrowsAsync<BillingRuleException>(() => service.UpdateAsync(
+            created.Id, new UpdateSubscriptionRequest(250_000m, null, null), actor));
+        Assert.Equal("amount_fixed", ex.Code);
+        Assert.Equal(BillingFault.Conflict, ex.Fault);
+
+        // Tafsilot o'zgarishi (summa o'sha-o'sha) — ruxsat.
+        var updated = await service.UpdateAsync(
+            created.Id, new UpdateSubscriptionRequest(300_000m, "Shaxmat", null), actor);
+        Assert.Equal(300_000m, updated.MonthlyAmount);
+        Assert.Equal("Shaxmat", updated.Detail);
+    }
+
     /// <summary>Ko'rsatilgan summa har doim ustun: sinf narxi uni bosib ketmaydi.</summary>
     [Fact]
     public async Task Korsatilgan_summa_sinf_narxidan_ustun()

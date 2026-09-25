@@ -3,7 +3,7 @@ import { Link, useParams } from 'react-router-dom'
 import {
   Archive, ArrowLeft, Award, CalendarCheck, CalendarDays, FileSignature,
   GraduationCap, History, KeyRound, MapPin, MessageSquare, Pencil, Phone,
-  RotateCcw, ShieldAlert, User, Users, Wallet,
+  Repeat, RotateCcw, ShieldAlert, User, Users, Wallet,
 } from 'lucide-react'
 import { useAuth } from '@/context/auth-context'
 import type { Credentials, Student } from '@/types'
@@ -33,10 +33,13 @@ import { DisciplineTab } from '@/pages/admin/students/profile/DisciplineTab'
 import { LocationTab } from '@/pages/admin/students/profile/LocationTab'
 import { MembershipsTab } from '@/pages/admin/students/profile/MembershipsTab'
 import { OverviewTab } from '@/pages/admin/students/profile/OverviewTab'
+import { SubscriptionsTab } from '@/pages/admin/students/profile/SubscriptionsTab'
+import { useBillingAccess } from '@/pages/admin/billing/access'
 import { ProfileError } from '@/pages/admin/students/profile/ProfileUi'
 import { TimetableTab } from '@/pages/admin/students/profile/TimetableTab'
 import { CASH_DESK_ROLES } from '@/pages/cashier/cashDeskRoles'
 import { StudentPaymentModal } from '@/pages/cashier/StudentPaymentModal'
+import { formatPhone } from '@/lib/phone'
 
 /**
  * O'quvchi kartochkasi — docs/modules/students-parity.md §2.3 (S-10).
@@ -54,6 +57,7 @@ import { StudentPaymentModal } from '@/pages/cashier/StudentPaymentModal'
  *   Sinf va guruhlar / Shartnomalar — avvalgi to'lqinlar qo'shgan tab'lar
  *
  * YANGI: Jadval, Davomat, Sertifikatlar, Izohlar, Manzil, Faoliyat tarixi.
+ * Abonementlar — o'sha bolaning obunalari (`SubscriptionsTab`), faqat moliya rollariga.
  *
  * PUL QOIDASI: sarlavhada balans KO'RSATILMAYDI. U "To'lovlar" tab'ida,
  * moliya rolining orqasida qoladi; ruxsat yetmasa ekran o'qiladigan yozuv
@@ -61,13 +65,14 @@ import { StudentPaymentModal } from '@/pages/cashier/StudentPaymentModal'
  */
 
 type TabId =
-  | 'overview' | 'timetable' | 'finance' | 'memberships' | 'attendance'
+  | 'overview' | 'timetable' | 'finance' | 'subscriptions' | 'memberships' | 'attendance'
   | 'certificates' | 'contracts' | 'comments' | 'discipline' | 'location' | 'activity'
 
 const tabs: { id: TabId; label: string; icon: typeof User }[] = [
   { id: 'overview', label: 'Umumiy', icon: User },
   { id: 'timetable', label: 'Jadval', icon: CalendarDays },
   { id: 'finance', label: "To'lovlar", icon: Wallet },
+  { id: 'subscriptions', label: 'Abonementlar', icon: Repeat },
   { id: 'memberships', label: 'Sinf va guruhlar', icon: Users },
   { id: 'attendance', label: 'Davomat', icon: CalendarCheck },
   { id: 'certificates', label: 'Sertifikatlar', icon: Award },
@@ -105,6 +110,9 @@ export function StudentDetailPage() {
   const [financeKey, setFinanceKey] = useState(0)
   const { user } = useAuth()
   const canTakePayment = user !== null && CASH_DESK_ROLES.includes(user.role)
+  // Abonementlar — moliya rollari (admin, direktor); server ham shu chegarada.
+  const { canManageSubscriptions } = useBillingAccess()
+  const visibleTabs = tabs.filter((t) => t.id !== 'subscriptions' || canManageSubscriptions)
 
   const load = useCallback(() => {
     if (!id) return
@@ -246,7 +254,7 @@ export function StudentDetailPage() {
             )}
             {(card?.phone || data.parentPhone) && (
               <span className="inline-flex items-center gap-1.5">
-                <Phone className="h-4 w-4 text-slate-400" /> {card?.phone || data.parentPhone}
+                <Phone className="h-4 w-4 text-slate-400" /> {formatPhone(card?.phone || data.parentPhone)}
               </span>
             )}
             {card && (
@@ -312,7 +320,7 @@ export function StudentDetailPage() {
       {/* ---------- Tab'lar ---------- */}
       <div className="overflow-x-auto">
         <div className="flex w-max gap-1 rounded-xl bg-slate-100 p-1">
-          {tabs.map((t) => (
+          {visibleTabs.map((t) => (
             <button
               key={t.id}
               type="button"
@@ -340,6 +348,15 @@ export function StudentDetailPage() {
         `studentId` faqat admin/xodim uchun ishlaydi).
       */}
       {tab === 'finance' && <FinanceView key={financeKey} studentId={data.id} embedded />}
+
+      {tab === 'subscriptions' && canManageSubscriptions && (
+        <SubscriptionsTab
+          studentId={data.id}
+          studentName={data.fullName}
+          className={data.className}
+          onChanged={() => setFinanceKey((k) => k + 1)}
+        />
+      )}
 
       {tab === 'memberships' && <MembershipsTab studentId={data.id} />}
 

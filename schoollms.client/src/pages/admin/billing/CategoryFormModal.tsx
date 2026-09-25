@@ -13,6 +13,7 @@ import type { FeeCategoryInput } from '@/api/services/billingCatalog'
 import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
+import { formatMoney } from '@/lib/utils'
 import { Notice } from './BillingUi'
 
 interface Props {
@@ -28,6 +29,7 @@ export function CategoryFormModal({ open, initial, busy, error, onClose, onSubmi
   const [code, setCode] = useState('')
   const [name, setName] = useState('')
   const [isActive, setIsActive] = useState(true)
+  const [price, setPrice] = useState('')
 
   useEffect(() => {
     if (!open) return
@@ -35,18 +37,26 @@ export function CategoryFormModal({ open, initial, busy, error, onClose, onSubmi
     setCode(initial?.code ?? '')
     setName(initial?.name ?? '')
     setIsActive(initial?.isActive ?? true)
+    setPrice(initial?.monthlyAmount != null ? String(initial.monthlyAmount) : '')
     /* eslint-enable react-hooks/set-state-in-effect */
   }, [open, initial])
 
   const editing = initial !== null
   const trimmedName = name.trim()
   const trimmedCode = code.trim().toLowerCase()
-  const valid = trimmedName.length > 0 && trimmedCode.length > 0
+  const priceNumber = Number(price)
+  const priceValid = price.trim() === '' || (Number.isFinite(priceNumber) && priceNumber >= 0)
+  const valid = trimmedName.length > 0 && trimmedCode.length > 0 && priceValid
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     if (!valid || busy) return
-    onSubmit({ code: trimmedCode, name: trimmedName, isActive })
+    onSubmit({
+      code: trimmedCode,
+      name: trimmedName,
+      isActive,
+      monthlyAmount: price.trim() === '' ? null : priceNumber,
+    })
   }
 
   return (
@@ -90,6 +100,25 @@ export function CategoryFormModal({ open, initial, busy, error, onClose, onSubmi
           value={name}
           onChange={(e) => setName(e.target.value)}
         />
+
+        <div>
+          <Input
+            label="Oylik narx (so'm)"
+            type="number"
+            min={0}
+            step={1000}
+            inputMode="numeric"
+            placeholder="belgilanmagan"
+            value={price}
+            onChange={(e) => setPrice(e.target.value)}
+          />
+          <p className="mt-1 text-xs text-slate-400">
+            {price.trim() !== '' && priceValid
+              ? `${formatMoney(priceNumber)} — abonement shu o'zgarmas summa bilan ochiladi. `
+              : "Bo'sh qoldirilsa narx har obunada alohida yoziladi (o'qish narxi sinfdan olinadi). "}
+            Yangi narx faqat keyin ochiladigan abonementlarga ta'sir qiladi.
+          </p>
+        </div>
 
         <label className="inline-flex cursor-pointer items-center gap-2 text-sm font-medium text-slate-700">
           <input

@@ -41,6 +41,8 @@ export interface FeeCategoryInput {
   code: string
   name: string
   isActive: boolean
+  /** Abonementning o'zgarmas oylik narxi; null — belgilanmagan. */
+  monthlyAmount: number | null
 }
 
 export async function getFeeCategories(activeOnly = false): Promise<FeeCategory[]> {
@@ -93,8 +95,11 @@ export interface SubscriptionDefault {
   categoryId: string
   categoryCode: string
   monthlyAmount: number
-  /** `class_fee` — sinf oylik to'lovidan; `none` — taklif yo'q. */
-  source: 'class_fee' | 'none' | string
+  /**
+   * `category_price` — toifaning o'zgarmas narxi (tahrirlanmaydi);
+   * `class_fee` — sinf oylik to'lovidan; `none` — taklif yo'q.
+   */
+  source: 'category_price' | 'class_fee' | 'none' | string
 }
 
 export async function getSubscriptions(

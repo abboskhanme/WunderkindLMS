@@ -4,6 +4,7 @@ import type { TeacherPayload } from '@/api/services/teachers'
 import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
 import { Input, Select } from '@/components/ui/Input'
+import { PhoneInput } from '@/components/ui/PhoneInput'
 import { PhotoUpload } from '@/components/ui/PhotoUpload'
 import { genderOptions, teacherPermissions, teacherCategories } from '@/config/constants'
 import { cn, randomPassword } from '@/lib/utils'
@@ -139,12 +140,10 @@ export function TeacherFormModal({ open, onClose, onSubmit, initial, subjects, c
             value={form.address}
             onChange={(e) => update('address', e.target.value)}
           />
-          <Input
+          <PhoneInput
             label="Telefon"
-            type="tel"
-            placeholder="+998 ..."
-            value={form.phone ?? ''}
-            onChange={(e) => update('phone', e.target.value)}
+            value={form.phone}
+            onChange={(v) => update('phone', v)}
           />
         </div>
         <div className="grid grid-cols-2 gap-4">

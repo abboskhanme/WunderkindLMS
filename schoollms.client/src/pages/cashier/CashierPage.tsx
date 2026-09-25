@@ -56,6 +56,7 @@ import {
   statusLabel,
 } from './format'
 import { DatePicker } from '@/components/ui/DatePicker'
+import { formatPhone } from '@/lib/phone'
 
 /** Kassa harakati turlari — "Tranzaksiya turi" filtri shu ro'yxatdan (format.ts dagi kindLabel bilan bir xil to'rttasi). */
 const TRANSACTION_KINDS: CashBoxTransactionRow['kind'][] = [
@@ -1347,7 +1348,7 @@ export function IncomeForm({
                     <p className="truncate text-xs text-slate-500">
                       {student.className}
                       {student.parentFullName ? ` · ${student.parentFullName}` : ''}
-                      {student.parentPhone ? ` · ${student.parentPhone}` : ''}
+                      {student.parentPhone ? ` · ${formatPhone(student.parentPhone)}` : ''}
                     </p>
                   </div>
                   <div className="ml-auto flex items-center gap-3">

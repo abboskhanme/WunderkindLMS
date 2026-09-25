@@ -122,6 +122,8 @@ public record SubscriptionQuery(
 public record SubscriptionDefaultDto(
     string StudentId, Guid CategoryId, string CategoryCode,
     decimal MonthlyAmount, string Source);
+// `Source = category_price` bo'lsa summa TAKLIF emas, o'zgarmas narx: server
+// yangi obunani baribir shu summa bilan ochadi (`CreateAsync`).
 
 /// <summary>Obuna narxi taklifining manbai (<see cref="SubscriptionDefaultDto.Source"/>).</summary>
 public static class SubscriptionDefaultSource
@@ -131,6 +133,9 @@ public static class SubscriptionDefaultSource
 
     /// <summary>Taklif yo'q — summani admin o'zi kiritadi.</summary>
     public const string None = "none";
+
+    /// <summary>Toifaning o'zgarmas narxi (<c>FeeCategory.MonthlyAmount</c>) — tahrirlanmaydi.</summary>
+    public const string CategoryPrice = "category_price";
 }
 
 /// <inheritdoc cref="ISubscriptionService"/>
@@ -185,6 +190,10 @@ public sealed class SubscriptionService(
         var student = await RequireStudentAsync(studentId, ct);
         var category = await RequireCategoryAsync(categoryId, ct);
 
+        if (category.MonthlyAmount is { } price)
+            return new SubscriptionDefaultDto(
+                student.Id, category.Id, category.Code, price, SubscriptionDefaultSource.CategoryPrice);
+
         var (amount, source) = await SuggestAmountAsync(student, category, ct);
         return new SubscriptionDefaultDto(student.Id, category.Id, category.Code, amount, source);
     }
@@ -222,7 +231,13 @@ public sealed class SubscriptionService(
         // to'ldiriladi. Tafsilot uchun `SuggestAmountAsync` izohiga qarang.
         var amount = decimal.Round(request.MonthlyAmount, MoneyScale);
         var amountSource = "so'rovda ko'rsatilgan";
-        if (amount == 0m)
+        if (category.MonthlyAmount is { } fixedPrice)
+        {
+            // Abonementning o'zgarmas narxi: so'rovdagi summa e'tiborga olinmaydi.
+            amount = decimal.Round(fixedPrice, MoneyScale);
+            amountSource = $"'{category.Name}' toifasining narxi";
+        }
+        else if (amount == 0m)
         {
             var (suggested, _) = await SuggestAmountAsync(student, category, ct);
             if (suggested > 0m)
@@ -279,6 +294,15 @@ public sealed class SubscriptionService(
         var changes = new List<string>();
 
         var amount = decimal.Round(request.MonthlyAmount, MoneyScale);
+        // Narxi belgilangan toifada summa qo'lda o'zgarmaydi: faqat o'z holicha qoladi
+        // yoki toifaning joriy narxiga tenglashtiriladi.
+        if (category.MonthlyAmount is { } fixedPrice
+            && amount != subscription.MonthlyAmount
+            && amount != decimal.Round(fixedPrice, MoneyScale))
+            throw BillingRuleException.Conflict(
+                "amount_fixed",
+                $"'{category.Name}' abonementining narxi o'zgarmas — {AuditService.Money(fixedPrice)} so'm. "
+                + "Narxni o'zgartirish uchun toifaning o'zini tahrirlang.");
         if (subscription.MonthlyAmount != amount)
             changes.Add($"summa {AuditService.Money(subscription.MonthlyAmount)} → {AuditService.Money(amount)} so'm");
         var detail = Trimmed(request.Detail);

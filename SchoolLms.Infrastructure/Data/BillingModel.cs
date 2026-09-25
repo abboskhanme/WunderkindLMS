@@ -45,6 +45,7 @@ internal static class BillingModel
             e.HasKey(x => x.Id);
             // Kod — mashina kaliti (accrual va hisobotlar shunga tayanadi), shuning uchun unikal.
             e.HasIndex(x => x.Code).IsUnique();
+            e.Property(x => x.MonthlyAmount).HasPrecision(14, 2);
         });
     }
 

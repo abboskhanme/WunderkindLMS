@@ -25,9 +25,12 @@ public class StaffController(AppDbContext db) : ControllerBase
 
 
     [HttpGet]
-    public async Task<ActionResult<IEnumerable<StaffDto>>> GetAll() =>
-        (await db.Users.Where(u => u.Role == Roles.Staff).OrderBy(u => u.FullName).ToListAsync())
-            .Select(ToDto).ToList();
+    public async Task<ActionResult<IEnumerable<StaffDto>>> GetAll()
+    {
+        var roleNames = await RoleNamesAsync();
+        return (await db.Users.Where(u => u.Role == Roles.Staff).OrderBy(u => u.FullName).ToListAsync())
+            .Select(u => ToDto(u, roleNames)).ToList();
+    }
 
     [HttpPost]
     public async Task<ActionResult<StaffDto>> Create(StaffPayload p)
@@ -43,7 +46,7 @@ public class StaffController(AppDbContext db) : ControllerBase
             user.SetInitialPassword(p.NewPassword.Trim());
         }
         await db.SaveChangesAsync();
-        return ToDto(user);
+        return ToDto(user, await RoleNamesAsync());
     }
 
     [HttpPut("{id}")]
@@ -61,7 +64,7 @@ public class StaffController(AppDbContext db) : ControllerBase
             user.SetInitialPassword(p.NewPassword.Trim());
         }
         await db.SaveChangesAsync();
-        return ToDto(user);
+        return ToDto(user, await RoleNamesAsync());
     }
 
     [HttpDelete("{id}")]
@@ -105,12 +108,48 @@ public class StaffController(AppDbContext db) : ControllerBase
         var user = await db.Users.FindAsync(id);
         if (user is null || user.Role != Roles.Staff) return NotFound();
         user.Permissions = req.Permissions ?? new();
+        // Hand-picked permissions no longer follow a role.
+        user.AccessRoleId = null;
         await db.SaveChangesAsync();
-        return ToDto(user);
+        return ToDto(user, await RoleNamesAsync());
     }
 
-    private static StaffDto ToDto(AppUser u) =>
-        new(u.Id, u.FullName, u.Position, u.Email, u.Permissions, u.AvatarUrl);
+    /// <summary>
+    /// Assigns an access role (Boshqaruv → Rollar) — FAQAT superadmin, like permissions.
+    /// The member's permissions become a copy of the role's; removing the role clears them.
+    /// </summary>
+    [HttpPut("{id}/role")]
+    [Authorize(Roles = "superadmin")]
+    public async Task<ActionResult<StaffDto>> SetRole(string id, SetStaffRoleRequest req)
+    {
+        var user = await db.Users.FindAsync(id);
+        if (user is null || user.Role != Roles.Staff) return NotFound();
+
+        if (req.AccessRoleId is { } roleId)
+        {
+            var role = await db.AccessRoles.AsNoTracking().FirstOrDefaultAsync(r => r.Id == roleId);
+            if (role is null) return BadRequest(new { message = "Rol topilmadi" });
+            user.AccessRoleId = role.Id;
+            user.Permissions = [.. role.Permissions];
+        }
+        else
+        {
+            user.AccessRoleId = null;
+            user.Permissions = new();
+        }
+
+        await db.SaveChangesAsync();
+        return ToDto(user, await RoleNamesAsync());
+    }
+
+    private Task<Dictionary<Guid, string>> RoleNamesAsync() =>
+        db.AccessRoles.AsNoTracking().ToDictionaryAsync(r => r.Id, r => r.Name);
+
+    private static StaffDto ToDto(AppUser u, IReadOnlyDictionary<Guid, string> roleNames) =>
+        new(u.Id, u.FullName, u.Position, u.Email, u.Permissions, u.AvatarUrl,
+            u.AccessRoleId,
+            u.AccessRoleId is { } rid ? roleNames.GetValueOrDefault(rid) : null,
+            u.LastLoginAt);
 
     /// <summary>
     /// Rasm manzilini qo'llaydi. Faqat o'zimizning yuklangan fayl (<c>/uploads/…</c>) —

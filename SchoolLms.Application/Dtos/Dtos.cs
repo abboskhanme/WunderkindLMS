@@ -1184,11 +1184,17 @@ public record BranchPayload(
 /// <summary>Xodim (o'qituvchi bo'lmagan ishchi) — admin akkaunti bilan.</summary>
 /// <param name="AvatarUrl">Profil rasmi (<c>/uploads/…</c>) — admin qo'yadi yoki xodimning o'zi.</param>
 public record StaffDto(string Id, string FullName, string Position, string Login, List<string> Permissions,
-    string? AvatarUrl = null);
+    string? AvatarUrl = null, Guid? AccessRoleId = null, string? AccessRoleName = null, string? LastLoginAt = null);
 /// <param name="AvatarUrl">null — o'zgarmaydi; "" — olib tashlanadi; "/uploads/…" — yangi rasm.</param>
 public record StaffPayload(string FullName, string Position, string? NewPassword = null, string? AvatarUrl = null);
 /// <summary>Xodimning admin bo'lim ruxsatlari (faqat superadmin o'zgartiradi).</summary>
 public record SetStaffPermissionsRequest(List<string> Permissions);
+/// <summary>Assign an access role to a staff member; null removes it (and its permissions).</summary>
+public record SetStaffRoleRequest(Guid? AccessRoleId);
+
+/// <summary>Staff access role (Boshqaruv → Rollar).</summary>
+public record AccessRoleDto(Guid Id, string Name, string Description, List<string> Permissions, int StaffCount);
+public record AccessRolePayload(string Name, string? Description, List<string>? Permissions);
 
 /// <summary>Taklif/shikoyat — admin ko'rinishi uchun (yuboruvchi roli/ismi + ixtiyoriy rasm bilan).</summary>
 public record FeedbackDto(

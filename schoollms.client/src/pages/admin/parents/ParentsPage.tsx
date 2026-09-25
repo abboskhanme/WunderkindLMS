@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/Button'
 import { Loader } from '@/components/ui/Loader'
 import { cn } from '@/lib/utils'
 import { GuardianEditModal } from './GuardianEditModal'
+import { formatPhone } from '@/lib/phone'
 
 const control =
   'rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-brand-400'
@@ -282,7 +283,7 @@ export function ParentsPage() {
                         <td className="px-4 py-3 font-medium text-slate-800">
                           {r.fullName || <span className="text-slate-400">—</span>}
                         </td>
-                        <td className="px-4 py-3 text-slate-600">{r.phone || '—'}</td>
+                        <td className="px-4 py-3 text-slate-600">{formatPhone(r.phone) || '—'}</td>
                         <td className="px-4 py-3">
                           <span className="rounded-md bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
                             {r.childrenCount} farzand
@@ -354,7 +355,7 @@ export function ParentsPage() {
                                           </span>
                                         )}
                                       </td>
-                                      <td className="px-3 py-2 text-slate-600">{c.phone || '—'}</td>
+                                      <td className="px-3 py-2 text-slate-600">{formatPhone(c.phone) || '—'}</td>
                                       <td className="px-3 py-2 text-slate-500">
                                         {c.isArchived ? 'Arxivda' : 'Faol'}
                                       </td>

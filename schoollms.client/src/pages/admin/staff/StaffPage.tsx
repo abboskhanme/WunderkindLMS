@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
-import { Plus, Eye, Pencil, Trash2, Check } from 'lucide-react'
-import type { Staff, Credentials } from '@/types'
+import { Plus, Eye, Pencil, Trash2 } from 'lucide-react'
+import type { AccessRole, Staff, Credentials } from '@/types'
 import {
   getStaff,
   createStaff,
@@ -8,54 +8,49 @@ import {
   deleteStaff,
   getStaffCredentials,
   resetStaffPassword,
-  setStaffPermissions,
+  setStaffRole,
   type StaffPayload,
 } from '@/api/services/staff'
-import { adminPermissions } from '@/config/constants'
+import { getAccessRoles } from '@/api/services/accessRoles'
 import { useAuth } from '@/context/auth-context'
 import { cn, randomPassword } from '@/lib/utils'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Loader } from '@/components/ui/Loader'
+import { Drawer } from '@/components/ui/Drawer'
 import { Modal } from '@/components/ui/Modal'
 import { PhotoUpload } from '@/components/ui/PhotoUpload'
 import { UserAvatar } from '@/components/ui/UserAvatar'
-import { Input } from '@/components/ui/Input'
+import { Input, Select } from '@/components/ui/Input'
 import { CredentialsBox } from '@/components/ui/CredentialsBox'
 
 const POSITIONS = ['Kassir', 'Administrator', "Direktor o'rinbosari", 'Qorovul', 'Hisobchi']
 
 export function StaffPage() {
   const { user } = useAuth()
-  // Rollar (ruxsatlar)ni faqat tizim egasi (superadmin) o'zgartira oladi — backend ham shuni talab qiladi.
+  // Rol biriktirishni faqat tizim egasi (superadmin) qila oladi — backend ham shuni talab qiladi.
   const canManageRoles = user?.role === 'superadmin'
 
   const [staff, setStaff] = useState<Staff[]>([])
+  const [roles, setRoles] = useState<AccessRole[]>([])
   const [loading, setLoading] = useState(true)
   const [formOpen, setFormOpen] = useState(false)
   const [editing, setEditing] = useState<Staff | null>(null)
   const [form, setForm] = useState<StaffPayload>({ fullName: '', position: '' })
-  // Yangi xodim yaratishda darrov beriladigan ruxsatlar
-  const [formPerms, setFormPerms] = useState<Set<string>>(new Set())
+  // Biriktiriladigan rol ('' — rolsiz)
+  const [formRoleId, setFormRoleId] = useState('')
   const [saving, setSaving] = useState(false)
-
-  // Har bir xodim uchun tahrirlanayotgan ruxsatlar (id → kalitlar to'plami)
-  const [draft, setDraft] = useState<Record<string, Set<string>>>({})
-  const [savingPermsId, setSavingPermsId] = useState<string | null>(null)
 
   // Login/parol oynasi
   const [credOf, setCredOf] = useState<Staff | null>(null)
   const [creds, setCreds] = useState<Credentials | null>(null)
   const [credLoading, setCredLoading] = useState(false)
 
-  const syncDraft = (list: Staff[]) =>
-    setDraft(Object.fromEntries(list.map((s) => [s.id, new Set(s.permissions)])))
-
   useEffect(() => {
-    getStaff()
-      .then((list) => {
+    Promise.all([getStaff(), getAccessRoles().catch(() => [] as AccessRole[])])
+      .then(([list, roleList]) => {
         setStaff(list)
-        syncDraft(list)
+        setRoles(roleList)
       })
       .finally(() => setLoading(false))
   }, [])
@@ -63,12 +58,13 @@ export function StaffPage() {
   const openCreate = () => {
     setEditing(null)
     setForm({ fullName: '', position: '', avatarUrl: '' })
-    setFormPerms(new Set())
+    setFormRoleId('')
     setFormOpen(true)
   }
   const openEdit = (s: Staff) => {
     setEditing(s)
     setForm({ fullName: s.fullName, position: s.position, avatarUrl: s.avatarUrl ?? '' })
+    setFormRoleId(s.accessRoleId ?? '')
     setFormOpen(true)
   }
 
@@ -81,31 +77,34 @@ export function StaffPage() {
       .finally(() => setCredLoading(false))
   }
 
+  /** Rol o'zgargan bo'lsa biriktiradi; xato bo'lsa xabar beradi, xodim esa saqlangan qoladi. */
+  const applyRole = async (s: Staff): Promise<Staff> => {
+    if (!canManageRoles || (s.accessRoleId ?? '') === formRoleId) return s
+    try {
+      return await setStaffRole(s.id, formRoleId || null)
+    } catch (err) {
+      alert(roleErrorMessage(err))
+      return s
+    }
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!form.fullName.trim()) return
     setSaving(true)
     try {
       if (editing) {
-        const u = await updateStaff(editing.id, form)
+        const u = await applyRole(await updateStaff(editing.id, form))
         setStaff((p) => p.map((x) => (x.id === u.id ? u : x)))
         setFormOpen(false)
       } else {
-        let created = await createStaff(form)
-        // Yangi xodimga tanlangan rollarni darrov beramiz (faqat superadmin)
-        if (canManageRoles && formPerms.size > 0) {
-          try {
-            created = await setStaffPermissions(created.id, [...formPerms])
-          } catch (err) {
-            // Xodim yaratildi, faqat ruxsatlar yozilmadi — jim o'tib ketmasin.
-            alert(permsErrorMessage(err))
-          }
-        }
+        const created = await applyRole(await createStaff(form))
         setStaff((p) => [created, ...p])
-        setDraft((d) => ({ ...d, [created.id]: new Set(created.permissions) }))
         setFormOpen(false)
         showCredentials(created) // login/parolni darrov ko'rsatamiz
       }
+      // Xodimlar soni ustuni "Rollar" sahifasida to'g'ri turishi uchun.
+      getAccessRoles().then(setRoles).catch(() => undefined)
     } finally {
       setSaving(false)
     }
@@ -113,54 +112,17 @@ export function StaffPage() {
 
   const handleDelete = (s: Staff) => {
     if (!confirm(`"${s.fullName}" xodimni o'chirasizmi? Akkaunti ham o'chadi.`)) return
-    deleteStaff(s.id).then(() => {
-      setStaff((p) => p.filter((x) => x.id !== s.id))
-      setDraft((d) => {
-        const rest = { ...d }
-        delete rest[s.id]
-        return rest
-      })
-    })
+    deleteStaff(s.id).then(() => setStaff((p) => p.filter((x) => x.id !== s.id)))
   }
-
-  const toggle = (staffId: string, key: string) =>
-    setDraft((d) => {
-      const next = new Set(d[staffId] ?? [])
-      if (next.has(key)) next.delete(key)
-      else next.add(key)
-      return { ...d, [staffId]: next }
-    })
-
-  const dirty = (s: Staff) => {
-    const cur = draft[s.id] ?? new Set()
-    return cur.size !== s.permissions.length || s.permissions.some((p) => !cur.has(p))
-  }
-
-  const savePerms = (s: Staff) => {
-    const perms = [...(draft[s.id] ?? new Set())]
-    setSavingPermsId(s.id)
-    setStaffPermissions(s.id, perms)
-      .then((u) => setStaff((p) => p.map((x) => (x.id === u.id ? u : x))))
-      .catch((err: unknown) => alert(permsErrorMessage(err)))
-      .finally(() => setSavingPermsId(null))
-  }
-
-  const toggleFormPerm = (key: string) =>
-    setFormPerms((s) => {
-      const next = new Set(s)
-      if (next.has(key)) next.delete(key)
-      else next.add(key)
-      return next
-    })
 
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-xl font-semibold text-slate-800">Xodimlar va rollar</h1>
+          <h1 className="text-xl font-semibold text-slate-800">Xodimlar</h1>
           <p className="text-sm text-slate-400">
-            Tizimdan foydalanadigan barcha xodimlar
-            {canManageRoles ? ' — har biriga kerakli bo\'limlarni (rollarni) shu yerda belgilang.' : '.'}
+            Tizimdan foydalanadigan xodimlar. Qaysi bo'limlarni ko'rishi biriktirilgan roldan olinadi
+            (Boshqaruv → Rollar).
           </p>
         </div>
         <Button onClick={openCreate}>
@@ -177,87 +139,70 @@ export function StaffPage() {
           </p>
         </Card>
       ) : (
-        <div className="space-y-4">
-          {staff.map((s) => {
-            const cur = draft[s.id] ?? new Set<string>()
-            return (
-              <Card key={s.id}>
-                <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
-                  <div className="flex min-w-0 items-center gap-3">
-                    <UserAvatar fullName={s.fullName} avatarUrl={s.avatarUrl} className="h-10 w-10 text-sm" />
-                    <div className="min-w-0">
-                    <p className="font-semibold text-slate-800">{s.fullName}</p>
-                    <p className="text-xs text-slate-400">
-                      {s.position || 'Xodim'} · <code>{s.login}</code>
-                    </p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-0.5">
-                    <IconBtn icon={Eye} title="Login/parol" onClick={() => showCredentials(s)} />
-                    <IconBtn icon={Pencil} title="Tahrirlash" onClick={() => openEdit(s)} />
-                    <IconBtn icon={Trash2} title="O'chirish" danger onClick={() => handleDelete(s)} />
-                  </div>
-                </div>
-
-                {canManageRoles ? (
-                  <>
-                    <div className="flex flex-wrap gap-2">
-                      {adminPermissions.map((p) => {
-                        const active = cur.has(p.key)
-                        return (
-                          <button
-                            key={p.key}
-                            type="button"
-                            onClick={() => toggle(s.id, p.key)}
-                            className={cn(
-                              'inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-sm transition-colors',
-                              active
-                                ? 'border-brand-500 bg-brand-50 text-brand-700'
-                                : 'border-slate-200 text-slate-600 hover:bg-slate-50',
-                            )}
-                          >
-                            {active && <Check className="h-3.5 w-3.5" />}
-                            {p.label}
-                          </button>
-                        )
-                      })}
-                    </div>
-                    <div className="mt-3 flex justify-end">
-                      <Button
-                        onClick={() => savePerms(s)}
-                        disabled={!dirty(s) || savingPermsId === s.id}
-                      >
-                        {savingPermsId === s.id ? 'Saqlanmoqda...' : 'Ruxsatlarni saqlash'}
-                      </Button>
-                    </div>
-                  </>
-                ) : (
-                  <div className="flex flex-wrap gap-1.5">
-                    {s.permissions.length === 0 ? (
-                      <span className="text-xs text-slate-400">Ruxsatlar belgilanmagan</span>
-                    ) : (
-                      s.permissions.map((key) => {
-                        const label = adminPermissions.find((p) => p.key === key)?.label ?? key
-                        return (
-                          <span
-                            key={key}
-                            className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs text-slate-600"
-                          >
-                            {label}
-                          </span>
-                        )
-                      })
-                    )}
-                  </div>
-                )}
-              </Card>
-            )
-          })}
-        </div>
+        <Card className="p-0">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead className="whitespace-nowrap bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
+                <tr>
+                  <th className="w-12 px-4 py-3">№</th>
+                  <th className="px-4 py-3">F.I.SH</th>
+                  <th className="px-4 py-3">Login</th>
+                  <th className="px-4 py-3">Lavozimi</th>
+                  <th className="px-4 py-3">Rol</th>
+                  <th className="px-4 py-3">Oxirgi faollik</th>
+                  <th className="px-4 py-3 text-right">Amallar</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {staff.map((s, i) => (
+                  <tr key={s.id} className="hover:bg-slate-50/60">
+                    <td className="px-4 py-3 text-slate-400">{i + 1}</td>
+                    <td className="px-4 py-3">
+                      <span className="flex items-center gap-3">
+                        <UserAvatar fullName={s.fullName} avatarUrl={s.avatarUrl} className="h-9 w-9 text-xs" />
+                        <span className="font-medium text-slate-800">{s.fullName}</span>
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <code className="text-xs text-slate-500">{s.login}</code>
+                    </td>
+                    <td className="px-4 py-3 text-slate-600">{s.position || '—'}</td>
+                    <td className="px-4 py-3">
+                      {s.accessRoleName ? (
+                        <span className="rounded-full bg-brand-50 px-2.5 py-0.5 text-xs font-medium text-brand-700">
+                          {s.accessRoleName}
+                        </span>
+                      ) : (
+                        <span
+                          className="text-xs text-slate-400"
+                          title={
+                            s.permissions.length > 0
+                              ? 'Rol biriktirilmagan — eski shaxsiy ruxsatlar amal qilyapti'
+                              : undefined
+                          }
+                        >
+                          {s.permissions.length > 0 ? `Rolsiz · ${s.permissions.length} ta ruxsat` : 'Rol yo\'q'}
+                        </span>
+                      )}
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-3 text-slate-500">{lastSeen(s.lastLoginAt)}</td>
+                    <td className="px-4 py-3">
+                      <span className="flex justify-end gap-0.5">
+                        <IconBtn icon={Eye} title="Login/parol" onClick={() => showCredentials(s)} />
+                        <IconBtn icon={Pencil} title="Tahrirlash" onClick={() => openEdit(s)} />
+                        <IconBtn icon={Trash2} title="O'chirish" danger onClick={() => handleDelete(s)} />
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
       )}
 
       {/* Yaratish / tahrirlash */}
-      <Modal
+      <Drawer
         open={formOpen}
         onClose={() => setFormOpen(false)}
         title={editing ? 'Xodimni tahrirlash' : 'Yangi xodim'}
@@ -321,44 +266,39 @@ export function StaffPage() {
               </div>
             </div>
           )}
-          {!editing && canManageRoles && (
-            <div>
-              <label className="mb-1 block text-sm font-medium text-slate-600">
-                Ruxsatlar (rollar)
-              </label>
-              <div className="flex flex-wrap gap-2">
-                {adminPermissions.map((p) => {
-                  const active = formPerms.has(p.key)
-                  return (
-                    <button
-                      key={p.key}
-                      type="button"
-                      onClick={() => toggleFormPerm(p.key)}
-                      className={cn(
-                        'inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-sm transition-colors',
-                        active
-                          ? 'border-brand-500 bg-brand-50 text-brand-700'
-                          : 'border-slate-200 text-slate-600 hover:bg-slate-50',
-                      )}
-                    >
-                      {active && <Check className="h-3.5 w-3.5" />}
-                      {p.label}
-                    </button>
-                  )
-                })}
-              </div>
-            </div>
-          )}
+          <div>
+            <Select
+              label="Rol"
+              value={formRoleId}
+              disabled={!canManageRoles}
+              onChange={(e) => setFormRoleId(e.target.value)}
+            >
+              <option value="">— Rol biriktirilmagan —</option>
+              {roles.map((r) => (
+                <option key={r.id} value={r.id}>
+                  {r.name}
+                </option>
+              ))}
+            </Select>
+            <p className="mt-1 text-xs text-slate-400">
+              {canManageRoles
+                ? 'Xodim faqat shu rolga berilgan bo\'limlarni ko\'radi. Ruxsatlar Boshqaruv → Rollar sahifasida.'
+                : 'Rolni tizim egasi (superadmin) biriktiradi.'}
+            </p>
+            {editing && !editing.accessRoleId && editing.permissions.length > 0 && canManageRoles && (
+              <p className="mt-1 text-xs text-amber-600">
+                Hozir {editing.permissions.length} ta eski shaxsiy ruxsat amal qilyapti — rol tanlansa, ular
+                rol ruxsatlari bilan almashadi.
+              </p>
+            )}
+          </div>
           {!editing && (
             <p className="text-xs text-slate-400">
               Saqlangach tizimga kirish uchun login va parol avtomatik yaratiladi va ko'rsatiladi.
-              {canManageRoles
-                ? ' Ruxsatlarni keyinroq ham har bir xodim kartasidan o\'zgartirishingiz mumkin.'
-                : ' Ruxsatlarni (bo\'limlarni) tizim egasi belgilaydi.'}
             </p>
           )}
         </form>
-      </Modal>
+      </Drawer>
 
       {/* Login/parol */}
       <Modal
@@ -416,10 +356,18 @@ function IconBtn({
   )
 }
 
-/** Ruxsatni saqlash xatosi — ko'pincha rol o'zgargandan keyin eski sessiya (403): qayta kirish kerak. */
-function permsErrorMessage(err: unknown): string {
+/** Rol biriktirish xatosi — ko'pincha rol o'zgargandan keyin eski sessiya (403): qayta kirish kerak. */
+function roleErrorMessage(err: unknown): string {
   const status = (err as { response?: { status?: number } })?.response?.status
   if (status === 403 || status === 401)
-    return "Ruxsatlarni saqlab bo'lmadi: sizning sessiyangizda superadmin huquqi yo'q. Tizimdan chiqib, qayta kiring."
-  return "Ruxsatlarni saqlab bo'lmadi. Qaytadan urinib ko'ring."
+    return "Rolni biriktirib bo'lmadi: sizning sessiyangizda superadmin huquqi yo'q. Tizimdan chiqib, qayta kiring."
+  return "Rolni biriktirib bo'lmadi. Qaytadan urinib ko'ring."
+}
+
+/** "2026-09-24T09:46:00" → "24.09.2026 | 09:46"; kirmagan bo'lsa "—". */
+function lastSeen(iso: string | null | undefined): string {
+  if (!iso) return '—'
+  const [date, time = ''] = iso.split('T')
+  const [y, m, d] = date.split('-')
+  return d && m && y ? `${d}.${m}.${y} | ${time.slice(0, 5)}` : iso
 }

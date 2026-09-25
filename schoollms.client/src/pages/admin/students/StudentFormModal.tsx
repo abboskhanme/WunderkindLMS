@@ -14,9 +14,11 @@ import { getClasses } from '@/api/services/classes'
 import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
 import { Input, Select } from '@/components/ui/Input'
+import { PhoneInput } from '@/components/ui/PhoneInput'
 import { genderOptions } from '@/config/constants'
 import { randomPassword, cn } from '@/lib/utils'
 import { DatePicker } from '@/components/ui/DatePicker'
+import { formatPhone } from '@/lib/phone'
 
 interface Props {
   open: boolean
@@ -471,11 +473,10 @@ export function StudentFormModal({ open, onClose, onSubmit, initial, prefill, ti
             </Select>
           </div>
           <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
-            <Input
+            <PhoneInput
               label="O'quvchi telefoni"
-              placeholder="+998 90 123 45 67"
-              value={form.phone ?? ''}
-              onChange={(e) => update('phone', e.target.value)}
+              value={form.phone}
+              onChange={(v) => update('phone', v)}
             />
             <Select
               label="O'qish tili"
@@ -528,11 +529,10 @@ export function StudentFormModal({ open, onClose, onSubmit, initial, prefill, ti
             />
           </div>
           <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-3">
-            <Input
+            <PhoneInput
               label="Telefon raqami"
-              placeholder="+998 90 123 45 67"
               value={form.parentPhone}
-              onChange={(e) => update('parentPhone', e.target.value)}
+              onChange={(v) => update('parentPhone', v)}
             />
             <Select
               label="Kimi bo'ladi"
@@ -578,11 +578,10 @@ export function StudentFormModal({ open, onClose, onSubmit, initial, prefill, ti
               value={second.fullName}
               onChange={(e) => setSecond((g) => ({ ...g, fullName: e.target.value }))}
             />
-            <Input
+            <PhoneInput
               label="Telefon raqami"
-              placeholder="+998 90 123 45 67"
               value={second.phone}
-              onChange={(e) => setSecond((g) => ({ ...g, phone: e.target.value }))}
+              onChange={(v) => setSecond((g) => ({ ...g, phone: v }))}
             />
           </div>
           <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
@@ -639,7 +638,7 @@ export function StudentFormModal({ open, onClose, onSubmit, initial, prefill, ti
                       {g.fullName}
                     </div>
                     <div className="text-xs text-slate-500">
-                      {g.phone} · {relationLabel(g.relation, g.relationNote)}
+                      {formatPhone(g.phone)} · {relationLabel(g.relation, g.relationNote)}
                       {g.childrenCount > 1 && ` · ${g.childrenCount} farzand`}
                     </div>
                   </div>

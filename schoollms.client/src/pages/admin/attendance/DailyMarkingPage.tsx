@@ -117,6 +117,12 @@ export function DailyMarkingPage() {
 
   /** Ekranda turgan (hali saqlanmagan) belgilar: studentId → Mark. */
   const [draft, setDraft] = useState<Record<string, Mark>>({})
+  /**
+   * Sariq belgining ANIQ sababi: studentId → katalogdagi sabab id'si. Yo'q bo'lsa — sukut
+   * (`excusedReasonId`). Ilgari sariq har doim bitta sababni yozardi: katalogdagi qolgan
+   * sabablar chiqmasdi va tanlanmasdi (mijoz, 2026-09-25).
+   */
+  const [picked, setPicked] = useState<Record<string, string>>({})
   const [dirty, setDirty] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -144,6 +150,8 @@ export function DailyMarkingPage() {
   const lesson = !day ? null : allMode ? allLessonsOf(day) : (day.lessons.find((l) => keyOf(l) === lessonKey) ?? null)
   const lessonCount = day?.lessons.length ?? 0
   const currentClass = overview?.classes.find((c) => c.classId === classId) ?? null
+  /** Sariq belgida tanlanadigan sabablar — qizil tugmaniki (Sababsiz) bundan mustasno. */
+  const excusedChoices = (day?.reasons ?? []).filter((r) => r.id !== day?.absentReasonId)
 
   const loadOverview = useCallback(async () => {
     setOverviewLoading(true)
@@ -162,6 +170,7 @@ export function DailyMarkingPage() {
     setDay(null)
     setLessonKey('')
     setDraft({})
+    setPicked({})
     setDirty(false)
     setSavedNote(null)
     setError(null)
@@ -187,6 +196,18 @@ export function DailyMarkingPage() {
     return next
   }
 
+  /**
+   * Saqlangan sariq sabablar (Kasal, Kech qoldi ...) — qayta saqlashda O'ZICHA qoladi. Ilgari
+   * ular sariq tugmaning sukut sababiga almashib ketardi. Katalogda yo'q id olinmaydi (server
+   * uni rad etadi) — o'sha o'quvchiga sukut sabab yoziladi.
+   */
+  const pickedOf = (data: DailyAttendanceClassDay, target: DailyAttendanceLesson | null) => {
+    const known = new Set((data.reasons ?? []).map((r) => r.id))
+    return Object.fromEntries(
+      Object.entries(target?.marks ?? {}).filter(([, rid]) => rid !== data.absentReasonId && known.has(rid)),
+    ) as Record<string, string>
+  }
+
   /** Sinfni YUKLAYDI (saqlanmagan belgilar tekshiruvi bu yerda emas). */
   const loadClass = async (id: string) => {
     setClassId(id)
@@ -202,6 +223,7 @@ export function DailyMarkingPage() {
       const target = data.lessons.find((l) => !l.marked) ?? data.lessons[0] ?? null
       setLessonKey(target ? keyOf(target) : '')
       setDraft(draftOf(data, target))
+      setPicked(pickedOf(data, target))
       setDirty(false)
       setShowUnmarked(false)
     } catch {
@@ -214,7 +236,9 @@ export function DailyMarkingPage() {
   const showLesson = (data: DailyAttendanceClassDay, key: string) => {
     setShowUnmarked(false)
     setLessonKey(key)
-    setDraft(draftOf(data, key === ALL_KEY ? allLessonsOf(data) : (data.lessons.find((l) => keyOf(l) === key) ?? null)))
+    const target = key === ALL_KEY ? allLessonsOf(data) : (data.lessons.find((l) => keyOf(l) === key) ?? null)
+    setDraft(draftOf(data, target))
+    setPicked(pickedOf(data, target))
     setDirty(false)
     setError(null)
     setSavedNote(null)
@@ -250,10 +274,20 @@ export function DailyMarkingPage() {
     setSavedNote(null)
   }
 
+  /** Sariq belgili o'quvchiga katalogdan aniq sabab tanlash. */
+  const setReason = (studentId: string, reasonId: string) => {
+    setError(null)
+    setPicked((prev) => ({ ...prev, [studentId]: reasonId }))
+    setDirty(true)
+    setSavedNote(null)
+  }
+
   /** Butun ustun — mijoz so'ragan "tepadagi bitta button". */
   const setColumn = (mark: Mark) => {
     if (!day || !lesson || !allowed(mark)) return
     setDraft(Object.fromEntries(lesson.studentIds.map((id) => [id, mark])))
+    // Butun ustun — hammaga bitta (sukut) sabab.
+    setPicked({})
     setDirty(true)
     setSavedNote(null)
   }
@@ -278,7 +312,7 @@ export function DailyMarkingPage() {
         .filter(([, m]) => m !== 'present')
         .map(([studentId, m]) => ({
           studentId,
-          reasonId: m === 'absent' ? day.absentReasonId : day.excusedReasonId,
+          reasonId: m === 'absent' ? day.absentReasonId : (picked[studentId] ?? day.excusedReasonId),
         }))
 
       const targets = allMode ? day.lessons : [lesson]
@@ -316,6 +350,7 @@ export function DailyMarkingPage() {
       setDay(null)
       setLessonKey('')
       setDraft({})
+      setPicked({})
       setDirty(false)
       setSavedNote(`${updated.className} · ${lessonTitle(lesson, targets.length)} saqlandi.`)
       setToast(`${updated.className} · ${lessonTitle(lesson, targets.length)} — davomat saqlandi`)
@@ -429,6 +464,7 @@ export function DailyMarkingPage() {
           <>
             <p className="mt-3 text-xs text-slate-400">
               Qizil — {day.absentReasonName ?? '—'} · Sariq — {day.excusedReasonName ?? '—'}
+              {excusedChoices.length > 1 && ' (boshqa sababni o’quvchi qatorida tanlang)'}
               {currentClass && ` · ${currentClass.studentCount} o'quvchi`}
             </p>
             {(!day.absentReasonId || !day.excusedReasonId) && (
@@ -524,6 +560,20 @@ export function DailyMarkingPage() {
                     </span>
 
                     <span className="flex shrink-0 items-center gap-2">
+                      {mark === 'excused' && excusedChoices.length > 1 && (
+                        <select
+                          value={picked[s.studentId] ?? day.excusedReasonId ?? ''}
+                          onChange={(e) => setReason(s.studentId, e.target.value)}
+                          aria-label={`${s.fullName} — sabab`}
+                          className="max-w-[9rem] truncate rounded-lg border border-amber-200 bg-amber-50 px-2 py-1 text-xs font-medium text-amber-800 outline-none focus:border-amber-400"
+                        >
+                          {excusedChoices.map((r) => (
+                            <option key={r.id} value={r.id}>
+                              {r.name}
+                            </option>
+                          ))}
+                        </select>
+                      )}
                       {MARKS.map((m) => (
                         <button
                           key={m}

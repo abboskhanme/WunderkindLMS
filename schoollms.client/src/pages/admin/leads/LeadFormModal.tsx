@@ -3,6 +3,7 @@ import type { Lead } from '@/types'
 import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
 import { Input, Select, Textarea } from '@/components/ui/Input'
+import { PhoneInput } from '@/components/ui/PhoneInput'
 import { genderOptions, gradeOptions } from '@/config/constants'
 
 export type LeadFormValues = Omit<Lead, 'id' | 'stage'>
@@ -103,11 +104,10 @@ export function LeadFormModal({ open, onClose, onSubmit, initial }: Props) {
           onChange={(e) => update('parentFullName', e.target.value)}
         />
         <div className="grid grid-cols-2 gap-4">
-          <Input
+          <PhoneInput
             label="Ota-onasi raqami"
-            placeholder="+998 90 123 45 67"
             value={form.parentPhone}
-            onChange={(e) => update('parentPhone', e.target.value)}
+            onChange={(v) => update('parentPhone', v)}
           />
           <Select
             label="Nechinchi sinfga"

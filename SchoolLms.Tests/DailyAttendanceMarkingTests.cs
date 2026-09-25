@@ -337,6 +337,42 @@ public class DailyAttendanceMarkingTests(ApiFixture fixture) : IAsyncLifetime
     }
 
     /// <summary>
+    /// Katalogdagi HAR BIR sabab ekranga keladi (mijoz, 2026-09-25: "sabablar
+    /// kiritilib qo'yilsa ham chiqarmayapti va tanlanamayapti"). Ilgari javobda
+    /// faqat qizil va sariq tugmaning ikkita sababi bor edi — "Kech keldi" kabi
+    /// qolgan turlarni ekran ko'rsata ham, tanlay ham olmasdi. Tanlangan aniq
+    /// sabab o'zgarmasdan jurnalga tushadi.
+    /// </summary>
+    [Fact]
+    public async Task Katalogdagi_barcha_sabablar_ekranga_keladi_va_tanlanganicha_yoziladi()
+    {
+        await using var db = await NewDbAsync("all_reasons");
+        var s = await SeedAsync(db);
+        var service = new DailyAttendanceService(db);
+
+        var day = await service.ClassDayAsync(s.ClassId, Monday);
+
+        Assert.NotNull(day);
+        Assert.Equal(
+            new[] { s.Illness, s.Unexcused, s.Late }.Order(StringComparer.Ordinal),
+            day.Reasons.Select(r => r.Id).Order(StringComparer.Ordinal));
+        Assert.True(day.Reasons.Single(r => r.Id == s.Late).IsLate);
+
+        // Sariq tugmaning sukut sababi EMAS — boshqa tur tanlanadi va aynan o'zi yoziladi.
+        Assert.NotEqual(s.Late, day.ExcusedReasonId);
+        Assert.Null(await service.SaveAsync(
+            new SaveDailyAttendanceRequest(s.ClassId, Monday, s.Math, 1, [new(s.A, s.Late)]),
+            s.ActorId));
+
+        var after = await service.ClassDayAsync(s.ClassId, Monday);
+        Assert.NotNull(after);
+        var lesson = after.Lessons.Single(l => l.Period == 1);
+        Assert.Equal(s.Late, lesson.Marks[s.A]);
+        Assert.Equal(1, lesson.LateCount);
+        Assert.Equal(0, lesson.AbsentCount);
+    }
+
+    /// <summary>
     /// Kunlik davomat HISOBOTI ham "belgilandi" ni ko'rsatadi: 0 ta yo'q
     /// bo'lgan dars "hammasi keldi" ni ham, "hech kim belgilamagan" ni ham
     /// bildirishi mumkin edi — zavuch uchun bu ikkisi boshqa narsa.

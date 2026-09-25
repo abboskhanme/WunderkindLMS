@@ -130,3 +130,21 @@ body {
     animation: none;
   }
 }
+
+/* Right-side form panel (components/ui/Drawer.tsx). */
+@keyframes drawer-in {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+.drawer-in {
+  animation: drawer-in 0.22s cubic-bezier(0.32, 0.72, 0, 1);
+}
+@media (prefers-reduced-motion: reduce) {
+  .drawer-in {
+    animation: none;
+  }
+}

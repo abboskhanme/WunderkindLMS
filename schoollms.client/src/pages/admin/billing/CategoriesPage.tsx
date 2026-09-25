@@ -21,6 +21,7 @@ import {
 import { billingErrorMessage } from '@/api/services/billingError'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
+import { formatMoney } from '@/lib/utils'
 import { AsyncBlock, BillingGuard, IconBtn, Notice, StatusPill } from './BillingUi'
 import { useBillingAccess } from './access'
 import { CategoryFormModal } from './CategoryFormModal'
@@ -133,6 +134,7 @@ function CategoriesView() {
                 <tr>
                   <th className="px-4 py-3">Toifa</th>
                   <th className="px-4 py-3">Kod</th>
+                  <th className="px-4 py-3 text-right">Oylik narx</th>
                   <th className="px-4 py-3">Holat</th>
                   <th className="px-4 py-3 text-right">Amal</th>
                 </tr>
@@ -149,6 +151,9 @@ function CategoriesView() {
                       </span>
                     </td>
                     <td className="px-4 py-3 font-mono text-xs text-slate-500">{row.code}</td>
+                    <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums text-slate-700">
+                      {row.monthlyAmount != null ? formatMoney(row.monthlyAmount) : <span className="text-slate-300">—</span>}
+                    </td>
                     <td className="px-4 py-3">
                       {row.isActive ? (
                         <StatusPill tone="success">Faol</StatusPill>

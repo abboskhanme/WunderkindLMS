@@ -72,6 +72,7 @@ import { CandidateLinkModal } from './CandidateLinkModal'
 import { CandidateParticipationPanel } from './CandidateParticipationPanel'
 import { CandidateReasonModal, type ReasonRequest } from './CandidateReasonModal'
 import { CandidateResult } from './CandidateResult'
+import { formatPhone, phoneHref } from '@/lib/phone'
 
 interface Notice {
   message: string
@@ -323,8 +324,8 @@ export function CandidateCardPage() {
             <Field label="Ota-onasi">{card.parentFullName || DASH}</Field>
             <Field label="Telefon">
               {card.parentPhone ? (
-                <a href={`tel:${card.parentPhone}`} className="text-brand-600 hover:text-brand-700">
-                  {card.parentPhone}
+                <a href={phoneHref(card.parentPhone)} className="text-brand-600 hover:text-brand-700">
+                  {formatPhone(card.parentPhone)}
                 </a>
               ) : (
                 DASH

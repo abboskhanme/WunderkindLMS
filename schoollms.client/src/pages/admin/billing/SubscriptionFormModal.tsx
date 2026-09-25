@@ -13,7 +13,7 @@ import type {
   SubscriptionRecord,
   SubscriptionUpdate,
 } from '@/api/services/billingCatalog'
-import { getSubscriptionDefault } from '@/api/services/billingCatalog'
+import { getSubscriptionDefault, getSubscriptions } from '@/api/services/billingCatalog'
 import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
 import { Input, Select } from '@/components/ui/Input'
@@ -49,6 +49,11 @@ interface Props {
   studentsError: string | null
   /** Yangi obuna shu o'quvchiga oldindan bog'lanadi (kartochkadagi tugma). */
   presetStudentId?: string
+  /**
+   * O'quvchi kartochkasidan ochilganda: o'quvchi qidiruvi ko'rsatilmaydi,
+   * `presetStudentId` o'zgarmas bo'lib qoladi.
+   */
+  lockStudent?: boolean
   busy: boolean
   error: string | null
   onClose: () => void
@@ -64,6 +69,7 @@ export function SubscriptionFormModal({
   studentsLoading,
   studentsError,
   presetStudentId,
+  lockStudent = false,
   busy,
   error,
   onClose,
@@ -80,6 +86,8 @@ export function SubscriptionFormModal({
   const [startsOn, setStartsOn] = useState(today())
   const [endsOn, setEndsOn] = useState('')
   const [suggestion, setSuggestion] = useState<string | null>(null)
+  // Tanlangan o'quvchining mavjud obunalari — kesishadigan toifani oldindan to'sish uchun.
+  const [existing, setExisting] = useState<SubscriptionRecord[]>([])
 
   useEffect(() => {
     if (!open) return
@@ -121,14 +129,59 @@ export function SubscriptionFormModal({
     [editing, amountTouched],
   )
 
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- o'quvchi almashganda eski ro'yxat ko'rinib qolmasin (maqsadli)
+    setExisting([])
+    if (!open || editing || !studentId) return
+    let active = true
+    getSubscriptions({ studentId, activeOnly: false })
+      .then((rows) => {
+        if (active) setExisting(rows)
+      })
+      // Yuklanmasa ham forma ishlaydi: server `subscription_overlap` bilan baribir rad etadi.
+      .catch(() => undefined)
+    return () => {
+      active = false
+    }
+  }, [open, editing, studentId])
+
+  /**
+   * Shu toifada yangi davr bilan kesishadigan obuna — server
+   * `RequireNoOverlapAsync` bilan aynan bir xil shart. Bir toifada bir vaqtda
+   * ikkita amaldagi obuna bo'lmaydi.
+   */
+  const clashFor = (id: string) =>
+    existing.find(
+      (s) =>
+        s.categoryId === id &&
+        (endsOn === '' || s.startsOn <= endsOn) &&
+        (s.endsOn == null || s.endsOn >= startsOn),
+    )
+  const clash = !editing && categoryId !== '' ? clashFor(categoryId) : undefined
+
+  const lockedStudent = lockStudent ? students.find((o) => o.id === studentId) : undefined
+
   const selectedCategory = categories.find((c) => c.id === categoryId)
   const hint = detailHint(selectedCategory?.code ?? initial?.categoryCode)
+
+  /**
+   * Abonementning o'zgarmas narxi (toifada belgilangan) — summa qo'lda
+   * yozilmaydi, server ham yangi obunani shu summa bilan ochadi. O'quvchi
+   * kartochkasidan (`lockStudent`) esa summa hech qachon qo'lda yozilmaydi:
+   * narx toifadan yoki (o'qish uchun) sinfdan keladi.
+   */
+  const categoryPrice =
+    (editing ? categories.find((c) => c.id === initial?.categoryId) : selectedCategory)?.monthlyAmount ?? null
+  const amountLocked = categoryPrice != null || lockStudent
+  const noPrice = amountLocked && !editing && categoryId !== '' && amount.trim() === ''
 
   const amountNumber = Number(amount)
   const amountValid = amount.trim() !== '' && Number.isFinite(amountNumber) && amountNumber >= 0
   const periodValid = endsOn === '' || endsOn >= (initial?.startsOn ?? startsOn)
   const valid =
-    amountValid && periodValid && (editing || (studentId !== '' && categoryId !== '' && startsOn !== ''))
+    amountValid &&
+    periodValid &&
+    (editing || (studentId !== '' && categoryId !== '' && startsOn !== '' && !clash))
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -179,58 +232,103 @@ export function SubscriptionFormModal({
           </div>
         ) : (
           <>
-            <StudentSelect
-              options={students}
-              loading={studentsLoading}
-              error={studentsError}
-              value={studentId}
-              onChange={(id) => {
-                setStudentId(id)
-                void applyDefault(id, categoryId)
-              }}
-              required
-            />
+            {lockStudent ? (
+              <div className="rounded-lg bg-slate-50 px-3 py-2 text-sm">
+                <p className="font-medium text-slate-800">{lockedStudent?.fullName ?? '—'}</p>
+                {lockedStudent?.className && <p className="text-slate-500">{lockedStudent.className}</p>}
+              </div>
+            ) : (
+              <StudentSelect
+                options={students}
+                loading={studentsLoading}
+                error={studentsError}
+                value={studentId}
+                onChange={(id) => {
+                  setStudentId(id)
+                  void applyDefault(id, categoryId)
+                }}
+                required
+              />
+            )}
             <Select
               label="To'lov toifasi"
               required
               value={categoryId}
               onChange={(e) => {
-                setCategoryId(e.target.value)
-                void applyDefault(studentId, e.target.value)
+                const id = e.target.value
+                setCategoryId(id)
+                const price = categories.find((c) => c.id === id)?.monthlyAmount
+                if (price != null) {
+                  setAmount(String(price))
+                  setSuggestion(null)
+                  return
+                }
+                if (lockStudent) {
+                  // Oldingi toifaning narxi yangisiga ko'chib qolmasin.
+                  setAmount('')
+                  setSuggestion(null)
+                }
+                void applyDefault(studentId, id)
               }}
             >
               <option value="">Tanlang...</option>
               {categories
                 .filter((c) => c.isActive)
-                .map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
+                .map((c) => {
+                  const taken = Boolean(clashFor(c.id))
+                  return (
+                    <option key={c.id} value={c.id} disabled={taken && c.id !== categoryId}>
+                      {taken ? `${c.name} — faol obuna bor` : c.name}
+                    </option>
+                  )
+                })}
             </Select>
           </>
         )}
 
-        <div>
-          <Input
-            label="Oylik summa (so'm)"
-            required
-            type="number"
-            min={0}
-            step={1000}
-            inputMode="numeric"
-            value={amount}
-            onChange={(e) => {
-              setAmount(e.target.value)
-              setAmountTouched(true)
-              setSuggestion(null)
-            }}
-          />
-          {amountValid && amountNumber > 0 && (
-            <p className="mt-1 text-xs text-slate-500">{formatMoney(amountNumber)}</p>
-          )}
-          {suggestion && <p className="mt-1 text-xs text-brand-600">{suggestion}</p>}
-        </div>
+        {amountLocked ? (
+          <div>
+            <span className="mb-1 block text-sm font-medium text-slate-600">Oylik summa</span>
+            <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium tabular-nums text-slate-800">
+              {amountValid ? formatMoney(amountNumber) : '—'}
+            </div>
+            <p className="mt-1 text-xs text-slate-400">
+              {categoryPrice != null
+                ? "Abonementning o'zgarmas narxi — faqat Moliya → Toifalar sahifasida o'zgaradi."
+                : "O'qish narxi sinfdan olinadi."}
+            </p>
+            {editing && categoryPrice != null && amountValid && amountNumber !== categoryPrice && (
+              <button
+                type="button"
+                onClick={() => setAmount(String(categoryPrice))}
+                className="mt-1 text-xs font-medium text-brand-600 hover:text-brand-700"
+              >
+                Toifaning joriy narxiga o'tkazish: {formatMoney(categoryPrice)}
+              </button>
+            )}
+          </div>
+        ) : (
+          <div>
+            <Input
+              label="Oylik summa (so'm)"
+              required
+              type="number"
+              min={0}
+              step={1000}
+              inputMode="numeric"
+              value={amount}
+              onChange={(e) => {
+                setAmount(e.target.value)
+                setAmountTouched(true)
+                setSuggestion(null)
+              }}
+            />
+            {amountValid && amountNumber > 0 && (
+              <p className="mt-1 text-xs text-slate-500">{formatMoney(amountNumber)}</p>
+            )}
+            {suggestion && <p className="mt-1 text-xs text-brand-600">{suggestion}</p>}
+          </div>
+        )}
 
         <Input
           label={hint.label}
@@ -269,6 +367,17 @@ export function SubscriptionFormModal({
         {!periodValid && (
           <Notice tone="danger">
             Tugash sanasi boshlanish sanasidan oldin bo'la olmaydi.
+          </Notice>
+        )}
+        {noPrice && (
+          <Notice tone="danger">
+            Bu toifaga narx belgilanmagan. Avval Moliya → Toifalar sahifasida oylik narxini qo'ying.
+          </Notice>
+        )}
+        {clash && (
+          <Notice tone="danger">
+            Bu toifada {clash.startsOn} … {clash.endsOn ?? 'muddatsiz'} davrli obuna allaqachon bor.
+            Avval uni yoping yoki yangisini u tugagandan keyingi sanadan boshlang.
           </Notice>
         )}
         {error && <Notice>{error}</Notice>}

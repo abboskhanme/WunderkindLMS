@@ -36,6 +36,7 @@ import {
   gradeLabel,
 } from '../exams/examLabels'
 import { isOpenExamStatus } from './CandidateHelpers'
+import { formatPhone } from '@/lib/phone'
 
 /** Who is being assigned — the three fields the picker and the grade check need. */
 export interface AssignTarget {
@@ -256,7 +257,7 @@ export function CandidateAssignModal({ targets, pickLeads, onClose, onAssigned }
                             {gradeLabel(lead.targetGrade)}
                           </span>
                           <span className="hidden shrink-0 text-xs text-slate-400 sm:inline">
-                            {lead.parentPhone}
+                            {formatPhone(lead.parentPhone)}
                           </span>
                         </label>
                       </li>

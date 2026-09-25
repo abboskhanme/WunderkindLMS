@@ -4,6 +4,7 @@ import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
 import { genderLabels } from '@/config/constants'
 import { formatDate } from '@/lib/utils'
+import { formatPhone } from '@/lib/phone'
 
 interface Props {
   lead: Lead | null
@@ -57,7 +58,7 @@ export function LeadDetailModal({ lead, onClose, onEdit, onDelete, onEnrol }: Pr
           <Row label="Tug'ilgan kun" value={formatDate(lead.birthDate)} />
           <Row label="Nechinchi sinfga" value={`${lead.targetGrade}-sinf`} />
           <Row label="Ota-onasi" value={lead.parentFullName || '—'} />
-          <Row label="Ota-onasi raqami" value={lead.parentPhone || '—'} />
+          <Row label="Ota-onasi raqami" value={formatPhone(lead.parentPhone) || '—'} />
           {lead.note && (
             <div className="pt-3">
               <p className="mb-1 text-sm text-slate-400">Izoh</p>

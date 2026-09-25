@@ -12,6 +12,7 @@ import { cn } from '@/lib/utils'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
+import { PhoneInput } from '@/components/ui/PhoneInput'
 import { Loader } from '@/components/ui/Loader'
 import { Modal } from '@/components/ui/Modal'
 import { DatePicker } from '@/components/ui/DatePicker'
@@ -412,7 +413,7 @@ function BusFormModal({
         <Input label="Nomi *" placeholder="1-avtobus" value={form.name} onChange={(e) => set('name', e.target.value)} />
         <Input label="Davlat raqami" placeholder="01 A 123 BC" value={form.plateNumber ?? ''} onChange={(e) => set('plateNumber', e.target.value)} />
         <Input label="Haydovchi" value={form.driverName ?? ''} onChange={(e) => set('driverName', e.target.value)} />
-        <Input label="Haydovchi telefoni" value={form.driverPhone ?? ''} onChange={(e) => set('driverPhone', e.target.value)} />
+        <PhoneInput label="Haydovchi telefoni" value={form.driverPhone} onChange={(v) => set('driverPhone', v)} />
         <Input label="GPS qurilma ID (IMEI)" placeholder="tracker id" value={form.deviceId ?? ''} onChange={(e) => set('deviceId', e.target.value)} />
         <Input label="Marshrut" placeholder="Chilonzor — Maktab" value={form.route ?? ''} onChange={(e) => set('route', e.target.value)} />
       </div>

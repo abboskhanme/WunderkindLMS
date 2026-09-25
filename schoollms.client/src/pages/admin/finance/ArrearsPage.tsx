@@ -39,6 +39,7 @@ import { cn, formatMoney } from '@/lib/utils'
 import { formatMonth } from '@/config/constants'
 import { ReportState } from './ReportState'
 import { MonthPicker } from '@/components/ui/DatePicker'
+import { formatPhone } from '@/lib/phone'
 
 const control =
   'rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-brand-400'
@@ -499,7 +500,7 @@ function StudentRow({
       </td>
 
       {/* F13.03 — ota-ona telefoni. */}
-      <td className="whitespace-nowrap px-3 py-2 text-slate-500">{row.parentPhone || '—'}</td>
+      <td className="whitespace-nowrap px-3 py-2 text-slate-500">{formatPhone(row.parentPhone) || '—'}</td>
 
       {showCategory && (
         <td className="whitespace-nowrap px-3 py-2 text-slate-500">{row.categoryName ?? '—'}</td>

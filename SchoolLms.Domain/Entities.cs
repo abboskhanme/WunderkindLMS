@@ -31,6 +31,11 @@ public class AppUser
     /// admin/superadmin uchun bo'sh (ular hamma narsani ko'radi). EF Core 8 primitive collection (JSON).
     /// </summary>
     public List<string> Permissions { get; set; } = new();
+    /// <summary>
+    /// Staff access role (<see cref="AccessRole"/>). When set, <see cref="Permissions"/> is a copy
+    /// of the role's permissions. null = no role (legacy per-user permissions stay as they are).
+    /// </summary>
+    public Guid? AccessRoleId { get; set; }
 }
 
 /// <summary>Maktab filiali — nomi, manzil, GPS joylashuv va radius (mobil geo-yo'qlama uchun).</summary>

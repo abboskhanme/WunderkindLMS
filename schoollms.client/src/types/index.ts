@@ -733,6 +733,20 @@ export interface Staff {
   permissions: string[]
   /** Profil rasmi (`/uploads/…`) yoki null */
   avatarUrl?: string | null
+  /** Biriktirilgan rol (Boshqaruv → Rollar); null — rolsiz (eski shaxsiy ruxsatlar) */
+  accessRoleId?: string | null
+  accessRoleName?: string | null
+  /** Oxirgi kirish (ISO) */
+  lastLoginAt?: string | null
+}
+
+/** Xodim roli: ruxsatlar rolga beriladi, xodimga faqat rol biriktiriladi. */
+export interface AccessRole {
+  id: string
+  name: string
+  description: string
+  permissions: string[]
+  staffCount: number
 }
 
 /** Taklif yoki shikoyat (ota-ona ilovasidan) */
@@ -1522,6 +1536,8 @@ export interface FeeCategory {
   code: FeeCategoryCode | string
   name: string
   isActive: boolean
+  /** Abonementning o'zgarmas oylik narxi; null — belgilanmagan (tuition narxi sinfdan). */
+  monthlyAmount?: number | null
 }
 
 /* ---------- Obunalar ---------- */

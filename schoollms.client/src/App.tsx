@@ -42,6 +42,7 @@ import { TeacherReportsPage } from '@/pages/admin/teacher-reports/TeacherReports
 import { ContractsPage } from '@/pages/admin/contracts/ContractsPage'
 import { BranchesPage } from '@/pages/admin/branches/BranchesPage'
 import { StaffPage } from '@/pages/admin/staff/StaffPage'
+import { RolesPage } from '@/pages/admin/staff/RolesPage'
 import { FeedbackPage } from '@/pages/admin/feedback/FeedbackPage'
 import { AcademicYearPage } from '@/pages/admin/academic-year/AcademicYearPage'
 import { SubjectsPage } from '@/pages/admin/subjects/SubjectsPage'
@@ -249,8 +250,8 @@ export default function App() {
           <Route path="boshqaruv/cameras" element={<RequirePerm perm="cameras"><CamerasPage /></RequirePerm>} />
           <Route path="boshqaruv/staff" element={<RequirePerm perm="staff"><StaffPage /></RequirePerm>} />
           <Route path="boshqaruv/feedback" element={<RequirePerm perm="feedback"><FeedbackPage /></RequirePerm>} />
-          {/* Rollar endi "Xodimlar va rollar" sahifasiga birlashtirildi */}
-          <Route path="boshqaruv/roles" element={<Navigate to="/admin/boshqaruv/staff" replace />} />
+          {/* Rollar — alohida sahifa (ruxsatlar rolga beriladi) */}
+          <Route path="boshqaruv/roles" element={<RequirePerm perm="staff"><RolesPage /></RequirePerm>} />
           <Route element={<ProtectedRoute role="superadmin" />}>
             <Route path="boshqaruv/branches" element={<BranchesPage />} />
           </Route>

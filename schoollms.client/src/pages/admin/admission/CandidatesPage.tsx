@@ -89,6 +89,7 @@ import {
 import { useCandidateEnrol } from './CandidateEnrol'
 import { CandidateAssignModal, type AssignTarget } from './CandidateAssignModal'
 import { CandidateLinkModal } from './CandidateLinkModal'
+import { formatPhone } from '@/lib/phone'
 
 interface Notice {
   message: string
@@ -572,7 +573,7 @@ export function CandidatesPage() {
                         </span>
                       </td>
                       <td className="px-4 py-3 text-slate-600">{gradeLabel(row.targetGrade)}</td>
-                      <td className="px-4 py-3 text-slate-600">{row.parentPhone || DASH}</td>
+                      <td className="px-4 py-3 text-slate-600">{formatPhone(row.parentPhone) || DASH}</td>
                       <td className="px-4 py-3">
                         <span
                           className={cn(

@@ -68,7 +68,7 @@ export const teacherPermissions: { key: string; label: string }[] = [
 
 /**
  * Xodim (role="staff") admin panelida ko'ra oladigan bo'limlar. Kalitlar nav (navigation.ts)
- * va route himoyasi (RequirePerm) bilan bir xil. Superadmin "Xodimlar va rollar" bo'limida belgilaydi.
+ * va route himoyasi (RequirePerm) bilan bir xil. Superadmin Boshqaruv → Rollar bo'limida rolga beradi.
  * (Filiallar bu ro'yxatda yo'q — u faqat superadmin uchun.)
  */
 export const adminPermissions: { key: string; label: string }[] = [
@@ -99,6 +99,21 @@ export const adminPermissions: { key: string; label: string }[] = [
   { key: 'gps', label: 'GPS (avtobus)' },
   { key: 'cameras', label: 'Kameralar' },
   { key: 'discipline', label: 'Intizomiy ball' },
+]
+
+/**
+ * `adminPermissions` grouped the way the side menu is — for the role editor
+ * (Boshqaruv → Rollar). Every key above appears in exactly one group.
+ */
+export const adminPermissionGroups: { label: string; keys: string[] }[] = [
+  { label: 'Asosiy', keys: ['dashboard', 'leads', 'marketing', 'admission'] },
+  { label: 'Moliya', keys: ['finance', 'contracts'] },
+  { label: "O'quv bo'limi", keys: ['students', 'classes', 'teachers', 'journal', 'schedule'] },
+  { label: 'Davomat', keys: ['attendance', 'attendanceEvening', 'attendanceDorm'] },
+  { label: 'Baholash', keys: ['exams', 'seasonalMarks', 'gradesReport', 'teacherReports', 'discipline'] },
+  { label: 'Aloqa va ilova', keys: ['messages', 'app', 'feedback'] },
+  { label: 'Boshqaruv', keys: ['staff', 'gps', 'cameras'] },
+  { label: 'Sozlamalar', keys: ['settings', 'academicYear'] },
 ]
 
 /** Oshxona — kunlik 3 mahal */

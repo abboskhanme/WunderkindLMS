@@ -38,6 +38,7 @@ import {
   statusLabel,
   statusTone,
 } from './submissionLabels'
+import { formatPhone, phoneHref } from '@/lib/phone'
 
 interface Props {
   /** The row the user clicked. The drawer opens with it while the full record loads. */
@@ -183,10 +184,10 @@ export function SubmissionDetailDrawer({ row, canOpenLeads, onClose }: Props) {
               <Field label="Telefon">
                 {detail.parentPhone ? (
                   <a
-                    href={`tel:${detail.parentPhone.replace(/[^\d+]/g, '')}`}
+                    href={phoneHref(detail.parentPhone)}
                     className="font-medium text-brand-600 hover:text-brand-700"
                   >
-                    {detail.parentPhone}
+                    {formatPhone(detail.parentPhone)}
                   </a>
                 ) : (
                   DASH
@@ -202,10 +203,10 @@ export function SubmissionDetailDrawer({ row, canOpenLeads, onClose }: Props) {
               <Field label="Telefon">
                 {detail.studentPhone ? (
                   <a
-                    href={`tel:${detail.studentPhone.replace(/[^\d+]/g, '')}`}
+                    href={phoneHref(detail.studentPhone)}
                     className="font-medium text-brand-600 hover:text-brand-700"
                   >
-                    {detail.studentPhone}
+                    {formatPhone(detail.studentPhone)}
                   </a>
                 ) : (
                   DASH

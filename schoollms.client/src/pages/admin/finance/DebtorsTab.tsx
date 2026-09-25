@@ -40,6 +40,7 @@ import { ReportState } from './ReportState'
 import { DebtorActionModal } from './DebtorActionModal'
 import { formatDateTime, formatMonthLabel } from './reportLabels'
 import { MonthPicker } from '@/components/ui/DatePicker'
+import { formatPhone } from '@/lib/phone'
 
 // Filtr qatori PAST bo'lsin (mijoz, 2026-09-19) — jadvalga joy qolsin.
 const control =
@@ -351,7 +352,7 @@ export function DebtorsTab() {
                             {r.className}
                           </span>
                         </td>
-                        <td className="whitespace-nowrap px-4 py-3 text-slate-500">{r.parentPhone || '—'}</td>
+                        <td className="whitespace-nowrap px-4 py-3 text-slate-500">{formatPhone(r.parentPhone) || '—'}</td>
                         {columns.map((c) => {
                           const value = debtOf(r, c.code)
                           return (

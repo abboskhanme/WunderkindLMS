@@ -91,7 +91,7 @@ public class BillingCatalogController(
 
         return await q
             .OrderBy(c => c.Name)
-            .Select(c => new FeeCategoryDto(c.Id, c.Code, c.Name, c.IsActive))
+            .Select(c => new FeeCategoryDto(c.Id, c.Code, c.Name, c.IsActive, c.MonthlyAmount))
             .ToListAsync();
     }
 
@@ -110,15 +110,17 @@ public class BillingCatalogController(
         if (await db.FeeCategories.AnyAsync(c => c.Code == code))
             throw BillingRuleException.Conflict("category_code_taken", $"'{code}' kodli toifa allaqachon bor.");
 
-        var category = new FeeCategory { Code = code, Name = name, IsActive = request.IsActive };
+        var price = CategoryPrice(request.MonthlyAmount);
+        var category = new FeeCategory { Code = code, Name = name, IsActive = request.IsActive, MonthlyAmount = price };
         db.FeeCategories.Add(category);
 
         audit.Record("FeeCategory", category.Id.ToString(), "create",
-            $"To'lov toifasi qo'shildi: {name} ({code})",
-            after: new { category.Code, category.Name, category.IsActive });
+            $"To'lov toifasi qo'shildi: {name} ({code})"
+            + (price is null ? string.Empty : $", narxi {AuditService.Money(price.Value)} so'm/oy"),
+            after: new { category.Code, category.Name, category.IsActive, category.MonthlyAmount });
 
         await db.SaveChangesAsync();
-        return new FeeCategoryDto(category.Id, category.Code, category.Name, category.IsActive);
+        return new FeeCategoryDto(category.Id, category.Code, category.Name, category.IsActive, category.MonthlyAmount);
     }
 
     /// <summary>
@@ -145,18 +147,34 @@ public class BillingCatalogController(
                 $"Toifa kodini o'zgartirib bo'lmaydi ('{category.Code}'): unga daromad hisobi va "
                 + "butun hisobot tarixi bog'langan. Kerak bo'lsa eskisini o'chirib, yangisini qo'shing.");
 
-        var before = new { category.Code, category.Name, category.IsActive };
+        var price = CategoryPrice(request.MonthlyAmount);
+        var before = new { category.Code, category.Name, category.IsActive, category.MonthlyAmount };
         category.Name = name;
         category.IsActive = request.IsActive;
+        category.MonthlyAmount = price;
 
+        // Narx faqat YANGI obunalarga ta'sir qiladi — ochilganlari o'z summasida qoladi.
         audit.Record("FeeCategory", category.Id.ToString(), "update",
             $"To'lov toifasi o'zgardi: {category.Code} — nomi '{before.Name}' → '{name}', "
-            + $"faol: {before.IsActive} → {request.IsActive}",
-            before: before, after: new { category.Code, category.Name, category.IsActive });
+            + $"faol: {before.IsActive} → {request.IsActive}, "
+            + $"narxi: {ShowPrice(before.MonthlyAmount)} → {ShowPrice(price)}",
+            before: before, after: new { category.Code, category.Name, category.IsActive, category.MonthlyAmount });
 
         await db.SaveChangesAsync();
-        return new FeeCategoryDto(category.Id, category.Code, category.Name, category.IsActive);
+        return new FeeCategoryDto(category.Id, category.Code, category.Name, category.IsActive, category.MonthlyAmount);
     }
+
+    /// <summary>Toifa narxi: null — belgilanmagan; manfiy bo'lmaydi; tiyingacha yaxlitlanadi.</summary>
+    private static decimal? CategoryPrice(decimal? amount)
+    {
+        if (amount is null) return null;
+        if (amount < 0m)
+            throw BillingRuleException.Invalid("invalid_amount", "Toifa narxi manfiy bo'la olmaydi.");
+        return decimal.Round(amount.Value, 2);
+    }
+
+    private static string ShowPrice(decimal? amount) =>
+        amount is null ? "belgilanmagan" : $"{AuditService.Money(amount.Value)} so'm";
 
     // ==================================================================
     //  Obunalar

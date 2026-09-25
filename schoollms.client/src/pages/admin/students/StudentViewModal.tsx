@@ -6,6 +6,7 @@ import { CredentialsBox } from '@/components/ui/CredentialsBox'
 import { getStudentCredentials, resetStudentPassword } from '@/api/services/students'
 import { genderLabels } from '@/config/constants'
 import { formatDate, formatMoney } from '@/lib/utils'
+import { formatPhone } from '@/lib/phone'
 
 interface Props {
   student: Student | null
@@ -59,7 +60,7 @@ export function StudentViewModal({ student, onClose }: Props) {
           <Row label="Manzil" value={student.address} />
           <Row label="Sinf" value={student.className} />
           <Row label="Ota-onasi" value={student.parentFullName} />
-          <Row label="Ota-onasi raqami" value={student.parentPhone} />
+          <Row label="Ota-onasi raqami" value={formatPhone(student.parentPhone)} />
           {/* Qoldiq HISOBLANADI (P1-21). Chegirma bu yerda ko'rsatilmaydi —
               u toifaga bog'liq va "Moliya → Chegirmalar" da turadi. */}
           <Row label="Balans" value={formatMoney(student.balance ?? 0)} />

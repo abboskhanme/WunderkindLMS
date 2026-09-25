@@ -40,6 +40,12 @@ export async function resetStaffPassword(id: string): Promise<Credentials> {
   return data
 }
 
+/** Xodimga rol biriktirish (faqat superadmin); null — roldan chiqarish */
+export async function setStaffRole(id: string, accessRoleId: string | null): Promise<Staff> {
+  const { data } = await api.put<Staff>(`/admin/staff/${id}/role`, { accessRoleId })
+  return data
+}
+
 /** Xodim bo'lim ruxsatlarini saqlash (faqat superadmin) */
 export async function setStaffPermissions(id: string, permissions: string[]): Promise<Staff> {
   const { data } = await api.put<Staff>(`/admin/staff/${id}/permissions`, { permissions })
