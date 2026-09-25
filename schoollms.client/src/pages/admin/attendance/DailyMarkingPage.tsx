@@ -150,8 +150,11 @@ export function DailyMarkingPage() {
   const lesson = !day ? null : allMode ? allLessonsOf(day) : (day.lessons.find((l) => keyOf(l) === lessonKey) ?? null)
   const lessonCount = day?.lessons.length ?? 0
   const currentClass = overview?.classes.find((c) => c.classId === classId) ?? null
-  /** Sariq belgida tanlanadigan sabablar — qizil tugmaniki (Sababsiz) bundan mustasno. */
-  const excusedChoices = (day?.reasons ?? []).filter((r) => r.id !== day?.absentReasonId)
+  /**
+   * Sariq belgida tanlanadigan sabablar — faqat kelmaganlik sabablari: qizil tugmaniki
+   * (Sababsiz) va "kech qoldi" bundan mustasno (mijoz, 2026-09-25: sabab faqat kelmagan uchun).
+   */
+  const excusedChoices = (day?.reasons ?? []).filter((r) => r.id !== day?.absentReasonId && !r.isLate)
 
   const loadOverview = useCallback(async () => {
     setOverviewLoading(true)
@@ -469,12 +472,9 @@ export function DailyMarkingPage() {
             </p>
             {(!day.absentReasonId || !day.excusedReasonId) && (
               <p className="mt-1 text-xs text-amber-600">
-                "Kelmadi" / "sababli" uchun sabab yo'q.{' '}
-                {(day.reasons ?? []).length > 0 && (day.reasons ?? []).every((r) => r.isLate)
-                  ? 'Hamma sabab "Kech qolish" deb belgilangan — kech qolgan o\'quvchi darsda bor hisoblanadi. '
-                  : ''}
-                Sozlamalar → Umumiy sozlamalar → Davomat sabablari: "Sababsiz" va "Sababli" dan "Kech qolish"
-                belgisini olib tashlang yoki shunday sabab qo'shing.
+                "Kelmadi" / "sababli" uchun sabab yo'q — Sozlamalar → Umumiy sozlamalar → Davomat
+                sabablari bo'limini ochib, "Saqlash" ni bosing (kerak bo'lsa "Sababsiz" va "Sababli" ni
+                qo'shing).
               </p>
             )}
           </>

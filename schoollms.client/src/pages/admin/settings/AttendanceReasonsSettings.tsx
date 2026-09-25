@@ -13,50 +13,77 @@ const control =
   'rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-brand-400'
 
 /**
- * Davomat sabablari (o'quvchi yo'qligi sabablari) — ilgari `SettingsPage`ning
- * `reasons` bo'limi sifatida inline yozilgan edi, endi alohida komponent: eski
- * `/admin/settings/reasons` marshrutida (SettingsPage orqali) va yangi "Umumiy
- * sozlamalar" hub sahifasida bir xil ishlatiladi. Forma va API chaqiruvlari
- * o'zgarmagan.
+ * Tizimning "kech qoldi" yozuvi: nomida "kech" bor va `isLate`. U sozlamada KO'RSATILMAYDI
+ * (mijoz, 2026-09-25: "kech qolishga sabab kerakmas") — jurnal va Mini App undan "kech qoldi"
+ * belgisi sifatida foydalanadi, shuning uchun saqlashda o'z holicha qaytariladi.
+ * Nomida "kech" bo'lmagan `isLate` sabab — xato qo'yilgan belgi: u oddiy yo'qlik sababi bo'lib
+ * ko'rinadi va saqlashda tuzaladi.
+ */
+const isSystemLate = (r: AbsenceReason) => r.isLate && /kech/i.test(r.name)
+
+const DEFAULT_LATE: Omit<AbsenceReason, 'id'> = { name: 'Kech qoldi', short: 'KQ', isLate: true }
+
+/**
+ * Jurnal katagidagi qisqa belgi nomdan hosil qilinadi — foydalanuvchi uni kiritmaydi.
+ * Borini saqlaymiz (jurnal ko'rinishi o'zgarmasin); yangisi — birinchi harf, band bo'lsa
+ * ikki harf, u ham band bo'lsa raqam qo'shiladi.
+ */
+function withShorts(list: AbsenceReason[], taken: Set<string>): AbsenceReason[] {
+  const used = new Set(taken)
+  for (const r of list) if (r.short.trim()) used.add(r.short.trim().toUpperCase())
+  return list.map((r) => {
+    if (r.short.trim()) return r
+    const letters = r.name.replace(/[^\p{L}]/gu, '').toUpperCase() || 'X'
+    let short = [letters.slice(0, 1), letters.slice(0, 2)].find((c) => !used.has(c)) ?? ''
+    for (let n = 2; !short; n++) if (!used.has(`${letters[0]}${n}`)) short = `${letters[0]}${n}`
+    used.add(short)
+    return { ...r, short }
+  })
+}
+
+/**
+ * Davomat sabablari — FAQAT kelmagan o'quvchi uchun (mijoz, 2026-09-25): nomi va
+ * o'chirish, boshqa hech narsa. Qisqa belgi avtomatik, "kech qoldi" tizimda yashirin.
  *
  * DIQQAT: bu "Arxivlash sabablari" (`ArchiveReasonsSettings.tsx`, §2.2) dan
  * boshqa katalog — u o'quvchini arxivlashda, bu esa kunlik davomatda ishlatiladi.
  */
 export function AttendanceReasonsSettings() {
   const [reasons, setReasons] = useState<AbsenceReason[]>([])
+  const [hidden, setHidden] = useState<AbsenceReason[]>([])
   const [loading, setLoading] = useState(true)
   const [status, setStatus] = useState<Status>('idle')
 
   useEffect(() => {
     getSettings()
-      .then((s) => setReasons(s.absenceReasons))
+      .then((s) => {
+        setHidden(s.absenceReasons.filter(isSystemLate))
+        setReasons(s.absenceReasons.filter((r) => !isSystemLate(r)).map((r) => ({ ...r, isLate: false })))
+      })
       .finally(() => setLoading(false))
   }, [])
 
-  const updateReason = (i: number, field: 'name' | 'short', value: string) =>
-    setReasons((prev) => prev.map((r, idx) => (idx === i ? { ...r, [field]: value } : r)))
+  const updateName = (i: number, value: string) =>
+    setReasons((prev) => prev.map((r, idx) => (idx === i ? { ...r, name: value } : r)))
 
-  const toggleReasonLate = (i: number) =>
-    setReasons((prev) => prev.map((r, idx) => (idx === i ? { ...r, isLate: !r.isLate } : r)))
-
-  const addReason = () =>
-    setReasons((prev) => [...prev, { id: uid(), name: '', short: '', isLate: false }])
+  const addReason = () => setReasons((prev) => [...prev, { id: uid(), name: '', short: '', isLate: false }])
 
   const removeReason = (i: number) => setReasons((prev) => prev.filter((_, idx) => idx !== i))
 
   const onSave = async () => {
     setStatus('saving')
-    await saveAbsenceReasons(reasons.filter((r) => r.name.trim()))
+    const late = hidden.length > 0 ? hidden : [{ ...DEFAULT_LATE, id: uid() }]
+    const visible = reasons
+      .filter((r) => r.name.trim())
+      .map((r) => ({ ...r, name: r.name.trim(), isLate: false }))
+    const taken = new Set(late.map((r) => r.short.toUpperCase()))
+    await saveAbsenceReasons([...withShorts(visible, taken), ...late])
+    setHidden(late)
     setStatus('saved')
     setTimeout(() => setStatus('idle'), 2000)
   }
 
   if (loading) return <Loader label="Yuklanmoqda..." />
-
-  // Kamida bitta "kelmadi" sababi kerak: faqat "kech qolish" sabablari bilan davomatda
-  // hech kimni "kelmadi" / "sababli" deb belgilab bo'lmaydi (mijoz, 2026-09-25).
-  const named = reasons.filter((r) => r.name.trim())
-  const noAbsence = named.length > 0 && named.every((r) => r.isLate)
 
   return (
     <Card>
@@ -64,44 +91,16 @@ export function AttendanceReasonsSettings() {
         <h2 className="font-semibold text-slate-800">Davomat sabablari</h2>
         <SaveButton status={status} onClick={onSave} />
       </div>
-      <p className="mb-3 text-xs text-slate-400">
-        "Kech qolish" belgisini faqat kechikish sabablariga qo'ying — bunday o'quvchi darsda bor hisoblanadi.
-        Yo'qlik sabablarida (Sababsiz, Sababli, Kasal) bu belgi bo'lmasin.
-      </p>
-      {noAbsence && (
-        <p className="mb-3 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-700">
-          Hamma sabab "Kech qolish" deb belgilangan — davomatda o'quvchini "kelmadi" yoki "sababli" deb
-          belgilab bo'lmaydi. Yo'qlik sabablaridan bu belgini olib tashlang.
-        </p>
-      )}
+      <p className="mb-3 text-xs text-slate-400">Kelmagan o'quvchi uchun tanlanadigan sabablar.</p>
       <div className="space-y-2">
         {reasons.map((r, i) => (
-          <div key={r.id} className="flex flex-wrap items-center gap-2">
+          <div key={r.id} className="flex items-center gap-2">
             <input
               value={r.name}
-              onChange={(e) => updateReason(i, 'name', e.target.value)}
+              onChange={(e) => updateName(i, e.target.value)}
               placeholder="Sabab nomi (masalan: Kasal)"
-              className={`${control} flex-1 min-w-[180px]`}
+              className={`${control} min-w-0 flex-1`}
             />
-            <input
-              value={r.short}
-              onChange={(e) => updateReason(i, 'short', e.target.value)}
-              placeholder="Belgi"
-              maxLength={3}
-              className={`${control} w-20 text-center`}
-            />
-            <label
-              className="inline-flex cursor-pointer items-center gap-1.5 whitespace-nowrap text-sm text-slate-600"
-              title="Kech keldi — yo'qlik emas, o'quvchi darsda bor, baho qo'ysa bo'ladi"
-            >
-              <input
-                type="checkbox"
-                checked={r.isLate}
-                onChange={() => toggleReasonLate(i)}
-                className="h-4 w-4 rounded border-slate-300"
-              />
-              Kech qolish (darsda bor)
-            </label>
             <button
               type="button"
               onClick={() => removeReason(i)}
