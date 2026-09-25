@@ -29,6 +29,17 @@ import { useAuth } from '@/context/auth-context'
 /** Bo'limga umuman kira oladigan rollar (`Roles.FinanceStaff` bilan bir xil). */
 export const BILLING_ROLES: readonly Role[] = ['admin', 'superadmin']
 
+/**
+ * Moliyaga kira oladimi: admin / direktor YOKI rolida "Moliya" ruxsati bor xodim
+ * (Boshqaruv → Rollar; server: `Roles.FinanceDelegate`). Mijoz, 2026-09-25:
+ * "hamma narsa role bilan boshqarilsin".
+ */
+export function hasFinanceAccess(user: User | null): boolean {
+  if (!user) return false
+  if (BILLING_ROLES.includes(user.role)) return true
+  return user.role === 'staff' && (user.permissions ?? []).includes('finance')
+}
+
 /** Faqat direktor bajaradigan amallar (tasdiqlash). */
 const DIRECTOR: Role = 'superadmin'
 
@@ -119,7 +130,7 @@ export interface BillingAccess {
 export function useBillingAccess(): BillingAccess {
   const { user } = useAuth()
 
-  const canOpen = hasRole(user, BILLING_ROLES)
+  const canOpen = hasFinanceAccess(user)
   const isDirector = hasRole(user, [DIRECTOR])
   const isOwn = (record: AuthoredRecord) => isOwnRecord(user, record)
 

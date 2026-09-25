@@ -77,7 +77,8 @@ public class CashierRoleTests(ApiFixture fixture)
     [Fact]
     public void Qoidalardagi_rollar_haqiqiy_rollar()
     {
-        string[] known = [Roles.SuperAdmin, Roles.Admin, Roles.Cashier, Roles.Staff, Roles.Teacher, Roles.Student];
+        string[] known = [Roles.SuperAdmin, Roles.Admin, Roles.Cashier, Roles.Staff, Roles.Teacher, Roles.Student,
+            Roles.FinanceDelegate];
 
         foreach (var rule in FinanceMatrix.Rules)
             foreach (var role in rule.Roles)

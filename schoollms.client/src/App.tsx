@@ -261,7 +261,7 @@ export default function App() {
       {/* Kassa — kassir ish o'rni (P1-16). ATAYLAB /admin daraxtidan tashqarida:
           u yerdagi role="admin" darvozasi `staff` ni kiritib, `cashier` ni
           chiqarib yuboradi — bu yerda aynan teskarisi kerak. */}
-      <Route element={<ProtectedRoute roles={['cashier', 'admin', 'superadmin']} />}>
+      <Route element={<ProtectedRoute roles={['cashier', 'admin', 'superadmin', 'staff']} />}>
         <Route path="/cashier" element={<AppLayout />}>
           <Route index element={<CashierPage />} />
         </Route>

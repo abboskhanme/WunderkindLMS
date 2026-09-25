@@ -93,24 +93,24 @@ export const navByRole: Record<Role, NavItem[]> = {
         // menyuda alohida yozuv qilmaydi.
         //
         // YANGI YOZUV QO'SHMANG. Bu ro'yxat EduSchool ekranidan nusxa.
-        { label: 'Kassa', to: '/cashier', roles: ['admin', 'superadmin'], group: 'AMALLAR' },
-        { label: 'Qarzdorlar bilan ishlash', to: '/admin/finance/debtors', roles: ['admin', 'superadmin'], group: 'AMALLAR' },
-        { label: 'Tranzaksiyalar', to: '/admin/finance/transactions', roles: ['admin', 'superadmin'], group: 'AMALLAR' },
-        { label: 'Abonement tranzaksiyalari', to: '/admin/billing/invoices', roles: ['admin', 'superadmin'], group: 'AMALLAR' },
-        { label: 'Abonement tranzaksiyalari (Qarzdorlik oyma oy)', to: '/admin/finance/arrears', roles: ['admin', 'superadmin'], group: 'AMALLAR' },
+        { label: 'Kassa', to: '/cashier', roles: ['admin', 'superadmin', 'staff'], group: 'AMALLAR' },
+        { label: 'Qarzdorlar bilan ishlash', to: '/admin/finance/debtors', roles: ['admin', 'superadmin', 'staff'], group: 'AMALLAR' },
+        { label: 'Tranzaksiyalar', to: '/admin/finance/transactions', roles: ['admin', 'superadmin', 'staff'], group: 'AMALLAR' },
+        { label: 'Abonement tranzaksiyalari', to: '/admin/billing/invoices', roles: ['admin', 'superadmin', 'staff'], group: 'AMALLAR' },
+        { label: 'Abonement tranzaksiyalari (Qarzdorlik oyma oy)', to: '/admin/finance/arrears', roles: ['admin', 'superadmin', 'staff'], group: 'AMALLAR' },
 
-        { label: 'Ish haqi', to: '/admin/teachers/salary', roles: ['admin', 'superadmin'], group: 'ISH HAQI' },
-        { label: 'Bonus', to: '/admin/finance/bonus', roles: ['admin', 'superadmin'], group: 'ISH HAQI' },
-        { label: 'Jarima', to: '/admin/finance/penalty', roles: ['admin', 'superadmin'], group: 'ISH HAQI' },
+        { label: 'Ish haqi', to: '/admin/teachers/salary', roles: ['admin', 'superadmin', 'staff'], group: 'ISH HAQI' },
+        { label: 'Bonus', to: '/admin/finance/bonus', roles: ['admin', 'superadmin', 'staff'], group: 'ISH HAQI' },
+        { label: 'Jarima', to: '/admin/finance/penalty', roles: ['admin', 'superadmin', 'staff'], group: 'ISH HAQI' },
 
-        { label: 'Moliya hisobotlari', to: '/admin/finance/reports', roles: ['admin', 'superadmin'], group: 'HISOBOTLAR' },
-        { label: 'Moliya hisobotlari (P&L)', to: '/admin/finance/pnl', roles: ['admin', 'superadmin'], group: 'HISOBOTLAR' },
+        { label: 'Moliya hisobotlari', to: '/admin/finance/reports', roles: ['admin', 'superadmin', 'staff'], group: 'HISOBOTLAR' },
+        { label: 'Moliya hisobotlari (P&L)', to: '/admin/finance/pnl', roles: ['admin', 'superadmin', 'staff'], group: 'HISOBOTLAR' },
         // P&L 2.0 (beta) — ilgari rad etilgan edi (existing-module-gaps.md
         // §3.6), mijoz 2026-09-18 da qaytardi. Ekranda hali qurilmagan
         // qismlari OCHIQ yozilgan, soxta tab qo'yilmagan.
-        { label: 'Moliya hisobotlari (P&L) 2.0', to: '/admin/finance/pnl-2', roles: ['admin', 'superadmin'], group: 'HISOBOTLAR' },
-        { label: 'Pul oqimi', to: '/admin/finance/cashflow', roles: ['admin', 'superadmin'], group: 'HISOBOTLAR' },
-        { label: 'Moliya analitikasi', to: '/admin/finance/money-flow', roles: ['admin', 'superadmin'], group: 'HISOBOTLAR' },
+        { label: 'Moliya hisobotlari (P&L) 2.0', to: '/admin/finance/pnl-2', roles: ['admin', 'superadmin', 'staff'], group: 'HISOBOTLAR' },
+        { label: 'Pul oqimi', to: '/admin/finance/cashflow', roles: ['admin', 'superadmin', 'staff'], group: 'HISOBOTLAR' },
+        { label: 'Moliya analitikasi', to: '/admin/finance/money-flow', roles: ['admin', 'superadmin', 'staff'], group: 'HISOBOTLAR' },
       ],
     },
     { label: 'Jurnal', to: '/admin/journal', icon: NotebookText, perm: 'journal' },
@@ -295,7 +295,7 @@ export const navByRole: Record<Role, NavItem[]> = {
         // bor bitta sahifa, menyuda esa o'nta yassi yozuv emas.
         // Eski manzillar (`/admin/settings/telegram` va h.k.) ishlashda
         // qoladi — hub qo'shimcha yo'l, almashtiruvchi emas.
-        { label: 'Moliya sozlamalari', to: '/admin/billing/settings', roles: ['admin', 'superadmin'], group: 'SOZLAMALAR' },
+        { label: 'Moliya sozlamalari', to: '/admin/billing/settings', roles: ['admin', 'superadmin', 'staff'], perm: 'finance', group: 'SOZLAMALAR' },
         { label: 'Integratsiyalar', to: '/admin/settings/integrations', perm: 'settings', group: 'SOZLAMALAR' },
         { label: 'Umumiy sozlamalar', to: '/admin/settings/general', perm: 'settings', group: 'SOZLAMALAR' },
         // Sotuv va marketing — EduSchool'da ham Sozlamalar ichida, `Umumiy

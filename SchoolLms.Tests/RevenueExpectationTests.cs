@@ -71,7 +71,8 @@ public class RevenueExpectationTests(ApiFixture fixture) : IAsyncLifetime
     [InlineData(Roles.Teacher)]
     public async Task Xodim_va_oqituvchi_kira_olmaydi_403(string role)
     {
-        using var client = await fixture.Api.ClientAsAsync(role, "finance");
+        // 2026-09-25: moliya xodim roli orqali ochiladi ("finance" ruxsati) — ruxsatSIZ xodim yopiq qoladi.
+        using var client = await fixture.Api.ClientAsAsync(role, role == Roles.Staff ? "students" : "finance");
 
         var response = await client.GetAsync(PnlExpectation);
 

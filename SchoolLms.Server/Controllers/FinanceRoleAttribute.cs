@@ -156,9 +156,11 @@ public sealed record FinanceRule(FinanceAction Action, string[] Roles, string Su
 /// </summary>
 public static class FinanceMatrix
 {
+    // Xodim roli orqali (Boshqaruv → Rollar): "finance" ruxsati — admin darajasi.
+    // Direktor tasdiqlari (Director) bunga KIRMAYDI.
     private static readonly string[] Director = [Roles.SuperAdmin];
-    private static readonly string[] AdminAndDirector = [Roles.Admin, Roles.SuperAdmin];
-    private static readonly string[] CashDesk = [Roles.Cashier, Roles.Admin, Roles.SuperAdmin];
+    private static readonly string[] AdminAndDirector = [Roles.Admin, Roles.SuperAdmin, Roles.FinanceDelegate];
+    private static readonly string[] CashDesk = [Roles.Cashier, Roles.Admin, Roles.SuperAdmin, Roles.FinanceDelegate];
     private static readonly string[] NoOne = [];
 
     /// <summary>

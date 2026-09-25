@@ -10,6 +10,7 @@
  * shu qarorni TAKRORLAYDI, chunki "tugmani bosdim — 403 oldim" foydalanuvchini
  * o'z ruxsatlari haqida chalg'itadi. Himoya serverda, bu yerda — halollik.
  */
+import { hasFinanceAccess } from '@/pages/admin/billing/access'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Wallet, Save, Clock, Percent, Lock } from 'lucide-react'
 import { getSalaryRates, saveSalaryRates, setBonusBulk, type SalaryRates } from '@/api/services/salaryRates'
@@ -37,7 +38,8 @@ function currentMonth(): string {
 
 export function SalaryCalcPage() {
   const { user } = useAuth()
-  const allowed = user?.role === 'admin' || user?.role === 'superadmin'
+  // Ish haqi — moliya: admin / direktor yoki rolida "Moliya" ruxsati bor xodim.
+  const allowed = hasFinanceAccess(user ?? null)
 
   if (!allowed) {
     return (

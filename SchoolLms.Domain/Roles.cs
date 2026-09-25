@@ -66,7 +66,22 @@ public static class Roles
     /// Admin va direktor ham kassaga tura oladi (SPEC §4.3 birinchi qator).
     /// <c>[Authorize(Roles = Roles.CashierOrAdmin)]</c>.
     /// </summary>
-    public const string CashierOrAdmin = Cashier + "," + Admin + "," + SuperAdmin;
+    public const string CashierOrAdmin = Cashier + "," + Admin + "," + SuperAdmin + "," + FinanceDelegate;
+
+    // ----- Moliya: xodim roli orqali (Boshqaruv → Rollar), 2026-09-25 -----
+    //
+    // Mijoz: "hamma narsa role bilan boshqarilsin". Bu ikkisi tokenda YO'Q — xodimning
+    // ruxsatlaridan HAR SO'ROVDA hosil bo'ladi (Program.cs, OnTokenValidated), xuddi
+    // `perm` claim'lari kabi: rol o'zgarsa darrov amal qiladi.
+
+    /// <summary>"finance" ruxsatli xodim — moliyada admin darajasi (direktor tasdiqlari bundan tashqari).</summary>
+    public const string FinanceDelegate = "financestaff";
+
+    /// <summary>Xodim ruxsat kaliti → hosil bo'ladigan ichki rol.</summary>
+    public static readonly IReadOnlyDictionary<string, string> PermissionRoles = new Dictionary<string, string>
+    {
+        ["finance"] = FinanceDelegate,
+    };
 
     /// <summary>
     /// Moliya "orqa ofisi": katalog, obunalar, chegirmalar, chiqimlar, hisobotlar,
@@ -75,5 +90,5 @@ public static class Roles
     /// eski xodim-ruxsat yo'li esa P1-21 gacha eski <c>FinanceController</c> da
     /// <c>AdminPermAttribute</c> orqali ishlashda davom etadi.
     /// </summary>
-    public const string FinanceStaff = Admin + "," + SuperAdmin;
+    public const string FinanceStaff = Admin + "," + SuperAdmin + "," + FinanceDelegate;
 }

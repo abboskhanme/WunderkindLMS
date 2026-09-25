@@ -94,12 +94,15 @@ public class SalaryAccessTests(ApiFixture fixture)
             "/api/admin/finance/salary-report/export",
         ];
 
-        using var staff = await fixture.Api.ClientAsAsync(Roles.Staff, "teachers", "finance");
+        // 2026-09-25: maosh — moliya; rolida "finance" ruxsati bor xodim o'qiydi, ruxsatsizi yo'q.
+        using var staff = await fixture.Api.ClientAsAsync(Roles.Staff, "teachers");
+        using var financeStaff = await fixture.Api.ClientAsAsync(Roles.Staff, "teachers", "finance");
         using var admin = await fixture.Api.ClientAsAsync(Roles.Admin);
 
         foreach (var url in urls)
         {
             Assert.Equal(HttpStatusCode.Forbidden, (await staff.GetAsync(url)).StatusCode);
+            Assert.Equal(HttpStatusCode.OK, (await financeStaff.GetAsync(url)).StatusCode);
             Assert.Equal(HttpStatusCode.OK, (await admin.GetAsync(url)).StatusCode);
         }
     }

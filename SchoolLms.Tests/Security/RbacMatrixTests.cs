@@ -536,9 +536,9 @@ public class RbacMatrixTests(ApiFixture fixture)
     }
 
     /// <summary>
-    /// <c>staff</c> — SPEC §4.3 da bunday ustun YO'Q. Yangi moliya
-    /// yuzasining har bir amali unga yopiq bo'lishi kerak (fail-closed):
-    /// eski "finance" ruxsat kaliti bu yerga o'tmaydi.
+    /// <c>staff</c> — rolida "finance" ruxsati YO'Q xodim. 2026-09-25 dan moliya
+    /// xodim roli orqali ochiladi (<c>Roles.FinanceDelegate</c>), lekin ruxsatsiz
+    /// xodimga moliya yuzasining har bir amali yopiq (fail-closed).
     /// </summary>
     [Theory]
     [InlineData("/api/cash/payments")]
@@ -547,7 +547,7 @@ public class RbacMatrixTests(ApiFixture fixture)
     [InlineData("/api/admin/billing/discounts")]
     public async Task Staff_yangi_moliya_yuzasiga_kira_olmaydi_403(string path)
     {
-        var actor = await ActorAsync(Roles.Staff, "finance");
+        var actor = await ActorAsync(Roles.Staff, "students");
 
         var response = await actor.Client.PostAsJsonAsync(path, new { });
 

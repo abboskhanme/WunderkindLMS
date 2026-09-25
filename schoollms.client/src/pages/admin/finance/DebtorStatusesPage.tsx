@@ -14,6 +14,7 @@
  * Izoh (hint) MUHIM: administratorlar almashganda "bu holat qachon
  * qo'yiladi" degan bilim shu yerda qoladi, odamlarning xotirasida emas.
  */
+import { hasFinanceAccess } from '@/pages/admin/billing/access'
 import { useState } from 'react'
 import { Archive, Pencil, Plus, RotateCcw, Tag } from 'lucide-react'
 import { useAsync } from '@/hooks/useAsync'
@@ -37,7 +38,7 @@ export function DebtorStatusesPage() {
   const { user } = useAuth()
   // SPEC §4.3: `/admin/finance/*` — faqat admin va direktor. Server baribir
   // 403 beradi; ekran esa 403 ni ko'rsatib o'tirmaydi, ochiq aytadi.
-  const allowed = !!user && (user.role === 'admin' || user.role === 'superadmin')
+  const allowed = hasFinanceAccess(user ?? null)
 
   const { data, loading, error, refetch } = useAsync(
     () => (allowed ? getDebtorStatuses(true) : Promise.resolve<DebtorStatus[]>([])),

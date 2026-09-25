@@ -88,7 +88,8 @@ public class BillingSettingsServiceTests(ApiFixture fixture)
     [InlineData(Roles.Teacher)]
     public async Task Settings_endpointi_admin_va_direktordan_boshqasiga_yopiq(string role)
     {
-        using var client = await fixture.Api.ClientAsAsync(role, "finance");
+        // 2026-09-25: moliya xodim roli orqali ochiladi ("finance" ruxsati) — ruxsatSIZ xodim yopiq qoladi.
+        using var client = await fixture.Api.ClientAsAsync(role, role == Roles.Staff ? "students" : "finance");
 
         var getResponse = await client.GetAsync("/api/admin/billing/settings");
         Assert.Equal(HttpStatusCode.Forbidden, getResponse.StatusCode);

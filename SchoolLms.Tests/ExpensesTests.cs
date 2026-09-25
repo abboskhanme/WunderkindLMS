@@ -515,7 +515,8 @@ public class ExpensesTests(ApiFixture fixture)
     [InlineData(Roles.Staff)]
     public async Task Oqituvchi_va_xodim_kira_olmaydi_403(string role)
     {
-        using var client = await fixture.Api.ClientAsAsync(role, "finance");
+        // 2026-09-25: moliya xodim roli orqali ochiladi ("finance" ruxsati) — ruxsatSIZ xodim yopiq qoladi.
+        using var client = await fixture.Api.ClientAsAsync(role, role == Roles.Staff ? "students" : "finance");
 
         Assert.Equal(HttpStatusCode.Forbidden, (await client.GetAsync(Url)).StatusCode);
     }

@@ -293,7 +293,8 @@ public class MoneyFlowTests(ApiFixture fixture)
     [Fact]
     public async Task Staff_403_oladi()
     {
-        using var client = await fixture.Api.ClientAsAsync(Roles.Staff, "finance");
+        // 2026-09-25: moliya xodim roli orqali ochiladi ("finance" ruxsati) — ruxsatSIZ xodim yopiq qoladi.
+        using var client = await fixture.Api.ClientAsAsync(Roles.Staff, "students");
 
         var response = await client.GetAsync("/api/admin/finance/money-flow");
 

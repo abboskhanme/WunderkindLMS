@@ -37,7 +37,7 @@ import { SubscriptionsTab } from '@/pages/admin/students/profile/SubscriptionsTa
 import { useBillingAccess } from '@/pages/admin/billing/access'
 import { ProfileError } from '@/pages/admin/students/profile/ProfileUi'
 import { TimetableTab } from '@/pages/admin/students/profile/TimetableTab'
-import { CASH_DESK_ROLES } from '@/pages/cashier/cashDeskRoles'
+import { canUseCashDesk } from '@/pages/cashier/cashDeskRoles'
 import { StudentPaymentModal } from '@/pages/cashier/StudentPaymentModal'
 import { formatPhone } from '@/lib/phone'
 
@@ -109,7 +109,7 @@ export function StudentDetailPage() {
   // To'lovdan keyin "To'lovlar" tab'i qaytadan yuklanishi uchun.
   const [financeKey, setFinanceKey] = useState(0)
   const { user } = useAuth()
-  const canTakePayment = user !== null && CASH_DESK_ROLES.includes(user.role)
+  const canTakePayment = canUseCashDesk(user)
   // Abonementlar — moliya rollari (admin, direktor); server ham shu chegarada.
   const { canManageSubscriptions } = useBillingAccess()
   const visibleTabs = tabs.filter((t) => t.id !== 'subscriptions' || canManageSubscriptions)

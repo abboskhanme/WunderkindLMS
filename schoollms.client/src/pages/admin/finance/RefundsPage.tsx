@@ -23,6 +23,7 @@
  * kassirning bir vaqtdagi to'lovini va qaytarimlarni hisobga oladi — bularni
  * bu yerda takrorlash ertami-kechmi serverdan uzoqlashardi.
  */
+import { hasFinanceAccess } from '@/pages/admin/billing/access'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { AlertCircle, Check, Clock, Plus, ShieldCheck, Undo2, X } from 'lucide-react'
 import type { PaymentMethod } from '@/types'
@@ -71,7 +72,7 @@ function statusTone(status: StudentRefundStatus): 'neutral' | 'success' | 'warni
 
 export function RefundsPage() {
   const { user } = useAuth()
-  const canRequest = user?.role === 'admin' || user?.role === 'superadmin'
+  const canRequest = hasFinanceAccess(user ?? null)
   const canApprove = user?.role === 'superadmin'
 
   const students = useStudentsIndex()

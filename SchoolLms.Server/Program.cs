@@ -185,7 +185,13 @@ builder.Services
                     if (!blocked && p.IsInRole(Roles.Staff) && u!.Permissions is { Count: > 0 } perms
                         && p.Identity is ClaimsIdentity ident)
                         foreach (var perm in perms)
+                        {
                             ident.AddClaim(new Claim(AdminPermAttribute.ClaimType, perm));
+                            // Moliya kabi rolga qarab yopilgan bo'limlar: ruxsatdan ichki rol
+                            // hosil bo'ladi (Roles.PermissionRoles) — hammasi xodim roli orqali.
+                            if (Roles.PermissionRoles.TryGetValue(perm, out var derived))
+                                ident.AddClaim(new Claim(ident.RoleClaimType, derived));
+                        }
                 }
                 else
                     blocked = false; // parent / boshqa — tegmaymiz

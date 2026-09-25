@@ -49,7 +49,7 @@ import {
 import { genderLabels } from '@/config/constants'
 import { formatDate, formatMoney, exportToCsv, cn } from '@/lib/utils'
 import { useAuth } from '@/context/auth-context'
-import { BILLING_ROLES } from '@/pages/admin/billing/access'
+import { hasFinanceAccess } from '@/pages/admin/billing/access'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Loader } from '@/components/ui/Loader'
@@ -196,7 +196,7 @@ export function StudentsPage({ initialTab = 'active' }: { initialTab?: Tab } = {
   const [banner, setBanner] = useState<string | null>(null)
 
   /** Moliya roli — S-4 yakunlari (jami qarz / jami avans) faqat shu rolga ko'rinadi. */
-  const canSeeTotals = !!user && BILLING_ROLES.includes(user.role)
+  const canSeeTotals = hasFinanceAccess(user)
 
   const effective: StudentListFilter = useMemo(
     () => ({

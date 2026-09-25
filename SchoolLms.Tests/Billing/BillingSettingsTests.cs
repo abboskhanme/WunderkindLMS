@@ -40,20 +40,27 @@ public class BillingSettingsTests(ApiFixture fixture)
     [InlineData(Roles.Staff)]
     public async Task Moliyaviy_bolmagan_rol_sozlamani_oqiy_olmaydi_403(string role)
     {
-        using var client = await fixture.Api.ClientAsAsync(role, "finance");
+        // 2026-09-25: moliya xodim roli orqali ochiladi ("finance" ruxsati) — ruxsatSIZ xodim yopiq qoladi.
+        using var client = await fixture.Api.ClientAsAsync(role, role == Roles.Staff ? "students" : "finance");
 
         var response = await client.GetAsync(Url);
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
+    /// <summary>
+    /// 2026-09-25: "finance" ruxsatli xodim moliya sozlamasini ochadi, lekin chiqim
+    /// tasdiq CHEGARASI — direktorniki (`threshold_requires_director`) bo'lib qoladi.
+    /// </summary>
     [Fact]
-    public async Task Staff_finance_ruxsati_bilan_ham_sozlamani_ozgartira_olmaydi_403()
+    public async Task Staff_finance_ruxsati_bilan_chegarani_ozgartira_olmaydi_403()
     {
         using var client = await fixture.Api.ClientAsAsync(Roles.Staff, "finance");
+        var current = await client.GetFromJsonAsync<BillingSettingsDto>(Url);
 
         var response = await client.PutAsJsonAsync(
-            Url, new UpdateBillingSettingsRequest(10, 15, 5_000_000m));
+            Url, new UpdateBillingSettingsRequest(
+                current!.PaymentDueDay, current.OverdueAfterDay, current.ExpenseApprovalThreshold + 1_000m));
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }

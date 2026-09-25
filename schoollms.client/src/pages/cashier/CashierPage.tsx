@@ -44,7 +44,7 @@ import { CashBoxActionModal } from './CashBoxActionModal'
 import type { CashBoxActionMode } from './CashBoxCard'
 import { CashLedger } from './CashLedger'
 import { CashTransactionReceipt } from './CashTransactionReceipt'
-import { CASH_DESK_ROLES } from './cashDeskRoles'
+import { canUseCashDesk } from './cashDeskRoles'
 import {
   formatDateTime,
   formatPeriod,
@@ -161,7 +161,7 @@ const MIN_ENTRY_DATE = () => {
  */
 export function CashierPage() {
   const { user } = useAuth()
-  const allowed = user !== null && CASH_DESK_ROLES.includes(user.role)
+  const allowed = canUseCashDesk(user)
   const canManageBoxes = user !== null && CASH_BOX_MANAGE_ROLES.includes(user.role)
 
   /* ---- Kassalar ---- */
