@@ -469,8 +469,12 @@ export function DailyMarkingPage() {
             </p>
             {(!day.absentReasonId || !day.excusedReasonId) && (
               <p className="mt-1 text-xs text-amber-600">
-                Katalogda yetarli davomat sababi yo'q — Sozlamalar → Umumiy sozlamalar →
-                Davomat sabablari bo'limiga qo'shing.
+                "Kelmadi" / "sababli" uchun sabab yo'q.{' '}
+                {(day.reasons ?? []).length > 0 && (day.reasons ?? []).every((r) => r.isLate)
+                  ? 'Hamma sabab "Kech qolish" deb belgilangan — kech qolgan o\'quvchi darsda bor hisoblanadi. '
+                  : ''}
+                Sozlamalar → Umumiy sozlamalar → Davomat sabablari: "Sababsiz" va "Sababli" dan "Kech qolish"
+                belgisini olib tashlang yoki shunday sabab qo'shing.
               </p>
             )}
           </>

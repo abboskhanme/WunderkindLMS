@@ -53,12 +53,27 @@ export function AttendanceReasonsSettings() {
 
   if (loading) return <Loader label="Yuklanmoqda..." />
 
+  // Kamida bitta "kelmadi" sababi kerak: faqat "kech qolish" sabablari bilan davomatda
+  // hech kimni "kelmadi" / "sababli" deb belgilab bo'lmaydi (mijoz, 2026-09-25).
+  const named = reasons.filter((r) => r.name.trim())
+  const noAbsence = named.length > 0 && named.every((r) => r.isLate)
+
   return (
     <Card>
       <div className="mb-4 flex items-center justify-between">
         <h2 className="font-semibold text-slate-800">Davomat sabablari</h2>
         <SaveButton status={status} onClick={onSave} />
       </div>
+      <p className="mb-3 text-xs text-slate-400">
+        "Kech qolish" belgisini faqat kechikish sabablariga qo'ying — bunday o'quvchi darsda bor hisoblanadi.
+        Yo'qlik sabablarida (Sababsiz, Sababli, Kasal) bu belgi bo'lmasin.
+      </p>
+      {noAbsence && (
+        <p className="mb-3 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-700">
+          Hamma sabab "Kech qolish" deb belgilangan — davomatda o'quvchini "kelmadi" yoki "sababli" deb
+          belgilab bo'lmaydi. Yo'qlik sabablaridan bu belgini olib tashlang.
+        </p>
+      )}
       <div className="space-y-2">
         {reasons.map((r, i) => (
           <div key={r.id} className="flex flex-wrap items-center gap-2">
@@ -77,7 +92,7 @@ export function AttendanceReasonsSettings() {
             />
             <label
               className="inline-flex cursor-pointer items-center gap-1.5 whitespace-nowrap text-sm text-slate-600"
-              title="Kech keldi — yo'qlik emas, baho qo'ysa bo'ladi"
+              title="Kech keldi — yo'qlik emas, o'quvchi darsda bor, baho qo'ysa bo'ladi"
             >
               <input
                 type="checkbox"
@@ -85,7 +100,7 @@ export function AttendanceReasonsSettings() {
                 onChange={() => toggleReasonLate(i)}
                 className="h-4 w-4 rounded border-slate-300"
               />
-              Kech qolish
+              Kech qolish (darsda bor)
             </label>
             <button
               type="button"
