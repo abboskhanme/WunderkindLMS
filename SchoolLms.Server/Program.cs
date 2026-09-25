@@ -462,7 +462,8 @@ app.Use(async (context, next) =>
 {
     var headers = context.Response.Headers;
     headers["X-Content-Type-Options"] = "nosniff";
-    headers["X-Frame-Options"] = "DENY";
+    // X-Frame-Options YO'Q: u ruxsat ro'yxatini bilmaydi (faqat DENY/SAMEORIGIN), Telegram Web esa Mini App'ni
+    // iframe'da ochadi. Clickjacking himoyasi — pastdagi CSP `frame-ancestors` (faqat Telegram domenlari).
     headers["Referrer-Policy"] = "no-referrer";
     // CSP faqat prod'da — dev'da SPA Vite serverida alohida beriladi.
     // Leaflet xaritasi unpkg/openstreetmap'dan rasm yuklaydi (img https:).
@@ -473,12 +474,15 @@ app.Use(async (context, next) =>
             "img-src 'self' data: blob: https:; " +
             "style-src 'self' 'unsafe-inline'; " +
             // gstatic — FCM web SW (firebase-messaging-sw.js) importScripts qiladi.
-            "script-src 'self' https://www.gstatic.com; " +
+            // telegram.org — Mini App SDK (telegram-web-app.js). Usiz Mini App Telegram imzosini ololmaydi va
+            // o'zini "brauzerda" deb o'ylaydi: bog'lanish saqlanmaydi, har safar parol so'raladi (2026-09-25).
+            "script-src 'self' https://www.gstatic.com https://telegram.org; " +
             "worker-src 'self'; " +
             // googleapis/gstatic — FCM web token olish (getToken) so'rovlari.
             "connect-src 'self' ws: wss: https://*.googleapis.com https://*.gstatic.com https://fcm.googleapis.com; " +
             "font-src 'self' data:; " +
-            "frame-ancestors 'none'; object-src 'none'; base-uri 'self'";
+            // Faqat Telegram (web.telegram.org Mini App'ni iframe'da ochadi) — boshqa saytlar freymga ololmaydi.
+            "frame-ancestors 'self' https://web.telegram.org https://*.telegram.org; object-src 'none'; base-uri 'self'";
     }
     await next();
 });

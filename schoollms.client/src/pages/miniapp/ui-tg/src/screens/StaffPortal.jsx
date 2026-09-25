@@ -13,22 +13,24 @@ import { Hero, Screen } from '../components/ui'
 
 const HOME = { cashier: '/cashier' }
 
-function openPanel(role) {
+function openPanel(user) {
   const token = tokenStore.get()
   if (token) {
     try {
+      // Veb-panel ikkalasini o'qiydi: `user` bo'lmasa u avval login sahifasiga otib, keyin qaytardi (miltillash).
       localStorage.setItem('token', token)
+      localStorage.setItem('user', JSON.stringify(user))
     } catch {
       /* private rejim — panel login so'raydi */
     }
   }
-  window.location.replace(HOME[role] ?? '/admin')
+  window.location.replace(HOME[user.role] ?? '/admin')
 }
 
 export function StaffPortal({ user }) {
   useEffect(() => {
-    openPanel(user.role)
-  }, [user.role])
+    openPanel(user)
+  }, [user])
 
   return (
     <Screen>
@@ -40,7 +42,7 @@ export function StaffPortal({ user }) {
         <p className="mt-3 text-[16px] font-bold">Boshqaruv paneli ochilmoqda…</p>
         <button
           type="button"
-          onClick={() => openPanel(user.role)}
+          onClick={() => openPanel(user)}
           className="mt-4 w-full rounded-2xl bg-brand py-3.5 text-[16px] font-bold text-brand-ink"
         >
           Panelni ochish

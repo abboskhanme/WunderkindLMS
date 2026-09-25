@@ -73,9 +73,13 @@ public class HealthEndpointTests(ApiFixture fixture)
         var response = await client.GetAsync("/api/health");
 
         Assert.Equal("nosniff", string.Join("", response.Headers.GetValues("X-Content-Type-Options")));
-        Assert.Equal("DENY", string.Join("", response.Headers.GetValues("X-Frame-Options")));
         Assert.Equal("no-referrer", string.Join("", response.Headers.GetValues("Referrer-Policy")));
-        Assert.Contains("frame-ancestors 'none'",
-            string.Join("", response.Headers.GetValues("Content-Security-Policy")));
+        var csp = string.Join("", response.Headers.GetValues("Content-Security-Policy"));
+        // Freymga faqat o'zi va Telegram (Mini App, 2026-09-25) — boshqa sayt clickjacking qila olmaydi.
+        Assert.Contains("frame-ancestors 'self' https://web.telegram.org https://*.telegram.org;", csp);
+        Assert.DoesNotContain("frame-ancestors *", csp);
+        // Mini App SDK yuklanadi — usiz Telegram imzosi yo'q.
+        Assert.Contains("https://telegram.org", csp);
+        Assert.False(response.Headers.Contains("X-Frame-Options"));
     }
 }
