@@ -40,12 +40,13 @@ public class BoardingAttendanceTests(ApiFixture fixture)
         var subject = new Subject { Name = $"Yo'nalish {tag}" };
         var track = new StudyGroup
         {
-            Name = $"Aniq fanlar {tag}", SubjectId = subject.Id, IsTrack = true,
+            // Yo'nalish guruhi fansiz (ck_study_groups_subject, TrackGroupsAsClasses).
+            Name = $"Aniq fanlar {tag}", SubjectId = null, IsTrack = true,
             CreatedBy = admin.Id, CreatedAt = AppClock.NowInstant,
         };
         StudyGroupMember Member(Student s) => new()
         {
-            GroupId = track.Id, SubjectId = subject.Id, StudentId = s.Id, JoinedOn = today.AddDays(-30),
+            GroupId = track.Id, SubjectId = null, StudentId = s.Id, JoinedOn = today.AddDays(-30),
             CreatedBy = admin.Id, CreatedAt = AppClock.NowInstant,
         };
         StudentSubscription Sub(Student s, Guid cat, DateOnly from, DateOnly? to) => new()

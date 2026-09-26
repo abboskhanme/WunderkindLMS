@@ -67,10 +67,19 @@ public static class PupilTimetable
             .ToDictionary(t => t.Id, StringComparer.Ordinal);
 
         var byId = owners.ToDictionary(o => o.Id, StringComparer.Ordinal);
+
+        // Yo'nalish guruhi SINF O'RNIDA turadi (docs/modules/track-groups-as-classes.md):
+        // o'quvchining yo'nalish guruhida shu hafta jadvali bo'lsa, uy sinfining (9-A ...)
+        // darslari ko'rsatilmaydi — aks holda eski sinf jadvali bilan ikki marta chiqardi.
+        // Yo'nalish jadvali hali kiritilmagan haftada sinf jadvali ko'rinishda qoladi.
+        var trackHasWeek = assignments.Any(a =>
+            byId.TryGetValue(a.ClassId, out var o) && o.IsGroup && o.IsTrack && o.Kind == a.OwnerKind);
+
         var result = new List<PupilLesson>();
         foreach (var a in assignments)
         {
             if (!byId.TryGetValue(a.ClassId, out var owner) || owner.Kind != a.OwnerKind) continue;
+            if (trackHasWeek && owner.IsClass) continue;
             if (!templates.TryGetValue(a.TemplateId!, out var tpl)) continue;
             foreach (var l in tpl.Lessons)
             {

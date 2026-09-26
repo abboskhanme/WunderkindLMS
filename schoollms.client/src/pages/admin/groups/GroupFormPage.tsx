@@ -83,7 +83,7 @@ export function GroupFormPage() {
     getGroup(id)
       .then((g) => {
         setName(g.name)
-        setSubjectId(g.subjectId)
+        setSubjectId(g.subjectId ?? '')
         setClassIds(g.classes.map((c) => c.id))
         setGrades([...new Set(g.classes.map((c) => c.grade))])
         setTeacherIds(g.teachers.map((t) => t.id))
@@ -99,7 +99,8 @@ export function GroupFormPage() {
   /* ---------- Chap panel ---------- */
 
   const loadCandidates = useCallback(() => {
-    if (!subjectId || classIds.length === 0) {
+    // Yo'nalish guruhi fansiz — nomzodlar faqat sinflardan (band = boshqa yo'nalishda).
+    if ((!isTrack && !subjectId) || classIds.length === 0) {
       setCandidates([])
       return
     }
@@ -107,8 +108,9 @@ export function GroupFormPage() {
       classIds,
       subjectId,
       excludeGroupId: id,
+      track: isTrack,
     }).then(setCandidates)
-  }, [subjectId, classIds, id])
+  }, [subjectId, classIds, id, isTrack])
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- ma'lumot kelganda formani to'ldiramiz (maqsadli, loyihadagi mavjud naqsh)
@@ -192,7 +194,7 @@ export function GroupFormPage() {
       setError("Guruh nomi kamida 3 belgidan iborat bo'lsin")
       return
     }
-    if (!subjectId) {
+    if (!isTrack && !subjectId) {
       setError('Fanni tanlang')
       return
     }
@@ -208,7 +210,8 @@ export function GroupFormPage() {
     setSaving(true)
     const payload = {
       name: name.trim(),
-      subjectId,
+      // Yo'nalish guruhida fan yo'q — har darsning fani dars jadvalida.
+      subjectId: isTrack ? null : subjectId,
       classIds,
       teacherIds: teacherIds.slice(0, 1),
       // Jins bo'yicha ajratish maktabda yo'q (mijoz, 2026-09-23) — har doim aralash.
@@ -262,7 +265,15 @@ export function GroupFormPage() {
 
       <Card className="space-y-4">
         <div className="grid gap-4 md:grid-cols-2">
-          {isEdit ? (
+          {isTrack ? (
+            // Yo'nalish guruhi fansiz (mijoz, 2026-09-26) — ko'p fan o'qitadi.
+            <div>
+              <span className="mb-1 block text-sm font-medium text-slate-600">Fan</span>
+              <div className="flex h-[42px] items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm text-slate-500">
+                <span className="truncate">Yo'nalish guruhi — fanlar dars jadvalida</span>
+              </div>
+            </div>
+          ) : isEdit ? (
             // Tahrirlashda fan QULFLANGAN — faol dropdown'ga o'xshamasin (mijoz: "ochilmayapti").
             <div>
               <span className="mb-1 block text-sm font-medium text-slate-600">Fan</span>
@@ -378,7 +389,8 @@ export function GroupFormPage() {
             <span>
               <span className="block text-sm font-medium text-slate-700">Yo'nalish guruhi</span>
               <span className="block text-xs text-slate-400">
-                Kechki dars va yotoqxona davomati shu guruh bo'yicha olinadi (9–11-sinflar aralash).
+                Sinf kabi ishlaydi: dars jadvali, davomat va jurnalda boqadigan sinflari (9–11)
+                o'rnida turadi. Fani yo'q; o'quvchi faqat bitta yo'nalish guruhida bo'ladi.
               </span>
             </span>
           </label>
@@ -417,9 +429,11 @@ export function GroupFormPage() {
           </div>
 
           <div className="max-h-96 overflow-y-auto px-2 pb-3">
-            {!subjectId || classIds.length === 0 ? (
+            {(!isTrack && !subjectId) || classIds.length === 0 ? (
               <p className="px-2 py-8 text-center text-sm text-slate-400">
-                Fan va sinflarni tanlang — nomzodlar shundan keyin chiqadi
+                {isTrack
+                  ? 'Sinflarni tanlang — nomzodlar shundan keyin chiqadi'
+                  : 'Fan va sinflarni tanlang — nomzodlar shundan keyin chiqadi'}
               </p>
             ) : visibleCandidates.length === 0 ? (
               <p className="px-2 py-8 text-center text-sm text-slate-400">Nomzod yo'q</p>
@@ -434,7 +448,9 @@ export function GroupFormPage() {
                     onClick={() => addCandidate(c)}
                     title={
                       busy
-                        ? `Bu o'quvchi shu fan bo'yicha "${c.currentGroupName}" guruhida`
+                        ? isTrack
+                          ? `Bu o'quvchi "${c.currentGroupName}" yo'nalish guruhida`
+                          : `Bu o'quvchi shu fan bo'yicha "${c.currentGroupName}" guruhida`
                         : undefined
                     }
                     className={cn(
@@ -507,6 +523,7 @@ export function GroupFormPage() {
         memberId={transferFor?.memberId ?? ''}
         studentName={transferFor?.fullName ?? ''}
         subjectId={subjectId}
+        track={isTrack}
         currentGroupId={id ?? ''}
         onClose={() => setTransferFor(null)}
         onDone={() => {

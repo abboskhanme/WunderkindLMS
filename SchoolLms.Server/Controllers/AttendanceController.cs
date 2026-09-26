@@ -32,7 +32,8 @@ public class AttendanceController(AppDbContext db) : ControllerBase
     {
         var owner = await LessonRoster.OwnerAsync(db, classId);
         if (owner is null) return new DailyAttendanceDto(0, []);
-        if (owner.IsGroup && !await LessonRoster.GroupLessonsEnabledAsync(db))
+        // Yo'nalish guruhi o'chirgichga qaramaydi (LessonRoster.LessonsLiveAsync).
+        if (!await LessonRoster.LessonsLiveAsync(db, owner))
             return new DailyAttendanceDto(0, []);
 
         // Bugungi so'rovning aynan o'zi: sinf uchun ARXIVLANGANLAR BILAN birga
@@ -128,7 +129,7 @@ public class AttendanceController(AppDbContext db) : ControllerBase
     {
         var owner = await LessonRoster.OwnerAsync(db, classId);
         if (owner is null) return new List<StudentStatusDto>();
-        if (owner.IsGroup && !await LessonRoster.GroupLessonsEnabledAsync(db))
+        if (!await LessonRoster.LessonsLiveAsync(db, owner))
             return new List<StudentStatusDto>();
 
         var students = await LessonRoster.ForLessonAsync(db, owner, includeArchived: true);

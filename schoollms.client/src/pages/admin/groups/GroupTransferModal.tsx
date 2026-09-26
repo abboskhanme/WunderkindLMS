@@ -12,6 +12,8 @@ interface Props {
   studentName: string
   /** Nishon guruhlar AYNAN shu fandan bo'ladi. */
   subjectId: string
+  /** Yo'nalish guruhi — nishonlar boshqa faol yo'nalish guruhlari (fan yo'q). */
+  track?: boolean
   /** Joriy guruh — ro'yxatdan chiqarib tashlanadi. */
   currentGroupId: string
   onClose: () => void
@@ -30,6 +32,7 @@ export function GroupTransferModal({
   memberId,
   studentName,
   subjectId,
+  track = false,
   currentGroupId,
   onClose,
   onDone,
@@ -41,16 +44,20 @@ export function GroupTransferModal({
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    if (open && subjectId) {
+    if (open && (subjectId || track)) {
       // eslint-disable-next-line react-hooks/set-state-in-effect -- ma'lumot kelganda formani to'ldiramiz (maqsadli, loyihadagi mavjud naqsh)
       setToGroupId('')
       setReason('')
       setError(null)
-      getGroups({ subjectId }).then((rows) =>
-        setGroups(rows.filter((g) => g.id !== currentGroupId && !g.isArchived)),
+      getGroups(track ? {} : { subjectId }).then((rows) =>
+        setGroups(
+          rows.filter(
+            (g) => g.id !== currentGroupId && !g.isArchived && Boolean(g.isTrack) === track,
+          ),
+        ),
       )
     }
-  }, [open, subjectId, currentGroupId])
+  }, [open, subjectId, currentGroupId, track])
 
   const handleSubmit = async () => {
     if (!toGroupId) return

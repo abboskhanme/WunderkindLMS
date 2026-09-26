@@ -29,7 +29,9 @@ public class ClassAnalyticsController(AppDbContext db) : ControllerBase
         var templates = await db.ScheduleTemplates.Include(t => t.Lessons)
             .Where(t => ownerIds.Contains(t.ClassId)).ToListAsync();
         var entries = await db.JournalEntries.Where(e => ownerIds.Contains(e.ClassId)).ToListAsync();
-        var notes = await db.LessonNotes.Where(n => ownerIds.Contains(n.ClassId)).ToListAsync();
+        // Davomat maxraji: o'tildi YOKI davomat belgilangan (HeldLessons qoidasi).
+        var notes = await HeldLessons.WithMarkedAsync(
+            db, await db.LessonNotes.Where(n => ownerIds.Contains(n.ClassId)).ToListAsync(), ownerIds);
         var lateIds = await db.AbsenceReasons.Where(r => r.IsLate).Select(r => r.Id).ToListAsync();
         return Analytics.BuildClass(
             cls, students, subjects, templates, entries, notes,
@@ -104,7 +106,8 @@ public class ClassAnalyticsController(AppDbContext db) : ControllerBase
                 .Where(t => ownerIds.Contains(t.ClassId)).ToListAsync();
             var entries = (await db.JournalEntries.Where(e => ownerIds.Contains(e.ClassId)).ToListAsync())
                 .Where(e => quarterList.Contains(e.Quarter)).ToList();
-            var notes = (await db.LessonNotes.Where(n => ownerIds.Contains(n.ClassId)).ToListAsync())
+            var notes = (await HeldLessons.WithMarkedAsync(
+                    db, await db.LessonNotes.Where(n => ownerIds.Contains(n.ClassId)).ToListAsync(), ownerIds))
                 .Where(n => quarterList.Contains(n.Quarter)).ToList();
             var qgrades = (await db.QuarterGrades.Where(g => ownerIds.Contains(g.ClassId)).ToListAsync())
                 .Where(g => quarterList.Contains(g.Quarter)).ToList();

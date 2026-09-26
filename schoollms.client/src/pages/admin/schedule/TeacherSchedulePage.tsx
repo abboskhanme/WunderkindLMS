@@ -9,8 +9,7 @@ import type {
   WeekAssignment,
 } from '@/types'
 import { getClasses } from '@/api/services/classes'
-import { getGroups } from '@/api/services/groups'
-import { getGroupLessonsSwitch } from '@/api/services/groupLessons'
+import { getLessonOwners } from '@/api/services/lessonOwners'
 import { getTeachers } from '@/api/services/teachers'
 import { getSubjects } from '@/api/services/subjects'
 import { getSettings } from '@/api/services/settings'
@@ -99,18 +98,22 @@ export function TeacherSchedulePage() {
       getSubjects(),
       getClasses(),
       getSettings(),
-      getGroupLessonsSwitch().catch(() => null),
+      getLessonOwners().catch(() => []),
     ])
-      .then(async ([tchs, subs, cls, st, flag]) => {
+      .then(([tchs, subs, cls, st, ownerList]) => {
         setTeachers(tchs)
         setSubjects(subs)
         setSettings(st)
 
+        // O'qituvchi jadvali HAMMA sinfni ko'radi (eski 9–11 sinf jadvali ham — maosh uni
+        // hisoblaydi), ustiga guruhlar: yo'nalish guruhlari har doim, oddiylari o'chirgich
+        // yoqilganda (server qoidasi).
         const list: Owner[] = cls.map((c) => ({ id: c.id, name: c.name, kind: 'class' as const }))
-        if (flag?.enabled) {
-          const groups = await getGroups().catch(() => [])
-          list.push(...groups.map((g) => ({ id: g.id, name: g.name, kind: 'group' as const })))
-        }
+        list.push(
+          ...ownerList
+            .filter((o) => o.kind === 'group')
+            .map((o) => ({ id: o.id, name: o.name, kind: 'group' as const })),
+        )
         setOwners(list)
 
         const { quarter, week } = getCurrentQuarterAndWeek(st.quarters)

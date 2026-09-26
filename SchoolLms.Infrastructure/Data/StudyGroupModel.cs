@@ -58,11 +58,15 @@ internal static class StudyGroupModel
             e.HasKey(x => x.Id);
             e.Property(x => x.Id).HasDefaultValueSql("gen_random_uuid()");
 
-            // `unique (id, subject_id)` — a'zolar jadvalidagi kompozit FK'ning
-            // nishoni. EF buni "alternate key" deb ataydi va kalit ustunini
-            // kuzatuv orqali o'zgartirishga yo'l qo'ymaydi: guruh fanini
-            // almashtirish `ExecuteUpdate` bilan bo'ladi (StudyGroups.cs).
-            e.HasAlternateKey(x => new { x.Id, x.SubjectId });
+            // `unique (id, subject_id)` (ak_study_groups_id_subject_id) — a'zolar
+            // jadvalidagi kompozit FK'ning nishoni — BAZADA QOLADI, lekin EF
+            // modelidan chiqarildi (TrackGroupsAsClasses, 2026-09-26): yo'nalish
+            // guruhining fani yo'q (NULL), EF esa kalit ustunining null bo'lishiga
+            // yo'l qo'ymaydi. PostgreSQL'da nullable ustunli unikal constraint va
+            // unga qaragan FK (MATCH SIMPLE) to'liq ishlaydi. Snapshot ularni
+            // ko'rmaydi, ya'ni keyingi `--autogenerate` ularga TEGMAYDI
+            // (`ux_study_groups_name_active` bilan bir xil naqsh).
+            e.Property(x => x.SubjectId).IsRequired(false);
 
             e.Property(x => x.IsArchived).HasDefaultValue(false);
             e.Property(x => x.CreatedAt).HasDefaultValueSql("now()");
@@ -79,6 +83,9 @@ internal static class StudyGroupModel
             {
                 t.HasCheckConstraint("ck_study_groups_name", "btrim(name) <> ''");
                 t.HasCheckConstraint("ck_study_groups_gender", "gender in ('male','female')");
+                // Oddiy guruh — bitta fan (majburiy); yo'nalish guruhi — fansiz.
+                t.HasCheckConstraint("ck_study_groups_subject",
+                    "(is_track and subject_id is null) or (not is_track and subject_id is not null)");
             });
         });
     }
@@ -142,13 +149,17 @@ internal static class StudyGroupModel
             e.Property(x => x.Id).HasDefaultValueSql("gen_random_uuid()");
             e.Property(x => x.CreatedAt).HasDefaultValueSql("now()");
 
-            // Kompozit FK: a'zodagi `subject_id` guruh fanidan uzoqlasha olmaydi.
-            // `ON UPDATE CASCADE` migratsiyada qo'lda qo'yilgan (EF modelida
-            // "update" harakati yo'q) — guruh fani o'zgarsa nusxa ham o'zgaradi
-            // va quyidagi unikal indeks YANGI fan bo'yicha tekshiradi.
+            // Guruhga bog'lanish — oddiy `group_id` FK (TrackGroupsAsClasses).
+            //
+            // Kompozit FK `(group_id, subject_id) → study_groups (id, subject_id)`
+            // (ON UPDATE CASCADE) BAZADA QOLADI, faqat EF modelidan chiqdi
+            // (yuqoridagi alternativ kalit izohi): a'zodagi `subject_id` guruh
+            // fanidan uzoqlasha olmaydi, yo'nalish guruhining a'zosida esa u NULL
+            // va MATCH SIMPLE uni tekshirmaydi. Guruh fani o'zgarsa (yoki
+            // tozalansa) nusxa baza tomonidan o'zi ko'chadi.
+            e.Property(x => x.SubjectId).IsRequired(false);
             e.HasOne<StudyGroup>().WithMany()
-                .HasForeignKey(x => new { x.GroupId, x.SubjectId })
-                .HasPrincipalKey(g => new { g.Id, g.SubjectId })
+                .HasForeignKey(x => x.GroupId)
                 .OnDelete(DeleteBehavior.Cascade);
 
             e.HasOne<Student>().WithMany().HasForeignKey(x => x.StudentId)

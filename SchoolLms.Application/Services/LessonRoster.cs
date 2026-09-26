@@ -49,13 +49,59 @@ namespace SchoolLms.Application.Services;
 /// </para>
 /// </summary>
 /// <param name="Kind"><see cref="LessonOwnerKind"/> qiymatlaridan biri.</param>
-/// <param name="SubjectId">Faqat guruhda to'ldiriladi — guruhning fani.</param>
-public sealed record LessonOwner(string Kind, string Id, string Name, string? SubjectId = null)
+/// <param name="SubjectId">Faqat ODDIY guruhda to'ldiriladi — guruhning fani. Yo'nalish
+/// guruhida null (u ko'p fan o'qitadi).</param>
+/// <param name="IsTrack">
+/// Yo'nalish guruhi (<see cref="StudyGroup.IsTrack"/>) — SINF KABI ishlaydi va darslari
+/// cut-over o'chirgichiga bog'liq emas (docs/modules/track-groups-as-classes.md).
+/// </param>
+public sealed record LessonOwner(
+    string Kind, string Id, string Name, string? SubjectId = null, bool IsTrack = false)
 {
     public bool IsGroup => Kind == LessonOwnerKind.Group;
 
     public bool IsClass => Kind == LessonOwnerKind.Class;
 }
+
+/// <summary>
+/// Qaysi GURUH egalarining darslari "tirik" — cut-over o'chirgichi va yo'nalish
+/// guruhlari birga (docs/modules/track-groups-as-classes.md).
+///
+/// <para>
+/// <b>Qoida:</b> sinf darsi — har doim tirik. Yo'nalish guruhining darsi —
+/// har doim tirik (o'chirgichga QARAMAYDI). Oddiy guruh darsi — faqat
+/// <c>group_lessons_enabled</c> yoqilganda.
+/// </para>
+/// <para>
+/// <see cref="TrackIds"/> — ARXIVLANGANLARI BILAN birga barcha yo'nalish guruhlari:
+/// arxivlangan guruhning o'tgan darslari (jurnal, davomat) tarix sifatida ko'rinishda qoladi.
+/// </para>
+/// </summary>
+public sealed record GroupLessonScope(bool AllGroups, IReadOnlySet<string> TrackIds)
+{
+    /// <summary>SQL filtrlari uchun ro'yxat (<c>Contains</c> → <c>= ANY</c>).</summary>
+    public List<string> TrackIdList { get; } = [.. TrackIds];
+
+    /// <summary>Birorta guruh darsi tirikmi (o'chirgich yoki kamida bitta yo'nalish).</summary>
+    public bool AnyGroup => AllGroups || TrackIds.Count > 0;
+
+    /// <summary>Shu (tur, ega id'si) dagi dars tirikmi.</summary>
+    public bool Allows(string ownerKind, string ownerId) =>
+        ownerKind != LessonOwnerKind.Group || AllGroups || TrackIds.Contains(ownerId);
+
+    /// <summary>Guruh id'si (sinf emasligi ma'lum) tirikmi.</summary>
+    public bool AllowsGroup(string groupId) => AllGroups || TrackIds.Contains(groupId);
+}
+
+/// <summary>
+/// Dars jadvali, davomat va jurnal TANLAGICHLARIdagi bitta ega (sinf yoki guruh).
+/// Tartib va almashtirish qoidasi — <see cref="LessonRoster.PickerOwnersAsync"/>.
+/// </summary>
+/// <param name="Grade">Sinf darajasi; guruh uchun 0.</param>
+/// <param name="ClassIds">Guruhni boqadigan sinflar (sinf uchun bo'sh).</param>
+public sealed record LessonOwnerItem(
+    string Id, string Name, string Kind, int Grade, bool IsTrack,
+    string? SubjectId, IReadOnlyList<string> ClassIds);
 
 /// <summary>
 /// "Shu darsda kim o'qiydi?" — yagona javob beruvchi. Fayl boshidagi izohda
@@ -65,8 +111,17 @@ public static class LessonRoster
 {
     /// <summary>
     /// Cut-over o'chirgichi (<c>school_meta.group_lessons_enabled</c>, §4.3).
-    /// O'chiq bo'lsa guruh darsi UMUMAN yo'q deb qaraladi — jadval, jurnal,
+    /// O'chiq bo'lsa ODDIY guruh darsi UMUMAN yo'q deb qaraladi — jadval, jurnal,
     /// maosh va turniket bugungi raqamni ko'rsatadi.
+    ///
+    /// <para>
+    /// <b>YO'NALISH GURUHLARI BU O'CHIRGICHGA QARAMAYDI</b> (mijoz, 2026-09-26,
+    /// docs/modules/track-groups-as-classes.md): ular 9–11-sinflarning sinfi
+    /// o'rnida turadi va darslari har doim tirik. Shuning uchun "guruh darsi
+    /// tirikmi" degan savolga bu metod emas, <see cref="LessonsLiveAsync"/> yoki
+    /// <see cref="GroupScopeAsync"/> javob beradi; bu metodni to'g'ridan-to'g'ri
+    /// faqat o'chirgichning O'ZI kerak bo'lgan joy (sozlama ekrani) chaqiradi.
+    /// </para>
     /// </summary>
     public static async Task<bool> GroupLessonsEnabledAsync(
         IAppDbContext db, CancellationToken ct = default)
@@ -77,8 +132,87 @@ public static class LessonRoster
     }
 
     /// <summary>
-    /// TIRIK egalar: arxivlanmagan sinflar (har doim) + arxivlanmagan guruhlar
-    /// (faqat o'chirgich yoqilganda). Kalit — <c>class_id</c> ustunidagi qiymat.
+    /// Guruh darslari qamrovi — o'chirgich + yo'nalish guruhlari
+    /// (<see cref="GroupLessonScope"/>). <c>group_lessons_enabled</c> ni
+    /// tekshiradigan har bir joy endi SHU qamrovga qaraydi: yo'nalish guruhining
+    /// darsi o'chirgich o'chiq bo'lsa ham tirik (mijoz, 2026-09-26).
+    /// </summary>
+    public static async Task<GroupLessonScope> GroupScopeAsync(
+        IAppDbContext db, CancellationToken ct = default)
+    {
+        var all = await GroupLessonsEnabledAsync(db, ct);
+        var tracks = await db.StudyGroups.AsNoTracking()
+            .Where(g => g.IsTrack).Select(g => g.Id).ToListAsync(ct);
+        return new GroupLessonScope(all,
+            tracks.Select(id => id.ToString()).ToHashSet(StringComparer.Ordinal));
+    }
+
+    /// <summary>
+    /// Shu eganing darslari tirikmi: sinf — ha; yo'nalish guruhi — ha (o'chirgichga
+    /// qaramaydi); oddiy guruh — faqat o'chirgich yoqilganda.
+    /// </summary>
+    public static async Task<bool> LessonsLiveAsync(
+        IAppDbContext db, LessonOwner owner, CancellationToken ct = default) =>
+        !owner.IsGroup || owner.IsTrack || await GroupLessonsEnabledAsync(db, ct);
+
+    /// <summary>
+    /// Faol yo'nalish guruhlarini boqadigan sinflar — dars jadvali, davomat va
+    /// jurnal ro'yxatlarida ular YASHIRILADI, o'rnida yo'nalish guruhlari turadi
+    /// (9–11-sinflar hamma darsini yo'nalish guruhida o'qiydi). Hujjat, moliya,
+    /// shartnoma va hisobotlar uchun sinf joyida qoladi.
+    /// </summary>
+    public static async Task<HashSet<string>> TrackFedClassIdsAsync(
+        IAppDbContext db, CancellationToken ct = default)
+    {
+        var ids = await db.StudyGroupClasses.AsNoTracking()
+            .Where(gc => db.StudyGroups.Any(g => g.Id == gc.GroupId && g.IsTrack && !g.IsArchived))
+            .Select(gc => gc.ClassId).Distinct().ToListAsync(ct);
+        return ids.ToHashSet(StringComparer.Ordinal);
+    }
+
+    /// <summary>
+    /// Tanlagich ro'yxati (dars jadvali, davomat, jurnal): yo'nalish guruhini
+    /// boqmaydigan arxivlanmagan SINFLAR daraja/nom bo'yicha, keyin faol
+    /// YO'NALISH guruhlari nom bo'yicha, keyin (faqat o'chirgich yoqilganda)
+    /// faol ODDIY guruhlar nom bo'yicha.
+    /// </summary>
+    /// <param name="includeOrdinaryGroups">false — oddiy guruhlar o'chirgich yoqilgan bo'lsa ham qo'shilmaydi.</param>
+    public static async Task<List<LessonOwnerItem>> PickerOwnersAsync(
+        IAppDbContext db, bool includeOrdinaryGroups = true, CancellationToken ct = default)
+    {
+        var hidden = await TrackFedClassIdsAsync(db, ct);
+        var result = (await db.Classes.AsNoTracking()
+                .Where(c => !c.IsArchived)
+                .Select(c => new { c.Id, c.Name, c.Grade }).ToListAsync(ct))
+            .Where(c => !hidden.Contains(c.Id))
+            .OrderBy(c => c.Grade).ThenBy(c => c.Name, StringComparer.Ordinal)
+            .Select(c => new LessonOwnerItem(c.Id, c.Name, LessonOwnerKind.Class, c.Grade, false, null, []))
+            .ToList();
+
+        var groupsOn = includeOrdinaryGroups && await GroupLessonsEnabledAsync(db, ct);
+        var groups = await db.StudyGroups.AsNoTracking()
+            .Where(g => !g.IsArchived && (g.IsTrack || groupsOn))
+            .Select(g => new { g.Id, g.Name, g.IsTrack, g.SubjectId }).ToListAsync(ct);
+        if (groups.Count == 0) return result;
+
+        var groupIds = groups.Select(g => g.Id).ToList();
+        var feeding = (await db.StudyGroupClasses.AsNoTracking()
+                .Where(gc => groupIds.Contains(gc.GroupId))
+                .Select(gc => new { gc.GroupId, gc.ClassId }).ToListAsync(ct))
+            .GroupBy(x => x.GroupId)
+            .ToDictionary(g => g.Key, g => (IReadOnlyList<string>)[.. g.Select(x => x.ClassId)]);
+
+        result.AddRange(groups
+            .OrderBy(g => g.IsTrack ? 0 : 1).ThenBy(g => g.Name, StringComparer.Ordinal)
+            .Select(g => new LessonOwnerItem(
+                g.Id.ToString(), g.Name, LessonOwnerKind.Group, 0, g.IsTrack,
+                g.IsTrack ? null : g.SubjectId, feeding.GetValueOrDefault(g.Id, []))));
+        return result;
+    }
+
+    /// <summary>
+    /// TIRIK egalar: arxivlanmagan sinflar (har doim) + arxivlanmagan yo'nalish
+    /// guruhlari (har doim) + arxivlanmagan oddiy guruhlar (faqat o'chirgich yoqilganda). Kalit — <c>class_id</c> ustunidagi qiymat.
     ///
     /// <para>
     /// Maosh (G-16) va turniket (G-14) shu ro'yxatdan oziqlanadi: guruh bu
@@ -110,13 +244,14 @@ public static class LessonRoster
         foreach (var c in await classQuery.Select(c => new { c.Id, c.Name }).ToListAsync(ct))
             owners[c.Id] = new LessonOwner(LessonOwnerKind.Class, c.Id, c.Name);
 
-        if (!await GroupLessonsEnabledAsync(db, ct)) return owners;
+        // Yo'nalish guruhlari o'chirgichga qaramaydi; oddiy guruhlar — faqat yoqilganda.
+        var groupsOn = await GroupLessonsEnabledAsync(db, ct);
 
-        var groupQuery = db.StudyGroups.AsNoTracking();
+        var groupQuery = db.StudyGroups.AsNoTracking().Where(g => groupsOn || g.IsTrack);
         if (!includeArchived) groupQuery = groupQuery.Where(g => !g.IsArchived);
-        foreach (var g in await groupQuery.Select(g => new { g.Id, g.Name, g.SubjectId }).ToListAsync(ct))
+        foreach (var g in await groupQuery.Select(g => new { g.Id, g.Name, g.SubjectId, g.IsTrack }).ToListAsync(ct))
             owners[g.Id.ToString()] = new LessonOwner(
-                LessonOwnerKind.Group, g.Id.ToString(), g.Name, g.SubjectId);
+                LessonOwnerKind.Group, g.Id.ToString(), g.Name, g.SubjectId, g.IsTrack);
 
         return owners;
     }
@@ -144,10 +279,10 @@ public static class LessonRoster
         if (!Guid.TryParse(ownerId, out var groupId)) return null;
         var grp = await db.StudyGroups.AsNoTracking()
             .Where(g => g.Id == groupId)
-            .Select(g => new { g.Id, g.Name, g.SubjectId }).FirstOrDefaultAsync(ct);
+            .Select(g => new { g.Id, g.Name, g.SubjectId, g.IsTrack }).FirstOrDefaultAsync(ct);
         return grp is null
             ? null
-            : new LessonOwner(LessonOwnerKind.Group, grp.Id.ToString(), grp.Name, grp.SubjectId);
+            : new LessonOwner(LessonOwnerKind.Group, grp.Id.ToString(), grp.Name, grp.SubjectId, grp.IsTrack);
     }
 
     /// <summary>
@@ -233,7 +368,8 @@ public static class LessonRoster
             .Select(c => new { c.Id, c.Name }).FirstOrDefaultAsync(ct);
         if (cls is not null) owners.Add(new LessonOwner(LessonOwnerKind.Class, cls.Id, cls.Name));
 
-        if (!await GroupLessonsEnabledAsync(db, ct)) return owners;
+        // Yo'nalish guruhi o'chirgichga qaramaydi; oddiy guruh — faqat yoqilganda.
+        var groupsOn = await GroupLessonsEnabledAsync(db, ct);
 
         var groupIds = asOf is null
             ? await db.StudyGroupMembers.AsNoTracking()
@@ -247,10 +383,10 @@ public static class LessonRoster
         if (groupIds.Count == 0) return owners;
 
         var groups = await db.StudyGroups.AsNoTracking()
-            .Where(g => groupIds.Contains(g.Id) && !g.IsArchived)
-            .Select(g => new { g.Id, g.Name, g.SubjectId }).ToListAsync(ct);
+            .Where(g => groupIds.Contains(g.Id) && !g.IsArchived && (groupsOn || g.IsTrack))
+            .Select(g => new { g.Id, g.Name, g.SubjectId, g.IsTrack }).ToListAsync(ct);
         foreach (var g in groups)
-            owners.Add(new LessonOwner(LessonOwnerKind.Group, g.Id.ToString(), g.Name, g.SubjectId));
+            owners.Add(new LessonOwner(LessonOwnerKind.Group, g.Id.ToString(), g.Name, g.SubjectId, g.IsTrack));
 
         return owners;
     }
@@ -263,16 +399,17 @@ public static class LessonRoster
         IAppDbContext db, CancellationToken ct = default)
     {
         var result = new Dictionary<string, List<LessonOwner>>(StringComparer.Ordinal);
-        if (!await GroupLessonsEnabledAsync(db, ct)) return result;
+        // Yo'nalish guruhlari o'chirgichga qaramaydi; oddiy guruhlar — faqat yoqilganda.
+        var groupsOn = await GroupLessonsEnabledAsync(db, ct);
 
         var groups = await db.StudyGroups.AsNoTracking()
-            .Where(g => !g.IsArchived)
-            .Select(g => new { g.Id, g.Name, g.SubjectId }).ToListAsync(ct);
+            .Where(g => !g.IsArchived && (groupsOn || g.IsTrack))
+            .Select(g => new { g.Id, g.Name, g.SubjectId, g.IsTrack }).ToListAsync(ct);
         if (groups.Count == 0) return result;
 
         var byId = groups.ToDictionary(
             g => g.Id,
-            g => new LessonOwner(LessonOwnerKind.Group, g.Id.ToString(), g.Name, g.SubjectId));
+            g => new LessonOwner(LessonOwnerKind.Group, g.Id.ToString(), g.Name, g.SubjectId, g.IsTrack));
 
         var members = await db.StudyGroupMembers.AsNoTracking()
             .Where(m => m.LeftOn == null)

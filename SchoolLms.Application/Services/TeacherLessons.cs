@@ -36,8 +36,9 @@ namespace SchoolLms.Application.Services;
 //
 //  O'CHIRGICH O'CHIQ = BUGUNGI RAQAM
 //  ---------------------------------
-//  `group_lessons_enabled` o'chiq ekan tirik egalar ro'yxatida faqat sinflar
-//  bo'ladi, ya'ni bu fayl bugungi filtrning aynan o'zini beradi.
+//  `group_lessons_enabled` o'chiq ekan tirik egalar ro'yxatida sinflar va
+//  YO'NALISH guruhlari bo'ladi (yo'nalish guruhi o'chirgichga qaramaydi,
+//  docs/modules/track-groups-as-classes.md); oddiy guruhlar — yo'q.
 // ===========================================================================
 
 /// <summary>Egasi bilan birga bitta dars katagi (jadval satri).</summary>
@@ -149,7 +150,8 @@ public static class TeacherLessons
         // `PortalSchedule.TeacherWeekAsync` shunday qiladi (u `db.Classes` ni
         // arxiv filtrisiz o'qiydi) va biz uni o'zgartirmaymiz.
         var owners = await LessonRoster.AllOwnersAsync(db, ct);
-        var groupsOn = await LessonRoster.GroupLessonsEnabledAsync(db, ct);
+        // Yo'nalish guruhi o'chirgichga qaramaydi; oddiy guruh — faqat yoqilganda.
+        var scope = await LessonRoster.GroupScopeAsync(db, ct);
         var templateIds = assignments.Select(a => a.TemplateId!).Distinct().ToList();
         var templates = (await db.ScheduleTemplates.AsNoTracking().Include(t => t.Lessons)
                 .Where(t => templateIds.Contains(t.Id)).ToListAsync(ct))
@@ -159,7 +161,7 @@ public static class TeacherLessons
         foreach (var a in assignments)
         {
             // O'chirgich o'chiq — guruh biriktirishi (bo'lsa ham) KO'RINMAYDI.
-            if (a.OwnerKind == LessonOwnerKind.Group && !groupsOn) continue;
+            if (!scope.Allows(a.OwnerKind, a.ClassId)) continue;
             // Egasi topilmagan "yetim" biriktirish: bugungi kod uni tashlamaydi,
             // shunchaki nomsiz ko'rsatadi — aynan shuni takrorlaymiz.
             if (!owners.TryGetValue(a.ClassId, out var owner) || owner.Kind != a.OwnerKind)

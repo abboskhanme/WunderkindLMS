@@ -42,6 +42,11 @@ namespace SchoolLms.Application.Services;
 //     ISHLATILMAYDI. Darsni "o'tildi" (`lesson_notes.conducted`) deb ham
 //     belgilamaymiz: buni O'QITUVCHI aytadi.
 //
+//  YO'NALISH GURUHLARI (2026-09-26): ro'yxatda 9–11-sinflar o'rnida yo'nalish
+//  guruhlari turadi; ular sinf kabi belgilanadi — ro'yxat guruh a'zolari,
+//  jurnal qatori `owner_kind = 'group'`, belgi `daily_attendance_marks.class_id`
+//  da guruh id'si bilan (docs/modules/track-groups-as-classes.md).
+//
 //  PUSH YUBORILMAYDI: mahsulot qoidasi — barcha xabar Telegram orqali
 //  (CLAUDE.md, 2026-09-16). Eski FCM yo'li bu yerda chaqirilmaydi.
 // ===========================================================================
@@ -49,9 +54,12 @@ namespace SchoolLms.Application.Services;
 /// <summary>Ro'yxatdagi bitta sinf — mas'ul xodim ko'radigan holat.</summary>
 /// <param name="LessonCount">Shu kunda jadval bo'yicha nechta dars bor.</param>
 /// <param name="MarkedLessons">Shulardan nechtasi belgilab bo'lingan.</param>
+/// <param name="OwnerKind"><c>class</c> yoki <c>group</c> — yo'nalish guruhi o'zini boqadigan
+/// sinflar (9–11) o'rnida turadi (docs/modules/track-groups-as-classes.md).</param>
 public record DailyAttendanceClassDto(
     string ClassId, string ClassName, int StudentCount,
-    int LessonCount, int MarkedLessons, int AbsentCount, int LateCount);
+    int LessonCount, int MarkedLessons, int AbsentCount, int LateCount,
+    string OwnerKind = LessonOwnerKind.Class, bool IsTrack = false);
 
 /// <summary>Kunning ro'yxati: sinflar va umumiy yakun.</summary>
 /// <param name="MarkedLessons">Shu kunda belgilangan DARS SOATLARI soni.</param>
@@ -108,7 +116,8 @@ public record DailyAttendanceClassDayDto(
     IReadOnlyList<DailyAttendanceLessonDto> Lessons,
     string? AbsentReasonId, string? AbsentReasonName,
     string? ExcusedReasonId, string? ExcusedReasonName,
-    IReadOnlyList<AbsenceReasonDto> Reasons);
+    IReadOnlyList<AbsenceReasonDto> Reasons,
+    string OwnerKind = LessonOwnerKind.Class);
 
 /// <summary>Bitta o'quvchining belgisi (saqlashda).</summary>
 public record DailyAttendanceMarkInput(string StudentId, string? ReasonId);
@@ -127,10 +136,11 @@ public sealed class DailyAttendanceService(IAppDbContext db)
     {
         var day = ParseDate(date);
 
-        var classes = await db.Classes.AsNoTracking()
-            .OrderBy(c => c.Name)
-            .Select(c => new { c.Id, c.Name })
-            .ToListAsync(ct);
+        // Ro'yxat: yo'nalish guruhini boqmaydigan sinflar (daraja/nom), keyin faol yo'nalish
+        // guruhlari (nom) — LessonRoster.PickerOwnersAsync. 9–11-sinflar hamma darsini yo'nalish
+        // guruhida o'qiydi, shuning uchun ularning sinfi (9-A ...) bu yerda yo'q. Oddiy guruhlar
+        // (masalan ingliz tili bo'linmasi) kunlik davomatga kirmaydi.
+        var owners = await LessonRoster.PickerOwnersAsync(db, includeOrdinaryGroups: false, ct);
 
         var marks = await db.DailyAttendanceMarks.AsNoTracking()
             .Where(m => m.Date == date)
@@ -143,18 +153,32 @@ public sealed class DailyAttendanceService(IAppDbContext db)
             .ToListAsync(ct);
         var countByName = counts.ToDictionary(x => x.ClassName ?? "", x => x.Count, StringComparer.Ordinal);
 
+        var groupGuids = owners.Where(o => o.Kind == LessonOwnerKind.Group)
+            .Select(o => Guid.Parse(o.Id)).ToList();
+        var countByGroup = groupGuids.Count == 0
+            ? new Dictionary<string, int>(StringComparer.Ordinal)
+            : (await db.StudyGroupMembers.AsNoTracking()
+                    .Where(m => m.LeftOn == null && groupGuids.Contains(m.GroupId)
+                                && db.Students.Any(s => s.Id == m.StudentId && !s.IsArchived))
+                    .Select(m => m.GroupId).ToListAsync(ct))
+                .GroupBy(g => g.ToString())
+                .ToDictionary(g => g.Key, g => g.Count(), StringComparer.Ordinal);
+
         var rows = new List<DailyAttendanceClassDto>();
-        foreach (var c in classes)
+        foreach (var o in owners)
         {
-            var lessons = await DayLessonsAsync(c.Id, day, ct);
-            var mine = marks.Where(m => m.ClassId == c.Id).ToList();
+            var lessons = await DayLessonsAsync(o.Id, o.Kind, day, ct);
+            var mine = marks.Where(m => m.ClassId == o.Id).ToList();
             rows.Add(new DailyAttendanceClassDto(
-                c.Id, c.Name,
-                countByName.GetValueOrDefault(c.Name, 0),
+                o.Id, o.Name,
+                o.Kind == LessonOwnerKind.Group
+                    ? countByGroup.GetValueOrDefault(o.Id, 0)
+                    : countByName.GetValueOrDefault(o.Name, 0),
                 lessons.Count,
                 mine.Count,
                 mine.Sum(m => m.AbsentCount),
-                mine.Sum(m => m.LateCount)));
+                mine.Sum(m => m.LateCount),
+                o.Kind, o.IsTrack));
         }
 
         return new DailyAttendanceOverviewDto(
@@ -171,19 +195,18 @@ public sealed class DailyAttendanceService(IAppDbContext db)
     {
         var day = ParseDate(date);
 
-        var cls = await db.Classes.AsNoTracking().FirstOrDefaultAsync(c => c.Id == classId, ct);
-        if (cls is null) return null;
+        // Ega — sinf YOKI yo'nalish guruhi (oddiy guruh — faqat o'chirgich yoqilganda).
+        var owner = await LessonRoster.OwnerAsync(db, classId, ct);
+        if (owner is null || !await LessonRoster.LessonsLiveAsync(db, owner, ct)) return null;
 
-        var roster = await db.Students.AsNoTracking()
-            .Where(s => s.ClassName == cls.Name && !s.IsArchived)
-            .OrderBy(s => s.FullName)
+        var roster = (await LessonRoster.ForLessonAsync(db, owner, ct: ct))
             .Select(s => new { s.Id, s.FullName, s.SubGroup })
-            .ToListAsync(ct);
+            .ToList();
         var students = roster
             .Select(s => new DailyAttendanceStudentDto(s.Id, s.FullName))
             .ToList();
 
-        var lessons = await DayLessonsAsync(classId, day, ct);
+        var lessons = await DayLessonsAsync(classId, owner.Kind, day, ct);
         var subjectIds = lessons.Select(l => l.SubjectId).Distinct().ToList();
         var subjectNames = subjectIds.Count == 0
             ? new Dictionary<string, string>(StringComparer.Ordinal)
@@ -196,7 +219,7 @@ public sealed class DailyAttendanceService(IAppDbContext db)
 
         var entries = await db.JournalEntries.AsNoTracking()
             .Where(e => e.ClassId == classId && e.Date == date && e.ReasonId != null
-                        && e.OwnerKind == LessonOwnerKind.Class)
+                        && e.OwnerKind == owner.Kind)
             .Select(e => new { e.StudentId, e.ReasonId, e.SubjectId, e.Period })
             .ToListAsync(ct);
 
@@ -223,8 +246,8 @@ public sealed class DailyAttendanceService(IAppDbContext db)
             times.TryGetValue(l.Period, out var time);
 
             // Bo'linish: 0 — butun sinf, 1/2 — faqat o'sha guruh
-            // (`LessonRoster.ForLessonAsync` dagi qoida bilan bir xil).
-            var lessonStudents = l.SubGroup == 0
+            // (`LessonRoster.ForLessonAsync` dagi qoida bilan bir xil). Guruhda bo'linish yo'q.
+            var lessonStudents = l.SubGroup == 0 || owner.IsGroup
                 ? roster
                 : roster.Where(x => x.SubGroup == l.SubGroup).ToList();
 
@@ -248,9 +271,9 @@ public sealed class DailyAttendanceService(IAppDbContext db)
             .ToListAsync(ct);
 
         return new DailyAttendanceClassDayDto(
-            cls.Id, cls.Name, date, students, lessonDtos,
+            owner.Id, owner.Name, date, students, lessonDtos,
             absent?.Id, absent?.Name, excused?.Id, excused?.Name,
-            catalog);
+            catalog, owner.Kind);
     }
 
     /// <summary>
@@ -265,10 +288,10 @@ public sealed class DailyAttendanceService(IAppDbContext db)
             return "Foydalanuvchi aniqlanmadi.";
 
         var day = ParseDate(req.Date);
-        var cls = await db.Classes.FirstOrDefaultAsync(c => c.Id == req.ClassId, ct);
-        if (cls is null) return "Sinf topilmadi.";
+        var owner = await LessonRoster.OwnerAsync(db, req.ClassId, ct);
+        if (owner is null || !await LessonRoster.LessonsLiveAsync(db, owner, ct)) return "Sinf topilmadi.";
 
-        var lessons = await DayLessonsAsync(req.ClassId, day, ct);
+        var lessons = await DayLessonsAsync(req.ClassId, owner.Kind, day, ct);
         if (lessons.Count == 0)
             return "Bu kunda jadval bo'yicha dars yo'q — davomat belgilanmaydi.";
 
@@ -287,13 +310,13 @@ public sealed class DailyAttendanceService(IAppDbContext db)
         if (marks.Any(m => m.ReasonId is not null && !reasons.ContainsKey(m.ReasonId)))
             return "Noma'lum davomat sababi.";
 
-        var roster = await db.Students.AsNoTracking()
-            .Where(s => s.ClassName == cls.Name && !s.IsArchived)
+        var roster = (await LessonRoster.ForLessonAsync(db, owner, ct: ct))
             .Select(s => new { s.Id, s.SubGroup })
-            .ToListAsync(ct);
+            .ToList();
         // Bo'lingan darsda faqat O'SHA guruh belgilanadi — qolgan yarim sinf
         // boshqa xonada va ularni "kelmadi" deb yozib qo'yish xato bo'lardi.
-        var students = lesson.SubGroup == 0
+        // Yo'nalish (o'quv) guruhida bo'linish yo'q — butun ro'yxat.
+        var students = lesson.SubGroup == 0 || owner.IsGroup
             ? roster
             : roster.Where(s => s.SubGroup == lesson.SubGroup).ToList();
         var studentIds = students.Select(s => s.Id).ToHashSet(StringComparer.Ordinal);
@@ -306,7 +329,7 @@ public sealed class DailyAttendanceService(IAppDbContext db)
         var existing = await db.JournalEntries
             .Where(e => e.ClassId == req.ClassId && e.Date == req.Date
                         && e.SubjectId == req.SubjectId && e.Period == req.Period
-                        && e.OwnerKind == LessonOwnerKind.Class)
+                        && e.OwnerKind == owner.Kind)
             .ToListAsync(ct);
 
         foreach (var student in students)
@@ -336,8 +359,9 @@ public sealed class DailyAttendanceService(IAppDbContext db)
                     StudentId = student.Id,
                     Date = req.Date,
                     Period = req.Period,
-                    SubGroup = student.SubGroup,
-                    OwnerKind = LessonOwnerKind.Class,
+                    // Guruh qatorlarida bo'linish har doim 0 (JournalService bilan bir xil, §2.1.3).
+                    SubGroup = owner.IsGroup ? 0 : student.SubGroup,
+                    OwnerKind = owner.Kind,
                     ReasonId = reasonId,
                 });
             }
@@ -432,7 +456,7 @@ public sealed class DailyAttendanceService(IAppDbContext db)
     /// shablon → o'sha kunning darslari.
     /// </summary>
     private async Task<List<(string SubjectId, int Period, int SubGroup)>> DayLessonsAsync(
-        string classId, DateOnly day, CancellationToken ct)
+        string classId, string ownerKind, DateOnly day, CancellationToken ct)
     {
         var jsDay = (int)day.DayOfWeek; // 0 = yakshanba
         if (jsDay == 0) return [];
@@ -450,7 +474,7 @@ public sealed class DailyAttendanceService(IAppDbContext db)
 
         var assignment = await db.WeekAssignments.AsNoTracking().FirstOrDefaultAsync(a =>
             a.ClassId == classId && a.Quarter == q.Quarter && a.Week == week.Week
-            && a.OwnerKind == LessonOwnerKind.Class, ct);
+            && a.OwnerKind == ownerKind, ct);
         if (assignment?.TemplateId is null) return [];
 
         var tpl = await db.ScheduleTemplates.AsNoTracking().Include(t => t.Lessons)

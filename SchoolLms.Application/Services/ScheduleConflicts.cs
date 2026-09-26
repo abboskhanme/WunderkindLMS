@@ -41,6 +41,10 @@ namespace SchoolLms.Application.Services;
 //  bitta sinfda — ziddiyat MATEMATIK jihatdan mumkin emas. Shuning uchun
 //  tekshiruv darhol bo'sh qaytadi: bugungi har bir saqlash bugungidek
 //  o'tadi va har katak saqlashda ortiqcha so'rov yubormaymiz.
+//
+//  YO'NALISH GURUHLARI (2026-09-26): ular o'chirgichga qaramaydi. Faol
+//  yo'nalish guruhi bor ekan tekshiruv ishlaydi — sinf (masalan 9-A) bilan
+//  yo'nalish guruhi orasidagi o'quvchi/o'qituvchi to'qnashuvi ham ziddiyat.
 // ===========================================================================
 
 /// <summary>
@@ -78,7 +82,9 @@ public static class ScheduleConflicts
         IReadOnlyList<(int Day, int Period, int SubGroup)> cells, CancellationToken ct = default)
     {
         if (cells.Count == 0) return [];
-        if (!await LessonRoster.GroupLessonsEnabledAsync(db, ct)) return [];
+        // Guruh darsi umuman tirik bo'lmasa (o'chirgich o'chiq va yo'nalish guruhi yo'q) —
+        // ziddiyat mumkin emas. Yo'nalish guruhi o'chirgichga qaramaydi.
+        if (!(await LessonRoster.GroupScopeAsync(db, ct)).AnyGroup) return [];
 
         var slots = await db.WeekAssignments.AsNoTracking()
             .Where(a => a.TemplateId == templateId && a.ClassId == owner.Id
@@ -99,7 +105,9 @@ public static class ScheduleConflicts
         IAppDbContext db, LessonOwner owner, int quarter,
         IReadOnlyList<(int Week, string? TemplateId)> assignments, CancellationToken ct = default)
     {
-        if (!await LessonRoster.GroupLessonsEnabledAsync(db, ct)) return [];
+        // Guruh darsi umuman tirik bo'lmasa (o'chirgich o'chiq va yo'nalish guruhi yo'q) —
+        // ziddiyat mumkin emas. Yo'nalish guruhi o'chirgichga qaramaydi.
+        if (!(await LessonRoster.GroupScopeAsync(db, ct)).AnyGroup) return [];
 
         var wanted = assignments.Where(a => !string.IsNullOrEmpty(a.TemplateId)).ToList();
         if (wanted.Count == 0) return [];

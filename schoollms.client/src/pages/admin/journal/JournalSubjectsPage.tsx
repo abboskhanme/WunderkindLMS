@@ -14,7 +14,13 @@ export function JournalSubjectsPage() {
   const subjects = useAsync(() => getJournalSubjects(classId), [classId])
   const owners = useAsync(getJournalOwners, [])
   const owner = owners.data?.find((o) => o.id === classId)
-  const title = owner ? (owner.kind === 'group' ? `Guruh: ${owner.name}` : `${owner.name}-sinf`) : ''
+  const title = owner
+    ? owner.kind === 'group'
+      ? owner.isTrack
+        ? `Yo'nalish: ${owner.name}`
+        : `Guruh: ${owner.name}`
+      : `${owner.name}-sinf`
+    : ''
 
   return (
     <div className="space-y-6">

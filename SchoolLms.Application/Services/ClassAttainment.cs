@@ -87,7 +87,8 @@ namespace SchoolLms.Application.Services;
 //  <see cref="GroupOwnerIds"/> — bo'sh, <see cref="GroupsOf"/> — bo'sh,
 //  <see cref="CountsFor"/> har qanday guruh qatorini RAD etadi. Qolgani —
 //  sinf va uning tarixi. `ClassAttainmentTests` va `MembershipHistoryTests`
-//  ikkala holatni ham tekshiradi.
+//  ikkala holatni ham tekshiradi. ISTISNO — yo'nalish guruhlari (2026-09-26):
+//  ular sinf o'rnida turadi va o'chirgichga qaramay qamrovga kiradi.
 //
 //  QAMROV SO'ROVNI KENGAYTIRADI, FILTR ESA TORAYTIRADI
 //  ---------------------------------------------------
@@ -181,7 +182,9 @@ public sealed class ClassAttainment
         var groupsByStudent = new Dictionary<string, List<LessonOwner>>(StringComparer.Ordinal);
         var groupWindows = new Dictionary<string, Dictionary<string, Window>>(StringComparer.Ordinal);
 
-        if (await LessonRoster.GroupLessonsEnabledAsync(db, ct))
+        // Oddiy guruh — o'chirgich yoqilgandagina; yo'nalish guruhi — har doim
+        // (docs/modules/track-groups-as-classes.md).
+        var groupsOn = await LessonRoster.GroupLessonsEnabledAsync(db, ct);
         {
             // ARXIVLANGAN GURUH HAM KIRADI — 5-band. Guruhni arxivlash
             // (`StudyGroupService.ArchiveAsync`) faol a'zoliklarni YOPADI, ya'ni
@@ -190,10 +193,11 @@ public sealed class ClassAttainment
             // olgan baholaridan ayrilardi (o'quv yilini yakunlash HAR guruhni
             // arxivlaydi — `AcademicYearController.Rollover`).
             var byId = (await db.StudyGroups.AsNoTracking()
-                    .Select(g => new { g.Id, g.Name, g.SubjectId }).ToListAsync(ct))
+                    .Where(g => groupsOn || g.IsTrack)
+                    .Select(g => new { g.Id, g.Name, g.SubjectId, g.IsTrack }).ToListAsync(ct))
                 .ToDictionary(
                     g => g.Id,
-                    g => new LessonOwner(LessonOwnerKind.Group, g.Id.ToString(), g.Name, g.SubjectId));
+                    g => new LessonOwner(LessonOwnerKind.Group, g.Id.ToString(), g.Name, g.SubjectId, g.IsTrack));
 
             if (byId.Count > 0)
             {
@@ -225,7 +229,7 @@ public sealed class ClassAttainment
         var groupsByStudent = new Dictionary<string, List<LessonOwner>>(StringComparer.Ordinal);
         var groupWindows = new Dictionary<string, Dictionary<string, Window>>(StringComparer.Ordinal);
 
-        if (await LessonRoster.GroupLessonsEnabledAsync(db, ct))
+        var groupsOn = await LessonRoster.GroupLessonsEnabledAsync(db, ct);
         {
             var members = await db.StudyGroupMembers.AsNoTracking()
                 .Where(m => m.StudentId == student.Id)
@@ -234,11 +238,11 @@ public sealed class ClassAttainment
             {
                 var ids = members.Select(m => m.GroupId).Distinct().ToList();
                 var byId = (await db.StudyGroups.AsNoTracking()
-                        .Where(g => ids.Contains(g.Id))
-                        .Select(g => new { g.Id, g.Name, g.SubjectId }).ToListAsync(ct))
+                        .Where(g => ids.Contains(g.Id) && (groupsOn || g.IsTrack))
+                        .Select(g => new { g.Id, g.Name, g.SubjectId, g.IsTrack }).ToListAsync(ct))
                     .ToDictionary(
                         g => g.Id,
-                        g => new LessonOwner(LessonOwnerKind.Group, g.Id.ToString(), g.Name, g.SubjectId));
+                        g => new LessonOwner(LessonOwnerKind.Group, g.Id.ToString(), g.Name, g.SubjectId, g.IsTrack));
 
                 var list = new List<LessonOwner>();
                 foreach (var m in members)

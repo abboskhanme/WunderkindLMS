@@ -314,10 +314,12 @@ public record ConductedLessonDto(
 /// <param name="StudentCount">Arxivlanmagan o'quvchilar soni.</param>
 /// <param name="Language">Sinfning ta'lim tili (uz / ru / en ...); guruh uchun null.</param>
 /// <param name="HomeroomTeacher">Sinf rahbari (o'qituvchilar ro'yxatidagi "sinf rahbari" belgisi); bo'lmasa null.</param>
+/// <param name="IsTrack">Yo'nalish guruhi — boqadigan sinflari (9–11) o'rnida turadi
+/// (docs/modules/track-groups-as-classes.md).</param>
 public record JournalOwnerDto(
     string Id, string Name, string Kind, int Grade,
     string? SubjectId, string? SubjectName, int StudentCount,
-    string? Language = null, string? HomeroomTeacher = null);
+    string? Language = null, string? HomeroomTeacher = null, bool IsTrack = false);
 
 /// <summary>Jurnal → sinf → fanlar ro'yxatining bitta qatori (EduSchool oqimi, 2026-09-23).</summary>
 /// <param name="Teachers">Shu sinfda shu fanni o'tadigan o'qituvchilar — dars jadvalidan.</param>

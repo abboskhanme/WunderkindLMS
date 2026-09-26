@@ -36,19 +36,24 @@ public class DashboardController(AppDbContext db) : ControllerBase
         var classes = await db.Classes.OrderBy(c => c.Grade).ToListAsync();
         var students = await db.Students.Where(s => !s.IsArchived).ToListAsync();
 
-        // O'chirgich o'chiq — guruh qatorlari YO'Q deb qaraladi (§4.3).
-        var groupsOn = await LessonRoster.GroupLessonsEnabledAsync(db);
+        // O'chirgich o'chiq — ODDIY guruh qatorlari YO'Q deb qaraladi (§4.3); yo'nalish
+        // guruhi o'chirgichga qaramaydi (LessonRoster.GroupScopeAsync).
+        var scope = await LessonRoster.GroupScopeAsync(db);
+        var trackIds = scope.TrackIdList;
+        var groupsOn = scope.AllGroups;
         var entries = await db.JournalEntries
-            .Where(e => groupsOn || e.OwnerKind != LessonOwnerKind.Group).ToListAsync();
+            .Where(e => groupsOn || e.OwnerKind != LessonOwnerKind.Group || trackIds.Contains(e.ClassId))
+            .ToListAsync();
 
-        // Davomat FAQAT o'tilgan darslar bo'yicha (Conducted=true). O'tilmagan darslar hisobga olinmaydi.
-        var conductedByClass = (await db.LessonNotes
-                .Where(n => n.Conducted && (groupsOn || n.OwnerKind != LessonOwnerKind.Group)).ToListAsync())
+        // Davomat FAQAT bo'lgan darslar bo'yicha: o'tildi (Conducted) YOKI davomat belgilangan
+        // (HeldLessons qoidasi). Bo'lmagan darslar hisobga olinmaydi.
+        var conductedByClass = (await HeldLessons.ListAsync(db))
+            .Where(n => scope.Allows(n.OwnerKind, n.ClassId))
             .GroupBy(n => n.ClassId)
             .ToDictionary(g => g.Key, g => g.Select(n => (n.SubjectId, n.Date, n.Period)).ToHashSet());
 
         // O'quvchi → uning faol guruhlari (o'chirgich o'chiq bo'lsa — bo'sh).
-        var groupsByStudent = await GroupIdsByStudentAsync(db, groupsOn);
+        var groupsByStudent = await GroupIdsByStudentAsync(db, scope);
 
         // "Kech keldi" turidagi sabablar davomatsizlik sifatida hisoblanmaydi.
         var lateReasonIds = (await db.AbsenceReasons.Where(r => r.IsLate).Select(r => r.Id).ToListAsync())
@@ -191,7 +196,7 @@ public class DashboardController(AppDbContext db) : ControllerBase
             .Take(5)
             .ToList();
 
-        var groupSizes = await GroupSizesAsync(db, groupsOn);
+        var groupSizes = await GroupSizesAsync(db, scope);
         return new AdminDashboardDto(
             stats, classPerformance, topClasses,
             AttendanceByPeriod(students, entries, lateReasonIds, groupSizes),
@@ -204,13 +209,14 @@ public class DashboardController(AppDbContext db) : ControllerBase
     /// bo'lsa — bo'sh lug'at (§4.3).
     /// </summary>
     private static async Task<Dictionary<string, List<string>>> GroupIdsByStudentAsync(
-        AppDbContext db, bool groupsOn)
+        AppDbContext db, GroupLessonScope scope)
     {
         var result = new Dictionary<string, List<string>>(StringComparer.Ordinal);
-        if (!groupsOn) return result;
+        if (!scope.AnyGroup) return result;
 
         var groupIds = (await db.StudyGroups.AsNoTracking()
-            .Where(g => !g.IsArchived).Select(g => g.Id).ToListAsync()).ToHashSet();
+                .Where(g => !g.IsArchived).Select(g => g.Id).ToListAsync())
+            .Where(id => scope.AllowsGroup(id.ToString())).ToHashSet();
         if (groupIds.Count == 0) return result;
 
         foreach (var m in await db.StudyGroupMembers.AsNoTracking()
@@ -228,13 +234,14 @@ public class DashboardController(AppDbContext db) : ControllerBase
     /// Guruh id → faol a'zolar soni. O'chirgich o'chiq bo'lsa — bo'sh, ya'ni
     /// "kutilgan" ustuni bugungidek faqat sinflardan hisoblanadi.
     /// </summary>
-    private static async Task<Dictionary<string, int>> GroupSizesAsync(AppDbContext db, bool groupsOn)
+    private static async Task<Dictionary<string, int>> GroupSizesAsync(AppDbContext db, GroupLessonScope scope)
     {
         var result = new Dictionary<string, int>(StringComparer.Ordinal);
-        if (!groupsOn) return result;
+        if (!scope.AnyGroup) return result;
 
         var groupIds = (await db.StudyGroups.AsNoTracking()
-            .Where(g => !g.IsArchived).Select(g => g.Id).ToListAsync()).ToHashSet();
+                .Where(g => !g.IsArchived).Select(g => g.Id).ToListAsync())
+            .Where(id => scope.AllowsGroup(id.ToString())).ToHashSet();
         if (groupIds.Count == 0) return result;
 
         foreach (var g in (await db.StudyGroupMembers.AsNoTracking()

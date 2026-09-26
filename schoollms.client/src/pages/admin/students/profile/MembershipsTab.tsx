@@ -111,7 +111,7 @@ export function MembershipsTab({ studentId }: Props) {
                 key={g.id}
                 active={!g.leftOn}
                 title={g.groupName}
-                subtitle={g.subjectName + (g.groupIsArchived ? ' · arxivda' : '')}
+                subtitle={(g.subjectName || "Yo'nalish guruhi") + (g.groupIsArchived ? ' · arxivda' : '')}
                 period={`${g.joinedOn} — ${g.leftOn ?? 'hozirgacha'} · ${g.days} kun`}
                 reason={g.leaveReason}
                 link={`/admin/groups/${g.groupId}/students`}

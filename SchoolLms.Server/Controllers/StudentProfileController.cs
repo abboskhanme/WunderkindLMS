@@ -233,15 +233,11 @@ public class StudentProfileController(AppDbContext db, AuditService audit) : Con
         var reasonMap = reasons.ToDictionary(r => r.Id);
         var lateSet = reasons.Where(r => r.IsLate).Select(r => r.Id).ToHashSet(StringComparer.Ordinal);
 
-        // O'tilgan darslar — o'quvchi qamroviga tushadiganlari.
+        // Bo'lgan darslar (o'tildi YOKI davomat belgilangan — HeldLessons) — o'quvchi
+        // qamroviga tushadiganlari.
         var notes = ownerIds.Count == 0
             ? []
-            : await db.LessonNotes.AsNoTracking()
-                .Where(n => n.Conducted && ownerIds.Contains(n.ClassId)
-                            && string.Compare(n.Date, start) >= 0
-                            && string.Compare(n.Date, end) <= 0)
-                .Select(n => new { n.ClassId, n.OwnerKind, n.SubjectId, n.Date, n.Period, n.SubGroup })
-                .ToListAsync(ct);
+            : await HeldLessons.ListAsync(db, ownerIds, start, end, ct);
 
         var conducted = notes
             .Where(n => attainment.CountsFor(st.Id, n.ClassId, n.OwnerKind, n.Date)

@@ -38,9 +38,8 @@ public static class StudentProfileBuilder
         var ownerIds = attainment.OwnerIdsForStudent(st.Id, classId);
         var conductedNotes = ownerIds.Count == 0
             ? []
-            : (await db.LessonNotes.Where(n => n.Conducted && ownerIds.Contains(n.ClassId))
-                    .Select(n => new { n.ClassId, n.OwnerKind, n.SubjectId, n.Date, n.Period, n.SubGroup })
-                    .ToListAsync())
+            // "Bo'lgan" dars = o'tildi YOKI davomat belgilangan (HeldLessons qoidasi).
+            : (await HeldLessons.ListAsync(db, ownerIds))
                 .Select(n => (n.ClassId, n.OwnerKind, n.SubjectId, n.Date, n.Period, n.SubGroup)).ToList();
         var studentConducted = conductedNotes
             .Where(c => attainment.CountsFor(st.Id, c.ClassId, c.OwnerKind, c.Date)

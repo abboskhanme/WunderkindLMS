@@ -18,12 +18,16 @@
  *    haftaga biriktirilmagan shablon hech qayerda ishlatilmaydi;
  *  - "Nashr qilish" — qoralama JORIY haftadan o'quv yili oxirigacha hamma sinfda qo'yiladi.
  *    O'tgan haftalar tegilmaydi (jurnal, davomat, maosh tarixi o'z jadvali bo'yicha qoladi).
+ *
+ * QATORLAR — DARS EGALARI (docs/modules/track-groups-as-classes.md): 1–8-sinflar, keyin
+ * YO'NALISH guruhlari (9–11-sinflar o'rnida — ularning sinfi bu yerda yo'q), keyin (faqat
+ * "Guruh darslari" yoqilganda) oddiy guruhlar. Tartib serverda (`/admin/schedule/owners`).
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { AlertTriangle, CalendarRange, Plus } from 'lucide-react'
-import type { ScheduleLesson, ScheduleTemplate, SchoolClass, SchoolSettings, Subject, Teacher } from '@/types'
-import { getClasses } from '@/api/services/classes'
+import type { LessonOwnerKind, ScheduleLesson, ScheduleTemplate, SchoolSettings, Subject, Teacher } from '@/types'
+import { getLessonOwners } from '@/api/services/lessonOwners'
 import { getSubjects } from '@/api/services/subjects'
 import { getTeachers } from '@/api/services/teachers'
 import { getSettings } from '@/api/services/settings'
@@ -48,11 +52,19 @@ import { LessonSlotModal, type OccupiedSlots, type SlotTarget } from '../classes
 
 const DEFAULT_NAME = 'Asosiy'
 
+/** Jadval qatori — sinf yoki guruh (yo'nalish guruhi sinf kabi). */
+interface OwnerRow {
+  id: string
+  name: string
+  kind: LessonOwnerKind
+  isTrack: boolean
+}
+
 const errText = (e: unknown, fallback: string) =>
   (e as { response?: { data?: { message?: string } } })?.response?.data?.message ?? fallback
 
 export function MasterScheduleGrid() {
-  const [classes, setClasses] = useState<SchoolClass[]>([])
+  const [classes, setClasses] = useState<OwnerRow[]>([])
   /** Sinf id → uning hamma shablonlari. */
   const [templates, setTemplates] = useState<Record<string, ScheduleTemplate[]>>({})
   const [subjects, setSubjects] = useState<Subject[]>([])
@@ -64,7 +76,7 @@ export function MasterScheduleGrid() {
 
   const [name, setName] = useState('')
   const [day, setDay] = useState(0)
-  const [editing, setEditing] = useState<{ cls: SchoolClass; slot: SlotTarget } | null>(null)
+  const [editing, setEditing] = useState<{ cls: OwnerRow; slot: SlotTarget } | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [toast, setToast] = useState<string | null>(null)
   const closeToast = useCallback(() => setToast(null), [])
@@ -80,11 +92,15 @@ export function MasterScheduleGrid() {
   const [activeNow, setActiveNow] = useState<Record<string, string | null>>({})
 
   useEffect(() => {
-    Promise.all([getClasses(), getSubjects(), getTeachers(), getSettings(), getOccupiedSlots('')])
-      .then(async ([cls, subs, tchs, st, occ]) => {
-        const active = cls
-          .filter((c) => !c.isArchived)
-          .sort((a, b) => a.grade - b.grade || a.name.localeCompare(b.name, 'uz'))
+    Promise.all([getLessonOwners(), getSubjects(), getTeachers(), getSettings(), getOccupiedSlots('')])
+      .then(async ([owners, subs, tchs, st, occ]) => {
+        // Arxivsiz, tartiblangan — server qoidasi (sinflar, yo'nalishlar, oddiy guruhlar).
+        const active: OwnerRow[] = owners.map((o) => ({
+          id: o.id,
+          name: o.name,
+          kind: o.kind,
+          isTrack: o.isTrack,
+        }))
         const tpls = await Promise.all(active.map((c) => getTemplates(c.id).catch(() => [])))
         const map: Record<string, ScheduleTemplate[]> = {}
         active.forEach((c, i) => (map[c.id] = tpls[i]))
@@ -159,7 +175,7 @@ export function MasterScheduleGrid() {
    * Qoralama hozirgi faol jadval bilan bir vaqtda ishlamaydi: o'qituvchi faol jadvalda shu
    * soatda dars bersa ham, bu qoralama uchun u band EMAS (aks holda soxta ogohlantirish).
    */
-  const occupiedFor = (cls: SchoolClass): OccupiedSlots => {
+  const occupiedFor = (cls: OwnerRow): OccupiedSlots => {
     const out: OccupiedSlots = {}
     for (const [tid, list] of Object.entries(occupied))
       out[tid] = list.filter((o) => o.templateName === name && o.className !== cls.name)
@@ -419,10 +435,15 @@ export function MasterScheduleGrid() {
                     <Link
                       to={`/admin/schedule/manage/${c.id}`}
                       className="font-semibold text-slate-800 hover:text-brand-600"
-                      title="Sinf jadvali — shablonlar va haftalar"
+                      title={c.kind === 'group' ? 'Guruh jadvali — shablonlar va haftalar' : 'Sinf jadvali — shablonlar va haftalar'}
                     >
                       {c.name}
                     </Link>
+                    {c.kind === 'group' && (
+                      <span className="block text-[10px] font-medium uppercase tracking-wide text-slate-400">
+                        {c.isTrack ? "yo'nalish" : 'guruh'}
+                      </span>
+                    )}
                   </td>
                   {periods.map((p) => {
                     const lessons = lessonsAt(c.id, p)
@@ -492,7 +513,7 @@ export function MasterScheduleGrid() {
         teachers={teachers}
         occupiedSlots={editing ? occupiedFor(editing.cls) : {}}
         timeLabel={editing ? timeLabel(editing.slot.period) : null}
-        ownerKind="class"
+        ownerKind={editing?.cls.kind ?? 'class'}
         onClose={() => setEditing(null)}
         onSave={(d, p, lessons) => void handleSave(d, p, lessons)}
         onClear={(d, p) => void handleClear(d, p)}

@@ -9,8 +9,7 @@ import {
   YAxis,
 } from 'recharts'
 import { Users, UserCheck, UserX, HelpCircle, Clock } from 'lucide-react'
-import type { SchoolClass } from '@/types'
-import { getClasses } from '@/api/services/classes'
+import { getLessonOwners, type LessonOwnerItem } from '@/api/services/lessonOwners'
 import {
   getAttendanceAnalytics,
   type AttendanceAnalytics,
@@ -54,7 +53,8 @@ const pct = (v: number | null) => (v == null ? '—' : `${v.toFixed(1).replace('
  * Barcha foizlar SERVERDA hisoblanadi.
  */
 export function AttendanceAnalyticsPage() {
-  const [classes, setClasses] = useState<SchoolClass[]>([])
+  // Sinflar (9–11 dan tashqari) va yo'nalish guruhlari — tanlagich qoidasi serverda.
+  const [classes, setClasses] = useState<LessonOwnerItem[]>([])
   const [classId, setClassId] = useState('') // bo'sh = butun maktab
   const [from, setFrom] = useState(addDaysISO(todayISO(), -6))
   const [to, setTo] = useState(todayISO())
@@ -63,7 +63,9 @@ export function AttendanceAnalyticsPage() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    getClasses().then(setClasses)
+    getLessonOwners()
+      .then((list) => setClasses(list.filter((o) => o.kind === 'class' || o.isTrack)))
+      .catch(() => setClasses([]))
   }, [])
 
   useEffect(() => {
@@ -113,7 +115,7 @@ export function AttendanceAnalyticsPage() {
           <option value="">Barcha sinflar</option>
           {classes.map((c) => (
             <option key={c.id} value={c.id}>
-              {c.name}-sinf
+              {c.kind === 'class' ? `${c.name}-sinf` : `${c.name} (yo'nalish)`}
             </option>
           ))}
         </select>

@@ -127,9 +127,11 @@ public static class TeacherActivityReport
         // ARXIVLANGAN sinfni ham sanaydi, shuning uchun reja aylanishi uchun egalar
         // ro'yxati arxivlanganlar bilan birga olinadi.
         var owners = await LessonRoster.AllOwnersAsync(db);
-        var groupsOn = await LessonRoster.GroupLessonsEnabledAsync(db);
+        // Yo'nalish guruhi o'chirgichga qaramaydi; oddiy guruh — faqat yoqilganda.
+        var scope = await LessonRoster.GroupScopeAsync(db);
+        var groupsOn = scope.AllGroups;
         var lessonOwners = owners.Values
-            .Where(o => o.IsClass || groupsOn)
+            .Where(o => scope.Allows(o.Kind, o.Id))
             .ToList();
         var classNames = lessonOwners.ToDictionary(o => o.Id, o => o.Name, StringComparer.Ordinal);
         var subjectNames = await db.Subjects.ToDictionaryAsync(s => s.Id, s => s.Name);
@@ -139,8 +141,9 @@ public static class TeacherActivityReport
         // Guruh o'qituvchilari — jadval orqali aniqlab bo'lmagan guruh qatorlari uchun
         // zaxira manba. FAQAT guruhda bitta o'qituvchi bo'lsa ishlatiladi (fayl boshidagi izoh).
         var groupTeacher = new Dictionary<string, string>(StringComparer.Ordinal);
-        if (groupsOn)
+        if (scope.AnyGroup)
             foreach (var g in (await db.StudyGroupTeachers.AsNoTracking().ToListAsync())
+                         .Where(x => scope.AllowsGroup(x.GroupId.ToString()))
                          .GroupBy(x => x.GroupId))
             {
                 var ids = g.Select(x => x.TeacherId).Distinct().ToList();
@@ -232,7 +235,7 @@ public static class TeacherActivityReport
         foreach (var n in notes)
         {
             if (!n.Conducted) continue;
-            if (!groupsOn && n.OwnerKind == LessonOwnerKind.Group) continue;
+            if (!scope.Allows(n.OwnerKind, n.ClassId)) continue;
             var teacher = Attribute(n.ClassId, n.SubjectId, n.SubGroup);
             if (teacher is null) continue;
             var agg = Key(teacher, n.ClassId, OwnerKindOf(n.ClassId, n.OwnerKind), n.SubjectId, n.SubGroup);
@@ -245,7 +248,7 @@ public static class TeacherActivityReport
         // --- Qo'yilgan baholar (JournalEntry) ---
         foreach (var e in entries)
         {
-            if (!groupsOn && e.OwnerKind == LessonOwnerKind.Group) continue;
+            if (!scope.Allows(e.OwnerKind, e.ClassId)) continue;
             var teacher = Attribute(e.ClassId, e.SubjectId, e.SubGroup);
             if (teacher is null) continue;
             Key(teacher, e.ClassId, OwnerKindOf(e.ClassId, e.OwnerKind), e.SubjectId, e.SubGroup).Grades++;

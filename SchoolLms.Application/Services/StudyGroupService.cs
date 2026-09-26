@@ -72,6 +72,17 @@ public sealed class StudyGroupService(IAppDbContext db)
 
     public const string TransferSameGroupMessage = "O'quvchi allaqachon shu guruhda";
 
+    /// <summary>Yo'nalish guruhi — o'quvchi ko'pi bilan BITTA faol yo'nalish guruhida (2026-09-26).</summary>
+    public const string OneTrackMessage =
+        "O'quvchi allaqachon boshqa yo'nalish guruhida. Bitta o'quvchi faqat bitta yo'nalish "
+        + "guruhida bo'ladi — avval eski guruhdan chiqaring yoki \"O'tkazish\" amalidan foydalaning.";
+
+    public const string DuplicateTrackNameMessage =
+        "Bunday nomli faol yo'nalish guruhi allaqachon bor — boshqa nom tanlang.";
+
+    public const string TrackToOrdinaryMessage =
+        "A'zolari bor yo'nalish guruhini oddiy guruhga aylantirib bo'lmaydi — yangi guruh oching.";
+
     /// <summary>Guruh nomining eng qisqa uzunligi (§2.1.1 formasi: min 3).</summary>
     private const int MinNameLength = 3;
 
@@ -88,10 +99,19 @@ public sealed class StudyGroupService(IAppDbContext db)
     {
         var name = (req.Name ?? "").Trim();
         if (name.Length < MinNameLength) return NameRequiredMessage;
-        if (string.IsNullOrWhiteSpace(req.SubjectId)) return SubjectRequiredMessage;
 
-        var subject = await db.Subjects.FirstOrDefaultAsync(s => s.Id == req.SubjectId, ct);
-        if (subject is null) return SubjectNotFoundMessage;
+        // Yo'nalish guruhida fan YO'Q (mijoz, 2026-09-26): u ko'p fan o'qitadi, har darsning
+        // fani dars katagida. Fan faqat ODDIY guruh uchun majburiy. `IsTrack` berilmasa
+        // (eski mijoz) — tahrirlanayotgan guruhning joriy qiymati.
+        var isTrack = req.IsTrack
+            ?? (excludeGroupId is { } gid
+                && await db.StudyGroups.AnyAsync(g => g.Id == gid && g.IsTrack, ct));
+        if (!isTrack)
+        {
+            if (string.IsNullOrWhiteSpace(req.SubjectId)) return SubjectRequiredMessage;
+            var subject = await db.Subjects.FirstOrDefaultAsync(s => s.Id == req.SubjectId, ct);
+            if (subject is null) return SubjectNotFoundMessage;
+        }
         // "Guruhlarga bo'linadi" talabi olib tashlandi (mijoz, 2026-09-23: "istalgan fanni
         // guruhga biriktirish mumkin"). `subjects.is_groupable` ustuni qoladi, lekin tekshirilmaydi.
 
@@ -108,9 +128,25 @@ public sealed class StudyGroupService(IAppDbContext db)
         var foundTeachers = await db.Teachers.CountAsync(t => teacherIds.Contains(t.Id), ct);
         if (foundTeachers != teacherIds.Count) return "Tanlangan o'qituvchilardan biri topilmadi";
 
-        if (await NameTakenAsync(req.SubjectId, name, excludeGroupId, ct)) return DuplicateNameMessage;
+        if (isTrack)
+        {
+            if (await TrackNameTakenAsync(name, excludeGroupId, ct)) return DuplicateTrackNameMessage;
+        }
+        else if (await NameTakenAsync(req.SubjectId!, name, excludeGroupId, ct))
+        {
+            return DuplicateNameMessage;
+        }
         return null;
     }
+
+    /// <summary>Faol yo'nalish guruhlari orasida nom band emasmi (katta-kichik harf farqsiz).</summary>
+    private Task<bool> TrackNameTakenAsync(string name, Guid? excludeGroupId, CancellationToken ct) =>
+        db.StudyGroups.AnyAsync(
+            g => g.IsTrack
+                 && !g.IsArchived
+                 && g.Id != (excludeGroupId ?? Guid.Empty)
+                 && g.Name.ToLower() == name.ToLower(),
+            ct);
 
     /// <summary>
     /// Shu fan ichida ARXIVLANMAGAN guruhlar orasida nom band emasmi
@@ -130,12 +166,14 @@ public sealed class StudyGroupService(IAppDbContext db)
     /// <summary>Yangi guruh — sinflari va o'qituvchilari bilan. SaveChanges CHAQIRILMAYDI.</summary>
     public StudyGroup Create(SaveStudyGroupRequest req, string userId)
     {
+        var isTrack = req.IsTrack ?? false;
         var group = new StudyGroup
         {
             Name = req.Name.Trim(),
-            SubjectId = req.SubjectId,
+            // Yo'nalish guruhi — fansiz (ck_study_groups_subject).
+            SubjectId = isTrack ? null : req.SubjectId,
             Gender = req.Gender,
-            IsTrack = req.IsTrack ?? false,
+            IsTrack = isTrack,
             CreatedBy = userId,
         };
         db.StudyGroups.Add(group);
@@ -160,12 +198,40 @@ public sealed class StudyGroupService(IAppDbContext db)
         StudyGroup group, SaveStudyGroupRequest req, CancellationToken ct = default)
     {
         if (group.IsArchived) return ArchivedGroupMessage;
-        if (!string.Equals(group.SubjectId, req.SubjectId, StringComparison.Ordinal))
+        var track = req.IsTrack ?? group.IsTrack;
+
+        if (track)
+        {
+            // Oddiy → yo'nalish: fan tozalanadi (a'zolardagi nusxani baza ON UPDATE CASCADE
+            // bilan o'zi null qiladi). Lekin a'zolardan birortasi BOSHQA yo'nalish guruhida
+            // bo'lsa — rad: "bitta o'quvchi — bitta yo'nalish" qoidasi buzilardi.
+            if (!group.IsTrack)
+            {
+                var memberIds = await db.StudyGroupMembers
+                    .Where(m => m.GroupId == group.Id && m.LeftOn == null)
+                    .Select(m => m.StudentId).ToListAsync(ct);
+                if (memberIds.Count > 0 && await db.StudyGroupMembers.AnyAsync(m =>
+                        m.LeftOn == null && m.GroupId != group.Id && memberIds.Contains(m.StudentId)
+                        && db.StudyGroups.Any(g => g.Id == m.GroupId && g.IsTrack), ct))
+                    return OneTrackMessage;
+            }
+            group.SubjectId = null;
+        }
+        else if (group.IsTrack)
+        {
+            // Yo'nalish → oddiy: fan kerak, a'zolar esa fansiz yozilgan — faqat a'zosiz guruhda.
+            if (await db.StudyGroupMembers.AnyAsync(m => m.GroupId == group.Id && m.LeftOn == null, ct))
+                return TrackToOrdinaryMessage;
+            group.SubjectId = req.SubjectId;
+        }
+        else if (!string.Equals(group.SubjectId, req.SubjectId, StringComparison.Ordinal))
+        {
             return "Guruhning fanini o'zgartirib bo'lmaydi — yangi guruh oching.";
+        }
 
         group.Name = req.Name.Trim();
         group.Gender = req.Gender;
-        if (req.IsTrack is { } track) group.IsTrack = track;
+        group.IsTrack = track;
 
         // FARQNI yozamiz, "hammasini o'chirib qaytadan qo'shish" EMAS. O'chirish
         // va qo'shish bitta SaveChanges ichida bir xil birlamchi kalitga tushsa
@@ -215,7 +281,9 @@ public sealed class StudyGroupService(IAppDbContext db)
     /// </summary>
     public async Task<string?> UnarchiveAsync(StudyGroup group, CancellationToken ct = default)
     {
-        if (await NameTakenAsync(group.SubjectId, group.Name, group.Id, ct))
+        if (group.IsTrack
+                ? await TrackNameTakenAsync(group.Name, group.Id, ct)
+                : await NameTakenAsync(group.SubjectId ?? "", group.Name, group.Id, ct))
             return "Shu nom bilan boshqa faol guruh ochilgan — avval uning nomini o'zgartiring.";
 
         group.IsArchived = false;
@@ -244,12 +312,16 @@ public sealed class StudyGroupService(IAppDbContext db)
     /// Har biriga SHU FAN bo'yicha joriy guruhi qo'shiladi — band bo'lgani
     /// kulrang ko'rinadi.
     /// </summary>
+    /// <param name="track">
+    /// Yo'nalish guruhi uchun: "band" — BOSHQA faol yo'nalish guruhida bo'lish
+    /// (fan ahamiyatsiz, <paramref name="subjectId"/> e'tiborga olinmaydi).
+    /// </param>
     public async Task<List<GroupCandidateDto>> CandidatesAsync(
-        IReadOnlyList<string> classIds, string? gender, string subjectId,
-        Guid? excludeGroupId = null, CancellationToken ct = default)
+        IReadOnlyList<string> classIds, string? gender, string? subjectId,
+        Guid? excludeGroupId = null, CancellationToken ct = default, bool track = false)
     {
         var ids = Distinct(classIds);
-        if (ids.Count == 0 || string.IsNullOrWhiteSpace(subjectId)) return [];
+        if (ids.Count == 0 || (!track && string.IsNullOrWhiteSpace(subjectId))) return [];
 
         var classes = await db.Classes.AsNoTracking()
             .Where(c => ids.Contains(c.Id)).ToListAsync(ct);
@@ -269,15 +341,18 @@ public sealed class StudyGroupService(IAppDbContext db)
 
         var studentIds = students.Select(s => s.Id).ToList();
         var busy = await db.StudyGroupMembers.AsNoTracking()
-            .Where(m => m.LeftOn == null && m.SubjectId == subjectId && studentIds.Contains(m.StudentId))
+            .Where(m => m.LeftOn == null && studentIds.Contains(m.StudentId))
             .Join(db.StudyGroups.AsNoTracking(), m => m.GroupId, g => g.Id,
-                (m, g) => new { m.StudentId, g.Id, g.Name })
+                (m, g) => new { m.StudentId, m.SubjectId, g.Id, g.Name, g.IsTrack })
+            .Where(x => track ? x.IsTrack : !x.IsTrack && x.SubjectId == subjectId)
+            .Select(x => new { x.StudentId, x.Id, x.Name })
             .ToListAsync(ct);
 
         // Tahrirlanayotgan guruhning O'Z a'zosi "band" emas — u o'ng panelda turadi.
         var busyByStudent = busy
             .Where(b => excludeGroupId is null || b.Id != excludeGroupId)
-            .ToDictionary(b => b.StudentId, b => (b.Id, b.Name), StringComparer.Ordinal);
+            .GroupBy(b => b.StudentId, StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => (g.First().Id, g.First().Name), StringComparer.Ordinal);
 
         return [.. students.Select(s =>
         {
@@ -310,16 +385,23 @@ public sealed class StudyGroupService(IAppDbContext db)
         var feedingNames = await db.Classes
             .Where(c => feedingClassIds.Contains(c.Id)).Select(c => c.Name).ToListAsync(ct);
 
-        var busy = await db.StudyGroupMembers
-            .Where(m => m.LeftOn == null && m.SubjectId == group.SubjectId && ids.Contains(m.StudentId))
-            .ToListAsync(ct);
+        // "Band": oddiy guruhda — shu FANdan boshqa faol guruh; yo'nalish guruhida —
+        // BOSHQA faol yo'nalish guruhi (bitta o'quvchi — bitta yo'nalish, 2026-09-26).
+        var busy = group.IsTrack
+            ? await db.StudyGroupMembers
+                .Where(m => m.LeftOn == null && ids.Contains(m.StudentId)
+                            && db.StudyGroups.Any(g => g.Id == m.GroupId && g.IsTrack))
+                .ToListAsync(ct)
+            : await db.StudyGroupMembers
+                .Where(m => m.LeftOn == null && m.SubjectId == group.SubjectId && ids.Contains(m.StudentId))
+                .ToListAsync(ct);
 
         foreach (var student in students)
         {
             // Allaqachon SHU guruhda — jim o'tkazamiz (ro'yxat qayta yuborilgan).
             if (busy.Any(m => m.StudentId == student.Id && m.GroupId == group.Id)) continue;
             if (busy.Any(m => m.StudentId == student.Id))
-                return $"{student.FullName}: {OneGroupPerSubjectMessage}";
+                return $"{student.FullName}: {(group.IsTrack ? OneTrackMessage : OneGroupPerSubjectMessage)}";
             if (student.IsArchived)
                 return $"{student.FullName}: arxivlangan o'quvchini guruhga qo'shib bo'lmaydi";
             if (!feedingNames.Contains(student.ClassName, StringComparer.Ordinal))
@@ -330,7 +412,7 @@ public sealed class StudyGroupService(IAppDbContext db)
             db.StudyGroupMembers.Add(new StudyGroupMember
             {
                 GroupId = group.Id,
-                SubjectId = group.SubjectId,
+                SubjectId = group.IsTrack ? null : group.SubjectId,
                 StudentId = student.Id,
                 JoinedOn = AppClock.Today,
                 CreatedBy = userId,
@@ -365,7 +447,9 @@ public sealed class StudyGroupService(IAppDbContext db)
     {
         if (to.IsArchived) return ArchivedGroupMessage;
         if (from.Id == to.Id) return TransferSameGroupMessage;
-        if (!string.Equals(from.SubjectId, to.SubjectId, StringComparison.Ordinal))
+        // Yo'nalish ↔ yo'nalish — fan yo'q, o'tkazish mumkin. Oddiy guruhda — faqat ayni fan ichida.
+        if (from.IsTrack != to.IsTrack
+            || (!to.IsTrack && !string.Equals(from.SubjectId, to.SubjectId, StringComparison.Ordinal)))
             return TransferSameSubjectMessage;
 
         var student = await db.Students.FirstOrDefaultAsync(s => s.Id == member.StudentId, ct);
@@ -388,7 +472,7 @@ public sealed class StudyGroupService(IAppDbContext db)
         db.StudyGroupMembers.Add(new StudyGroupMember
         {
             GroupId = to.Id,
-            SubjectId = to.SubjectId,
+            SubjectId = to.IsTrack ? null : to.SubjectId,
             StudentId = student.Id,
             JoinedOn = AppClock.Today,
             CreatedBy = userId,

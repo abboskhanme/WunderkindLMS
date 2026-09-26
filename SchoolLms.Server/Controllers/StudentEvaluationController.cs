@@ -107,6 +107,9 @@ public class StudentEvaluationController(AppDbContext db) : ControllerBase
             .Select(n => n.Date.Substring(0, 7)).Distinct().ToListAsync();
         var markMonths = await db.JournalEntries.Where(e => e.ReasonId != null && e.Date.Length >= 7)
             .Select(e => e.Date.Substring(0, 7)).Distinct().ToListAsync();
+        // "Davomat belgilash" ekranida belgilangan darslar ham oy katalogiga kiradi (HeldLessons).
+        markMonths.AddRange(await db.DailyAttendanceMarks.Where(m => m.Date.Length >= 7)
+            .Select(m => m.Date.Substring(0, 7)).Distinct().ToListAsync());
         var current = AppClock.Now.ToString("yyyy-MM");
         var months = lessonMonths.Concat(markMonths).Append(current)
             .Distinct().OrderByDescending(x => x, StringComparer.Ordinal).ToList();
@@ -118,21 +121,22 @@ public class StudentEvaluationController(AppDbContext db) : ControllerBase
         var (start, end) = PeriodRange(month, week);
         var monthPrefix = month + "-";
 
-        // O'chirgich o'chiq — guruh qatorlari UMUMAN o'qilmaydi (§4.3).
-        var groupsOn = await LessonRoster.GroupLessonsEnabledAsync(db);
+        // O'chirgich o'chiq — ODDIY guruh qatorlari UMUMAN o'qilmaydi (§4.3); yo'nalish
+        // guruhi o'chirgichga qaramaydi.
+        var scope = await LessonRoster.GroupScopeAsync(db);
+        var groupsOn = scope.AllGroups;
+        var trackIds = scope.TrackIdList;
 
         var students = await db.Students.Where(s => !s.IsArchived)
             .Select(s => new { s.Id, s.FullName, s.ClassName, s.SubGroup }).ToListAsync();
         var classes = await db.Classes.Select(c => new { c.Id, c.Name }).ToListAsync();
-        var conducted = (await db.LessonNotes
-                .Where(n => n.Conducted && n.Date.StartsWith(monthPrefix)
-                            && (groupsOn || n.OwnerKind != LessonOwnerKind.Group))
-                .Select(n => new { n.ClassId, n.SubjectId, n.Date, n.Period, n.SubGroup }).ToListAsync())
-            .Where(n => string.CompareOrdinal(n.Date, start) >= 0 && string.CompareOrdinal(n.Date, end) <= 0)
+        // Bo'lgan darslar: o'tildi YOKI davomat belgilangan (HeldLessons qoidasi).
+        var conducted = (await HeldLessons.ListAsync(db, null, start, end))
+            .Where(n => scope.Allows(n.OwnerKind, n.ClassId))
             .ToList();
         var marks = (await db.JournalEntries
                 .Where(e => e.ReasonId != null && e.Date.StartsWith(monthPrefix)
-                            && (groupsOn || e.OwnerKind != LessonOwnerKind.Group))
+                            && (groupsOn || e.OwnerKind != LessonOwnerKind.Group || trackIds.Contains(e.ClassId)))
                 .Select(e => new { e.StudentId, e.SubjectId, e.Date, e.Period, e.ReasonId }).ToListAsync())
             .Where(e => string.CompareOrdinal(e.Date, start) >= 0 && string.CompareOrdinal(e.Date, end) <= 0)
             .ToList();
@@ -152,7 +156,7 @@ public class StudentEvaluationController(AppDbContext db) : ControllerBase
         var classIdByName = classes.GroupBy(c => c.Name)
             .ToDictionary(g => g.Key, g => g.First().Id, StringComparer.OrdinalIgnoreCase);
         // O'quvchi → uning faol guruhlari. O'chirgich o'chiq bo'lsa — bo'sh lug'at.
-        var groupsByStudent = await GroupIdsByStudentAsync(groupsOn);
+        var groupsByStudent = await GroupIdsByStudentAsync(scope);
         var reasonMap = reasons.ToDictionary(r => r.Id);
         var lateSet = reasons.Where(r => r.IsLate).Select(r => r.Id).ToHashSet();
 
@@ -223,13 +227,14 @@ public class StudentEvaluationController(AppDbContext db) : ControllerBase
     /// O'quvchi id → uning faol o'quv guruhlarining id'lari. Cut-over o'chirgichi
     /// o'chiq bo'lsa — BO'SH lug'at, ya'ni jadval bugungi raqamni beradi (§4.3).
     /// </summary>
-    private async Task<Dictionary<string, List<string>>> GroupIdsByStudentAsync(bool groupsOn)
+    private async Task<Dictionary<string, List<string>>> GroupIdsByStudentAsync(GroupLessonScope scope)
     {
         var result = new Dictionary<string, List<string>>(StringComparer.Ordinal);
-        if (!groupsOn) return result;
+        if (!scope.AnyGroup) return result;
 
         var groupIds = (await db.StudyGroups.AsNoTracking()
-            .Where(g => !g.IsArchived).Select(g => g.Id).ToListAsync()).ToHashSet();
+                .Where(g => !g.IsArchived).Select(g => g.Id).ToListAsync())
+            .Where(id => scope.AllowsGroup(id.ToString())).ToHashSet();
         if (groupIds.Count == 0) return result;
 
         foreach (var m in await db.StudyGroupMembers.AsNoTracking()

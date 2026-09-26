@@ -41,42 +41,40 @@ public class JournalController(AppDbContext db, FcmService fcm) : ControllerBase
             .GroupBy(s => s.ClassName ?? "", StringComparer.Ordinal)
             .ToDictionary(g => g.Key, g => g.Count(), StringComparer.Ordinal);
 
-        var result = await db.Classes.AsNoTracking()
-            .Where(c => !c.IsArchived)
-            .OrderBy(c => c.Grade).ThenBy(c => c.Name)
-            .Select(c => new JournalOwnerDto(
-                c.Id, c.Name, LessonOwnerKind.Class, c.Grade, null, null, 0, c.Language, null))
-            .ToListAsync(ct);
+        // Tartib va almashtirish qoidasi — LessonRoster.PickerOwnersAsync: yo'nalish guruhini
+        // boqadigan sinflar (9–11) yashiriladi, o'rnida yo'nalish guruhlari turadi; oddiy
+        // guruhlar faqat o'chirgich yoqilganda (docs/modules/track-groups-as-classes.md).
+        var picker = await LessonRoster.PickerOwnersAsync(db, ct: ct);
+        var classInfo = await db.Classes.AsNoTracking()
+            .Select(c => new { c.Id, c.Language }).ToDictionaryAsync(c => c.Id, c => c.Language, ct);
         // Sinf rahbari — o'qituvchi kartasidagi "sinf rahbari" maydoni (sinf NOMI bo'yicha).
         var homeroom = (await db.Teachers.AsNoTracking()
                 .Where(t => !t.IsArchived && t.HomeroomClass != "")
                 .Select(t => new { t.HomeroomClass, t.FullName }).ToListAsync(ct))
             .GroupBy(t => t.HomeroomClass, StringComparer.Ordinal)
             .ToDictionary(g => g.Key, g => string.Join(", ", g.Select(x => x.FullName)), StringComparer.Ordinal);
-        result = [.. result.Select(o => o with
-        {
-            StudentCount = countByClassName.GetValueOrDefault(o.Name, 0),
-            HomeroomTeacher = homeroom.GetValueOrDefault(o.Name),
-        })];
-
-        if (!await LessonRoster.GroupLessonsEnabledAsync(db, ct)) return result;
 
         var subjectNames = await db.Subjects.AsNoTracking().ToDictionaryAsync(s => s.Id, s => s.Name, ct);
         var activeIds = students.Select(s => s.Id).ToHashSet(StringComparer.Ordinal);
-        var memberCounts = (await db.StudyGroupMembers.AsNoTracking()
-                .Where(m => m.LeftOn == null)
-                .Select(m => new { m.GroupId, m.StudentId }).ToListAsync(ct))
-            .Where(m => activeIds.Contains(m.StudentId))
-            .GroupBy(m => m.GroupId)
-            .ToDictionary(g => g.Key, g => g.Count());
+        var memberCounts = picker.Any(o => o.Kind == LessonOwnerKind.Group)
+            ? (await db.StudyGroupMembers.AsNoTracking()
+                    .Where(m => m.LeftOn == null)
+                    .Select(m => new { m.GroupId, m.StudentId }).ToListAsync(ct))
+                .Where(m => activeIds.Contains(m.StudentId))
+                .GroupBy(m => m.GroupId.ToString())
+                .ToDictionary(g => g.Key, g => g.Count(), StringComparer.Ordinal)
+            : new Dictionary<string, int>(StringComparer.Ordinal);
 
-        var groups = await db.StudyGroups.AsNoTracking()
-            .Where(g => !g.IsArchived).OrderBy(g => g.Name).ToListAsync(ct);
-        result.AddRange(groups.Select(g => new JournalOwnerDto(
-            g.Id.ToString(), g.Name, LessonOwnerKind.Group, 0,
-            g.SubjectId, subjectNames.GetValueOrDefault(g.SubjectId, ""),
-            memberCounts.GetValueOrDefault(g.Id, 0))));
-        return result;
+        return picker.Select(o => o.Kind == LessonOwnerKind.Class
+                ? new JournalOwnerDto(
+                    o.Id, o.Name, LessonOwnerKind.Class, o.Grade, null, null,
+                    countByClassName.GetValueOrDefault(o.Name, 0),
+                    classInfo.GetValueOrDefault(o.Id), homeroom.GetValueOrDefault(o.Name))
+                : new JournalOwnerDto(
+                    o.Id, o.Name, LessonOwnerKind.Group, 0,
+                    o.SubjectId, o.SubjectId is null ? null : subjectNames.GetValueOrDefault(o.SubjectId, ""),
+                    memberCounts.GetValueOrDefault(o.Id, 0), null, null, o.IsTrack))
+            .ToList();
     }
 
     /// <summary>
@@ -99,14 +97,15 @@ public class JournalController(AppDbContext db, FcmService fcm) : ControllerBase
         var pairs = lessons.Where(l => l.SubjectId != "").ToList();
 
         // O'quv guruhi: fani bitta, jadval hali bo'lmasa ham ro'yxat bo'sh qolmasin.
+        // Yo'nalish guruhining fani yo'q — uning fanlari faqat jadvaldan (sinf kabi).
         if (owner.IsGroup && Guid.TryParse(classId, out var gid))
         {
             var group = await db.StudyGroups.AsNoTracking().FirstOrDefaultAsync(g => g.Id == gid, ct);
-            if (group is not null)
+            if (group is { SubjectId: not null })
             {
                 var gTeachers = await db.StudyGroupTeachers.AsNoTracking()
                     .Where(x => x.GroupId == gid).Select(x => x.TeacherId).ToListAsync(ct);
-                pairs.AddRange(gTeachers.DefaultIfEmpty("").Select(t => new { SubjectId = group.SubjectId, TeacherId = t }));
+                pairs.AddRange(gTeachers.DefaultIfEmpty("").Select(t => new { SubjectId = group.SubjectId!, TeacherId = t }));
             }
         }
 
@@ -173,7 +172,7 @@ public class JournalController(AppDbContext db, FcmService fcm) : ControllerBase
 
         var owner = await LessonRoster.OwnerAsync(db, classId, ct);
         if (owner is null) return new List<StudentDto>();
-        if (owner.IsGroup && !await LessonRoster.GroupLessonsEnabledAsync(db, ct))
+        if (!await LessonRoster.LessonsLiveAsync(db, owner, ct))
             return new List<StudentDto>();
 
         var students = await LessonRoster.ForLessonAsync(db, owner, subGroup, ct: ct);
@@ -201,15 +200,18 @@ public class JournalController(AppDbContext db, FcmService fcm) : ControllerBase
     [HttpGet("conducted")]
     public async Task<ActionResult<IEnumerable<ConductedLessonDto>>> Conducted([FromQuery] string date)
     {
-        var groupsOn = await LessonRoster.GroupLessonsEnabledAsync(db);
-        var fromNotes = await db.LessonNotes
-            .Where(n => n.Date == date && n.Conducted)
-            .Where(n => groupsOn || n.OwnerKind != LessonOwnerKind.Group)
+        // Oddiy guruh — o'chirgich yoqilgandagina; yo'nalish guruhi — har doim.
+        var scope = await LessonRoster.GroupScopeAsync(db);
+        var groupsOn = scope.AllGroups;
+        var trackIds = scope.TrackIdList;
+        // O'tildi YOKI davomat belgilangan (HeldLessons qoidasi).
+        var fromNotes = (await HeldLessons.ListAsync(db, null, date, date))
+            .Where(n => scope.Allows(n.OwnerKind, n.ClassId))
             .Select(n => new ConductedLessonDto(n.ClassId, n.SubjectId, n.Period, n.SubGroup, n.OwnerKind))
-            .ToListAsync();
+            .ToList();
         var fromEntries = await db.JournalEntries
             .Where(e => e.Date == date && (e.Grade != null || e.ReasonId != null))
-            .Where(e => groupsOn || e.OwnerKind != LessonOwnerKind.Group)
+            .Where(e => groupsOn || e.OwnerKind != LessonOwnerKind.Group || trackIds.Contains(e.ClassId))
             .Select(e => new ConductedLessonDto(e.ClassId, e.SubjectId, e.Period, e.SubGroup, e.OwnerKind))
             .ToListAsync();
         return fromNotes.Concat(fromEntries).Distinct().ToList();

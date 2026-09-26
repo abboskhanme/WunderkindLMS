@@ -79,7 +79,7 @@ export function GroupRosterPage() {
           <div>
             <h1 className="text-xl font-semibold text-slate-800">{group?.name}</h1>
             <p className="text-sm text-slate-400">
-              {group?.subjectName} · {group?.classes.map((c) => c.name).join(', ')} ·{' '}
+              {group?.isTrack ? "Yo'nalish guruhi" : group?.subjectName} · {group?.classes.map((c) => c.name).join(', ')} ·{' '}
               {activeMembers.length} ta o'quvchi
             </p>
           </div>
@@ -199,6 +199,7 @@ export function GroupRosterPage() {
         memberId={transferFor?.id ?? ''}
         studentName={transferFor?.fullName ?? ''}
         subjectId={group?.subjectId ?? ''}
+        track={Boolean(group?.isTrack)}
         currentGroupId={id}
         onClose={() => setTransferFor(null)}
         onDone={() => {

@@ -233,7 +233,7 @@ public static class SubjectProgressService
 
         // Egalarning nomlari: sinflar har doim, guruhlar faqat o'chirgich yoqilganda.
         var owners = await LessonRoster.AllOwnersAsync(db);
-        var groupsOn = await LessonRoster.GroupLessonsEnabledAsync(db);
+        var scope = await LessonRoster.GroupScopeAsync(db);
         var classNames = owners.ToDictionary(kv => kv.Key, kv => kv.Value.Name, StringComparer.Ordinal);
         var subjectNames = await db.Subjects.ToDictionaryAsync(s => s.Id, s => s.Name);
 
@@ -241,7 +241,7 @@ public static class SubjectProgressService
         var assignments = (await db.WeekAssignments
                 .Where(a => a.Quarter == quarter && a.TemplateId != null && taughtClassIds.Contains(a.ClassId))
                 .ToListAsync())
-            .Where(a => groupsOn || a.OwnerKind != LessonOwnerKind.Group)
+            .Where(a => scope.Allows(a.OwnerKind, a.ClassId))
             .ToList();
         var notes = await db.LessonNotes
             .Where(n => n.Quarter == quarter && taughtClassIds.Contains(n.ClassId))

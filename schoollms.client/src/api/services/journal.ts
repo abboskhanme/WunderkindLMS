@@ -85,6 +85,11 @@ export interface JournalOwner {
   language?: string | null
   /** Sinf rahbari; belgilanmagan bo'lsa null */
   homeroomTeacher?: string | null
+  /**
+   * Yo'nalish guruhi — boqadigan sinflari (9–11) o'rnida turadi, o'chirgichga bog'liq emas
+   * (docs/modules/track-groups-as-classes.md).
+   */
+  isTrack?: boolean
 }
 
 /** Jurnal → sinf → fanlar ro'yxatining qatori. */

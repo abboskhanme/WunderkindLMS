@@ -29,7 +29,8 @@ export interface StudyGroupTeacherRef {
 export interface StudyGroupListItem {
   id: string
   name: string
-  subjectId: string
+  /** Oddiy guruhning fani; yo'nalish guruhida null (u ko'p fan o'qitadi). */
+  subjectId: string | null
   subjectName: string
   /** 'male' | 'female' | null (aralash) */
   gender: string | null
@@ -39,7 +40,10 @@ export interface StudyGroupListItem {
   teachers: StudyGroupTeacherRef[]
   /** FAOL a'zolar soni */
   memberCount: number
-  /** Yo'nalish guruhi — kechki dars va yotoqxona davomati shu guruhlar bo'yicha */
+  /**
+   * Yo'nalish guruhi — SINF KABI ishlaydi: dars jadvali, davomat va jurnalda boqadigan
+   * sinflari (9–11) o'rnida turadi; fani yo'q (docs/modules/track-groups-as-classes.md).
+   */
   isTrack?: boolean
 }
 
@@ -77,7 +81,8 @@ export interface GroupCandidate {
 
 export interface SaveGroupPayload {
   name: string
-  subjectId: string
+  /** Faqat oddiy guruhda majburiy; yo'nalish guruhida null. */
+  subjectId: string | null
   classIds: string[]
   teacherIds: string[]
   gender?: string | null
@@ -129,20 +134,25 @@ export async function getGroupMembers(
   return data
 }
 
-/** Chap panel nomzodlari. Sinf VA fan berilmaguncha bo'sh qaytadi. */
+/**
+ * Chap panel nomzodlari. Sinf VA fan berilmaguncha bo'sh qaytadi. Yo'nalish guruhida
+ * (`track`) fan kerak emas — "band" = boshqa faol yo'nalish guruhida.
+ */
 export async function getGroupCandidates(params: {
   classIds: string[]
   subjectId: string
   gender?: string | null
   excludeGroupId?: string
+  track?: boolean
 }): Promise<GroupCandidate[]> {
-  if (!params.subjectId || params.classIds.length === 0) return []
+  if ((!params.track && !params.subjectId) || params.classIds.length === 0) return []
   const { data } = await api.get<GroupCandidate[]>(`${base}/candidates`, {
     params: {
       classIds: params.classIds.join(','),
-      subjectId: params.subjectId,
+      subjectId: params.track ? undefined : params.subjectId,
       gender: params.gender || undefined,
       excludeGroupId: params.excludeGroupId || undefined,
+      track: params.track ? true : undefined,
     },
   })
   return data

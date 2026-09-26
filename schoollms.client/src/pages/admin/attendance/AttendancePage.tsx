@@ -100,7 +100,9 @@ export function AttendancePage() {
             <select value={classId} onChange={(e) => setClassId(e.target.value)} className={control}>
               {owners.map((o) => (
                 <option key={o.id} value={o.id}>
-                  {o.kind === 'group' ? `Guruh: ${o.name}` : `${o.name}-sinf`}
+                  {o.kind === 'group'
+                    ? `${o.isTrack ? "Yo'nalish" : 'Guruh'}: ${o.name}`
+                    : `${o.name}-sinf`}
                 </option>
               ))}
             </select>

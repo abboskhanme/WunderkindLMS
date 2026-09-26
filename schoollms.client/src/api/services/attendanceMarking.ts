@@ -23,6 +23,12 @@ export interface DailyAttendanceClass {
   markedLessons: number
   absentCount: number
   lateCount: number
+  /**
+   * 'class' | 'group' — yo'nalish guruhi o'zini boqadigan sinflar (9–11) o'rnida turadi
+   * (docs/modules/track-groups-as-classes.md). Tartib serverda: sinflar, keyin yo'nalishlar.
+   */
+  ownerKind?: 'class' | 'group'
+  isTrack?: boolean
 }
 
 export interface DailyAttendanceOverview {
@@ -78,6 +84,8 @@ export interface DailyAttendanceClassDay {
   excusedReasonName: string | null
   /** Katalogdagi BARCHA davomat sabablari — sariq belgida aniq sabab shu ro'yxatdan tanlanadi. */
   reasons: AbsenceReason[]
+  /** 'class' | 'group' (yo'nalish guruhi — ro'yxat guruh a'zolari) */
+  ownerKind?: 'class' | 'group'
 }
 
 export interface DailyAttendanceMarkInput {

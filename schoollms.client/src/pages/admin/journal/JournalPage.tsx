@@ -205,7 +205,7 @@ export function JournalPage() {
   const selectedOwner = owners.find((o) => o.id === classId) ?? null
   const selectedOwnerLabel = selectedOwner
     ? selectedOwner.kind === 'group'
-      ? `Guruh: ${selectedOwner.name}`
+      ? `${selectedOwner.isTrack ? "Yo'nalish" : 'Guruh'}: ${selectedOwner.name}`
       : `${selectedOwner.name}-sinf`
     : ''
   const isGroupOwner = selectedOwner?.kind === 'group'
@@ -467,7 +467,9 @@ export function JournalPage() {
             <select value={classId} onChange={(e) => setClassId(e.target.value)} className={control}>
               {owners.map((o) => (
                 <option key={o.id} value={o.id}>
-                  {o.kind === 'group' ? `Guruh: ${o.name}` : `${o.name}-sinf`}
+                  {o.kind === 'group'
+                    ? `${o.isTrack ? "Yo'nalish" : 'Guruh'}: ${o.name}`
+                    : `${o.name}-sinf`}
                 </option>
               ))}
             </select>

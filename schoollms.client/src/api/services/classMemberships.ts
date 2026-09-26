@@ -52,7 +52,8 @@ export interface StudentGroupMembership {
   id: string
   groupId: string
   groupName: string
-  subjectId: string
+  /** Yo'nalish guruhida null */
+  subjectId: string | null
   subjectName: string
   groupIsArchived: boolean
   joinedOn: string

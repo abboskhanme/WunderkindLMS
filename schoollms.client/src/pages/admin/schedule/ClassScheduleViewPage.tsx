@@ -9,9 +9,7 @@ import type {
   Teacher,
   WeekAssignment,
 } from '@/types'
-import { getClasses } from '@/api/services/classes'
-import { getGroups } from '@/api/services/groups'
-import { getGroupLessonsSwitch } from '@/api/services/groupLessons'
+import { getLessonOwners } from '@/api/services/lessonOwners'
 import { getTeachers } from '@/api/services/teachers'
 import { getSubjects } from '@/api/services/subjects'
 import { getSettings } from '@/api/services/settings'
@@ -86,24 +84,15 @@ export function ClassScheduleViewPage() {
   const [dataLoading, setDataLoading] = useState(false)
 
   useEffect(() => {
-    Promise.all([
-      getClasses(),
-      getSubjects(),
-      getTeachers(),
-      getSettings(),
-      getGroupLessonsSwitch().catch(() => null),
-    ])
-      .then(async ([cls, subs, tchs, st, flag]) => {
+    Promise.all([getLessonOwners(), getSubjects(), getTeachers(), getSettings()])
+      .then(([ownerList, subs, tchs, st]) => {
         setSubjects(subs)
         setTeachers(tchs)
         setSettings(st)
 
-        const list: Owner[] = cls.map((c) => ({ id: c.id, name: c.name, kind: 'class' as const }))
-        if (flag?.enabled) {
-          const groups = await getGroups().catch(() => [])
-          list.push(...groups.map((g) => ({ id: g.id, name: g.name, kind: 'group' as const })))
-        }
-        setOwners(list)
+        // Tartib va almashtirish serverda: sinflar (9–11 dan tashqari), keyin yo'nalish
+        // guruhlari, keyin (o'chirgich yoqilganda) oddiy guruhlar.
+        setOwners(ownerList.map((o) => ({ id: o.id, name: o.name, kind: o.kind })))
 
         const { quarter, week } = getCurrentQuarterAndWeek(st.quarters)
         setWeekKey(`${quarter}:${week}`)

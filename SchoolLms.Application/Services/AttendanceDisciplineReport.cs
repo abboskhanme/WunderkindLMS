@@ -94,31 +94,31 @@ public static class AttendanceDisciplineReport
             .ToListAsync();
         var reasonById = reasons.ToDictionary(r => r.Id, StringComparer.Ordinal);
 
-        // O'quvchi → uning faol o'quv guruhlari (G-13). O'chirgich o'chiq bo'lsa — bo'sh.
-        var groupsOn = await LessonRoster.GroupLessonsEnabledAsync(db);
+        // O'quvchi → uning faol o'quv guruhlari (G-13). O'chirgich o'chiq bo'lsa — faqat
+        // yo'nalish guruhlari (ular o'chirgichga qaramaydi).
+        var scope = await LessonRoster.GroupScopeAsync(db);
+        var groupsOn = scope.AllGroups;
+        var trackIds = scope.TrackIdList;
         var groupsByStudent = await GroupIdsByStudentAsync(db);
         var groupIdsInScope = students
             .SelectMany(s => groupsByStudent.GetValueOrDefault(s.Id) ?? [])
             .Distinct(StringComparer.Ordinal).ToList();
 
-        // O'tilgan darslar — davomat maxraji. O'tilmagan dars umuman hisobga olinmaydi.
-        var conducted = (await db.LessonNotes.AsNoTracking()
-                .Where(n => n.Conducted
-                    && (groupsOn || n.OwnerKind != LessonOwnerKind.Group)
-                    && (classId == null || n.ClassId == classId || groupIdsInScope.Contains(n.ClassId))
-                    && string.Compare(n.Date, from) >= 0 && string.Compare(n.Date, to) <= 0)
-                .Select(n => new { n.ClassId, n.SubjectId, n.Date, n.Period, n.SubGroup })
-                .ToListAsync())
+        // Bo'lgan darslar — davomat maxraji: o'tildi YOKI davomat belgilangan (HeldLessons).
+        // Bo'lmagan dars umuman hisobga olinmaydi.
+        var conducted = (await HeldLessons.ListAsync(
+                    db, classId == null ? null : [classId, .. groupIdsInScope], from, to))
+            .Where(n => scope.Allows(n.OwnerKind, n.ClassId))
             .GroupBy(n => n.ClassId, StringComparer.Ordinal)
             .ToDictionary(
                 g => g.Key,
-                g => g.Select(n => (Slot: new Slot(n.SubjectId, n.Date, n.Period), n.SubGroup)).ToList(),
+                g => g.Select(n => (Slot: new Slot(n.SubjectId, n.Date, n.Period), n.SubGroup, n.Marked)).ToList(),
                 StringComparer.Ordinal);
 
         // O'chirgich o'chiq — guruh qatorlari UMUMAN o'qilmaydi (sabablar kesimiga ham
         // tushmasin: §4.3 "hech bir raqam qimirlamaydi").
         var entries = (await db.JournalEntries.AsNoTracking()
-                .Where(e => (groupsOn || e.OwnerKind != LessonOwnerKind.Group)
+                .Where(e => (groupsOn || e.OwnerKind != LessonOwnerKind.Group || trackIds.Contains(e.ClassId))
                     && (classId == null || e.ClassId == classId || groupIdsInScope.Contains(e.ClassId))
                     && string.Compare(e.Date, from) >= 0 && string.Compare(e.Date, to) <= 0)
                 .Select(e => new { e.ClassId, e.StudentId, e.SubjectId, e.Date, e.Period, e.ReasonId })
@@ -173,13 +173,21 @@ public static class AttendanceDisciplineReport
                     .Where(c => c.SubGroup == 0 || c.SubGroup == st.SubGroup)
                     .Select(c => c.Slot)
                     .ToHashSet();
+                // "Davomat belgilash" ekranida belgilangan darslar — yozuvsiz o'quvchi ham tekshirilgan (keldi).
+                var checkedSlots = classSlots
+                    .Where(c => c.Marked && (c.SubGroup == 0 || c.SubGroup == st.SubGroup))
+                    .Select(c => c.Slot)
+                    .ToHashSet();
 
                 // O'quv guruhi darslari ham shu o'quvchining imkoniyati (G-13). Guruhda
                 // sinf ichidagi bo'linish yo'q — hamma faol a'zo qatnashadi.
                 var myGroupIds = groupsByStudent.GetValueOrDefault(st.Id) ?? [];
                 foreach (var groupId in myGroupIds)
                     if (conducted.TryGetValue(groupId, out var groupSlots))
+                    {
                         mySlots.UnionWith(groupSlots.Select(g => g.Slot));
+                        checkedSlots.UnionWith(groupSlots.Where(g => g.Marked).Select(g => g.Slot));
+                    }
 
                 entries.TryGetValue(st.Id, out var myEntries);
                 myEntries ??= [];
@@ -202,6 +210,7 @@ public static class AttendanceDisciplineReport
                 var opportunities = mySlots.Count;
                 var marked = onConducted
                     .Select(e => new Slot(e.SubjectId, e.Date, e.Period))
+                    .Concat(checkedSlots)
                     .ToHashSet().Count;
                 var unchecked_ = Math.Max(0, opportunities - marked);
 
@@ -327,10 +336,12 @@ public static class AttendanceDisciplineReport
     private static async Task<Dictionary<string, List<string>>> GroupIdsByStudentAsync(IAppDbContext db)
     {
         var result = new Dictionary<string, List<string>>(StringComparer.Ordinal);
-        if (!await LessonRoster.GroupLessonsEnabledAsync(db)) return result;
+        var scope = await LessonRoster.GroupScopeAsync(db);
+        if (!scope.AnyGroup) return result;
 
         var groupIds = (await db.StudyGroups.AsNoTracking()
-            .Where(g => !g.IsArchived).Select(g => g.Id).ToListAsync()).ToHashSet();
+                .Where(g => !g.IsArchived).Select(g => g.Id).ToListAsync())
+            .Where(id => scope.AllowsGroup(id.ToString())).ToHashSet();
         if (groupIds.Count == 0) return result;
 
         var members = await db.StudyGroupMembers.AsNoTracking()

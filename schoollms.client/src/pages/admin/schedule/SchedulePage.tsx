@@ -71,8 +71,8 @@ export function SchedulePage() {
       <div>
         <h1 className="text-xl font-semibold text-slate-800">Dars jadvali yaratish</h1>
         <p className="text-sm text-slate-400">
-          Hamma sinf bir jadvalda — katakni bosib fan va o'qituvchini qo'ying. Sinf nomi bosilsa —
-          o'sha sinfning shablonlari va haftalari
+          Hamma sinf va yo'nalish guruhi bir jadvalda (9–11-sinflar yo'nalish guruhlari orqali) —
+          katakni bosib fan va o'qituvchini qo'ying. Nom bosilsa — shablonlar va haftalar
         </p>
       </div>
 
@@ -83,7 +83,7 @@ export function SchedulePage() {
             <p className="text-xs text-slate-400">
               {flag.enabled
                 ? `Yoqilgan · ${flag.activeGroups} ta faol guruh, ${flag.groupWeekAssignments} ta biriktirilgan hafta`
-                : `O'chiq · ${flag.activeGroups} ta guruh bor, lekin birorta dars, hisobot yoki maosh ularni ko'rmaydi`}
+                : `O'chiq · oddiy guruhlar darsi hisobga olinmaydi. Yo'nalish guruhlari bu o'chirgichga bog'liq emas — ular sinf kabi ishlaydi`}
             </p>
           </div>
           <button

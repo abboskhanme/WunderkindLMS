@@ -82,7 +82,8 @@ public static class TeacherOwnerAccess
         CancellationToken ct = default)
     {
         var owner = await LessonRoster.OwnerAsync(db, ownerId, ct);
-        if (owner is not null && owner.IsGroup && !await LessonRoster.GroupLessonsEnabledAsync(db, ct))
+        // Yo'nalish guruhi o'chirgichga qaramaydi (LessonRoster.LessonsLiveAsync).
+        if (owner is not null && !await LessonRoster.LessonsLiveAsync(db, owner, ct))
             return false;
 
         return await HasLessonAsync(db, teacherId, ownerId, owner?.Kind, subjectId, ct);
@@ -101,7 +102,7 @@ public static class TeacherOwnerAccess
 
         if (owner.IsGroup)
         {
-            if (!await LessonRoster.GroupLessonsEnabledAsync(db, ct)) return false;
+            if (!await LessonRoster.LessonsLiveAsync(db, owner, ct)) return false;
             if (await IsGroupTeacherAsync(db, teacher.Id, owner, ct)) return true;
         }
         else if (!string.IsNullOrEmpty(teacher.HomeroomClass) && teacher.HomeroomClass == owner.Name)
@@ -151,13 +152,15 @@ public static class TeacherOwnerAccess
                 [.. subjIds ?? []]));
         }
 
-        if (!await LessonRoster.GroupLessonsEnabledAsync(db, ct)) return result;
+        // Oddiy guruh — o'chirgich yoqilgandagina; yo'nalish guruhi — har doim.
+        var groupsOn = await LessonRoster.GroupLessonsEnabledAsync(db, ct);
 
         var myGroupIds = (await db.StudyGroupTeachers.AsNoTracking()
             .Where(g => g.TeacherId == teacher.Id).Select(g => g.GroupId).ToListAsync(ct)).ToHashSet();
 
         var groups = await db.StudyGroups.AsNoTracking()
-            .Where(g => !g.IsArchived).OrderBy(g => g.Name).ToListAsync(ct);
+            .Where(g => !g.IsArchived && (groupsOn || g.IsTrack))
+            .OrderBy(g => g.IsTrack ? 0 : 1).ThenBy(g => g.Name).ToListAsync(ct);
         foreach (var grp in groups)
         {
             var id = grp.Id.ToString();
@@ -165,11 +168,12 @@ public static class TeacherOwnerAccess
             taught.TryGetValue(OwnerKey(id, LessonOwnerKind.Group), out var subjIds);
             if (!attached && (subjIds is null || subjIds.Count == 0)) continue;
             result.Add(new TeacherOwner(
-                new LessonOwner(LessonOwnerKind.Group, id, grp.Name, grp.SubjectId),
+                new LessonOwner(LessonOwnerKind.Group, id, grp.Name, grp.SubjectId, grp.IsTrack),
                 attached,
-                // Guruhda fan BITTA — jadvalda darsi bo'lmasa ham guruhning fani
+                // Oddiy guruhda fan BITTA — jadvalda darsi bo'lmasa ham guruhning fani
                 // ko'rsatiladi, aks holda biriktirilgan o'qituvchi bo'sh ro'yxat ko'rardi.
-                [.. subjIds ?? [grp.SubjectId]]));
+                // Yo'nalish guruhining fani yo'q — faqat jadvaldagi fanlar (sinf kabi).
+                [.. subjIds ?? (grp.SubjectId is null ? [] : [grp.SubjectId])]));
         }
 
         return result;
@@ -183,11 +187,11 @@ public static class TeacherOwnerAccess
     public static async Task<HashSet<(string OwnerId, string OwnerKind, string SubjectId)>> PairsAsync(
         IAppDbContext db, string teacherId, CancellationToken ct = default)
     {
-        var groupsOn = await LessonRoster.GroupLessonsEnabledAsync(db, ct);
+        var scope = await LessonRoster.GroupScopeAsync(db, ct);
         var templates = await db.ScheduleTemplates.AsNoTracking().Include(x => x.Lessons).ToListAsync(ct);
 
         return [.. templates
-            .Where(tpl => groupsOn || tpl.OwnerKind != LessonOwnerKind.Group)
+            .Where(tpl => scope.Allows(tpl.OwnerKind, tpl.ClassId))
             .SelectMany(tpl => tpl.Lessons
                 .Where(l => l.TeacherId == teacherId)
                 .Select(l => (tpl.ClassId, tpl.OwnerKind, l.SubjectId)))];

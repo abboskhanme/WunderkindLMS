@@ -97,7 +97,7 @@ public class StudentSearchController(AppDbContext db, AuditService audit) : Cont
             .ToDictionary(
                 g => g.Key,
                 g => string.Join("; ", g.Select(x =>
-                    $"{subjectNameById.GetValueOrDefault(x.SubjectId, "?")}: {x.Name}")),
+                    $"{SubjectLabel(subjectNameById, x.SubjectId)}: {x.Name}")),
                 StringComparer.Ordinal);
 
         var data = rows.Select(r => (IReadOnlyList<string>)new[]
@@ -134,7 +134,7 @@ public class StudentSearchController(AppDbContext db, AuditService audit) : Cont
             new ExcelExport.SheetSpec("Guruhlar",
                 new[] { "Guruh (Guruhlar katagiga shu matnni yozing)" },
                 groupLabels.Select(g => (IReadOnlyList<string>)new[]
-                    { $"{subjectNameById.GetValueOrDefault(g.SubjectId, "?")}: {g.Name}" })),
+                    { $"{SubjectLabel(subjectNameById, g.SubjectId)}: {g.Name}" })),
         });
 
         return File(bytes, XlsxMime, $"oquvchilar_{AppClock.Now:yyyy-MM-dd}.xlsx");
@@ -216,4 +216,8 @@ public class StudentSearchController(AppDbContext db, AuditService audit) : Cont
     /// yerda turibdi; wiring bosqichida u <c>AuditService</c> ga ko'chiriladi.
     /// </summary>
     public const string AuditEntityStudentDelete = AuditService.EntityStudentDelete;
+
+    /// <summary>Guruh yorlig'idagi fan nomi; yo'nalish guruhi fansiz — "Yo'nalish".</summary>
+    private static string SubjectLabel(Dictionary<string, string> names, string? subjectId) =>
+        subjectId is null ? "Yo'nalish" : names.GetValueOrDefault(subjectId, "?");
 }

@@ -533,7 +533,7 @@ public class StudentsController(AppDbContext db, AuditService audit) : Controlle
             })
             .ToListAsync(ct);
 
-        var subjectIds = groupRows.Select(r => r.SubjectId).Distinct().ToList();
+        var subjectIds = groupRows.Where(r => r.SubjectId != null).Select(r => r.SubjectId!).Distinct().ToList();
         var subjects = await db.Subjects.AsNoTracking()
             .Where(s => subjectIds.Contains(s.Id))
             .ToDictionaryAsync(s => s.Id, s => s.Name, ct);
@@ -550,7 +550,7 @@ public class StudentsController(AppDbContext db, AuditService audit) : Controlle
                 .OrderBy(r => r.LeftOn != null).ThenByDescending(r => r.JoinedOn)
                 .Select(r => new StudentGroupMembershipDto(
                     r.Id, r.GroupId, r.GroupName, r.SubjectId,
-                    subjects.GetValueOrDefault(r.SubjectId, ""), r.IsArchived,
+                    r.SubjectId is null ? "" : subjects.GetValueOrDefault(r.SubjectId, ""), r.IsArchived,
                     r.JoinedOn, r.LeftOn, r.LeaveReason,
                     DaysBetween(r.JoinedOn, r.LeftOn, today)))]);
     }

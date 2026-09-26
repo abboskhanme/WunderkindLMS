@@ -100,8 +100,9 @@ public class StudyGroupsController(AppDbContext db, AuditService audit) : Contro
         var group = await db.StudyGroups.AsNoTracking().FirstOrDefaultAsync(g => g.Id == id, ct);
         if (group is null) return NotFound();
 
-        var subject = await db.Subjects.AsNoTracking()
-            .FirstOrDefaultAsync(s => s.Id == group.SubjectId, ct);
+        var subject = group.SubjectId is null
+            ? null
+            : await db.Subjects.AsNoTracking().FirstOrDefaultAsync(s => s.Id == group.SubjectId, ct);
         var classes = await ClassesOfAsync([group.Id], ct);
         var teachers = await TeachersOfAsync([group.Id], ct);
 
@@ -136,11 +137,13 @@ public class StudyGroupsController(AppDbContext db, AuditService audit) : Contro
         [FromQuery] string? subjectId = null,
         [FromQuery] string? gender = null,
         [FromQuery] Guid? excludeGroupId = null,
+        [FromQuery] bool track = false,
         CancellationToken ct = default)
     {
-        if (string.IsNullOrWhiteSpace(subjectId)) return new List<GroupCandidateDto>();
+        // Yo'nalish guruhi fansiz — nomzodlar fan bo'lmasa ham qaytadi.
+        if (!track && string.IsNullOrWhiteSpace(subjectId)) return new List<GroupCandidateDto>();
         var ids = SplitIds(classIds);
-        return await Service.CandidatesAsync(ids, gender, subjectId, excludeGroupId, ct);
+        return await Service.CandidatesAsync(ids, gender, subjectId, excludeGroupId, ct, track);
     }
 
     /* ===================================================================
@@ -287,7 +290,7 @@ public class StudyGroupsController(AppDbContext db, AuditService audit) : Contro
         }
 
         var create = new SaveStudyGroupRequest(
-            req.Name, source.SubjectId, classIds, teacherIds, source.Gender, studentIds);
+            req.Name, source.SubjectId, classIds, teacherIds, source.Gender, studentIds, source.IsTrack);
         return await Create(create, ct);
     }
 
@@ -431,7 +434,7 @@ public class StudyGroupsController(AppDbContext db, AuditService audit) : Contro
         var classes = await ClassesOfAsync(ids, ct);
         var teachers = await TeachersOfAsync(ids, ct);
 
-        var subjectIds = groups.Select(g => g.SubjectId).Distinct().ToList();
+        var subjectIds = groups.Where(g => g.SubjectId != null).Select(g => g.SubjectId!).Distinct().ToList();
         var subjects = await db.Subjects.AsNoTracking()
             .Where(s => subjectIds.Contains(s.Id))
             .ToDictionaryAsync(s => s.Id, s => s.Name, ct);
@@ -443,7 +446,8 @@ public class StudyGroupsController(AppDbContext db, AuditService audit) : Contro
             .ToDictionaryAsync(x => x.GroupId, x => x.Count, ct);
 
         return [.. groups.Select(g => new StudyGroupListItemDto(
-            g.Id, g.Name, g.SubjectId, subjects.GetValueOrDefault(g.SubjectId, ""), g.Gender,
+            g.Id, g.Name, g.SubjectId,
+            g.SubjectId is null ? "" : subjects.GetValueOrDefault(g.SubjectId, ""), g.Gender,
             g.IsArchived, g.ArchivedAt,
             classes.GetValueOrDefault(g.Id, []),
             teachers.GetValueOrDefault(g.Id, []),

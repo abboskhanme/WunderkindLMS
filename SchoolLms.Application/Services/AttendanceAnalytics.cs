@@ -12,7 +12,8 @@ namespace SchoolLms.Application.Services;
 /// ta'rifi <c>Analytics.BuildClass</c> va <c>DashboardController.AttendanceByPeriod</c> bilan
 /// aynan bir xil:</para>
 /// <list type="bullet">
-///   <item><b>Maxraj</b> — FAQAT o'tilgan darslar (<c>LessonNote.Conducted = true</c>) ×
+///   <item><b>Maxraj</b> — FAQAT bo'lgan darslar (<c>LessonNote.Conducted = true</c> YOKI
+///     "Davomat belgilash" ekranida belgilangan — <see cref="HeldLessons"/>) ×
 ///     shu darsga tegishli o'quvchilar. O'tilmagan dars hisobga kirmaydi: unda tekshiriladigan
 ///     narsa yo'q.</item>
 ///   <item><b>Guruh (SubGroup)</b> — bo'lingan darsda o'quvchi faqat O'Z guruhining (yoki butun
@@ -78,9 +79,29 @@ public static class AttendanceAnalytics
 
         var wantClass = string.IsNullOrWhiteSpace(classId) ? null : classId;
 
+        // YO'NALISH GURUHLARI (docs/modules/track-groups-as-classes.md): ular o'zlarini
+        // boqadigan sinflar (9–11) O'RNIDA qator bo'ladi. A'zo o'quvchining qatori — uning
+        // yo'nalish guruhi; boqilgan sinf qatori ro'yxatdan yashiriladi.
+        var tracks = await db.StudyGroups.AsNoTracking()
+            .Where(g => g.IsTrack && !g.IsArchived)
+            .OrderBy(g => g.Name)
+            .Select(g => new { g.Id, g.Name })
+            .ToListAsync();
+        var trackGuids = tracks.Select(t => t.Id).ToList();
+        var trackOfStudent = trackGuids.Count == 0
+            ? new Dictionary<string, string>(StringComparer.Ordinal)
+            : (await db.StudyGroupMembers.AsNoTracking()
+                    .Where(m => m.LeftOn == null && trackGuids.Contains(m.GroupId))
+                    .Select(m => new { m.StudentId, m.GroupId }).ToListAsync())
+                .GroupBy(m => m.StudentId, StringComparer.Ordinal)
+                .ToDictionary(g => g.Key, g => g.First().GroupId.ToString(), StringComparer.Ordinal);
+        var trackFed = await LessonRoster.TrackFedClassIdsAsync(db);
+        var wantTrack = wantClass is not null && tracks.Any(t => t.Id.ToString() == wantClass);
+
         // Arxivlangan sinf/o'quvchi hisobotga kirmaydi — ular bugungi davomat emas, tarix.
+        // Yo'nalish guruhi tanlansa — o'quvchilari istalgan sinfdan bo'lishi mumkin.
         var classes = await db.Classes.AsNoTracking()
-            .Where(c => !c.IsArchived && (wantClass == null || c.Id == wantClass))
+            .Where(c => !c.IsArchived && (wantClass == null || wantTrack || c.Id == wantClass))
             .OrderBy(c => c.Grade).ThenBy(c => c.Name)
             .ToListAsync();
 
@@ -94,10 +115,12 @@ public static class AttendanceAnalytics
         var classIds = classes.Select(c => c.Id).ToList();
         var classNames = classes.Select(c => c.Name).ToList();
 
-        var students = await db.Students.AsNoTracking()
-            .Where(s => !s.IsArchived && classNames.Contains(s.ClassName))
-            .Select(s => new { s.Id, s.ClassName, s.SubGroup })
-            .ToListAsync();
+        var students = (await db.Students.AsNoTracking()
+                .Where(s => !s.IsArchived && classNames.Contains(s.ClassName))
+                .Select(s => new { s.Id, s.ClassName, s.SubGroup })
+                .ToListAsync())
+            .Where(s => !wantTrack || trackOfStudent.GetValueOrDefault(s.Id) == wantClass)
+            .ToList();
 
         // Sinf nomi -> sinf id (o'quvchi sinfga NOM orqali bog'langan — loyihaning mavjud modeli).
         var classIdByName = classes
@@ -108,20 +131,25 @@ public static class AttendanceAnalytics
             .GroupBy(s => classIdByName[s.ClassName], StringComparer.Ordinal)
             .ToDictionary(g => g.Key, g => g.Select(s => (s.Id, s.SubGroup)).ToList(), StringComparer.Ordinal);
 
-        // O'quv guruhlari (G-13). O'chirgich o'chiq bo'lsa bu lug'at BO'SH bo'ladi va
-        // quyidagi hamma narsa bugungidek ishlaydi.
-        var groupRoster = await GroupRosterAsync(db, students
+        // O'quvchining QATORI: yo'nalish guruhi a'zosi — guruh qatori, qolgan hamma — sinfi.
+        var rowOfStudent = students
             .Where(s => classIdByName.ContainsKey(s.ClassName))
-            .ToDictionary(s => s.Id, s => classIdByName[s.ClassName], StringComparer.Ordinal));
+            .ToDictionary(
+                s => s.Id,
+                s => (wantClass == null || wantTrack) && trackOfStudent.TryGetValue(s.Id, out var track)
+                    ? track
+                    : classIdByName[s.ClassName],
+                StringComparer.Ordinal);
+        string RowOf(string studentId, string fallback) => rowOfStudent.GetValueOrDefault(studentId, fallback);
+
+        // O'quv guruhlari (G-13). Oddiy guruh — o'chirgich yoqilgandagina, yo'nalish guruhi —
+        // har doim. Ikkalasi ham bo'lmasa bu lug'at BO'SH va hamma narsa bugungidek ishlaydi.
+        var groupRoster = await GroupRosterAsync(db, rowOfStudent);
         var ownerIds = classIds.Concat(groupRoster.Keys).ToList();
 
         // Sanalar "yyyy-MM-dd" satr — leksikografik taqqoslash xronologik bilan bir xil.
-        var notes = await db.LessonNotes.AsNoTracking()
-            .Where(n => n.Conducted && ownerIds.Contains(n.ClassId)
-                        && string.Compare(n.Date, fromDate) >= 0
-                        && string.Compare(n.Date, toDate) <= 0)
-            .Select(n => new { n.ClassId, n.SubjectId, n.Date, n.Period, n.SubGroup, n.OwnerKind })
-            .ToListAsync();
+        // "Bo'lgan" dars = o'tildi (conducted) YOKI davomat belgilangan (HeldLessons qoidasi).
+        var notes = await HeldLessons.ListAsync(db, ownerIds, fromDate, toDate);
 
         var entries = await db.JournalEntries.AsNoTracking()
             .Where(e => ownerIds.Contains(e.ClassId)
@@ -138,7 +166,15 @@ public static class AttendanceAnalytics
             entryByKey.TryAdd((e.ClassId, e.SubjectId, e.Date, e.Period, e.StudentId), e.ReasonId);
 
         var total = new Tally();
-        var byClass = classIds.ToDictionary(id => id, _ => new Tally(), StringComparer.Ordinal);
+        // Qatorlar: yashirilmagan sinflar, keyin faol yo'nalish guruhlari (tanlagich tartibi).
+        var rowDefs = classes
+            .Where(c => wantClass != null ? c.Id == wantClass : !trackFed.Contains(c.Id))
+            .Select(c => (Id: c.Id, c.Name, c.Grade, Kind: LessonOwnerKind.Class))
+            .Concat(tracks
+                .Where(t => wantClass == null || t.Id.ToString() == wantClass)
+                .Select(t => (Id: t.Id.ToString(), t.Name, Grade: 0, Kind: LessonOwnerKind.Group)))
+            .ToList();
+        var byClass = rowDefs.ToDictionary(r => r.Id, _ => new Tally(), StringComparer.Ordinal);
         var byPeriod = new Dictionary<int, Tally>();
         var byDate = new Dictionary<string, Tally>(StringComparer.Ordinal);
         var reasonCounts = new Dictionary<string, int>(StringComparer.Ordinal);
@@ -162,7 +198,7 @@ public static class AttendanceAnalytics
                 participants = [.. classStudents
                     // Bo'lingan darsda faqat o'z guruhi (yoki butun sinf darsi).
                     .Where(s => n.SubGroup == 0 || n.SubGroup == s.SubGroup)
-                    .Select(s => (s.Id, n.ClassId))];
+                    .Select(s => (s.Id, RowOf(s.Id, n.ClassId)))];
             }
 
             var dateTally = Get(byDate, n.Date);
@@ -176,9 +212,7 @@ public static class AttendanceAnalytics
             // Sinf darsi — o'sha sinfning bitta darsi. Guruh darsi esa har bir BOQUVCHI
             // sinf uchun ham bitta dars (o'sha sinfning bolalari o'sha kuni yana bir
             // darsda bo'lgan), lekin jami (`total`) bo'yicha — BITTA.
-            foreach (var feedingClassId in isGroup
-                         ? participants.Select(p => p.ClassId).Distinct(StringComparer.Ordinal)
-                         : [n.ClassId])
+            foreach (var feedingClassId in participants.Select(p => p.ClassId).Distinct(StringComparer.Ordinal))
                 if (byClass.TryGetValue(feedingClassId, out var t)) t.Lessons++;
 
             foreach (var (studentId, homeroomId) in participants)
@@ -196,7 +230,8 @@ public static class AttendanceAnalytics
                 void Add(Tally t)
                 {
                     t.Opportunities++;
-                    if (!has) { t.Unchecked++; return; }
+                    // "Davomat belgilash" ekranida belgilangan darsda yozuvsiz o'quvchi — keldi.
+                    if (!has && !n.Marked) { t.Unchecked++; return; }
                     if (reasonId is null) { t.Present++; return; }
                     if (lateIds.Contains(reasonId)) { t.Present++; t.Late++; return; }
                     t.Absent++;
@@ -210,10 +245,13 @@ public static class AttendanceAnalytics
             .GroupBy(t => t.Period)
             .ToDictionary(g => g.Key, g => g.First());
 
-        var classRows = classes.Select(c => new AttendanceClassRowDto(
-                c.Id, c.Name, c.Grade,
-                studentsByClass.TryGetValue(c.Id, out var list) ? list.Count : 0,
-                byClass[c.Id].ToDto()))
+        var studentsPerRow = rowOfStudent.Values
+            .GroupBy(v => v, StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => g.Count(), StringComparer.Ordinal);
+        var classRows = rowDefs.Select(r => new AttendanceClassRowDto(
+                r.Id, r.Name, r.Grade,
+                studentsPerRow.GetValueOrDefault(r.Id),
+                byClass[r.Id].ToDto(), r.Kind))
             .ToList();
 
         var periodRows = byPeriod.OrderBy(kv => kv.Key)
@@ -259,10 +297,11 @@ public static class AttendanceAnalytics
     {
         var result = new Dictionary<string, List<(string, string)>>(StringComparer.Ordinal);
         if (classIdByStudent.Count == 0) return result;
-        if (!await LessonRoster.GroupLessonsEnabledAsync(db)) return result;
+        // Yo'nalish guruhi o'chirgichga qaramaydi; oddiy guruh — faqat yoqilganda.
+        var groupsOn = await LessonRoster.GroupLessonsEnabledAsync(db);
 
         var groupIds = (await db.StudyGroups.AsNoTracking()
-            .Where(g => !g.IsArchived).Select(g => g.Id).ToListAsync()).ToHashSet();
+            .Where(g => !g.IsArchived && (groupsOn || g.IsTrack)).Select(g => g.Id).ToListAsync()).ToHashSet();
         if (groupIds.Count == 0) return result;
 
         var members = await db.StudyGroupMembers.AsNoTracking()

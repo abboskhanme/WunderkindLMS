@@ -48,7 +48,7 @@ export async function resolveScheduleOwner(id: string): Promise<ScheduleOwner | 
       id: grp.id,
       name: grp.name,
       kind: 'group',
-      subtitle: `O'quv guruhi · ${grp.subjectName}${grp.isArchived ? ' · arxivda' : ''}`,
+      subtitle: `${grp.isTrack ? "Yo'nalish guruhi" : `O'quv guruhi · ${grp.subjectName}`}${grp.isArchived ? ' · arxivda' : ''}`,
     }
   } catch {
     return null

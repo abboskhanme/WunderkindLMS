@@ -91,7 +91,7 @@ export function JournalClassesPage() {
                         <span title={o.subjectName ?? undefined}>
                           {o.name}{' '}
                           <span className="rounded-full bg-violet-50 px-1.5 py-0.5 text-[10px] font-medium text-violet-600">
-                            guruh
+                            {o.isTrack ? "yo'nalish" : 'guruh'}
                           </span>
                         </span>
                       ) : (

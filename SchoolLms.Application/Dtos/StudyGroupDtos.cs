@@ -32,7 +32,7 @@ public record StudyGroupTeacherRefDto(string Id, string FullName);
 public record StudyGroupListItemDto(
     Guid Id,
     string Name,
-    string SubjectId,
+    string? SubjectId,
     string SubjectName,
     string? Gender,
     bool IsArchived,
@@ -49,7 +49,7 @@ public record StudyGroupListItemDto(
 public record StudyGroupDetailDto(
     Guid Id,
     string Name,
-    string SubjectId,
+    string? SubjectId,
     string SubjectName,
     string? Gender,
     bool IsArchived,
@@ -88,9 +88,13 @@ public record StudyGroupMemberDto(
 /// o'zgartirish bolalarni guruhdan chiqarib yubormasligi kerak.
 /// </para>
 /// </summary>
+/// <para>
+/// <paramref name="SubjectId"/> — faqat ODDIY guruhda majburiy; yo'nalish guruhida
+/// (<paramref name="IsTrack"/> = true) e'tiborga olinmaydi va guruh fansiz saqlanadi.
+/// </para>
 public record SaveStudyGroupRequest(
     string Name,
-    string SubjectId,
+    string? SubjectId,
     IReadOnlyList<string> ClassIds,
     IReadOnlyList<string> TeacherIds,
     string? Gender = null,
@@ -220,7 +224,7 @@ public record StudentGroupMembershipDto(
     Guid Id,
     Guid GroupId,
     string GroupName,
-    string SubjectId,
+    string? SubjectId,
     string SubjectName,
     bool GroupIsArchived,
     DateOnly JoinedOn,

@@ -35,7 +35,9 @@ public class DailyAttendanceMark
 {
     public string Id { get; set; } = Guid.NewGuid().ToString();
 
-    /// <summary>Sinf id'si (<see cref="SchoolClass"/>). Faqat SINF — o'quv guruhi emas.</summary>
+    /// <summary>Ega id'si: sinf (<see cref="SchoolClass"/>) YOKI yo'nalish guruhi
+    /// (<see cref="StudyGroup"/>, 2026-09-26) — jurnal qatorlaridagi <c>class_id</c> bilan bir xil
+    /// ma'no. Guruh id'si uuid, sinf id'si bilan to'qnashmaydi; FK yo'q.</summary>
     public string ClassId { get; set; } = string.Empty;
 
     /// <summary>Kun, "YYYY-MM-DD" — jurnal qatorlaridagi <c>date</c> bilan bir xil shakl.</summary>

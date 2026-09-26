@@ -401,7 +401,7 @@ public class TeacherPortalController(
         var feedingClassIds = await db.StudyGroupClasses
             .Where(c => c.GroupId == id).Select(c => c.ClassId).ToListAsync();
         return await new StudyGroupService(db)
-            .CandidatesAsync(feedingClassIds, group.Gender, group.SubjectId, excludeGroupId: id);
+            .CandidatesAsync(feedingClassIds, group.Gender, group.SubjectId, excludeGroupId: id, track: group.IsTrack);
     }
 
     /// <summary>Guruhga bir yoki bir nechta o'quvchi qo'shadi — FAQAT biriktirilgan o'qituvchiga.

@@ -35,6 +35,8 @@ export interface AttendanceClassRow {
   grade: number
   students: number
   tally: AttendanceTally
+  /** 'group' — yo'nalish guruhi qatori (9–11-sinflar o'rnida) */
+  ownerKind?: 'class' | 'group'
 }
 
 export interface AttendancePeriodRow {

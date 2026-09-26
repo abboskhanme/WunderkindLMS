@@ -277,19 +277,21 @@ public sealed class StudentImportService(IAppDbContext db)
         // (fan id, guruh nomi-kaliti) -> shu nom/fandagi guruhlar (odatda bitta —
         // faol guruhlar orasida nom fan ichida unikal, arxivlangani bilan
         // to'qnashishi mumkin, shu sabab ro'yxat).
+        // Yo'nalish guruhi fansiz — "Fan: Guruh" importi unga taalluqli emas.
         var groupIndex = groupsList
-            .GroupBy(g => (g.SubjectId, NameKey: Collapse(g.Name).ToLowerInvariant()))
+            .Where(g => g.SubjectId != null)
+            .GroupBy(g => (SubjectId: g.SubjectId!, NameKey: Collapse(g.Name).ToLowerInvariant()))
             .ToDictionary(g => g.Key, g => g.ToList());
 
         // O'quvchining fan bo'yicha FAOL guruhi (bor bo'lsa) — "boshqa guruhda
         // turibdi" ziddiyatini tekshirish uchun.
         var activeMembershipByStudent = (await db.StudyGroupMembers.AsNoTracking()
-                .Where(m => m.LeftOn == null).ToListAsync(ct))
+                .Where(m => m.LeftOn == null && m.SubjectId != null).ToListAsync(ct))
             .GroupBy(m => m.StudentId, StringComparer.Ordinal)
             .ToDictionary(
                 g => g.Key,
                 g => g.ToDictionary(
-                    m => m.SubjectId,
+                    m => m.SubjectId!,
                     m => (m.GroupId, GroupName: groupById.TryGetValue(m.GroupId, out var gr) ? gr.Name : ""),
                     StringComparer.Ordinal),
                 StringComparer.Ordinal);

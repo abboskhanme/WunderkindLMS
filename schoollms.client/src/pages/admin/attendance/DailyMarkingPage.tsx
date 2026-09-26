@@ -416,7 +416,7 @@ export function DailyMarkingPage() {
           <DatePicker label="Kun" value={date} onChange={setDate} max={todayISO()} />
 
           <Select
-            label="Sinf"
+            label="Sinf / yo'nalish"
             value={classId}
             onChange={(e) => pickClass(e.target.value)}
             disabled={overviewLoading}
@@ -425,6 +425,7 @@ export function DailyMarkingPage() {
             {overview?.classes.map((c) => (
               <option key={c.classId} value={c.classId} disabled={c.lessonCount === 0}>
                 {c.className}
+                {c.isTrack ? " (yo'nalish)" : ''}
                 {c.lessonCount === 0
                   ? " — bu kunda dars yo'q"
                   : ` — ${c.markedLessons}/${c.lessonCount} dars`}

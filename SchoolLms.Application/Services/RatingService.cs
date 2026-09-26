@@ -35,7 +35,9 @@ public static class RatingService
             var templates = await db.ScheduleTemplates.Include(t => t.Lessons)
                 .Where(t => ownerIds.Contains(t.ClassId)).ToListAsync();
             var entries = await db.JournalEntries.Where(e => ownerIds.Contains(e.ClassId)).ToListAsync();
-            var notes = await db.LessonNotes.Where(n => ownerIds.Contains(n.ClassId)).ToListAsync();
+            // Davomat maxraji: o'tildi YOKI davomat belgilangan (HeldLessons qoidasi).
+            var notes = await HeldLessons.WithMarkedAsync(
+                db, await db.LessonNotes.Where(n => ownerIds.Contains(n.ClassId)).ToListAsync(), ownerIds);
             var rows = Analytics.BuildClass(
                 cls, students, subjects, templates, entries, notes,
                 lateReasonIds: lateIds, attainment: attainment).Rows;

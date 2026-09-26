@@ -11,6 +11,8 @@ import {
   Search,
   Download,
   ShieldAlert,
+  Users2,
+  ChevronRight,
 } from 'lucide-react'
 import type { SchoolClass } from '@/types'
 import type { ClassPayload } from '@/api/services/classes'
@@ -26,6 +28,7 @@ import {
   setHomeroomTeachers,
 } from '@/api/services/classes'
 import { getClassesStats, type ClassStats } from '@/api/services/classPerformance'
+import { getGroups, type StudyGroupListItem } from '@/api/services/groups'
 import { languageLabels } from '@/config/constants'
 import { formatMoney, cn } from '@/lib/utils'
 import { Card } from '@/components/ui/Card'
@@ -53,12 +56,20 @@ export function ClassesPage() {
   /** C-3: nom/xona bo'yicha qidiruv. */
   const [search, setSearch] = useState('')
   const [exporting, setExporting] = useState(false)
+  /**
+   * Faol yo'nalish guruhlari — ro'yxat oxirida alohida blok (docs/modules/track-groups-as-classes.md).
+   * Sinflar (9-A ...) bu sahifada JOYIDA qoladi: hujjat, moliya va shartnomalar ularga bog'liq.
+   */
+  const [tracks, setTracks] = useState<StudyGroupListItem[]>([])
 
   useEffect(() => {
     Promise.all([getClassesStats(), getArchivedClasses()]).then(([st, ar]) => {
       setStats(st)
       setArchived(ar)
     })
+    getGroups()
+      .then((gs) => setTracks(gs.filter((g) => g.isTrack)))
+      .catch(() => setTracks([]))
   }, [])
 
   const loadClasses = useCallback(() => {
@@ -320,6 +331,42 @@ export function ClassesPage() {
           </div>
         )}
       </Card>
+
+      {tracks.length > 0 && (
+        <div className="space-y-3">
+          <div>
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-400">
+              Yo'nalish guruhlari
+            </h2>
+            <p className="text-xs text-slate-400">
+              Dars jadvali, davomat va jurnalda shu guruhlar boqadigan sinflari o'rnida turadi
+            </p>
+          </div>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {tracks.map((g) => (
+              <button
+                key={g.id}
+                type="button"
+                onClick={() => navigate(`/admin/groups/${g.id}/students`)}
+                className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200/80 bg-white p-4 text-left shadow-sm transition-colors hover:border-brand-300 hover:bg-brand-50/40"
+              >
+                <div className="flex min-w-0 items-center gap-3">
+                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-violet-50 text-violet-600">
+                    <Users2 className="h-5 w-5" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="truncate font-semibold text-slate-800">{g.name}</p>
+                    <p className="truncate text-xs text-slate-400">
+                      {g.classes.map((c) => c.name).join(', ')} · {g.memberCount} ta o'quvchi
+                    </p>
+                  </div>
+                </div>
+                <ChevronRight className="h-5 w-5 shrink-0 text-slate-300" />
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       <ClassFormModal
         open={formOpen}

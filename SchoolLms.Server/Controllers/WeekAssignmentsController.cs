@@ -67,7 +67,8 @@ public class WeekAssignmentsController(AppDbContext db) : ControllerBase
         var owner = await LessonRoster.OwnerAsync(db, classId, ct);
         if (owner is null) return NotFound();
 
-        if (owner.IsGroup && !await LessonRoster.GroupLessonsEnabledAsync(db, ct))
+        // Yo'nalish guruhi o'chirgichga qaramaydi — u sinf kabi haftaga biriktiriladi.
+        if (!await LessonRoster.LessonsLiveAsync(db, owner, ct))
             return Conflict(new
             {
                 message = "Guruh darslari hali yoqilmagan. Guruh jadvalini haftaga biriktirish "

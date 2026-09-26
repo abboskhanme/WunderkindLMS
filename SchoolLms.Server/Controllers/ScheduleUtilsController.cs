@@ -17,6 +17,17 @@ namespace SchoolLms.Server.Controllers;
 public class ScheduleUtilsController(AppDbContext db) : ControllerBase
 {
     /// <summary>
+    /// Dars jadvali / davomat / jurnal tanlagichlari uchun egalar ro'yxati — BITTA qoida
+    /// (docs/modules/track-groups-as-classes.md): yo'nalish guruhini boqmaydigan sinflar
+    /// daraja/nom bo'yicha, keyin faol yo'nalish guruhlari nom bo'yicha, keyin (faqat
+    /// <c>group_lessons_enabled</c> yoqilganda) oddiy guruhlar. 9–11-sinflar (9-A ...)
+    /// bu yerda YO'Q — ular hujjat, moliya va hisobotlar uchun "Sinflar" bo'limida qoladi.
+    /// </summary>
+    [HttpGet("owners")]
+    public async Task<ActionResult<IEnumerable<LessonOwnerItem>>> Owners(CancellationToken ct = default)
+        => await LessonRoster.PickerOwnersAsync(db, ct: ct);
+
+    /// <summary>
     /// Barcha template'lardagi o'qituvchi-band-soatlar xaritasi.
     /// Jadval yaratishda: tanlangan o'qituvchi boshqa sinfda shu soatda dars bersa — ogohlantirish.
     ///
@@ -94,7 +105,8 @@ public class ScheduleUtilsController(AppDbContext db) : ControllerBase
     {
         var owner = await LessonRoster.OwnerAsync(db, ownerId, ct);
         if (owner is null) return NotFound();
-        if (!await LessonRoster.GroupLessonsEnabledAsync(db, ct)) return new List<PupilOverlaySlotDto>();
+        // Guruh darsi umuman tirik bo'lmasa (o'chirgich o'chiq va yo'nalish guruhi yo'q) — bo'sh.
+        if (!(await LessonRoster.GroupScopeAsync(db, ct)).AnyGroup) return new List<PupilOverlaySlotDto>();
 
         var mine = (await LessonRoster.ForLessonAsync(db, owner, ct: ct))
             .Select(s => s.Id).ToHashSet(StringComparer.Ordinal);

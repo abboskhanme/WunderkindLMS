@@ -17,8 +17,8 @@ namespace SchoolLms.Application.Services;
 /// aniqlaydi — <c>class_id</c> ni o'qiydigan ~60 joy o'zgarishsiz qoladi.
 /// </para>
 /// <para>
-/// <b>O'chirgich o'chiq ekan (<c>group_lessons_enabled</c>) hech narsa
-/// o'zgarmaydi:</b> guruh haftaga biriktirilmaydi, ustun chiqmaydi,
+/// <b>O'chirgich o'chiq ekan (<c>group_lessons_enabled</c>) ODDIY guruh uchun hech narsa
+/// o'zgarmaydi</b> (yo'nalish guruhi o'chirgichga qaramaydi — sinf kabi ishlaydi): guruh haftaga biriktirilmaydi, ustun chiqmaydi,
 /// ro'yxat so'ralmaydi — va mavjud har bir qator <c>owner_kind='class'</c>,
 /// ya'ni yangi filtrlar bugungi natijani bir bayt ham siljitmaydi.
 /// </para>
@@ -46,7 +46,8 @@ public static class JournalService
 
         var owner = await LessonRoster.OwnerAsync(db, classId);
         // O'chirgich o'chiq — guruhning darsi UMUMAN yo'q (§4.3).
-        if (owner is not null && owner.IsGroup && !await LessonRoster.GroupLessonsEnabledAsync(db)) return [];
+        // Yo'nalish guruhi o'chirgichga qaramaydi (LessonRoster.LessonsLiveAsync).
+        if (owner is not null && !await LessonRoster.LessonsLiveAsync(db, owner)) return [];
 
         var weeks = ScheduleMath.GetQuarterWeeks(q.StartDate, q.EndDate);
         var assignmentQuery = db.WeekAssignments.Where(a => a.ClassId == classId && a.Quarter == quarter);
@@ -122,7 +123,7 @@ public static class JournalService
 
         var owner = await LessonRoster.OwnerAsync(db, req.ClassId);
         // O'chirgich o'chiq ekan guruh jurnaliga yozib bo'lmaydi (§4.3).
-        if (owner is not null && owner.IsGroup && !await LessonRoster.GroupLessonsEnabledAsync(db))
+        if (owner is not null && !await LessonRoster.LessonsLiveAsync(db, owner))
             return GroupLessonsOffMessage;
         var ownerKind = owner?.Kind ?? LessonOwnerKind.Class;
 
@@ -335,7 +336,7 @@ public static class JournalService
         if (owner is not null && owner.IsGroup)
         {
             // O'chirgich o'chiq ekan guruh jurnaliga yozib bo'lmaydi (§4.3).
-            if (!await LessonRoster.GroupLessonsEnabledAsync(db)) return GroupLessonsOffMessage;
+            if (!await LessonRoster.LessonsLiveAsync(db, owner)) return GroupLessonsOffMessage;
             // Guruhda sinf ichidagi bo'linish yo'q — server rad etadi (§2.1.4).
             if (req.SubGroup != 0) return SubGroupOnGroupMessage;
         }

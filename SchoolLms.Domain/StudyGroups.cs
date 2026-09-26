@@ -86,10 +86,11 @@ public class StudyGroup
     /// unikal (katta-kichik harf farqlanmaydi).</summary>
     public string Name { get; set; } = string.Empty;
 
-    /// <summary>Guruh fani (subjects.id). Fan "guruhlarga bo'linadi"
-    /// (<see cref="Subject.IsGroupable"/>) bo'lishi kerak — buni xizmat
-    /// tekshiradi, baza emas.</summary>
-    public string SubjectId { get; set; } = string.Empty;
+    /// <summary>Guruh fani (subjects.id). ODDIY guruhda majburiy
+    /// (<c>ck_study_groups_subject</c>). YO'NALISH guruhida (<see cref="IsTrack"/>)
+    /// har doim <c>null</c>: u ko'p fan o'qitadi, har darsning fani dars
+    /// katagida turadi (mijoz, 2026-09-26 — docs/modules/track-groups-as-classes.md).</summary>
+    public string? SubjectId { get; set; }
 
     /// <summary><c>male</c> | <c>female</c> | null (aralash). Ro'yxatga
     /// qo'shishda filtr bo'ladi.</summary>
@@ -104,6 +105,13 @@ public class StudyGroup
     /// <summary>
     /// Yo'nalish guruhi (9–11-sinflar aralash, masalan "Aniq fanlar"). Kechki dars va yotoqxona
     /// davomati sinf o'rniga shu guruhlar bo'yicha chiqadi (mijoz, 2026-09-23).
+    ///
+    /// <para>
+    /// 2026-09-26 dan yo'nalish guruhi SINF KABI ishlaydi: dars jadvali, davomat va jurnalda
+    /// uni boqadigan sinflar (9-A ...) o'rnida turadi, fani yo'q (<see cref="SubjectId"/> null),
+    /// darslari esa <c>group_lessons_enabled</c> o'chirgichiga BOG'LIQ EMAS. O'quvchi ko'pi
+    /// bilan BITTA faol yo'nalish guruhida bo'ladi (xizmat tekshiradi).
+    /// </para>
     /// </summary>
     public bool IsTrack { get; set; }
 
@@ -152,8 +160,10 @@ public class StudyGroupMember
 
     public Guid GroupId { get; set; }
 
-    /// <summary>Guruh fani (study_groups.subject_id nusxasi, kompozit FK).</summary>
-    public string SubjectId { get; set; } = string.Empty;
+    /// <summary>Guruh fani (study_groups.subject_id nusxasi, kompozit FK). Yo'nalish
+    /// guruhida <c>null</c> — kompozit FK (MATCH SIMPLE) null qatorni tekshirmaydi,
+    /// guruhga bog'lanishni esa oddiy <c>group_id</c> FK ushlaydi.</summary>
+    public string? SubjectId { get; set; }
 
     /// <summary>students.id — `text`.</summary>
     public string StudentId { get; set; } = string.Empty;

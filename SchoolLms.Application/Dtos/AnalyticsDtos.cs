@@ -51,8 +51,13 @@ public record AttendanceTallyDto(
 
 /// <summary>Sinf kesimidagi davomat qatori.</summary>
 /// <param name="Students">Sinfdagi (arxivlanmagan) o'quvchilar soni.</param>
+/// <param name="OwnerKind">
+/// <c>class</c> yoki <c>group</c> — yo'nalish guruhi o'zini boqadigan sinflar (9–11) o'rnida
+/// alohida qator bo'lib chiqadi (docs/modules/track-groups-as-classes.md).
+/// </param>
 public record AttendanceClassRowDto(
-    string ClassId, string ClassName, int Grade, int Students, AttendanceTallyDto Tally);
+    string ClassId, string ClassName, int Grade, int Students, AttendanceTallyDto Tally,
+    string OwnerKind = "class");
 
 /// <summary>Tanlangan KUNning bitta dars soati kesimidagi davomat.</summary>
 /// <param name="StartTime">Dars vaqti "HH:mm" (sozlamada belgilanmagan bo'lsa — null).</param>

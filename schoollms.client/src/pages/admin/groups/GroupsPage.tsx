@@ -252,7 +252,9 @@ function groupColumns(
     {
       id: 'subject',
       header: 'Fan',
-      cell: (g) => <span className="text-slate-600">{g.subjectName}</span>,
+      cell: (g) => (
+        <span className="text-slate-600">{g.isTrack ? "Yo'nalish (fanlar jadvalda)" : g.subjectName}</span>
+      ),
     },
     {
       id: 'classes',
