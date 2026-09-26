@@ -254,6 +254,9 @@ export const navByRole: Record<Role, NavItem[]> = {
         // (lib/access.ts `PAGE_EXTRA_SECTIONS`).
         { label: 'Xodimlar', to: '/admin/boshqaruv/staff', perm: 'staff', group: 'TASHKILOT' },
         { label: 'Rollar', to: '/admin/boshqaruv/roles', perm: 'staff', group: 'TASHKILOT' },
+        // AI (MCP) ulanishlari va ularning jurnali — faqat superadmin, rol bilan berilmaydi
+        // (lib/access.ts katalogi `roles` li bandlarni o'tkazib yuboradi, Filiallar kabi).
+        { label: 'AI ulanishlar', to: '/admin/boshqaruv/ai', roles: ['superadmin'], group: 'TASHKILOT' },
         { label: 'Avtobus-gps', to: '/admin/boshqaruv/gps', perm: 'gps', group: 'KUZATUV' },
         { label: 'Kameralar', to: '/admin/boshqaruv/cameras', perm: 'cameras', group: 'KUZATUV' },
         { label: 'Taklif va shikoyatlar', to: '/admin/boshqaruv/feedback', perm: 'feedback', group: 'FIKR' },

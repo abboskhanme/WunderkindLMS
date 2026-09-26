@@ -14,6 +14,7 @@ using SchoolLms.Application.Services;
 using SchoolLms.Infrastructure.Auth;
 using SchoolLms.Infrastructure.Data;
 using SchoolLms.Server.Controllers;
+using SchoolLms.Server.Mcp;
 using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -148,6 +149,9 @@ builder.Services
             {
                 var accessToken = context.Request.Query["access_token"];
                 var path = context.HttpContext.Request.Path;
+                // /mcp uses opaque OAuth tokens (McpTokenAuthenticationHandler), not our JWT —
+                // do not try to parse them here (would only log noise).
+                if (path.StartsWithSegments("/mcp")) { context.NoResult(); return Task.CompletedTask; }
                 if (!string.IsNullOrEmpty(accessToken) && path.StartsWithSegments("/hubs"))
                     context.Token = accessToken;
                 return Task.CompletedTask;
@@ -207,9 +211,12 @@ builder.Services.AddAuthorization();
 builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    // Kalit — IPv6 uchun /64 (PublicFormPartition): bitta abonentning /64 ichida manzil
+    // almashtirib chegarani aylanib o'tish mumkin edi (MCP xavfsizlik tekshiruvi, 2026-09-26).
+    // Shu policy MCP OAuth login formasini ham himoyalaydi.
     options.AddPolicy("login", httpContext =>
         System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter(
-            partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            partitionKey: PublicFormPartition(httpContext),
             factory: _ => new System.Threading.RateLimiting.FixedWindowRateLimiterOptions
             {
                 PermitLimit = 10,
@@ -373,6 +380,10 @@ builder.Services.AddOutputCache(options =>
 // "Faqat ko'rish" moliya xodimi yoza olmasin (ViewOnlyWriteGuard, 2026-09-26).
 builder.Services.AddControllers(o => o.Filters.Add<SchoolLms.Server.Controllers.ViewOnlyWriteGuard>());
 
+// Read-only MCP server for AI clients (docs/modules/mcp-readonly.md). Fail-closed: without
+// ConnectionStrings:ReadOnly (the `app_ro` role) the whole feature stays off.
+builder.AddSchoolMcp();
+
 var app = builder.Build();
 
 // ---------- Bazani yaratish va seed ----------
@@ -531,8 +542,13 @@ app.UseStaticFiles(new StaticFileOptions
 
 app.UseHttpsRedirection();
 
+// /mcp va /oauth: autentifikatsiyadan OLDIN IP (/64) bo'yicha chegara — soxta token oqimi
+// token-hash qidiruvlariga aylanmasin.
+app.UseMcpPreAuthLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
+// /mcp: bir ulanishga 2 ta, butun jarayonga 6 ta parallel chaqiruv (navbatsiz).
+app.UseMcpConcurrency();
 app.UseRateLimiter();
 // OutputCache middleware — tayyor turadi, lekin [OutputCache] faqat ochiq endpointlarga qo'yiladi
 // (multi-tenant xavfsizligi uchun; pastdagi izohga qarang). Auth'dan keyin turishi shart.
@@ -541,6 +557,8 @@ app.UseOutputCache();
 app.MapControllers();
 app.MapHub<ChatHub>("/hubs/chat");
 app.MapHub<LiveHub>("/hubs/live");
+// /mcp, /oauth/*, /.well-known/oauth-* (or a 503/404 stub when the feature is off).
+app.MapSchoolMcp();
 
 // API "tirikligi": https://<domen>/api ochilganda SPA HTML emas, JSON qaytaradi.
 app.MapGet("/api", () => Results.Ok(new

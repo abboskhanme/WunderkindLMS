@@ -83,6 +83,14 @@ const RETIRED_PAGES: Record<string, string> = {
 
 const GRANT_SEP = '|'
 
+/**
+ * AI ulanish ruxsati (docs/modules/mcp-readonly.md). Menyu sahifasi EMAS — rol oynasidagi
+ * alohida belgi. Rolning `permissions` ro'yxatiga shu kalit qo'shiladi; server
+ * (`McpAccess.PermissionKey`) faqat shu kalitli xodimga AI (MCP) tokenini beradi.
+ * Sahifa yozuvi ham, bo'lim kaliti ham emas, shuning uchun `grantsOf`/`encodeGrants` unga tegmaydi.
+ */
+export const AI_ACCESS_KEY = 'aiAccess'
+
 export const isPageGrant = (entry: string) => entry.startsWith('/')
 
 /** Rol/xodim ruxsatlari → sahifa → daraja. Eski shakl bo'lim kalitlaridan yoyiladi. */

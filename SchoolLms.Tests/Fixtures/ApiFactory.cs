@@ -99,6 +99,10 @@ public sealed class ApiFactory : WebApplicationFactory<SchoolLms.Server.Controll
         Environment.SetEnvironmentVariable("ConnectionStrings__Migrator", database.OwnerConnectionString);
         // Redis testda kerak emas — bo'sh bo'lsa ilova xotira keshiga tushadi.
         Environment.SetEnvironmentVariable("ConnectionStrings__Redis", "");
+        // Read-only MCP server (docs/modules/mcp-readonly.md): its tools run on `app_ro`.
+        Environment.SetEnvironmentVariable("ConnectionStrings__ReadOnly", database.AppRoConnectionString);
+        // Outside Development the MCP feature requires a fixed public base URL (review L4).
+        Environment.SetEnvironmentVariable("Mcp__PublicBaseUrl", "https://localhost");
 
         // HTTPS: Testing muhitida UseHttpsRedirection/UseHsts yoqilgan. `https` bilan
         // so'rasak redirect bo'lmaydi va prod pipeline'i aynan takrorlanadi.

@@ -188,10 +188,62 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<ExamAnswer> ExamAnswers => Set<ExamAnswer>();
     public DbSet<SeasonalMark> SeasonalMarks => Set<SeasonalMark>();
 
+    // Read-only MCP server for AI clients (docs/modules/mcp-readonly.md). Configuration:
+    // McpModel.cs. Written ONLY by the OAuth/audit path on this (app_rw) context — the
+    // MCP tools themselves read through ReadOnlyDatabase (app_ro) and never see these.
+    public DbSet<McpClient> McpClients => Set<McpClient>();
+    public DbSet<McpGrant> McpGrants => Set<McpGrant>();
+    public DbSet<McpAuthCode> McpAuthCodes => Set<McpAuthCode>();
+    public DbSet<McpToken> McpTokens => Set<McpToken>();
+    public DbSet<McpAuditEntry> McpAudit => Set<McpAuditEntry>();
+
     /// <inheritdoc />
     public Task<Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction> BeginTransactionAsync(
         CancellationToken cancellationToken = default) =>
         Database.BeginTransactionAsync(cancellationToken);
+
+    // ---------------------------------------------------------------------
+    //  Password change ⇒ AI (MCP) connections end (docs/modules/mcp-readonly.md, review M4).
+    //  Done HERE, not in each controller: every path that sets a password (account page,
+    //  staff/teacher reset, restore, Telegram link, future ones) goes through SaveChanges.
+    // ---------------------------------------------------------------------
+
+    /// <summary><c>mcp_grants.revoked_by</c> value for grants ended by a password change.</summary>
+    public const string McpRevokedByPasswordChange = "system:password-change";
+
+    public override int SaveChanges(bool acceptAllChangesOnSuccess)
+    {
+        foreach (var g in PendingMcpRevocations(ids => McpGrants.Where(g => ids.Contains(g.UserId) && g.RevokedAt == null).ToList()))
+            Revoke(g);
+        return base.SaveChanges(acceptAllChangesOnSuccess);
+    }
+
+    public override async Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
+    {
+        var ids = PasswordChangedUserIds();
+        if (ids.Count > 0)
+            foreach (var g in await McpGrants.Where(g => ids.Contains(g.UserId) && g.RevokedAt == null).ToListAsync(cancellationToken))
+                Revoke(g);
+        return await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+    }
+
+    private List<string> PasswordChangedUserIds() =>
+        ChangeTracker.Entries<AppUser>()
+            .Where(e => e.State == EntityState.Modified && e.Property(u => u.PasswordHash).IsModified)
+            .Select(e => e.Entity.Id)
+            .ToList();
+
+    private IEnumerable<McpGrant> PendingMcpRevocations(Func<List<string>, List<McpGrant>> load)
+    {
+        var ids = PasswordChangedUserIds();
+        return ids.Count == 0 ? [] : load(ids);
+    }
+
+    private static void Revoke(McpGrant g)
+    {
+        g.RevokedAt = DateTimeOffset.UtcNow;
+        g.RevokedBy = McpRevokedByPasswordChange;
+    }
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -388,6 +440,9 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
 
         // ----- Staff salary (employees-unified.md): users salary columns + expenses.employee_user_id -----
         StaffSalaryModel.Apply(b);
+
+        // ----- Read-only MCP server: OAuth clients, grants, codes, tokens, audit -----
+        McpModel.Apply(b);
 
         // ----- PostgreSQL: vaqt turi -----
         // Tizim sanalarni Toshkent "devor soati" sifatida saqlaydi (AppClock.Now — Kind=Unspecified),

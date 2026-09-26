@@ -43,6 +43,11 @@ public class ViewAccessSweepTests(ApiFixture fixture)
         "api/admin/teachers/export",
         // Filiallar — bitta maktab, tizim egasining sozlamasi (menyuda ham faqat superadmin).
         "api/admin/branches",
+        // AI ulanishlar (docs/modules/mcp-readonly.md) — superadmin only: who connected which
+        // AI client, what it read, and revocation. Not a page a role can grant.
+        "api/admin/mcp/status",
+        "api/admin/mcp/connections",
+        "api/admin/mcp/audit",
     };
 
     public static TheoryData<string> AdminGets()

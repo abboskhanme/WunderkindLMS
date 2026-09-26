@@ -222,3 +222,24 @@ Bular bor deb hisoblamang — ular hali qurilmagan:
   bu paket hech qayerda ishlatilmagan.
 - **Yangi tekshiruv:** 3.5-bo'lim. Himoya buzilsa xato chiqmaydi, shuning uchun uni
   har deploydan keyin buyruq bilan tekshirish kerak.
+
+---
+
+## 7. AI ulanish (MCP, faqat o'qish) — 2026-09-26
+
+To'liq qo'llanma va deploy qadamlari: **docs/MCP.md §6**. Qisqasi:
+
+- Yangi `.env`: `DB_RO_PASSWORD` (bo'sh = AI ulanish o'chiq, ilova ishlayveradi).
+- Compose avtomatik: backend `ConnectionStrings__ReadOnly` (`app_ro`), database `RO_DB_PASSWORD`;
+  server fayli: `Mcp__PublicBaseUrl=https://lms.wunderkindedu.uz`.
+- `deploy/init-roles.sql` endi `app_ro` ni ham yaratadi (SELECT only, `default_transaction_read_only=on`,
+  hech narsaga ega emas) va `mcp_audit` ni `app_rw` uchun append-only qiladi — migratsiyadan
+  OLDIN va KEYIN ishga tushiring (mavjud bazada `docker exec -e RO_DB_PASSWORD=… wunderkind-database psql … -f …`).
+- Yangi migratsiya `20260926150755_McpReadOnly` — 5 ta `mcp_*` jadval + `mcp_apply_app_ro_grants()`
+  (app_ro ruxsat ro'yxati) va `mcp_prune_audit()` (jurnal 1 yil), DROP yo'q, Down to'liq qaytaradi.
+- `Mcp__PublicBaseUrl` Production'da MAJBURIY (server faylida bor); `ConnectionStrings__Default`
+  endi `Maximum Pool Size=40`.
+- Cloudflare: bot-challenge'dan faqat `/mcp`, `/oauth/token|register|revoke`, `/.well-known/*` ozod;
+  `/oauth/authorize` himoyada qoladi (docs/MCP.md §6.4).
+- Caddy: o'zgarish yo'q.
+

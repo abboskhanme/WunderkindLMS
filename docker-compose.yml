@@ -28,6 +28,9 @@ services:
       # tushirganda ham (migratsiyadan keyin) shular ishlatiladi.
       APP_DB_PASSWORD: "${DB_APP_PASSWORD}"
       MIGRATOR_DB_PASSWORD: "${DB_MIGRATOR_PASSWORD}"
+      # `app_ro` — READ-ONLY role of the MCP (AI client) tools. Optional: empty = role not
+      # created and the MCP server stays off (docs/MCP.md).
+      RO_DB_PASSWORD: "${DB_RO_PASSWORD:-}"
     volumes:
       - pg-data:/var/lib/postgresql/data
       - pg-backups:/backups
@@ -81,13 +84,23 @@ services:
       # shuning uchun `REVOKE` unga HAQIQATAN ta'sir qiladi (jadval egasiga qilmaydi —
       # bu serverda amaliy sinovdan o'tkazilgan).
       # Bu qatorni `schoollms` ga qaytarsangiz — moliyaviy himoya JIMGINA yo'qoladi.
-      ConnectionStrings__Default: "Host=database;Port=5432;Database=schoollms;Username=app_rw;Password=${DB_APP_PASSWORD};Include Error Detail=true"
+      # Maximum Pool Size=40: server Postgres max_connections=60 (docker-compose.server.yml) —
+      # 40 (app_rw) + 8 (app_ro, MCP) + migrator/backup/psql/superuser reserve must fit.
+      ConnectionStrings__Default: "Host=database;Port=5432;Database=schoollms;Username=app_rw;Password=${DB_APP_PASSWORD};Include Error Detail=true;Maximum Pool Size=40"
       # Migrator = `schoollms_owner`: sxema egasi, FAQAT migratsiya uchun.
       # Berilmasa ilova Default ga qaytadi (dev qulayligi) — prodda IKKALASI ham shart.
       ConnectionStrings__Migrator: "Host=database;Port=5432;Database=schoollms;Username=schoollms_owner;Password=${DB_MIGRATOR_PASSWORD};Include Error Detail=true"
       # Redis kesh. Bu qatorni o'chirsangiz — ilova jarayon ichidagi xotira keshiga qaytadi
       # (qayta build SHART EMAS). Rollback shu qadar oddiy.
       ConnectionStrings__Redis: "cache:6379"
+      # Read-only MCP server for AI clients (docs/MCP.md). `app_ro` = SELECT only. Built ONLY
+      # when DB_RO_PASSWORD is set; empty string = MCP endpoint off (fail-closed), app unaffected.
+      # No "Include Error Detail" (it can echo row data into logs); the app also enforces pool ≤ 8,
+      # timeouts and a read-only session option itself (McpReadOnlyConnection.Harden).
+      ConnectionStrings__ReadOnly: "${DB_RO_PASSWORD:+Host=database;Port=5432;Database=schoollms;Username=app_ro;Password=${DB_RO_PASSWORD};Maximum Pool Size=8;Timeout=5;Command Timeout=30}"
+      # OAuth issuer / public /mcp URL. REQUIRED outside Development, else MCP stays off.
+      # Server: docker-compose.server.yml sets it; local: MCP_PUBLIC_BASE_URL in .env.
+      Mcp__PublicBaseUrl: "${MCP_PUBLIC_BASE_URL:-}"
       Tenancy__RootDomain: "${ROOT_DOMAIN}"
       App__Host: "test.${ROOT_DOMAIN}"     # FAQAT shu host ilovani (SPA) ochadi; qolganlari → landing
       Jwt__Key: "${JWT_KEY}"               # >=32 belgi; prod'da MAJBURIY

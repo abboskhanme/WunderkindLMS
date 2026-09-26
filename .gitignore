@@ -49,3 +49,7 @@ backups/
 # EduSchool frontend bundle — tahlil uchun mahalliy nusxa, repozitoriyaga kirmaydi
 .eduschool-bundle/
 .DS_Store
+
+# EduSchool import artefacts — real pupils/guardians PII, never commit (2026-09-26)
+docs/import/
+docs/REJECTED_ROWS.csv

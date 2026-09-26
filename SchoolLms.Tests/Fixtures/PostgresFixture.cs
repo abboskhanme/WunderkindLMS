@@ -65,6 +65,14 @@ public sealed class PostgresFixture : IAsyncLifetime
     public const string AppRwRole = "app_rw";
     public const string AppRwPassword = "app_rw_test_pwd";
 
+    /// <summary>
+    /// Read-only role of the MCP tools (docs/modules/mcp-readonly.md). Created here as
+    /// <c>deploy/init-roles.sql</c> step 5c does: no DML, owns nothing, sessions read-only by
+    /// default; its SELECT allow-list comes from the migration. Tests prove writes fail for it.
+    /// </summary>
+    public const string AppRoRole = "app_ro";
+    public const string AppRoPassword = "app_ro_test_pwd";
+
     private const string TemplateDatabase = "schoollms_template";
 
     private PostgreSqlContainer? _container;
@@ -113,12 +121,14 @@ public sealed class PostgresFixture : IAsyncLifetime
         // (tashqi Postgres qayta ishlatilganda shu yerda yiqilardi).
         await ExecuteAdminAsync($"""DROP DATABASE IF EXISTS "{TemplateDatabase}" WITH (FORCE);""");
         await ExecuteAdminAsync($"""DROP ROLE IF EXISTS "{AppRwRole}";""");
+        await ExecuteAdminAsync($"""DROP ROLE IF EXISTS "{AppRoRole}";""");
         await ExecuteAdminAsync($"""DROP ROLE IF EXISTS "{OwnerRole}";""");
         await ExecuteAdminAsync($"""CREATE ROLE "{OwnerRole}" LOGIN PASSWORD '{OwnerPassword}';""");
         await ExecuteAdminAsync($"""CREATE DATABASE "{TemplateDatabase}" OWNER "{OwnerRole}";""");
 
         // ---- `app_rw`: migratsiyadan OLDIN va FAQAT bazaviy huquqlar bilan ----
         await CreateAppRwWithBaselineGrantsAsync();
+        await CreateAppRoAsync();
 
         // ---- Migratsiya: AYNAN owner roli bilan ----
         var ownerTemplateConn = BuildConnectionString(TemplateDatabase, OwnerRole, OwnerPassword);
@@ -200,6 +210,27 @@ public sealed class PostgresFixture : IAsyncLifetime
     }
 
     /// <summary>
+    /// <c>app_ro</c>: the MCP tools' read-only role — a mirror of init-roles.sql step 5c.
+    /// Created BEFORE the migration so the default privileges cover every table it creates.
+    /// </summary>
+    private async Task CreateAppRoAsync()
+    {
+        await ExecuteAdminAsync(
+            $"""
+             CREATE ROLE "{AppRoRole}" LOGIN PASSWORD '{AppRoPassword}'
+                 NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOINHERIT NOBYPASSRLS;
+             """);
+        await ExecuteAdminAsync($"""ALTER ROLE "{AppRoRole}" SET default_transaction_read_only = on;""");
+        await ExecuteOnDatabaseAsync(TemplateDatabase,
+            $"""GRANT CONNECT ON DATABASE "{TemplateDatabase}" TO "{AppRoRole}";""");
+        await ExecuteOnDatabaseAsync(TemplateDatabase, $"""GRANT USAGE ON SCHEMA public TO "{AppRoRole}";""");
+        await ExecuteOnDatabaseAsync(TemplateDatabase, $"""REVOKE CREATE ON SCHEMA public FROM "{AppRoRole}";""");
+        // NO default privileges: app_ro gets an explicit allow-list, applied by the McpReadOnly
+        // migration through public.mcp_apply_app_ro_grants() (the same function init-roles.sql
+        // step 5c calls). New tables stay closed to it.
+    }
+
+    /// <summary>
     /// Test klassi uchun yangi, migratsiya qo'llangan baza. Shablondan nusxalanadi —
     /// migratsiya qayta yugurmaydi (~50 ms o'rniga ~2 s).
     /// </summary>
@@ -233,6 +264,7 @@ public sealed class PostgresFixture : IAsyncLifetime
             await ExecuteAdminAsync($"""DROP DATABASE IF EXISTS "{name}" WITH (FORCE);""");
         await ExecuteAdminAsync($"""DROP DATABASE IF EXISTS "{TemplateDatabase}" WITH (FORCE);""");
         await ExecuteAdminAsync($"""DROP ROLE IF EXISTS "{AppRwRole}";""");
+        await ExecuteAdminAsync($"""DROP ROLE IF EXISTS "{AppRoRole}";""");
         await ExecuteAdminAsync($"""DROP ROLE IF EXISTS "{OwnerRole}";""");
     }
 
@@ -249,7 +281,10 @@ public sealed class PostgresFixture : IAsyncLifetime
         AppRwConnectionString: AppRwIsOwnerFallback
             ? BuildConnectionString(name, OwnerRole, OwnerPassword)
             : BuildConnectionString(name, AppRwRole, AppRwPassword),
-        AppRwIsOwnerFallback: AppRwIsOwnerFallback);
+        AppRwIsOwnerFallback: AppRwIsOwnerFallback)
+    {
+        AppRoConnectionString = BuildConnectionString(name, AppRoRole, AppRoPassword),
+    };
 
     private string BuildConnectionString(string database, string user, string password) =>
         new NpgsqlConnectionStringBuilder(_adminConnectionString)
@@ -322,6 +357,9 @@ public sealed record TestDatabase(
     string AppRwConnectionString,
     bool AppRwIsOwnerFallback)
 {
+    /// <summary>MCP tools' read-only role (<c>app_ro</c>) — SELECT only.</summary>
+    public string AppRoConnectionString { get; init; } = string.Empty;
+
     /// <summary>
     /// GRANT'larga tayanadigan testlar (P1-22 — ledger immutability) SHUNI birinchi qatorda
     /// chaqirsin. Fallback holatida <c>app_rw</c> satri aslida owner'niki bo'ladi va

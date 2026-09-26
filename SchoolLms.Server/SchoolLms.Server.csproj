@@ -24,6 +24,9 @@
          tug'dirardi. Rollback: shu qatorni qaytarish + `dotnet restore`. -->
     <!-- Taqsimlangan kesh (ReferenceCache). Redis ulanish satri bo'lmasa ishlatilmaydi. -->
     <PackageReference Include="Microsoft.Extensions.Caching.StackExchangeRedis" Version="10.*" />
+    <!-- Read-only MCP server for AI clients (docs/modules/mcp-readonly.md). Official C# SDK,
+         Streamable HTTP transport. Pinned: the SDK tracks a fast-moving protocol. -->
+    <PackageReference Include="ModelContextProtocol.AspNetCore" Version="2.2.0" />
   </ItemGroup>
 
   <ItemGroup>

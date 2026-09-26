@@ -57,6 +57,10 @@
 \set owner_pw ''
 \getenv app_pw APP_DB_PASSWORD
 \getenv owner_pw MIGRATOR_DB_PASSWORD
+-- Optional (docs/MCP.md): password of the READ-ONLY role `app_ro` used by the MCP (AI
+-- client) tools. Empty = the role is not created/refreshed and the MCP server stays off.
+\set ro_pw ''
+\getenv ro_pw RO_DB_PASSWORD
 
 -- Fail loudly instead of silently creating passwordless roles.
 SELECT CASE
@@ -202,7 +206,10 @@ FROM (VALUES
         -- with a `reversal_of` row, never edited. `adjustment_reasons` (B2)
         -- is NOT in this list on purpose: it is an ordinary catalogue with
         -- no money in it, so it keeps the full CRUD step 4 already grants.
-        ('payroll_adjustments')
+        ('payroll_adjustments'),
+        -- docs/modules/mcp-readonly.md — what an AI client read is audited;
+        -- the audit row can never be edited or deleted afterwards.
+        ('mcp_audit')
      ) AS t(name)
 WHERE to_regclass('public.' || quote_ident(t.name)) IS NOT NULL
 \gexec
@@ -236,6 +243,67 @@ WHERE to_regclass('public.' || quote_ident(t.name)) IS NOT NULL
 
 
 -- ---------------------------------------------------------------------------
+-- 5c) app_ro — READ-ONLY role for the MCP (AI client) tools.
+--     docs/modules/mcp-readonly.md, docs/MCP.md §6.
+--
+--     LOGIN, NOINHERIT, OWNS NOTHING, SELECT ONLY, at most 8 connections. Belt and
+--     braces: sessions start with `default_transaction_read_only = on` and a 30 s
+--     statement timeout.
+--
+--     PRIVILEGES ARE AN ALLOW-LIST, not "all tables": the list lives in ONE place — the
+--     function public.mcp_apply_app_ro_grants() created by the McpReadOnly migration
+--     (Migrations/Sql/mcp_guards.sql). It revokes everything, then grants SELECT on the
+--     listed tables and only the non-secret COLUMNS of users / school_meta / guardians.
+--     New tables are closed by default (no default privileges for app_ro).
+--
+--     Created/refreshed only when RO_DB_PASSWORD is set. When the role exists its
+--     attributes and privileges are re-asserted on every run, password or not.
+--     Run this script BEFORE the migration (role exists -> the migration applies the
+--     allow-list) and AFTER it (the usual step).
+-- ---------------------------------------------------------------------------
+SELECT format('%s ROLE app_ro LOGIN PASSWORD %L',
+              CASE WHEN EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_ro')
+                   THEN 'ALTER' ELSE 'CREATE' END,
+              :'ro_pw')
+WHERE :'ro_pw' <> ''
+\gexec
+
+SELECT 'DO $n$ BEGIN RAISE NOTICE ''RO_DB_PASSWORD not set - app_ro not created/refreshed (MCP stays off)''; END $n$;'
+WHERE :'ro_pw' = '' AND NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_ro')
+\gexec
+
+SELECT stmt FROM (VALUES
+    (1, 'ALTER ROLE app_ro NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOINHERIT NOBYPASSRLS CONNECTION LIMIT 8'),
+    (2, 'ALTER ROLE app_ro SET default_transaction_read_only = on'),
+    (3, 'ALTER ROLE app_ro SET statement_timeout = ''30s'''),
+    (4, format('GRANT CONNECT ON DATABASE %I TO app_ro', current_database())),
+    (5, 'GRANT USAGE ON SCHEMA public TO app_ro'),
+    (6, 'REVOKE CREATE ON SCHEMA public FROM app_ro'),
+    (7, 'REVOKE ALL ON ALL TABLES IN SCHEMA public FROM app_ro'),
+    (8, 'REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM app_ro'),
+    -- An earlier version of this script granted SELECT on FUTURE tables; take it back.
+    (9, 'ALTER DEFAULT PRIVILEGES FOR ROLE schoollms_owner IN SCHEMA public REVOKE ALL ON TABLES FROM app_ro'),
+    (10, 'ALTER DEFAULT PRIVILEGES FOR ROLE schoollms_owner IN SCHEMA public REVOKE ALL ON SEQUENCES FROM app_ro')
+) AS t(n, stmt)
+WHERE EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_ro')
+ORDER BY n
+\gexec
+
+-- Never a member of a writing role (membership would let it SET ROLE and write).
+SELECT format('REVOKE %I FROM app_ro', r)
+FROM unnest(ARRAY['schoollms_owner', 'app_rw']) AS r
+WHERE EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_ro')
+  AND pg_has_role('app_ro', r, 'MEMBER')
+\gexec
+
+-- The allow-list (no-op until the McpReadOnly migration has created the function).
+SELECT 'SELECT public.mcp_apply_app_ro_grants()'
+WHERE EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_ro')
+  AND to_regprocedure('public.mcp_apply_app_ro_grants()') IS NOT NULL
+\gexec
+
+
+-- ---------------------------------------------------------------------------
 -- 6) Report what was done — this output is the deploy evidence.
 -- ---------------------------------------------------------------------------
 -- `owns_in_public` is the number that matters: app_rw MUST show 0, for ever.
@@ -253,5 +321,5 @@ SELECT r.rolname AS role,
            AND n.nspname = 'public'
            AND c.relkind IN ('r','p','S','v','m')) AS owns_in_public
 FROM pg_roles r
-WHERE r.rolname IN ('schoollms', 'schoollms_owner', 'app_rw')
+WHERE r.rolname IN ('schoollms', 'schoollms_owner', 'app_rw', 'app_ro')
 ORDER BY r.rolname;
