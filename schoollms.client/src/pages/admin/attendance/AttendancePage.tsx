@@ -79,7 +79,7 @@ export function AttendancePage() {
   const openDetail = (s: SubjectAttendance) => {
     setDetail(s)
     setDetailLoading(true)
-    getSubjectAttendanceDetail(classId, s.subjectId, date)
+    getSubjectAttendanceDetail(classId, s.subjectId, date, s.period)
       .then(setDetailStudents)
       .finally(() => setDetailLoading(false))
   }

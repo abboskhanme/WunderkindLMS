@@ -22,6 +22,10 @@ public class StaffSalaryMigrationTests(ApiFixture fixture) : IAsyncLifetime
 {
     private const string PreviousMigration = "20260925124026_StaffAccessRoles";
 
+    /// <summary>This migration itself — Down() is measured FROM here, so columns added by later
+    /// migrations (e.g. boarding_attendance.reason_id) are not counted as "removed by Down".</summary>
+    private const string ThisMigration = "20260926061213_StaffSalary";
+
     private static readonly (string Table, string Column)[] NewColumns =
     [
         ("users", "phone"),
@@ -103,6 +107,7 @@ public class StaffSalaryMigrationTests(ApiFixture fixture) : IAsyncLifetime
     {
         HashSet<string> head;
         long users, expenses;
+        await MigrateToAsync(ThisMigration);
         await using (var conn = await OpenOwnerAsync())
         {
             await InsertMinimalRowAsync(conn, "users", new()
@@ -127,7 +132,7 @@ public class StaffSalaryMigrationTests(ApiFixture fixture) : IAsyncLifetime
             Assert.Equal("staff", await ScalarAsync(conn, "select role from users where id = 'u-down-staff'"));
         }
 
-        await MigrateToAsync(null);
+        await MigrateToAsync(ThisMigration);
 
         await using (var conn = await OpenOwnerAsync())
         {

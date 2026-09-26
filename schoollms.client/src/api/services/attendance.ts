@@ -107,11 +107,15 @@ export interface StudentStatus {
   reasonName?: string
 }
 
-/** Bitta fan/kun bo'yicha har bir o'quvchining holati */
+/**
+ * Bitta fan/kun bo'yicha har bir o'quvchining holati. `period` — fan kunda ikki marta
+ * bo'lsa aynan shu soat. Kech kelgan o'quvchi `absent: false` (sabab nomi bilan).
+ */
 export async function getSubjectAttendanceDetail(
   classId: string,
   subjectId: string,
   date: string,
+  period?: number,
 ): Promise<StudentStatus[]> {
   if (USE_MOCK) {
     await delay()
@@ -136,7 +140,7 @@ export async function getSubjectAttendanceDetail(
     })
   }
   const { data } = await api.get<StudentStatus[]>('/admin/attendance/subject', {
-    params: { classId, subjectId, date },
+    params: { classId, subjectId, date, period },
   })
   return data
 }

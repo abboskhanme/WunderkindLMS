@@ -197,10 +197,39 @@ public class DashboardController(AppDbContext db) : ControllerBase
             .ToList();
 
         var groupSizes = await GroupSizesAsync(db, scope);
+
+        // "Davomat belgilash" ekranida belgilangan darslar (HeldLessons qoidasi): bunday darsda
+        // jurnalda yozuvi YO'Q o'quvchi — KELDI, "tekshirilmagan" emas. Ilgari bu ikki vidjet
+        // faqat jurnal yozuvlarini ko'rardi va belgilangan darsdagi kelganlar "tekshirilmagan"
+        // (bugungi soatlar) yoki umuman ko'rinmas (oxirgi kelgan kuni) bo'lib qolardi.
+        var membersByGroup = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+        foreach (var (studentId, groupIds) in groupsByStudent)
+            foreach (var groupId in groupIds)
+            {
+                if (!membersByGroup.TryGetValue(groupId, out var list)) membersByGroup[groupId] = list = [];
+                list.Add(studentId);
+            }
+        var classNameById = classes.ToDictionary(c => c.Id, c => c.Name, StringComparer.Ordinal);
+        List<string> RosterOf(HeldLesson m) => m.OwnerKind == LessonOwnerKind.Group
+            ? membersByGroup.GetValueOrDefault(m.ClassId) ?? []
+            : classNameById.TryGetValue(m.ClassId, out var name)
+                ? [.. students.Where(s => s.ClassName == name && (m.SubGroup == 0 || s.SubGroup == m.SubGroup))
+                    .Select(s => s.Id)]
+                : [];
+        var from30 = AppClock.Today.AddDays(-30).ToString("yyyy-MM-dd");
+        var markedLessons = (await HeldLessons.MarkedAsync(db, null, from30, AppClock.Today.ToString("yyyy-MM-dd")))
+            .Where(m => scope.Allows(m.OwnerKind, m.ClassId))
+            .Select(m => (Lesson: m, Roster: RosterOf(m)))
+            .ToList();
+
+        var reasonRows = await db.AbsenceReasons.AsNoTracking().ToListAsync();
+        var unexcusedIds = reasonRows.Where(AttendanceAnalytics.IsUnexcusedReason)
+            .Select(r => r.Id).ToHashSet(StringComparer.Ordinal);
+
         return new AdminDashboardDto(
             stats, classPerformance, topClasses,
-            AttendanceByPeriod(students, entries, lateReasonIds, groupSizes),
-            await AbsentStudentsAsync(students, lateReasonIds),
+            AttendanceByPeriod(students, entries, lateReasonIds, groupSizes, classNameById, markedLessons),
+            await AbsentStudentsAsync(students, lateReasonIds, unexcusedIds, markedLessons),
             classHeadcounts);
     }
 
@@ -267,13 +296,20 @@ public class DashboardController(AppDbContext db) : ControllerBase
     /// SINFning emas, GURUHning soni qo'shiladi (G-13). O'chirgich o'chiq bo'lsa
     /// lug'at bo'sh va bu qo'shimcha umuman ishlamaydi.
     /// </param>
+    /// <param name="classNameById">Sinf id → nomi (belgilangan sinf darsining "kutilgan" soni uchun).</param>
+    /// <param name="markedLessons">
+    /// "Davomat belgilash" ekranida belgilangan darslar va ularning ro'yxati. Bugungi shunday
+    /// darsdagi HAR BIR o'quvchi tekshirilgan: yozuvi yo'q — keldi (HeldLessons qoidasi).
+    /// </param>
     private static List<AttendanceByPeriodDto> AttendanceByPeriod(
         List<Student> students, List<JournalEntry> entries, HashSet<string> lateReasonIds,
-        Dictionary<string, int> groupSizes)
+        Dictionary<string, int> groupSizes, Dictionary<string, string> classNameById,
+        List<(HeldLesson Lesson, List<string> Roster)> markedLessons)
     {
         // `JournalEntry.Date` — `yyyy-MM-dd` satri, shuning uchun solishtirish ham satrda.
         var today = AppClock.Today.ToString("yyyy-MM-dd");
         var todays = entries.Where(e => e.Date == today).ToList();
+        var todaysMarked = markedLessons.Where(m => m.Lesson.Date == today).ToList();
         var byClass = students.GroupBy(s => s.ClassName ?? "")
             .ToDictionary(g => g.Key, g => g.Count(), StringComparer.Ordinal);
 
@@ -284,17 +320,28 @@ public class DashboardController(AppDbContext db) : ControllerBase
             // Sinf va guruh yozuvlari ALOHIDA: sinf tarafi bugungi hisobning aynan o'zi.
             var slot = all.Where(e => e.OwnerKind != LessonOwnerKind.Group).ToList();
             var groupSlot = all.Where(e => e.OwnerKind == LessonOwnerKind.Group).ToList();
+            var markedSlot = todaysMarked.Where(m => m.Lesson.Period == period).ToList();
 
-            var marked = all.Select(e => e.StudentId).Distinct().Count();
+            var marked = all.Select(e => e.StudentId)
+                .Concat(markedSlot.SelectMany(m => m.Roster))
+                .Distinct(StringComparer.Ordinal).Count();
             var absent = all.Count(e => e.ReasonId != null && !lateReasonIds.Contains(e.ReasonId));
             var present = marked - absent;
 
             // Kutilgan son — shu sinflardagi barcha o'quvchilar, belgilanmaganlar ham.
+            var slotClassNames = slot
+                .Select(e => students.FirstOrDefault(s => s.Id == e.StudentId)?.ClassName)
+                .Concat(markedSlot.Where(m => m.Lesson.OwnerKind != LessonOwnerKind.Group)
+                    .Select(m => classNameById.GetValueOrDefault(m.Lesson.ClassId)))
+                .Where(n => n is not null)
+                .ToHashSet(StringComparer.Ordinal);
             var totalInClasses = byClass
-                .Where(kv => slot.Any(e => students.Any(s => s.Id == e.StudentId && s.ClassName == kv.Key)))
+                .Where(kv => slotClassNames.Contains(kv.Key))
                 .Sum(kv => kv.Value);
             // Guruh darsida esa — guruhning o'z a'zolari soni (sinfniki emas).
-            var totalInGroups = groupSlot.Select(e => e.ClassId).Distinct(StringComparer.Ordinal)
+            var totalInGroups = groupSlot.Select(e => e.ClassId)
+                .Concat(markedSlot.Where(m => m.Lesson.OwnerKind == LessonOwnerKind.Group).Select(m => m.Lesson.ClassId))
+                .Distinct(StringComparer.Ordinal)
                 .Sum(id => groupSizes.GetValueOrDefault(id));
             var expected = Math.Max(totalInClasses + totalInGroups, marked);
 
@@ -309,30 +356,51 @@ public class DashboardController(AppDbContext db) : ControllerBase
     /// Sababli yo'qlik va "kech keldi" bu ro'yxatga tushmaydi — aks holda
     /// kasal bo'lgan bola intizom muammosi bo'lib ko'rinardi.
     /// </summary>
+    /// <param name="unexcusedIds">Sababsiz sabablar — <see cref="AttendanceAnalytics.IsUnexcusedReason"/>.
+    /// Ro'yxat va vidjet sarlavhasi "sababsiz" deydi; ilgari kasal/oilaviy sabab ham sanalardi.</param>
+    /// <param name="markedLessons">Belgilangan darslar: yo'qlik yozuvi yo'q o'quvchi o'sha kuni KELGAN
+    /// ("Oxirgi kelgan" ustuni uchun) — "Davomat belgilash" ekranida keldi yozuv qoldirmaydi.</param>
     private async Task<List<AbsentStudentDto>> AbsentStudentsAsync(
-        List<Student> students, HashSet<string> lateReasonIds)
+        List<Student> students, HashSet<string> lateReasonIds, HashSet<string> unexcusedIds,
+        List<(HeldLesson Lesson, List<string> Roster)> markedLessons)
     {
         // Satr sanalar `yyyy-MM-dd` — leksikografik taqqoslash xronologik bilan bir xil.
         var from = AppClock.Today.AddDays(-30).ToString("yyyy-MM-dd");
         var recent = await db.JournalEntries.AsNoTracking()
             .Where(e => string.Compare(e.Date, from) >= 0)
-            .Select(e => new { e.StudentId, e.Date, e.ReasonId })
+            .Select(e => new { e.StudentId, e.Date, e.ReasonId, e.ClassId, e.SubjectId, e.Period })
             .ToListAsync();
 
         var byStudent = recent.GroupBy(e => e.StudentId).ToDictionary(g => g.Key, g => g.ToList());
         var names = students.ToDictionary(s => s.Id, s => s);
+
+        // Belgilangan darsda yo'qlik (kech keldidan boshqa) sababi bor katak — kelmagan.
+        var absentAt = recent
+            .Where(e => e.ReasonId != null && !lateReasonIds.Contains(e.ReasonId))
+            .Select(e => (e.StudentId, e.ClassId, e.SubjectId, e.Date, e.Period))
+            .ToHashSet();
+        var seenOnMarked = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var (m, roster) in markedLessons)
+            foreach (var id in roster)
+            {
+                if (absentAt.Contains((id, m.ClassId, m.SubjectId, m.Date, m.Period))) continue;
+                if (!seenOnMarked.TryGetValue(id, out var d) || string.CompareOrdinal(m.Date, d) > 0)
+                    seenOnMarked[id] = m.Date;
+            }
 
         return [.. byStudent
             .Select(kv =>
             {
                 if (!names.TryGetValue(kv.Key, out var st)) return null;
                 var missed = kv.Value
-                    .Where(e => e.ReasonId != null && !lateReasonIds.Contains(e.ReasonId))
+                    .Where(e => e.ReasonId != null && unexcusedIds.Contains(e.ReasonId))
                     .Select(e => e.Date).Distinct().Count();
                 if (missed == 0) return null;
                 var lastSeen = kv.Value
                     .Where(e => e.ReasonId == null || lateReasonIds.Contains(e.ReasonId))
                     .Select(e => e.Date)
+                    .Append(seenOnMarked.GetValueOrDefault(kv.Key))
+                    .Where(d => d is not null)
                     .DefaultIfEmpty(null!)
                     .Max();
                 return new AbsentStudentDto(

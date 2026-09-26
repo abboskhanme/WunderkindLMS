@@ -328,6 +328,12 @@ public static class AttendanceAnalytics
         !r.IsLate
         && (r.Name.Contains("sababsiz", StringComparison.OrdinalIgnoreCase) || r.Points < 0);
 
+    /// <summary>
+    /// Sababsiz yo'qlik ta'rifi boshqa ekranlar uchun (bosh sahifadagi "Dars qoldirayotgan
+    /// o'quvchilar") — shu hisobotdagi bilan AYNAN bir xil bo'lishi uchun.
+    /// </summary>
+    public static bool IsUnexcusedReason(AbsenceReason r) => IsUnexcused(r);
+
     private static List<AttendanceReasonRowDto> ReasonRows(
         List<AbsenceReason> reasons,
         HashSet<string> unexcusedIds,

@@ -90,7 +90,9 @@ public class AttendanceController(AppDbContext db) : ControllerBase
         var result = new List<SubjectAttendanceDto>();
         foreach (var l in dayLessons)
         {
-            var subjEntries = entries.Where(e => e.SubjectId == l.SubjectId).ToList();
+            // Fan KUNIGA ikki marta bo'lishi mumkin (masalan 1- va 4-soat Kimyo) — yozuv dars
+            // raqami bilan ham ajratiladi, aks holda bir darsdagi yo'qlik ikkinchisiga ham tushardi.
+            var subjEntries = entries.Where(e => e.SubjectId == l.SubjectId && e.Period == l.Period).ToList();
             var reasonCounts = subjEntries
                 .GroupBy(e => e.ReasonId!)
                 .Select(g => new ReasonCountDto(reasons.GetValueOrDefault(g.Key, "?"), g.Count()))
@@ -123,9 +125,15 @@ public class AttendanceController(AppDbContext db) : ControllerBase
         => await AttendanceAnalytics.BuildAsync(db, classId, from, to, day);
 
     /// <summary>Bitta fan/kun bo'yicha har bir o'quvchining holati (ega — sinf yoki guruh).</summary>
+    /// <param name="period">Dars raqami — fan kunda ikki marta bo'lsa aynan shu soat
+    /// (berilmasa — eski xulq: shu fanning kun bo'yi yozuvlari).</param>
+    /// <remarks>"Kech keldi" (<c>IsLate</c>) turidagi sabab — KELDI: <c>Absent = false</c>, sabab
+    /// nomi esa baribir qaytadi (ekran "Keldi · Kech qoldi" deb ko'rsatadi) — jadvaldagi
+    /// "keldi" soni bilan bir xil.</remarks>
     [HttpGet("subject")]
     public async Task<ActionResult<IEnumerable<StudentStatusDto>>> GetSubjectDetail(
-        [FromQuery] string classId, [FromQuery] string subjectId, [FromQuery] string date)
+        [FromQuery] string classId, [FromQuery] string subjectId, [FromQuery] string date,
+        [FromQuery] int? period = null)
     {
         var owner = await LessonRoster.OwnerAsync(db, classId);
         if (owner is null) return new List<StudentStatusDto>();
@@ -143,12 +151,15 @@ public class AttendanceController(AppDbContext db) : ControllerBase
             ? new List<JournalEntry>()
             : await db.JournalEntries.Where(e =>
                 e.ClassId == classId && e.SubjectId == subjectId && e.Quarter == q.Quarter &&
-                e.Date == date && e.ReasonId != null && e.OwnerKind == owner.Kind).ToListAsync();
+                e.Date == date && e.ReasonId != null && e.OwnerKind == owner.Kind
+                && (period == null || e.Period == period)).ToListAsync();
+        var lateIds = (await db.AbsenceReasons.Where(r => r.IsLate).Select(r => r.Id).ToListAsync())
+            .ToHashSet();
 
         return students.Select(s =>
         {
             var e = entries.FirstOrDefault(x => x.StudentId == s.Id);
-            return new StudentStatusDto(Map(s), e is not null,
+            return new StudentStatusDto(Map(s), e is not null && !lateIds.Contains(e.ReasonId!),
                 e?.ReasonId is null ? null : reasons.GetValueOrDefault(e.ReasonId));
         }).ToList();
     }

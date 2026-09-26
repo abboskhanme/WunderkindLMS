@@ -59,7 +59,10 @@ export function SubjectAttendanceModal({
                     s.absent ? 'bg-red-50 text-red-600' : 'bg-emerald-50 text-emerald-600',
                   )}
                 >
-                  {s.absent ? `Kelmadi${s.reasonName ? ` · ${s.reasonName}` : ''}` : 'Keldi'}
+                  {/* Kech kelgan — keldi (absent: false), sababi yonida: "Keldi · Kech qoldi". */}
+                  {s.absent
+                    ? `Kelmadi${s.reasonName ? ` · ${s.reasonName}` : ''}`
+                    : `Keldi${s.reasonName ? ` · ${s.reasonName}` : ''}`}
                 </span>
               </div>
             ))}
