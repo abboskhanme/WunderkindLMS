@@ -24,6 +24,13 @@ public class BoardingAttendance
     /// <summary><see cref="BoardingStatus"/>: present | absent | excused.</summary>
     public string Status { get; set; } = BoardingStatus.Present;
 
+    /// <summary>
+    /// Aniq sabab (absence_reasons.id), 2026-09-26: "keldi" da — kechikish sababi (IsLate)
+    /// yoki null; "kelmadi"/"sababli" da — yo'qlik sababi. Eski yozuvlarda null.
+    /// FK yo'q: sabablar katalogi saqlashda qayta yoziladi (id'lar saqlanadi), jurnal kabi.
+    /// </summary>
+    public string? ReasonId { get; set; }
+
     /// <summary>Kim belgilagan (users.id).</summary>
     public string MarkedBy { get; set; } = string.Empty;
 

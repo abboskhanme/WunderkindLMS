@@ -112,6 +112,62 @@ public class BoardingAttendanceTests(ApiFixture fixture)
         Assert.Equal(HttpStatusCode.BadRequest, bad.StatusCode);
     }
 
+    /// <summary>
+    /// 2026-09-26: kechki dars va yotoqxona ham K / Y + sabab. Sabab saqlanadi va qaytadi;
+    /// holatga mos kelmagan sabab (keldi + yo'qlik sababi) rad etiladi.
+    /// </summary>
+    [Fact]
+    public async Task Sabab_saqlanadi_va_holatga_mos_bolishi_shart()
+    {
+        var w = await SeedAsync();
+        using var admin = await fixture.Api.ClientAsAsync(Roles.Admin);
+
+        // Umumiy katalogdan foydalanamiz — yangi sabab qo'shish boshqa testlarga ta'sir qilardi.
+        string? lateId = null, absentId = null;
+        await fixture.Api.WithDbAsync(async db =>
+        {
+            lateId = await db.AbsenceReasons.Where(r => r.IsLate).Select(r => r.Id).FirstOrDefaultAsync();
+            absentId = await db.AbsenceReasons.Where(r => !r.IsLate).Select(r => r.Id).FirstOrDefaultAsync();
+            if (lateId is null)
+            {
+                var r = new AbsenceReason { Name = $"Kech {w.Tag}", Short = "K9", IsLate = true };
+                db.AbsenceReasons.Add(r); lateId = r.Id;
+            }
+            if (absentId is null)
+            {
+                var r = new AbsenceReason { Name = $"Kasal {w.Tag}", Short = "Q9", IsLate = false };
+                db.AbsenceReasons.Add(r); absentId = r.Id;
+            }
+            await db.SaveChangesAsync();
+        });
+
+        var late = await admin.PutAsJsonAsync(Url, new
+        {
+            date = w.Date, session = "evening",
+            marks = new[] { new { studentId = w.Boarder, status = "present", reasonId = lateId } },
+        });
+        Assert.Equal(HttpStatusCode.OK, late.StatusCode);
+        var day = (await DayAsync(admin, w.Date, BoardingSession.Evening))!;
+        var row = day.Sections.SelectMany(s => s.Students).Single(s => s.StudentId == w.Boarder);
+        Assert.Equal(("present", lateId), (row.Status, row.ReasonId));
+
+        var absent = await admin.PutAsJsonAsync(Url, new
+        {
+            date = w.Date, session = "dorm",
+            marks = new[] { new { studentId = w.Boarder, status = "excused", reasonId = absentId } },
+        });
+        Assert.Equal(HttpStatusCode.OK, absent.StatusCode);
+        var dorm = (await DayAsync(admin, w.Date, BoardingSession.Dorm))!;
+        Assert.Equal(absentId, dorm.Sections.SelectMany(s => s.Students).Single(s => s.StudentId == w.Boarder).ReasonId);
+
+        var mismatch = await admin.PutAsJsonAsync(Url, new
+        {
+            date = w.Date, session = "evening",
+            marks = new[] { new { studentId = w.Boarder, status = "present", reasonId = absentId } },
+        });
+        Assert.Equal(HttpStatusCode.BadRequest, mismatch.StatusCode);
+    }
+
     [Fact]
     public async Task Qayta_saqlash_qatorni_yangilaydi_takrorlamaydi()
     {

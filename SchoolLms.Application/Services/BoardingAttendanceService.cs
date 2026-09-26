@@ -48,7 +48,7 @@ public sealed class BoardingAttendanceService(
         var eligible = await EligibleAsync(date, ct);
         var marks = await db.BoardingAttendance.AsNoTracking()
             .Where(a => a.Date == date && a.Session == session)
-            .ToDictionaryAsync(a => a.StudentId, a => a.Status, ct);
+            .ToDictionaryAsync(a => a.StudentId, a => (a.Status, a.ReasonId), ct);
 
         // Yo'nalish guruhlari va ularning faol a'zolari.
         var tracks = await db.StudyGroups.AsNoTracking()
@@ -64,7 +64,9 @@ public sealed class BoardingAttendanceService(
             select new { m.GroupId, st.Id, st.FullName, st.ClassName }).ToListAsync(ct);
 
         BoardingStudentDto Row(string id, string name, string? cls) =>
-            new(id, name, cls ?? "", eligible.Contains(id), marks.GetValueOrDefault(id));
+            new(id, name, cls ?? "", eligible.Contains(id),
+                marks.TryGetValue(id, out var m) ? m.Status : null,
+                marks.TryGetValue(id, out var r) ? r.ReasonId : null);
 
         var sections = new List<BoardingSectionDto>();
         var inTrack = new HashSet<string>(StringComparer.Ordinal);
@@ -117,6 +119,19 @@ public sealed class BoardingAttendanceService(
         if (marks.Any(m => !BoardingStatus.All.Contains(m.Status)))
             return (null, "Holat noto'g'ri (present, absent yoki excused)");
 
+        // Sabab (2026-09-26): "keldi" — faqat kechikish sababi (IsLate); "kelmadi"/"sababli" —
+        // faqat yo'qlik sababi. Katalogda yo'q id — xato.
+        var reasonIds = marks.Where(m => !string.IsNullOrEmpty(m.ReasonId)).Select(m => m.ReasonId!).Distinct().ToList();
+        var reasons = await db.AbsenceReasons.AsNoTracking()
+            .Where(r => reasonIds.Contains(r.Id)).ToDictionaryAsync(r => r.Id, r => r.IsLate, ct);
+        foreach (var m in marks.Where(m => !string.IsNullOrEmpty(m.ReasonId)))
+        {
+            if (!reasons.TryGetValue(m.ReasonId!, out var isLate))
+                return (null, "Sabab topilmadi — sahifani yangilab qayta urinib ko'ring");
+            if (isLate != (m.Status == BoardingStatus.Present))
+                return (null, "Sabab holatga mos emas: \"keldi\" — faqat kechikish, \"kelmadi\" — faqat yo'qlik sababi");
+        }
+
         var eligible = await EligibleAsync(date, ct);
         var foreign = marks.Where(m => !eligible.Contains(m.StudentId)).ToList();
         if (foreign.Count > 0)
@@ -139,6 +154,7 @@ public sealed class BoardingAttendanceService(
             // Holat "yo'q" dan boshqasiga o'zgarsa — keyingi "yo'q" uchun xabar yana ketishi mumkin.
             if (m.Status != BoardingStatus.Absent) row.NotifiedAt = null;
             row.Status = m.Status;
+            row.ReasonId = string.IsNullOrEmpty(m.ReasonId) ? null : m.ReasonId;
             row.MarkedBy = userId;
             row.MarkedAt = now;
             if (m.Status == BoardingStatus.Absent && row.NotifiedAt is null) toNotify.Add(row);

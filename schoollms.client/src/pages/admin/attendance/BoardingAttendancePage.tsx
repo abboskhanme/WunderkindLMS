@@ -1,17 +1,20 @@
 /**
- * Kechki dars va yotoqxona davomati (mijoz, 2026-09-23).
+ * Kechki dars va yotoqxona davomati (mijoz, 2026-09-23; ikki tugma — 2026-09-26).
  *
- * Ikki yorliq — ikki xil odam oladi: "Kechki dars" (keldi / kelmadi / sababli) va "Yotoqxona"
- * (joyida / yo'q / ruxsat bilan). Kuniga bir marta. Ro'yxat yo'nalish guruhlari bo'yicha;
- * guruhi yo'q yotoqxona o'quvchilari o'z sinfi bilan "Guruhsiz" bo'limida.
+ * "Davomat belgilash" bilan bir xil: ikki tugma — K/J (keldi / joyida; ostida kech keldi
+ * sabablari) va Y (kelmadi / yo'q; ostida sabab, sukut — Sababsiz). Kuniga bir marta, ikki
+ * yorliq — ikki xil odam oladi. Ro'yxat yo'nalish guruhlari bo'yicha; guruhi yo'q yotoqxona
+ * o'quvchilari o'z sinfi bilan "Guruhsiz" bo'limida.
+ *
+ * Saqlashda holat: keldi → `present`; kelmadi + Sababsiz → `absent` (ota-onaga Telegram xabar,
+ * bir holat — bir marta); kelmadi + boshqa sabab → `excused`. Aniq sabab `reasonId` da.
  *
  * Yotoqxona abonementi yo'q o'quvchi KULRANG: belgilanmaydi, hisobga kirmaydi, xabar ketmaydi.
- * "Kelmadi / Yo'q" saqlanganda ota-onaga Telegram xabar ketadi (bir holat — bir marta).
- * Kunduzgi dars davomati (jurnal) bu yerda yo'q va tegilmaydi.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { BedDouble, Moon, Search } from 'lucide-react'
+import type { AbsenceReason } from '@/types'
 import {
   getBoardingDay,
   saveBoarding,
@@ -19,7 +22,9 @@ import {
   type BoardingSection,
   type BoardingSession,
   type BoardingStatus,
+  type BoardingStudent,
 } from '@/api/services/boardingAttendance'
+import { getSettings } from '@/api/services/settings'
 import { useAuth } from '@/context/auth-context'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
@@ -39,27 +44,26 @@ const SESSIONS: { key: BoardingSession; label: string; perm: string; icon: typeo
   { key: 'dorm', label: 'Yotoqxona', perm: 'attendanceDorm', icon: BedDouble },
 ]
 
-const STATUSES: BoardingStatus[] = ['present', 'absent', 'excused']
-const LABELS: Record<BoardingSession, Record<BoardingStatus, { letter: string; title: string }>> = {
-  evening: {
-    present: { letter: 'K', title: 'Keldi' },
-    absent: { letter: 'Y', title: 'Kelmadi' },
-    excused: { letter: 'S', title: 'Sababli' },
-  },
-  dorm: {
-    present: { letter: 'J', title: 'Joyida' },
-    absent: { letter: 'Y', title: "Yo'q" },
-    excused: { letter: 'R', title: 'Ruxsat bilan' },
-  },
+/** Ekrandagi ikki holat. */
+type Mark = 'present' | 'absent'
+const MARKS: Mark[] = ['present', 'absent']
+const LABELS: Record<BoardingSession, Record<Mark, { letter: string; title: string }>> = {
+  evening: { present: { letter: 'K', title: 'Keldi' }, absent: { letter: 'Y', title: 'Kelmadi' } },
+  dorm: { present: { letter: 'J', title: 'Joyida' }, absent: { letter: 'Y', title: "Yo'q" } },
 }
 
-const chip = (active: boolean, tone: BoardingStatus, disabled = false) =>
+/** Belgi: holat + aniq sabab (keldi — kechikish yoki yo'q; kelmadi — sabab yoki sukut). */
+interface Pick {
+  mark: Mark
+  reasonId: string | null
+}
+
+const chip = (active: boolean, tone: Mark, disabled = false) =>
   cn(
-    'flex h-8 w-8 items-center justify-center rounded-full text-xs font-semibold transition-colors',
+    'flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold transition-colors',
     disabled && 'cursor-not-allowed opacity-40',
     active && tone === 'present' && 'bg-emerald-500 text-white',
     active && tone === 'absent' && 'bg-red-500 text-white',
-    active && tone === 'excused' && 'bg-amber-500 text-white',
     !active && 'bg-slate-100 text-slate-400',
     !active && !disabled && 'hover:bg-slate-200',
   )
@@ -67,17 +71,20 @@ const chip = (active: boolean, tone: BoardingStatus, disabled = false) =>
 export function BoardingAttendancePage() {
   const { user } = useAuth()
   const [params, setParams] = useSearchParams()
-  const allowed = SESSIONS.filter((s) => !user?.permissions || user.permissions.includes(s.perm))
+  const allowed = SESSIONS.filter(
+    (s) => !user?.permissions || user.permissions.includes(s.perm) || user.permissions.includes(`${s.perm}:view`),
+  )
   const requested = params.get('session') as BoardingSession | null
   const session: BoardingSession =
     allowed.find((s) => s.key === requested)?.key ?? allowed[0]?.key ?? 'evening'
 
   const [date, setDate] = useState(todayISO())
   const [day, setDay] = useState<BoardingDay | null>(null)
+  const [reasons, setReasons] = useState<AbsenceReason[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  /** Saqlanmagan belgilar: bo'lim kaliti → o'quvchi → holat. */
-  const [draft, setDraft] = useState<Record<string, Record<string, BoardingStatus>>>({})
+  /** Saqlanmagan belgilar: bo'lim kaliti → o'quvchi → belgi. */
+  const [draft, setDraft] = useState<Record<string, Record<string, Pick>>>({})
   const [saving, setSaving] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const [hideIneligible, setHideIneligible] = useState(false)
@@ -87,6 +94,12 @@ export function BoardingAttendancePage() {
   // Qayta yuklash — saqlagandan keyin (server hisoblagan "belgilandi"/"yo'q" sonlari uchun).
   const [reloadTick, setReloadTick] = useState(0)
   const load = () => setReloadTick((n) => n + 1)
+
+  useEffect(() => {
+    getSettings()
+      .then((s) => setReasons(s.absenceReasons))
+      .catch(() => setReasons([]))
+  }, [])
 
   useEffect(() => {
     let active = true
@@ -111,41 +124,61 @@ export function BoardingAttendancePage() {
     }
   }, [date, session, reloadTick])
 
+  // Sabablar: K ostida — kechikish (isLate); Y ostida — Sababsiz (sukut) va qolgan yo'qlik sabablari.
+  const lateChoices = reasons.filter((r) => r.isLate)
+  const absentAll = reasons.filter((r) => !r.isLate)
+  const unexcused = absentAll.find((r) => /sababsiz/i.test(r.name)) ?? absentAll[0] ?? null
+  const absentChoices = unexcused ? [unexcused, ...absentAll.filter((r) => r.id !== unexcused.id)] : absentAll
+  const lateIds = new Set(lateChoices.map((r) => r.id))
+
+  /** Saqlangan qator → ekrandagi belgi. Sabab yo'q eski "sababli" — Y, sukutdan boshqa birinchi sabab. */
+  const savedPick = (s: BoardingStudent): Pick | null => {
+    if (!s.status) return null
+    if (s.status === 'present') return { mark: 'present', reasonId: s.reasonId && lateIds.has(s.reasonId) ? s.reasonId : null }
+    const fallback =
+      s.status === 'excused' ? (absentChoices.find((r) => r.id !== unexcused?.id)?.id ?? null) : (unexcused?.id ?? null)
+    return { mark: 'absent', reasonId: s.reasonId ?? fallback }
+  }
   // Sukut — BELGILANMAGAN (mijoz, 2026-09-23): hech kim o'z-o'zidan "keldi/joyida" emas.
-  const statusOf = (sec: BoardingSection, id: string, saved: BoardingStatus | null): BoardingStatus | null =>
-    draft[sec.key]?.[id] ?? saved ?? null
+  const pickOf = (sec: BoardingSection, s: BoardingStudent): Pick | null => draft[sec.key]?.[s.studentId] ?? savedPick(s)
+
   /** "Saqlash" belgisizlar bilan bosilgan bo'limlar — belgisiz qatorlar sariq. */
   const [flagged, setFlagged] = useState<Set<string>>(new Set())
 
-  const setAll = (sec: BoardingSection, st: BoardingStatus) =>
+  const defaultPick = (mark: Mark): Pick => ({ mark, reasonId: mark === 'absent' ? (unexcused?.id ?? null) : null })
+
+  const setAll = (sec: BoardingSection, mark: Mark) =>
     setDraft((prev) => ({
       ...prev,
-      [sec.key]: Object.fromEntries(sec.students.filter((x) => x.eligible).map((x) => [x.studentId, st])),
+      [sec.key]: Object.fromEntries(sec.students.filter((x) => x.eligible).map((x) => [x.studentId, defaultPick(mark)])),
     }))
 
-  const setMark = (secKey: string, id: string, st: BoardingStatus) => {
+  const setPick = (secKey: string, id: string, pick: Pick) => {
     setError(null)
-    setDraft((prev) => ({ ...prev, [secKey]: { ...prev[secKey], [id]: st } }))
+    setDraft((prev) => ({ ...prev, [secKey]: { ...prev[secKey], [id]: pick } }))
   }
 
   const saveSection = async (sec: BoardingSection) => {
     const eligible = sec.students.filter((s) => s.eligible)
-    const unmarked = eligible.filter((s) => !statusOf(sec, s.studentId, s.status)).length
+    const unmarked = eligible.filter((s) => !pickOf(sec, s)).length
     if (unmarked > 0) {
       // Hamma belgilanmaguncha saqlanmaydi — belgisiz o'quvchi hisobdan tushib qolmasin.
       setFlagged((prev) => new Set(prev).add(sec.key))
       setError(`${sec.title}: ${unmarked} ta o'quvchi belgilanmagan — avval hammasini belgilang.`)
       return
     }
-    const marks = eligible.map((s) => ({ studentId: s.studentId, status: statusOf(sec, s.studentId, s.status)! }))
+    const marks = eligible.map((s) => {
+      const p = pickOf(sec, s)!
+      const status: BoardingStatus =
+        p.mark === 'present' ? 'present' : !p.reasonId || p.reasonId === unexcused?.id ? 'absent' : 'excused'
+      return { studentId: s.studentId, status, reasonId: p.reasonId }
+    })
     if (marks.length === 0) return
     setSaving(sec.key)
     setError(null)
     try {
       const res = await saveBoarding(date, session, marks)
-      setToast(
-        `${sec.title} saqlandi` + (res.notified > 0 ? ` · ${res.notified} ta ota-onaga xabar ketdi` : ''),
-      )
+      setToast(`${sec.title} saqlandi` + (res.notified > 0 ? ` · ${res.notified} ta ota-onaga xabar ketdi` : ''))
       load()
     } catch (e) {
       setError((e as { response?: { data?: { message?: string } } })?.response?.data?.message ?? "Saqlab bo'lmadi")
@@ -160,8 +193,7 @@ export function BoardingAttendancePage() {
       (day?.sections ?? []).map((sec) => ({
         ...sec,
         students: sec.students.filter(
-          (s) =>
-            (!hideIneligible || s.eligible) && (!needle || s.fullName.toLocaleLowerCase('uz').includes(needle)),
+          (s) => (!hideIneligible || s.eligible) && (!needle || s.fullName.toLocaleLowerCase('uz').includes(needle)),
         ),
       })),
     [day, hideIneligible, needle],
@@ -179,13 +211,17 @@ export function BoardingAttendancePage() {
         <div>
           <h1 className="text-xl font-semibold text-slate-800">Kechki va yotoqxona davomati</h1>
           <p className="text-sm text-slate-400">
-            Faqat yotoqxona abonementi bor o'quvchilar belgilanadi · {L.present.title} (yashil), {L.absent.title}{' '}
-            (qizil), {L.excused.title} (sariq)
+            Faqat yotoqxona abonementi bor o'quvchilar belgilanadi · {L.present.letter} — {L.present.title.toLowerCase()}
+            {lateChoices.length > 0 && ' (ostidan: kech keldi)'} · {L.absent.letter} — {L.absent.title.toLowerCase()}
+            {unexcused && `, sukut: ${unexcused.name}`}
           </p>
         </div>
         {day && (
           <p className="text-sm text-slate-600">
-            <b>{day.marked}</b> / {day.eligible} belgilandi · <span className="text-red-600">{day.absent} {L.absent.title.toLowerCase()}</span>
+            <b>{day.marked}</b> / {day.eligible} belgilandi ·{' '}
+            <span className="text-red-600">
+              {day.absent} {L.absent.title.toLowerCase()}
+            </span>
           </p>
         )}
       </header>
@@ -234,8 +270,8 @@ export function BoardingAttendancePage() {
       ) : sections.length === 0 ? (
         <Card>
           <p className="py-10 text-center text-sm text-slate-400">
-            Ro'yxat bo'sh. Yo'nalish guruhlarini "O'quv bo'limi → Guruhlar"da belgilang, yotoqxona
-            abonementini esa o'quvchi kartasida qo'shing.
+            Ro'yxat bo'sh. Yo'nalish guruhlarini "O'quv bo'limi → Guruhlar"da belgilang, yotoqxona abonementini esa
+            o'quvchi kartasida qo'shing.
           </p>
         </Card>
       ) : (
@@ -244,75 +280,127 @@ export function BoardingAttendancePage() {
             const done = sec.eligible > 0 && sec.marked === sec.eligible
             return (
               <Card key={sec.key} className="p-0">
-                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-4 py-3">
-                  <div className="min-w-0">
+                {/* Sarlavha: ustun tugmalari o'ngda — pastdagi qator tugmalari bilan AYNAN bir ustunda
+                    (mijoz, 2026-09-26: "ustuni ustuniga mos kelsin"). Qatorlar o'ralmaydi. */}
+                <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-4 py-3">
+                  <div className="min-w-0 flex-1">
                     <p className="truncate font-semibold text-slate-800">{sec.title}</p>
-                    <p className="text-xs text-slate-400">
+                    <p className="truncate text-xs text-slate-400">
                       {sec.eligible} ta yotoqxonada · {sec.marked} belgilangan
-                      {sec.absent > 0 && <span className="text-red-600"> · {sec.absent} {L.absent.title.toLowerCase()}</span>}
+                      {sec.absent > 0 && (
+                        <span className="text-red-600">
+                          {' '}
+                          · {sec.absent} {L.absent.title.toLowerCase()}
+                        </span>
+                      )}
                       {done && <span className="text-emerald-600"> · tugadi</span>}
                     </p>
                   </div>
-                  <div className="flex items-center gap-2">
-                    {STATUSES.map((st) => (
+                  <div className="flex shrink-0 items-center gap-1.5">
+                    {MARKS.map((m) => (
                       <button
-                        key={st}
+                        key={m}
                         type="button"
                         disabled={sec.eligible === 0}
-                        onClick={() => setAll(sec, st)}
-                        title={`Hammasi — ${L[st].title}`}
-                        aria-label={`Hammasi — ${L[st].title}`}
-                        className={chip(true, st, sec.eligible === 0)}
+                        onClick={() => setAll(sec, m)}
+                        title={`Hammasi — ${L[m].title}`}
+                        aria-label={`Hammasi — ${L[m].title}`}
+                        className={chip(true, m, sec.eligible === 0)}
                       >
-                        {L[st].letter}
+                        {L[m].letter}
                       </button>
                     ))}
                   </div>
                 </div>
                 <ul className="divide-y divide-slate-50">
                   {sec.students.map((s, i) => {
-                    const cur = statusOf(sec, s.studentId, s.status)
+                    const cur = s.eligible ? pickOf(sec, s) : null
                     return (
                       <li
                         key={s.studentId}
                         className={cn(
-                          'flex items-center gap-3 px-4 py-2',
+                          'px-4 py-2',
                           !s.eligible && 'bg-slate-50/60',
                           s.eligible && !cur && flagged.has(sec.key) && 'bg-amber-50/70',
                         )}
                         title={s.eligible ? undefined : "Shu kuni yotoqxona abonementi yo'q — davomat olinmaydi"}
                       >
-                        <span className="w-6 text-right text-xs tabular-nums text-slate-400">{i + 1}</span>
-                        <span className="min-w-0 flex-1">
-                          <span className={cn('block truncate', s.eligible ? 'text-slate-800' : 'text-slate-400')}>
-                            {s.fullName}
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="flex min-w-0 flex-1 items-center gap-3">
+                            <span className="w-6 shrink-0 text-right text-xs tabular-nums text-slate-400">{i + 1}</span>
+                            <span className="min-w-0">
+                              <span className={cn('block truncate', s.eligible ? 'text-slate-800' : 'text-slate-400')}>
+                                {s.fullName}
+                              </span>
+                              <span className="block truncate text-[11px] text-slate-400">
+                                {s.className || '—'}
+                                {!s.eligible && " · abonement yo'q"}
+                              </span>
+                            </span>
                           </span>
-                          <span className="text-[11px] text-slate-400">
-                            {s.className || '—'}
-                            {!s.eligible && ' · abonement yo\'q'}
+                          <span className="flex shrink-0 items-center gap-1.5">
+                            {MARKS.map((m) => (
+                              <button
+                                key={m}
+                                type="button"
+                                disabled={!s.eligible}
+                                title={L[m].title}
+                                aria-label={`${s.fullName} — ${L[m].title}`}
+                                onClick={() => setPick(sec.key, s.studentId, cur?.mark === m ? cur : defaultPick(m))}
+                                className={chip(!!cur && cur.mark === m, m, !s.eligible)}
+                              >
+                                {L[m].letter}
+                              </button>
+                            ))}
                           </span>
-                        </span>
-                        <span className="flex gap-1.5">
-                          {STATUSES.map((st) => (
-                            <button
-                              key={st}
-                              type="button"
-                              disabled={!s.eligible}
-                              title={L[st].title}
-                              onClick={() => setMark(sec.key, s.studentId, st)}
-                              className={chip(s.eligible && cur === st, st, !s.eligible)}
+                        </div>
+
+                        {/* Sabab — ism OSTIDA (Davomat belgilash bilan bir xil). */}
+                        {cur?.mark === 'present' && lateChoices.length > 0 && (
+                          <div className="mt-1 pl-9">
+                            <select
+                              value={cur.reasonId ?? ''}
+                              onChange={(e) => setPick(sec.key, s.studentId, { mark: 'present', reasonId: e.target.value || null })}
+                              aria-label={`${s.fullName} — ${L.present.title.toLowerCase()} / kech keldi`}
+                              className={cn(
+                                'min-w-0 max-w-full rounded-lg border px-2 py-0.5 text-xs outline-none',
+                                cur.reasonId
+                                  ? 'border-amber-200 bg-amber-50 font-medium text-amber-800'
+                                  : 'border-transparent bg-transparent text-slate-400 hover:border-slate-200',
+                              )}
                             >
-                              {L[st].letter}
-                            </button>
-                          ))}
-                        </span>
+                              <option value="">{L.present.title}</option>
+                              {lateChoices.map((r) => (
+                                <option key={r.id} value={r.id}>
+                                  {r.name}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        )}
+                        {cur?.mark === 'absent' && absentChoices.length > 1 && (
+                          <div className="mt-1 pl-9">
+                            <select
+                              value={cur.reasonId ?? unexcused?.id ?? ''}
+                              onChange={(e) => setPick(sec.key, s.studentId, { mark: 'absent', reasonId: e.target.value })}
+                              aria-label={`${s.fullName} — sabab`}
+                              className="min-w-0 max-w-full rounded-lg border border-red-200 bg-red-50 px-2 py-0.5 text-xs font-medium text-red-700 outline-none focus:border-red-400"
+                            >
+                              {absentChoices.map((r) => (
+                                <option key={r.id} value={r.id}>
+                                  {r.name}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        )}
                       </li>
                     )
                   })}
                 </ul>
                 {/* Saqlash — pastda, "Davomat belgilash" sahifasidagidek (mijoz, 2026-09-23). */}
                 {(() => {
-                  const left = sec.students.filter((x) => x.eligible && !statusOf(sec, x.studentId, x.status)).length
+                  const left = sec.students.filter((x) => x.eligible && !pickOf(sec, x)).length
                   return (
                     <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 px-4 py-3">
                       <span className="text-sm text-slate-400">

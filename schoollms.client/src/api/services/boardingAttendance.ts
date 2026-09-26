@@ -14,6 +14,8 @@ export interface BoardingStudent {
   /** false — shu kuni yotoqxona abonementi yo'q: kulrang, belgilanmaydi */
   eligible: boolean
   status: BoardingStatus | null
+  /** Aniq sabab: keldi — kechikish sababi yoki null; kelmadi — yo'qlik sababi (2026-09-26). */
+  reasonId?: string | null
 }
 
 export interface BoardingSection {
@@ -44,7 +46,7 @@ export async function getBoardingDay(date: string, session: BoardingSession): Pr
 export async function saveBoarding(
   date: string,
   session: BoardingSession,
-  marks: { studentId: string; status: BoardingStatus }[],
+  marks: { studentId: string; status: BoardingStatus; reasonId?: string | null }[],
 ): Promise<{ saved: number; notified: number }> {
   const { data } = await api.put<{ saved: number; notified: number }>('/admin/boarding-attendance', {
     date,
