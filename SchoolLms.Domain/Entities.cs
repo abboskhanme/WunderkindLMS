@@ -36,6 +36,18 @@ public class AppUser
     /// of the role's permissions. null = no role (legacy per-user permissions stay as they are).
     /// </summary>
     public Guid? AccessRoleId { get; set; }
+
+    // ----- Staff salary (docs/modules/employees-unified.md) — used for role="staff" only -----
+
+    /// <summary>Xodim telefoni (<c>+998 97 666 66 66</c> ko'rinishida saqlanadi, bo'sh bo'lishi mumkin).</summary>
+    public string Phone { get; set; } = string.Empty;
+    /// <summary>Xodimning oylik maoshi (so'm, <c>numeric(14,2)</c>). O'qituvchi maoshi bu yerda EMAS.</summary>
+    public decimal Salary { get; set; }
+    /// <summary>
+    /// Maosh shu kundan hisoblanadi (ISO <c>yyyy-MM-dd</c>, bo'sh = davr boshidan). Birinchi oy
+    /// kalendar kunlari bo'yicha qisman — <c>StaffSalaryCalc</c>.
+    /// </summary>
+    public string SalaryStartDate { get; set; } = string.Empty;
 }
 
 /// <summary>Maktab filiali — nomi, manzil, GPS joylashuv va radius (mobil geo-yo'qlama uchun).</summary>

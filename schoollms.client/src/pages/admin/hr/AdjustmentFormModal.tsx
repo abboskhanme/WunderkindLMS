@@ -18,7 +18,19 @@ import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
 import { Input, Select, Textarea } from '@/components/ui/Input'
 import { PhotoUpload } from '@/components/ui/PhotoUpload'
+import { TEACHER_POSITION } from '@/lib/employees'
 import { Notice } from '../billing/BillingUi'
+
+/** Bitta ro'yxatdagi xodim (o'qituvchi yoki boshqa xodim) — tanlov qiymati `kind:id`. */
+interface EmployeeOption {
+  value: string
+  kind: EmployeeKind
+  id: string
+  fullName: string
+  position: string
+}
+
+const optionValue = (kind: EmployeeKind, id: string) => `${kind}:${id}`
 
 const MONTHS = [
   "Yanvar", "Fevral", "Mart", "Aprel", "May", "Iyun",
@@ -41,8 +53,9 @@ export function AdjustmentFormModal({ open, kind, busy, error, onClose, onSubmit
   const [staff, setStaff] = useState<Staff[]>([])
   const [reasons, setReasons] = useState<AdjustmentReason[]>([])
 
-  const [employeeKind, setEmployeeKind] = useState<EmployeeKind>('teacher')
-  const [employeeId, setEmployeeId] = useState('')
+  // Tanlangan xodim: `teacher:<id>` yoki `staff:<id>` (mijoz, 2026-09-26: bitta ro'yxat).
+  const [employee, setEmployee] = useState('')
+  const [employeeSearch, setEmployeeSearch] = useState('')
   const [reasonId, setReasonId] = useState('')
   const [amount, setAmount] = useState('')
   const [periodYear, setPeriodYear] = useState(today.getFullYear())
@@ -53,8 +66,8 @@ export function AdjustmentFormModal({ open, kind, busy, error, onClose, onSubmit
   useEffect(() => {
     if (!open) return
     /* eslint-disable react-hooks/set-state-in-effect -- oyna ochilganda formani boshlang'ich holatga keltirish (maqsadli) */
-    setEmployeeKind('teacher')
-    setEmployeeId('')
+    setEmployee('')
+    setEmployeeSearch('')
     setReasonId('')
     setAmount('')
     setPeriodYear(today.getFullYear())
@@ -71,9 +84,43 @@ export function AdjustmentFormModal({ open, kind, busy, error, onClose, onSubmit
 
   const activeReasons = useMemo(() => reasons.filter((r) => r.isActive), [reasons])
 
+  // O'qituvchilar va boshqa xodimlar — BITTA ro'yxat, ism bo'yicha, lavozimi bilan.
+  const employees = useMemo<EmployeeOption[]>(
+    () =>
+      [
+        ...teachers.map((t) => ({
+          value: optionValue('teacher', t.id),
+          kind: 'teacher' as const,
+          id: t.id,
+          fullName: t.fullName,
+          position: TEACHER_POSITION,
+        })),
+        ...staff.map((s) => ({
+          value: optionValue('staff', s.id),
+          kind: 'staff' as const,
+          id: s.id,
+          fullName: s.fullName,
+          position: s.position || 'Xodim',
+        })),
+      ].sort((a, b) => a.fullName.localeCompare(b.fullName, 'uz')),
+    [teachers, staff],
+  )
+  const selected = employees.find((e) => e.value === employee) ?? null
+  // Qidiruv ro'yxatni toraytiradi; tanlangan xodim esa har doim ro'yxatda qoladi.
+  const shownEmployees = useMemo(() => {
+    const q = employeeSearch.trim().toLocaleLowerCase('uz')
+    if (!q) return employees
+    return employees.filter(
+      (e) =>
+        e.value === employee ||
+        e.fullName.toLocaleLowerCase('uz').includes(q) ||
+        e.position.toLocaleLowerCase('uz').includes(q),
+    )
+  }, [employees, employeeSearch, employee])
+
   const parsedAmount = Number(amount.replace(/\s/g, '').replace(',', '.'))
   const valid =
-    employeeId !== '' &&
+    selected !== null &&
     reasonId !== '' &&
     Number.isFinite(parsedAmount) &&
     parsedAmount > 0 &&
@@ -82,10 +129,10 @@ export function AdjustmentFormModal({ open, kind, busy, error, onClose, onSubmit
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    if (!valid || busy) return
+    if (!valid || busy || !selected) return
     onSubmit({
-      employeeKind,
-      employeeId,
+      employeeKind: selected.kind,
+      employeeId: selected.id,
       kind,
       reasonId,
       amount: parsedAmount,
@@ -116,42 +163,30 @@ export function AdjustmentFormModal({ open, kind, busy, error, onClose, onSubmit
       }
     >
       <form id="adjustment-form" onSubmit={handleSubmit} className="space-y-4">
-        <div>
-          <span className="mb-1 block text-sm font-medium text-slate-600">
-            Xodim turi <span className="text-red-500">*</span>
-          </span>
-          <div className="flex gap-2">
-            {(['teacher', 'staff'] as const).map((k) => (
-              <button
-                key={k}
-                type="button"
-                onClick={() => {
-                  setEmployeeKind(k)
-                  setEmployeeId('')
-                }}
-                className={`flex-1 rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
-                  employeeKind === k
-                    ? 'border-brand-400 bg-brand-50 text-brand-700'
-                    : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
-                }`}
-              >
-                {k === 'teacher' ? "O'qituvchi" : 'Boshqa xodim'}
-              </button>
+        <div className="space-y-2">
+          <Input
+            label="Xodim"
+            required
+            type="search"
+            placeholder="Ism yoki lavozim bo'yicha qidirish..."
+            value={employeeSearch}
+            onChange={(e) => setEmployeeSearch(e.target.value)}
+          />
+          <Select
+            aria-label="Xodimni tanlang"
+            value={employee}
+            onChange={(e) => setEmployee(e.target.value)}
+          >
+            <option value="">
+              {shownEmployees.length === 0 ? 'Hech kim topilmadi' : `Tanlang... (${shownEmployees.length} ta)`}
+            </option>
+            {shownEmployees.map((p) => (
+              <option key={p.value} value={p.value}>
+                {p.fullName} — {p.position}
+              </option>
             ))}
-          </div>
+          </Select>
         </div>
-
-        <Select
-          label="Xodim"
-          required
-          value={employeeId}
-          onChange={(e) => setEmployeeId(e.target.value)}
-        >
-          <option value="">Tanlang...</option>
-          {(employeeKind === 'teacher' ? teachers : staff).map((p) => (
-            <option key={p.id} value={p.id}>{p.fullName}</option>
-          ))}
-        </Select>
 
         <Select
           label="Sabab"

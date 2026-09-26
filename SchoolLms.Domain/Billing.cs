@@ -356,6 +356,14 @@ public class Expense
     public string? TeacherId { get; set; }
 
     /// <summary>
+    /// Maosh o'qituvchi BO'LMAGAN xodimga berilgan bo'lsa — uning akkaunti
+    /// (<c>users.id</c>, role="staff"). <see cref="TeacherId"/> bilan birga
+    /// hech qachon to'ldirilmaydi va faqat <c>salary</c> toifasida bo'ladi
+    /// (docs/modules/employees-unified.md).
+    /// </summary>
+    public string? EmployeeUserId { get; set; }
+
+    /// <summary>
     /// Naqd chiqim qaysi kassa smenasidan to'landi (F1.03, finance-parity
     /// §3.1 A1). <c>null</c> = smenaga bog'lanmagan chiqim.
     ///

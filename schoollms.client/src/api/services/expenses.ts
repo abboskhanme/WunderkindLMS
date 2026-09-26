@@ -86,6 +86,12 @@ export interface ExpenseRecord {
   teacherId: string | null
   teacherName: string | null
   /**
+   * Maosh o'qituvchi BO'LMAGAN xodimga berilgan bo'lsa — `users.id` va ismi
+   * (employees-unified.md). `teacherId` bilan birga hech qachon to'lmaydi.
+   */
+  employeeUserId: string | null
+  employeeName: string | null
+  /**
    * Naqd chiqim qaysi kassa smenasidan to'landi (F1.03). `null` = pul
    * bankdan chiqqan yoki chiqim hali jurnalga tushmagan.
    */

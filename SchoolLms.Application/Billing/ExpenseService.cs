@@ -140,7 +140,11 @@ public record ExpenseDto(
     // Qaysi KASSADAN to'landi (kassalar modeli, 2026-09). `null` = bankdan
     // yoki eski (kassa modelidan oldingi) qator.
     Guid? CashBoxId = null,
-    string? CashBoxName = null);
+    string? CashBoxName = null,
+    // Maosh o'qituvchi bo'lmagan xodimga berilgan bo'lsa (employees-unified.md):
+    // `users.id` va ismi. `TeacherId` bilan birga hech qachon to'lmaydi.
+    string? EmployeeUserId = null,
+    string? EmployeeName = null);
 
 /// <summary>
 /// Chiqimga biriktirilgan hujjat (F1.08) — o'qish uchun.
@@ -206,9 +210,14 @@ public record AttachExpenseFileRequest(
 /// Naqd chiqim QAYSI kassadan to'lanadi (kassalar modeli, 2026-09 — "smena"
 /// o'rnini bosadi). <c>null</c> = SUKUT kassa. Naqd bo'lmagan usulda e'tiborsiz.
 /// </param>
+/// <param name="EmployeeUserId">
+/// Maosh o'qituvchi BO'LMAGAN xodimga (<c>users.id</c>, role="staff") berilyapti —
+/// <paramref name="TeacherId"/> ning ko'zgusi: faqat <c>salary</c> toifasida va
+/// <paramref name="TeacherId"/> bilan birga emas, aks holda <b>400</b>.
+/// </param>
 public record CreateExpenseRequest(
     DateOnly OnDate, string Category, decimal Amount, string Method, string? Note,
-    string? TeacherId = null, Guid? CashBoxId = null);
+    string? TeacherId = null, Guid? CashBoxId = null, string? EmployeeUserId = null);
 
 /// <summary>
 /// Chegaradan yuqori chiqimni tasdiqlash (SPEC §4.5). <c>approved_by</c> tanada
@@ -397,6 +406,7 @@ public sealed class ExpenseService(
         var category = RequireCategory(request.Category);
         var method = RequireMethod(request.Method);
         var teacherId = Trim(request.TeacherId);
+        var employeeUserId = Trim(request.EmployeeUserId);
 
         // Kelajak sanasi bilan chiqim — hali bo'lmagan pul harakati. U hali
         // yopilmagan davrga tushib, keyingi oyning P&L'ini jimgina o'zgartirardi.
@@ -430,6 +440,22 @@ public sealed class ExpenseService(
                 throw BillingRuleException.NotFound("teacher_not_found", "O'qituvchi topilmadi.");
         }
 
+        // Xodim maoshi — xuddi shu qoida (bazada: `ck_expenses_employee_only_salary`,
+        // `ck_expenses_one_salary_recipient`). Maosh BITTA odamga yoziladi.
+        if (employeeUserId is not null)
+        {
+            if (category != SalaryPaymentQuery.SalaryCategory)
+                throw BillingRuleException.Invalid("employee_not_allowed",
+                    $"Xodim faqat '{SalaryPaymentQuery.SalaryCategory}' toifasida ko'rsatiladi.");
+
+            if (teacherId is not null)
+                throw BillingRuleException.Invalid("salary_recipient_ambiguous",
+                    "Maosh yo o'qituvchiga, yo xodimga yoziladi — ikkalasiga birdan emas.");
+
+            if (!await db.Users.AsNoTracking().AnyAsync(u => u.Id == employeeUserId && u.Role == Roles.Staff, ct))
+                throw BillingRuleException.NotFound("employee_not_found", "Xodim topilmadi.");
+        }
+
         var expense = new Expense
         {
             OnDate = request.OnDate,
@@ -437,6 +463,7 @@ public sealed class ExpenseService(
             Amount = amount,
             Note = Trim(request.Note),
             TeacherId = teacherId,
+            EmployeeUserId = employeeUserId,
             CreatedBy = actorId,
             ApprovedBy = null,
             CreatedAt = AppClock.NowInstant,
@@ -944,6 +971,7 @@ public sealed class ExpenseService(
 
         var userIds = expenses.Select(e => e.CreatedBy)
             .Concat(expenses.Select(e => e.ApprovedBy).Where(x => x is not null).Select(x => x!))
+            .Concat(expenses.Select(e => e.EmployeeUserId).Where(x => x is not null).Select(x => x!))
             .Concat(entries.Select(l => l.CreatedBy))
             .Distinct()
             .ToList();
@@ -1024,7 +1052,9 @@ public sealed class ExpenseService(
                 e.CashShiftId,
                 attachmentCounts.GetValueOrDefault(e.Id, 0),
                 e.CashBoxId,
-                e.CashBoxId is null ? null : boxNames.GetValueOrDefault(e.CashBoxId.Value, "—"));
+                e.CashBoxId is null ? null : boxNames.GetValueOrDefault(e.CashBoxId.Value, "—"),
+                e.EmployeeUserId,
+                e.EmployeeUserId is null ? null : Name(e.EmployeeUserId));
         })];
 
         string Name(string userId) => names.GetValueOrDefault(userId, "—");

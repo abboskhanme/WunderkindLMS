@@ -28,7 +28,10 @@ function monthsInPeriod(from?: string, to?: string): number {
   return m < 1 ? 1 : m
 }
 
-/** O'qituvchilar maoshi hisoboti (davr bo'yicha): oylik, kerakli, berilgan, qoldiq */
+/**
+ * Xodimlar maoshi hisoboti (davr bo'yicha): oylik, kerakli, berilgan, qoldiq.
+ * Avval o'qituvchilar, keyin boshqa xodimlar (`kind === 'staff'`) keladi.
+ */
 export async function getSalaryReport(from?: string, to?: string): Promise<SalaryReportRow[]> {
   if (USE_MOCK) {
     await delay()
@@ -48,6 +51,8 @@ export async function getSalaryReport(from?: string, to?: string): Promise<Salar
         months,
         expected,
         remaining: expected,
+        kind: 'teacher' as const,
+        position: "O'qituvchi",
       }
     })
   }
@@ -73,7 +78,7 @@ export async function downloadSalaryReport(from: string, to: string): Promise<vo
   a.href = url
   const cd = (res.headers['content-disposition'] as string | undefined) ?? ''
   const m = cd.match(/filename="?([^"]+)"?/)
-  a.download = m?.[1] ?? 'oqituvchilar-maoshi.xlsx'
+  a.download = m?.[1] ?? 'xodimlar-maoshi.xlsx'
   document.body.appendChild(a)
   a.click()
   a.remove()

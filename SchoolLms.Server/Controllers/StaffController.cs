@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using SchoolLms.Infrastructure.Auth;
 using SchoolLms.Infrastructure.Data;
 using SchoolLms.Application.Dtos;
+using SchoolLms.Application.Services;
 using SchoolLms.Domain;
 
 namespace SchoolLms.Server.Controllers;
@@ -18,26 +19,37 @@ namespace SchoolLms.Server.Controllers;
 [Authorize]
 [AdminPerm("staff")]
 [Route("api/admin/staff")]
-public class StaffController(AppDbContext db) : ControllerBase
+public class StaffController(AppDbContext db, AuditService audit) : ControllerBase
 {
     private const int MinPasswordLength = 8;
     private const string WeakPasswordMessage = "Parol kamida 8 belgidan iborat bo'lsin";
+    /// <summary><c>users.salary</c> — <c>numeric(14,2)</c> ning eng katta qiymati.</summary>
+    private const decimal MaxSalary = 999_999_999_999.99m;
 
 
+    /// <summary>
+    /// Xodimlar ro'yxati. <see cref="AdminPermAttribute"/> o'qishni HAR QANDAY xodimga ochadi
+    /// (ro'yxat boshqa ekranlarda ma'lumotnoma sifatida ishlatiladi), oylik esa pul — uni faqat
+    /// admin, moliya rollari va "staff" bo'limi (to'liq yoki faqat ko'rish) bor xodim ko'radi;
+    /// boshqalarga <c>salary = 0</c>, <c>salaryStartDate = ""</c> (F0.02 dagi maosh qoidasi).
+    /// </summary>
     [HttpGet]
     public async Task<ActionResult<IEnumerable<StaffDto>>> GetAll()
     {
         var roleNames = await RoleNamesAsync();
+        var showSalary = CanSeeSalary();
         return (await db.Users.Where(u => u.Role == Roles.Staff).OrderBy(u => u.FullName).ToListAsync())
-            .Select(u => ToDto(u, roleNames)).ToList();
+            .Select(u => ToDto(u, roleNames, showSalary)).ToList();
     }
 
     [HttpPost]
     public async Task<ActionResult<StaffDto>> Create(StaffPayload p)
     {
         if (string.IsNullOrWhiteSpace(p.FullName)) return BadRequest(new { message = "F.I.SH kerak" });
+        if (ValidateSalary(p) is { } salaryError) return BadRequest(new { message = salaryError });
         var user = AccountFactory.CreateAccountFor(db, Roles.Staff, p.FullName.Trim());
         user.Position = (p.Position ?? "").Trim();
+        ApplySalary(user, p);
         if (ApplyAvatar(user, p.AvatarUrl) is { } avatarError) return BadRequest(new { message = avatarError });
         if (!string.IsNullOrWhiteSpace(p.NewPassword))
         {
@@ -45,6 +57,11 @@ public class StaffController(AppDbContext db) : ControllerBase
                 return BadRequest(new { message = WeakPasswordMessage });
             user.SetInitialPassword(p.NewPassword.Trim());
         }
+        if (user.Salary != 0 || user.SalaryStartDate.Length > 0)
+            audit.Record(AuditService.EntityStaffSalary, user.Id, "create",
+                $"Oylik belgilandi: {user.FullName} — {AuditService.Money(user.Salary)} so'm"
+                + (user.SalaryStartDate.Length > 0 ? $", {user.SalaryStartDate} dan" : ""),
+                after: new { user.Salary, user.SalaryStartDate });
         await db.SaveChangesAsync();
         return ToDto(user, await RoleNamesAsync());
     }
@@ -54,8 +71,11 @@ public class StaffController(AppDbContext db) : ControllerBase
     {
         var user = await db.Users.FindAsync(id);
         if (user is null || user.Role != Roles.Staff) return NotFound();
+        if (ValidateSalary(p) is { } salaryError) return BadRequest(new { message = salaryError });
+        var before = new { user.Salary, user.SalaryStartDate };
         user.FullName = p.FullName.Trim();
         user.Position = (p.Position ?? "").Trim();
+        ApplySalary(user, p);
         if (ApplyAvatar(user, p.AvatarUrl) is { } avatarError) return BadRequest(new { message = avatarError });
         if (!string.IsNullOrWhiteSpace(p.NewPassword))
         {
@@ -63,6 +83,13 @@ public class StaffController(AppDbContext db) : ControllerBase
                 return BadRequest(new { message = WeakPasswordMessage });
             user.SetInitialPassword(p.NewPassword.Trim());
         }
+        if (before.Salary != user.Salary || before.SalaryStartDate != user.SalaryStartDate)
+            audit.Record(AuditService.EntityStaffSalary, user.Id, "update",
+                $"Oylik o'zgardi: {user.FullName} — {AuditService.Money(before.Salary)} → "
+                + $"{AuditService.Money(user.Salary)} so'm, boshlanish "
+                + $"{(before.SalaryStartDate.Length > 0 ? before.SalaryStartDate : "—")} → "
+                + $"{(user.SalaryStartDate.Length > 0 ? user.SalaryStartDate : "—")}",
+                before: before, after: new { user.Salary, user.SalaryStartDate });
         await db.SaveChangesAsync();
         return ToDto(user, await RoleNamesAsync());
     }
@@ -72,6 +99,10 @@ public class StaffController(AppDbContext db) : ControllerBase
     {
         var user = await db.Users.FindAsync(id);
         if (user is null || user.Role != Roles.Staff) return NotFound();
+        // `expenses.employee_user_id` is RESTRICT: salary already paid is financial history.
+        // Refuse with a readable message instead of a 23503 → 500.
+        if (await db.Expenses.AnyAsync(e => e.EmployeeUserId == id))
+            return Conflict(new { message = "Bu xodimga maosh berilgan — akkauntni o'chirib bo'lmaydi (moliyaviy tarix saqlanadi)." });
         db.Users.Remove(user);
         await db.SaveChangesAsync();
         return NoContent();
@@ -145,11 +176,41 @@ public class StaffController(AppDbContext db) : ControllerBase
     private Task<Dictionary<Guid, string>> RoleNamesAsync() =>
         db.AccessRoles.AsNoTracking().ToDictionaryAsync(r => r.Id, r => r.Name);
 
-    private static StaffDto ToDto(AppUser u, IReadOnlyDictionary<Guid, string> roleNames) =>
+    private static StaffDto ToDto(AppUser u, IReadOnlyDictionary<Guid, string> roleNames, bool showSalary = true) =>
         new(u.Id, u.FullName, u.Position, u.Email, u.Permissions, u.AvatarUrl,
             u.AccessRoleId,
             u.AccessRoleId is { } rid ? roleNames.GetValueOrDefault(rid) : null,
-            u.LastLoginAt);
+            u.LastLoginAt,
+            u.Phone, showSalary ? u.Salary : 0m, showSalary ? u.SalaryStartDate : "");
+
+    /// <summary>Oylikni kim ko'radi: admin/superadmin, moliya rollari, "staff" yoki "staff:view" ruxsati.</summary>
+    private bool CanSeeSalary() =>
+        User.IsInRole(Roles.Admin) || User.IsInRole(Roles.SuperAdmin)
+        || User.IsInRole(Roles.FinanceDelegate) || User.IsInRole(Roles.FinanceViewer)
+        || User.HasClaim(c => c.Type == AdminPermAttribute.ClaimType
+                              && (c.Value == "staff" || c.Value == "staff" + Roles.ViewSuffix));
+
+    /// <summary>Oylik va boshlanish sanasini tekshiradi (hech narsani o'zgartirmaydi). Xato matni yoki null.</summary>
+    private static string? ValidateSalary(StaffPayload p)
+    {
+        if (p.Salary is { } salary)
+        {
+            if (salary < 0) return "Oylik manfiy bo'lishi mumkin emas";
+            if (decimal.Round(salary, 2) != salary || salary > MaxSalary) return "Oylik noto'g'ri";
+        }
+        var start = p.SalaryStartDate?.Trim();
+        if (!string.IsNullOrEmpty(start) && !StaffSalaryCalc.IsIsoDate(start))
+            return "Maosh boshlanish sanasi yyyy-MM-dd ko'rinishida bo'lsin";
+        return null;
+    }
+
+    /// <summary>Telefon, oylik, boshlanish sanasi: null — o'zgarmaydi. Avval <see cref="ValidateSalary"/>.</summary>
+    private static void ApplySalary(AppUser user, StaffPayload p)
+    {
+        if (p.Phone is not null) user.Phone = p.Phone.Trim();
+        if (p.Salary is { } salary) user.Salary = salary;
+        if (p.SalaryStartDate is not null) user.SalaryStartDate = p.SalaryStartDate.Trim();
+    }
 
     /// <summary>
     /// Rasm manzilini qo'llaydi. Faqat o'zimizning yuklangan fayl (<c>/uploads/…</c>) —

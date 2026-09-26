@@ -84,9 +84,19 @@ public record SalaryLedgerDto(
     string TeacherId, string FullName, decimal Salary,
     decimal TotalExpected, decimal TotalPaid, decimal Remaining,
     List<MonthSalaryDto> Months, List<PaymentDto> Payments);
+/// <param name="TeacherId">O'qituvchi qatorida <c>teachers.id</c>, xodim qatorida <c>users.id</c>.</param>
+/// <param name="Kind"><c>teacher</c> | <c>staff</c> (docs/modules/employees-unified.md).</param>
+/// <param name="Position">Lavozim: o'qituvchi — "O'qituvchi", xodim — <c>users.position</c>.</param>
 public record SalaryReportRowDto(
     string TeacherId, string TeacherName, decimal Salary, decimal TotalPaid, int PaymentsCount,
-    int Months, decimal Expected, decimal Remaining);
+    int Months, decimal Expected, decimal Remaining,
+    string Kind = SalaryReportKinds.Teacher, string Position = "");
+/// <summary><see cref="SalaryReportRowDto.Kind"/> qiymatlari.</summary>
+public static class SalaryReportKinds
+{
+    public const string Teacher = "teacher";
+    public const string Staff = "staff";
+}
 
 /// <summary>"Dars jadvali → Oylik hisoblash": toifa soat narxlari + har o'qituvchining hisoblangan oyligi.</summary>
 public record SalaryRatesDto(
@@ -1183,10 +1193,17 @@ public record BranchPayload(
 
 /// <summary>Xodim (o'qituvchi bo'lmagan ishchi) — admin akkaunti bilan.</summary>
 /// <param name="AvatarUrl">Profil rasmi (<c>/uploads/…</c>) — admin qo'yadi yoki xodimning o'zi.</param>
+/// <param name="Salary">Oylik maosh (so'm).</param>
+/// <param name="SalaryStartDate">Maosh shu kundan hisoblanadi (<c>yyyy-MM-dd</c>, bo'sh = belgilanmagan).</param>
 public record StaffDto(string Id, string FullName, string Position, string Login, List<string> Permissions,
-    string? AvatarUrl = null, Guid? AccessRoleId = null, string? AccessRoleName = null, string? LastLoginAt = null);
+    string? AvatarUrl = null, Guid? AccessRoleId = null, string? AccessRoleName = null, string? LastLoginAt = null,
+    string Phone = "", decimal Salary = 0, string SalaryStartDate = "");
 /// <param name="AvatarUrl">null — o'zgarmaydi; "" — olib tashlanadi; "/uploads/…" — yangi rasm.</param>
-public record StaffPayload(string FullName, string Position, string? NewPassword = null, string? AvatarUrl = null);
+/// <param name="Phone">null — o'zgarmaydi (yaratishda bo'sh).</param>
+/// <param name="Salary">null — o'zgarmaydi (yaratishda 0). Manfiy — 400.</param>
+/// <param name="SalaryStartDate">null — o'zgarmaydi; "" — tozalanadi; aks holda <c>yyyy-MM-dd</c>, boshqasi — 400.</param>
+public record StaffPayload(string FullName, string Position, string? NewPassword = null, string? AvatarUrl = null,
+    string? Phone = null, decimal? Salary = null, string? SalaryStartDate = null);
 /// <summary>Xodimning admin bo'lim ruxsatlari (faqat superadmin o'zgartiradi).</summary>
 public record SetStaffPermissionsRequest(List<string> Permissions);
 /// <summary>Assign an access role to a staff member; null removes it (and its permissions).</summary>

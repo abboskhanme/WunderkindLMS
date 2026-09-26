@@ -23,7 +23,6 @@ import { StudentEvaluationPage } from '@/pages/admin/students/StudentEvaluationP
 import { EvaluationTypesPage } from '@/pages/admin/students/EvaluationTypesPage'
 import { StudentDetailPage } from '@/pages/admin/students/StudentDetailPage'
 import { StudentTurnstilePage } from '@/pages/admin/students/StudentTurnstilePage'
-import { TeachersPage } from '@/pages/admin/teachers/TeachersPage'
 import { TeacherAttendancePage } from '@/pages/admin/teachers/TeacherAttendancePage'
 import { ClassesPage } from '@/pages/admin/classes/ClassesPage'
 import { ClassDetailPage } from '@/pages/admin/classes/ClassDetailPage'
@@ -41,7 +40,7 @@ import { GradesReportPage } from '@/pages/admin/grades-report/GradesReportPage'
 import { TeacherReportsPage } from '@/pages/admin/teacher-reports/TeacherReportsPage'
 import { ContractsPage } from '@/pages/admin/contracts/ContractsPage'
 import { BranchesPage } from '@/pages/admin/branches/BranchesPage'
-import { StaffPage } from '@/pages/admin/staff/StaffPage'
+import { EmployeesPage, TeachersRedirect } from '@/pages/admin/staff/EmployeesPage'
 import { RolesPage } from '@/pages/admin/staff/RolesPage'
 import { FeedbackPage } from '@/pages/admin/feedback/FeedbackPage'
 import { AcademicYearPage } from '@/pages/admin/academic-year/AcademicYearPage'
@@ -145,7 +144,9 @@ export default function App() {
           <Route path="students/turniket/kirish-chiqish" element={<RequirePerm perm="students"><TurnstileFlowPage /></RequirePerm>} />
           <Route path="students/turniket/kunlik-davomat" element={<RequirePerm perm="students"><DailyAttendanceReportPage /></RequirePerm>} />
           <Route path="students/:id" element={<RequirePerm perm="students"><StudentDetailPage /></RequirePerm>} />
-          <Route path="teachers" element={<RequirePerm perm="teachers"><TeachersPage /></RequirePerm>} />
+          {/* O'qituvchilar ro'yxati Boshqaruv → Xodimlar ga qo'shildi (2026-09-26). Eski manzil
+              (dashboard, global qidiruv `?q=&tab=`) o'sha sahifaga `?position=teacher` bilan o'tadi. */}
+          <Route path="teachers" element={<TeachersRedirect />} />
           <Route path="teachers/attendance" element={<RequirePerm perm="teachers"><TeacherAttendancePage /></RequirePerm>} />
           <Route path="classes" element={<RequirePerm perm="classes"><ClassesPage /></RequirePerm>} />
           <Route path="classes/rating" element={<RequirePerm perm="classes"><ClassRatingPage /></RequirePerm>} />
@@ -165,7 +166,9 @@ export default function App() {
           <Route path="schedule" element={<RequirePerm perm="schedule"><ClassScheduleViewPage /></RequirePerm>} />
           <Route path="schedule/teachers" element={<RequirePerm perm="schedule"><TeacherSchedulePage /></RequirePerm>} />
           <Route path="schedule/manage" element={<RequirePerm perm="schedule"><SchedulePage /></RequirePerm>} />
-          <Route path="teachers/salary" element={<RequirePerm perm="teachers"><SalaryCalcPage /></RequirePerm>} />
+          {/* Ish haqi — Moliya ostida va endi har bir xodim uchun: `finance` ham ochadi (sahifa o'zi
+              hasFinanceAccess bilan tekshiradi). */}
+          <Route path="teachers/salary" element={<RequirePerm perm={['finance', 'teachers']}><SalaryCalcPage /></RequirePerm>} />
           <Route path="schedule/holidays" element={<RequirePerm perm="schedule"><HolidaysPage /></RequirePerm>} />
           <Route path="discipline" element={<RequirePerm perm="discipline"><BallarNazoratiPage /></RequirePerm>} />
           <Route path="discipline/reasons" element={<RequirePerm perm="discipline"><BallSabablarPage /></RequirePerm>} />
@@ -248,7 +251,8 @@ export default function App() {
           {/* Boshqaruv */}
           <Route path="boshqaruv/gps" element={<RequirePerm perm="gps"><GpsPage /></RequirePerm>} />
           <Route path="boshqaruv/cameras" element={<RequirePerm perm="cameras"><CamerasPage /></RequirePerm>} />
-          <Route path="boshqaruv/staff" element={<RequirePerm perm="staff"><StaffPage /></RequirePerm>} />
+          {/* Xodimlar — o'qituvchilar + boshqa xodimlar bitta ro'yxatda; sahifa ruxsati yo'q qismini yashiradi. */}
+          <Route path="boshqaruv/staff" element={<RequirePerm perm={['staff', 'teachers']}><EmployeesPage /></RequirePerm>} />
           <Route path="boshqaruv/feedback" element={<RequirePerm perm="feedback"><FeedbackPage /></RequirePerm>} />
           {/* Rollar — alohida sahifa (ruxsatlar rolga beriladi) */}
           <Route path="boshqaruv/roles" element={<RequirePerm perm="staff"><RolesPage /></RequirePerm>} />

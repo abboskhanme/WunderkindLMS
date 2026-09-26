@@ -2,12 +2,14 @@ import type {
   Credentials,
   MonthSalary,
   MonthStatus,
+  PaymentMethod,
   SalaryLedger,
   Teacher,
 } from '@/types'
 import { delay, uid } from '@/lib/utils'
 import { api, USE_MOCK } from '../client'
 import { teachersMock } from '../mock/teachers'
+import type { ExpenseRecord } from './expenses'
 
 /** newPassword — ixtiyoriy: tahrirda kiritilsa o'qituvchi akkaunti paroli almashtiriladi. */
 export type TeacherPayload = Omit<Teacher, 'id'> & { newPassword?: string }
@@ -160,6 +162,26 @@ export async function getSalaryLedger(id: string, from?: string, to?: string): P
   const { data } = await api.get<SalaryLedger>(`/admin/teachers/${id}/salary-ledger`, {
     params: { from, to },
   })
+  return data
+}
+
+/**
+ * Maosh berish so'rovi — `SalaryPaymentRequest` ning ko'zgusi. O'qituvchi va boshqa
+ * xodim uchun bir xil tana (`/admin/teachers/{id}/…` va `/admin/staff/{id}/…`).
+ */
+export interface SalaryPaymentInput {
+  amount: number
+  note?: string
+  /** Berilmasa server `transfer` deb oladi. */
+  method?: PaymentMethod
+}
+
+/**
+ * O'qituvchiga maosh berish — `salary` chiqimi yoziladi (kassa, direktor tasdig'i
+ * chegarasi va jurnal qoidalari serverda). Chegaradan yuqori summa `pending` bo'lib qaytadi.
+ */
+export async function payTeacherSalary(id: string, input: SalaryPaymentInput): Promise<ExpenseRecord> {
+  const { data } = await api.post<ExpenseRecord>(`/admin/teachers/${id}/salary-payments`, input)
   return data
 }
 

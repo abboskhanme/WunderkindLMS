@@ -478,8 +478,12 @@ function ExpensesView() {
                         </span>
                       </td>
                       <td className="whitespace-nowrap px-4 py-3 text-slate-600">
-                        <span className="block max-w-[13rem] truncate" title={row.teacherName ?? ''}>
-                          {row.teacherName ?? '—'}
+                        {/* Maosh kimga: o'qituvchi yoki boshqa xodim (employees-unified.md). */}
+                        <span
+                          className="block max-w-[13rem] truncate"
+                          title={row.teacherName ?? row.employeeName ?? ''}
+                        >
+                          {row.teacherName ?? row.employeeName ?? '—'}
                         </span>
                       </td>
                       <td

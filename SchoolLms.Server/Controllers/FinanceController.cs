@@ -60,6 +60,9 @@ namespace SchoolLms.Server.Controllers;
 [Route("api/admin/finance")]
 public class FinanceController(AppDbContext db) : ControllerBase
 {
+    /// <summary>O'qituvchi qatorining "Lavozim" ustuni.</summary>
+    private const string TeacherPosition = "O'qituvchi";
+
     /// <summary>
     /// O'qituvchilarga berilgan maoshlar hisoboti (davr bo'yicha): oylik,
     /// kerakli (davr oylari bo'yicha davomatga moslangan), berilgan va qoldiq.
@@ -69,6 +72,12 @@ public class FinanceController(AppDbContext db) : ControllerBase
     /// TUSHGAN va storno qilinmagan chiqimlar (<see cref="SalaryPaymentQuery"/>).
     /// Direktor tasdig'ini kutayotgan chiqim hali berilmagan pul (SPEC §4.5),
     /// shuning uchun bu ustunga kirmaydi.
+    /// </para>
+    /// <para>
+    /// O'qituvchilardan keyin o'qituvchi BO'LMAGAN xodimlar (role="staff") keladi
+    /// (docs/modules/employees-unified.md): <c>Kind = "staff"</c>, <c>TeacherId</c> — akkaunt id'si,
+    /// kerakli summa — belgilangan oylik (<see cref="StaffSalaryCalc"/>), berilgan —
+    /// <c>expenses.employee_user_id</c> bo'yicha, xuddi shu "jurnalga tushgan, storno qilinmagan" qoida.
     /// </para>
     /// </summary>
     [HttpGet("salary-report")]
@@ -95,7 +104,7 @@ public class FinanceController(AppDbContext db) : ControllerBase
             .Where(a => a.Status == "absent" && a.Date.Length >= 7)
             .Select(a => new { a.TeacherId, a.Date }).ToListAsync(ct);
 
-        return teachers.Select(te =>
+        var report = teachers.Select(te =>
         {
             var byWeekday = byWeekdayAll.GetValueOrDefault(te.Id) ?? new int[6];
             var nominalMonthly = TeacherSalaryCalc.WithBonus(
@@ -121,7 +130,49 @@ public class FinanceController(AppDbContext db) : ControllerBase
                 absByMonth.GetValueOrDefault(mn) ?? Enumerable.Empty<string>(), te.BonusPct, quarters));
             return new SalaryReportRowDto(
                 te.Id, te.FullName, nominalMonthly, totalPaid, rows.Count,
-                monthList.Count, expected, expected - totalPaid);
+                monthList.Count, expected, expected - totalPaid,
+                SalaryReportKinds.Teacher, TeacherPosition);
+        }).ToList();
+
+        report.AddRange(await StaffSalaryRowsAsync(fromMonth, toMonth, ct));
+        return report;
+    }
+
+    /// <summary>
+    /// Xodimlar (role="staff") qatorlari — ikki so'rov, xodimlar soniga bog'liq emas.
+    /// Davr qoidasi o'qituvchinikining aynan o'zi: boshlangan oydan oldingi oylar sanalmaydi.
+    /// </summary>
+    private async Task<List<SalaryReportRowDto>> StaffSalaryRowsAsync(
+        string fromMonth, string toMonth, CancellationToken ct)
+    {
+        var paidByUser = (await new SalaryPaymentQuery(db).ForAllEmployeesAsync(
+                MonthStart(fromMonth), MonthEnd(toMonth), ct))
+            .ToLookup(p => p.TeacherId);
+
+        var staff = await db.Users.AsNoTracking()
+            .Where(u => u.Role == Roles.Staff)
+            .OrderBy(u => u.FullName)
+            .Select(u => new { u.Id, u.FullName, u.Position, u.Salary, u.SalaryStartDate })
+            .ToListAsync(ct);
+
+        return staff.Select(u =>
+        {
+            var startDate = StaffSalaryCalc.StartDateOf(u.SalaryStartDate);
+            var startMonth = StaffSalaryCalc.FirstMonth(startDate, fromMonth);
+            var monthList = string.CompareOrdinal(startMonth, toMonth) > 0
+                ? new List<string>()
+                : TuitionService.MonthRange(startMonth, toMonth).ToList();
+
+            var paid = paidByUser[u.Id]
+                .Where(p => string.CompareOrdinal(p.Month, startMonth) >= 0)
+                .ToList();
+            var totalPaid = paid.Sum(p => p.Amount);
+            var expected = monthList.Sum(mn => StaffSalaryCalc.MonthlyForMonth(u.Salary, mn, startDate));
+
+            return new SalaryReportRowDto(
+                u.Id, u.FullName, u.Salary, totalPaid, paid.Count,
+                monthList.Count, expected, expected - totalPaid,
+                SalaryReportKinds.Staff, u.Position);
         }).ToList();
     }
 
@@ -146,11 +197,12 @@ public class FinanceController(AppDbContext db) : ControllerBase
 
         var rows = report.ToList();
 
-        string[] headers = ["O'qituvchi", "Oylik", "Oylar", "Hisoblangan", "Berilgan", "To'lovlar", "Qoldiq"];
+        string[] headers = ["Xodim", "Lavozim", "Oylik", "Oylar", "Hisoblangan", "Berilgan", "To'lovlar", "Qoldiq"];
 
         var cells = rows.Select(r => (IReadOnlyList<ExcelExport.XlsxCell>)
         [
             ExcelExport.XlsxCell.Of(r.TeacherName),
+            ExcelExport.XlsxCell.Of(r.Position),
             ExcelExport.XlsxCell.Num(r.Salary),
             ExcelExport.XlsxCell.Num(r.Months),
             ExcelExport.XlsxCell.Num(r.Expected),
@@ -164,6 +216,7 @@ public class FinanceController(AppDbContext db) : ControllerBase
             ExcelExport.XlsxCell.Of("Jami"),
             ExcelExport.XlsxCell.Of(null),
             ExcelExport.XlsxCell.Of(null),
+            ExcelExport.XlsxCell.Of(null),
             ExcelExport.XlsxCell.Num(rows.Sum(r => r.Expected)),
             ExcelExport.XlsxCell.Num(rows.Sum(r => r.TotalPaid)),
             ExcelExport.XlsxCell.Num(rows.Sum(r => r.PaymentsCount)),
@@ -174,7 +227,7 @@ public class FinanceController(AppDbContext db) : ControllerBase
         return File(
             bytes,
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            "oqituvchilar-maoshi.xlsx");
+            "xodimlar-maoshi.xlsx");
     }
 
     /// <summary>"yyyy-MM" → o'sha oyning birinchi kuni.</summary>

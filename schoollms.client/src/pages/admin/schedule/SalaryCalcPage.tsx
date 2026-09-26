@@ -14,6 +14,9 @@ import { hasFinanceAccess } from '@/pages/admin/billing/access'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Wallet, Save, Clock, Percent, Lock } from 'lucide-react'
 import { getSalaryRates, saveSalaryRates, setBonusBulk, type SalaryRates } from '@/api/services/salaryRates'
+import { getSalaryReport } from '@/api/services/finance'
+import { billingErrorMessage } from '@/api/services/billingError'
+import type { SalaryReportRow } from '@/types'
 import { teacherCategoryLabel } from '@/config/constants'
 import { useAuth } from '@/context/auth-context'
 import { formatMoney, cn } from '@/lib/utils'
@@ -22,7 +25,16 @@ import { Button } from '@/components/ui/Button'
 import { Loader } from '@/components/ui/Loader'
 import { Modal } from '@/components/ui/Modal'
 import { TeacherSalaryDetailModal } from './TeacherSalaryDetailModal'
+import { TeacherSalaryDetailModal as EmployeeSalaryModal } from '@/pages/admin/finance/TeacherSalaryDetailModal'
 import { MonthPicker } from '@/components/ui/DatePicker'
+import { PositionFilter } from '@/components/employees/PositionFilter'
+import {
+  TEACHER_FILTER,
+  TEACHER_POSITION,
+  matchesPosition,
+  positionOptions,
+  type Positioned,
+} from '@/lib/employees'
 
 const rateFields = [
   { key: 'oliy', label: 'Oliy toifa' },
@@ -34,6 +46,13 @@ const rateFields = [
 function currentMonth(): string {
   const d = new Date()
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+}
+
+/** "YYYY-MM" → the month's first and last day ("YYYY-MM-DD"). */
+function monthRange(m: string): { from: string; to: string } {
+  const [y, mm] = m.split('-').map(Number)
+  const last = new Date(y, mm, 0).getDate()
+  return { from: `${m}-01`, to: `${m}-${String(last).padStart(2, '0')}` }
 }
 
 export function SalaryCalcPage() {
@@ -61,6 +80,14 @@ export function SalaryCalcPage() {
 function SalaryCalcView() {
   const [data, setData] = useState<SalaryRates | null>(null)
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  // Boshqa xodimlar (mijoz, 2026-09-26: maosh har bir xodimga) — maosh hisobotidan, shu oy uchun:
+  // `expected` birinchi oyda ishga kirgan kundan qisman hisoblangan.
+  const [staffRows, setStaffRows] = useState<SalaryReportRow[]>([])
+  const [staffError, setStaffError] = useState<string | null>(null)
+  const [staffDetail, setStaffDetail] = useState<SalaryReportRow | null>(null)
+  // Lavozim filtri (lib/employees.ts)
+  const [position, setPosition] = useState('')
   const [saving, setSaving] = useState(false)
   const [month, setMonth] = useState(currentMonth())
   const [rates, setRates] = useState({ oliy: 0, t1: 0, t2: 0, mutaxasis: 0 })
@@ -73,12 +100,23 @@ function SalaryCalcView() {
 
   const load = useCallback((m: string) => {
     setLoading(true)
-    getSalaryRates(m)
-      .then((d) => {
+    setLoadError(null)
+    setStaffError(null)
+    const { from, to } = monthRange(m)
+    Promise.all([
+      getSalaryRates(m),
+      getSalaryReport(from, to).catch((e: unknown) => {
+        setStaffError(billingErrorMessage(e, "Boshqa xodimlar maoshini yuklab bo'lmadi"))
+        return [] as SalaryReportRow[]
+      }),
+    ])
+      .then(([d, report]) => {
         setData(d)
         setRates({ oliy: d.oliy, t1: d.t1, t2: d.t2, mutaxasis: d.mutaxasis })
         setSelected(new Set())
+        setStaffRows(report.filter((r) => r.kind === 'staff'))
       })
+      .catch((e: unknown) => setLoadError(billingErrorMessage(e, "Oylik hisobini yuklab bo'lmadi")))
       .finally(() => setLoading(false))
   }, [])
 
@@ -96,9 +134,23 @@ function SalaryCalcView() {
     })
   }, [data, rates])
 
+  const positions = useMemo(
+    () =>
+      positionOptions([
+        ...liveTeachers.map((): Positioned => ({ kind: 'teacher', position: TEACHER_POSITION })),
+        ...staffRows,
+      ]),
+    [liveTeachers, staffRows],
+  )
+  const showTeachers = !position || position === TEACHER_FILTER
+  const visibleTeachers = useMemo(() => (showTeachers ? liveTeachers : []), [showTeachers, liveTeachers])
+  const visibleStaff = useMemo(() => staffRows.filter((r) => matchesPosition(r, position)), [staffRows, position])
+
   const totalMonthly = useMemo(
-    () => liveTeachers.reduce((sum, t) => sum + t.monthlySalary, 0),
-    [liveTeachers],
+    () =>
+      visibleTeachers.reduce((sum, t) => sum + t.monthlySalary, 0) +
+      visibleStaff.reduce((sum, r) => sum + r.expected, 0),
+    [visibleTeachers, visibleStaff],
   )
 
   const save = () => {
@@ -117,9 +169,10 @@ function SalaryCalcView() {
       return n
     })
 
-  const allSelected = !!data && data.teachers.length > 0 && selected.size === data.teachers.length
+  // "Hammasini tanlash" — faqat ko'rinib turgan o'qituvchilar (ustama faqat o'qituvchiga).
+  const allSelected = visibleTeachers.length > 0 && visibleTeachers.every((t) => selected.has(t.id))
   const toggleSelectAll = () =>
-    setSelected(() => (allSelected ? new Set() : new Set(data?.teachers.map((t) => t.id))))
+    setSelected(() => (allSelected ? new Set() : new Set(visibleTeachers.map((t) => t.id))))
 
   const assignBonus = () => {
     setAssigning(true)
@@ -134,6 +187,18 @@ function SalaryCalcView() {
 
   if (loading) return <Loader label="Yuklanmoqda..." />
 
+  if (loadError) {
+    return (
+      <Card className="flex flex-col items-center gap-3 py-12 text-center">
+        <p className="font-medium text-slate-800">Ma'lumotni yuklab bo'lmadi</p>
+        <p className="max-w-md text-sm text-slate-500">{loadError}</p>
+        <Button variant="secondary" onClick={() => load(month)}>
+          Qayta urinish
+        </Button>
+      </Card>
+    )
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -142,6 +207,7 @@ function SalaryCalcView() {
           <p className="text-sm text-slate-400">
             Oylik maosh = (oydagi haqiqiy darslar − kelmagan kun darslari) × toifa soat narxi (+ ustama).
             Darslar har oy jadval bo'yicha haqiqiy sanaladi — hafta kunlari soniga qarab oydan-oyga farq qiladi.
+            Boshqa xodimlar — belgilangan oylik (ishga kirgan oyi kunlar bo'yicha qisman).
           </p>
         </div>
         <label className="flex items-center gap-2 text-sm text-slate-600">
@@ -187,12 +253,15 @@ function SalaryCalcView() {
         </div>
       </Card>
 
-      {/* O'qituvchilar bo'yicha hisob */}
+      {/* Xodimlar bo'yicha hisob: o'qituvchilar + boshqa xodimlar */}
       <Card className="p-0">
         <div className="flex flex-wrap items-center justify-between gap-2 px-5 py-4">
-          <div className="flex items-center gap-2">
-            <Wallet className="h-5 w-5 text-brand-600" />
-            <h2 className="font-semibold text-slate-800">O'qituvchilar oyligi</h2>
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex items-center gap-2">
+              <Wallet className="h-5 w-5 text-brand-600" />
+              <h2 className="font-semibold text-slate-800">Xodimlar maoshi</h2>
+            </div>
+            <PositionFilter value={position} onChange={setPosition} positions={positions} />
           </div>
           {selected.size > 0 ? (
             <div className="flex items-center gap-2">
@@ -225,12 +294,14 @@ function SalaryCalcView() {
                     type="checkbox"
                     checked={allSelected}
                     onChange={toggleSelectAll}
+                    disabled={visibleTeachers.length === 0}
                     className="h-4 w-4 accent-brand-600"
-                    title="Hammasini tanlash"
+                    title="Barcha o'qituvchilarni tanlash"
                   />
                 </th>
                 <th className="w-8 px-2 py-3">#</th>
                 <th className="px-4 py-3">F.I.SH</th>
+                <th className="px-4 py-3">Lavozim</th>
                 <th className="px-4 py-3">Toifa</th>
                 <th className="px-4 py-3 text-center">Haftalik dars</th>
                 <th className="px-4 py-3 text-center">Oylik dars</th>
@@ -240,7 +311,7 @@ function SalaryCalcView() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {liveTeachers.map((t, i) => (
+              {visibleTeachers.map((t, i) => (
                 <tr
                   key={t.id}
                   onClick={() => setDetailId(t.id)}
@@ -261,6 +332,7 @@ function SalaryCalcView() {
                         {t.fullName}
                       </span>
                     </td>
+                  <td className="whitespace-nowrap px-4 py-3 text-slate-600">{TEACHER_POSITION}</td>
                   <td className="px-4 py-3">
                     {t.category ? (
                       <span className="rounded-md bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-700">
@@ -300,19 +372,57 @@ function SalaryCalcView() {
                   </td>
                 </tr>
               ))}
-              {liveTeachers.length === 0 && (
+              {visibleStaff.map((r, i) => (
+                <tr
+                  key={`staff:${r.teacherId}`}
+                  onClick={() => setStaffDetail(r)}
+                  className="cursor-pointer hover:bg-slate-50/60"
+                  title="Tafsilot va maosh berish"
+                >
+                  {/* Ustama foizi faqat o'qituvchiga — xodim qatorida tanlash yo'q. */}
+                  <td className="px-4 py-3" />
+                  <td className="px-2 py-3 text-slate-400">{visibleTeachers.length + i + 1}</td>
+                  <td className="px-4 py-3 font-medium text-slate-800">
+                    <span className="block max-w-[14rem] truncate" title={r.teacherName}>
+                      {r.teacherName}
+                    </span>
+                  </td>
+                  <td className="whitespace-nowrap px-4 py-3 text-slate-600">{r.position || '—'}</td>
+                  <td className="px-4 py-3 text-slate-300">—</td>
+                  <td className="px-4 py-3 text-center text-slate-300">—</td>
+                  <td className="px-4 py-3 text-center text-slate-300">—</td>
+                  <td className="px-4 py-3 text-center text-slate-300">—</td>
+                  <td className="px-4 py-3 text-center text-slate-300">—</td>
+                  <td
+                    className={cn(
+                      'px-4 py-3 text-right font-semibold',
+                      r.expected > 0 ? 'text-slate-800' : 'text-slate-300',
+                    )}
+                    title={r.expected !== r.salary ? `Belgilangan oylik: ${formatMoney(r.salary)}` : undefined}
+                  >
+                    {r.expected > 0 ? formatMoney(r.expected) : '—'}
+                  </td>
+                </tr>
+              ))}
+              {visibleTeachers.length === 0 && visibleStaff.length === 0 && (
                 <tr>
-                  <td colSpan={9} className="px-4 py-12 text-center text-slate-400">
-                    O'qituvchi yo'q
+                  <td colSpan={10} className="px-4 py-12 text-center text-slate-400">
+                    {position ? "Bu lavozimda xodim yo'q" : "Xodim yo'q"}
                   </td>
                 </tr>
               )}
             </tbody>
           </table>
         </div>
+        {staffError && (
+          <p className="border-t border-slate-100 px-5 py-3 text-sm text-amber-700">
+            {staffError} — ro'yxatda faqat o'qituvchilar.
+          </p>
+        )}
         <p className="px-5 py-3 text-xs text-slate-400">
-          Qatorni bosing — oylik tafsiloti (qancha, qancha/qachon kelmagan, qoldiq). Ustama berish uchun —
-          chap tarafdagi katakchadan o'qituvchilarni tanlab, yuqoridagi "Ustama tayinlash" tugmasini bosing.
+          Qatorni bosing — oylik tafsiloti (qancha, qancha/qachon kelmagan, qoldiq) va maosh berish. Ustama
+          berish uchun — chap tarafdagi katakchadan o'qituvchilarni tanlab, yuqoridagi "Ustama tayinlash"
+          tugmasini bosing.
         </p>
       </Card>
 
@@ -355,6 +465,12 @@ function SalaryCalcView() {
       </Modal>
 
       <TeacherSalaryDetailModal teacherId={detailId} month={month} onClose={() => setDetailId(null)} />
+      <EmployeeSalaryModal
+        teacher={staffDetail}
+        from={monthRange(month).from}
+        to={monthRange(month).to}
+        onClose={() => setStaffDetail(null)}
+      />
     </div>
   )
 }

@@ -44,6 +44,8 @@ namespace SchoolLms.Application.Billing;
 /// <summary>
 /// Bitta maosh to'lovi (jurnalga tushgan, storno qilinmagan chiqim qatori).
 /// </summary>
+/// <param name="TeacherId">Maosh oluvchi: o'qituvchi so'rovlarida <c>teachers.id</c>,
+/// xodim so'rovlarida (<see cref="SalaryPaymentQuery.ForEmployeeAsync"/>) <c>users.id</c>.</param>
 /// <param name="OnDate">Buxgalteriya sanasi — maosh qaysi kunga yozilgan.</param>
 /// <param name="Month">Sananing oyi (<c>"yyyy-MM"</c>) — eski hisobotlar oyni
 /// AYNAN shu ko'rinishda kutadi.</param>
@@ -53,6 +55,8 @@ public sealed record SalaryPaymentRow(
 /// <summary>
 /// O'qituvchilarga berilgan maoshlar — <c>expenses</c> jadvalidan, faqat
 /// jurnalga tushgan va storno qilinmagan qatorlar. Batafsil: fayl boshidagi izoh.
+/// O'qituvchi bo'lmagan xodimlar (<c>expenses.employee_user_id</c>) — xuddi shu
+/// qoidalar bilan <see cref="ForEmployeeAsync"/> / <see cref="ForAllEmployeesAsync"/>.
 /// </summary>
 public sealed class SalaryPaymentQuery(IAppDbContext db)
 {
@@ -72,13 +76,36 @@ public sealed class SalaryPaymentQuery(IAppDbContext db)
         DateOnly? from = null, DateOnly? to = null, CancellationToken ct = default) =>
         ListAsync(null, from, to, ct);
 
-    private async Task<IReadOnlyList<SalaryPaymentRow>> ListAsync(
-        string? teacherId, DateOnly? from, DateOnly? to, CancellationToken ct)
+    /// <summary>
+    /// Bitta xodimga (<c>users.id</c>, role="staff") berilgan maoshlar — <c>expenses.employee_user_id</c>
+    /// bo'yicha, o'qituvchi bilan AYNAN bir xil qoidalar (jurnalga tushgan, storno qilinmagan).
+    /// </summary>
+    public Task<IReadOnlyList<SalaryPaymentRow>> ForEmployeeAsync(
+        string userId, DateOnly? from = null, DateOnly? to = null, CancellationToken ct = default)
     {
-        var q = db.Expenses.AsNoTracking()
-            .Where(e => e.Category == SalaryCategory && e.TeacherId != null);
+        ArgumentException.ThrowIfNullOrWhiteSpace(userId);
+        return ListAsync(userId, from, to, ct, employees: true);
+    }
 
-        if (teacherId is not null) q = q.Where(e => e.TeacherId == teacherId);
+    /// <summary>Barcha xodimlarga berilgan maoshlar (maosh hisoboti uchun, bitta so'rov).</summary>
+    public Task<IReadOnlyList<SalaryPaymentRow>> ForAllEmployeesAsync(
+        DateOnly? from = null, DateOnly? to = null, CancellationToken ct = default) =>
+        ListAsync(null, from, to, ct, employees: true);
+
+    /// <param name="employees"><c>false</c> — <c>teacher_id</c> bo'yicha, <c>true</c> — <c>employee_user_id</c> bo'yicha.</param>
+    private async Task<IReadOnlyList<SalaryPaymentRow>> ListAsync(
+        string? recipientId, DateOnly? from, DateOnly? to, CancellationToken ct, bool employees = false)
+    {
+        var q = db.Expenses.AsNoTracking().Where(e => e.Category == SalaryCategory);
+
+        q = employees
+            ? q.Where(e => e.EmployeeUserId != null)
+            : q.Where(e => e.TeacherId != null);
+
+        if (recipientId is not null)
+            q = employees
+                ? q.Where(e => e.EmployeeUserId == recipientId)
+                : q.Where(e => e.TeacherId == recipientId);
         if (from is { } f) q = q.Where(e => e.OnDate >= f);
         if (to is { } t) q = q.Where(e => e.OnDate <= t);
 
@@ -91,10 +118,11 @@ public sealed class SalaryPaymentQuery(IAppDbContext db)
         var rows = await q
             .OrderByDescending(e => e.OnDate)
             .ThenByDescending(e => e.CreatedAt)
-            .Select(e => new { e.Id, e.TeacherId, e.OnDate, e.Amount, e.Note })
+            .Select(e => new { e.Id, e.TeacherId, e.EmployeeUserId, e.OnDate, e.Amount, e.Note })
             .ToListAsync(ct);
 
         return [.. rows.Select(e => new SalaryPaymentRow(
-            e.Id, e.TeacherId!, e.OnDate, e.OnDate.ToString("yyyy-MM"), e.Amount, e.Note))];
+            e.Id, (employees ? e.EmployeeUserId : e.TeacherId)!, e.OnDate, e.OnDate.ToString("yyyy-MM"),
+            e.Amount, e.Note))];
     }
 }

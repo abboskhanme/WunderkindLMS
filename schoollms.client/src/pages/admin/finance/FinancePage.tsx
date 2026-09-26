@@ -1,8 +1,9 @@
 import { hasFinanceAccess } from '@/pages/admin/billing/access'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { FileSpreadsheet, History } from 'lucide-react'
 import type { SalaryReportRow } from '@/types'
 import { downloadSalaryReport, getSalaryReport } from '@/api/services/finance'
+import { billingErrorMessage } from '@/api/services/billingError'
 import { formatMoney, cn } from '@/lib/utils'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
@@ -11,6 +12,8 @@ import { AuditHistoryModal } from '@/components/audit/AuditHistoryModal'
 import type { AuditFilters } from '@/api/services/audit'
 import { useAuth } from '@/context/auth-context'
 import { TeacherSalaryDetailModal } from './TeacherSalaryDetailModal'
+import { PositionFilter } from '@/components/employees/PositionFilter'
+import { matchesPosition, positionOptions } from '@/lib/employees'
 import { PnlTab } from './PnlTab'
 import { CashFlowTab } from './CashFlowTab'
 import { DebtorsTab } from './DebtorsTab'
@@ -56,7 +59,8 @@ type Tab = 'teachers' | 'pnl' | 'cashflow' | 'debtors'
  * o'zi) umumiy sarlavha qoladi.
  */
 const tabHeadings: Record<Tab, { title: string; subtitle: string }> = {
-  teachers: { title: "O'qituvchilar maoshi", subtitle: 'Hisoblangan, berilgan va qoldiq — davr bo\'yicha' },
+  // Mijoz, 2026-09-26: o'qituvchilar va boshqa xodimlar maoshi bitta ro'yxatda.
+  teachers: { title: 'Xodimlar maoshi', subtitle: 'Hisoblangan, berilgan va qoldiq — davr bo\'yicha' },
   pnl: { title: 'Moliya hisobotlari (P&L)', subtitle: 'Foyda va zarar — buxgalteriya jurnali bo\'yicha' },
   cashflow: { title: 'Pul oqimi', subtitle: 'Kirim va chiqim harakati — oylar kesimida' },
   debtors: { title: 'Qarzdorlar bilan ishlash', subtitle: "Qarzi bor o'quvchilar, muddati o'tgan qarz va va'dalar" },
@@ -100,18 +104,23 @@ export function FinancePage({ initialTab }: { initialTab?: Tab } = {}) {
   const [to, setTo] = useState(todayStr)
 
   const [salaryReport, setSalaryReport] = useState<SalaryReportRow[]>([])
+  const [salaryError, setSalaryError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [exporting, setExporting] = useState(false)
 
   const [audit, setAudit] = useState<{ filters: AuditFilters; title: string } | null>(null)
   const [detailTeacher, setDetailTeacher] = useState<SalaryReportRow | null>(null)
+  // Lavozim filtri: '' — hammasi, 'teacher' — o'qituvchilar, 'p:<lavozim>' — shu lavozimdagi xodimlar.
+  const [position, setPosition] = useState('')
 
   const load = useCallback(() => {
     // Boshqa tablar o'z ma'lumotini o'zi oladi.
     if (tab !== 'teachers') return
     setLoading(true)
+    setSalaryError(null)
     getSalaryReport(from, to)
       .then(setSalaryReport)
+      .catch((e: unknown) => setSalaryError(billingErrorMessage(e, "Maosh hisobotini yuklab bo'lmadi")))
       .finally(() => setLoading(false))
   }, [from, to, tab])
 
@@ -135,10 +144,17 @@ export function FinancePage({ initialTab }: { initialTab?: Tab } = {}) {
     return Math.max(1, (ty - fy) * 12 + (tm - fm) + 1)
   })()
 
+  const positions = useMemo(() => positionOptions(salaryReport), [salaryReport])
+  const visibleSalary = useMemo(
+    () => salaryReport.filter((r) => matchesPosition(r, position)),
+    [salaryReport, position],
+  )
+
+  // Jamilar ko'rinib turgan (filtrlangan) qatorlar bo'yicha.
   const teacherTotals = {
-    expected: salaryReport.reduce((a, r) => a + r.expected, 0),
-    paid: salaryReport.reduce((a, r) => a + r.totalPaid, 0),
-    remaining: salaryReport.reduce((a, r) => a + Math.max(0, r.remaining), 0),
+    expected: visibleSalary.reduce((a, r) => a + r.expected, 0),
+    paid: visibleSalary.reduce((a, r) => a + r.totalPaid, 0),
+    remaining: visibleSalary.reduce((a, r) => a + Math.max(0, r.remaining), 0),
   }
 
   return (
@@ -149,7 +165,7 @@ export function FinancePage({ initialTab }: { initialTab?: Tab } = {}) {
             {initialTab ? tabHeadings[initialTab].title : 'Moliya'}
           </h1>
           <p className="text-sm text-slate-400">
-            {initialTab ? tabHeadings[initialTab].subtitle : "Hisobotlar va o'qituvchilar maoshi"}
+            {initialTab ? tabHeadings[initialTab].subtitle : 'Hisobotlar va xodimlar maoshi'}
           </p>
         </div>
         <Button
@@ -172,7 +188,7 @@ export function FinancePage({ initialTab }: { initialTab?: Tab } = {}) {
               : 'bg-white text-slate-600 hover:bg-slate-100',
           )}
         >
-          O'qituvchilar
+          Xodimlar
         </button>
 
         {/* Hisobotlar — faqat admin va direktor (SPEC §4.3). */}
@@ -216,10 +232,18 @@ export function FinancePage({ initialTab }: { initialTab?: Tab } = {}) {
         </Card>
       )}
 
-      {/* ============ O'QITUVCHILAR (maosh) ============ */}
+      {/* ============ XODIMLAR (maosh): o'qituvchilar + boshqa xodimlar ============ */}
       {tab === 'teachers' &&
         (loading ? (
           <Loader label="Yuklanmoqda..." />
+        ) : salaryError ? (
+          <Card className="flex flex-col items-center gap-3 py-12 text-center">
+            <p className="font-medium text-slate-800">Ma'lumotni yuklab bo'lmadi</p>
+            <p className="max-w-md text-sm text-slate-500">{salaryError}</p>
+            <Button variant="secondary" onClick={load}>
+              Qayta urinish
+            </Button>
+          </Card>
         ) : (
           <>
             {salaryReport.length > 0 && (
@@ -240,25 +264,29 @@ export function FinancePage({ initialTab }: { initialTab?: Tab } = {}) {
             <Card className="p-0">
               <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 p-4">
                 <div>
-                  <h2 className="font-semibold text-slate-800">O'qituvchilar maoshi</h2>
+                  <h2 className="font-semibold text-slate-800">Xodimlar maoshi</h2>
                   <p className="text-sm text-slate-400">
-                    Davr bo'yicha — {periodMonths} oy · batafsil uchun o'qituvchini bosing
+                    Davr bo'yicha — {periodMonths} oy · batafsil va maosh berish uchun xodimni bosing
                   </p>
                 </div>
-                <Button
-                  variant="secondary"
-                  onClick={handleExportTeachers}
-                  disabled={exporting || salaryReport.length === 0}
-                >
-                  <FileSpreadsheet className="h-4 w-4" />{' '}
-                  {exporting ? 'Tayyorlanmoqda...' : 'Excel'}
-                </Button>
+                <div className="flex flex-wrap items-center gap-2">
+                  <PositionFilter value={position} onChange={setPosition} positions={positions} />
+                  <Button
+                    variant="secondary"
+                    onClick={handleExportTeachers}
+                    disabled={exporting || salaryReport.length === 0}
+                  >
+                    <FileSpreadsheet className="h-4 w-4" />{' '}
+                    {exporting ? 'Tayyorlanmoqda...' : 'Excel'}
+                  </Button>
+                </div>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-sm">
                   <thead className="whitespace-nowrap bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
                     <tr>
-                      <th className="px-4 py-3">O'qituvchi</th>
+                      <th className="px-4 py-3">Xodim</th>
+                      <th className="px-4 py-3">Lavozim</th>
                       <th className="px-4 py-3 text-right">Oylik</th>
                       <th className="px-4 py-3 text-right">Hisoblangan</th>
                       <th className="px-4 py-3 text-right">Berilgan</th>
@@ -267,13 +295,14 @@ export function FinancePage({ initialTab }: { initialTab?: Tab } = {}) {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {salaryReport.map((r) => (
+                    {visibleSalary.map((r) => (
                       <tr
-                        key={r.teacherId}
+                        key={`${r.kind}:${r.teacherId}`}
                         onClick={() => setDetailTeacher(r)}
                         className="cursor-pointer hover:bg-slate-50/60"
                       >
                         <td className="px-4 py-3 font-medium text-brand-700">{r.teacherName}</td>
+                        <td className="whitespace-nowrap px-4 py-3 text-slate-600">{r.position || '—'}</td>
                         <td className="px-4 py-3 text-right text-slate-600">{formatMoney(r.salary)}</td>
                         <td className="px-4 py-3 text-right text-slate-600">{formatMoney(r.expected)}</td>
                         <td className="px-4 py-3 text-right font-medium text-emerald-600">
@@ -283,24 +312,29 @@ export function FinancePage({ initialTab }: { initialTab?: Tab } = {}) {
                           {r.remaining < 0 ? `+${formatMoney(-r.remaining)}` : formatMoney(r.remaining)}
                         </td>
                         <td className="px-4 py-3 text-right">
-                          <button
-                            type="button"
-                            title="O'zgarishlar tarixi"
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              setAudit({ filters: { teacherId: r.teacherId }, title: `Tarix — ${r.teacherName}` })
-                            }}
-                            className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700"
-                          >
-                            <History className="h-4 w-4" />
-                          </button>
+                          {/* Audit tarixi o'qituvchi bo'yicha filtrlanadi; xodim uchun filtr yo'q. */}
+                          {r.kind === 'teacher' ? (
+                            <button
+                              type="button"
+                              title="O'zgarishlar tarixi"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                setAudit({ filters: { teacherId: r.teacherId }, title: `Tarix — ${r.teacherName}` })
+                              }}
+                              className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700"
+                            >
+                              <History className="h-4 w-4" />
+                            </button>
+                          ) : (
+                            <span className="text-slate-300">—</span>
+                          )}
                         </td>
                       </tr>
                     ))}
-                    {salaryReport.length === 0 && (
+                    {visibleSalary.length === 0 && (
                       <tr>
-                        <td colSpan={6} className="px-4 py-10 text-center text-slate-400">
-                          Ma'lumot yo'q
+                        <td colSpan={7} className="px-4 py-10 text-center text-slate-400">
+                          {salaryReport.length === 0 ? "Ma'lumot yo'q" : 'Bu lavozimda xodim yo\'q'}
                         </td>
                       </tr>
                     )}
@@ -328,6 +362,7 @@ export function FinancePage({ initialTab }: { initialTab?: Tab } = {}) {
         from={from}
         to={to}
         onClose={() => setDetailTeacher(null)}
+        onPaid={load}
       />
     </div>
   )

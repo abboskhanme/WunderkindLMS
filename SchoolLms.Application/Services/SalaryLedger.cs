@@ -84,6 +84,49 @@ public static class SalaryLedger
     }
 
     /// <summary>
+    /// O'qituvchi bo'lmagan xodimning (role="staff") maosh daftari — javob shakli o'qituvchinikining
+    /// aynan o'zi. Har oy kerakli summa = belgilangan oylik (<see cref="StaffSalaryCalc"/>:
+    /// birinchi oy qisman, undan oldin 0); berilgan — <c>expenses.employee_user_id</c> bo'yicha.
+    /// </summary>
+    public static async Task<SalaryLedgerDto> BuildForStaffAsync(
+        IAppDbContext db, AppUser staff, string? from, string? to)
+    {
+        var fromMonth = string.IsNullOrEmpty(from)
+            ? await TuitionService.AcademicYearStartMonthAsync(db) : from[..7];
+        var toMonth = string.IsNullOrEmpty(to) ? TuitionService.CurrentMonth() : to[..7];
+
+        var startDate = StaffSalaryCalc.StartDateOf(staff);
+        var startMonth = StaffSalaryCalc.FirstMonth(startDate, fromMonth);
+
+        var payments = await new SalaryPaymentQuery(db).ForEmployeeAsync(
+            staff.Id, ParseDate($"{startMonth}-01"), ParseDate($"{toMonth}-31"));
+        var paidByMonth = payments
+            .GroupBy(p => p.Month)
+            .ToDictionary(g => g.Key, g => g.Sum(x => x.Amount));
+
+        var months = new List<MonthSalaryDto>();
+        foreach (var month in TuitionService.MonthRange(startMonth, toMonth))
+        {
+            var expected = StaffSalaryCalc.MonthlyForMonth(staff.Salary, month, startDate);
+            var paid = paidByMonth.GetValueOrDefault(month, 0m);
+            var remaining = expected - paid;
+            var status = remaining <= 0 ? "paid" : paid > 0 ? "partial" : "unpaid";
+            months.Add(new MonthSalaryDto(month, expected, paid, remaining, status));
+        }
+
+        var totalExpected = months.Sum(m => m.Expected);
+        var totalPaid = payments.Sum(p => p.Amount);
+        var paymentDtos = payments
+            .Select(t => new PaymentDto(t.OnDate.ToString("yyyy-MM-dd"), t.Amount, t.Note, t.Month))
+            .ToList();
+
+        return new SalaryLedgerDto(
+            staff.Id, staff.FullName, staff.Salary,
+            totalExpected, totalPaid, totalExpected - totalPaid,
+            months, paymentDtos);
+    }
+
+    /// <summary>
     /// Eski oraliq satrini (<c>"yyyy-MM-31"</c> ham uchraydi) <c>DateOnly</c> ga
     /// o'giradi. Oyning oxirgi kuni 31 bo'lmasa ham chegara oy oxiriga siqiladi —
     /// fevral uchun "2026-02-31" haqiqiy sana emas, lekin ma'nosi "oy oxirigacha".

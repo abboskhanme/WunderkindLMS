@@ -75,6 +75,8 @@ public class ExpensesController(IExpenseService expenses) : ControllerBase
         // `teacherId` so'rovda KELADI (maosh kimga berilgani), `teacherName`
         // esa serverda `teachers` jadvalidan olinadi — tanadan qabul qilinmaydi.
         "teacherName",
+        // `employeeUserId` ham xuddi shunday (xodim maoshi), ismi esa `users` dan.
+        "employeeName",
         // "Smena" endi yo'q (kassalar modeli, 2026-09) — bu maydon faqat
         // ESKI qatorlar uchun tarixiy ustun, klient uni HECH QACHON
         // to'ldirmasligi kerak. `cashBoxId` esa ATAYLAB bu ro'yxatda YO'Q:

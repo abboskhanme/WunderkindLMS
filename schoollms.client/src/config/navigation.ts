@@ -216,11 +216,13 @@ export const navByRole: Record<Role, NavItem[]> = {
     },
     {
       label: 'HR',
-      to: '/admin/teachers',
+      to: '/admin/teachers/attendance',
       icon: GraduationCap,
       perm: 'teachers',
       children: [
-        { label: "O'qituvchilar", to: '/admin/teachers', end: true, group: 'XODIMLAR' },
+        // "O'qituvchilar" ro'yxati Boshqaruv → Xodimlar ga qo'shildi (mijoz, 2026-09-26:
+        // o'qituvchi va boshqa xodimlar BITTA ro'yxatda, farqi "Lavozim" ustunida).
+        // `/admin/teachers` manzili o'sha sahifaga `?position=teacher` bilan yo'naltiradi.
         { label: "O'qituvchilar davomati", to: '/admin/teachers/attendance', group: 'XODIMLAR' },
         // 'Oylik hisoblash' MOLIYA ostiga ko'chdi — EduSchool'da Ish haqi
         // aynan o'sha yerda turadi. Ikki joyda ko'rsatish menyuni chalkashtirardi.
@@ -248,6 +250,8 @@ export const navByRole: Record<Role, NavItem[]> = {
       children: [
         { label: 'Filiallar', to: '/admin/boshqaruv/branches', roles: ['superadmin'], group: 'TASHKILOT' },
         // Mijoz, 2026-09-25: xodimlar va rollar alohida — ruxsat rolga beriladi, xodimga rol biriktiriladi.
+        // 2026-09-26: o'qituvchilar ham shu ro'yxatda — sahifa `teachers` bo'limini ham beradi
+        // (lib/access.ts `PAGE_EXTRA_SECTIONS`).
         { label: 'Xodimlar', to: '/admin/boshqaruv/staff', perm: 'staff', group: 'TASHKILOT' },
         { label: 'Rollar', to: '/admin/boshqaruv/roles', perm: 'staff', group: 'TASHKILOT' },
         { label: 'Avtobus-gps', to: '/admin/boshqaruv/gps', perm: 'gps', group: 'KUZATUV' },

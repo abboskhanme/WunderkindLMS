@@ -738,6 +738,12 @@ export interface Staff {
   accessRoleName?: string | null
   /** Oxirgi kirish (ISO) */
   lastLoginAt?: string | null
+  /** Telefon (`+998 97 666 66 66`); bo'sh — kiritilmagan */
+  phone: string
+  /** Belgilangan oylik maosh (so'm); 0 — maosh yo'q */
+  salary: number
+  /** Maosh qaysi kundan hisoblanadi ("YYYY-MM-DD"); birinchi oy qisman. Bo'sh — belgilanmagan */
+  salaryStartDate: string
 }
 
 /** Xodim roli: ruxsatlar rolga beriladi, xodimga faqat rol biriktiriladi. */
@@ -821,7 +827,17 @@ export interface SalaryReportRow {
   expected: number
   /** Qoldiq (kerakli − berilgan); manfiy = ortiqcha berilgan */
   remaining: number
+  /**
+   * Kimning qatori: `teacher` — `teacherId` o'qituvchi id'si; `staff` — `teacherId`
+   * xodimning (users) id'si. Maosh endpoint'lari shunga qarab tanlanadi.
+   */
+  kind: EmployeeKind
+  /** Lavozim: o'qituvchilarda "O'qituvchi", xodimlarda `users.position` */
+  position: string
 }
+
+/** Xodim turi: o'qituvchi (`teachers`) yoki boshqa xodim (`users`, role=staff). */
+export type EmployeeKind = 'teacher' | 'staff'
 
 /** O'quvchilar bo'yicha moliya hisoboti qatori (joriy holat) */
 export interface StudentFinanceRow {

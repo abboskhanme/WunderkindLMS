@@ -386,6 +386,9 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
         // migration that introduced it).
         ExamModel.Apply(b);
 
+        // ----- Staff salary (employees-unified.md): users salary columns + expenses.employee_user_id -----
+        StaffSalaryModel.Apply(b);
+
         // ----- PostgreSQL: vaqt turi -----
         // Tizim sanalarni Toshkent "devor soati" sifatida saqlaydi (AppClock.Now — Kind=Unspecified),
         // UTC sifatida emas. Npgsql sukut bo'yicha DateTime'ni `timestamptz` ga moslaydi va

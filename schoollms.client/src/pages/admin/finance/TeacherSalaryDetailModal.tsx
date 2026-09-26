@@ -1,17 +1,24 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import type { MonthStatus, SalaryLedger, SalaryReportRow } from '@/types'
 import { getSalaryLedger } from '@/api/services/teachers'
+import { getStaffSalaryLedger } from '@/api/services/staff'
+import { billingErrorMessage } from '@/api/services/billingError'
 import { Modal } from '@/components/ui/Modal'
 import { Loader } from '@/components/ui/Loader'
+import { Button } from '@/components/ui/Button'
 import { AuditHistoryList } from '@/components/audit/AuditHistoryList'
 import { formatDate, formatMoney, cn } from '@/lib/utils'
 import { formatMonth, monthStatusLabels } from '@/config/constants'
+import { SalaryPayForm } from './SalaryPayForm'
 
 interface Props {
+  /** Maosh hisobotining qatori — `kind` qaysi endpoint'lar ishlatilishini aytadi. */
   teacher: SalaryReportRow | null
   from: string
   to: string
   onClose: () => void
+  /** Maosh berilgandan keyin (ro'yxatni yangilash uchun). */
+  onPaid?: () => void
 }
 
 const statusStyles: Record<MonthStatus, string> = {
@@ -20,31 +27,62 @@ const statusStyles: Record<MonthStatus, string> = {
   unpaid: 'bg-red-50 text-red-700',
 }
 
-export function TeacherSalaryDetailModal({ teacher, from, to, onClose }: Props) {
+/** Xodim (o'qituvchi yoki boshqa xodim) maoshi — davr bo'yicha hisob va maosh berish. */
+export function TeacherSalaryDetailModal({ teacher, from, to, onClose, onPaid }: Props) {
   const [ledger, setLedger] = useState<SalaryLedger | null>(null)
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
-  useEffect(() => {
+  const isStaff = teacher?.kind === 'staff'
+
+  const fetchLedger = useCallback(
+    (row: SalaryReportRow) =>
+      row.kind === 'staff'
+        ? getStaffSalaryLedger(row.teacherId, from, to)
+        : getSalaryLedger(row.teacherId, from, to),
+    [from, to],
+  )
+
+  const load = useCallback(() => {
     if (!teacher) return
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- modal ochilganda hisobni yuklash (maqsadli)
     setLoading(true)
+    setError(null)
     setLedger(null)
-    getSalaryLedger(teacher.teacherId, from, to)
+    fetchLedger(teacher)
       .then(setLedger)
+      .catch((e: unknown) => setError(billingErrorMessage(e, "Maosh hisobini yuklab bo'lmadi")))
       .finally(() => setLoading(false))
-  }, [teacher, from, to])
+  }, [teacher, fetchLedger])
+
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- modal ochilganda hisobni yuklash (maqsadli)
+  useEffect(() => load(), [load])
+
+  /** To'lovdan keyin — yuklovchisiz yangilash (forma va uning xabari joyida qoladi). */
+  const handlePaid = () => {
+    if (teacher) fetchLedger(teacher).then(setLedger).catch(() => undefined)
+    onPaid?.()
+  }
 
   return (
-    <Modal open={!!teacher} onClose={onClose} size="lg" title="O'qituvchi oyligi">
-      {loading || !ledger ? (
+    <Modal open={!!teacher} onClose={onClose} size="lg" title={isStaff ? 'Xodim oyligi' : "O'qituvchi oyligi"}>
+      {loading ? (
         <Loader label="Yuklanmoqda..." />
+      ) : error || !ledger ? (
+        <div className="flex flex-col items-center gap-3 py-10 text-center">
+          <p className="text-sm text-slate-500">{error ?? "Ma'lumot yo'q"}</p>
+          <Button variant="secondary" onClick={load}>
+            Qayta urinish
+          </Button>
+        </div>
       ) : (
         <div className="space-y-5">
           {/* Sarlavha */}
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-slate-50 px-4 py-3">
             <div>
               <p className="font-semibold text-slate-800">{ledger.fullName}</p>
-              <p className="text-sm text-slate-500">Belgilangan oylik: {formatMoney(ledger.salary)}</p>
+              <p className="text-sm text-slate-500">
+                {teacher?.position ? `${teacher.position} · ` : ''}Belgilangan oylik: {formatMoney(ledger.salary)}
+              </p>
             </div>
             <div className="text-right">
               <p className="text-xs text-slate-400">Qoldiq</p>
@@ -75,6 +113,16 @@ export function TeacherSalaryDetailModal({ teacher, from, to, onClose }: Props) 
               valueClass={ledger.remaining > 0 ? 'text-red-600' : 'text-slate-600'}
             />
           </div>
+
+          {teacher && (
+            <SalaryPayForm
+              key={`${teacher.kind}:${teacher.teacherId}`}
+              kind={teacher.kind}
+              employeeId={teacher.teacherId}
+              suggested={Math.max(0, ledger.remaining)}
+              onPaid={handlePaid}
+            />
+          )}
 
           {/* Oylar bo'yicha */}
           <div>
@@ -116,6 +164,13 @@ export function TeacherSalaryDetailModal({ teacher, from, to, onClose }: Props) 
                       </td>
                     </tr>
                   ))}
+                  {ledger.months.length === 0 && (
+                    <tr>
+                      <td colSpan={5} className="px-4 py-6 text-center text-slate-400">
+                        Bu davrda maosh hisoblanmagan
+                      </td>
+                    </tr>
+                  )}
                 </tbody>
                 <tfoot className="border-t border-slate-200 bg-slate-50 text-sm font-semibold text-slate-700">
                   <tr>
@@ -149,14 +204,16 @@ export function TeacherSalaryDetailModal({ teacher, from, to, onClose }: Props) 
             )}
           </div>
 
-          {/* O'zgarishlar tarixi */}
-          <div>
-            <p className="mb-2 text-sm font-medium text-slate-600">O'zgarishlar tarixi</p>
-            <AuditHistoryList
-              filters={{ teacherId: ledger.teacherId }}
-              emptyLabel="Maosh bo'yicha o'zgarishlar yo'q"
-            />
-          </div>
+          {/* O'zgarishlar tarixi — audit faqat o'qituvchi bo'yicha filtrlanadi. */}
+          {!isStaff && (
+            <div>
+              <p className="mb-2 text-sm font-medium text-slate-600">O'zgarishlar tarixi</p>
+              <AuditHistoryList
+                filters={{ teacherId: ledger.teacherId }}
+                emptyLabel="Maosh bo'yicha o'zgarishlar yo'q"
+              />
+            </div>
+          )}
         </div>
       )}
     </Modal>

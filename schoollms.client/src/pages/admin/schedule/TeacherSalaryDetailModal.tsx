@@ -4,6 +4,7 @@ import { teacherCategoryLabel } from '@/config/constants'
 import { formatDate, formatMoney, cn } from '@/lib/utils'
 import { Modal } from '@/components/ui/Modal'
 import { Loader } from '@/components/ui/Loader'
+import { SalaryPayForm } from '@/pages/admin/finance/SalaryPayForm'
 
 const WD = ['Yakshanba', 'Dushanba', 'Seshanba', 'Chorshanba', 'Payshanba', 'Juma', 'Shanba']
 const weekday = (iso: string) => WD[new Date(iso).getDay()] ?? ''
@@ -18,10 +19,13 @@ export function TeacherSalaryDetailModal({
   teacherId,
   month,
   onClose,
+  onPaid,
 }: {
   teacherId: string | null
   month: string
   onClose: () => void
+  /** Maosh berilgandan keyin (ro'yxatni yangilash uchun). */
+  onPaid?: () => void
 }) {
   const [data, setData] = useState<TeacherSalaryDetail | null>(null)
   const [loading, setLoading] = useState(false)
@@ -35,6 +39,12 @@ export function TeacherSalaryDetailModal({
       .then(setData)
       .finally(() => setLoading(false))
   }, [teacherId, month])
+
+  /** To'lovdan keyin — yuklovchisiz yangilash (forma xabari joyida qoladi). */
+  const handlePaid = () => {
+    if (teacherId) getTeacherSalaryDetail(teacherId, month).then(setData).catch(() => undefined)
+    onPaid?.()
+  }
 
   return (
     <Modal open={!!teacherId} onClose={onClose} title={data?.fullName ?? 'Maosh tafsiloti'} size="md">
@@ -101,6 +111,14 @@ export function TeacherSalaryDetailModal({
               />
             </div>
           </div>
+
+          <SalaryPayForm
+            key={data.teacherId}
+            kind="teacher"
+            employeeId={data.teacherId}
+            suggested={Math.max(0, data.remaining)}
+            onPaid={handlePaid}
+          />
 
           {/* Qachon kelmagan */}
           <div>

@@ -25,6 +25,8 @@ public class AuditService(IAppDbContext db, IHttpContextAccessor http)
     /// </summary>
     public const string EntityFinanceTransaction = "FinanceTransaction";
     public const string EntityTeacherSalary = "TeacherSalary";
+    /// <summary>O'qituvchi bo'lmagan xodim maoshi — oylik belgilash va maosh berish (employees-unified.md).</summary>
+    public const string EntityStaffSalary = "StaffSalary";
     public const string EntityClassFee = "ClassFee";
     public const string EntityStudentDiscount = "StudentDiscount";
 
