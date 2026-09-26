@@ -35,4 +35,12 @@ public static class PermissionCheck
         user.IsInRole(Roles.Admin)
         || user.IsInRole(Roles.SuperAdmin)
         || user.Claims.Any(c => c.Type == AdminPermAttribute.ClaimType && c.Value == perm);
+
+    /// <summary>
+    /// O'QISH uchun: to'liq ruxsat YOKI "faqat ko'rish" (<c>perm:view</c>). Rol bo'limga
+    /// ko'rish huquqini bersa, o'sha bo'limning ma'lumoti to'liq chiqishi kerak (2026-09-26).
+    /// </summary>
+    public static bool HasReadPerm(this ClaimsPrincipal user, string perm) =>
+        user.HasPerm(perm)
+        || user.Claims.Any(c => c.Type == AdminPermAttribute.ClaimType && c.Value == perm + Roles.ViewSuffix);
 }

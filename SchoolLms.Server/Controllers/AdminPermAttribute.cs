@@ -62,7 +62,9 @@ public sealed class AdminPermAttribute(string perm) : Attribute, IAuthorizationF
         var isRead = HttpMethods.IsGet(method) || HttpMethods.IsHead(method) || HttpMethods.IsOptions(method);
         if (isRead && !GatedRead) return;
 
-        var has = user.Claims.Any(c => c.Type == ClaimType && c.Value == _perm);
+        // Gated read: "faqat ko'rish" (perm:view) ham o'qiy oladi. Yozish — faqat to'liq ruxsat.
+        var has = user.Claims.Any(c => c.Type == ClaimType
+            && (c.Value == _perm || (isRead && c.Value == _perm + Roles.ViewSuffix)));
         if (!has) context.Result = new ForbidResult();
     }
 }

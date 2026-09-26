@@ -30,6 +30,14 @@ public sealed class FinanceRoleAttribute(FinanceAction action) : Attribute, IAut
     {
         var user = context.HttpContext.User;
         if (user.Identity?.IsAuthenticated != true) { context.Result = new UnauthorizedResult(); return; }
+
+        // "Faqat ko'rish" moliya xodimi (Roles.FinanceViewer) har qanday moliya amalining
+        // O'QISH tomonini ko'radi — ruxsat bor bo'limning ma'lumoti chiqmay qolmasin
+        // (2026-09-26). Yozish so'rovlarini ViewOnlyWriteGuard rad etadi.
+        var method = context.HttpContext.Request.Method;
+        var isRead = HttpMethods.IsGet(method) || HttpMethods.IsHead(method) || HttpMethods.IsOptions(method);
+        if (isRead && user.IsInRole(Roles.FinanceViewer)) return;
+
         if (!FinanceMatrix.IsAllowed(Action, user)) context.Result = new ForbidResult();
     }
 }

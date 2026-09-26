@@ -29,7 +29,8 @@ import {
 import type { LucideIcon } from 'lucide-react'
 import type { Role } from '@/types'
 import { useAuth } from '@/context/auth-context'
-import { navByRole } from '@/config/navigation'
+import { navByRole, type NavChild, type NavItem } from '@/config/navigation'
+import { canSeeNav } from '@/lib/access'
 import { globalSearch, type GlobalSearchHit, type GlobalSearchKind } from '@/api/services/globalSearch'
 import { cn } from '@/lib/utils'
 
@@ -135,12 +136,11 @@ export function GlobalSearch() {
   const pages = useMemo<Item[]>(() => {
     if (!user) return []
     const role = user.role as Role
-    const canSee = (x: { roles?: Role[]; perm?: string }) =>
-      (!x.roles || x.roles.includes(role)) &&
-      (!x.perm || !user.permissions || user.permissions.includes(x.perm))
+    const canSee = (x: NavItem | NavChild) => canSeeNav(user, x)
     const out: Item[] = []
     for (const item of navByRole[role] ?? []) {
       if (!canSee(item)) continue
+      if (item.children && !item.children.some(canSee)) continue
       const push = (label: string, to: string, group?: string) =>
         out.push({
           key: `page:${to}:${label}`,

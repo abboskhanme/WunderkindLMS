@@ -23,5 +23,5 @@ public class GlobalSearchController(AppDbContext db) : ControllerBase
 {
     [HttpGet]
     public async Task<ActionResult<List<GlobalSearchHitDto>>> Get([FromQuery] string? q, CancellationToken ct) =>
-        await GlobalSearchQuery.RunAsync(db, q, perm => User.HasPerm(perm), ct);
+        await GlobalSearchQuery.RunAsync(db, q, perm => User.HasReadPerm(perm), ct);
 }

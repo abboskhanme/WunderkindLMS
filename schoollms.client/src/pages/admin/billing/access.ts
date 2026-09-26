@@ -37,7 +37,8 @@ export const BILLING_ROLES: readonly Role[] = ['admin', 'superadmin']
 export function hasFinanceAccess(user: User | null): boolean {
   if (!user) return false
   if (BILLING_ROLES.includes(user.role)) return true
-  return user.role === 'staff' && (user.permissions ?? []).includes('finance')
+  const perms = user.permissions ?? []
+  return user.role === 'staff' && (perms.includes('finance') || perms.includes('finance:view'))
 }
 
 /** Faqat direktor bajaradigan amallar (tasdiqlash). */

@@ -47,7 +47,9 @@ public class BoardingAttendanceController(BoardingAttendanceService service) : C
             return BadRequest(new { message = "Sessiya noto'g'ri (evening yoki dorm)" });
         if (!DateOnly.TryParseExact(date, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out day))
             return BadRequest(new { message = "Sana formati YYYY-MM-DD bo'lishi kerak" });
-        if (!User.HasPerm(BoardingSession.PermissionOf(session))) return Forbid();
+        var perm = BoardingSession.PermissionOf(session);
+        var allowed = HttpMethods.IsGet(Request.Method) ? User.HasReadPerm(perm) : User.HasPerm(perm);
+        if (!allowed) return Forbid();
         return null;
     }
 }

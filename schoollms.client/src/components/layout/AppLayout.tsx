@@ -4,6 +4,7 @@ import { UnreadProvider } from '@/context/unread-context'
 import { Sidebar } from './Sidebar'
 import { Topbar } from './Topbar'
 import { TooltipLayer } from '@/components/ui/TooltipLayer'
+import { PageAccessGate } from '@/components/auth/PageAccessGate'
 
 export function AppLayout() {
   // Desktopda ochiq, mobil ekranda yopiq holatda boshlanadi
@@ -32,7 +33,9 @@ export function AppLayout() {
         <div className="flex flex-1 flex-col overflow-hidden">
           <Topbar sidebarOpen={open} onMenuClick={() => setOpen((o) => !o)} />
           <main className="flex-1 overflow-y-auto p-6">
-            <Outlet />
+            <PageAccessGate>
+              <Outlet />
+            </PageAccessGate>
           </main>
         </div>
       </div>

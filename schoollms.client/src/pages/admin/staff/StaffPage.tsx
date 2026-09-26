@@ -12,6 +12,7 @@ import {
   type StaffPayload,
 } from '@/api/services/staff'
 import { getAccessRoles } from '@/api/services/accessRoles'
+import { grantsOf } from '@/lib/access'
 import { useAuth } from '@/context/auth-context'
 import { cn, randomPassword } from '@/lib/utils'
 import { Card } from '@/components/ui/Card'
@@ -181,7 +182,7 @@ export function StaffPage() {
                               : undefined
                           }
                         >
-                          {s.permissions.length > 0 ? `Rolsiz · ${s.permissions.length} ta ruxsat` : 'Rol yo\'q'}
+                          {s.permissions.length > 0 ? `Rolsiz · ${grantsOf(s.permissions).size} ta sahifa` : 'Rol yo\'q'}
                         </span>
                       )}
                     </td>

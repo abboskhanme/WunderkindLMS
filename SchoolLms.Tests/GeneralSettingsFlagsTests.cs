@@ -40,18 +40,22 @@ public class GeneralSettingsFlagsTests(ApiFixture fixture)
     // =====================================================================
 
     /// <summary>
-    /// <c>AdminPerm("settings")</c> xodimga O'QISHni har doim beradi. Bu bayroqlar pul va
-    /// ma'lumot qoidalarini o'zgartiradi, shuning uchun "settings" ruxsati BOR xodim ham
-    /// ko'ra olmaydi va yoza olmaydi.
+    /// 2026-09-26: "Umumiy sozlamalar" ham rol orqali (Boshqaruv → Rollar). "Faqat ko'rish"
+    /// (<c>settings:view</c>) bayroqlarni ko'radi, lekin saqlay olmaydi; ruxsatsiz xodim ham
+    /// saqlay olmaydi. Saqlash — to'liq <c>settings</c> ruxsati (AdminPerm). Umumiy baza
+    /// bayroqlari bu yerda ataylab o'zgartirilmaydi — parallel testlarga ta'sir qilardi.
     /// </summary>
     [Fact]
-    public async Task Settings_ruxsati_bor_xodim_ham_bayroqlarni_ocholmaydi_403()
+    public async Task Bayroqlar_faqat_korishda_oqiladi_saqlanmaydi()
     {
-        using var client = await fixture.Api.ClientAsAsync(Roles.Staff, "settings");
+        using var viewer = await fixture.Api.ClientAsAsync(Roles.Staff, "settings:view");
+        using var outsider = await fixture.Api.ClientAsAsync(Roles.Staff, "students");
 
-        Assert.Equal(HttpStatusCode.Forbidden, (await client.GetAsync(General)).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await viewer.GetAsync(General)).StatusCode);
         Assert.Equal(HttpStatusCode.Forbidden,
-            (await client.PutAsJsonAsync(General, Flags(false, false, false, false))).StatusCode);
+            (await viewer.PutAsJsonAsync(General, Flags(false, false, false, false))).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden,
+            (await outsider.PutAsJsonAsync(General, Flags(false, false, false, false))).StatusCode);
     }
 
     [Theory]

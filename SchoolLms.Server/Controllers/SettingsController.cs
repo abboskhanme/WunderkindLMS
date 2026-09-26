@@ -95,8 +95,9 @@ public class SettingsController(AppDbContext db, TelegramService telegram, Contr
     //  faqat admin/superadmin ishi. Ikkala atribut birga ishlaydi: rol filtri
     //  ustiga qo'shiladi, undan ayirilmaydi.
 
+    // Rol orqali: o'qish — sozlama sahifasini ko'ra oladigan xodim ham; saqlash —
+    // `AdminPerm("settings")` (to'liq ruxsat). 2026-09-26.
     [HttpGet("general")]
-    [Authorize(Roles = Roles.AdminOrSuper)]
     public async Task<ActionResult<GeneralSettingsDto>> GetGeneral(CancellationToken ct = default)
     {
         var m = await db.SchoolMeta.AsNoTracking().FirstOrDefaultAsync(ct);
@@ -111,7 +112,6 @@ public class SettingsController(AppDbContext db, TelegramService telegram, Contr
     }
 
     [HttpPut("general")]
-    [Authorize(Roles = Roles.AdminOrSuper)]
     public async Task<ActionResult<GeneralSettingsDto>> SaveGeneral(
         GeneralSettingsDto req, CancellationToken ct = default)
     {

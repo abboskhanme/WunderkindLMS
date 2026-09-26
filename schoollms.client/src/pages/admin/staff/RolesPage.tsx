@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Check, Pencil, Plus, Trash2 } from 'lucide-react'
+import { ChevronDown, ChevronRight, Pencil, Plus, Trash2 } from 'lucide-react'
 import type { AccessRole } from '@/types'
 import {
   createAccessRole,
@@ -7,7 +7,7 @@ import {
   getAccessRoles,
   updateAccessRole,
 } from '@/api/services/accessRoles'
-import { adminPermissionGroups, adminPermissions } from '@/config/constants'
+import { ACCESS_CATALOG, ACCESS_PAGES, encodeGrants, grantsOf, type AccessLevel } from '@/lib/access'
 import { useAuth } from '@/context/auth-context'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/Button'
@@ -16,8 +16,19 @@ import { Drawer } from '@/components/ui/Drawer'
 import { Input, Textarea } from '@/components/ui/Input'
 import { Loader } from '@/components/ui/Loader'
 
-const labelOf = (key: string) => adminPermissions.find((p) => p.key === key)?.label ?? key
-const ALL_KEYS = adminPermissions.map((p) => p.key)
+const ALL_PAGES = ACCESS_PAGES.map((p) => p.key)
+
+const LEVELS: { value: AccessLevel; label: string }[] = [
+  { value: 'none', label: "Yo'q" },
+  { value: 'view', label: "Ko'rish" },
+  { value: 'edit', label: "To'liq" },
+]
+
+/** Bir nechta sahifaning umumiy darajasi; har xil bo'lsa — null ("aralash"). */
+function commonLevel(grants: Map<string, AccessLevel>, keys: string[]): AccessLevel | null {
+  const levels = new Set(keys.map((k) => grants.get(k) ?? 'none'))
+  return levels.size === 1 ? [...levels][0] : null
+}
 
 const errorText = (e: unknown, fallback: string) =>
   (e as { response?: { data?: { message?: string } } })?.response?.data?.message ?? fallback
@@ -42,7 +53,8 @@ export function RolesPage() {
   const [editing, setEditing] = useState<AccessRole | null>(null)
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
-  const [perms, setPerms] = useState<Set<string>>(new Set())
+  const [grants, setGrants] = useState<Map<string, AccessLevel>>(new Map())
+  const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
 
@@ -57,22 +69,30 @@ export function RolesPage() {
     setEditing(role)
     setName(role?.name ?? '')
     setDescription(role?.description ?? '')
-    setPerms(new Set(role?.permissions ?? []))
+    setGrants(grantsOf(role?.permissions ?? []))
+    setExpanded(new Set())
     setFormError(null)
     setOpen(true)
   }
 
-  const toggle = (keys: string[], on: boolean) =>
-    setPerms((cur) => {
-      const next = new Set(cur)
+  /** Bir yoki bir nechta sahifaga daraja qo'yish (menyu qatori — hamma sahifasiga). */
+  const setLevel = (keys: string[], level: AccessLevel) =>
+    setGrants((cur) => {
+      const next = new Map(cur)
       for (const k of keys) {
-        if (on) next.add(k)
-        else next.delete(k)
+        if (level === 'none') next.delete(k)
+        else next.set(k, level)
       }
       return next
     })
 
-  const allOn = ALL_KEYS.every((k) => perms.has(k))
+  const toggleExpanded = (label: string) =>
+    setExpanded((cur) => {
+      const next = new Set(cur)
+      if (next.has(label)) next.delete(label)
+      else next.add(label)
+      return next
+    })
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -83,7 +103,8 @@ export function RolesPage() {
     const payload = {
       name: name.trim(),
       description: description.trim(),
-      permissions: ALL_KEYS.filter((k) => perms.has(k)),
+      // Sahifa darajalari + ulardan hosil bo'ladigan server bo'lim kalitlari (lib/access.ts).
+      permissions: encodeGrants(grants),
     }
     try {
       const saved = editing ? await updateAccessRole(editing.id, payload) : await createAccessRole(payload)
@@ -156,11 +177,7 @@ export function RolesPage() {
                     <td className="px-4 py-3 font-medium text-slate-800">{r.name}</td>
                     <td className="px-4 py-3 text-slate-600">{r.description || '—'}</td>
                     <td className="px-4 py-3 text-slate-500">
-                      {r.permissions.length === ALL_KEYS.length
-                        ? 'Barchasi'
-                        : r.permissions.length === 0
-                          ? '—'
-                          : `${r.permissions.length} ta bo'lim`}
+                      {rolesSummary(r.permissions)}
                     </td>
                     <td className="px-4 py-3 text-right tabular-nums text-slate-700">{r.staffCount}</td>
                     {canManage && (
@@ -213,28 +230,56 @@ export function RolesPage() {
           <Input label="Rol nomi" required value={name} onChange={(e) => setName(e.target.value)} />
           <Textarea label="Izoh" rows={3} value={description} onChange={(e) => setDescription(e.target.value)} />
 
-          <PermCheck label="Barchasi" checked={allOn} onChange={(on) => toggle(ALL_KEYS, on)} strong />
+          <div className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5">
+            <span className="text-sm font-medium text-slate-700">Barchasi</span>
+            <LevelPicker value={commonLevel(grants, ALL_PAGES)} onChange={(l) => setLevel(ALL_PAGES, l)} />
+          </div>
 
-          {adminPermissionGroups.map((g) => {
-            const groupOn = g.keys.every((k) => perms.has(k))
-            return (
-              <section key={g.label} className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-400">{g.label}</h4>
-                  <button
-                    type="button"
-                    onClick={() => toggle(g.keys, !groupOn)}
-                    className="text-xs font-medium text-brand-600 hover:text-brand-700"
-                  >
-                    {groupOn ? 'Hammasini olish' : 'Hammasini tanlash'}
-                  </button>
-                </div>
-                {g.keys.map((k) => (
-                  <PermCheck key={k} label={labelOf(k)} checked={perms.has(k)} onChange={(on) => toggle([k], on)} />
-                ))}
-              </section>
-            )
-          })}
+          <div className="space-y-2">
+            {ACCESS_CATALOG.map((menu) => {
+              const keys = menu.pages.map((p) => p.key)
+              const single = menu.pages.length === 1 && menu.pages[0].label === menu.label
+              const isOpen = expanded.has(menu.label)
+              return (
+                <section key={menu.label} className="rounded-xl border border-slate-200">
+                  <div className="flex items-center justify-between gap-3 px-3 py-2.5">
+                    {single ? (
+                      <span className="text-sm font-medium text-slate-700">{menu.label}</span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => toggleExpanded(menu.label)}
+                        className="flex min-w-0 items-center gap-1.5 text-left text-sm font-medium text-slate-700"
+                      >
+                        {isOpen ? <ChevronDown className="h-4 w-4 shrink-0" /> : <ChevronRight className="h-4 w-4 shrink-0" />}
+                        <span className="truncate">{menu.label}</span>
+                        <span className="shrink-0 text-xs font-normal text-slate-400">{menu.pages.length}</span>
+                      </button>
+                    )}
+                    <LevelPicker value={commonLevel(grants, keys)} onChange={(l) => setLevel(keys, l)} />
+                  </div>
+                  {!single && isOpen && (
+                    <div className="space-y-1 border-t border-slate-100 px-3 py-2">
+                      {menu.pages.map((p) => (
+                        <div key={p.key} className="flex items-center justify-between gap-3 py-1 pl-5">
+                          <span className="min-w-0 truncate text-sm text-slate-600">{p.label}</span>
+                          <LevelPicker
+                            value={grants.get(p.key) ?? 'none'}
+                            onChange={(l) => setLevel([p.key], l)}
+                            small
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </section>
+              )
+            })}
+          </div>
+          <p className="text-xs text-slate-400">
+            Ko'rish — sahifa va uning barcha ma'lumoti ko'rinadi, o'zgartirib bo'lmaydi. To'liq — qo'shish,
+            o'zgartirish va o'chirish ham. Chegirma, chiqim va qaytarimni tasdiqlash — faqat direktor.
+          </p>
 
           {editing && editing.staffCount > 0 && (
             <p className="text-xs text-slate-400">
@@ -248,38 +293,52 @@ export function RolesPage() {
   )
 }
 
-function PermCheck({
-  label,
-  checked,
+/** Rollar jadvalidagi qisqa yozuv: nechta sahifa, shundan nechtasi faqat ko'rish. */
+function rolesSummary(permissions: string[]): string {
+  const grants = grantsOf(permissions)
+  if (grants.size === 0) return '—'
+  const view = [...grants.values()].filter((l) => l === 'view').length
+  const total = grants.size === ALL_PAGES.length ? 'Barcha sahifa' : `${grants.size} ta sahifa`
+  return view > 0 ? `${total} (${view} tasi faqat ko'rish)` : total
+}
+
+/** Uch holatli tanlov: Yo'q / Ko'rish / To'liq. `null` — ichidagi sahifalar har xil. */
+function LevelPicker({
+  value,
   onChange,
-  strong,
+  small,
 }: {
-  label: string
-  checked: boolean
-  onChange: (on: boolean) => void
-  strong?: boolean
+  value: AccessLevel | null
+  onChange: (level: AccessLevel) => void
+  small?: boolean
 }) {
   return (
-    <button
-      type="button"
-      role="checkbox"
-      aria-checked={checked}
-      onClick={() => onChange(!checked)}
-      className={cn(
-        'flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-left text-sm transition-colors',
-        checked ? 'border-brand-200 bg-brand-50/60' : 'border-slate-200 hover:bg-slate-50',
-        strong && 'font-medium',
-      )}
-    >
-      <span
-        className={cn(
-          'flex h-5 w-5 shrink-0 items-center justify-center rounded-md border transition-colors',
-          checked ? 'border-brand-600 bg-brand-600 text-white' : 'border-slate-300 bg-white',
-        )}
-      >
-        {checked && <Check className="h-3.5 w-3.5" />}
-      </span>
-      <span className="text-slate-700">{label}</span>
-    </button>
+    <div className="inline-flex shrink-0 rounded-lg bg-slate-100 p-0.5" role="radiogroup">
+      {LEVELS.map((l) => {
+        const active = value === l.value
+        return (
+          <button
+            key={l.value}
+            type="button"
+            role="radio"
+            aria-checked={active}
+            onClick={() => onChange(l.value)}
+            className={cn(
+              'rounded-md font-medium transition-colors',
+              small ? 'px-2 py-0.5 text-xs' : 'px-2.5 py-1 text-xs',
+              active
+                ? l.value === 'none'
+                  ? 'bg-white text-slate-700 shadow-sm'
+                  : l.value === 'view'
+                    ? 'bg-white text-amber-700 shadow-sm'
+                    : 'bg-white text-brand-700 shadow-sm'
+                : 'text-slate-500 hover:text-slate-700',
+            )}
+          >
+            {l.label}
+          </button>
+        )
+      })}
+    </div>
   )
 }

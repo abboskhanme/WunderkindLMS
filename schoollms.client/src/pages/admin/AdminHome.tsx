@@ -1,7 +1,7 @@
 import { Navigate } from 'react-router-dom'
-import type { Role } from '@/types'
 import { useAuth } from '@/context/auth-context'
 import { navByRole } from '@/config/navigation'
+import { canSeeNav, pageLevel } from '@/lib/access'
 import { AdminDashboard } from '@/pages/admin/AdminDashboard'
 
 /**
@@ -11,20 +11,14 @@ import { AdminDashboard } from '@/pages/admin/AdminDashboard'
  */
 export function AdminHome() {
   const { user } = useAuth()
-  const perms = user?.permissions
-  if (!user || user.role !== 'staff' || !perms || perms.includes('dashboard')) return <AdminDashboard />
+  if (!user || user.role !== 'staff' || pageLevel(user, '/admin') !== 'none') return <AdminDashboard />
 
-  // Sidebar bilan AYNAN bir xil qoida: bo'limning O'Z ruxsati va roli ham, bolalarniki ham. Ilgari bo'lim ruxsati
-  // (masalan Moliya — `finance`) hisobga olinmasdi va xodim `/cashier` ga yuborilardi, u yerdan esa yana `/admin`
-  // ga qaytarilardi — cheksiz aylanish (Telegram'da "yonib-o'chish", 2026-09-25).
-  const allowed = (x: { perm?: string; roles?: Role[] }) =>
-    (!x.roles || x.roles.includes(user.role)) && (!x.perm || perms.includes(x.perm))
+  // Sidebar bilan AYNAN bir xil qoida (lib/access.ts `canSeeNav`). `/admin` ning o'zi bu yerda
+  // yo'q — aks holda cheksiz aylanish bo'lardi (2026-09-25).
   const first = navByRole.admin
-    .filter(allowed)
-    .flatMap((item) => (item.children ? item.children.filter(allowed) : [item]))
-    // Faqat AYNAN berilgan ruxsatli bo'lim: ruxsati yozilmagan menyu bandining sahifasi (masalan Dars jadvali)
-    // baribir ruxsat so'rashi va `/admin` ga qaytarishi mumkin — bu yana aylanish bo'lardi.
-    .find((x) => !!x.perm && perms.includes(x.perm) && x.to !== '/admin' && x.to.startsWith('/admin'))
+    .filter((x) => canSeeNav(user, x))
+    .flatMap((item) => (item.children ? item.children.filter((c) => canSeeNav(user, c)) : [item]))
+    .find((x) => x.to !== '/admin' && x.to.startsWith('/admin'))
   if (first) return <Navigate to={first.to} replace />
 
   return (

@@ -8,7 +8,8 @@ import { Card } from '@/components/ui/Card'
  */
 export function RequirePerm({ perm, children }: { perm: string; children: ReactNode }) {
   const { user } = useAuth()
-  const ok = !user?.permissions || user.permissions.includes(perm)
+  // Bo'lim kaliti: to'liq (`finance`) yoki faqat ko'rish (`finance:view`) — sahifa ochiladi.
+  const ok = !user?.permissions || user.permissions.includes(perm) || user.permissions.includes(`${perm}:view`)
   if (!ok) {
     return (
       <Card>

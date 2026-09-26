@@ -67,7 +67,7 @@ public class AcademicYearController(AppDbContext db, AuditService audit) : Contr
         // `malumotlar.json` da esa ikkalasi ham to'liq yotadi. Shuning uchun bu
         // yuklab olish moliya ruxsatini talab qiladi — faqat `Moliya/` papkasini
         // olib qo'yish soxta himoya bo'lardi, JSON baribir hammasini berardi.
-        if (!User.HasPerm(PermissionCheck.Finance)) return Forbid();
+        if (!User.HasReadPerm(PermissionCheck.Finance)) return Forbid();
 
         var a = await db.SchoolYearArchives.FindAsync(id);
         if (a is null) return NotFound();

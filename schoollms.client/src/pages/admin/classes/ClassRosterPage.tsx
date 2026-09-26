@@ -45,7 +45,7 @@ export function ClassRosterPage() {
   const canSeeBalance =
     user?.role === 'admin' ||
     user?.role === 'superadmin' ||
-    Boolean(user?.permissions?.includes('finance'))
+    Boolean(user?.permissions?.includes('finance') || user?.permissions?.includes('finance:view'))
 
   const load = useCallback(() => {
     setLoading(true)

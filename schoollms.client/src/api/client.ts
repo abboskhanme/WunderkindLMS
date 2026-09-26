@@ -26,6 +26,16 @@ api.interceptors.response.use(
     const status = error.response?.status
     const url: string = error.config?.url ?? ''
     const isLoginCall = url.includes('/auth/login')
+    // "Faqat ko'rish" xodimining yozish urinishi — sahifada tushunarli xabar (PageAccessGate).
+    const method = (error.config?.method ?? 'get').toLowerCase()
+    if (status === 403 && method !== 'get') {
+      try {
+        const role = (JSON.parse(localStorage.getItem('user') ?? 'null') as { role?: string } | null)?.role
+        if (role === 'staff') window.dispatchEvent(new Event('access:readonly'))
+      } catch {
+        /* localStorage buzilgan — xabarsiz o'tamiz */
+      }
+    }
     if (status === 401 && !isLoginCall) {
       localStorage.removeItem('token')
       localStorage.removeItem('user')

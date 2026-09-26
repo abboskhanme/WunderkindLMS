@@ -333,7 +333,7 @@ public class MessagesController(AppDbContext db, ChatService chat, TelegramServi
         // `messages` ruxsatiga ega har qanday xodim undan butun maktabning qarzini
         // o'qib ololmasligi kerak. Ruxsat yo'q bo'lsa qoldiq `null` — nol EMAS,
         // chunki nol "qarzi yo'q" degan YOLG'ON ma'no berardi.
-        var canSeeMoney = User.HasPerm(PermissionCheck.Finance);
+        var canSeeMoney = User.HasReadPerm(PermissionCheck.Finance);
         var balances = canSeeMoney
             ? await Balances.ForManyAsync(ids)
             : new Dictionary<string, decimal>(StringComparer.Ordinal);

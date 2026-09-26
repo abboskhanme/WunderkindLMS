@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
 import { ChevronDown, ChevronRight } from 'lucide-react'
-import type { Role } from '@/types'
 import { useAuth } from '@/context/auth-context'
 import { useUnread } from '@/context/unread-context'
 import { getSchoolName } from '@/api/services/settings'
 import { navByRole, homeByRole, type NavChild, type NavItem } from '@/config/navigation'
 import { cn } from '@/lib/utils'
+import { canSeeNav } from '@/lib/access'
 
 interface SidebarProps {
   open: boolean
@@ -33,10 +33,8 @@ export function Sidebar({ open, onNavigate }: SidebarProps) {
 
   if (!user) return null
   const role = user.role
-  // Element ko'rinadi: roli mos (yoki roles yo'q) VA xodim ruxsati bor (yoki perm yo'q / permissions yo'q).
-  const canSee = (x: { roles?: Role[]; perm?: string }) =>
-    (!x.roles || x.roles.includes(role)) &&
-    (!x.perm || !user.permissions || user.permissions.includes(x.perm))
+  // Element ko'rinadi: roli mos VA ruxsati bor. Xodim uchun — sahifa darajasi (lib/access.ts).
+  const canSee = (x: NavItem | NavChild) => canSeeNav(user, x)
 
   // Guruh bolalarini ham filtrlaymiz; barcha bolalari yashirilgan guruhni ko'rsatmaymiz.
   const items = navByRole[role]

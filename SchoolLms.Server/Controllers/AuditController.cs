@@ -8,7 +8,8 @@ namespace SchoolLms.Server.Controllers;
 
 /// <summary>O'zgarishlar tarixi (audit). Moliyaga oid yozuvlar bo'yicha tarixni qaytaradi.</summary>
 [ApiController]
-[Authorize(Roles = "admin,superadmin")]
+// Faqat o'qish (GET). Xodim ham ko'radi: ruxsat bor bo'limdagi tarix chiqmay qolmasin (2026-09-26).
+[Authorize(Roles = "admin,superadmin,staff")]
 [Route("api/admin/audit")]
 public class AuditController(AppDbContext db) : ControllerBase
 {

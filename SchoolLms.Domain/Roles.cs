@@ -66,7 +66,7 @@ public static class Roles
     /// Admin va direktor ham kassaga tura oladi (SPEC §4.3 birinchi qator).
     /// <c>[Authorize(Roles = Roles.CashierOrAdmin)]</c>.
     /// </summary>
-    public const string CashierOrAdmin = Cashier + "," + Admin + "," + SuperAdmin + "," + FinanceDelegate;
+    public const string CashierOrAdmin = Cashier + "," + Admin + "," + SuperAdmin + "," + FinanceDelegate + "," + FinanceViewer;
 
     // ----- Moliya: xodim roli orqali (Boshqaruv → Rollar), 2026-09-25 -----
     //
@@ -77,10 +77,21 @@ public static class Roles
     /// <summary>"finance" ruxsatli xodim — moliyada admin darajasi (direktor tasdiqlari bundan tashqari).</summary>
     public const string FinanceDelegate = "financestaff";
 
+    /// <summary>
+    /// "finance:view" ruxsatli xodim — moliyani FAQAT O'QIYDI. Moliya darvozalari
+    /// (<see cref="FinanceStaff"/>, <see cref="CashierOrAdmin"/>) uni o'tkazadi, har qanday
+    /// yozish so'rovini esa <c>ViewOnlyWriteGuard</c> rad etadi; FinanceMatrix'da u yo'q.
+    /// </summary>
+    public const string FinanceViewer = "financeviewer";
+
+    /// <summary>Ruxsat kalitining "faqat ko'rish" ko'rinishi: <c>students</c> → <c>students:view</c>.</summary>
+    public const string ViewSuffix = ":view";
+
     /// <summary>Xodim ruxsat kaliti → hosil bo'ladigan ichki rol.</summary>
     public static readonly IReadOnlyDictionary<string, string> PermissionRoles = new Dictionary<string, string>
     {
         ["finance"] = FinanceDelegate,
+        ["finance" + ViewSuffix] = FinanceViewer,
     };
 
     /// <summary>
@@ -90,5 +101,5 @@ public static class Roles
     /// eski xodim-ruxsat yo'li esa P1-21 gacha eski <c>FinanceController</c> da
     /// <c>AdminPermAttribute</c> orqali ishlashda davom etadi.
     /// </summary>
-    public const string FinanceStaff = Admin + "," + SuperAdmin + "," + FinanceDelegate;
+    public const string FinanceStaff = Admin + "," + SuperAdmin + "," + FinanceDelegate + "," + FinanceViewer;
 }

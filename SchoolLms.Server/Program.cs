@@ -370,7 +370,8 @@ builder.Services.AddOutputCache(options =>
     options.AddPolicy("public-tenant", b => b.Expire(TimeSpan.FromSeconds(30)));
 });
 
-builder.Services.AddControllers();
+// "Faqat ko'rish" moliya xodimi yoza olmasin (ViewOnlyWriteGuard, 2026-09-26).
+builder.Services.AddControllers(o => o.Filters.Add<SchoolLms.Server.Controllers.ViewOnlyWriteGuard>());
 
 var app = builder.Build();
 
