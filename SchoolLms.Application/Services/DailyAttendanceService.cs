@@ -158,7 +158,9 @@ public sealed class DailyAttendanceService(IAppDbContext db)
         var countByGroup = groupGuids.Count == 0
             ? new Dictionary<string, int>(StringComparer.Ordinal)
             : (await db.StudyGroupMembers.AsNoTracking()
-                    .Where(m => m.LeftOn == null && groupGuids.Contains(m.GroupId)
+                    // O'sha KUNDAGI a'zolar — o'tgan sanaga davomat ham hisobotlar bilan bir xil ro'yxat.
+                    .Where(m => m.JoinedOn <= day && (m.LeftOn == null || m.LeftOn >= day)
+                                && groupGuids.Contains(m.GroupId)
                                 && db.Students.Any(s => s.Id == m.StudentId && !s.IsArchived))
                     .Select(m => m.GroupId).ToListAsync(ct))
                 .GroupBy(g => g.ToString())
@@ -199,7 +201,7 @@ public sealed class DailyAttendanceService(IAppDbContext db)
         var owner = await LessonRoster.OwnerAsync(db, classId, ct);
         if (owner is null || !await LessonRoster.LessonsLiveAsync(db, owner, ct)) return null;
 
-        var roster = (await LessonRoster.ForLessonAsync(db, owner, ct: ct))
+        var roster = (await LessonRoster.ForLessonAsync(db, owner, asOf: owner.IsGroup ? day : null, ct: ct))
             .Select(s => new { s.Id, s.FullName, s.SubGroup })
             .ToList();
         var students = roster
@@ -310,7 +312,7 @@ public sealed class DailyAttendanceService(IAppDbContext db)
         if (marks.Any(m => m.ReasonId is not null && !reasons.ContainsKey(m.ReasonId)))
             return "Noma'lum davomat sababi.";
 
-        var roster = (await LessonRoster.ForLessonAsync(db, owner, ct: ct))
+        var roster = (await LessonRoster.ForLessonAsync(db, owner, asOf: owner.IsGroup ? day : null, ct: ct))
             .Select(s => new { s.Id, s.SubGroup })
             .ToList();
         // Bo'lingan darsda faqat O'SHA guruh belgilanadi — qolgan yarim sinf

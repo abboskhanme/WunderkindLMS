@@ -202,6 +202,30 @@ public class TrackGroupsAsClassesTests(ApiFixture fixture) : IAsyncLifetime
         Assert.Null(await service.ClassDayAsync(w.OrdinaryId, Monday));
     }
 
+    /// <summary>
+    /// O'tgan sanaga davomat (mijoz, 2026-09-26): ro'yxat O'SHA KUNDAGI a'zolardan — keyinroq
+    /// qo'shilgan o'quvchi oldingi kunda chiqmaydi, keyingi kunda chiqadi. Hisobotlar ham a'zolik
+    /// sanasiga qaraydi, shuning uchun ekran va hisobot bir xil ro'yxatni ko'radi.
+    /// </summary>
+    [Fact]
+    public async Task Otgan_sana_royxati_osha_kundagi_azolardan()
+    {
+        await using var db = await NewDbAsync("pastdate");
+        var w = await SeedAsync(db);
+        var late = NewStudent("Kechroq Qo'shilgan", "9-A");
+        db.Students.Add(late);
+        db.StudyGroupMembers.Add(Member(Guid.Parse(w.TrackId), null, late.Id, new DateOnly(2026, 9, 7), w.UserId));
+        await db.SaveChangesAsync();
+        var service = new DailyAttendanceService(db);
+
+        var before = (await service.ClassDayAsync(w.TrackId, Monday))!;
+        Assert.DoesNotContain(before.Students, s => s.StudentId == late.Id);
+        Assert.Equal(2, (await service.OverviewAsync(Monday)).Classes.Single(c => c.ClassId == w.TrackId).StudentCount);
+
+        var after = (await service.ClassDayAsync(w.TrackId, "2026-09-07"))!;
+        Assert.Contains(after.Students, s => s.StudentId == late.Id);
+    }
+
     /* =====================================================================
      *  5. HeldLessons — belgilangan dars statistikada "bo'lgan"
      * ================================================================== */
