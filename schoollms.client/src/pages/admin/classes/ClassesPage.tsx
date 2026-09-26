@@ -11,8 +11,6 @@ import {
   Search,
   Download,
   ShieldAlert,
-  Users2,
-  ChevronRight,
 } from 'lucide-react'
 import type { SchoolClass } from '@/types'
 import type { ClassPayload } from '@/api/services/classes'
@@ -57,8 +55,9 @@ export function ClassesPage() {
   const [search, setSearch] = useState('')
   const [exporting, setExporting] = useState(false)
   /**
-   * Faol yo'nalish guruhlari — ro'yxat oxirida alohida blok (docs/modules/track-groups-as-classes.md).
-   * Sinflar (9-A ...) bu sahifada JOYIDA qoladi: hujjat, moliya va shartnomalar ularga bog'liq.
+   * Faol yo'nalish guruhlari — sinflar JADVALINING oxirgi qatorlari (mijoz, 2026-09-26;
+   * docs/modules/track-groups-as-classes.md). Sinflar (9-A ...) bu sahifada JOYIDA qoladi:
+   * hujjat, moliya va shartnomalar ularga bog'liq.
    */
   const [tracks, setTracks] = useState<StudyGroupListItem[]>([])
 
@@ -68,7 +67,7 @@ export function ClassesPage() {
       setArchived(ar)
     })
     getGroups()
-      .then((gs) => setTracks(gs.filter((g) => g.isTrack)))
+      .then((gs) => setTracks(gs.filter((g) => g.isTrack && !g.isArchived)))
       .catch(() => setTracks([]))
   }, [])
 
@@ -319,7 +318,69 @@ export function ClassesPage() {
                     </td>
                   </tr>
                 ))}
-                {classes.length === 0 && (
+                {/* Yo'nalish guruhlari — sinflardan keyin, o'sha ustunlar bilan. Qidiruv ularga ham
+                    qo'llanadi. Til, xona va oylik to'lov sinfniki — yo'nalishda "—". */}
+                {tracks
+                  .filter((g) => !search.trim() || g.name.toLowerCase().includes(search.trim().toLowerCase()))
+                  .map((g, j) => (
+                    <tr
+                      key={g.id}
+                      onClick={() => navigate(`/admin/groups/${g.id}/students`)}
+                      className="cursor-pointer bg-violet-50/30 hover:bg-violet-50/60"
+                    >
+                      <td className="px-4 py-3 text-slate-400">{classes.length + j + 1}</td>
+                      <td className="px-4 py-3 font-medium text-slate-800">
+                        <span
+                          className="flex max-w-[16rem] items-center gap-2"
+                          title={`${g.name} · ${g.classes.map((c) => c.name).join(', ')} · ${g.memberCount} ta o'quvchi`}
+                        >
+                          <span className="truncate">{g.name}</span>
+                          <span className="shrink-0 rounded-md bg-violet-100 px-1.5 py-0.5 text-[11px] font-medium text-violet-700">
+                            yo'nalish
+                          </span>
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-slate-400">—</td>
+                      <td className="px-4 py-3 text-slate-400">—</td>
+                      <td className="px-4 py-3">
+                        {stats[g.id] && stats[g.id].averageGrade > 0 ? (
+                          <span className={cn('font-semibold', gradeColor(stats[g.id].averageGrade))}>
+                            {stats[g.id].averageGrade.toFixed(1)}
+                          </span>
+                        ) : (
+                          <span className="text-slate-400">—</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        {stats[g.id] && stats[g.id].attendance != null ? (
+                          <span className={cn('font-medium', attColor(stats[g.id].attendance!))}>
+                            {stats[g.id].attendance}%
+                          </span>
+                        ) : (
+                          <span className="text-slate-400">—</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-slate-400">—</td>
+                      <td className="px-4 py-3">
+                        <div
+                          className="flex items-center justify-end gap-0.5"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <IconBtn
+                            icon={ClipboardList}
+                            title="Yo'nalish ro'yxati"
+                            onClick={() => navigate(`/admin/groups/${g.id}/students`)}
+                          />
+                          <IconBtn
+                            icon={Pencil}
+                            title="Tahrirlash"
+                            onClick={() => navigate(`/admin/groups/${g.id}`)}
+                          />
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                {classes.length === 0 && tracks.length === 0 && (
                   <tr>
                     <td colSpan={8} className="px-4 py-12 text-center text-slate-400">
                       Sinflar yo'q
@@ -331,42 +392,6 @@ export function ClassesPage() {
           </div>
         )}
       </Card>
-
-      {tracks.length > 0 && (
-        <div className="space-y-3">
-          <div>
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-400">
-              Yo'nalish guruhlari
-            </h2>
-            <p className="text-xs text-slate-400">
-              Dars jadvali, davomat va jurnalda shu guruhlar boqadigan sinflari o'rnida turadi
-            </p>
-          </div>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {tracks.map((g) => (
-              <button
-                key={g.id}
-                type="button"
-                onClick={() => navigate(`/admin/groups/${g.id}/students`)}
-                className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200/80 bg-white p-4 text-left shadow-sm transition-colors hover:border-brand-300 hover:bg-brand-50/40"
-              >
-                <div className="flex min-w-0 items-center gap-3">
-                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-violet-50 text-violet-600">
-                    <Users2 className="h-5 w-5" />
-                  </div>
-                  <div className="min-w-0">
-                    <p className="truncate font-semibold text-slate-800">{g.name}</p>
-                    <p className="truncate text-xs text-slate-400">
-                      {g.classes.map((c) => c.name).join(', ')} · {g.memberCount} ta o'quvchi
-                    </p>
-                  </div>
-                </div>
-                <ChevronRight className="h-5 w-5 shrink-0 text-slate-300" />
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
 
       <ClassFormModal
         open={formOpen}

@@ -55,17 +55,40 @@ public class ClassAnalyticsController(AppDbContext db) : ControllerBase
         var classes = await db.Classes.ToListAsync();
         var attainment = await ClassAttainment.BuildAsync(db);
         var result = new Dictionary<string, ClassStatsDto>();
+        var byStudent = new Dictionary<string, ClassStudentRowDto>();
         foreach (var cls in classes)
         {
             var rows = (await BuildFor(cls, students, subjects, attainment)).Rows;
-            var n = rows.Count;
-            var att = rows.Where(r => r.Attendance.HasValue).Select(r => r.Attendance!.Value).ToList();
-            result[cls.Id] = new ClassStatsDto(
-                n,
-                n > 0 ? Math.Round(rows.Average(r => r.Average), 1) : 0,
-                att.Count > 0 ? Math.Round(att.Average()) : null);
+            foreach (var r in rows) byStudent[r.Student.Id] = r;
+            result[cls.Id] = Summarize(rows);
+        }
+
+        // Yo'nalish guruhlari (2026-09-26): Sinflar jadvalida sinflardan keyin qator sifatida
+        // chiqadi. Har bir a'zoning ko'rsatkichi yuqorida o'z sinfi hisobida allaqachon bor
+        // (sinf hisobi shu o'quvchining guruh darslarini ham qamraydi) — bu yerda faqat
+        // guruh a'zolari bo'yicha o'rtachalanadi, qayta hisoblanmaydi. Kalit — guruh id'si.
+        var trackMembers = await db.StudyGroupMembers.AsNoTracking()
+            .Where(m => m.LeftOn == null
+                        && db.StudyGroups.Any(g => g.Id == m.GroupId && g.IsTrack && !g.IsArchived))
+            .Select(m => new { m.GroupId, m.StudentId })
+            .ToListAsync();
+        foreach (var group in trackMembers.GroupBy(m => m.GroupId))
+        {
+            var rows = group.Select(m => byStudent.GetValueOrDefault(m.StudentId))
+                .Where(r => r is not null).Select(r => r!).ToList();
+            result[group.Key.ToString()] = Summarize(rows);
         }
         return result;
+    }
+
+    private static ClassStatsDto Summarize(List<ClassStudentRowDto> rows)
+    {
+        var n = rows.Count;
+        var att = rows.Where(r => r.Attendance.HasValue).Select(r => r.Attendance!.Value).ToList();
+        return new ClassStatsDto(
+            n,
+            n > 0 ? Math.Round(rows.Average(r => r.Average), 1) : 0,
+            att.Count > 0 ? Math.Round(att.Average()) : null);
     }
 
     /// <summary>
