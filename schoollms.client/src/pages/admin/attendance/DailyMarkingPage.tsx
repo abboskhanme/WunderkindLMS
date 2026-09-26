@@ -554,23 +554,47 @@ export function DailyMarkingPage() {
                 return (
                   <li
                     key={s.studentId}
-                    className={cn(
-                      'flex items-center justify-between gap-3 px-4 py-2',
-                      !mark && showUnmarked && 'bg-amber-50/70',
-                    )}
+                    className={cn('px-4 py-2', !mark && showUnmarked && 'bg-amber-50/70')}
                   >
-                    <span className="flex min-w-0 items-center gap-3">
-                      <span className="w-5 shrink-0 text-xs text-slate-400">{i + 1}</span>
-                      <span className="truncate font-medium text-slate-800">{s.fullName}</span>
-                    </span>
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="flex min-w-0 items-center gap-3">
+                        <span className="w-5 shrink-0 text-xs text-slate-400">{i + 1}</span>
+                        <span className="truncate font-medium text-slate-800">{s.fullName}</span>
+                      </span>
 
-                    <span className="flex shrink-0 items-center gap-2">
-                      {mark === 'excused' && excusedChoices.length > 1 && (
+                      <span className="flex shrink-0 items-center gap-2">
+                        {MARKS.map((m) => (
+                          <button
+                            key={m}
+                            type="button"
+                            disabled={!allowed(m)}
+                            onClick={() => setMark(s.studentId, m)}
+                            title={
+                              allowed(m)
+                                ? MARK_TITLE[m]
+                                : 'Bu belgi uchun katalogda davomat sababi yo\u2019q'
+                            }
+                            aria-label={`${s.fullName} — ${MARK_TITLE[m]}`}
+                            className={cn(
+                              chip(mark === m, m),
+                              !allowed(m) && 'cursor-not-allowed opacity-30',
+                            )}
+                          >
+                            {MARK_LETTER[m]}
+                          </button>
+                        ))}
+                      </span>
+                    </div>
+
+                    {/* Sabab — ism OSTIDA, ikkinchi qatorda: telefonda ismni yopib qo'ymasin (mijoz, 2026-09-26). */}
+                    {mark === 'excused' && excusedChoices.length > 1 && (
+                      <div className="mt-1.5 flex items-center gap-2 pl-8">
+                        <span className="shrink-0 text-xs text-slate-400">Sabab:</span>
                         <select
                           value={picked[s.studentId] ?? day.excusedReasonId ?? ''}
                           onChange={(e) => setReason(s.studentId, e.target.value)}
                           aria-label={`${s.fullName} — sabab`}
-                          className="max-w-[9rem] truncate rounded-lg border border-amber-200 bg-amber-50 px-2 py-1 text-xs font-medium text-amber-800 outline-none focus:border-amber-400"
+                          className="min-w-0 max-w-full rounded-lg border border-amber-200 bg-amber-50 px-2 py-1 text-xs font-medium text-amber-800 outline-none focus:border-amber-400"
                         >
                           {excusedChoices.map((r) => (
                             <option key={r.id} value={r.id}>
@@ -578,28 +602,8 @@ export function DailyMarkingPage() {
                             </option>
                           ))}
                         </select>
-                      )}
-                      {MARKS.map((m) => (
-                        <button
-                          key={m}
-                          type="button"
-                          disabled={!allowed(m)}
-                          onClick={() => setMark(s.studentId, m)}
-                          title={
-                            allowed(m)
-                              ? MARK_TITLE[m]
-                              : 'Bu belgi uchun katalogda davomat sababi yo\u2019q'
-                          }
-                          aria-label={`${s.fullName} — ${MARK_TITLE[m]}`}
-                          className={cn(
-                            chip(mark === m, m),
-                            !allowed(m) && 'cursor-not-allowed opacity-30',
-                          )}
-                        >
-                          {MARK_LETTER[m]}
-                        </button>
-                      ))}
-                    </span>
+                      </div>
+                    )}
                   </li>
                 )
               })}
