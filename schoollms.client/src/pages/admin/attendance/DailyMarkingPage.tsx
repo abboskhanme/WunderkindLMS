@@ -41,8 +41,11 @@ import { cn } from '@/lib/utils'
    kelmaydi. Ochilganda hamma yashil turadi, xodim faqat kerakligini bosadi.
    ========================================================================== */
 
-/** Uchta holat — ekrandagi uchta doira. */
-type Mark = 'present' | 'absent' | 'excused'
+/**
+ * Ikki holat — ekrandagi ikki doira (mijoz, 2026-09-26): K — keldi (ostida: kech keldi),
+ * Y — kelmadi (ostida sabab, sukut — Sababsiz). Aniq sabab `picked` da.
+ */
+type Mark = 'present' | 'absent'
 
 const pad = (n: number) => String(n).padStart(2, '0')
 
@@ -57,13 +60,12 @@ const chip = (active: boolean, tone: Mark) =>
     'flex h-8 w-8 items-center justify-center rounded-full text-xs font-semibold transition-colors',
     active && tone === 'present' && 'bg-emerald-500 text-white',
     active && tone === 'absent' && 'bg-red-500 text-white',
-    active && tone === 'excused' && 'bg-amber-500 text-white',
     !active && 'bg-slate-100 text-slate-400 hover:bg-slate-200',
   )
 
-const MARKS: Mark[] = ['present', 'absent', 'excused']
-const MARK_LETTER: Record<Mark, string> = { present: 'K', absent: 'Y', excused: 'S' }
-const MARK_TITLE: Record<Mark, string> = { present: 'Keldi', absent: 'Kelmadi', excused: 'Sababli' }
+const MARKS: Mark[] = ['present', 'absent']
+const MARK_LETTER: Record<Mark, string> = { present: 'K', absent: 'Y' }
+const MARK_TITLE: Record<Mark, string> = { present: 'Keldi', absent: 'Kelmadi' }
 
 /**
  * "Barcha darslar" — sinfning shu kundagi HAMMA soati bitta ro'yxatda (mijoz, 2026-09-25: "hamshira bir kunda
@@ -118,9 +120,8 @@ export function DailyMarkingPage() {
   /** Ekranda turgan (hali saqlanmagan) belgilar: studentId → Mark. */
   const [draft, setDraft] = useState<Record<string, Mark>>({})
   /**
-   * Sariq belgining ANIQ sababi: studentId → katalogdagi sabab id'si. Yo'q bo'lsa — sukut
-   * (`excusedReasonId`). Ilgari sariq har doim bitta sababni yozardi: katalogdagi qolgan
-   * sabablar chiqmasdi va tanlanmasdi (mijoz, 2026-09-25).
+   * Belgining ANIQ sababi: studentId → katalogdagi sabab id'si. Y uchun yo'q bo'lsa — sukut
+   * (Sababsiz); K uchun — kechikish sababi (yo'q bo'lsa oddiy "keldi"). Mijoz, 2026-09-26.
    */
   const [picked, setPicked] = useState<Record<string, string>>({})
   const [dirty, setDirty] = useState(false)
@@ -141,9 +142,7 @@ export function DailyMarkingPage() {
    * jim ketib qolardi (server `reasonId: null` ni "keldi" deb tushunadi).
    * Shuning uchun tugma o'chiriladi va sozlamaga yo'l ko'rsatiladi.
    */
-  const allowed = (m: Mark) =>
-    m === 'present' ||
-    (m === 'absent' ? !!day?.absentReasonId : !!day?.excusedReasonId)
+  const allowed = (m: Mark) => m === 'present' || !!day?.absentReasonId
 
   const keyOf = (l: DailyAttendanceLesson) => `${l.subjectId}|${l.period}|${l.subGroup}`
   const allMode = lessonKey === ALL_KEY
@@ -154,7 +153,13 @@ export function DailyMarkingPage() {
    * Sariq belgida tanlanadigan sabablar — faqat kelmaganlik sabablari: qizil tugmaniki
    * (Sababsiz) va "kech qoldi" bundan mustasno (mijoz, 2026-09-25: sabab faqat kelmagan uchun).
    */
-  const excusedChoices = (day?.reasons ?? []).filter((r) => r.id !== day?.absentReasonId && !r.isLate)
+  const absentChoices = [
+    ...(day?.reasons ?? []).filter((r) => r.id === day?.absentReasonId),
+    ...(day?.reasons ?? []).filter((r) => r.id !== day?.absentReasonId && !r.isLate),
+  ]
+  /** K ostidagi tanlov: "Keldi" (sabab yo'q) yoki kechikish sabablari (`isLate`). */
+  const lateChoices = (day?.reasons ?? []).filter((r) => r.isLate)
+  const lateIds = new Set(lateChoices.map((r) => r.id))
 
   const loadOverview = useCallback(async () => {
     setOverviewLoading(true)
@@ -194,15 +199,15 @@ export function DailyMarkingPage() {
     for (const s of data.students) {
       if (!ids.has(s.studentId)) continue
       const reason = target?.marks[s.studentId]
-      next[s.studentId] = !reason ? 'present' : reason === data.absentReasonId ? 'absent' : 'excused'
+      const late = (data.reasons ?? []).some((r) => r.id === reason && r.isLate)
+      next[s.studentId] = !reason || late ? 'present' : 'absent'
     }
     return next
   }
 
   /**
-   * Saqlangan sariq sabablar (Kasal, Kech qoldi ...) — qayta saqlashda O'ZICHA qoladi. Ilgari
-   * ular sariq tugmaning sukut sababiga almashib ketardi. Katalogda yo'q id olinmaydi (server
-   * uni rad etadi) — o'sha o'quvchiga sukut sabab yoziladi.
+   * Saqlangan aniq sabablar (Kasal, Kech qoldi ...) — qayta saqlashda O'ZICHA qoladi. Katalogda
+   * yo'q id olinmaydi (server uni rad etadi) — o'sha o'quvchiga sukut sabab yoziladi.
    */
   const pickedOf = (data: DailyAttendanceClassDay, target: DailyAttendanceLesson | null) => {
     const known = new Set((data.reasons ?? []).map((r) => r.id))
@@ -273,14 +278,27 @@ export function DailyMarkingPage() {
     if (!allowed(mark)) return
     setError(null)
     setDraft((prev) => ({ ...prev, [studentId]: mark }))
+    // Belgi almashsa oldingi sabab o'sha belgiga tegishli edi — sukutga qaytamiz.
+    if (draft[studentId] !== mark) {
+      setPicked((prev) => {
+        const next = { ...prev }
+        delete next[studentId]
+        return next
+      })
+    }
     setDirty(true)
     setSavedNote(null)
   }
 
-  /** Sariq belgili o'quvchiga katalogdan aniq sabab tanlash. */
+  /** Aniq sabab tanlash ('' — sukut: "Keldi" yoki "Sababsiz"). */
   const setReason = (studentId: string, reasonId: string) => {
     setError(null)
-    setPicked((prev) => ({ ...prev, [studentId]: reasonId }))
+    setPicked((prev) => {
+      const next = { ...prev }
+      if (reasonId) next[studentId] = reasonId
+      else delete next[studentId]
+      return next
+    })
     setDirty(true)
     setSavedNote(null)
   }
@@ -300,8 +318,8 @@ export function DailyMarkingPage() {
     const values = Object.values(draft)
     return {
       present: values.filter((v) => v === 'present').length,
+      late: Object.entries(draft).filter(([id, v]) => v === 'present' && lateIds.has(picked[id] ?? '')).length,
       absent: values.filter((v) => v === 'absent').length,
-      excused: values.filter((v) => v === 'excused').length,
       unmarked: (lesson?.studentIds ?? []).filter((id) => !draft[id]).length,
     }
   })()
@@ -311,12 +329,19 @@ export function DailyMarkingPage() {
     setSaving(true)
     setError(null)
     try {
+      // Y — tanlangan sabab yoki Sababsiz; K — faqat kechikish tanlangan bo'lsa yoziladi,
+      // oddiy "keldi" server tomonida belgisiz o'quvchi (hozirgidek).
       const marks = Object.entries(draft)
-        .filter(([, m]) => m !== 'present')
         .map(([studentId, m]) => ({
           studentId,
-          reasonId: m === 'absent' ? day.absentReasonId : (picked[studentId] ?? day.excusedReasonId),
+          reasonId:
+            m === 'absent'
+              ? (picked[studentId] ?? day.absentReasonId)
+              : lateIds.has(picked[studentId] ?? '')
+                ? picked[studentId]
+                : null,
         }))
+        .filter((x) => !!x.reasonId)
 
       const targets = allMode ? day.lessons : [lesson]
       let updated: DailyAttendanceClassDay | null = null
@@ -467,15 +492,15 @@ export function DailyMarkingPage() {
         {day && (
           <>
             <p className="mt-3 text-xs text-slate-400">
-              Qizil — {day.absentReasonName ?? '—'} · Sariq — {day.excusedReasonName ?? '—'}
-              {excusedChoices.length > 1 && ' (boshqa sababni o’quvchi qatorida tanlang)'}
+              K — keldi{lateChoices.length > 0 && ' (ostidan: kech keldi)'} · Y — kelmadi, sukut:{' '}
+              {day.absentReasonName ?? '—'}
+              {absentChoices.length > 1 && ' (boshqa sababni ostidan tanlang)'}
               {currentClass && ` · ${currentClass.studentCount} o'quvchi`}
             </p>
-            {(!day.absentReasonId || !day.excusedReasonId) && (
+            {!day.absentReasonId && (
               <p className="mt-1 text-xs text-amber-600">
-                "Kelmadi" / "sababli" uchun sabab yo'q — Sozlamalar → Umumiy sozlamalar → Davomat
-                sabablari bo'limini ochib, "Saqlash" ni bosing (kerak bo'lsa "Sababsiz" va "Sababli" ni
-                qo'shing).
+                "Kelmadi" uchun sabab yo'q — Sozlamalar → Umumiy sozlamalar → Davomat sabablari
+                bo'limiga "Sababsiz" ni qo'shing.
               </p>
             )}
           </>
@@ -509,7 +534,7 @@ export function DailyMarkingPage() {
                   {day.className} · {lessonTitle(lesson, lessonCount)}
                 </p>
                 <p className="text-xs text-slate-400">
-                  {counts.present} keldi · {counts.absent} kelmadi · {counts.excused} sababli
+                  {counts.present} keldi{counts.late > 0 ? ` (${counts.late} kech)` : ''} · {counts.absent} kelmadi
                   {lesson.marked && lesson.markedByName ? ` · ${lesson.markedByName}` : ''}
                 </p>
               </div>
@@ -586,17 +611,39 @@ export function DailyMarkingPage() {
                       </span>
                     </div>
 
-                    {/* Sabab — ism OSTIDA, ikkinchi qatorda: telefonda ismni yopib qo'ymasin (mijoz, 2026-09-26). */}
-                    {mark === 'excused' && excusedChoices.length > 1 && (
-                      <div className="mt-1.5 flex items-center gap-2 pl-8">
-                        <span className="shrink-0 text-xs text-slate-400">Sabab:</span>
+                    {/* Sabab — ism OSTIDA, ikkinchi qatorda: telefonda ismni yopib qo'ymasin (mijoz, 2026-09-26).
+                        K — "Keldi" yoki kechikish; Y — Sababsiz (sukut) yoki boshqa sabab. */}
+                    {mark === 'present' && lateChoices.length > 0 && (
+                      <div className="mt-1 flex items-center gap-2 pl-8">
                         <select
-                          value={picked[s.studentId] ?? day.excusedReasonId ?? ''}
+                          value={lateIds.has(picked[s.studentId] ?? '') ? picked[s.studentId] : ''}
                           onChange={(e) => setReason(s.studentId, e.target.value)}
-                          aria-label={`${s.fullName} — sabab`}
-                          className="min-w-0 max-w-full rounded-lg border border-amber-200 bg-amber-50 px-2 py-1 text-xs font-medium text-amber-800 outline-none focus:border-amber-400"
+                          aria-label={`${s.fullName} — keldi / kech keldi`}
+                          className={cn(
+                            'min-w-0 max-w-full rounded-lg border px-2 py-0.5 text-xs outline-none',
+                            lateIds.has(picked[s.studentId] ?? '')
+                              ? 'border-amber-200 bg-amber-50 font-medium text-amber-800'
+                              : 'border-transparent bg-transparent text-slate-400 hover:border-slate-200',
+                          )}
                         >
-                          {excusedChoices.map((r) => (
+                          <option value="">Keldi</option>
+                          {lateChoices.map((r) => (
+                            <option key={r.id} value={r.id}>
+                              {r.name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+                    {mark === 'absent' && absentChoices.length > 1 && (
+                      <div className="mt-1 flex items-center gap-2 pl-8">
+                        <select
+                          value={picked[s.studentId] ?? day.absentReasonId ?? ''}
+                          onChange={(e) => setReason(s.studentId, e.target.value === day.absentReasonId ? '' : e.target.value)}
+                          aria-label={`${s.fullName} — kelmaganlik sababi`}
+                          className="min-w-0 max-w-full rounded-lg border border-red-200 bg-red-50 px-2 py-0.5 text-xs font-medium text-red-700 outline-none focus:border-red-400"
+                        >
+                          {absentChoices.map((r) => (
                             <option key={r.id} value={r.id}>
                               {r.name}
                             </option>
@@ -689,7 +736,7 @@ export function DailyMarkingPage() {
             <p>
               <span className="text-emerald-600">{counts.present} keldi</span> ·{' '}
               <span className="text-red-600">{counts.absent} kelmadi</span> ·{' '}
-              <span className="text-amber-600">{counts.excused} sababli</span>
+              <span className="text-amber-600">{counts.late} kech</span>
             </p>
             <p className="text-xs text-slate-400">
               Saqlangach bu sinf yopiladi — keyingi sinfni yuqoridan tanlaysiz.

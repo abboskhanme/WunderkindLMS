@@ -13,13 +13,12 @@ const control =
   'rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-brand-400'
 
 /**
- * Tizimning "kech qoldi" yozuvi: nomida "kech" bor va `isLate`. U sozlamada KO'RSATILMAYDI
- * (mijoz, 2026-09-25: "kech qolishga sabab kerakmas") — jurnal va Mini App undan "kech qoldi"
- * belgisi sifatida foydalanadi, shuning uchun saqlashda o'z holicha qaytariladi.
- * Nomida "kech" bo'lmagan `isLate` sabab — xato qo'yilgan belgi: u oddiy yo'qlik sababi bo'lib
- * ko'rinadi va saqlashda tuzaladi.
+ * Ikki ro'yxat (mijoz, 2026-09-26): davomatda K (keldi) ostida — kech keldi sabablari
+ * (`isLate`), Y (kelmadi) ostida — kelmaganlik sabablari. Kechikish ro'yxati bo'sh qolsa ham
+ * "Kech qoldi" saqlanadi: o'qituvchi jurnali va Mini App undan kechikish belgisi sifatida
+ * foydalanadi.
  */
-const isSystemLate = (r: AbsenceReason) => r.isLate && /kech/i.test(r.name)
+const isSystemLate = (r: AbsenceReason) => r.isLate
 
 const DEFAULT_LATE: Omit<AbsenceReason, 'id'> = { name: 'Kech qoldi', short: 'KQ', isLate: true }
 
@@ -42,8 +41,8 @@ function withShorts(list: AbsenceReason[], taken: Set<string>): AbsenceReason[] 
 }
 
 /**
- * Davomat sabablari — FAQAT kelmagan o'quvchi uchun (mijoz, 2026-09-25): nomi va
- * o'chirish, boshqa hech narsa. Qisqa belgi avtomatik, "kech qoldi" tizimda yashirin.
+ * Davomat sabablari — ikki ro'yxat (mijoz, 2026-09-26): "Kelmadi sabablari" (Y ostida) va
+ * "Kech keldi sabablari" (K ostida). Har birida faqat nom va o'chirish; qisqa belgi avtomatik.
  *
  * DIQQAT: bu "Arxivlash sabablari" (`ArchiveReasonsSettings.tsx`, §2.2) dan
  * boshqa katalog — u o'quvchini arxivlashda, bu esa kunlik davomatda ishlatiladi.
@@ -65,19 +64,25 @@ export function AttendanceReasonsSettings() {
 
   const updateName = (i: number, value: string) =>
     setReasons((prev) => prev.map((r, idx) => (idx === i ? { ...r, name: value } : r)))
-
   const addReason = () => setReasons((prev) => [...prev, { id: uid(), name: '', short: '', isLate: false }])
-
   const removeReason = (i: number) => setReasons((prev) => prev.filter((_, idx) => idx !== i))
+
+  const updateLateName = (i: number, value: string) =>
+    setHidden((prev) => prev.map((r, idx) => (idx === i ? { ...r, name: value } : r)))
+  const addLate = () => setHidden((prev) => [...prev, { id: uid(), name: '', short: '', isLate: true }])
+  const removeLate = (i: number) => setHidden((prev) => prev.filter((_, idx) => idx !== i))
 
   const onSave = async () => {
     setStatus('saving')
-    const late = hidden.length > 0 ? hidden : [{ ...DEFAULT_LATE, id: uid() }]
+    const named = hidden.filter((r) => r.name.trim()).map((r) => ({ ...r, name: r.name.trim(), isLate: true }))
+    const late = named.length > 0 ? named : [{ ...DEFAULT_LATE, id: uid() }]
     const visible = reasons
       .filter((r) => r.name.trim())
       .map((r) => ({ ...r, name: r.name.trim(), isLate: false }))
-    const taken = new Set(late.map((r) => r.short.toUpperCase()))
-    await saveAbsenceReasons([...withShorts(visible, taken), ...late])
+    const taken = new Set<string>()
+    const visibleWithShorts = withShorts(visible, new Set())
+    for (const r of visibleWithShorts) taken.add(r.short.toUpperCase())
+    await saveAbsenceReasons([...visibleWithShorts, ...withShorts(late, taken)])
     setHidden(late)
     setStatus('saved')
     setTimeout(() => setStatus('idle'), 2000)
@@ -91,7 +96,10 @@ export function AttendanceReasonsSettings() {
         <h2 className="font-semibold text-slate-800">Davomat sabablari</h2>
         <SaveButton status={status} onClick={onSave} />
       </div>
-      <p className="mb-3 text-xs text-slate-400">Kelmagan o'quvchi uchun tanlanadigan sabablar.</p>
+      <h3 className="mb-1 text-sm font-medium text-slate-700">Kelmadi sabablari</h3>
+      <p className="mb-3 text-xs text-slate-400">
+        Davomatda Y (kelmadi) ostidan tanlanadi. Birinchi "Sababsiz" — sukut bo'yicha.
+      </p>
       <div className="space-y-2">
         {reasons.map((r, i) => (
           <div key={r.id} className="flex items-center gap-2">
@@ -117,6 +125,39 @@ export function AttendanceReasonsSettings() {
           className="inline-flex items-center gap-1 text-sm font-medium text-brand-600 hover:text-brand-700"
         >
           <Plus className="h-4 w-4" /> Sabab qo'shish
+        </button>
+      </div>
+
+      <h3 className="mb-1 mt-6 text-sm font-medium text-slate-700">Kech keldi sabablari</h3>
+      <p className="mb-3 text-xs text-slate-400">
+        Davomatda K (keldi) ostidan tanlanadi — o'quvchi darsda bor hisoblanadi. Bo'sh qolsa, "Kech qoldi"
+        saqlanadi.
+      </p>
+      <div className="space-y-2">
+        {hidden.map((r, i) => (
+          <div key={r.id} className="flex items-center gap-2">
+            <input
+              value={r.name}
+              onChange={(e) => updateLateName(i, e.target.value)}
+              placeholder="Masalan: Kech keldi"
+              className={`${control} min-w-0 flex-1`}
+            />
+            <button
+              type="button"
+              onClick={() => removeLate(i)}
+              title="O'chirish"
+              className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-red-50 hover:text-red-600"
+            >
+              <Trash2 className="h-4 w-4" />
+            </button>
+          </div>
+        ))}
+        <button
+          type="button"
+          onClick={addLate}
+          className="inline-flex items-center gap-1 text-sm font-medium text-brand-600 hover:text-brand-700"
+        >
+          <Plus className="h-4 w-4" /> Kechikish sababi qo'shish
         </button>
       </div>
     </Card>
