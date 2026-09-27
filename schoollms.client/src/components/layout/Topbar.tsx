@@ -75,7 +75,9 @@ export function Topbar({ sidebarOpen, onMenuClick }: TopbarProps) {
       </div>
 
       <div className="ml-3 flex items-center gap-3 sm:gap-4">
-        <NotificationsBell />
+        {/* Bildirishnomalar API'si faqat panel xodimlariga ochiq (admin/superadmin/staff);
+            o'qituvchi sahifasida (masalan /teacher/dars-tahlili) har ochilishda 403 berardi. */}
+        {['admin', 'superadmin', 'staff'].includes(user.role) && <NotificationsBell />}
 
         {/* Profil — bosilganda akkaunt sozlamalari/chiqish menyusi ochiladi */}
         <div className="relative" ref={menuRef}>
