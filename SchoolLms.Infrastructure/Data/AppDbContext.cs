@@ -197,6 +197,13 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<McpToken> McpTokens => Set<McpToken>();
     public DbSet<McpAuditEntry> McpAudit => Set<McpAuditEntry>();
 
+    // Dars tahlili — lesson observation checklist + teacher rating
+    // (docs/modules/lesson-analysis.md §3). Configuration: LessonAnalysisModel.cs.
+    public DbSet<LessonObservationSection> LessonObservationSections => Set<LessonObservationSection>();
+    public DbSet<LessonObservationCriterion> LessonObservationCriteria => Set<LessonObservationCriterion>();
+    public DbSet<LessonObservation> LessonObservations => Set<LessonObservation>();
+    public DbSet<LessonObservationDetail> LessonObservationDetails => Set<LessonObservationDetail>();
+
     /// <inheritdoc />
     public Task<Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction> BeginTransactionAsync(
         CancellationToken cancellationToken = default) =>
@@ -443,6 +450,9 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
 
         // ----- Read-only MCP server: OAuth clients, grants, codes, tokens, audit -----
         McpModel.Apply(b);
+
+        // ----- Dars tahlili: sections, criteria, observations, details (lesson-analysis.md §3) -----
+        LessonAnalysisModel.Apply(b);
 
         // ----- PostgreSQL: vaqt turi -----
         // Tizim sanalarni Toshkent "devor soati" sifatida saqlaydi (AppClock.Now — Kind=Unspecified),

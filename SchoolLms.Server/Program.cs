@@ -347,6 +347,14 @@ builder.Services.AddHostedService<SchoolLms.Application.Billing.BillingAccrualSe
 // Kamera (videokuzatuv) media-shlyuzi (MediaMTX) bilan ishlash
 builder.Services.AddHttpClient<SchoolLms.Application.Services.CameraGateway>();
 
+// Dars tahlili (docs/modules/lesson-analysis.md). The AI summariser is a typed HttpClient
+// behind an interface so tests replace it (they never touch the network). Config:
+// Gemini:ApiKey (env Gemini__ApiKey, never in the repo), Gemini:Model. 90 s as the old app.
+builder.Services.AddScoped<SchoolLms.Application.Services.LessonAnalysisService>();
+builder.Services.AddHttpClient<SchoolLms.Application.Services.ILessonAnalysisAi,
+                               SchoolLms.Application.Services.GeminiLessonAnalysisAi>(
+    c => c.Timeout = TimeSpan.FromSeconds(90));
+
 // ---------- Moliya (billing) ----------
 // DIQQAT: qolgan moliya xizmatlari (to'lov, smena, hisob-faktura, chek) hali
 // ro'yxatdan o'tmagan — ular P1-15 ning ishi, ro'yxati docs/PENDING_WIRING.md
@@ -441,6 +449,19 @@ using (var scope = app.Services.CreateScope())
     // Telegram bot tokeni — restartdan keyin bot avtomatik ishga tushadi; token yo'q bo'lsa
     // admin Sozlamadan kiritguncha kutadi.
     scope.ServiceProvider.GetRequiredService<TelegramService>().Load(db);
+
+    // Dars tahlili: the 34 checklist criteria in 8 sections — only into an EMPTY sections
+    // table (old rule: a restart must not undo an admin's edits). Best-effort: with
+    // Database__AutoMigrate=false the table may not exist yet, which must not stop start-up.
+    try
+    {
+        if (await LessonAnalysisSeeder.SeedAsync(db))
+            Console.WriteLine("[db] Dars tahlili: 34 ta mezon (8 bo'lim) qo'shildi.");
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"[db] Dars tahlili mezonlari qo'shilmadi: {ex.GetType().Name}");
+    }
 }
 
 // ---------- Pipeline ----------
@@ -615,6 +636,18 @@ app.MapFallback(async ctx =>
     if (path.Equals("/teacher", StringComparison.OrdinalIgnoreCase))
     {
         ctx.Response.Redirect("/teacher/", permanent: false);
+        return;
+    }
+    // Dars tahlili — o'qituvchining sahifasi PWA'da emas, ASOSIY SPA'da
+    // (docs/modules/lesson-analysis.md §7). PWA'ning Profil ekrani shu yerga olib keladi;
+    // istisnosiz havola yoki sahifani yangilash PWA'ning index.html iga tushardi.
+    if (path.StartsWith("/teacher/dars-tahlili", StringComparison.OrdinalIgnoreCase))
+    {
+        var spaIndex = Path.Combine(webRoot, "index.html");
+        if (!File.Exists(spaIndex)) { ctx.Response.StatusCode = StatusCodes.Status404NotFound; return; }
+        ctx.Response.ContentType = "text/html; charset=utf-8";
+        ctx.Response.Headers.CacheControl = "no-cache";
+        await ctx.Response.SendFileAsync(spaIndex);
         return;
     }
     if (path.StartsWith("/teacher/", StringComparison.OrdinalIgnoreCase))

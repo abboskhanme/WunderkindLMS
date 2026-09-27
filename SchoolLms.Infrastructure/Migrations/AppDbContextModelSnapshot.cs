@@ -3515,6 +3515,234 @@ namespace SchoolLms.Infrastructure.Migrations
                         });
                 });
 
+            modelBuilder.Entity("SchoolLms.Domain.LessonObservation", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasColumnType("text")
+                        .HasColumnName("id");
+
+                    b.Property<string>("AiError")
+                        .HasColumnType("text")
+                        .HasColumnName("ai_error");
+
+                    b.Property<string>("AiSummary")
+                        .HasColumnType("text")
+                        .HasColumnName("ai_summary");
+
+                    b.Property<string>("ClassName")
+                        .HasColumnType("text")
+                        .HasColumnName("class_name");
+
+                    b.Property<DateTimeOffset?>("CompletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("completed_at");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("GrowthAreas")
+                        .HasColumnType("text")
+                        .HasColumnName("growth_areas");
+
+                    b.Property<int?>("LegacyId")
+                        .HasColumnType("integer")
+                        .HasColumnName("legacy_id");
+
+                    b.Property<DateOnly>("LessonDate")
+                        .HasColumnType("date")
+                        .HasColumnName("lesson_date");
+
+                    b.Property<string>("LessonTime")
+                        .HasColumnType("text")
+                        .HasColumnName("lesson_time");
+
+                    b.Property<string>("NextLessonAdvice")
+                        .HasColumnType("text")
+                        .HasColumnName("next_lesson_advice");
+
+                    b.Property<string>("ObserverUserId")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("observer_user_id");
+
+                    b.Property<int>("ScoreDone")
+                        .HasColumnType("integer")
+                        .HasColumnName("score_done");
+
+                    b.Property<decimal>("ScorePercent")
+                        .HasPrecision(5, 2)
+                        .HasColumnType("numeric(5,2)")
+                        .HasColumnName("score_percent");
+
+                    b.Property<int>("ScoreTotal")
+                        .HasColumnType("integer")
+                        .HasColumnName("score_total");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("status");
+
+                    b.Property<string>("Strengths")
+                        .HasColumnType("text")
+                        .HasColumnName("strengths");
+
+                    b.Property<string>("Subject")
+                        .HasColumnType("text")
+                        .HasColumnName("subject");
+
+                    b.Property<string>("TeacherId")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("teacher_id");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id")
+                        .HasName("pk_lesson_observations");
+
+                    b.HasIndex("LegacyId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_lesson_observations_legacy_id")
+                        .HasFilter("legacy_id is not null");
+
+                    b.HasIndex("ObserverUserId")
+                        .HasDatabaseName("ix_lesson_observations_observer_user_id");
+
+                    b.HasIndex("Status", "LessonDate")
+                        .HasDatabaseName("ix_lesson_observations_status_lesson_date");
+
+                    b.HasIndex("TeacherId", "Status", "LessonDate")
+                        .HasDatabaseName("ix_lesson_observations_teacher_id_status_lesson_date");
+
+                    b.ToTable("lesson_observations", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_lesson_observations_status", "status in ('draft','completed')");
+                        });
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.LessonObservationCriterion", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasColumnType("text")
+                        .HasColumnName("id");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_active");
+
+                    b.Property<int?>("LegacyId")
+                        .HasColumnType("integer")
+                        .HasColumnName("legacy_id");
+
+                    b.Property<int>("OrderIndex")
+                        .HasColumnType("integer")
+                        .HasColumnName("order_index");
+
+                    b.Property<string>("SectionId")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("section_id");
+
+                    b.Property<string>("Text")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("text");
+
+                    b.HasKey("Id")
+                        .HasName("pk_lesson_observation_criteria");
+
+                    b.HasIndex("LegacyId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_lesson_observation_criteria_legacy_id")
+                        .HasFilter("legacy_id is not null");
+
+                    b.HasIndex("SectionId", "OrderIndex")
+                        .HasDatabaseName("ix_lesson_observation_criteria_section_id_order_index");
+
+                    b.ToTable("lesson_observation_criteria", (string)null);
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.LessonObservationDetail", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasColumnType("text")
+                        .HasColumnName("id");
+
+                    b.Property<string>("Comment")
+                        .HasColumnType("text")
+                        .HasColumnName("comment");
+
+                    b.Property<string>("CriterionId")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("criterion_id");
+
+                    b.Property<bool?>("IsDone")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_done");
+
+                    b.Property<string>("ObservationId")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("observation_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_lesson_observation_details");
+
+                    b.HasIndex("CriterionId")
+                        .HasDatabaseName("ix_lesson_observation_details_criterion_id");
+
+                    b.HasIndex("ObservationId", "CriterionId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_lesson_observation_details_observation_id_criterion_id");
+
+                    b.ToTable("lesson_observation_details", (string)null);
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.LessonObservationSection", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasColumnType("text")
+                        .HasColumnName("id");
+
+                    b.Property<string>("Color")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("color");
+
+                    b.Property<int?>("LegacyId")
+                        .HasColumnType("integer")
+                        .HasColumnName("legacy_id");
+
+                    b.Property<int>("OrderIndex")
+                        .HasColumnType("integer")
+                        .HasColumnName("order_index");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("title");
+
+                    b.HasKey("Id")
+                        .HasName("pk_lesson_observation_sections");
+
+                    b.HasIndex("LegacyId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_lesson_observation_sections_legacy_id")
+                        .HasFilter("legacy_id is not null");
+
+                    b.HasIndex("OrderIndex")
+                        .HasDatabaseName("ix_lesson_observation_sections_order_index");
+
+                    b.ToTable("lesson_observation_sections", (string)null);
+                });
+
             modelBuilder.Entity("SchoolLms.Domain.LessonTime", b =>
                 {
                     b.Property<string>("Id")
@@ -7501,6 +7729,52 @@ namespace SchoolLms.Infrastructure.Migrations
                         .HasConstraintName("fk_ledger_entries_ledger_entries_reversal_of");
                 });
 
+            modelBuilder.Entity("SchoolLms.Domain.LessonObservation", b =>
+                {
+                    b.HasOne("SchoolLms.Domain.AppUser", null)
+                        .WithMany()
+                        .HasForeignKey("ObserverUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_lesson_observations_users_observer_user_id");
+
+                    b.HasOne("SchoolLms.Domain.Teacher", null)
+                        .WithMany()
+                        .HasForeignKey("TeacherId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_lesson_observations_teachers_teacher_id");
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.LessonObservationCriterion", b =>
+                {
+                    b.HasOne("SchoolLms.Domain.LessonObservationSection", "Section")
+                        .WithMany("Criteria")
+                        .HasForeignKey("SectionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_lesson_observation_criteria_lesson_observation_sections_sec");
+
+                    b.Navigation("Section");
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.LessonObservationDetail", b =>
+                {
+                    b.HasOne("SchoolLms.Domain.LessonObservationCriterion", null)
+                        .WithMany()
+                        .HasForeignKey("CriterionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_lesson_observation_details_lesson_observation_criteria_crit");
+
+                    b.HasOne("SchoolLms.Domain.LessonObservation", null)
+                        .WithMany("Details")
+                        .HasForeignKey("ObservationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_lesson_observation_details_lesson_observations_observation_");
+                });
+
             modelBuilder.Entity("SchoolLms.Domain.LmsMaterial", b =>
                 {
                     b.HasOne("SchoolLms.Domain.LmsTopic", "Topic")
@@ -8079,6 +8353,16 @@ namespace SchoolLms.Infrastructure.Migrations
             modelBuilder.Entity("SchoolLms.Domain.Exam", b =>
                 {
                     b.Navigation("Sections");
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.LessonObservation", b =>
+                {
+                    b.Navigation("Details");
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.LessonObservationSection", b =>
+                {
+                    b.Navigation("Criteria");
                 });
 
             modelBuilder.Entity("SchoolLms.Domain.LmsModule", b =>

@@ -18,6 +18,7 @@ import {
   BookOpen,
   ShieldAlert,
   Newspaper,
+  ListChecks,
 } from 'lucide-react'
 import type { Role } from '@/types'
 
@@ -260,6 +261,10 @@ export const navByRole: Record<Role, NavItem[]> = {
         { label: 'Avtobus-gps', to: '/admin/boshqaruv/gps', perm: 'gps', group: 'KUZATUV' },
         { label: 'Kameralar', to: '/admin/boshqaruv/cameras', perm: 'cameras', group: 'KUZATUV' },
         { label: 'Taklif va shikoyatlar', to: '/admin/boshqaruv/feedback', perm: 'feedback', group: 'FIKR' },
+        // Dars tahlili (lesson-analysis.md §7, mijoz 2026-09-27) — eski rating.wunderkindedu.uz
+        // o'rnida. Bitta yozuv, ichida tablar (Umumiy · Tahlillar · Reyting · Mezonlar).
+        // `end` YO'Q — ichki sahifalarda ham yozuv faol turadi, ruxsat ham prefiks bo'yicha.
+        { label: 'Dars tahlili', to: '/admin/boshqaruv/dars-tahlili', perm: 'lessonAnalysis', group: "TA'LIM SIFATI" },
       ],
     },
     {
@@ -354,6 +359,8 @@ export const navByRole: Record<Role, NavItem[]> = {
     { label: 'Bosh sahifa', to: '/teacher', icon: LayoutDashboard },
     { label: 'Jurnal', to: '/teacher/journal', icon: NotebookText, perm: 'journal' },
     { label: 'Feedback', to: '/teacher/evaluation', icon: ClipboardList },
+    // Dars tahlilim — o'z yakunlangan dars kuzatuvlari va ko'rsatkichi (lesson-analysis.md §7).
+    { label: 'Dars tahlilim', to: '/teacher/dars-tahlili', icon: ListChecks },
     { label: 'Topshiriqlar', to: '/teacher/assignments', icon: ClipboardCheck, perm: 'assignments' },
     { label: "Ta'lim (LMS)", to: '/teacher/lms', icon: BookOpen },
     { label: 'Dars jadvali', to: '/teacher/schedule', icon: CalendarRange, perm: 'schedule' },

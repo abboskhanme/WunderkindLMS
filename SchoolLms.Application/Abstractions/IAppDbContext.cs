@@ -262,6 +262,15 @@ public interface IAppDbContext
     DbSet<ExamAnswer> ExamAnswers { get; }
     DbSet<SeasonalMark> SeasonalMarks { get; }
 
+    /// <summary>
+    /// Dars tahlili (<c>docs/modules/lesson-analysis.md</c> §3): checklist sections and
+    /// criteria, observations and their per-criterion answers. Not financial — full CRUD.
+    /// </summary>
+    DbSet<LessonObservationSection> LessonObservationSections { get; }
+    DbSet<LessonObservationCriterion> LessonObservationCriteria { get; }
+    DbSet<LessonObservation> LessonObservations { get; }
+    DbSet<LessonObservationDetail> LessonObservationDetails { get; }
+
     int SaveChanges();
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 

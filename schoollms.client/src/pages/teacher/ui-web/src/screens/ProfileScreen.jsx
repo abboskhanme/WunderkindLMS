@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import {
   GraduationCap, Wallet, BookOpen, Badge, LineChart, Users2,
-  MessageSquareWarning, Moon, Lock, LogOut, ChevronRight, Download, Bell,
+  MessageSquareWarning, Moon, Lock, LogOut, ChevronRight, Download, Bell, ListChecks,
 } from 'lucide-react'
 import Avatar from '../components/Avatar'
 import AppButton from '../components/AppButton'
@@ -142,6 +142,8 @@ export default function ProfileScreen({ onNavigate, dark, onToggleTheme }) {
             <Item icon={<LineChart size={16} />} title="Dars o'tilishi" hint="O'tilgan darslar progresi" onClick={() => onNavigate?.('progress')} />
             <Item icon={<BookOpen size={16} />} title="Ta'lim" hint="O'quv materiallar va progress" onClick={() => onNavigate?.('lms')} />
             <Item icon={<Wallet size={16} />} title="Maosh" hint="Oylik hisob-kitob" onClick={() => onNavigate?.('salary')} />
+            {/* Dars tahlili asosiy ilovada (/teacher/dars-tahlili) — token ikkalasida bir xil kalitda. */}
+            <Item icon={<ListChecks size={16} />} title="Dars tahlilim" hint="Darslarim tahlili va reytingim" onClick={() => window.location.assign('/teacher/dars-tahlili')} />
             <Item icon={<MessageSquareWarning size={16} />} title="Taklif va shikoyatlar" hint="Adminga murojaat yuborish" last onClick={() => onNavigate?.('feedback')} />
           </Card>
         </div>

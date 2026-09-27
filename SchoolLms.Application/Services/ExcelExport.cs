@@ -110,11 +110,15 @@ public static class ExcelExport
     /// qalin shrift bilan yoziladi. <c>null</c> = yakun yo'q. Uzunligi
     /// <paramref name="Headers"/> bilan bir xil bo'lishi SHART emas: qisqa
     /// bo'lsa qolgan kataklar bo'sh qoladi.</param>
+    /// <param name="Title">Optional bold title line above the table, followed by one blank
+    /// row (the lesson-analysis rating export, docs/modules/lesson-analysis.md §5). null = the
+    /// header is the first row, exactly as before.</param>
     public sealed record TableSpec(
         string Name,
         IReadOnlyList<string> Headers,
         IEnumerable<IReadOnlyList<XlsxCell>> Rows,
-        IReadOnlyList<XlsxCell>? Totals = null);
+        IReadOnlyList<XlsxCell>? Totals = null,
+        string? Title = null);
 
     /// <summary>Bitta varaqli moliya jadvali (F0.01).</summary>
     public static byte[] BuildTable(
@@ -156,6 +160,11 @@ public static class ExcelExport
                     Name = spec.Name.Length > 31 ? spec.Name[..31] : spec.Name,
                 });
 
+                if (spec.Title is { } title)
+                {
+                    sheetData.Append(MakeRow([XlsxCell.Of(title)], bold: true));
+                    sheetData.Append(new Row());
+                }
                 sheetData.Append(MakeRow([.. spec.Headers.Select(XlsxCell.Of)], bold: true));
                 foreach (var r in spec.Rows) sheetData.Append(MakeRow(r, bold: false));
                 if (spec.Totals is { } totals) sheetData.Append(MakeRow(totals, bold: true));

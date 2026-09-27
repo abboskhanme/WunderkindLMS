@@ -108,6 +108,16 @@ import { DailyAttendanceReportPage } from '@/pages/admin/turnstile/DailyAttendan
 import { SettingsPage } from '@/pages/admin/settings/SettingsPage'
 import { AccountPage } from '@/pages/admin/account/AccountPage'
 import { TeacherAppRedirect } from '@/components/TeacherAppRedirect'
+import { LessonAnalysisLayout } from '@/pages/admin/lesson-analysis/LessonAnalysisLayout'
+import { LaDashboardPage } from '@/pages/admin/lesson-analysis/LaDashboardPage'
+import { LaObservationsPage } from '@/pages/admin/lesson-analysis/LaObservationsPage'
+import { LaObservationFormPage } from '@/pages/admin/lesson-analysis/LaObservationFormPage'
+import { LaObservationDetailPage } from '@/pages/admin/lesson-analysis/LaObservationDetailPage'
+import { LaRatingPage } from '@/pages/admin/lesson-analysis/LaRatingPage'
+import { LaTeacherProfilePage } from '@/pages/admin/lesson-analysis/LaTeacherProfilePage'
+import { LaCriteriaPage } from '@/pages/admin/lesson-analysis/LaCriteriaPage'
+import { MyLessonAnalysisPage } from '@/pages/teacher/lesson-analysis/MyLessonAnalysisPage'
+import { MyObservationDetailPage } from '@/pages/teacher/lesson-analysis/MyObservationDetailPage'
 import { Loader } from '@/components/ui/Loader'
 
 // P1-26 — Pul aylanmasi (3D halqa). LAZY: sahifa Three.js'ga tayanadi, statik
@@ -255,6 +265,19 @@ export default function App() {
           {/* Xodimlar — o'qituvchilar + boshqa xodimlar bitta ro'yxatda; sahifa ruxsati yo'q qismini yashiradi. */}
           <Route path="boshqaruv/staff" element={<RequirePerm perm={['staff', 'teachers']}><EmployeesPage /></RequirePerm>} />
           <Route path="boshqaruv/feedback" element={<RequirePerm perm="feedback"><FeedbackPage /></RequirePerm>} />
+          {/* Dars tahlili (docs/modules/lesson-analysis.md §7) — bitta menyu yozuvi, ichida tablar
+              Umumiy · Tahlillar · Reyting · Mezonlar. Mezonlarni o'zgartirish va o'chirish —
+              faqat admin/superadmin (sahifa ichida; server ham tekshiradi). */}
+          <Route path="boshqaruv/dars-tahlili" element={<RequirePerm perm="lessonAnalysis"><LessonAnalysisLayout /></RequirePerm>}>
+            <Route index element={<LaDashboardPage />} />
+            <Route path="tahlillar" element={<LaObservationsPage />} />
+            <Route path="tahlillar/yangi" element={<LaObservationFormPage />} />
+            <Route path="tahlillar/:id" element={<LaObservationDetailPage />} />
+            <Route path="tahlillar/:id/tahrir" element={<LaObservationFormPage />} />
+            <Route path="reyting" element={<LaRatingPage />} />
+            <Route path="oqituvchi/:teacherId" element={<LaTeacherProfilePage />} />
+            <Route path="mezonlar" element={<LaCriteriaPage />} />
+          </Route>
           {/* Rollar — alohida sahifa (ruxsatlar rolga beriladi) */}
           <Route path="boshqaruv/roles" element={<RequirePerm perm="staff"><RolesPage /></RequirePerm>} />
           <Route element={<ProtectedRoute role="superadmin" />}>
@@ -289,6 +312,16 @@ export default function App() {
 
       {/* O'qituvchi — alohida o'rnatiladigan PWA (/teacher/, wwwroot/teacher statik ilova).
           SPA shu manzilga kelsa (login redirect / RootRedirect) to'liq sahifa bilan o'sha ilovaga o'tamiz. */}
+      {/* Dars tahlilim (lesson-analysis.md §7) — o'qituvchi portalining SPA ichidagi yagona sahifasi.
+          Aniq yo'l `/teacher/*` dan ustun turadi (react-router eng aniq moslikni tanlaydi).
+          DIQQAT: server `/teacher/*` ning hammasini PWA index.html ga beradi (Program.cs MapFallback) —
+          bu yo'llar to'g'ridan-to'g'ri ochilishi uchun serverda SPA index.html ga istisno kerak. */}
+      <Route element={<ProtectedRoute role="teacher" />}>
+        <Route path="/teacher/dars-tahlili" element={<AppLayout />}>
+          <Route index element={<MyLessonAnalysisPage />} />
+          <Route path=":id" element={<MyObservationDetailPage />} />
+        </Route>
+      </Route>
       <Route path="/teacher/*" element={<TeacherAppRedirect />} />
 
       <Route path="*" element={<RootRedirect />} />
