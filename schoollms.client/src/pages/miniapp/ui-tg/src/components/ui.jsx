@@ -267,9 +267,13 @@ export function TabBar({ tabs, value, onChange }) {
   const keyboardOpen = useKeyboardOpen()
   if (keyboardOpen) return null
 
+  // Oltita tab (HR xodimi bo'lgan o'qituvchi) 320 px da sig'ishi uchun ixcham
+  // ko'rinish. Besh va undan kam tabda ko'rinish AYNAN avvalgidek.
+  const dense = tabs.length > 5
+
   return (
     <nav className="fixed inset-x-0 bottom-0 z-20 border-t border-slate-200 bg-white pb-[var(--tg-safe-bottom)]">
-      <div className="mx-auto flex max-w-md items-stretch justify-around px-2 py-2">
+      <div className={'mx-auto flex max-w-md items-stretch justify-around py-2 ' + (dense ? 'px-1' : 'px-2')}>
         {tabs.map((t) => {
           const active = t.value === value
           const Icon = t.icon
@@ -282,7 +286,8 @@ export function TabBar({ tabs, value, onChange }) {
             >
               <span
                 className={
-                  'flex h-9 w-14 items-center justify-center rounded-full transition ' +
+                  'flex h-9 items-center justify-center rounded-full transition ' +
+                  (dense ? 'w-full max-w-14 ' : 'w-14 ') +
                   (active ? 'bg-brand text-brand-ink' : 'text-slate-400')
                 }
               >
@@ -290,7 +295,8 @@ export function TabBar({ tabs, value, onChange }) {
               </span>
               <span
                 className={
-                  'truncate text-[11px] ' +
+                  'truncate ' +
+                  (dense ? 'max-w-full text-[10px] tracking-tight ' : 'text-[11px] ') +
                   (active ? 'font-semibold text-brand-ink' : 'text-slate-400')
                 }
               >

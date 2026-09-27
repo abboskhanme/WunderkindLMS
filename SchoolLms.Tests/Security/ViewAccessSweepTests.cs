@@ -31,7 +31,7 @@ public class ViewAccessSweepTests(ApiFixture fixture)
         "teachers", "attendance", "attendanceEvening", "attendanceDorm", "schedule", "classes",
         "journal", "messages", "app", "gradesReport", "teacherReports", "contracts", "finance",
         "academicYear", "settings", "staff", "feedback", "gps", "cameras", "discipline",
-        "lessonAnalysis",
+        "lessonAnalysis", "hrTasks",
     ];
 
     /// <summary>
@@ -49,6 +49,9 @@ public class ViewAccessSweepTests(ApiFixture fixture)
         "api/admin/mcp/status",
         "api/admin/mcp/connections",
         "api/admin/mcp/audit",
+        // HR topshiriqlari settings (docs/modules/hr-tasks.md §3) — directors only (the old
+        // hr_settings permission): admin/superadmin or an HR director; a view key does not open it.
+        "api/admin/hr/settings",
     };
 
     public static TheoryData<string> AdminGets()

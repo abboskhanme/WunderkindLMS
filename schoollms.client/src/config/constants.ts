@@ -100,6 +100,7 @@ export const adminPermissions: { key: string; label: string }[] = [
   { key: 'cameras', label: 'Kameralar' },
   { key: 'discipline', label: 'Intizomiy ball' },
   { key: 'lessonAnalysis', label: 'Dars tahlili' },
+  { key: 'hrTasks', label: 'HR topshiriqlari' },
 ]
 
 /**
@@ -114,6 +115,7 @@ export const adminPermissionGroups: { label: string; keys: string[] }[] = [
   { label: 'Baholash', keys: ['exams', 'seasonalMarks', 'gradesReport', 'teacherReports', 'discipline'] },
   { label: 'Aloqa va ilova', keys: ['messages', 'app', 'feedback'] },
   { label: 'Boshqaruv', keys: ['staff', 'gps', 'cameras', 'lessonAnalysis'] },
+  { label: 'HR', keys: ['hrTasks'] },
   { label: 'Sozlamalar', keys: ['settings', 'academicYear'] },
 ]
 

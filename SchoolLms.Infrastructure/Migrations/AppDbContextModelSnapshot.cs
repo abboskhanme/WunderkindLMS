@@ -3067,6 +3067,740 @@ namespace SchoolLms.Infrastructure.Migrations
                     b.ToTable("holidays", (string)null);
                 });
 
+            modelBuilder.Entity("SchoolLms.Domain.HrEmployee", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasColumnType("text")
+                        .HasColumnName("id");
+
+                    b.Property<string>("Branch")
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("branch");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("FullName")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .HasColumnType("character varying(160)")
+                        .HasColumnName("full_name");
+
+                    b.Property<string>("HrRole")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasDefaultValue("employee")
+                        .HasColumnName("hr_role");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("is_active");
+
+                    b.Property<string>("Note")
+                        .HasColumnType("text")
+                        .HasColumnName("note");
+
+                    b.Property<string>("Phone")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("phone");
+
+                    b.Property<string>("PositionId")
+                        .HasColumnType("text")
+                        .HasColumnName("position_id");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<string>("UserId")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_hr_employees");
+
+                    b.HasIndex("Branch")
+                        .HasDatabaseName("ix_hr_employee_branch")
+                        .HasFilter("branch is not null");
+
+                    b.HasIndex("Phone")
+                        .IsUnique()
+                        .HasDatabaseName("uq_hr_employee_phone");
+
+                    b.HasIndex("PositionId")
+                        .HasDatabaseName("ix_hr_employee_position");
+
+                    b.HasIndex("UserId")
+                        .IsUnique()
+                        .HasDatabaseName("uq_hr_employee_user");
+
+                    b.ToTable("hr_employees", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_hr_employee_branch", "branch in ('center','school')");
+
+                            t.HasCheckConstraint("ck_hr_employee_role", "hr_role in ('employee','manager','director')");
+                        });
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.HrEmployeeManager", b =>
+                {
+                    b.Property<string>("EmployeeId")
+                        .HasColumnType("text")
+                        .HasColumnName("employee_id");
+
+                    b.Property<string>("ManagerId")
+                        .HasColumnType("text")
+                        .HasColumnName("manager_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.HasKey("EmployeeId", "ManagerId")
+                        .HasName("pk_hr_employee_managers");
+
+                    b.HasIndex("ManagerId")
+                        .HasDatabaseName("ix_hr_employee_managers_manager");
+
+                    b.ToTable("hr_employee_managers", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_hr_employee_manager_self", "employee_id <> manager_id");
+                        });
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.HrJobRun", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasColumnType("text")
+                        .HasColumnName("id");
+
+                    b.Property<string>("Details")
+                        .HasColumnType("jsonb")
+                        .HasColumnName("details");
+
+                    b.Property<DateTimeOffset?>("FinishedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("finished_at");
+
+                    b.Property<string>("JobName")
+                        .IsRequired()
+                        .HasMaxLength(60)
+                        .HasColumnType("character varying(60)")
+                        .HasColumnName("job_name");
+
+                    b.Property<DateOnly>("RunDate")
+                        .HasColumnType("date")
+                        .HasColumnName("run_date");
+
+                    b.Property<DateTimeOffset>("StartedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("started_at");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)")
+                        .HasDefaultValue("ok")
+                        .HasColumnName("status");
+
+                    b.HasKey("Id")
+                        .HasName("pk_hr_job_runs");
+
+                    b.HasIndex("JobName", "RunDate")
+                        .IsUnique()
+                        .HasDatabaseName("uq_hr_job_run");
+
+                    b.ToTable("hr_job_runs", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_hr_job_run_status", "status in ('ok','failed')");
+                        });
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.HrPosition", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasColumnType("text")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("is_active");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)")
+                        .HasColumnName("name");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id")
+                        .HasName("pk_hr_positions");
+
+                    b.HasIndex("Name")
+                        .IsUnique()
+                        .HasDatabaseName("uq_hr_position_name");
+
+                    b.ToTable("hr_positions", (string)null);
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.HrSettings", b =>
+                {
+                    b.Property<short>("Id")
+                        .HasColumnType("smallint")
+                        .HasColumnName("id");
+
+                    b.Property<TimeOnly>("CloseOverdueTime")
+                        .HasColumnType("time without time zone")
+                        .HasColumnName("close_overdue_time")
+                        .HasDefaultValueSql("'23:50'");
+
+                    b.Property<TimeOnly>("DigestTime")
+                        .HasColumnType("time without time zone")
+                        .HasColumnName("digest_time")
+                        .HasDefaultValueSql("'19:00'");
+
+                    b.PrimitiveCollection<short[]>("DigestWeekdays")
+                        .IsRequired()
+                        .HasColumnType("smallint[]")
+                        .HasColumnName("digest_weekdays")
+                        .HasDefaultValueSql("'{1,2,3,4,5,6}'");
+
+                    b.Property<TimeOnly>("GenerationTime")
+                        .HasColumnType("time without time zone")
+                        .HasColumnName("generation_time")
+                        .HasDefaultValueSql("'00:10'");
+
+                    b.Property<bool>("MorningListEnabled")
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("morning_list_enabled");
+
+                    b.Property<TimeOnly>("MorningTime")
+                        .HasColumnType("time without time zone")
+                        .HasColumnName("morning_time")
+                        .HasDefaultValueSql("'07:30'");
+
+                    b.Property<bool>("RemindEndOfDay")
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("remind_end_of_day");
+
+                    b.Property<bool>("ReminderEnabled")
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("reminder_enabled");
+
+                    b.PrimitiveCollection<short[]>("ReminderOffsets")
+                        .IsRequired()
+                        .HasColumnType("smallint[]")
+                        .HasColumnName("reminder_offsets")
+                        .HasDefaultValueSql("'{120,60,30}'");
+
+                    b.Property<string>("Timezone")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasDefaultValue("Asia/Tashkent")
+                        .HasColumnName("timezone");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id")
+                        .HasName("pk_hr_settings");
+
+                    b.ToTable("hr_settings", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_hr_settings_single", "id = 1");
+
+                            t.HasCheckConstraint("ck_hr_settings_weekdays", "digest_weekdays <@ ARRAY[1,2,3,4,5,6,7]::smallint[]");
+                        });
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.HrTask", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasColumnType("text")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset?>("AcceptedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("accepted_at");
+
+                    b.Property<DateTimeOffset?>("CompletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("completed_at");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("CreatedBy")
+                        .HasColumnType("text")
+                        .HasColumnName("created_by");
+
+                    b.Property<decimal>("CurrentAmount")
+                        .HasPrecision(12, 2)
+                        .HasColumnType("numeric(12,2)")
+                        .HasDefaultValue(0m)
+                        .HasColumnName("current_amount");
+
+                    b.Property<string>("Description")
+                        .HasColumnType("text")
+                        .HasColumnName("description");
+
+                    b.Property<string>("DirectorComment")
+                        .HasColumnType("text")
+                        .HasColumnName("director_comment");
+
+                    b.Property<DateTimeOffset>("DueAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("due_at");
+
+                    b.Property<string>("EmployeeComment")
+                        .HasColumnType("text")
+                        .HasColumnName("employee_comment");
+
+                    b.Property<string>("EmployeeId")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("employee_id");
+
+                    b.Property<bool>("IsLate")
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("is_late");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)")
+                        .HasDefaultValue("check")
+                        .HasColumnName("kind");
+
+                    b.Property<string>("OverduePolicy")
+                        .IsRequired()
+                        .HasMaxLength(12)
+                        .HasColumnType("character varying(12)")
+                        .HasDefaultValue("close")
+                        .HasColumnName("overdue_policy");
+
+                    b.Property<DateOnly>("PeriodStart")
+                        .HasColumnType("date")
+                        .HasColumnName("period_start");
+
+                    b.Property<bool>("ProofRequired")
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("proof_required");
+
+                    b.Property<DateTimeOffset?>("ReturnedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("returned_at");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)")
+                        .HasColumnName("source");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(12)
+                        .HasColumnType("character varying(12)")
+                        .HasDefaultValue("open")
+                        .HasColumnName("status");
+
+                    b.Property<decimal?>("TargetAmount")
+                        .HasPrecision(12, 2)
+                        .HasColumnType("numeric(12,2)")
+                        .HasColumnName("target_amount");
+
+                    b.Property<string>("TemplateId")
+                        .HasColumnType("text")
+                        .HasColumnName("template_id");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("title");
+
+                    b.Property<string>("Unit")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("unit");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id")
+                        .HasName("pk_hr_tasks");
+
+                    b.HasIndex("DueAt")
+                        .HasDatabaseName("ix_hr_task_due_open")
+                        .HasFilter("status in ('open','returned')");
+
+                    b.HasIndex("PeriodStart")
+                        .HasDatabaseName("ix_hr_task_period_start");
+
+                    b.HasIndex("TemplateId")
+                        .HasDatabaseName("ix_hr_tasks_template_id");
+
+                    b.HasIndex("EmployeeId", "PeriodStart")
+                        .HasDatabaseName("ix_hr_task_employee_period");
+
+                    b.HasIndex("Status", "DueAt")
+                        .HasDatabaseName("ix_hr_task_status_due");
+
+                    b.HasIndex("TemplateId", "EmployeeId", "PeriodStart", "DueAt")
+                        .IsUnique()
+                        .HasDatabaseName("uq_hr_task_period")
+                        .HasFilter("template_id IS NOT NULL");
+
+                    b.ToTable("hr_tasks", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_hr_task_amount", "(kind = 'numeric' AND target_amount IS NOT NULL AND target_amount > 0) OR (kind = 'check' AND target_amount IS NULL AND unit IS NULL)");
+
+                            t.HasCheckConstraint("ck_hr_task_kind", "kind in ('check','numeric')");
+
+                            t.HasCheckConstraint("ck_hr_task_overdue_policy", "overdue_policy in ('close','keep_open')");
+
+                            t.HasCheckConstraint("ck_hr_task_source", "source in ('director','self','template')");
+
+                            t.HasCheckConstraint("ck_hr_task_status", "status in ('open','done','returned','missed','cancelled')");
+                        });
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.HrTaskAttachment", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasColumnType("text")
+                        .HasColumnName("id");
+
+                    b.Property<string>("ContentType")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)")
+                        .HasColumnName("content_type");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("CreatedBy")
+                        .HasColumnType("text")
+                        .HasColumnName("created_by");
+
+                    b.Property<int?>("DurationSeconds")
+                        .HasColumnType("integer")
+                        .HasColumnName("duration_seconds");
+
+                    b.Property<string>("FilePath")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("file_path");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("kind");
+
+                    b.Property<string>("OriginalName")
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)")
+                        .HasColumnName("original_name");
+
+                    b.Property<int>("SizeBytes")
+                        .HasColumnType("integer")
+                        .HasColumnName("size_bytes");
+
+                    b.Property<string>("TaskId")
+                        .HasColumnType("text")
+                        .HasColumnName("task_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_hr_task_attachments");
+
+                    b.HasIndex("TaskId")
+                        .HasDatabaseName("ix_hr_attachment_task");
+
+                    b.ToTable("hr_task_attachments", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_hr_attachment_kind", "kind in ('voice','file')");
+                        });
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.HrTaskProgress", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasColumnType("text")
+                        .HasColumnName("id");
+
+                    b.Property<decimal>("Amount")
+                        .HasPrecision(12, 2)
+                        .HasColumnType("numeric(12,2)")
+                        .HasColumnName("amount");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("note");
+
+                    b.Property<string>("TaskId")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("task_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_hr_task_progress");
+
+                    b.HasIndex("TaskId", "CreatedAt")
+                        .HasDatabaseName("ix_hr_progress_task");
+
+                    b.ToTable("hr_task_progress", (string)null);
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.HrTaskProof", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasColumnType("text")
+                        .HasColumnName("id");
+
+                    b.Property<string>("ContentType")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("content_type");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("FilePath")
+                        .HasMaxLength(400)
+                        .HasColumnType("character varying(400)")
+                        .HasColumnName("file_path");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)")
+                        .HasColumnName("kind");
+
+                    b.Property<string>("OriginalName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("original_name");
+
+                    b.Property<int?>("SizeBytes")
+                        .HasColumnType("integer")
+                        .HasColumnName("size_bytes");
+
+                    b.Property<string>("TaskId")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("task_id");
+
+                    b.Property<string>("Text")
+                        .HasColumnType("text")
+                        .HasColumnName("text");
+
+                    b.Property<string>("Url")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("url");
+
+                    b.HasKey("Id")
+                        .HasName("pk_hr_task_proofs");
+
+                    b.HasIndex("TaskId")
+                        .HasDatabaseName("ix_hr_proof_task");
+
+                    b.ToTable("hr_task_proofs", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_hr_proof_kind", "kind in ('photo','file','link','text')");
+                        });
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.HrTaskReminder", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasColumnType("text")
+                        .HasColumnName("id");
+
+                    b.Property<short>("OffsetMinutes")
+                        .HasColumnType("smallint")
+                        .HasColumnName("offset_minutes");
+
+                    b.Property<DateTimeOffset>("SentAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("sent_at");
+
+                    b.Property<string>("TaskId")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("task_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_hr_task_reminders");
+
+                    b.HasIndex("TaskId", "OffsetMinutes")
+                        .IsUnique()
+                        .HasDatabaseName("uq_hr_task_reminder");
+
+                    b.ToTable("hr_task_reminders", (string)null);
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.HrTaskTemplate", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasColumnType("text")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("CreatedBy")
+                        .HasColumnType("text")
+                        .HasColumnName("created_by");
+
+                    b.PrimitiveCollection<short[]>("DaysOfMonth")
+                        .IsRequired()
+                        .HasColumnType("smallint[]")
+                        .HasColumnName("days_of_month")
+                        .HasDefaultValueSql("'{}'");
+
+                    b.Property<string>("Description")
+                        .HasColumnType("text")
+                        .HasColumnName("description");
+
+                    b.Property<TimeOnly?>("DueTime")
+                        .HasColumnType("time without time zone")
+                        .HasColumnName("due_time");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("is_active");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)")
+                        .HasColumnName("kind");
+
+                    b.Property<string>("OverduePolicy")
+                        .IsRequired()
+                        .HasMaxLength(12)
+                        .HasColumnType("character varying(12)")
+                        .HasColumnName("overdue_policy");
+
+                    b.Property<bool>("ProofRequired")
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("proof_required");
+
+                    b.Property<string>("Recurrence")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)")
+                        .HasColumnName("recurrence");
+
+                    b.Property<decimal?>("TargetAmount")
+                        .HasPrecision(12, 2)
+                        .HasColumnType("numeric(12,2)")
+                        .HasColumnName("target_amount");
+
+                    b.Property<string>("TargetEmployeeId")
+                        .HasColumnType("text")
+                        .HasColumnName("target_employee_id");
+
+                    b.Property<string>("TargetPositionId")
+                        .HasColumnType("text")
+                        .HasColumnName("target_position_id");
+
+                    b.Property<string>("TargetType")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)")
+                        .HasColumnName("target_type");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("title");
+
+                    b.Property<string>("Unit")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("unit");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.PrimitiveCollection<short[]>("Weekdays")
+                        .IsRequired()
+                        .HasColumnType("smallint[]")
+                        .HasColumnName("weekdays")
+                        .HasDefaultValueSql("'{}'");
+
+                    b.HasKey("Id")
+                        .HasName("pk_hr_task_templates");
+
+                    b.HasIndex("TargetEmployeeId")
+                        .HasDatabaseName("ix_hr_task_templates_target_employee_id");
+
+                    b.HasIndex("TargetPositionId")
+                        .HasDatabaseName("ix_hr_task_templates_target_position_id");
+
+                    b.ToTable("hr_task_templates", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_hr_template_amount", "(kind = 'numeric' AND target_amount IS NOT NULL AND target_amount > 0) OR (kind = 'check' AND target_amount IS NULL AND unit IS NULL)");
+
+                            t.HasCheckConstraint("ck_hr_template_days", "(recurrence IN ('daily','weekly') AND array_length(weekdays, 1) IS NOT NULL) OR (recurrence = 'monthly' AND array_length(days_of_month, 1) IS NOT NULL)");
+
+                            t.HasCheckConstraint("ck_hr_template_days_of_month", "days_of_month <@ ARRAY[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31]::smallint[]");
+
+                            t.HasCheckConstraint("ck_hr_template_kind", "kind in ('check','numeric')");
+
+                            t.HasCheckConstraint("ck_hr_template_overdue_policy", "overdue_policy in ('close','keep_open')");
+
+                            t.HasCheckConstraint("ck_hr_template_recurrence", "recurrence in ('daily','weekly','monthly')");
+
+                            t.HasCheckConstraint("ck_hr_template_target", "target_type in ('employee','position')");
+
+                            t.HasCheckConstraint("ck_hr_template_target_ref", "(target_type = 'employee' AND target_employee_id IS NOT NULL AND target_position_id IS NULL) OR (target_type = 'position' AND target_position_id IS NOT NULL AND target_employee_id IS NULL)");
+
+                            t.HasCheckConstraint("ck_hr_template_weekdays", "weekdays <@ ARRAY[1,2,3,4,5,6,7]::smallint[]");
+                        });
+                });
+
             modelBuilder.Entity("SchoolLms.Domain.Invoice", b =>
                 {
                     b.Property<Guid>("Id")
@@ -7676,6 +8410,109 @@ namespace SchoolLms.Infrastructure.Migrations
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.SetNull)
                         .HasConstraintName("fk_guardians_users_user_id");
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.HrEmployee", b =>
+                {
+                    b.HasOne("SchoolLms.Domain.HrPosition", null)
+                        .WithMany()
+                        .HasForeignKey("PositionId")
+                        .OnDelete(DeleteBehavior.SetNull)
+                        .HasConstraintName("fk_hr_employees_hr_positions_position_id");
+
+                    b.HasOne("SchoolLms.Domain.AppUser", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_hr_employees_users_user_id");
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.HrEmployeeManager", b =>
+                {
+                    b.HasOne("SchoolLms.Domain.HrEmployee", null)
+                        .WithMany()
+                        .HasForeignKey("EmployeeId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_hr_employee_managers_hr_employees_employee_id");
+
+                    b.HasOne("SchoolLms.Domain.HrEmployee", null)
+                        .WithMany()
+                        .HasForeignKey("ManagerId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_hr_employee_managers_hr_employees_manager_id");
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.HrTask", b =>
+                {
+                    b.HasOne("SchoolLms.Domain.HrEmployee", null)
+                        .WithMany()
+                        .HasForeignKey("EmployeeId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_hr_tasks_hr_employees_employee_id");
+
+                    b.HasOne("SchoolLms.Domain.HrTaskTemplate", null)
+                        .WithMany()
+                        .HasForeignKey("TemplateId")
+                        .OnDelete(DeleteBehavior.SetNull)
+                        .HasConstraintName("fk_hr_tasks_hr_task_templates_template_id");
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.HrTaskAttachment", b =>
+                {
+                    b.HasOne("SchoolLms.Domain.HrTask", null)
+                        .WithMany()
+                        .HasForeignKey("TaskId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .HasConstraintName("fk_hr_task_attachments_hr_tasks_task_id");
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.HrTaskProgress", b =>
+                {
+                    b.HasOne("SchoolLms.Domain.HrTask", null)
+                        .WithMany()
+                        .HasForeignKey("TaskId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_hr_task_progress_hr_tasks_task_id");
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.HrTaskProof", b =>
+                {
+                    b.HasOne("SchoolLms.Domain.HrTask", null)
+                        .WithMany()
+                        .HasForeignKey("TaskId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_hr_task_proofs_hr_tasks_task_id");
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.HrTaskReminder", b =>
+                {
+                    b.HasOne("SchoolLms.Domain.HrTask", null)
+                        .WithMany()
+                        .HasForeignKey("TaskId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_hr_task_reminders_hr_tasks_task_id");
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.HrTaskTemplate", b =>
+                {
+                    b.HasOne("SchoolLms.Domain.HrEmployee", null)
+                        .WithMany()
+                        .HasForeignKey("TargetEmployeeId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_hr_task_templates_hr_employees_target_employee_id");
+
+                    b.HasOne("SchoolLms.Domain.HrPosition", null)
+                        .WithMany()
+                        .HasForeignKey("TargetPositionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_hr_task_templates_hr_positions_target_position_id");
                 });
 
             modelBuilder.Entity("SchoolLms.Domain.Invoice", b =>

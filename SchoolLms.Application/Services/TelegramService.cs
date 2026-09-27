@@ -114,6 +114,63 @@ public class TelegramService(
     }
 
     /// <summary>
+    /// <c>sendMessage</c> with <c>parse_mode=HTML</c> (HR topshiriqlari — the old WunderkindHR texts use
+    /// <c>&lt;b&gt;</c>). The caller escapes user text. Success — true; not configured — false.
+    /// </summary>
+    public async Task<bool> SendHtmlAsync(
+        long chatId, string html, object? replyMarkup = null, CancellationToken ct = default)
+    {
+        if (!IsConfigured) return false;
+        try
+        {
+            var payload = new Dictionary<string, object?>
+            {
+                ["chat_id"] = chatId,
+                ["text"] = html,
+                ["parse_mode"] = "HTML",
+                ["disable_web_page_preview"] = true,
+            };
+            if (replyMarkup is not null) payload["reply_markup"] = replyMarkup;
+            using var content = new StringContent(
+                JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
+            var resp = await Client().PostAsync($"{ApiBase}/sendMessage", content, ct);
+            return resp.IsSuccessStatusCode;
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Telegram sendMessage (HTML) xatosi");
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// <c>sendVoice</c> (multipart) — a manager's voice note on an HR task. Telegram accepts
+    /// OGG/OPUS, MP3 and M4A here; anything else is refused by Telegram and we return false.
+    /// </summary>
+    public async Task<bool> SendVoiceAsync(
+        long chatId, byte[] bytes, string fileName, string contentType, string? caption = null, CancellationToken ct = default)
+    {
+        if (!IsConfigured) return false;
+        try
+        {
+            using var form = new MultipartFormDataContent();
+            form.Add(new StringContent(chatId.ToString()), "chat_id");
+            if (!string.IsNullOrWhiteSpace(caption)) form.Add(new StringContent(caption), "caption");
+            var fileContent = new ByteArrayContent(bytes);
+            if (!string.IsNullOrWhiteSpace(contentType))
+                fileContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(contentType);
+            form.Add(fileContent, "voice", fileName);
+            var resp = await Client().PostAsync($"{ApiBase}/sendVoice", form, ct);
+            return resp.IsSuccessStatusCode;
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Telegram sendVoice xatosi");
+            return false;
+        }
+    }
+
+    /// <summary>
     /// getUpdates (long polling). Telegram javobidagi "result" massivini (xom JSON) qaytaradi.
     /// Token yo'q yoki xato bo'lsa — null.
     /// </summary>

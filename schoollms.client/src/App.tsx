@@ -117,6 +117,14 @@ import { LaRatingPage } from '@/pages/admin/lesson-analysis/LaRatingPage'
 import { LaTeacherProfilePage } from '@/pages/admin/lesson-analysis/LaTeacherProfilePage'
 import { LaCriteriaPage } from '@/pages/admin/lesson-analysis/LaCriteriaPage'
 import { MyLessonAnalysisPage } from '@/pages/teacher/lesson-analysis/MyLessonAnalysisPage'
+import { HrDashboardPage } from '@/pages/admin/hr-tasks/HrDashboardPage'
+import { HrTasksPage } from '@/pages/admin/hr-tasks/HrTasksPage'
+import { HrTaskCreatePage } from '@/pages/admin/hr-tasks/HrTaskCreatePage'
+import { HrTemplatesPage } from '@/pages/admin/hr-tasks/HrTemplatesPage'
+import { HrEmployeesPage } from '@/pages/admin/hr-tasks/HrEmployeesPage'
+import { HrReportsPage } from '@/pages/admin/hr-tasks/HrReportsPage'
+import { HrSettingsPage } from '@/pages/admin/hr-tasks/HrSettingsPage'
+import { HrMyTasksPage } from '@/pages/admin/hr-tasks/HrMyTasksPage'
 import { MyObservationDetailPage } from '@/pages/teacher/lesson-analysis/MyObservationDetailPage'
 import { Loader } from '@/components/ui/Loader'
 
@@ -278,12 +286,30 @@ export default function App() {
             <Route path="oqituvchi/:teacherId" element={<LaTeacherProfilePage />} />
             <Route path="mezonlar" element={<LaCriteriaPage />} />
           </Route>
+          {/* HR → TOPSHIRIQLAR (docs/modules/hr-tasks.md §8) — the WunderkindHR panel. Access: admin/superadmin
+              or staff with `hrTasks`; the scope (manager subtree / whole organisation) is enforced by the server. */}
+          <Route path="hr/topshiriqlar" element={<RequirePerm perm="hrTasks"><HrDashboardPage /></RequirePerm>} />
+          <Route path="hr/topshiriqlar/royxat" element={<RequirePerm perm="hrTasks"><HrTasksPage /></RequirePerm>} />
+          <Route path="hr/topshiriqlar/royxat/yangi" element={<RequirePerm perm="hrTasks"><HrTaskCreatePage /></RequirePerm>} />
+          <Route path="hr/topshiriqlar/takroriy" element={<RequirePerm perm="hrTasks"><HrTemplatesPage /></RequirePerm>} />
+          <Route path="hr/topshiriqlar/xodimlar" element={<RequirePerm perm="hrTasks"><HrEmployeesPage /></RequirePerm>} />
+          <Route path="hr/topshiriqlar/hisobotlar" element={<RequirePerm perm="hrTasks"><HrReportsPage /></RequirePerm>} />
+          <Route path="hr/topshiriqlar/sozlamalar" element={<RequirePerm perm="hrTasks"><HrSettingsPage /></RequirePerm>} />
           {/* Rollar — alohida sahifa (ruxsatlar rolga beriladi) */}
           <Route path="boshqaruv/roles" element={<RequirePerm perm="staff"><RolesPage /></RequirePerm>} />
           <Route element={<ProtectedRoute role="superadmin" />}>
             <Route path="boshqaruv/branches" element={<BranchesPage />} />
             <Route path="boshqaruv/ai" element={<AiConnectionsPage />} />
           </Route>
+        </Route>
+      </Route>
+
+      {/* Mening topshiriqlarim (hr-tasks.md §8) — ANY panel user with an HR employee row, cashier included.
+          Hence outside the /admin tree (its role="admin" gate rejects the cashier); the exact path outranks
+          the `/admin` branch. Without an HR row the page explains why it is empty. */}
+      <Route element={<ProtectedRoute roles={['staff', 'admin', 'superadmin', 'cashier']} />}>
+        <Route path="/admin/hr/mening-topshiriqlarim" element={<AppLayout />}>
+          <Route index element={<HrMyTasksPage />} />
         </Route>
       </Route>
 

@@ -219,14 +219,31 @@ export const navByRole: Record<Role, NavItem[]> = {
       label: 'HR',
       to: '/admin/teachers/attendance',
       icon: GraduationCap,
-      perm: 'teachers',
+      // No section-level `perm` (2026-09-27, HR tasks): the section mixes three kinds of access —
+      // `teachers` (attendance), `hrTasks` (task panel) and anyone with an HR row
+      // ("Mening topshiriqlarim"). The key sits on each child; a section with no visible child is
+      // hidden (the O'quv bo'limi pattern). "O'qituvchilar davomati" keeps its `teachers` key.
       children: [
         // "O'qituvchilar" ro'yxati Boshqaruv → Xodimlar ga qo'shildi (mijoz, 2026-09-26:
         // o'qituvchi va boshqa xodimlar BITTA ro'yxatda, farqi "Lavozim" ustunida).
         // `/admin/teachers` manzili o'sha sahifaga `?position=teacher` bilan yo'naltiradi.
-        { label: "O'qituvchilar davomati", to: '/admin/teachers/attendance', group: 'XODIMLAR' },
+        { label: "O'qituvchilar davomati", to: '/admin/teachers/attendance', perm: 'teachers', group: 'XODIMLAR' },
         // 'Oylik hisoblash' MOLIYA ostiga ko'chdi — EduSchool'da Ish haqi
         // aynan o'sha yerda turadi. Ikki joyda ko'rsatish menyuni chalkashtirardi.
+        //
+        // HR tasks (docs/modules/hr-tasks.md §8) — the WunderkindHR panel moved here. Each entry is
+        // its own page in the role editor (section key `hrTasks`). Scope is server-side: a manager
+        // sees their subtree, a director/admin the whole organisation.
+        { label: 'Boshqaruv paneli', to: '/admin/hr/topshiriqlar', end: true, perm: 'hrTasks', group: 'TOPSHIRIQLAR' },
+        { label: 'Topshiriqlar', to: '/admin/hr/topshiriqlar/royxat', perm: 'hrTasks', group: 'TOPSHIRIQLAR' },
+        { label: 'Takroriy topshiriqlar', to: '/admin/hr/topshiriqlar/takroriy', perm: 'hrTasks', group: 'TOPSHIRIQLAR' },
+        { label: 'Xodimlar', to: '/admin/hr/topshiriqlar/xodimlar', perm: 'hrTasks', group: 'TOPSHIRIQLAR' },
+        { label: 'Hisobotlar', to: '/admin/hr/topshiriqlar/hisobotlar', perm: 'hrTasks', group: 'TOPSHIRIQLAR' },
+        // Settings — non-directors see "directors only" (server 403).
+        { label: 'Sozlamalar', to: '/admin/hr/topshiriqlar/sozlamalar', perm: 'hrTasks', group: 'TOPSHIRIQLAR' },
+        // No key: anyone with an HR employee row sees their own tasks (`/api/hr/me/*`); without
+        // a row the page explains. Not part of the role catalog (no `perm`).
+        { label: 'Mening topshiriqlarim', to: '/admin/hr/mening-topshiriqlarim', roles: ['staff', 'admin', 'superadmin'], group: 'TOPSHIRIQLAR' },
       ],
     },
     {
@@ -383,7 +400,11 @@ export const navByRole: Record<Role, NavItem[]> = {
   // u moliyaning qolgan qismini ko'rmaydi: storno, chegirma, chiqim va kassirlar
   // kesimidagi hisobot unga yopiq. To'liq kassir ish joyi P1-16 da, marshrutlar
   // esa P1-20 da ulanadi — shu ikkisigacha bu ro'yxat bitta elementdan iborat.
-  cashier: [{ label: 'Kassa', to: '/cashier', icon: Wallet }],
+  cashier: [
+    { label: 'Kassa', to: '/cashier', icon: Wallet },
+    // HR tasks (hr-tasks.md §8): a cashier can be an HR employee too — own tasks only.
+    { label: 'Mening topshiriqlarim', to: '/admin/hr/mening-topshiriqlarim', icon: ListChecks },
+  ],
 }
 
 // Superadmin va xodim admin nav'ini qayta ishlatadi (Sidebar rol/ruxsat bo'yicha filtrlaydi).

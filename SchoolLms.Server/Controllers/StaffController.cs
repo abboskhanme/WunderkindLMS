@@ -25,6 +25,9 @@ public class StaffController(AppDbContext db, AuditService audit) : ControllerBa
     private const string WeakPasswordMessage = "Parol kamida 8 belgidan iborat bo'lsin";
     /// <summary><c>users.salary</c> — <c>numeric(14,2)</c> ning eng katta qiymati.</summary>
     private const decimal MaxSalary = 999_999_999_999.99m;
+    /// <summary>Shown when the account has an HR topshiriqlari row (its task history must stay).</summary>
+    internal const string HrEmployeeDeleteMessage =
+        "Bu foydalanuvchi HR xodimlari ro'yxatida — topshiriqlar tarixi saqlanishi uchun akkauntni o'chirib bo'lmaydi (HR bo'limida ishdan bo'shating).";
 
 
     /// <summary>
@@ -103,6 +106,9 @@ public class StaffController(AppDbContext db, AuditService audit) : ControllerBa
         // Refuse with a readable message instead of a 23503 → 500.
         if (await db.Expenses.AnyAsync(e => e.EmployeeUserId == id))
             return Conflict(new { message = "Bu xodimga maosh berilgan — akkauntni o'chirib bo'lmaydi (moliyaviy tarix saqlanadi)." });
+        // `hr_employees.user_id` is RESTRICT too (HR task history) — a readable 409, not a 23503 → 500.
+        if (await db.HrEmployees.AnyAsync(e => e.UserId == id))
+            return Conflict(new { message = HrEmployeeDeleteMessage });
         db.Users.Remove(user);
         await db.SaveChangesAsync();
         return NoContent();

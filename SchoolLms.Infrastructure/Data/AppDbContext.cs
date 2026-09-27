@@ -204,6 +204,20 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<LessonObservation> LessonObservations => Set<LessonObservation>();
     public DbSet<LessonObservationDetail> LessonObservationDetails => Set<LessonObservationDetail>();
 
+    // HR topshiriqlari — staff tasks, the WunderkindHR port (docs/modules/hr-tasks.md §4).
+    // Configuration: HrTasksModel.cs.
+    public DbSet<HrPosition> HrPositions => Set<HrPosition>();
+    public DbSet<HrEmployee> HrEmployees => Set<HrEmployee>();
+    public DbSet<HrEmployeeManager> HrEmployeeManagers => Set<HrEmployeeManager>();
+    public DbSet<HrTaskTemplate> HrTaskTemplates => Set<HrTaskTemplate>();
+    public DbSet<HrTask> HrTasks => Set<HrTask>();
+    public DbSet<HrTaskProof> HrTaskProofs => Set<HrTaskProof>();
+    public DbSet<HrTaskProgress> HrTaskProgress => Set<HrTaskProgress>();
+    public DbSet<HrTaskAttachment> HrTaskAttachments => Set<HrTaskAttachment>();
+    public DbSet<HrTaskReminder> HrTaskReminders => Set<HrTaskReminder>();
+    public DbSet<HrSettings> HrSettings => Set<HrSettings>();
+    public DbSet<HrJobRun> HrJobRuns => Set<HrJobRun>();
+
     /// <inheritdoc />
     public Task<Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction> BeginTransactionAsync(
         CancellationToken cancellationToken = default) =>
@@ -453,6 +467,9 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
 
         // ----- Dars tahlili: sections, criteria, observations, details (lesson-analysis.md §3) -----
         LessonAnalysisModel.Apply(b);
+
+        // ----- HR topshiriqlari: positions, employees, templates, tasks, proofs, jobs (hr-tasks.md §4) -----
+        HrTasksModel.Apply(b);
 
         // ----- PostgreSQL: vaqt turi -----
         // Tizim sanalarni Toshkent "devor soati" sifatida saqlaydi (AppClock.Now — Kind=Unspecified),

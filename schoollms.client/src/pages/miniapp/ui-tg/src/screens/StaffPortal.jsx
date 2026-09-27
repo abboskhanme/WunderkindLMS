@@ -13,7 +13,8 @@ import { Hero, Screen } from '../components/ui'
 
 const HOME = { cashier: '/cashier' }
 
-function openPanel(user) {
+/** Veb-panelni shu oynada ochadi. HR xodim paneli ("Boshqaruv paneli" tugmasi) ham shuni chaqiradi. */
+export function openPanel(user) {
   const token = tokenStore.get()
   if (token) {
     try {

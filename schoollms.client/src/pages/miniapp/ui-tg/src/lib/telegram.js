@@ -76,6 +76,27 @@ export function haptic(kind = 'light') {
 }
 
 /**
+ * Natija haqida taktil javob — `success` | `warning` | `error`.
+ * HR topshiriqlari ekranlari (eski xodim ilovasidagi `haptic('success')` va h.k.).
+ */
+export function hapticNotify(type = 'success') {
+  try {
+    tg?.HapticFeedback?.notificationOccurred(type)
+  } catch {
+    /* qo'llab-quvvatlanmasa — jim o'tamiz */
+  }
+}
+
+/** Tanlov o'zgarganda (sana lentasi, filtr) — eng yengil "tiq". */
+export function hapticSelect() {
+  try {
+    tg?.HapticFeedback?.selectionChanged()
+  } catch {
+    /* qo'llab-quvvatlanmasa — jim o'tamiz */
+  }
+}
+
+/**
  * Klaviatura ochiqmi — matn maydoni fokusda turibdimi.
  *
  * Telefonda klaviatura ochilganda pastga qadalgan (`fixed bottom`) tab paneli

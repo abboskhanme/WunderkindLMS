@@ -355,6 +355,16 @@ builder.Services.AddHttpClient<SchoolLms.Application.Services.ILessonAnalysisAi,
                                SchoolLms.Application.Services.GeminiLessonAnalysisAi>(
     c => c.Timeout = TimeSpan.FromSeconds(90));
 
+// HR topshiriqlari — the WunderkindHR port (docs/modules/hr-tasks.md). Telegram and file storage
+// are behind interfaces so tests replace them (no network). ONE scheduler: a tick every 5 minutes,
+// hr_job_runs makes every daily job run once per local day (generate, morning, digest, close).
+builder.Services.AddScoped<SchoolLms.Application.HrTasks.HrTasksService>();
+builder.Services.AddSingleton<SchoolLms.Application.HrTasks.IHrTelegramSender,
+                              SchoolLms.Application.HrTasks.TelegramHrSender>();
+builder.Services.AddSingleton<SchoolLms.Application.HrTasks.IHrFileStore,
+                              SchoolLms.Application.HrTasks.LocalHrFileStore>();
+builder.Services.AddHostedService<SchoolLms.Application.HrTasks.HrTasksScheduler>();
+
 // ---------- Moliya (billing) ----------
 // DIQQAT: qolgan moliya xizmatlari (to'lov, smena, hisob-faktura, chek) hali
 // ro'yxatdan o'tmagan — ular P1-15 ning ishi, ro'yxati docs/PENDING_WIRING.md
@@ -461,6 +471,19 @@ using (var scope = app.Services.CreateScope())
     catch (Exception ex)
     {
         Console.WriteLine($"[db] Dars tahlili mezonlari qo'shilmadi: {ex.GetType().Name}");
+    }
+
+    // HR topshiriqlari: the single hr_settings row with the old defaults (19:00 digest Mon–Sat,
+    // 07:30 morning list, 00:10 generation, reminders 120/60/30) — only when missing. Best-effort
+    // like the seeder above: a missing table (AutoMigrate=false) must not stop start-up.
+    try
+    {
+        if (await SchoolLms.Application.HrTasks.HrTasksSeeder.SeedAsync(db))
+            Console.WriteLine("[db] HR topshiriqlari: sukut sozlamalari qo'shildi.");
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"[db] HR sozlamalari qo'shilmadi: {ex.GetType().Name}");
     }
 }
 

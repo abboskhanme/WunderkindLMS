@@ -11,15 +11,17 @@
  * baribir 403 qaytaradi, ya'ni bu ko'z bo'yash emas.
  */
 import { useState } from 'react'
-import { CalendarDays, ClipboardCheck, Home, MessageSquare, Wallet } from 'lucide-react'
+import { CalendarDays, ClipboardCheck, Home, ListChecks, MessageSquare, Wallet } from 'lucide-react'
 import { ErrorState, Loader, Screen, TabBar } from '../components/ui'
 import { useAsync } from '../lib/useAsync'
 import { teacherApi } from '../lib/teacherApi'
+import { hrApi } from '../lib/hrApi'
 import { TodayTab } from './teacher/TodayTab'
 import { AttendanceTab } from './teacher/AttendanceTab'
 import { ScheduleTab } from './teacher/ScheduleTab'
 import { SalaryTab } from './teacher/SalaryTab'
 import { MessagesTab } from './teacher/MessagesTab'
+import { HrTab } from './hr/HrTab'
 
 /** `perm` — shu tabni ko'rsatish uchun kerakli ruxsat (null = hammaga). */
 const TABS = [
@@ -30,8 +32,19 @@ const TABS = [
   { value: 'chat', label: 'Xabarlar', icon: MessageSquare, perm: 'messages' },
 ]
 
+/**
+ * HR topshiriqlari (hr-tasks.md §8) — faqat `GET /hr/me` muvaffaqiyatli bo'lsa
+ * (o'qituvchining `hr_employees` qatori bor). Oxirida qo'shiladi: mavjud beshta
+ * tabning o'rni o'zgarmasin.
+ */
+const HR_TAB = { value: 'hr', label: 'Topshiriqlar', icon: ListChecks, perm: null }
+
 export function TeacherPanel({ user }) {
   const ctx = useAsync(() => Promise.all([teacherApi.profile(), teacherApi.meta()]), [])
+  // Panelni KUTTIRMAYDI: javob kelguncha beshta tab, xodim bo'lsa oltinchisi qo'shiladi.
+  // Har qanday xato — "tab yo'q" (o'qituvchi paneli o'zgarishsiz qoladi).
+  const hr = useAsync(() => hrApi.probe().catch(() => null), [])
+  const hrMe = hr.data
   const [tab, setTab] = useState('home')
   // "Bugun" dan darsga bosilganda davomat o'sha darsda ochilishi uchun.
   const [focusLesson, setFocusLesson] = useState(null)
@@ -53,7 +66,7 @@ export function TeacherPanel({ user }) {
 
   const [profile, meta] = ctx.data
   const perms = profile?.permissions || []
-  const tabs = TABS.filter((t) => !t.perm || perms.includes(t.perm))
+  const tabs = [...TABS.filter((t) => !t.perm || perms.includes(t.perm)), ...(hrMe ? [HR_TAB] : [])]
   // Ruxsat olib qo'yilgan bo'lim ochiq qolib ketmasin.
   const active = tabs.some((t) => t.value === tab) ? tab : 'home'
 
@@ -84,6 +97,7 @@ export function TeacherPanel({ user }) {
       {active === 'salary' && <SalaryTab meta={meta} />}
       {/* `user` — sessiya identifikatori: chatda o'z xabarlarini ajratish uchun. */}
       {active === 'chat' && <MessagesTab profile={profile} user={user} />}
+      {active === 'hr' && hrMe && <HrTab me={hrMe} />}
 
       <TabBar tabs={tabs} value={active} onChange={change} />
     </>

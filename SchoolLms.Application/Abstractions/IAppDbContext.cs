@@ -271,6 +271,22 @@ public interface IAppDbContext
     DbSet<LessonObservation> LessonObservations { get; }
     DbSet<LessonObservationDetail> LessonObservationDetails { get; }
 
+    /// <summary>
+    /// HR topshiriqlari (<c>docs/modules/hr-tasks.md</c> §4): the WunderkindHR staff-task tables.
+    /// Not financial — full CRUD.
+    /// </summary>
+    DbSet<HrPosition> HrPositions { get; }
+    DbSet<HrEmployee> HrEmployees { get; }
+    DbSet<HrEmployeeManager> HrEmployeeManagers { get; }
+    DbSet<HrTaskTemplate> HrTaskTemplates { get; }
+    DbSet<HrTask> HrTasks { get; }
+    DbSet<HrTaskProof> HrTaskProofs { get; }
+    DbSet<HrTaskProgress> HrTaskProgress { get; }
+    DbSet<HrTaskAttachment> HrTaskAttachments { get; }
+    DbSet<HrTaskReminder> HrTaskReminders { get; }
+    DbSet<HrSettings> HrSettings { get; }
+    DbSet<HrJobRun> HrJobRuns { get; }
+
     int SaveChanges();
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 
