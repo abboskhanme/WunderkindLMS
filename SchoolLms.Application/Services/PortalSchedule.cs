@@ -20,13 +20,23 @@ public static class PortalSchedule
         {
             if (string.CompareOrdinal(today, q.StartDate) < 0 || string.CompareOrdinal(today, q.EndDate) > 0)
                 continue;
-            var weeks = ScheduleMath.GetQuarterWeeks(q.StartDate, q.EndDate);
-            var wk = weeks.FirstOrDefault(w =>
-                string.CompareOrdinal(today, w.StartISO) >= 0 && string.CompareOrdinal(today, w.EndISO) <= 0);
-            return (q.Quarter, wk?.Week ?? 1);
+            return (q.Quarter, WeekOf(ScheduleMath.GetQuarterWeeks(q.StartDate, q.EndDate), today));
         }
         return (1, 1);
     }
+
+    /// <summary>
+    /// Sana chorakning qaysi haftasiga tushadi. Haftalar Du–Sha
+    /// (<see cref="ScheduleMath.GetQuarterWeeks"/>), ya'ni YAKSHANBA hech qaysi
+    /// oraliqqa kirmaydi — u o'zidan oldingi dushanbadan boshlangan haftaga
+    /// tegishli (kalendar haftasi Du–Ya). Ilgari bu holatda 1-hafta qaytardi:
+    /// har yakshanba o'qituvchi va ota-ona jadvali chorakning birinchi
+    /// haftasiga sakrardi.
+    /// </summary>
+    public static int WeekOf(IReadOnlyList<ScheduleMath.WeekRange> weeks, string todayISO) =>
+        weeks.LastOrDefault(w => string.CompareOrdinal(w.StartISO, todayISO) <= 0)?.Week
+        ?? weeks.FirstOrDefault()?.Week
+        ?? 1;
 
     /// <summary>
     /// EGAning (chorak, hafta) ga biriktirilgan jadval darslari. Biriktirilmagan

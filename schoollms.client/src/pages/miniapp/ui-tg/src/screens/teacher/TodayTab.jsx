@@ -12,6 +12,7 @@ import { CalendarOff, ChevronRight, Clock } from 'lucide-react'
 import {
   Badge, Card, DateChip, EmptyState, Hero, HeroProgress, Row, Screen, StatGrid,
 } from '../../components/ui'
+import { LogoutButton } from '../../components/LogoutButton'
 import { useAsync } from '../../lib/useAsync'
 import { teacherApi } from '../../lib/teacherApi'
 import { readSeen } from '../../lib/chatSeen'
@@ -46,10 +47,12 @@ export function TodayTab({ profile, meta, onOpenAttendance }) {
     const lessons = schedule.filter((l) => l.day === day).sort((a, b) => a.period - b.period)
 
     // "Dars o'tildi" belgisi dars qaydlarida turadi — bugungi har (sinf, fan)
-    // uchun bittadan so'rov. Darslar o'qituvchining o'ziniki, ya'ni ruxsat bor.
+    // uchun bittadan so'rov. Bittasi yiqilsa (masalan, jurnal ruxsati o'sha
+    // sinfga yo'q — 403) butun "Bugun" ekrani xato bo'lib qolmasin: o'sha dars
+    // shunchaki "belgilanmagan" ko'rinadi.
     const pairs = canJournal ? lessonPairs(lessons) : []
     const noteLists = await Promise.all(
-      pairs.map((p) => teacherApi.journalNotes(p.classId, p.subjectId, quarter)),
+      pairs.map((p) => teacherApi.journalNotes(p.classId, p.subjectId, quarter).catch(() => [])),
     )
     const conducted = new Set()
     noteLists.forEach((list, i) => {
@@ -58,15 +61,18 @@ export function TodayTab({ profile, meta, onOpenAttendance }) {
       }
     })
 
+    // Xabarlar sanog'i — ikkinchi darajali: u yiqilsa kun jadvali baribir ko'rinadi.
     const [progress, lastMessages] = await Promise.all([
       teacherApi.progress(quarter),
-      canMessages ? teacherApi.chatLastMessages() : Promise.resolve({}),
+      canMessages ? teacherApi.chatLastMessages().catch(() => ({})) : Promise.resolve({}),
     ])
 
     // O'qilmagan xabarlar — "Xabarlar" tabidagi bilan BIR XIL manbadan, ya'ni
     // ikki ekran hech qachon boshqa-boshqa raqam ko'rsatmaydi.
     const channels = Object.keys(lastMessages)
-    const summaries = canMessages ? await channelSummaries(channels, lastMessages, readSeen()) : []
+    const summaries = canMessages
+      ? await channelSummaries(channels, lastMessages, readSeen()).catch(() => [])
+      : []
     const unread = summaries.reduce((n, s) => n + s.unread, 0)
     const unreadChannels = summaries.filter((s) => s.unread > 0).length
 
@@ -83,7 +89,7 @@ export function TodayTab({ profile, meta, onOpenAttendance }) {
 
   return (
     <Screen>
-      <Hero title={profile.fullName} subtitle={subtitle}>
+      <Hero title={profile.fullName} subtitle={subtitle} right={<LogoutButton />}>
         {total > 0 && (
           <HeroProgress
             value={done}

@@ -7,6 +7,9 @@
    zonani hisobga olamiz. */
 :root {
   --tg-safe-bottom: env(safe-area-inset-bottom, 0px);
+  /* Ilova ATAYLAB yorug' (brend ranglari): Telegramning qorong'i temasida ham
+     tizim elementlari (kiritish maydoni, aylantirish chizig'i) qora bo'lib qolmasin. */
+  color-scheme: light;
 }
 
 html,
@@ -15,12 +18,28 @@ body,
   height: 100%;
 }
 
+html {
+  /* Telefon burilganda iOS matnni o'zi kattalashtirmasin. */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
 body {
   margin: 0;
   background: #f0f0f0;
   color: #0e1520;
   -webkit-font-smoothing: antialiased;
   overscroll-behavior-y: none;
+  /* Uzun so'z (havola, raqamlar qatori) sahifani yon tomonga cho'zmasin. */
+  overflow-wrap: break-word;
+  /* Android WebView'da har bosishda chiqadigan kulrang to'rtburchak. */
+  -webkit-tap-highlight-color: transparent;
+}
+
+#root {
+  /* Biror element baribir ekrandan chiqsa ham sahifa yon tomonga siljimasin.
+     `clip` (hidden emas) — yangi aylantirish konteyneri yaratmaydi. */
+  overflow-x: clip;
 }
 
 /* Telegram o'zining temasini o'zgaruvchilar orqali beradi, lekin biz ATAYLAB

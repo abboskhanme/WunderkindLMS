@@ -51,8 +51,10 @@ export function AttendanceTab({ profile, meta, focusLesson, onClearFocus }) {
     const lessons = schedule.filter((l) => l.day === todayIndex()).sort((a, b) => a.period - b.period)
 
     const pairs = lessonPairs(lessons)
+    // Bitta darsning qaydlari yiqilsa ro'yxat baribir ochilsin — o'sha dars
+    // "Olinmagan" ko'rinadi, xatoning o'zi dars ichida (403 matni bilan) chiqadi.
     const noteLists = await Promise.all(
-      pairs.map((p) => teacherApi.journalNotes(p.classId, p.subjectId, quarter)),
+      pairs.map((p) => teacherApi.journalNotes(p.classId, p.subjectId, quarter).catch(() => [])),
     )
     const conducted = new Set()
     noteLists.forEach((list, i) => {

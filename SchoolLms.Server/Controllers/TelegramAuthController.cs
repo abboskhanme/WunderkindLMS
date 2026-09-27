@@ -272,6 +272,13 @@ public sealed class TelegramAuthController(
     /// <summary>
     /// O'z Telegram bog'lanishini uzish. Shundan keyin Mini App yana
     /// <c>status: "unlinked"</c> qaytaradi va yangi kod kerak bo'ladi.
+    ///
+    /// <para>
+    /// Mini App'ning "Chiqish" tugmasi <c>X-Telegram-Init-Data</c> sarlavhasini
+    /// yuboradi — shunda FAQAT shu Telegram akkaunt uziladi: bitta hisobga ota
+    /// ham, ona ham bog'langan bo'lishi mumkin, otaning chiqishi onani chiqarib
+    /// yubormasligi kerak. Sarlavhasiz chaqiruv — avvalgidek hammasini uzadi.
+    /// </para>
     /// </summary>
     [HttpDelete("link")]
     [Authorize]
@@ -280,8 +287,26 @@ public sealed class TelegramAuthController(
         var uid = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
         if (uid is null) return Unauthorized();
 
-        // Hisobga bir nechta Telegram bog'lanishi mumkin — "uzish" hammasini uzadi.
-        var accounts = await db.TelegramAccounts.Where(a => a.UserId == uid).ToListAsync(ct);
+        var query = db.TelegramAccounts.Where(a => a.UserId == uid);
+
+        var raw = HeaderInitData();
+        if (!string.IsNullOrWhiteSpace(raw))
+        {
+            // Imzo tekshirilmasa — hech narsa uzilmaydi. "Hammasini uzish" ga
+            // tushib ketish boshqa oila a'zosini jimgina chiqarib yuborardi.
+            // 401 emas, 400: sessiya tokeni to'g'ri, eskirgani — Telegram ma'lumoti.
+            var check = TelegramInitData.Validate(raw, telegram.BotToken, DateTimeOffset.UtcNow);
+            if (!check.Ok)
+                return BadRequest(new
+                {
+                    code = "invalid_init_data",
+                    message = "Telegram ma'lumoti eskirgan. Ilovani yopib, qaytadan oching.",
+                });
+            var telegramUserId = check.User!.Id;
+            query = query.Where(a => a.TelegramUserId == telegramUserId);
+        }
+
+        var accounts = await query.ToListAsync(ct);
         if (accounts.Count == 0) return NotFound(new { message = "Telegram bog'lanishi topilmadi" });
 
         db.TelegramAccounts.RemoveRange(accounts);

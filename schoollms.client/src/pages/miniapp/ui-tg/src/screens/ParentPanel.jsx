@@ -12,9 +12,10 @@
  * `key={child.id}` orqali qaytadan yig'iladi: ochilgan oy, tanlangan hafta —
  * hammasi yangi farzandning holatiga tozalanadi.
  */
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { CalendarDays, GraduationCap, Home, UserRoundX, UtensilsCrossed, Wallet } from 'lucide-react'
 import { EmptyState, ErrorState, Hero, Loader, Screen, TabBar } from '../components/ui'
+import { ProfileButton, ProfileSheet } from './parent/ProfileSheet'
 import { useAsync } from '../lib/useAsync'
 import { getShowLearningProgress, listChildren } from '../lib/parentApi'
 import { showBackButton } from '../lib/telegram'
@@ -37,7 +38,7 @@ export function ParentPanel({ user }) {
   const [tab, setTab] = useState('home')
   const [childId, setChildId] = useState(null)
 
-  const state = useAsync(() => listChildren(), [])
+  const state = useAsync(() => listChildren(user.role), [user.role])
   // §5.5 — maktab ota-onaga baholarni yopgan bo'lsa "Baholar" tabi umuman chiqmaydi.
   // Javob kelguncha tab ko'rinadi (eski xatti-harakat); qulf baribir serverda.
   const progress = useAsync(() => getShowLearningProgress(), [])
@@ -58,11 +59,20 @@ export function ParentPanel({ user }) {
     if (!showGrades && tab === 'grades') setTab('home')
   }, [showGrades, tab])
 
+  // Profil — butun ekranni yopadigan varaq (sarlavhadagi avatar ochadi).
+  const [profileOpen, setProfileOpen] = useState(false)
+  const closeProfile = useCallback(() => setProfileOpen(false), [])
+  const pickFromProfile = useCallback((id) => {
+    setChildId(id)
+    setProfileOpen(false)
+  }, [])
+
   // Telegramning o'z "orqaga" tugmasi — ichki tabdan Boshga qaytaradi.
+  // Profil ochiq bo'lsa tugma profilniki (u o'zi ro'yxatdan o'tkazadi).
   useEffect(() => {
-    if (tab === 'home') return undefined
+    if (tab === 'home' || profileOpen) return undefined
     return showBackButton(() => setTab('home'))
-  }, [tab])
+  }, [tab, profileOpen])
 
   const roleWord = user.role === 'student' ? "O'quvchi" : 'Ota-ona'
   const subtitle = child
@@ -72,7 +82,11 @@ export function ParentPanel({ user }) {
   return (
     <>
       <Screen>
-        <Hero title={child?.fullName || user.fullName} subtitle={subtitle}>
+        <Hero
+          title={child?.fullName || user.fullName}
+          subtitle={subtitle}
+          right={<ProfileButton fullName={user.fullName} onClick={() => setProfileOpen(true)} />}
+        >
           {/* Bitta farzandda `null` — `Hero` bo'sh joy ham qoldirmaydi. */}
           {children.length > 1 ? (
             <ChildSwitcher items={children} value={child?.id} onChange={setChildId} />
@@ -105,6 +119,16 @@ export function ParentPanel({ user }) {
       </Screen>
 
       <TabBar tabs={tabs} value={tab} onChange={setTab} />
+
+      {profileOpen && (
+        <ProfileSheet
+          user={user}
+          panelChildren={children}
+          activeChildId={child?.id ?? null}
+          onPickChild={pickFromProfile}
+          onClose={closeProfile}
+        />
+      )}
     </>
   )
 }

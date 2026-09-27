@@ -67,8 +67,28 @@ export function SessionProvider({ children }) {
     }
   }, [])
 
+  /**
+   * "Chiqish". Brauzerda — token o'chadi va login ekrani chiqadi. Telegram
+   * ichida token o'chirishning o'zi yetmaydi: keyingi ochilishda imzo bo'yicha
+   * yana avtomatik kiradi. Shuning uchun SHU Telegram akkaunt hisobdan uziladi
+   * (imzo sarlavhada — ota chiqsa, onaning Telegram'i bog'langanicha qoladi)
+   * va ilova login ekraniga qaytadi.
+   */
+  const logout = useCallback(async () => {
+    if (inTelegram) {
+      try {
+        await api.del('/tg/link', { 'X-Telegram-Init-Data': initData })
+      } catch (e) {
+        // 404 — bog'lanish allaqachon yo'q: chiqish baribir bajarilgan.
+        if (e.status !== 404) throw e
+      }
+    }
+    tokenStore.clear()
+    setState({ status: inTelegram ? 'unlinked' : 'outside', user: null, error: null })
+  }, [])
+
   return (
-    <SessionContext.Provider value={{ ...state, retry: authenticate, adoptSession }}>
+    <SessionContext.Provider value={{ ...state, retry: authenticate, adoptSession, logout }}>
       {children}
     </SessionContext.Provider>
   )

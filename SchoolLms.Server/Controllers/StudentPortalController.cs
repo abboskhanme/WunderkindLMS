@@ -35,7 +35,8 @@ public class StudentPortalController(
     /// <summary>
     /// Maqsadli o'quvchini topadi.
     /// • student → o'z akkauntidan (UserId bo'yicha)
-    /// • parent  → logini (email) telefon raqami sifatida Student.ParentPhone bilan taqqoslanadi
+    /// • parent  → <see cref="GuardianAccess.ParentTargetAsync"/>: o'z farzandi bo'lsa `?studentId=`,
+    ///             aks holda birinchi farzandi (vasiylik, keyin telefon raqami)
     /// • admin   → ?studentId=... query param orqali istalgan o'quvchi
     /// </summary>
     private async Task<Student?> TargetAsync(string? studentId)
@@ -48,30 +49,13 @@ public class StudentPortalController(
         var uid = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
         if (uid is null) return null;
 
+        // Vasiylik (`student_guardians`) birinchi: ko'p farzandli ota-onaning
+        // `?studentId=` i shu yerda hal bo'ladi; telefon — eski yo'l, oxirida.
         if (User.IsInRole("parent"))
-        {
-            var user = await db.Users.FindAsync(uid);
-            if (user is null) return null;
-            var phone = NormalizePhone(user.Email);
-            if (phone.Length == 0) return null;
-            // `NormalizePhone` SQL'ga o'girilmaydi — ilgari u `Where` ichida turardi va
-            // ota-onaning HAR bir so'rovi 500 bilan yiqilardi (EF "could not be translated").
-            // Shuning uchun faqat (id, telefon) juftliklari olinadi va solishtirish xotirada.
-            var candidates = await db.Students.AsNoTracking()
-                .Where(s => !s.IsArchived && s.ParentPhone != "")
-                .OrderBy(s => s.FullName)
-                .Select(s => new { s.Id, s.ParentPhone })
-                .ToListAsync();
-            var match = candidates.FirstOrDefault(s => NormalizePhone(s.ParentPhone) == phone);
-            return match is null ? null : await db.Students.FindAsync(match.Id);
-        }
+            return await new GuardianAccess(db).ParentTargetAsync(uid, studentId);
 
         return await db.Students.FirstOrDefaultAsync(s => s.UserId == uid);
     }
-
-    /// <summary>Telefon raqamidan faqat raqamlarni qoldiradi (taqqoslash uchun).</summary>
-    private static string NormalizePhone(string? p) =>
-        new string((p ?? "").Where(char.IsDigit).ToArray());
 
     // =====================================================================
     //  §5.5 — `show_learning_progress_in_parent_dashboard`
@@ -327,10 +311,7 @@ public class StudentPortalController(
         if (s is null) return null;
         if (User.IsInRole("student")) return s.UserId == uid ? s : null;
         if (User.IsInRole("parent"))
-        {
-            var user = uid is null ? null : await db.Users.FindAsync(uid);
-            return NormalizePhone(user?.Email) == NormalizePhone(s.ParentPhone) ? s : null;
-        }
+            return uid is not null && await new GuardianAccess(db).ParentOwnsAsync(uid, s.Id) ? s : null;
         return s;
     }
 

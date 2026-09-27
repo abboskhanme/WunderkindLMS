@@ -10,6 +10,7 @@
  * `brand.ink` (#0E1520), `ground` (#F0F0F0).
  */
 import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { useKeyboardOpen } from '../lib/telegram'
 
 /* ------------------------------------------------------------------ karkas */
 
@@ -133,6 +134,10 @@ export function Card({ title, action, children, className = '' }) {
 /**
  * Namunadagi 2×2 raqamlar to'ri: bitta oq kartochka, ichida ingichka
  * ajratgichlar bilan bo'lingan kataklar.
+ *
+ * Katak tor telefonda (320 px) ~110 px: "12 500 000" 26 px da sig'maydi va
+ * qo'shni katakka o'tib ketardi. Uzun qiymatning shrifti ekran eniga qarab
+ * kichrayadi, qisqasi (dars soni, baho) avvalgidek katta qoladi.
  */
 export function StatGrid({ items }) {
   return (
@@ -141,12 +146,19 @@ export function StatGrid({ items }) {
         <div
           key={it.label}
           className={
-            'p-4 ' +
+            'min-w-0 p-4 ' +
             (i % 2 === 0 ? 'border-r border-slate-100 ' : '') +
             (i >= 2 ? 'border-t border-slate-100' : '')
           }
         >
-          <p className="text-[26px] font-extrabold leading-none">{it.value}</p>
+          <p
+            className={
+              'break-words font-extrabold leading-none ' +
+              (String(it.value).length > 6 ? 'text-[length:clamp(18px,5.4vw,26px)]' : 'text-[26px]')
+            }
+          >
+            {it.value}
+          </p>
           <p className="mt-1.5 text-[13px] text-slate-500">{it.label}</p>
           {it.note && <p className="text-[12px] text-slate-400">{it.note}</p>}
         </div>
@@ -165,9 +177,10 @@ export function Row({ lead, title, subtitle, right, onClick }) {
       className="flex w-full items-center gap-3 border-t border-slate-100 px-4 py-3 text-left first:border-t-0"
     >
       {lead}
+      {/* `break-words` — uzun so'z (havola, uzun ism) qatorni yon tomonga cho'zmasin. */}
       <div className="min-w-0 flex-1">
-        <p className="text-[15px] font-semibold leading-snug">{title}</p>
-        {subtitle && <p className="mt-0.5 text-[13px] text-slate-500">{subtitle}</p>}
+        <p className="break-words text-[15px] font-semibold leading-snug">{title}</p>
+        {subtitle && <p className="mt-0.5 break-words text-[13px] text-slate-500">{subtitle}</p>}
       </div>
       {right}
     </Tag>
@@ -244,8 +257,16 @@ export function ErrorState({ message, onRetry }) {
 
 /* ------------------------------------------------------------ tab paneli */
 
-/** Pastdagi panel. Faol element — namunadagidek sariq tabletka. */
+/**
+ * Pastdagi panel. Faol element — namunadagidek sariq tabletka.
+ *
+ * Klaviatura ochiq bo'lganda panel YASHIRINADI: aks holda u klaviatura ustiga
+ * ko'tarilib, yozilayotgan maydonni yopib qo'yardi (`useKeyboardOpen`).
+ */
 export function TabBar({ tabs, value, onChange }) {
+  const keyboardOpen = useKeyboardOpen()
+  if (keyboardOpen) return null
+
   return (
     <nav className="fixed inset-x-0 bottom-0 z-20 border-t border-slate-200 bg-white pb-[var(--tg-safe-bottom)]">
       <div className="mx-auto flex max-w-md items-stretch justify-around px-2 py-2">

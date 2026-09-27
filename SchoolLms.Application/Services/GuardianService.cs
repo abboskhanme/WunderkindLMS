@@ -12,13 +12,11 @@ namespace SchoolLms.Application.Services;
 // ===========================================================================
 //
 //  "Bu foydalanuvchi qaysi o'quvchini ko'ra oladi?" degan savolning YAGONA
-//  javobi shu fayl bo'lishi kerak. Bugungacha u ikki joyda takrorlangan
-//  (`StudentPortalController.TargetAsync` va `PortalFinanceController.ResolveAsync`,
-//  docs/PENDING_WIRING.md §15) va ikkalasi ham telefon raqamiga tayanadi —
-//  ya'ni ikki farzandli ota-onaga BITTA farzand ko'rsatadi. Yangi
-//  `/api/tg/*` yuzasi faqat shu yerdan so'raydi; eski ikkitasi joyida
-//  qoladi (ular bir farzandli holatda bir xil javob beradi) va ularni
-//  ko'chirish alohida vazifa sifatida yozilgan.
+//  javobi shu fayl bo'lishi kerak. `/api/tg/*` yuzasi shu yerdan so'raydi;
+//  eski `/api/student/*` ham (`StudentPortalController.TargetAsync`,
+//  `PortalFinanceController.ResolveAsync`) endi `ParentTargetAsync` orqali
+//  shu yerdan so'raydi — ilgari ular telefon raqamini o'zlari solishtirib,
+//  ikki farzandli ota-onaga BITTA farzand ko'rsatardi (PENDING_WIRING §15).
 // ===========================================================================
 
 /// <summary>
@@ -73,6 +71,72 @@ public sealed class GuardianAccess(IAppDbContext db)
                       where g.UserId == userId && s.Id == studentId && !s.IsArchived
                       select s)
             .FirstOrDefaultAsync(ct);
+    }
+
+    /// <summary>
+    /// Which child a PARENT account is looking at on the older `/api/student/*`
+    /// surface (<c>StudentPortalController</c>, <c>PortalFinanceController</c>).
+    /// Both controllers ask this one method instead of matching phone numbers
+    /// on their own. Returns a TRACKED entity — callers used <c>FindAsync</c>
+    /// before and some of them write to it.
+    ///
+    /// <para>
+    /// ORDER. (1) <paramref name="studentId"/> names one of this account's own
+    /// children through <c>student_guardians</c> → that child. This is what
+    /// makes the Mini App's child switcher real: the id used to be ignored, so
+    /// every tab showed the first child whatever name the header carried.
+    /// (2) Otherwise the first child by guardianship. (3) No guardianship at
+    /// all → the legacy match, login digits against <c>students.parent_phone</c>.
+    /// </para>
+    /// <para>
+    /// A FOREIGN id is ignored, never an error — the contract these endpoints
+    /// always had, so a guessed id reveals nothing about the stranger.
+    /// </para>
+    /// </summary>
+    public async Task<Student?> ParentTargetAsync(
+        string userId, string? studentId, CancellationToken ct = default)
+    {
+        if (!string.IsNullOrWhiteSpace(studentId))
+        {
+            var own = await ChildAsync(userId, studentId, ct);
+            if (own is not null) return await db.Students.FindAsync([own.Id], ct);
+        }
+
+        var first = (await ChildrenOfAsync(userId, ct)).FirstOrDefault();
+        if (first is not null) return await db.Students.FindAsync([first.Id], ct);
+
+        var byPhone = await PhoneChildrenAsync(userId, ct);
+        var pick = byPhone.FirstOrDefault(id => id == studentId) ?? byPhone.FirstOrDefault();
+        return pick is null ? null : await db.Students.FindAsync([pick], ct);
+    }
+
+    /// <summary>
+    /// Can this parent account act for this child — guardianship first, the
+    /// legacy phone match second. For writes (pickup): unlike
+    /// <see cref="ParentTargetAsync"/> a foreign id is a plain "no".
+    /// </summary>
+    public async Task<bool> ParentOwnsAsync(string userId, string studentId, CancellationToken ct = default) =>
+        await ChildAsync(userId, studentId, ct) is not null
+        || (await PhoneChildrenAsync(userId, ct)).Contains(studentId);
+
+    /// <summary>
+    /// Legacy link: non-archived students whose <c>parent_phone</c> digits equal
+    /// the login's digits, by name. The comparison runs in memory —
+    /// <c>DigitsOnly</c> does not translate to SQL.
+    /// </summary>
+    private async Task<List<string>> PhoneChildrenAsync(string userId, CancellationToken ct)
+    {
+        var login = await db.Users.AsNoTracking()
+            .Where(u => u.Id == userId).Select(u => u.Email).FirstOrDefaultAsync(ct);
+        var phone = PhoneUtil.DigitsOnly(login);
+        if (phone.Length == 0) return [];
+
+        var candidates = await db.Students.AsNoTracking()
+            .Where(s => !s.IsArchived && s.ParentPhone != "")
+            .OrderBy(s => s.FullName)
+            .Select(s => new { s.Id, s.ParentPhone })
+            .ToListAsync(ct);
+        return [.. candidates.Where(s => PhoneUtil.DigitsOnly(s.ParentPhone) == phone).Select(s => s.Id)];
     }
 
     /// <summary>

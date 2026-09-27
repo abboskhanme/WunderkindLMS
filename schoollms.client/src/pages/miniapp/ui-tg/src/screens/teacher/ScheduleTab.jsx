@@ -16,7 +16,7 @@ import { teacherApi } from '../../lib/teacherApi'
 import { axisIndexOf, dateOfWeekday, todayISO, weekAxis } from '../../lib/weeks'
 import { dayMonth, weekdayName } from '../../lib/format'
 import { haptic } from '../../lib/telegram'
-import { AsyncBlock, lessonKey } from './shared'
+import { AsyncBlock, lessonKey, lessonOwnerTitle } from './shared'
 
 const DAYS = [0, 1, 2, 3, 4, 5] // dushanba … shanba
 
@@ -61,6 +61,7 @@ export function ScheduleTab({ meta }) {
               label={`${quarter}-chorak · ${week}-hafta`}
               onPrev={() => step(-1)}
               onNext={() => step(1)}
+              disabledPrev={index <= 0}
               disabledNext={index >= axis.length - 1}
             />
             <p className="mt-1 text-center text-[13px] opacity-70">
@@ -113,7 +114,7 @@ export function ScheduleTab({ meta }) {
                           lead={
                             <DateChip day={l.period} month="dars" tone={isToday ? 'brand' : 'neutral'} />
                           }
-                          title={`${l.className}${l.subGroup > 0 ? ` · ${l.subGroup}-guruh` : ''}`}
+                          title={lessonOwnerTitle(l)}
                           subtitle={l.subjectName}
                           right={
                             <span className="shrink-0 text-right text-[13px] font-semibold text-slate-500">

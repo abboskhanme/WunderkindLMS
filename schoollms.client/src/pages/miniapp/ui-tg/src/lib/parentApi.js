@@ -8,13 +8,11 @@
  * fayldagi funksiyalarni chaqiradi — yo'lni almashtirish har endpoint uchun
  * bitta qator.
  *
- * HAR FUNKSIYA `childId` NI OSHKORA OLADI. Bugungi backend ota-onani telefon
- * raqami orqali BITTA farzandga bog'laydi (`students.parent_phone`) va
- * `?studentId=` ni ota-ona uchun ATAYLAB e'tiborga olmaydi — begona bolaning
- * id'sini yozib qo'yishning oldini oladi. Ya'ni bugun bu parametr javobga
- * ta'sir qilmaydi, lekin ko'p farzandli bog'lanish (`guardians` jadvali)
- * kelganda ekranlar o'zgarmaydi: ular allaqachon "qaysi farzand" degan
- * savolga javob berib turibdi.
+ * HAR FUNKSIYA `childId` NI OSHKORA OLADI. Backend ota-ona uchun `?studentId=`
+ * ni vasiylik (`student_guardians`) bo'yicha tekshiradi: O'Z farzandi bo'lsa —
+ * o'sha farzand, begona id bo'lsa — jimgina e'tiborsiz qoladi
+ * (`GuardianAccess.ParentTargetAsync`). Ya'ni farzand almashtirgich har tabda
+ * haqiqatan tanlangan farzandning ma'lumotini ko'rsatadi.
  */
 import { api, ApiError, tokenStore } from './api'
 
@@ -38,28 +36,44 @@ function forChild(childId, extra = '') {
  * tablar ham farqni sezmaydi; ro'yxat bittaga qisqarsa almashtirgich o'zi
  * ko'rinmay qoladi.
  *
- * FAQAT "endpoint yo'q" xatosida orqaga qaytamiz: 401 yoki 500 da qaytish
- * haqiqiy nosozlikni yashirgan bo'lardi.
+ * ESKI YO'LGA UCH HOLATDA tushamiz: endpoint yo'q (404/405); hisob o'quvchiniki
+ * (403 — `/tg/parent/*` faqat ota-onaga ochiq, bu panel esa o'quvchiga ham
+ * xizmat qiladi va ko'p ota-onalar farzandining login'i bilan kiradi); ro'yxat
+ * bo'sh (vasiylik yozilmagan, lekin telefon bo'yicha eski bog'lanish bor).
+ * 401 yoki 500 da qaytish haqiqiy nosozlikni yashirgan bo'lardi.
+ *
+ * `role` berilsa va u o'quvchi bo'lsa, keraksiz 403 so'rovi umuman yuborilmaydi.
  */
-export async function listChildren() {
-  try {
-    const body = await api.get('/tg/parent/children')
-    // Shartnoma hali e'lon qilinmagan: ro'yxat to'g'ridan-to'g'ri ham,
-    // `{ children: [...] }` ichida ham kelishi mumkin. Ikkalasini ham
-    // qabul qilamiz — mos kelmagan javob ekranni yiqitmasin.
-    const rows = Array.isArray(body) ? body : (body?.children ?? [])
-    return rows.map((c) => ({
-      id: c.id ?? c.studentId,
-      fullName: c.fullName,
-      className: c.className ?? '',
-    }))
-  } catch (e) {
-    const missing = e instanceof ApiError && (e.status === 404 || e.status === 405)
-    if (!missing) throw e
+export async function listChildren(role) {
+  if (role !== 'student') {
+    try {
+      const body = await api.get('/tg/parent/children')
+      // Shartnoma hali e'lon qilinmagan: ro'yxat to'g'ridan-to'g'ri ham,
+      // `{ children: [...] }` ichida ham kelishi mumkin. Ikkalasini ham
+      // qabul qilamiz — mos kelmagan javob ekranni yiqitmasin.
+      const rows = Array.isArray(body) ? body : (body?.children ?? [])
+      if (rows.length > 0) {
+        return rows.map((c) => ({
+          id: c.id ?? c.studentId,
+          fullName: c.fullName,
+          className: c.className ?? '',
+        }))
+      }
+    } catch (e) {
+      const fallback = e instanceof ApiError && [403, 404, 405].includes(e.status)
+      if (!fallback) throw e
+    }
   }
 
-  const me = await api.get('/student/me')
-  return me ? [{ id: me.id, fullName: me.fullName, className: me.className ?? '' }] : []
+  try {
+    const me = await api.get('/student/me')
+    return me ? [{ id: me.id, fullName: me.fullName, className: me.className ?? '' }] : []
+  } catch (e) {
+    // Hech qaysi yo'l bilan bog'langan farzand yo'q — bu xato emas, bo'sh holat:
+    // qobiq "Farzand biriktirilmagan" deb sababini tushuntiradi.
+    if (e instanceof ApiError && e.status === 404) return []
+    throw e
+  }
 }
 
 /* -------------------------------------------------------------- ko'rinish */
@@ -81,6 +95,22 @@ export async function getShowLearningProgress() {
   } catch {
     return true
   }
+}
+
+/* ----------------------------------------------------------------- Profil */
+
+/**
+ * Profil ekrani: kim (ism, rol, maktab), qaysi Telegram ulangan va farzandlar
+ * (sinf, qarindoshlik, asosiy vasiymi, qarz) — `/api/tg/me` dan; login esa
+ * `/api/auth/me` dan (u yo'q bo'lsa profil baribir ochiladi, faqat login qatori
+ * chiqmaydi).
+ */
+export async function getProfile() {
+  const [me, account] = await Promise.all([
+    api.get('/tg/me'),
+    api.get('/auth/me').catch(() => null),
+  ])
+  return { ...me, login: account?.email ?? null }
 }
 
 /* ------------------------------------------------------------------- Bosh */
@@ -241,6 +271,15 @@ export async function downloadReceipt(childId, paymentId, receiptNo) {
   // Darrov bekor qilsak fayl yuklanmay qoladi — nusxa ko'chirilguncha turadi.
   window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
 }
+
+/**
+ * Chekni foydalanuvchining O'Z Telegram chatiga yuboradi (bot hujjat qilib).
+ *
+ * Telegram ichida `downloadReceipt` ishonchsiz: Android WebView blob yuklashni
+ * jimgina e'tiborsiz qoldiradi, iOS PDF'ni ilova ustida ochib yuboradi. Chatga
+ * kelgan faylni esa har qanday telefon ochadi va saqlaydi.
+ */
+export const sendReceiptToTelegram = (paymentId) => api.post(`/tg/receipts/${paymentId}/send`)
 
 /* ------------------------------------------------------------------ Ovqat */
 

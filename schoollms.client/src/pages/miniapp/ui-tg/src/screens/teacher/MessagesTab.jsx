@@ -18,7 +18,7 @@ import { useAsync } from '../../lib/useAsync'
 import { teacherApi } from '../../lib/teacherApi'
 import { markSeen, readSeen } from '../../lib/chatSeen'
 import { dayMonth } from '../../lib/format'
-import { haptic, showBackButton } from '../../lib/telegram'
+import { haptic, showBackButton, useKeyboardOpen } from '../../lib/telegram'
 import {
   AsyncBlock, STAFF_CHANNEL, channelBadge, channelSummaries, channelTitle,
 } from './shared'
@@ -167,6 +167,7 @@ function Conversation({ channel, label, profile, userId, onBack }) {
   // yuborilgan xabarning javobidan bilib olamiz.
   const [myUserId, setMyUserId] = useState(userId)
   const bottomRef = useRef(null)
+  const keyboardOpen = useKeyboardOpen()
 
   const messages = useMemo(() => {
     const base = q.data || []
@@ -277,10 +278,16 @@ function Conversation({ channel, label, profile, userId, onBack }) {
 
       {sendError && <p className="mx-6 mt-2 text-[13px] font-medium text-red-600">{sendError}</p>}
 
-      {/* Yozish paneli tab panelining ustida turadi. */}
+      {/* Yozish paneli tab panelining ustida turadi; klaviatura ochilganda tab
+          paneli yashirinadi (`TabBar`) va yozish paneli eng pastga tushadi. */}
       <div className="h-24" />
       <div ref={bottomRef} />
-      <div className="fixed inset-x-0 bottom-[calc(76px+var(--tg-safe-bottom))] z-10 flex items-center gap-2 border-t border-slate-200 bg-white px-3 py-2.5">
+      <div
+        className={
+          'fixed inset-x-0 z-10 flex items-center gap-2 border-t border-slate-200 bg-white px-3 py-2.5 ' +
+          (keyboardOpen ? 'bottom-0' : 'bottom-[calc(76px+var(--tg-safe-bottom))]')
+        }
+      >
         <input
           value={text}
           onChange={(e) => setText(e.target.value)}
@@ -290,12 +297,18 @@ function Conversation({ channel, label, profile, userId, onBack }) {
               void send()
             }
           }}
+          enterKeyHint="send"
           placeholder="Xabar yozing…"
-          className="min-w-0 flex-1 rounded-2xl bg-slate-100 px-4 py-2.5 text-[15px] outline-none placeholder:text-slate-400"
+          // 16 px: kichikroq shriftda iOS maydonni fokuslaganda sahifani kattalashtiradi.
+          className="min-w-0 flex-1 rounded-2xl bg-slate-100 px-4 py-2.5 text-[16px] outline-none placeholder:text-slate-400"
         />
         <button
           type="button"
           onClick={send}
+          // Bosilganda maydon fokusni yo'qotmasin: aks holda klaviatura yopilib,
+          // panel siljiydi va barmoq tugmaga emas, bo'sh joyga tushadi.
+          onPointerDown={(e) => e.preventDefault()}
+          onMouseDown={(e) => e.preventDefault()}
           disabled={sending || !text.trim()}
           aria-label="Yuborish"
           className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-brand text-brand-ink disabled:bg-slate-200 disabled:text-slate-400"
@@ -331,9 +344,11 @@ function Bubble({ message, mine, showDay, showAuthor }) {
               </span>
             </p>
           )}
+          {/* pre-wrap — xabardagi qator ko'chishlari saqlansin; break-words — uzun
+              havola pufakchani ekrandan tashqariga cho'zmasin. */}
           <div
             className={
-              'rounded-2xl px-3.5 py-2 text-[15px] leading-snug ' +
+              'whitespace-pre-wrap break-words rounded-2xl px-3.5 py-2 text-[15px] leading-snug ' +
               (mine ? 'bg-brand text-brand-ink' : 'bg-white text-brand-ink')
             }
           >

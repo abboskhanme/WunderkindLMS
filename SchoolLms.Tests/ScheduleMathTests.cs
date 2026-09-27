@@ -163,4 +163,27 @@ public class ScheduleMathTests
     [InlineData("01.09.2026", "31.10.2026")] // ISO emas
     public void Notogri_oraliq_bosh_royxat(string start, string end) =>
         Assert.Empty(ScheduleMath.GetQuarterWeeks(start, end));
+
+    // =====================================================================
+    //  Joriy hafta — `PortalSchedule.WeekOf`
+    // =====================================================================
+
+    /// <summary>
+    /// Haftalar Du–Sha, ya'ni YAKSHANBA hech qaysi oraliqqa kirmaydi. U o'zidan
+    /// oldingi dushanbadan boshlangan haftaga tegishli. Ilgari bu holatda
+    /// 1-hafta qaytardi — har yakshanba Mini App jadvali chorak boshiga sakrardi.
+    /// 1-chorak 2026-09-01 (seshanba) — 1-hafta 1..5-sentyabr, 4-hafta 21..26-sentyabr.
+    /// </summary>
+    [Theory]
+    [InlineData("2026-09-01", 1)] // chorakning birinchi kuni
+    [InlineData("2026-09-26", 4)] // shanba
+    [InlineData("2026-09-27", 4)] // yakshanba — 1 emas
+    [InlineData("2026-09-28", 5)] // dushanba
+    [InlineData("2026-10-30", 9)] // chorakning oxirgi kuni (juma)
+    public void Joriy_hafta_yakshanbada_birinchi_haftaga_sakramaydi(string today, int expected)
+    {
+        var weeks = ScheduleMath.GetQuarterWeeks("2026-09-01", "2026-10-30");
+
+        Assert.Equal(expected, PortalSchedule.WeekOf(weeks, today));
+    }
 }

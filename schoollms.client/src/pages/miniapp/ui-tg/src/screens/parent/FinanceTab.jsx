@@ -19,13 +19,13 @@
  */
 import { useState } from 'react'
 import {
-  ChevronDown, ChevronRight, FileDown, ReceiptText, TriangleAlert, Wallet,
+  ChevronDown, ChevronRight, FileDown, ReceiptText, Send, TriangleAlert, Wallet,
 } from 'lucide-react'
 import { Badge, Card, EmptyState, Row } from '../../components/ui'
 import { useAsync } from '../../lib/useAsync'
 import { dateTime, dayMonth, money, sum } from '../../lib/format'
-import { haptic } from '../../lib/telegram'
-import { downloadReceipt, getBilling } from '../../lib/parentApi'
+import { haptic, inTelegram } from '../../lib/telegram'
+import { downloadReceipt, getBilling, sendReceiptToTelegram } from '../../lib/parentApi'
 import { AsyncBlock, balanceText, lineStatus, methodLabel, monthLabel } from './shared'
 import { parseISO } from './weeks'
 
@@ -204,6 +204,7 @@ function PaymentsCard({ childId, payments }) {
   const [open, setOpen] = useState(() => new Set())
   const [busy, setBusy] = useState(null)
   const [error, setError] = useState(null)
+  const [sent, setSent] = useState(null)
 
   const toggle = (id) => {
     haptic('light')
@@ -218,8 +219,15 @@ function PaymentsCard({ childId, payments }) {
   const take = async (p) => {
     setBusy(p.paymentId)
     setError(null)
+    setSent(null)
     try {
-      await downloadReceipt(childId, p.paymentId, p.receiptNo)
+      // Telegram ichida — chatga; brauzerda — oddiy yuklab olish.
+      if (inTelegram) {
+        await sendReceiptToTelegram(p.paymentId)
+        setSent(p.paymentId)
+      } else {
+        await downloadReceipt(childId, p.paymentId, p.receiptNo)
+      }
       haptic('medium')
     } catch (e) {
       // Xato AYNAN shu to'lov ostida chiqsin — ro'yxatda o'nta chek bo'lishi mumkin.
@@ -315,9 +323,16 @@ function PaymentsCard({ childId, payments }) {
                   disabled={busy === p.paymentId}
                   className="mt-3 flex w-full items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white py-3 text-[14px] font-semibold disabled:opacity-50"
                 >
-                  <FileDown className="h-4 w-4" />
-                  {busy === p.paymentId ? 'Yuklanmoqda…' : 'Chekni yuklab olish (PDF)'}
+                  {inTelegram ? <Send className="h-4 w-4" /> : <FileDown className="h-4 w-4" />}
+                  {busy === p.paymentId
+                    ? inTelegram ? 'Yuborilmoqda…' : 'Yuklanmoqda…'
+                    : inTelegram ? 'Chekni Telegramga yuborish (PDF)' : 'Chekni yuklab olish (PDF)'}
                 </button>
+                {sent === p.paymentId && (
+                  <p className="mt-2 text-[12px] text-emerald-700">
+                    Chek Telegram chatingizga yuborildi — bot bilan suhbatni oching.
+                  </p>
+                )}
                 {error?.id === p.paymentId && (
                   <p className="mt-2 text-[12px] text-red-600">{error.message}</p>
                 )}

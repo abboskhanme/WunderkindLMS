@@ -368,6 +368,60 @@ public class TelegramMiniAppTests(ApiFixture fixture)
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
+    /// <summary>
+    /// Mini App'dagi "Chiqish": bitta hisobga ota ham, ona ham bog'langan
+    /// bo'lishi mumkin. Imzo sarlavhada kelsa FAQAT shu Telegram uziladi;
+    /// soxta imzo hech narsani uzmaydi; sarlavhasiz chaqiruv — avvalgidek hammasi.
+    /// </summary>
+    [Fact]
+    public async Task Chiqish_faqat_shu_telegramni_uzadi()
+    {
+        var (parent, _) = await fixture.Api.SeedUserAsync("parent");
+        var father = NewTelegramId();
+        var mother = NewTelegramId();
+        await fixture.Api.WithDbAsync(async db =>
+        {
+            foreach (var id in new[] { father, mother })
+                db.TelegramAccounts.Add(new TelegramAccount
+                {
+                    TelegramUserId = id, UserId = parent.Id, DisplayName = "Test " + id,
+                });
+            await db.SaveChangesAsync();
+        });
+
+        using var client = ClientWithToken(
+            fixture.Api.TokenFor("parent", parent.Id, parent.FullName, parent.Email));
+
+        async Task<HttpStatusCode> UnlinkAsync(string? initData)
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Delete, "/api/tg/link");
+            if (initData is not null) request.Headers.Add("X-Telegram-Init-Data", initData);
+            return (await client.SendAsync(request)).StatusCode;
+        }
+
+        async Task<List<long>> LinkedAsync()
+        {
+            var ids = new List<long>();
+            await fixture.Api.WithDbAsync(async db => ids = await db.TelegramAccounts
+                .Where(a => a.UserId == parent.Id).Select(a => a.TelegramUserId).ToListAsync());
+            return ids;
+        }
+
+        // Soxta imzo — 400 va hech kim uzilmaydi.
+        var forged = TelegramInitData.Sign(InitFields(father), "999:BEGONA-BOT-TOKEN");
+        Assert.Equal(HttpStatusCode.BadRequest, await UnlinkAsync(forged));
+        Assert.Equal(2, (await LinkedAsync()).Count);
+
+        // Otaning imzosi — faqat ota chiqadi, ona qoladi.
+        Assert.Equal(HttpStatusCode.NoContent,
+            await UnlinkAsync(TelegramInitData.Sign(InitFields(father), BotToken)));
+        Assert.Equal(new[] { mother }, await LinkedAsync());
+
+        // Sarlavhasiz — eski xulq: qolgani ham uziladi.
+        Assert.Equal(HttpStatusCode.NoContent, await UnlinkAsync(null));
+        Assert.Empty(await LinkedAsync());
+    }
+
     // =====================================================================
     //  Yordamchilar
     // =====================================================================

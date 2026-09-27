@@ -220,10 +220,6 @@ public sealed class PortalFinanceController(
     /// (<c>GET /api/tg/parent/children/{id}/finance</c>) AYNAN shu javob shaklini
     /// qaytaradi. Ikkinchi nusxa yozilsa ikkita "ota-ona moliyasi" paydo bo'lardi
     /// va ular jamlarni bir xil qo'shishiga hech qanday kafolat qolmasdi.
-    /// Mini App'ga alohida endpoint kerak bo'lgani BOSHQA sabab: bu yerdagi
-    /// <see cref="ResolveAsync"/> ota-ona uchun <c>?studentId=</c> ni ATAYLAB
-    /// e'tiborsiz qoldiradi va telefon bo'yicha BIRINCHI farzandni topadi —
-    /// ikki farzandli ota-onaga ikkinchisi ko'rinmaydi.
     /// </para>
     /// </summary>
     internal static PortalFinanceDto ToPortal(StudentBillingDto card)
@@ -307,17 +303,15 @@ public sealed class PortalFinanceController(
     private readonly record struct Target(string? StudentId, ActionResult? Error);
 
     /// <summary>
-    /// SPEC §4.4 ruhida: MA'LUMOT EGASINI SERVER ANIQLAYDI. O'quvchi va ota-ona
-    /// uchun <c>?studentId=</c> butunlay E'TIBORGA OLINMAYDI — aks holda ota-ona
-    /// begona bola id'sini yozib, uning qarzini ko'rardi.
+    /// SPEC §4.4 ruhida: MA'LUMOT EGASINI SERVER ANIQLAYDI. O'quvchi uchun
+    /// <c>?studentId=</c> butunlay E'TIBORGA OLINMAYDI; ota-ona uchun esa u faqat
+    /// O'Z farzandini nomlasa hurmat qilinadi, begona id jimgina e'tiborsiz
+    /// qoladi — aks holda ota-ona begona bola id'sini yozib, uning qarzini ko'rardi.
     ///
     /// <para>
-    /// Ota-ona bog'lanishi bugungi kunda telefon raqami orqali
-    /// (<c>users.email</c> = login = telefon ↔ <c>students.parent_phone</c>) —
-    /// aynan <c>StudentPortalController.TargetAsync</c> dagi qoida. Ikki nusxa
-    /// bo'lib qolgani <c>docs/PENDING_WIRING.md</c> da yozilgan: SPEC §3.2
-    /// dagi ko'p-ko'pga bog'lanish kelganda ikkalasi ham shu yagona joyga
-    /// o'tishi kerak.
+    /// Ota-onaning farzandi <see cref="GuardianAccess.ParentTargetAsync"/> dan —
+    /// <c>StudentPortalController.TargetAsync</c> bilan BITTA qoida: avval
+    /// vasiylik (<c>student_guardians</c>), keyin eski telefon yo'li.
     /// </para>
     /// </summary>
     private async Task<Target> ResolveAsync(string? studentId, CancellationToken ct)
@@ -338,22 +332,14 @@ public sealed class PortalFinanceController(
 
         if (uid is null) return new Target(null, Unauthorized());
 
+        // Vasiylik birinchi, telefon — eski yo'l (`GuardianAccess.ParentTargetAsync`):
+        // ko'p farzandli ota-onaning `?studentId=` i faqat O'Z farzandi bo'lsa hurmat qilinadi.
         if (User.IsInRole("parent"))
         {
-            var login = await db.Users.AsNoTracking()
-                .Where(u => u.Id == uid).Select(u => u.Email).FirstOrDefaultAsync(ct);
-            var phone = OnlyDigits(login);
-            if (phone.Length == 0)
-                return new Target(null, NotFound(new { message = "Farzand topilmadi" }));
-
-            var child = await db.Students.AsNoTracking()
-                .Where(s => !s.IsArchived)
-                .Select(s => new { s.Id, s.ParentPhone })
-                .ToListAsync(ct);
-            var match = child.FirstOrDefault(s => OnlyDigits(s.ParentPhone) == phone);
-            return match is null
+            var child = await new GuardianAccess(db).ParentTargetAsync(uid, studentId, ct);
+            return child is null
                 ? new Target(null, NotFound(new { message = "Farzand topilmadi" }))
-                : new Target(match.Id, null);
+                : new Target(child.Id, null);
         }
 
         var own = await db.Students.AsNoTracking()
@@ -362,9 +348,6 @@ public sealed class PortalFinanceController(
             ? new Target(null, NotFound(new { message = "O'quvchi topilmadi" }))
             : new Target(own, null);
     }
-
-    private static string OnlyDigits(string? value) =>
-        new([.. (value ?? string.Empty).Where(char.IsDigit)]);
 
     // =====================================================================
     //  Xizmatlar — DI'siz (docs/PENDING_WIRING.md §3a namunasi)

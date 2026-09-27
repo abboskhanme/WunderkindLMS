@@ -62,6 +62,7 @@ export function SalaryTab({ meta }) {
               label={labelOf(ym)}
               onPrev={() => step(-1)}
               onNext={() => step(1)}
+              disabledPrev={index <= 0}
               disabledNext={index >= axis.length - 1}
             />
             {month && (
