@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using SchoolLms.Application.Abstractions;
 using SchoolLms.Domain;
 using System.Text.Json;
@@ -10,14 +11,29 @@ namespace SchoolLms.Application.Services;
 /// telefon raqamini ulashganda, raqam o'quvchining ParentPhone'i bilan (oxirgi 9 raqam bo'yicha)
 /// solishtirilib, TelegramRegistration yoziladi — keyin shu sinf e'lonlari shu chatga boradi.
 /// Token sozlanmagan bo'lsa xizmat darrov to'xtaydi (ilova baribir ishlaydi).
+///
+/// <para>
+/// PANEL ENTRY (client, 2026-09-28): not the Mini App menu button but a persistent keyboard
+/// button "🏫 Panelni ochish" inside the bot, for everyone (staff, teachers, parents). A linked
+/// account gets it on /start (and once at start-up, see <see cref="SendMissingPanelKeyboardsAsync"/>);
+/// an unlinked chat gets an inline "🔐 Panelga kirish" that carries <c>initData</c> so the Mini
+/// App can link the account — the keyboard follows from <c>TelegramAuthController</c>.
+/// Details and the key's safety rules: <see cref="TelegramPanelKeys"/>.
+/// </para>
 /// </summary>
 public class TelegramBotService(
     IServiceProvider sp, TelegramService telegram, ILogger<TelegramBotService> logger) : BackgroundService
 {
+    /// <summary>Mini App address for the buttons; null — none sent. Tests set it (no public URL there).</summary>
+    public string? MiniAppUrl { get; set; } = TelegramPanelKeys.MiniAppUrl(sp.GetService<IConfiguration>());
+
+    private const string PanelHint = "Panelni ochish uchun pastdagi «🏫 Panelni ochish» tugmasini bosing.";
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         long offset = 0;
         var announced = false;
+        var prepared = false;
         while (!stoppingToken.IsCancellationRequested)
         {
             // Token sozlanmagan bo'lsa kutamiz — admin keyin sozlamadan qo'shsa, bot o'zi ishga tushadi.
@@ -31,6 +47,11 @@ public class TelegramBotService(
             {
                 logger.LogInformation("Telegram bot ishga tushdi (long polling).");
                 announced = true;
+            }
+            if (!prepared)
+            {
+                prepared = true;
+                await PrepareAsync(stoppingToken);
             }
 
             try
@@ -64,6 +85,52 @@ public class TelegramBotService(
         catch (OperationCanceledException) { return false; }
     }
 
+    /// <summary>
+    /// Once per start: the Mini App menu button goes (the keyboard replaces it) and every linked
+    /// account that has never had the keyboard gets it. Failures are logged, never fatal.
+    /// </summary>
+    private async Task PrepareAsync(CancellationToken ct)
+    {
+        try
+        {
+            if (MiniAppUrl is null)
+            {
+                logger.LogWarning("Telegram: Mini App manzili sozlanmagan ({Key}) — panel tugmasi yuborilmaydi",
+                    TelegramPanelKeys.MiniAppUrlKey);
+                return;
+            }
+            if (!await telegram.UseCommandsMenuButtonAsync(ct))
+                logger.LogWarning("Telegram: menyu tugmasini almashtirib bo'lmadi");
+            var sent = await SendMissingPanelKeyboardsAsync(ct);
+            if (sent > 0) logger.LogInformation("Telegram: {Count} ta akkauntga panel tugmasi yuborildi", sent);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(ex, "Telegram: panel tugmasini tayyorlashda xato");
+        }
+    }
+
+    /// <summary>
+    /// Every linked account without a panel key yet gets the keyboard — the one-time rollout
+    /// when the menu button goes away, and later a catch-up for anyone missed. Returns messages sent.
+    /// </summary>
+    public async Task<int> SendMissingPanelKeyboardsAsync(CancellationToken ct = default)
+    {
+        using var scope = sp.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<IAppDbContext>();
+        var accounts = await db.TelegramAccounts.Where(a => a.PanelKeyIssuedAt == null).ToListAsync(ct);
+        var sent = 0;
+        foreach (var account in accounts)
+        {
+            if (await TelegramPanelKeys.SendKeyboardAsync(db, telegram, MiniAppUrl, account,
+                    "Panel endi shu yerda: pastdagi «🏫 Panelni ochish» tugmasini bosing — login va parol shart emas.", ct))
+                sent++;
+            // Telegram: ~30 messages/s per bot — a small gap keeps a big school well under it.
+            await Task.Delay(50, ct);
+        }
+        return sent;
+    }
+
     /// <summary>Bitta update. Testlar to'g'ridan-to'g'ri chaqiradi (polling'siz).</summary>
     public async Task HandleUpdateAsync(JsonElement upd, CancellationToken ct)
     {
@@ -88,7 +155,20 @@ public class TelegramBotService(
         }
 
         var text = msg.TryGetProperty("text", out var t) ? t.GetString() ?? "" : "";
-        if (text.StartsWith("/start"))
+        var start = text.StartsWith("/start");
+
+        // Linked account → the panel keyboard (a fresh key every time).
+        using (var scope = sp.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<IAppDbContext>();
+            var account = await db.TelegramAccounts.FirstOrDefaultAsync(a => a.TelegramUserId == chatId, ct);
+            if (account is not null
+                && await TelegramPanelKeys.SendKeyboardAsync(db, telegram, MiniAppUrl, account,
+                    start ? "Assalomu alaykum! " + PanelHint : PanelHint, ct))
+                return;
+        }
+
+        if (start)
         {
             await telegram.SendMessageAsync(chatId,
                 "Assalomu alaykum! Maktab e'lonlari va shartnomalarini olish uchun telefon raqamingizni " +
@@ -100,6 +180,13 @@ public class TelegramBotService(
             await telegram.SendMessageAsync(chatId,
                 "Iltimos, pastdagi tugma orqali telefon raqamingizni ulashing.", ContactKeyboard, ct);
         }
+        // Not linked yet: an inline web_app button carries `initData`, so the Mini App can link the
+        // account; the keyboard then arrives by itself (TelegramAuthController).
+        if (MiniAppUrl is { } url)
+            await telegram.SendMessageAsync(chatId,
+                "Panelga kirish uchun shu tugmani bosing va login-parolingizni bir marta kiriting. " +
+                "Keyin panel pastdagi «🏫 Panelni ochish» tugmasidan ochiladi.",
+                TelegramPanelKeys.SignInButton(url), ct);
     }
 
     private async Task RegisterByPhoneAsync(long chatId, string? phone, string senderName, CancellationToken ct)
@@ -167,9 +254,15 @@ public class TelegramBotService(
             return;
         }
 
-        await telegram.SendMessageAsync(chatId,
-            "✅ Ro'yxatdan o'tdingiz. Endi quyidagilar bo'yicha e'lon va shartnomalarni olasiz:\n• " +
-            string.Join("\n• ", linked), RemoveKeyboard, ct);
+        var registered = "✅ Ro'yxatdan o'tdingiz. Endi quyidagilar bo'yicha e'lon va shartnomalarni olasiz:\n• " +
+                         string.Join("\n• ", linked);
+        // A linked account keeps its panel button (the phone row is gone now); otherwise the
+        // phone keyboard simply closes.
+        var account = await db.TelegramAccounts.FirstOrDefaultAsync(a => a.TelegramUserId == chatId, ct);
+        if (account is not null
+            && await TelegramPanelKeys.SendKeyboardAsync(db, telegram, MiniAppUrl, account, registered, ct))
+            return;
+        await telegram.SendMessageAsync(chatId, registered, RemoveKeyboard, ct);
     }
 
     /// <summary>

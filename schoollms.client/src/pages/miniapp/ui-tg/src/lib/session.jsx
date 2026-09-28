@@ -7,10 +7,14 @@
  *
  * Sahifadagi `initDataUnsafe` dan foydalanuvchi kimligi OLINMAYDI: uni har
  * kim o'zgartira oladi. Kimligini faqat server aytadi.
+ *
+ * BOTDAGI "🏫 Panelni ochish" TUGMASI (2026-09-28): u yerdan ochilganda `initData`
+ * bo'lmaydi — o'rniga manzildagi shaxsiy kalit (`lib/panelKey.js`) almashtiriladi.
  */
 import { createContext, useCallback, useContext, useEffect, useState } from 'react'
 import { api, setUnauthorizedHandler, tokenStore } from './api'
 import { bootstrap, initData, inTelegram } from './telegram'
+import { panelKey } from './panelKey'
 
 const SessionContext = createContext(null)
 
@@ -20,6 +24,23 @@ export function SessionProvider({ children }) {
 
   const authenticate = useCallback(async () => {
     if (!inTelegram) {
+      if (panelKey) {
+        // Botdagi pastki tugma: imzo yo'q, lekin bot manzilga shaxsiy kalit qo'ygan.
+        setState({ status: 'loading', user: null, error: null })
+        try {
+          const res = await api.post('/tg/auth/key', { key: panelKey })
+          tokenStore.set(res.token)
+          setState({ status: 'ready', user: res.user, error: null })
+        } catch (e) {
+          const stale = e.code === 'panel_key_invalid'
+          setState({
+            status: 'error',
+            user: null,
+            error: stale ? 'Tugma eskirgan. Botda /start ni bosing — yangi tugma keladi.' : e.message,
+          })
+        }
+        return
+      }
       // Brauzerda ochilgan: imzo yo'q, ya'ni kim ekanini isbotlab bo'lmaydi.
       setState({ status: 'outside', user: null, error: null })
       return
@@ -75,9 +96,12 @@ export function SessionProvider({ children }) {
    * va ilova login ekraniga qaytadi.
    */
   const logout = useCallback(async () => {
-    if (inTelegram) {
+    if (inTelegram || panelKey) {
+      // Qaysi Telegram chiqayotganini imzo yoki (pastki tugmadan ochilganda) kalit aytadi —
+      // "hammasini uzish" emas: ota chiqsa, onaning Telegram'i bog'langanicha qoladi.
+      const who = inTelegram ? { 'X-Telegram-Init-Data': initData } : { 'X-Telegram-Panel-Key': panelKey }
       try {
-        await api.del('/tg/link', { 'X-Telegram-Init-Data': initData })
+        await api.del('/tg/link', who)
       } catch (e) {
         // 404 — bog'lanish allaqachon yo'q: chiqish baribir bajarilgan.
         if (e.status !== 404) throw e

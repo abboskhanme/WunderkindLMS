@@ -171,6 +171,28 @@ public class TelegramService(
     }
 
     /// <summary>
+    /// The bot-wide default menu button becomes the plain "commands" menu (client, 2026-09-28: the
+    /// panel opens from the "🏫 Panelni ochish" keyboard button, not a Mini App menu button). No
+    /// <c>chat_id</c> — the default every chat without its own override shows. Success — true.
+    /// </summary>
+    public async Task<bool> UseCommandsMenuButtonAsync(CancellationToken ct = default)
+    {
+        if (!IsConfigured) return false;
+        try
+        {
+            var payload = new { menu_button = new { type = "commands" } };
+            using var content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
+            var resp = await Client().PostAsync($"{ApiBase}/setChatMenuButton", content, ct);
+            return resp.IsSuccessStatusCode;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(ex, "Telegram setChatMenuButton xatosi");
+            return false;
+        }
+    }
+
+    /// <summary>
     /// getUpdates (long polling). Telegram javobidagi "result" massivini (xom JSON) qaytaradi.
     /// Token yo'q yoki xato bo'lsa — null.
     /// </summary>

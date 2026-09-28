@@ -66,10 +66,14 @@ public sealed class TelegramAuthController(
     JwtTokenService jwt,
     JwtOptions jwtOptions,
     TelegramService telegram,
+    IConfiguration config,
     ILogger<TelegramAuthController> logger) : ControllerBase
 {
     /// <summary>`initData` ni tanadan tashqari shu sarlavhada ham yuborish mumkin.</summary>
     private const string InitDataHeader = "X-Telegram-Init-Data";
+
+    /// <summary>Logout from a keyboard-launched Mini App names its Telegram by the panel key.</summary>
+    private const string PanelKeyHeader = "X-Telegram-Panel-Key";
 
     private TelegramLinkService Links => new(db);
 
@@ -112,6 +116,50 @@ public sealed class TelegramAuthController(
 
         var session = await SessionFactory.IssueAsync(db, jwt, user, ct);
         return Ok(new TgAuthResponse("ok", session.Token, session.User, Profile(tgUser), null));
+    }
+
+    /// <summary>
+    /// "🏫 Panelni ochish" keyboard button → session (client, 2026-09-28). Telegram gives a
+    /// keyboard-launched Mini App no <c>initData</c>; the bot put a personal key in the button URL
+    /// instead (<see cref="TelegramPanelKeys"/>). Unknown, replaced or expired key → 401
+    /// <c>panel_key_invalid</c> ("/start" in the bot gives a fresh button).
+    /// </summary>
+    [HttpPost("auth/key")]
+    [AllowAnonymous]
+    [EnableRateLimiting("telegram")]
+    public async Task<ActionResult<TgAuthResponse>> AuthByPanelKey(TgPanelKeyRequest req, CancellationToken ct)
+    {
+        var account = await TelegramPanelKeys.ResolveAsync(db, req?.Key, ct);
+        var user = account is null ? null : await db.Users.FirstOrDefaultAsync(u => u.Id == account.UserId, ct);
+        if (account is null || user is null)
+            return Unauthorized(new { code = "panel_key_invalid", message = "Tugma eskirgan — botda /start ni bosing" });
+
+        if (await SessionFactory.IsBlockedAsync(db, user, ct))
+            return Unauthorized(new { code = "account_blocked", message = "Akkaunt arxivlangan yoki to'xtatilgan" });
+
+        account.LastSeenAt = AppClock.Now;
+        var session = await SessionFactory.IssueAsync(db, jwt, user, ct);
+        return Ok(new TgAuthResponse("ok", session.Token, session.User,
+            new TgTelegramUserDto(account.TelegramUserId.ToString(), account.DisplayName, account.Username), null));
+    }
+
+    /// <summary>
+    /// Just linked in the Mini App → the bot sends the "🏫 Panelni ochish" keyboard, so from now on
+    /// the panel opens from the chat. Never fails the sign-in: a send error is only logged.
+    /// </summary>
+    private async Task SendPanelKeyboardAsync(long telegramUserId, CancellationToken ct)
+    {
+        try
+        {
+            var account = await db.TelegramAccounts.FirstOrDefaultAsync(a => a.TelegramUserId == telegramUserId, ct);
+            if (account is not null)
+                await TelegramPanelKeys.SendKeyboardAsync(db, telegram, TelegramPanelKeys.MiniAppUrl(config), account,
+                    "✅ Hisobingiz ulandi. Endi panelni pastdagi «🏫 Panelni ochish» tugmasi orqali ochasiz.", ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(ex, "Panel tugmasi yuborilmadi: tg={TelegramUserId}", telegramUserId);
+        }
     }
 
     /// <summary>
@@ -170,6 +218,7 @@ public sealed class TelegramAuthController(
 
         ClearLinkTicket();
         var session = await SessionFactory.IssueAsync(db, jwt, user, ct);
+        await SendPanelKeyboardAsync(tgUser.Id, ct);
         return Ok(new TgAuthResponse("ok", session.Token, session.User, Profile(tgUser), null));
     }
 
@@ -213,6 +262,7 @@ public sealed class TelegramAuthController(
         ClearLinkTicket();
 
         var session = await SessionFactory.IssueAsync(db, jwt, user!, ct);
+        await SendPanelKeyboardAsync(tgUser.Id, ct);
         return Ok(new TgAuthResponse("ok", session.Token, session.User, Profile(tgUser), null));
     }
 
@@ -304,6 +354,16 @@ public sealed class TelegramAuthController(
                 });
             var telegramUserId = check.User!.Id;
             query = query.Where(a => a.TelegramUserId == telegramUserId);
+        }
+        else if (Request.Headers[PanelKeyHeader].ToString() is { Length: > 0 } panelKey)
+        {
+            // Opened from the "🏫 Panelni ochish" button (no initData): the key says WHICH Telegram
+            // is leaving — the same rule as above, never "unlink them all".
+            var keyAccount = await TelegramPanelKeys.ResolveAsync(db, panelKey, ct);
+            if (keyAccount is null || keyAccount.UserId != uid)
+                return BadRequest(new { code = "panel_key_invalid", message = "Tugma eskirgan — botda /start ni bosing" });
+            var keyId = keyAccount.Id;
+            query = query.Where(a => a.Id == keyId);
         }
 
         var accounts = await query.ToListAsync(ct);

@@ -7526,6 +7526,15 @@ namespace SchoolLms.Infrastructure.Migrations
                         .HasColumnType("text")
                         .HasColumnName("linked_by_user_id");
 
+                    b.Property<string>("PanelKeyHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("panel_key_hash");
+
+                    b.Property<DateTime?>("PanelKeyIssuedAt")
+                        .HasColumnType("timestamp without time zone")
+                        .HasColumnName("panel_key_issued_at");
+
                     b.Property<long>("TelegramUserId")
                         .HasColumnType("bigint")
                         .HasColumnName("telegram_user_id");
@@ -7544,6 +7553,10 @@ namespace SchoolLms.Infrastructure.Migrations
 
                     b.HasIndex("LinkedByUserId")
                         .HasDatabaseName("ix_telegram_accounts_linked_by_user_id");
+
+                    b.HasIndex("PanelKeyHash")
+                        .IsUnique()
+                        .HasDatabaseName("ix_telegram_accounts_panel_key_hash");
 
                     b.HasIndex("TelegramUserId")
                         .IsUnique()

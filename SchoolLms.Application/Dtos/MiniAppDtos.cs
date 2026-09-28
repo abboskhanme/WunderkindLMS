@@ -39,6 +39,9 @@ public record TgLinkRequest(string Code, string? InitData = null);
 /// </summary>
 public record TgLoginLinkRequest(string Login, string Password, string? InitData = null);
 
+/// <summary>`POST /api/tg/auth/key` — the key from the "🏫 Panelni ochish" button URL (`?k=`).</summary>
+public record TgPanelKeyRequest(string? Key);
+
 /// <summary>Imzosi tekshirilgan Telegram foydalanuvchisi (bog'lash ekranida ko'rsatiladi).</summary>
 public record TgTelegramUserDto(string Id, string DisplayName, string? Username);
 

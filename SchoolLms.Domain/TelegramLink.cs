@@ -48,6 +48,17 @@ public class TelegramAccount
 
     /// <summary>Oxirgi muvaffaqiyatli Mini App kirishi — "kim ishlatyapti" ko'rinishi uchun.</summary>
     public DateTime LastSeenAt { get; set; } = AppClock.Now;
+
+    /// <summary>
+    /// SHA-256 (hex) of the personal key behind the bot's "🏫 Panelni ochish" keyboard button
+    /// (client, 2026-09-28). Telegram gives a keyboard-launched Mini App no <c>initData</c>, so
+    /// the button URL carries <c>?k=</c>; only the hash is stored. A new keyboard = a new key
+    /// (the old one dies); deleting this row (unlink) kills it too. Null = none issued yet.
+    /// </summary>
+    public string? PanelKeyHash { get; set; }
+
+    /// <summary>When <see cref="PanelKeyHash"/> was issued — also "the keyboard was sent".</summary>
+    public DateTime? PanelKeyIssuedAt { get; set; }
 }
 
 /// <summary>

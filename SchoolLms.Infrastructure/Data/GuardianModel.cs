@@ -110,6 +110,10 @@ internal static class GuardianModel
             // oladigan bo'lib tursin") — unikal emas.
             e.HasIndex(x => x.UserId);
 
+            // "Panelni ochish" key lookup — by hash only (the key itself is never stored).
+            e.Property(x => x.PanelKeyHash).HasMaxLength(64);
+            e.HasIndex(x => x.PanelKeyHash).IsUnique();
+
             // Akkaunt o'chsa bog'lanish ham ketadi — bog'lanish akkauntsiz ma'nosiz.
             e.HasOne<AppUser>().WithMany().HasForeignKey(x => x.UserId)
                 .OnDelete(DeleteBehavior.Cascade);
