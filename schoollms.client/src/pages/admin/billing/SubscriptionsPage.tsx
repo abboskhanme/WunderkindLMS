@@ -9,10 +9,14 @@
  * frontend hisoblamaydi. Obunalar yig'indisi kerak bo'lganda uni server
  * beradi (o'quvchining moliyaviy kartochkasi, P1-09), bu yerda `reduce`
  * bilan yasalmaydi.
+ *
+ * ABONEMENT (docs/modules/billing-plans.md §6): each row shows the plan name (the
+ * category name for subscriptions opened before plans existed) and the list can be
+ * filtered by plan. Plans are an addition — if they fail to load, the page works as before.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { CalendarOff, Pencil, Plus, Users } from 'lucide-react'
-import type { FeeCategory } from '@/types'
+import type { FeeCategory, SubscriptionPlan } from '@/types'
 import type {
   SubscriptionInput,
   SubscriptionRecord,
@@ -22,6 +26,7 @@ import {
   createSubscription,
   endSubscription,
   getFeeCategories,
+  getSubscriptionPlans,
   getSubscriptions,
   updateSubscription,
 } from '@/api/services/billingCatalog'
@@ -37,6 +42,7 @@ import { EndSubscriptionModal } from './EndSubscriptionModal'
 import { StudentSelect } from './StudentSelect'
 import { SubscriptionFormModal } from './SubscriptionFormModal'
 import { useStudentsIndex } from './useStudents'
+import { groupPlansByType } from './planUtils'
 
 export function SubscriptionsPage() {
   return (
@@ -51,6 +57,9 @@ interface StudentGroup {
   studentName: string
   rows: SubscriptionRecord[]
 }
+
+/** What the subscription is called: its abonement, or its category for pre-plan rows. */
+const subscriptionTitle = (row: SubscriptionRecord) => row.planName ?? row.categoryName
 
 function groupByStudent(rows: SubscriptionRecord[]): StudentGroup[] {
   const map = new Map<string, StudentGroup>()
@@ -70,11 +79,13 @@ function SubscriptionsView() {
 
   const [rows, setRows] = useState<SubscriptionRecord[]>([])
   const [categories, setCategories] = useState<FeeCategory[]>([])
+  const [plans, setPlans] = useState<SubscriptionPlan[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
   const [studentFilter, setStudentFilter] = useState('')
   const [categoryFilter, setCategoryFilter] = useState('')
+  const [planFilter, setPlanFilter] = useState('')
   const [activeOnly, setActiveOnly] = useState(true)
 
   const [formOpen, setFormOpen] = useState(false)
@@ -92,22 +103,28 @@ function SubscriptionsView() {
       getSubscriptions({
         studentId: studentFilter || undefined,
         categoryId: categoryFilter || undefined,
+        planId: planFilter || undefined,
         activeOnly,
       }),
       getFeeCategories(),
+      // Plans only add the filter and the plan picker; without them the page and the
+      // form fall back to the category flow instead of failing as a whole.
+      getSubscriptionPlans(false).catch((): SubscriptionPlan[] => []),
     ])
-      .then(([subs, cats]) => {
+      .then(([subs, cats, planList]) => {
         setRows(subs)
         setCategories(cats)
+        setPlans(planList)
       })
       .catch((e: unknown) => setError(billingErrorMessage(e, "Obunalarni yuklab bo'lmadi")))
       .finally(() => setLoading(false))
-  }, [studentFilter, categoryFilter, activeOnly])
+  }, [studentFilter, categoryFilter, planFilter, activeOnly])
 
   // eslint-disable-next-line react-hooks/set-state-in-effect -- filtr o'zgarganda qayta yuklash (FinancePage bilan bir xil naqsh)
   useEffect(() => load(), [load])
 
   const groups = useMemo(() => groupByStudent(rows), [rows])
+  const planGroups = useMemo(() => groupPlansByType(plans), [plans])
 
   const openCreate = (studentId?: string) => {
     setEditing(null)
@@ -129,7 +146,7 @@ function SubscriptionsView() {
     try {
       const created = await createSubscription(values)
       setFormOpen(false)
-      setNotice(`${created.studentName} — "${created.categoryName}" obunasi ochildi.`)
+      setNotice(`${created.studentName} — "${subscriptionTitle(created)}" obunasi ochildi.`)
       load()
     } catch (e: unknown) {
       setActionError(billingErrorMessage(e, "Obunani ochib bo'lmadi"))
@@ -146,7 +163,7 @@ function SubscriptionsView() {
       setRows((prev) => prev.map((r) => (r.id === updated.id ? updated : r)))
       setFormOpen(false)
       setEditing(null)
-      setNotice(`${updated.studentName} — "${updated.categoryName}" obunasi yangilandi.`)
+      setNotice(`${updated.studentName} — "${subscriptionTitle(updated)}" obunasi yangilandi.`)
     } catch (e: unknown) {
       setActionError(billingErrorMessage(e, "Obunani saqlab bo'lmadi"))
     } finally {
@@ -182,7 +199,7 @@ function SubscriptionsView() {
       const voidedNote =
         voidInvoiceIds.length > 0 ? ` (${voidInvoiceIds.length} ta kelajak oy bekor qilindi)` : ''
       setNotice(
-        `${ended.studentName} — "${ended.categoryName}" obunasi ${endsOn} sanasida yopildi${voidedNote}.`,
+        `${ended.studentName} — "${subscriptionTitle(ended)}" obunasi ${endsOn} sanasida yopildi${voidedNote}.`,
       )
       load()
     } catch (e: unknown) {
@@ -212,7 +229,7 @@ function SubscriptionsView() {
       {actionError && !formOpen && !ending && <Notice>{actionError}</Notice>}
 
       <Card>
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
           <StudentSelect
             options={students.options}
             loading={students.loading}
@@ -232,6 +249,22 @@ function SubscriptionsView() {
               <option key={c.id} value={c.id}>
                 {c.name}
               </option>
+            ))}
+          </Select>
+          <Select
+            label="Abonement bo'yicha"
+            value={planFilter}
+            onChange={(e) => setPlanFilter(e.target.value)}
+          >
+            <option value="">Barcha abonementlar</option>
+            {planGroups.map((group) => (
+              <optgroup key={group.categoryId} label={group.categoryName}>
+                {group.plans.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.isActive ? p.name : `${p.name} (arxivda)`}
+                  </option>
+                ))}
+              </optgroup>
             ))}
           </Select>
           <label className="flex cursor-pointer items-center gap-2 self-end pb-2 text-sm font-medium text-slate-700">
@@ -289,7 +322,7 @@ function SubscriptionsView() {
                 <table className="w-full text-left text-sm">
                   <thead className="whitespace-nowrap bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
                     <tr>
-                      <th className="px-4 py-2">Toifa</th>
+                      <th className="px-4 py-2">Abonement</th>
                       <th className="px-4 py-2 text-right">Oylik summa</th>
                       <th className="px-4 py-2">Tafsilot</th>
                       <th className="px-4 py-2">Boshlanish</th>
@@ -301,7 +334,10 @@ function SubscriptionsView() {
                   <tbody className="divide-y divide-slate-100">
                     {group.rows.map((row) => (
                       <tr key={row.id} className="hover:bg-slate-50/60">
-                        <td className="px-4 py-3 font-medium text-slate-800">{row.categoryName}</td>
+                        <td className="px-4 py-3">
+                          <p className="font-medium text-slate-800">{subscriptionTitle(row)}</p>
+                          {row.planName && <p className="text-xs text-slate-400">{row.categoryName}</p>}
+                        </td>
                         <td className="px-4 py-3 text-right tabular-nums text-slate-800">
                           {formatMoney(row.monthlyAmount)}
                         </td>
@@ -357,6 +393,7 @@ function SubscriptionsView() {
             open={formOpen}
             initial={editing}
             categories={categories}
+            plans={plans}
             students={students.options}
             studentsLoading={students.loading}
             studentsError={students.error}

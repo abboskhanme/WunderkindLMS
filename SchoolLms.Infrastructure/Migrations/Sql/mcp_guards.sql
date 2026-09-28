@@ -33,7 +33,7 @@ DECLARE
         'cash_box_transactions', 'cash_boxes', 'cash_handovers', 'cash_shifts',
         'certificate_subjects', 'certificate_types', 'certificates', 'class_memberships', 'classes',
         'daily_attendance_marks', 'debtor_actions', 'debtor_statuses', 'discipline_points',
-        'discipline_reasons', 'discounts', 'evaluation_grades', 'evaluation_types',
+        'discipline_reasons', 'discount_types', 'discounts', 'evaluation_grades', 'evaluation_types',
         'exam_participants', 'exam_section_scores', 'exam_sections', 'exam_types', 'exams',
         'expense_attachments', 'expenses', 'fee_categories', 'holidays', 'invoices',
         'journal_entries', 'lead_conversions', 'lead_stages', 'leads', 'ledger_entries',
@@ -42,7 +42,7 @@ DECLARE
         'schedule_templates', 'seasonal_marks', 'student_archive_reasons', 'student_contracts',
         'student_guardians', 'student_refunds', 'student_statuses', 'student_subscriptions',
         'students', 'study_group_classes', 'study_group_members', 'study_group_teachers',
-        'study_groups', 'subjects', 'survey_submissions', 'surveys', 'teachers',
+        'study_groups', 'subjects', 'subscription_plans', 'survey_submissions', 'surveys', 'teachers',
         -- homework quiz questions (assignments): the pupil card's assignment scores load them
         'test_questions', 'transaction_types', 'week_assignments'
     ];

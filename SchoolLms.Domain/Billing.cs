@@ -91,6 +91,12 @@ public class StudentSubscription
     /// <summary>O'quvchi (students.id — `text`).</summary>
     public string StudentId { get; set; } = string.Empty;
     public Guid CategoryId { get; set; }
+    /// <summary>
+    /// The abonement this subscription is on (<see cref="SubscriptionPlan"/>); null for one opened
+    /// straight on a category (before abonements existed). When set, <see cref="CategoryId"/> and
+    /// <see cref="MonthlyAmount"/> were copied from the plan when this row was written.
+    /// </summary>
+    public Guid? PlanId { get; set; }
     /// <summary>Oylik summa (so'm). 0 bo'lishi mumkin (bepul o'qish).</summary>
     public decimal MonthlyAmount { get; set; }
     /// <summary>Tafsilot: avtobus yo'nalishi, yotoqxona xonasi va h.k.</summary>
@@ -100,6 +106,31 @@ public class StudentSubscription
     public DateOnly? EndsOn { get; set; }
     /// <summary>Kim yaratgan (users.id) — JWT'dan olinadi, so'rov tanasidan EMAS (SPEC §4.4).</summary>
     public string CreatedBy { get; set; } = string.Empty;
+    public DateTimeOffset CreatedAt { get; set; }
+}
+
+/// <summary>
+/// Abonement — a named price inside a category ("5-11 sinflar 1 690 000" in <c>tuition</c>,
+/// "Avtobus to'lovi 160 000" in <c>bus</c>). docs/modules/billing-plans.md. The category stays the
+/// accounting bucket (its code drives allocation order and revenue accounts); the plan is what the
+/// school sells and prices. A price change reaches its students from the next month (§3).
+/// </summary>
+public class SubscriptionPlan
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public string Name { get; set; } = string.Empty;
+    /// <summary>The plan's type — fixed once students are on it.</summary>
+    public Guid CategoryId { get; set; }
+    /// <summary>Monthly price (so'm), copied into each subscription opened on the plan.</summary>
+    public decimal MonthlyAmount { get; set; }
+    /// <summary>
+    /// Schedule: null = "Butun oy" (every calendar day counts), 1..7 = "Haftasiga N kun". Only
+    /// used to count a month's lesson days — the price stays monthly (client, 2026-09-28); the
+    /// sickness discount takes <c>price ÷ lesson days</c> per sick day.
+    /// </summary>
+    public int? DaysPerWeek { get; set; }
+    /// <summary>false = archived: no new subscriptions, existing ones continue.</summary>
+    public bool IsActive { get; set; } = true;
     public DateTimeOffset CreatedAt { get; set; }
 }
 
@@ -119,6 +150,12 @@ public class StudentSubscription
 public class Discount
 {
     public Guid Id { get; set; } = Guid.NewGuid();
+    /// <summary>
+    /// The catalog entry this discount came from (<see cref="DiscountType"/>); null for a
+    /// hand-written one. A catalog discount is approved at birth with NO approver — client,
+    /// 2026-09-28: "tasdiqlash shartmas" (docs/modules/billing-plans.md §8).
+    /// </summary>
+    public Guid? DiscountTypeId { get; set; }
     public string StudentId { get; set; } = string.Empty;
     /// <summary>null = BARCHA toifalarga tegishli.</summary>
     public Guid? CategoryId { get; set; }
@@ -151,6 +188,64 @@ public static class DiscountStatus
     public const string Rejected = "rejected";
 
     public static readonly IReadOnlyList<string> All = [Pending, Approved, Rejected];
+}
+
+/// <summary>
+/// Chegirma turi — a named, priced discount in the catalog ("Ko'p bolali oila — 10%",
+/// "Xodim farzandi — 200 000 so'm"). docs/modules/billing-plans.md §8. Attaching one to a student
+/// writes a <see cref="Discount"/> that needs no approval.
+/// </summary>
+public class DiscountType
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public string Name { get; set; } = string.Empty;
+    /// <summary>0..100, applied first (same math as <see cref="Discount.Percent"/>).</summary>
+    public decimal Percent { get; set; }
+    /// <summary>Flat so'm, applied after the percent.</summary>
+    public decimal Amount { get; set; }
+    /// <summary>null = every abonement type.</summary>
+    public Guid? CategoryId { get; set; }
+    public bool IsActive { get; set; } = true;
+    public DateTimeOffset CreatedAt { get; set; }
+}
+
+/// <summary>
+/// Reduction of an ALREADY written invoice (§10): a sickness discount put by the cashier, or a
+/// catalog discount attached from a month that was invoiced before. Append-only. Applying it
+/// raises <see cref="Invoice.Discount"/> and posts debit revenue / credit receivable.
+///
+/// <para>
+/// A cancelled sickness discount (§9.1) is never edited: a second row with
+/// <see cref="ReversalOf"/> = the original gives the same sum back — it lowers
+/// <see cref="Invoice.Discount"/> and posts debit receivable / credit revenue.
+/// </para>
+/// </summary>
+public class InvoiceAdjustment
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid InvoiceId { get; set; }
+    /// <summary><see cref="InvoiceAdjustmentKind"/>.</summary>
+    public string Kind { get; set; } = InvoiceAdjustmentKind.Sick;
+    public decimal Amount { get; set; }
+    /// <summary>Sick days for <see cref="InvoiceAdjustmentKind.Sick"/>; null otherwise.</summary>
+    public int? SickDays { get; set; }
+    /// <summary>The catalog discount behind a <see cref="InvoiceAdjustmentKind.Discount"/> one.</summary>
+    public Guid? DiscountId { get; set; }
+    public string? Note { get; set; }
+    /// <summary>One cashier action = one group: a sickness discount writes a row per invoice of the month.</summary>
+    public Guid GroupId { get; set; }
+    /// <summary>Set on the row that cancels another; that one is then reversed (at most once).</summary>
+    public Guid? ReversalOf { get; set; }
+    public string CreatedBy { get; set; } = string.Empty;
+    public DateTimeOffset CreatedAt { get; set; }
+}
+
+public static class InvoiceAdjustmentKind
+{
+    /// <summary>"Kasallik chegirmasi" from the payment form.</summary>
+    public const string Sick = "sick";
+    /// <summary>A catalog discount reaching a month that was already invoiced.</summary>
+    public const string Discount = "discount";
 }
 
 /// <summary>
@@ -469,8 +564,11 @@ public static class LedgerRefType
     /// <summary>O'quvchiga pul qaytarish — <see cref="StudentRefund"/> (F1.05).</summary>
     public const string Refund = "refund";
 
+    /// <summary>An <see cref="InvoiceAdjustment"/> — debit revenue, credit receivable (billing-plans.md §10).</summary>
+    public const string InvoiceAdjustment = "invoice_adjustment";
+
     public static readonly IReadOnlyList<string> All =
-        [Payment, Invoice, Expense, Salary, Reversal, CashHandover, Refund];
+        [Payment, Invoice, Expense, Salary, Reversal, CashHandover, Refund, InvoiceAdjustment];
 }
 
 /// <summary>

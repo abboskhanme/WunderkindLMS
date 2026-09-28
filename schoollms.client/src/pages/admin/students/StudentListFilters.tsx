@@ -527,11 +527,13 @@ export function StudentListFilters({
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <label className="block">
+    // A <div>, not a <label>: it wraps date pickers too, and a label forwards clicks on its
+    // empty space to the first input inside — the calendar opened from beside the field.
+    <div className="block">
       <span className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-400">
         {label}
       </span>
       {children}
-    </label>
+    </div>
   )
 }

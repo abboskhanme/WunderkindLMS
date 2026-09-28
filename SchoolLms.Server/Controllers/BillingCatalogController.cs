@@ -180,13 +180,67 @@ public class BillingCatalogController(
     //  Obunalar
     // ==================================================================
 
-    /// <summary>Obunalar ro'yxati (o'quvchi / toifa / faqat faollar bo'yicha filtr).</summary>
+    // ==================================================================
+    //  Abonementlar (docs/modules/billing-plans.md)
+    // ==================================================================
+
+    private SubscriptionPlanService Plans => new(db, audit);
+
+    /// <summary>Abonementlar va har birida nechta o'quvchi.</summary>
+    [HttpGet("plans")]
+    public async Task<ActionResult<IEnumerable<SubscriptionPlanDto>>> GetPlans([FromQuery] bool activeOnly = false) =>
+        (await Plans.ListAsync(activeOnly, HttpContext.RequestAborted)).ToList();
+
+    [HttpPost("plans")]
+    [FinanceRole(FinanceAction.ManageSubscriptions)]
+    public async Task<ActionResult<SubscriptionPlanDto>> CreatePlan(CreateSubscriptionPlanRequest request) =>
+        await Plans.CreateAsync(request, Actor(), HttpContext.RequestAborted);
+
+    /// <summary>Nomi / narxi / faolligi. Yangi narx abonementdagi hammaga keyingi oydan (§3).</summary>
+    [HttpPut("plans/{id:guid}")]
+    [FinanceRole(FinanceAction.ManageSubscriptions)]
+    public async Task<ActionResult<UpdateSubscriptionPlanResult>> UpdatePlan(Guid id, UpdateSubscriptionPlanRequest request) =>
+        await Plans.UpdateAsync(id, request, Actor(), HttpContext.RequestAborted);
+
+    // ==================================================================
+    //  Chegirma turlari va biriktirish (billing-plans.md §8)
+    // ==================================================================
+
+    private DiscountCatalogService DiscountCatalog => new(db, audit);
+
+    [HttpGet("discount-types")]
+    public async Task<ActionResult<IEnumerable<DiscountTypeDto>>> GetDiscountTypes([FromQuery] bool activeOnly = false) =>
+        (await DiscountCatalog.ListAsync(activeOnly, HttpContext.RequestAborted)).ToList();
+
+    [HttpPost("discount-types")]
+    [FinanceRole(FinanceAction.ManageSubscriptions)]
+    public async Task<ActionResult<DiscountTypeDto>> CreateDiscountType(CreateDiscountTypeRequest request) =>
+        await DiscountCatalog.CreateAsync(request, Actor(), HttpContext.RequestAborted);
+
+    [HttpPut("discount-types/{id:guid}")]
+    [FinanceRole(FinanceAction.ManageSubscriptions)]
+    public async Task<ActionResult<UpdateDiscountTypeResult>> UpdateDiscountType(Guid id, UpdateDiscountTypeRequest request) =>
+        await DiscountCatalog.UpdateAsync(id, request, Actor(), HttpContext.RequestAborted);
+
+    /// <summary>Katalogdagi chegirmani o'quvchiga biriktiradi — tasdiqsiz (mijoz, 2026-09-28).</summary>
+    [HttpPost("discounts/attach")]
+    [FinanceRole(FinanceAction.ManageSubscriptions)]
+    public async Task<ActionResult<AttachDiscountResult>> AttachDiscount(AttachDiscountRequest request) =>
+        await DiscountCatalog.AttachAsync(request, Actor(), HttpContext.RequestAborted);
+
+    [HttpPost("discounts/{id:guid}/end")]
+    [FinanceRole(FinanceAction.ManageSubscriptions)]
+    public async Task<ActionResult<DiscountDto>> EndDiscount(Guid id, EndDiscountRequest request) =>
+        await DiscountCatalog.EndAsync(id, request, Actor(), HttpContext.RequestAborted);
+
+    /// <summary>Obunalar ro'yxati (o'quvchi / toifa / abonement / faqat faollar bo'yicha filtr).</summary>
     [HttpGet("subscriptions")]
     public async Task<ActionResult<IEnumerable<StudentSubscriptionDto>>> GetSubscriptions(
         [FromQuery] string? studentId,
         [FromQuery] Guid? categoryId,
-        [FromQuery] bool activeOnly = false) =>
-        (await subscriptions.ListAsync(new SubscriptionQuery(studentId, categoryId, activeOnly), HttpContext.RequestAborted))
+        [FromQuery] bool activeOnly = false,
+        [FromQuery] Guid? planId = null) =>
+        (await subscriptions.ListAsync(new SubscriptionQuery(studentId, categoryId, activeOnly, planId), HttpContext.RequestAborted))
         .ToList();
 
     /// <summary>

@@ -27,9 +27,12 @@ internal static class BillingModel
     public static void Apply(ModelBuilder b)
     {
         ConfigureFeeCategories(b);
+        ConfigureSubscriptionPlans(b);
         ConfigureSubscriptions(b);
+        ConfigureDiscountTypes(b);
         ConfigureDiscounts(b);
         ConfigureInvoices(b);
+        ConfigureInvoiceAdjustments(b);
         ConfigurePayments(b);
         ConfigureAllocations(b);
         ConfigureCashShifts(b);
@@ -64,6 +67,10 @@ internal static class BillingModel
                 .OnDelete(DeleteBehavior.Restrict);
             e.HasOne<AppUser>().WithMany().HasForeignKey(x => x.CreatedBy)
                 .OnDelete(DeleteBehavior.Restrict);
+            // An abonement with students is archived, never deleted.
+            e.HasOne<SubscriptionPlan>().WithMany().HasForeignKey(x => x.PlanId)
+                .OnDelete(DeleteBehavior.Restrict);
+            e.HasIndex(x => x.PlanId);
 
             // Accrual har oy "shu o'quvchining shu toifadagi faol obunasi" ni qidiradi.
             e.HasIndex(x => new { x.StudentId, x.CategoryId, x.StartsOn });
@@ -72,6 +79,74 @@ internal static class BillingModel
             {
                 t.HasCheckConstraint("ck_student_subscriptions_amount", "monthly_amount >= 0");
                 t.HasCheckConstraint("ck_student_subscriptions_period", "ends_on is null or ends_on >= starts_on");
+            });
+        });
+    }
+
+    private static void ConfigureSubscriptionPlans(ModelBuilder b)
+    {
+        b.Entity<SubscriptionPlan>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Name).HasMaxLength(160);
+            e.Property(x => x.MonthlyAmount).HasPrecision(14, 2);
+            e.HasOne<FeeCategory>().WithMany().HasForeignKey(x => x.CategoryId)
+                .OnDelete(DeleteBehavior.Restrict);
+            // Two ACTIVE abonements with one name would be indistinguishable in the picker.
+            e.HasIndex(x => x.Name).IsUnique().HasFilter("is_active");
+            e.ToTable(t =>
+            {
+                t.HasCheckConstraint("ck_subscription_plans_amount", "monthly_amount >= 0");
+                t.HasCheckConstraint("ck_subscription_plans_days_per_week", "days_per_week is null or days_per_week between 1 and 7");
+            });
+        });
+    }
+
+    private static void ConfigureDiscountTypes(ModelBuilder b)
+    {
+        b.Entity<DiscountType>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Name).HasMaxLength(120);
+            e.Property(x => x.Percent).HasPrecision(5, 2);
+            e.Property(x => x.Amount).HasPrecision(14, 2);
+            e.HasOne<FeeCategory>().WithMany().HasForeignKey(x => x.CategoryId)
+                .OnDelete(DeleteBehavior.Restrict);
+            e.HasIndex(x => x.Name).IsUnique().HasFilter("is_active");
+            e.ToTable(t =>
+            {
+                t.HasCheckConstraint("ck_discount_types_percent", "percent >= 0 and percent <= 100");
+                t.HasCheckConstraint("ck_discount_types_amount", "amount >= 0");
+                t.HasCheckConstraint("ck_discount_types_nonzero", "percent > 0 or amount > 0");
+            });
+        });
+    }
+
+    private static void ConfigureInvoiceAdjustments(ModelBuilder b)
+    {
+        b.Entity<InvoiceAdjustment>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Kind).HasMaxLength(16);
+            e.Property(x => x.Amount).HasPrecision(14, 2);
+            e.Property(x => x.Note).HasMaxLength(500);
+            e.HasOne<Invoice>().WithMany().HasForeignKey(x => x.InvoiceId)
+                .OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<Discount>().WithMany().HasForeignKey(x => x.DiscountId)
+                .OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<AppUser>().WithMany().HasForeignKey(x => x.CreatedBy)
+                .OnDelete(DeleteBehavior.Restrict);
+            e.HasIndex(x => x.InvoiceId);
+            e.HasIndex(x => x.GroupId);
+            // A row is cancelled at most once.
+            e.HasOne<InvoiceAdjustment>().WithMany().HasForeignKey(x => x.ReversalOf)
+                .OnDelete(DeleteBehavior.Restrict);
+            e.HasIndex(x => x.ReversalOf).IsUnique();
+            e.ToTable(t =>
+            {
+                t.HasCheckConstraint("ck_invoice_adjustments_amount", "amount > 0");
+                t.HasCheckConstraint("ck_invoice_adjustments_kind", "kind in ('sick','discount')");
+                t.HasCheckConstraint("ck_invoice_adjustments_days", "sick_days is null or sick_days > 0");
             });
         });
     }
@@ -92,6 +167,9 @@ internal static class BillingModel
                 .OnDelete(DeleteBehavior.Restrict);
             e.HasOne<AppUser>().WithMany().HasForeignKey(x => x.ApprovedBy)
                 .OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<DiscountType>().WithMany().HasForeignKey(x => x.DiscountTypeId)
+                .OnDelete(DeleteBehavior.Restrict);
+            e.HasIndex(x => x.DiscountTypeId);
 
             // Accrual: "shu o'quvchining TASDIQLANGAN chegirmalari" — eng issiq so'rov.
             e.HasIndex(x => new { x.StudentId, x.Status });
@@ -107,7 +185,9 @@ internal static class BillingModel
                 // SPEC §4.5 — ikki qavatli nazorat. Ilova tekshiruvi chetlab o'tilsa ham baza to'xtatadi.
                 t.HasCheckConstraint("ck_discounts_approver_differs", "approved_by is null or approved_by <> created_by");
                 // Mijoz javobi (SPEC §8.1 Q5): tasdiqlangan chegirma TASDIQLOVCHISIZ bo'la olmaydi.
-                t.HasCheckConstraint("ck_discounts_approved_has_approver", "status <> 'approved' or approved_by is not null");
+                // ... except a catalog discount (billing-plans.md §8): approved at birth, no approver.
+                t.HasCheckConstraint("ck_discounts_approved_has_approver",
+                    "status <> 'approved' or approved_by is not null or discount_type_id is not null");
             });
         });
     }

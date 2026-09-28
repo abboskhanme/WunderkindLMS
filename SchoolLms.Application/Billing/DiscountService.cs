@@ -329,6 +329,8 @@ public sealed class DiscountService(IAppDbContext db, AuditService audit) : IDis
             join u in db.Users.AsNoTracking() on d.CreatedBy equals u.Id
             join aRaw in db.Users.AsNoTracking() on d.ApprovedBy equals aRaw.Id into approvers
             from a in approvers.DefaultIfEmpty()
+            join tRaw in db.DiscountTypes.AsNoTracking() on d.DiscountTypeId equals (Guid?)tRaw.Id into types
+            from t in types.DefaultIfEmpty()
             select new
             {
                 d.Id,
@@ -347,6 +349,8 @@ public sealed class DiscountService(IAppDbContext db, AuditService audit) : IDis
                 ApprovedByName = a == null ? null : a.FullName,
                 d.DecidedAt,
                 d.CreatedAt,
+                d.DiscountTypeId,
+                DiscountTypeName = t == null ? null : t.Name,
             };
 
         joined = oldestFirst
@@ -362,7 +366,7 @@ public sealed class DiscountService(IAppDbContext db, AuditService audit) : IDis
             r.StartsOn, r.EndsOn,
             r.Status,
             r.CreatedByName, r.ApprovedByName,
-            r.DecidedAt, r.CreatedAt))];
+            r.DecidedAt, r.CreatedAt, r.DiscountTypeId, r.DiscountTypeName))];
     }
 
     private async Task<DiscountDto> RequireDtoAsync(Guid id, CancellationToken ct) =>

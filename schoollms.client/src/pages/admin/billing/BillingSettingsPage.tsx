@@ -68,7 +68,8 @@
  *                          lekin aynan o'rnini bosmaydi.
  *   To'lov usuli         → yo'q, xuddi shu sababdan YOPIQ (`PaymentMethod`).
  *   Abonement            → Obunalar (ustuvor, operatsion shaklda).
- *   Chegirma             → Chegirmalar (navbat shaklida, tur katalogisiz).
+ *   Chegirma             → Chegirmalar (navbat shaklida; 2026-09-28 dan tepasida
+ *                          "Chegirma turlari" katalogi — billing-plans.md §8).
  *   Pul birligi          → yo'q — so'm yolg'iz (§2.0: "declined — so'm only").
  *   Coin birligi         → yo'q — gamifikatsiya, bizda mavjud emas.
  *   Tizim obunasi        → yo'q — EduSchool o'zining SaaS to'lovi, bizga
@@ -100,7 +101,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { ArrowLeftRight, CalendarClock, Check, Layers, Settings, ShieldCheck, Tag, Users } from 'lucide-react'
+import { ArrowLeftRight, CalendarClock, Check, Layers, Settings, ShieldCheck, Tag, Ticket, Users } from 'lucide-react'
 import type { BillingSettingsInput } from '@/api/services/billingCatalog'
 import { getBillingSettings, updateBillingSettings } from '@/api/services/billingCatalog'
 import { billingErrorMessage } from '@/api/services/billingError'
@@ -111,6 +112,7 @@ import { cn, formatDate, formatMoney } from '@/lib/utils'
 import { AsyncBlock, BillingGuard, Notice } from './BillingUi'
 import { useBillingAccess } from './access'
 import { CategoriesPage } from './CategoriesPage'
+import { PlansPage } from './PlansPage'
 import { SubscriptionsPage } from './SubscriptionsPage'
 import { DiscountsPage } from './DiscountsPage'
 import { DebtorStatusesPage } from '../finance/DebtorStatusesPage'
@@ -119,6 +121,7 @@ import { TransactionTypesPage } from './TransactionTypesPage'
 
 type SectionKey =
   | 'settings'
+  | 'plans'
   | 'categories'
   | 'subscriptions'
   | 'discounts'
@@ -138,7 +141,9 @@ type SectionKey =
  */
 const SECTIONS: Array<{ key: SectionKey; label: string; icon: typeof Layers }> = [
   { key: 'settings', label: 'Sozlamalar', icon: Settings },
-  { key: 'categories', label: "To'lov toifalari", icon: Layers },
+  // "Abonementlar" took the menu slot of "To'lov toifalari" (docs/modules/billing-plans.md §6):
+  // plans carry the prices now, categories are just their five base types.
+  { key: 'plans', label: 'Abonementlar', icon: Ticket },
   { key: 'subscriptions', label: 'Obunalar', icon: Users },
   { key: 'discounts', label: 'Chegirmalar', icon: ShieldCheck },
   { key: 'debtor-statuses', label: 'Qarzdor holatlari', icon: Tag },
@@ -146,8 +151,17 @@ const SECTIONS: Array<{ key: SectionKey; label: string; icon: typeof Layers }> =
   { key: 'transaction-types', label: 'Tranzaksiya turi', icon: ArrowLeftRight },
 ]
 
+/**
+ * Reachable by `?tab=` but not listed in the menu. `categories` stays here so old links and
+ * the "To'lov toifalari" link on the Abonementlar page keep working.
+ */
+const HIDDEN_SECTIONS: readonly SectionKey[] = ['categories']
+
 function isSectionKey(value: string | null): value is SectionKey {
-  return !!value && SECTIONS.some((s) => s.key === value)
+  return (
+    !!value &&
+    (SECTIONS.some((s) => s.key === value) || HIDDEN_SECTIONS.some((k) => k === value))
+  )
 }
 
 export function BillingSettingsPage() {
@@ -197,6 +211,7 @@ function BillingSettingsHub() {
 
       <div className="min-w-0 flex-1">
         {active === 'settings' && <BillingSettingsForm />}
+        {active === 'plans' && <PlansPage />}
         {active === 'categories' && <CategoriesPage />}
         {active === 'subscriptions' && <SubscriptionsPage />}
         {active === 'discounts' && <DiscountsPage />}

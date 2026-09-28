@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { CalendarOff, Pencil, Plus } from 'lucide-react'
-import type { FeeCategory } from '@/types'
+import type { FeeCategory, SubscriptionPlan } from '@/types'
 import type {
   SubscriptionInput,
   SubscriptionRecord,
@@ -10,6 +10,7 @@ import {
   createSubscription,
   endSubscription,
   getFeeCategories,
+  getSubscriptionPlans,
   getSubscriptions,
   updateSubscription,
 } from '@/api/services/billingCatalog'
@@ -22,6 +23,7 @@ import { AsyncBlock, IconBtn, Notice, StatusPill } from '@/pages/admin/billing/B
 import { EndSubscriptionModal } from '@/pages/admin/billing/EndSubscriptionModal'
 import { SubscriptionFormModal } from '@/pages/admin/billing/SubscriptionFormModal'
 import type { StudentOption } from '@/pages/admin/billing/useStudents'
+import { StudentDiscountsCard } from './StudentDiscountsCard'
 
 interface Props {
   studentId: string
@@ -41,10 +43,14 @@ interface Props {
  * `voidInvoice` bilan ketma-ket bekor qilinadi, keyin obuna yopiladi).
  * Ruxsat serverda (`Roles.FinanceStaff`); tab'ni sahifa faqat moliya
  * rollariga ko'rsatadi.
+ *
+ * Under the subscriptions: the student's discounts (`StudentDiscountsCard`) — attaching a
+ * catalog type and ending a running discount.
  */
 export function SubscriptionsTab({ studentId, studentName, className, onChanged }: Props) {
   const [rows, setRows] = useState<SubscriptionRecord[]>([])
   const [categories, setCategories] = useState<FeeCategory[]>([])
+  const [plans, setPlans] = useState<SubscriptionPlan[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [activeOnly, setActiveOnly] = useState(false)
@@ -65,8 +71,13 @@ export function SubscriptionsTab({ studentId, studentName, className, onChanged 
   const load = useCallback(() => {
     setLoading(true)
     setError(null)
-    Promise.all([getSubscriptions({ studentId, activeOnly }), getFeeCategories()])
-      .then(([subs, cats]) => {
+    Promise.all([
+      getSubscriptions({ studentId, activeOnly }),
+      getFeeCategories(),
+      // Plans only drive the form's abonement picker; without them it falls back to categories.
+      getSubscriptionPlans(false).catch((): SubscriptionPlan[] => []),
+    ])
+      .then(([subs, cats, planList]) => {
         setRows(
           [...subs].sort(
             (a, b) =>
@@ -75,6 +86,7 @@ export function SubscriptionsTab({ studentId, studentName, className, onChanged 
           ),
         )
         setCategories(cats)
+        setPlans(planList)
       })
       .catch((e: unknown) => setError(billingErrorMessage(e, "Abonementlarni yuklab bo'lmadi")))
       .finally(() => setLoading(false))
@@ -106,7 +118,7 @@ export function SubscriptionsTab({ studentId, studentName, className, onChanged 
     try {
       const created = await createSubscription(values)
       setFormOpen(false)
-      setNotice(`"${created.categoryName}" abonementi ochildi.`)
+      setNotice(`"${created.planName ?? created.categoryName}" abonementi ochildi.`)
       changed()
     } catch (e: unknown) {
       setActionError(billingErrorMessage(e, "Abonementni ochib bo'lmadi"))
@@ -122,7 +134,7 @@ export function SubscriptionsTab({ studentId, studentName, className, onChanged 
       const updated = await updateSubscription(id, values)
       setFormOpen(false)
       setEditing(null)
-      setNotice(`"${updated.categoryName}" abonementi yangilandi.`)
+      setNotice(`"${updated.planName ?? updated.categoryName}" abonementi yangilandi.`)
       changed()
     } catch (e: unknown) {
       setActionError(billingErrorMessage(e, "Abonementni saqlab bo'lmadi"))
@@ -143,7 +155,7 @@ export function SubscriptionsTab({ studentId, studentName, className, onChanged 
       setEnding(null)
       const voidedNote =
         voidInvoiceIds.length > 0 ? ` (${voidInvoiceIds.length} ta kelajak oy bekor qilindi)` : ''
-      setNotice(`"${ended.categoryName}" abonementi ${endsOn} sanasida yopildi${voidedNote}.`)
+      setNotice(`"${ended.planName ?? ended.categoryName}" abonementi ${endsOn} sanasida yopildi${voidedNote}.`)
       changed()
     } catch (e: unknown) {
       setActionError(billingErrorMessage(e, "Abonementni yopib bo'lmadi"))
@@ -190,7 +202,7 @@ export function SubscriptionsTab({ studentId, studentName, className, onChanged 
             <table className="w-full text-left text-sm">
               <thead className="whitespace-nowrap bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
                 <tr>
-                  <th className="px-4 py-2">Toifa</th>
+                  <th className="px-4 py-2">Abonement</th>
                   <th className="px-4 py-2 text-right">Oylik summa</th>
                   <th className="px-4 py-2">Tafsilot</th>
                   <th className="px-4 py-2">Boshlanish</th>
@@ -202,7 +214,10 @@ export function SubscriptionsTab({ studentId, studentName, className, onChanged 
               <tbody className="divide-y divide-slate-100">
                 {rows.map((row) => (
                   <tr key={row.id} className="hover:bg-slate-50/60">
-                    <td className="px-4 py-3 font-medium text-slate-800">{row.categoryName}</td>
+                    <td className="px-4 py-3">
+                      <p className="font-medium text-slate-800">{row.planName ?? row.categoryName}</p>
+                      {row.planName && <p className="text-xs text-slate-400">{row.categoryName}</p>}
+                    </td>
                     <td className="px-4 py-3 text-right tabular-nums text-slate-800">
                       {formatMoney(row.monthlyAmount)}
                     </td>
@@ -240,10 +255,14 @@ export function SubscriptionsTab({ studentId, studentName, className, onChanged 
         </AsyncBlock>
       </Card>
 
+      {/* Discounts (docs/modules/billing-plans.md §8) — a card of their own, under the subscriptions. */}
+      <StudentDiscountsCard studentId={studentId} studentName={studentName} onChanged={onChanged} />
+
       <SubscriptionFormModal
         open={formOpen}
         initial={editing}
         categories={categories}
+        plans={plans}
         students={self}
         studentsLoading={false}
         studentsError={null}

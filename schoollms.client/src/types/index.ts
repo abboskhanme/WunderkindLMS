@@ -1556,6 +1556,32 @@ export interface FeeCategory {
   monthlyAmount?: number | null
 }
 
+/* ---------- Abonementlar (docs/modules/billing-plans.md) ---------- */
+
+/**
+ * A named, priced plan ("5-11 sinflar", "Avtobus to'lovi"). Its category is the plan's
+ * type and stays fixed after creation — accounting keeps running by category.
+ */
+export interface SubscriptionPlan {
+  id: string
+  name: string
+  categoryId: string
+  categoryName: string
+  categoryCode: FeeCategoryCode | string
+  /** Price per month (so'm). */
+  monthlyAmount: number
+  /** false = archived: no new subscriptions, existing ones continue. */
+  isActive: boolean
+  /** Distinct students with a live subscription of this plan today (server-computed). */
+  studentCount: number
+  /**
+   * Schedule (§7): null = "Butun oy" (every calendar day), 1..7 = "Haftasiga N kun" (the first
+   * N weekdays from Monday, minus holidays). The price stays monthly — the schedule only counts
+   * a month's lesson days for the sickness discount.
+   */
+  daysPerWeek: number | null
+}
+
 /* ---------- Obunalar ---------- */
 
 export interface StudentSubscription {
@@ -1577,6 +1603,9 @@ export interface StudentSubscription {
   createdByName: string
   /** ISO sana-vaqt (ofset bilan) */
   createdAt: string
+  /** The abonement this subscription was opened from; null = category-only (legacy). */
+  planId: string | null
+  planName: string | null
 }
 
 /* ---------- Chegirmalar ---------- */
@@ -1601,6 +1630,34 @@ export interface Discount {
   approvedByName?: string
   decidedAt?: string
   createdAt: string
+  /**
+   * The catalog type it was attached from (docs/modules/billing-plans.md §8); null = a
+   * hand-written discount. A catalog discount is `approved` with no approver — no director step.
+   */
+  discountTypeId: string | null
+  discountTypeName: string | null
+}
+
+/* ---------- Chegirma turlari (docs/modules/billing-plans.md §8) ---------- */
+
+/**
+ * A named discount in the catalog ("Aka-uka chegirmasi 10%"). Percent first, then amount —
+ * the same math as a hand-written discount. The category (abonement type) is fixed after creation.
+ */
+export interface DiscountType {
+  id: string
+  name: string
+  /** 0..100 */
+  percent: number
+  /** so'm, ≥ 0 */
+  amount: number
+  /** null = every abonement type ("Barcha abonementlar"). */
+  categoryId: string | null
+  categoryName: string | null
+  /** false = archived: cannot be attached any more; attached discounts keep running. */
+  isActive: boolean
+  /** Students with a running discount of this type (server-computed). */
+  studentCount: number
 }
 
 /* ---------- Moliya sozlamalari (F14.01, mijoz javobi SPEC §8.1 Q6) ---------- */

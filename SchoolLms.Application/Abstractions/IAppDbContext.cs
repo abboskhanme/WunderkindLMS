@@ -88,6 +88,9 @@ public interface IAppDbContext
     // turgan ilovada 42501 bilan YIQILADI — tuzatish `reversal_of` orqali bo'ladi.
     DbSet<FeeCategory> FeeCategories { get; }
     DbSet<StudentSubscription> StudentSubscriptions { get; }
+    DbSet<SubscriptionPlan> SubscriptionPlans { get; }
+    DbSet<DiscountType> DiscountTypes { get; }
+    DbSet<InvoiceAdjustment> InvoiceAdjustments { get; }
     DbSet<Discount> Discounts { get; }
     DbSet<Invoice> Invoices { get; }
     DbSet<Payment> Payments { get; }

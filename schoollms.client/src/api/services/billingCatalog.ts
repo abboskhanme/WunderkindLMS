@@ -22,7 +22,15 @@
  * interfeys avtomatik ravishda ism solishtirishdan id solishtirishga o'tadi;
  * qarang `pages/admin/billing/dualControl.ts`.
  */
-import type { BillingSettings, Discount, FeeCategory, Invoice, StudentSubscription } from '@/types'
+import type {
+  BillingSettings,
+  Discount,
+  DiscountType,
+  FeeCategory,
+  Invoice,
+  StudentSubscription,
+  SubscriptionPlan,
+} from '@/types'
 import { api } from '../client'
 
 const BASE = '/admin/billing'
@@ -63,11 +71,63 @@ export async function updateFeeCategory(
   return data
 }
 
+/* ---------- Abonementlar (docs/modules/billing-plans.md) ---------- */
+
+export interface SubscriptionPlanInput {
+  name: string
+  /** The plan's type. Fixed after creation. */
+  categoryId: string
+  monthlyAmount: number
+  /** null = "Butun oy", 1..7 = "Haftasiga N kun" (§7). */
+  daysPerWeek: number | null
+}
+
+/** The type (category) is not part of an update — it cannot change. */
+export interface SubscriptionPlanUpdate {
+  name: string
+  monthlyAmount: number
+  isActive: boolean
+  /** Always sent — null means "Butun oy", not "leave as is". */
+  daysPerWeek: number | null
+}
+
+export interface SubscriptionPlanUpdateResult {
+  plan: SubscriptionPlan
+  /** How many subscriptions moved to the new price (0 when the price did not change). */
+  repriced: number
+  /** "yyyy-MM-dd" — the day the new price starts for existing students; null if not repriced. */
+  effectiveFrom: string | null
+}
+
+/** Ordered by category name, then plan name. */
+export async function getSubscriptionPlans(activeOnly = false): Promise<SubscriptionPlan[]> {
+  const { data } = await api.get<SubscriptionPlan[]>(`${BASE}/plans`, { params: { activeOnly } })
+  return data
+}
+
+export async function createSubscriptionPlan(input: SubscriptionPlanInput): Promise<SubscriptionPlan> {
+  const { data } = await api.post<SubscriptionPlan>(`${BASE}/plans`, input)
+  return data
+}
+
+/**
+ * A price change applies to every student on the plan from the first day of next month;
+ * past months and written invoices stay as they are.
+ */
+export async function updateSubscriptionPlan(
+  id: string,
+  input: SubscriptionPlanUpdate,
+): Promise<SubscriptionPlanUpdateResult> {
+  const { data } = await api.put<SubscriptionPlanUpdateResult>(`${BASE}/plans/${id}`, input)
+  return data
+}
+
 /* ---------- Obunalar ---------- */
 
 export interface SubscriptionFilters {
   studentId?: string
   categoryId?: string
+  planId?: string
   /** true = bugungi kunda amal qiladiganlar (starts_on ≤ bugun ≤ ends_on). */
   activeOnly?: boolean
 }
@@ -76,6 +136,11 @@ export interface SubscriptionInput {
   studentId: string
   categoryId: string
   monthlyAmount: number
+  /**
+   * The abonement. When set, the server takes category and amount from the plan and
+   * ignores the two fields above — they are still sent (the plan's values) for the validator.
+   */
+  planId?: string
   /** Avtobus yo'nalishi, yotoqxona xonasi va h.k. */
   detail?: string
   /** "YYYY-MM-DD" */
@@ -219,6 +284,87 @@ export async function approveDiscount(id: string): Promise<DiscountRecord> {
 /** Rad etish — sabab majburiy. Qator tarix uchun qoladi. */
 export async function rejectDiscount(id: string, reason: string): Promise<DiscountRecord> {
   const { data } = await api.post<DiscountRecord>(`${BASE}/discounts/${id}/reject`, { reason })
+  return data
+}
+
+/* ---------- Chegirma turlari (docs/modules/billing-plans.md §8, §11) ---------- */
+
+export interface DiscountTypeInput {
+  name: string
+  /** 0..100 — taken first. */
+  percent: number
+  /** so'm, ≥ 0 — taken after the percent. At least one of the two must be > 0. */
+  amount: number
+  /** null = every abonement type. Fixed after creation. */
+  categoryId: string | null
+}
+
+/** The category is not part of an update — it cannot change. */
+export interface DiscountTypeUpdate {
+  name: string
+  percent: number
+  amount: number
+  isActive: boolean
+}
+
+export interface DiscountTypeUpdateResult {
+  discountType: DiscountType
+  /** Attached, still-running discounts moved to the new value (from the next accrual). */
+  updated: number
+}
+
+/** Errors: `discount_type_name_taken` (409), `invalid_discount` (400). */
+export async function getDiscountTypes(activeOnly = false): Promise<DiscountType[]> {
+  const { data } = await api.get<DiscountType[]>(`${BASE}/discount-types`, { params: { activeOnly } })
+  return data
+}
+
+export async function createDiscountType(input: DiscountTypeInput): Promise<DiscountType> {
+  const { data } = await api.post<DiscountType>(`${BASE}/discount-types`, input)
+  return data
+}
+
+/**
+ * A new percent/amount reaches every student the type is attached to from the next accrual;
+ * invoices already written stay as they are.
+ */
+export async function updateDiscountType(
+  id: string,
+  input: DiscountTypeUpdate,
+): Promise<DiscountTypeUpdateResult> {
+  const { data } = await api.put<DiscountTypeUpdateResult>(`${BASE}/discount-types/${id}`, input)
+  return data
+}
+
+export interface AttachDiscountInput {
+  studentId: string
+  discountTypeId: string
+  /** "yyyy-MM-01" — the first day of the first month that gets it. */
+  startsOn: string
+  /** "yyyy-MM-dd" (last day of a month) or null = open-ended. */
+  endsOn: string | null
+}
+
+export interface AttachDiscountResult {
+  discount: DiscountRecord
+  /** Open invoices from `startsOn` on that were reduced right away. */
+  adjustedInvoices: number
+  /** The sum taken off those invoices (so'm, server-computed). */
+  adjustedTotal: number
+}
+
+/**
+ * Attach a catalog type to a student. NO APPROVAL (client choice, §8): the discount is
+ * written `approved` at once, and months already invoiced from `startsOn` on are reduced.
+ */
+export async function attachDiscount(input: AttachDiscountInput): Promise<AttachDiscountResult> {
+  const { data } = await api.post<AttachDiscountResult>(`${BASE}/discounts/attach`, input)
+  return data
+}
+
+/** No month after `endsOn` ("yyyy-MM-dd") gets the discount. */
+export async function endDiscount(id: string, endsOn: string): Promise<DiscountRecord> {
+  const { data } = await api.post<DiscountRecord>(`${BASE}/discounts/${id}/end`, { endsOn })
   return data
 }
 

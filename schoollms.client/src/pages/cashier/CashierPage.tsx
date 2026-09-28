@@ -9,6 +9,7 @@ import {
   RefreshCw,
   Search,
   ShieldOff,
+  Thermometer,
   Wallet,
 } from 'lucide-react'
 import type { AllocationSuggestion, Payment, PaymentMethod, SchoolClass } from '@/types'
@@ -45,6 +46,8 @@ import { CashBoxActionModal } from './CashBoxActionModal'
 import type { CashBoxActionMode } from './CashBoxCard'
 import { CashLedger } from './CashLedger'
 import { CashTransactionReceipt } from './CashTransactionReceipt'
+import { SickDiscountModal } from './SickDiscountModal'
+import { SickDiscountNotices } from './SickDiscountNotices'
 import { canUseCashDesk } from './cashDeskRoles'
 import {
   formatDateTime,
@@ -1078,12 +1081,17 @@ interface InvoiceListProps {
   loading: boolean
   error: string | null
   onRetry: () => void
+  /** Shown next to the title once the list is loaded and not empty ("Kasallik chegirmasi"). */
+  action?: ReactNode
 }
 
-function InvoiceList({ invoices, loading, error, onRetry }: InvoiceListProps) {
+function InvoiceList({ invoices, loading, error, onRetry, action }: InvoiceListProps) {
   return (
     <Card>
-      <h2 className="mb-3 font-semibold text-slate-800">Ochiq hisob-fakturalar</h2>
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <h2 className="font-semibold text-slate-800">Ochiq hisob-fakturalar</h2>
+        {!loading && !error && invoices.length > 0 && action}
+      </div>
 
       {loading && <Loader className="py-8" label="Yuklanmoqda..." />}
 
@@ -1160,6 +1168,11 @@ interface IncomeFormProps {
   preferStudentType?: boolean
   /** O'quvchini almashtirib bo'lmaydi — "O'zgartirish" tugmasi ko'rinmaydi. */
   lockStudent?: boolean
+  /**
+   * A sickness discount reduced the student's debt (the form reloads its invoices itself via
+   * `onInvoicesRetry`). For hosts that show the debt elsewhere too, e.g. the student profile.
+   */
+  onDebtAdjusted?: () => void
 }
 
 /**
@@ -1220,8 +1233,18 @@ export function IncomeForm({
   onCancel,
   preferStudentType = false,
   lockStudent = false,
+  onDebtAdjusted,
 }: IncomeFormProps) {
   const [amountRaw, setAmountRaw] = useState('')
+  /*
+   * Sickness discount (docs/modules/billing-plans.md §9). After it the debt goes down; if the
+   * amount field held the whole old debt ("Butun qarzni qo'yish"), it follows the reloaded debt
+   * for that student until the cashier types — so the form never offers to take the old sum.
+   */
+  const [sickOpen, setSickOpen] = useState(false)
+  /** Bumped after a new sickness discount — its green notice (with "Bekor qilish") reloads. */
+  const [sickReload, setSickReload] = useState(0)
+  const [amountFollowsDebtOf, setAmountFollowsDebtOf] = useState<string | null>(null)
   const [method, setMethod] = useState<PaymentMethod>('cash')
   const [note, setNote] = useState('')
   const [date, setDate] = useState(todayStr())
@@ -1266,7 +1289,33 @@ export function IncomeForm({
     if (!isStudentTuitionType(types.find((t) => t.id === nextId))) onClearStudent()
   }
 
-  const amount = parseSum(amountRaw)
+  // Debt cleared to 0 → an empty field (nothing to take), not a "0" that reads as an input error.
+  const amountText =
+    student !== null && amountFollowsDebtOf === student.id
+      ? debt > 0
+        ? String(debt)
+        : ''
+      : amountRaw
+  const changeAmount = (raw: string) => {
+    setAmountFollowsDebtOf(null)
+    setAmountRaw(raw)
+  }
+
+  /** A sickness discount was applied or cancelled — the debt changed on the server. */
+  const handleSickChanged = () => {
+    if (!student) return
+    if (parseSum(amountText) === debt) setAmountFollowsDebtOf(student.id)
+    onInvoicesRetry()
+    onDebtAdjusted?.()
+  }
+
+  const handleSickApplied = () => {
+    setSickOpen(false)
+    setSickReload((k) => k + 1)
+    handleSickChanged()
+  }
+
+  const amount = parseSum(amountText)
   const amountValid = amount !== null && amount > 0
   // O'quvchi to'lovida o'quvchi majburiy — kimning qarziga tushishi noma'lum
   // bo'lsa, taqsimot oynasini ochib ham bo'lmaydi.
@@ -1383,11 +1432,11 @@ export function IncomeForm({
         <div className="mt-4 grid gap-4 sm:grid-cols-2">
           <MoneyInput
             label="Summa (so'm)"
-            value={amountRaw}
-            onValueChange={setAmountRaw}
+            value={amountText}
+            onValueChange={changeAmount}
             placeholder="0"
-            invalid={amountRaw.length > 0 && !amountValid}
-            hint={amountRaw.length > 0 && !amountValid ? "Summa noldan katta bo'lishi kerak." : undefined}
+            invalid={amountText.length > 0 && !amountValid}
+            hint={amountText.length > 0 && !amountValid ? "Summa noldan katta bo'lishi kerak." : undefined}
           />
           <Select label="To'lov usuli" value={method} onChange={(e) => setMethod(e.target.value as PaymentMethod)}>
             {METHODS.map((m) => (
@@ -1403,7 +1452,7 @@ export function IncomeForm({
             variant="ghost"
             className="mt-2"
             type="button"
-            onClick={() => setAmountRaw(String(debt))}
+            onClick={() => changeAmount(String(debt))}
           >
             Butun qarzni qo'yish ({formatSum(debt)})
           </Button>
@@ -1417,7 +1466,9 @@ export function IncomeForm({
             orqaga yo'q). Kechagi pulni bugun kiritganda u KECHAGI kun
             hisobotiga tushadi. */}
         <div className="mt-4">
-          <label className="block">
+          {/* A <div>, not a <label>: a full-width label forwards every click on its empty
+              right-hand side to the picker's input — the calendar opened from anywhere on the row. */}
+          <div className="block">
             <span className="mb-1 block text-sm font-medium text-slate-600">Sana</span>
             <DatePicker
               value={date}
@@ -1426,7 +1477,7 @@ export function IncomeForm({
               onChange={setDate}
               invalid={!dateValid}
             />
-          </label>
+          </div>
           <p className={cn('mt-1 text-xs', dateValid ? 'text-slate-400' : 'text-red-600')}>
             {dateValid
               ? "Sukut bo'yicha bugun — o'tgan kun bilan ham yozish mumkin."
@@ -1448,11 +1499,34 @@ export function IncomeForm({
       </Card>
 
       {studentMode && student && (
+        <SickDiscountNotices
+          studentId={student.id}
+          reloadKey={sickReload}
+          disabled={busy}
+          onCancelled={handleSickChanged}
+        />
+      )}
+
+      {studentMode && student && (
         <InvoiceList
           invoices={invoices}
           loading={invoicesLoading}
           error={invoicesError}
           onRetry={onInvoicesRetry}
+          action={
+            <Button variant="secondary" type="button" onClick={() => setSickOpen(true)} disabled={busy}>
+              <Thermometer className="h-4 w-4" /> Kasallik chegirmasi
+            </Button>
+          }
+        />
+      )}
+
+      {sickOpen && studentMode && student && invoices.length > 0 && (
+        <SickDiscountModal
+          student={student}
+          invoices={invoices}
+          onClose={() => setSickOpen(false)}
+          onApplied={handleSickApplied}
         />
       )}
 

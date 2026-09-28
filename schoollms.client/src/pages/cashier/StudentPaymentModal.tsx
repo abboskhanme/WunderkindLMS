@@ -49,6 +49,12 @@ export function StudentPaymentModal({ open, student, onClose, onPaid }: StudentP
     cashBoxId: string
   } | null>(null)
   const [receipt, setReceipt] = useState<Payment | null>(null)
+  /**
+   * A sickness discount lowered the debt (docs/modules/billing-plans.md §9). Closing then goes
+   * through `onPaid` — the profile reloads its money figures even when no payment follows.
+   */
+  const [debtAdjusted, setDebtAdjusted] = useState(false)
+  const close = debtAdjusted ? onPaid : onClose
 
   useEffect(() => {
     if (!open) return
@@ -105,7 +111,7 @@ export function StudentPaymentModal({ open, student, onClose, onPaid }: StudentP
     <>
       <Modal
         open={open && splitDraft === null && receipt === null}
-        onClose={onClose}
+        onClose={close}
         title={box ? `O'qish to'lovi — ${box.name}` : "O'qish to'lovi"}
         size="md"
       >
@@ -142,10 +148,11 @@ export function StudentPaymentModal({ open, student, onClose, onPaid }: StudentP
               onInvoicesRetry={() => setInvoicesReload((n) => n + 1)}
               debt={debt}
               onStudentSubmit={setSplitDraft}
-              onDone={onClose}
-              onCancel={onClose}
+              onDone={close}
+              onCancel={close}
               preferStudentType
               lockStudent
+              onDebtAdjusted={() => setDebtAdjusted(true)}
             />
           </div>
         )}

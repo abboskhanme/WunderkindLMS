@@ -1850,6 +1850,10 @@ namespace SchoolLms.Infrastructure.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("decided_at");
 
+                    b.Property<Guid?>("DiscountTypeId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("discount_type_id");
+
                     b.Property<DateOnly?>("EndsOn")
                         .HasColumnType("date")
                         .HasColumnName("ends_on");
@@ -1890,6 +1894,9 @@ namespace SchoolLms.Infrastructure.Migrations
                     b.HasIndex("CreatedBy")
                         .HasDatabaseName("ix_discounts_created_by");
 
+                    b.HasIndex("DiscountTypeId")
+                        .HasDatabaseName("ix_discounts_discount_type_id");
+
                     b.HasIndex("Status")
                         .HasDatabaseName("ix_discounts_status");
 
@@ -1900,7 +1907,7 @@ namespace SchoolLms.Infrastructure.Migrations
                         {
                             t.HasCheckConstraint("ck_discounts_amount", "amount >= 0");
 
-                            t.HasCheckConstraint("ck_discounts_approved_has_approver", "status <> 'approved' or approved_by is not null");
+                            t.HasCheckConstraint("ck_discounts_approved_has_approver", "status <> 'approved' or approved_by is not null or discount_type_id is not null");
 
                             t.HasCheckConstraint("ck_discounts_approver_differs", "approved_by is null or approved_by <> created_by");
 
@@ -1909,6 +1916,62 @@ namespace SchoolLms.Infrastructure.Migrations
                             t.HasCheckConstraint("ck_discounts_period", "ends_on is null or ends_on >= starts_on");
 
                             t.HasCheckConstraint("ck_discounts_status", "status in ('pending','approved','rejected')");
+                        });
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.DiscountType", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<decimal>("Amount")
+                        .HasPrecision(14, 2)
+                        .HasColumnType("numeric(14,2)")
+                        .HasColumnName("amount");
+
+                    b.Property<Guid?>("CategoryId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("category_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_active");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)")
+                        .HasColumnName("name");
+
+                    b.Property<decimal>("Percent")
+                        .HasPrecision(5, 2)
+                        .HasColumnType("numeric(5,2)")
+                        .HasColumnName("percent");
+
+                    b.HasKey("Id")
+                        .HasName("pk_discount_types");
+
+                    b.HasIndex("CategoryId")
+                        .HasDatabaseName("ix_discount_types_category_id");
+
+                    b.HasIndex("Name")
+                        .IsUnique()
+                        .HasDatabaseName("ix_discount_types_name")
+                        .HasFilter("is_active");
+
+                    b.ToTable("discount_types", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_discount_types_amount", "amount >= 0");
+
+                            t.HasCheckConstraint("ck_discount_types_nonzero", "percent > 0 or amount > 0");
+
+                            t.HasCheckConstraint("ck_discount_types_percent", "percent >= 0 and percent <= 100");
                         });
                 });
 
@@ -3868,6 +3931,87 @@ namespace SchoolLms.Infrastructure.Migrations
                             t.HasCheckConstraint("ck_invoices_period_first_day", "extract(day from period_month) = 1");
 
                             t.HasCheckConstraint("ck_invoices_status", "status in ('open','partial','paid','void')");
+                        });
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.InvoiceAdjustment", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<decimal>("Amount")
+                        .HasPrecision(14, 2)
+                        .HasColumnType("numeric(14,2)")
+                        .HasColumnName("amount");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("created_by");
+
+                    b.Property<Guid?>("DiscountId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("discount_id");
+
+                    b.Property<Guid>("GroupId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("group_id");
+
+                    b.Property<Guid>("InvoiceId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("invoice_id");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("kind");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("note");
+
+                    b.Property<Guid?>("ReversalOf")
+                        .HasColumnType("uuid")
+                        .HasColumnName("reversal_of");
+
+                    b.Property<int?>("SickDays")
+                        .HasColumnType("integer")
+                        .HasColumnName("sick_days");
+
+                    b.HasKey("Id")
+                        .HasName("pk_invoice_adjustments");
+
+                    b.HasIndex("CreatedBy")
+                        .HasDatabaseName("ix_invoice_adjustments_created_by");
+
+                    b.HasIndex("DiscountId")
+                        .HasDatabaseName("ix_invoice_adjustments_discount_id");
+
+                    b.HasIndex("GroupId")
+                        .HasDatabaseName("ix_invoice_adjustments_group_id");
+
+                    b.HasIndex("InvoiceId")
+                        .HasDatabaseName("ix_invoice_adjustments_invoice_id");
+
+                    b.HasIndex("ReversalOf")
+                        .IsUnique()
+                        .HasDatabaseName("ix_invoice_adjustments_reversal_of");
+
+                    b.ToTable("invoice_adjustments", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_invoice_adjustments_amount", "amount > 0");
+
+                            t.HasCheckConstraint("ck_invoice_adjustments_days", "sick_days is null or sick_days > 0");
+
+                            t.HasCheckConstraint("ck_invoice_adjustments_kind", "kind in ('sick','discount')");
                         });
                 });
 
@@ -6904,6 +7048,10 @@ namespace SchoolLms.Infrastructure.Migrations
                         .HasColumnType("numeric(14,2)")
                         .HasColumnName("monthly_amount");
 
+                    b.Property<Guid?>("PlanId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("plan_id");
+
                     b.Property<DateOnly>("StartsOn")
                         .HasColumnType("date")
                         .HasColumnName("starts_on");
@@ -6921,6 +7069,9 @@ namespace SchoolLms.Infrastructure.Migrations
 
                     b.HasIndex("CreatedBy")
                         .HasDatabaseName("ix_student_subscriptions_created_by");
+
+                    b.HasIndex("PlanId")
+                        .HasDatabaseName("ix_student_subscriptions_plan_id");
 
                     b.HasIndex("StudentId", "CategoryId", "StartsOn")
                         .HasDatabaseName("ix_student_subscriptions_student_id_category_id_starts_on");
@@ -7138,6 +7289,59 @@ namespace SchoolLms.Infrastructure.Migrations
                     b.ToTable("subjects", null, t =>
                         {
                             t.HasCheckConstraint("ck_subjects_color", "color is null or color ~ '^#[0-9a-fA-F]{6}$'");
+                        });
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.SubscriptionPlan", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("CategoryId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("category_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<int?>("DaysPerWeek")
+                        .HasColumnType("integer")
+                        .HasColumnName("days_per_week");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_active");
+
+                    b.Property<decimal>("MonthlyAmount")
+                        .HasPrecision(14, 2)
+                        .HasColumnType("numeric(14,2)")
+                        .HasColumnName("monthly_amount");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .HasColumnType("character varying(160)")
+                        .HasColumnName("name");
+
+                    b.HasKey("Id")
+                        .HasName("pk_subscription_plans");
+
+                    b.HasIndex("CategoryId")
+                        .HasDatabaseName("ix_subscription_plans_category_id");
+
+                    b.HasIndex("Name")
+                        .IsUnique()
+                        .HasDatabaseName("ix_subscription_plans_name")
+                        .HasFilter("is_active");
+
+                    b.ToTable("subscription_plans", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_subscription_plans_amount", "monthly_amount >= 0");
+
+                            t.HasCheckConstraint("ck_subscription_plans_days_per_week", "days_per_week is null or days_per_week between 1 and 7");
                         });
                 });
 
@@ -8183,12 +8387,27 @@ namespace SchoolLms.Infrastructure.Migrations
                         .IsRequired()
                         .HasConstraintName("fk_discounts_users_created_by");
 
+                    b.HasOne("SchoolLms.Domain.DiscountType", null)
+                        .WithMany()
+                        .HasForeignKey("DiscountTypeId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_discounts_discount_types_discount_type_id");
+
                     b.HasOne("SchoolLms.Domain.Student", null)
                         .WithMany()
                         .HasForeignKey("StudentId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("fk_discounts_students_student_id");
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.DiscountType", b =>
+                {
+                    b.HasOne("SchoolLms.Domain.FeeCategory", null)
+                        .WithMany()
+                        .HasForeignKey("CategoryId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_discount_types_fee_categories_category_id");
                 });
 
             modelBuilder.Entity("SchoolLms.Domain.Exam", b =>
@@ -8542,6 +8761,35 @@ namespace SchoolLms.Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_invoices_students_student_id");
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.InvoiceAdjustment", b =>
+                {
+                    b.HasOne("SchoolLms.Domain.AppUser", null)
+                        .WithMany()
+                        .HasForeignKey("CreatedBy")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_invoice_adjustments_users_created_by");
+
+                    b.HasOne("SchoolLms.Domain.Discount", null)
+                        .WithMany()
+                        .HasForeignKey("DiscountId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_invoice_adjustments_discounts_discount_id");
+
+                    b.HasOne("SchoolLms.Domain.Invoice", null)
+                        .WithMany()
+                        .HasForeignKey("InvoiceId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_invoice_adjustments_invoices_invoice_id");
+
+                    b.HasOne("SchoolLms.Domain.InvoiceAdjustment", null)
+                        .WithMany()
+                        .HasForeignKey("ReversalOf")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_invoice_adjustments_invoice_adjustments_reversal_of");
                 });
 
             modelBuilder.Entity("SchoolLms.Domain.Lead", b =>
@@ -9025,6 +9273,12 @@ namespace SchoolLms.Infrastructure.Migrations
                         .IsRequired()
                         .HasConstraintName("fk_student_subscriptions_users_created_by");
 
+                    b.HasOne("SchoolLms.Domain.SubscriptionPlan", null)
+                        .WithMany()
+                        .HasForeignKey("PlanId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_student_subscriptions_subscription_plans_plan_id");
+
                     b.HasOne("SchoolLms.Domain.Student", null)
                         .WithMany()
                         .HasForeignKey("StudentId")
@@ -9105,6 +9359,16 @@ namespace SchoolLms.Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_study_group_teachers_teachers_teacher_id");
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.SubscriptionPlan", b =>
+                {
+                    b.HasOne("SchoolLms.Domain.FeeCategory", null)
+                        .WithMany()
+                        .HasForeignKey("CategoryId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_subscription_plans_fee_categories_category_id");
                 });
 
             modelBuilder.Entity("SchoolLms.Domain.Survey", b =>

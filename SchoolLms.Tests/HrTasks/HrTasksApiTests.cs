@@ -425,10 +425,17 @@ public class HrTasksApiTests(ApiFixture fixture)
     {
         using var admin = await fixture.Api.ClientAsAsync(Roles.Admin);
         var e = await kit.PersonAsync();
+        // "Natijam" counts tasks due up to the end of TODAY in Tashkent — near midnight "+30 min" is
+        // tomorrow and the KPI row is (rightly) not there. Keep the due time inside today.
+        var tz = HrValues.Zone("Asia/Tashkent");
+        var now = DateTimeOffset.UtcNow;
+        var localNow = TimeZoneInfo.ConvertTime(now, tz);
+        var endOfToday = new DateTimeOffset(localNow.Date.AddDays(1), localNow.Offset);
+        var dueAt = now.AddMinutes(30) < endOfToday ? now.AddMinutes(30) : endOfToday.AddSeconds(-30);
         var created = await ReadAsync(await admin.PostAsJsonAsync($"{Panel}/tasks", new
         {
             employeeId = e.Employee!.Id, title = "Leadlar", kind = "numeric", targetAmount = "10", unit = "lead",
-            dueAt = DateTimeOffset.UtcNow.AddMinutes(30).ToString("o"),
+            dueAt = dueAt.ToString("o"),
         }));
         var id = created.GetProperty("id").GetString();
         var step = await ReadAsync(await e.Client.PostAsJsonAsync($"{Me}/tasks/{id}/progress", new { amount = "4.50", note = "ertalab" }));

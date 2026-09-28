@@ -4,6 +4,7 @@ import { AppLayout } from '@/components/layout/AppLayout'
 import { ProtectedRoute, RootRedirect } from '@/components/auth/ProtectedRoute'
 import { RequirePerm } from '@/components/auth/RequirePerm'
 import { CategoriesPage } from '@/pages/admin/billing/CategoriesPage'
+import { PlansPage } from '@/pages/admin/billing/PlansPage'
 import { BillingSettingsPage } from '@/pages/admin/billing/BillingSettingsPage'
 import { RefundsPage } from '@/pages/admin/finance/RefundsPage'
 import { PnlExpectationPage } from '@/pages/admin/finance/PnlExpectationPage'
@@ -234,6 +235,7 @@ export default function App() {
           <Route path="finance/transactions" element={<RequirePerm perm="finance"><TransactionsPage /></RequirePerm>} />
           <Route path="billing/invoices" element={<RequirePerm perm="finance"><InvoicesPage /></RequirePerm>} />
           <Route path="billing/categories" element={<RequirePerm perm="finance"><CategoriesPage /></RequirePerm>} />
+          <Route path="billing/plans" element={<RequirePerm perm="finance"><PlansPage /></RequirePerm>} />
           <Route path="billing/settings" element={<RequirePerm perm="finance"><BillingSettingsPage /></RequirePerm>} />
           <Route path="finance/refunds" element={<RequirePerm perm="finance"><RefundsPage /></RequirePerm>} />
           {/* EduSchool'da alohida menyu yozuvi — bizda bitta sahifaning tablari. */}

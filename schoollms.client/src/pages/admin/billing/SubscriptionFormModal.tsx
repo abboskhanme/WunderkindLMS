@@ -5,9 +5,13 @@
  * `UpdateSubscriptionRequest` da faqat narx, tafsilot va tugash sanasini
  * qabul qiladi): boshqa o'quvchiga "ko'chirilgan" obuna hisob-fakturalar
  * tarixini buzardi. Kerak bo'lsa eskisi yopiladi va yangisi ochiladi.
+ *
+ * ABONEMENT (docs/modules/billing-plans.md §6): a NEW subscription is opened from an
+ * active plan — the price is the plan's and is not typed. With no active plans the form
+ * falls back to the category-based flow below, so nothing breaks before plans exist.
  */
 import { useCallback, useEffect, useState } from 'react'
-import type { FeeCategory } from '@/types'
+import type { FeeCategory, SubscriptionPlan } from '@/types'
 import type {
   SubscriptionInput,
   SubscriptionRecord,
@@ -20,6 +24,7 @@ import { Input, Select } from '@/components/ui/Input'
 import { formatMoney } from '@/lib/utils'
 import { Notice } from './BillingUi'
 import { StudentSelect } from './StudentSelect'
+import { groupPlansByType } from './planUtils'
 import type { StudentOption } from './useStudents'
 import { DatePicker } from '@/components/ui/DatePicker'
 
@@ -44,6 +49,8 @@ interface Props {
   /** null = yangi obuna. */
   initial: SubscriptionRecord | null
   categories: FeeCategory[]
+  /** All plans (archived included — an edited subscription may point at one); only active ones are offered. */
+  plans: SubscriptionPlan[]
   students: StudentOption[]
   studentsLoading: boolean
   studentsError: string | null
@@ -65,6 +72,7 @@ export function SubscriptionFormModal({
   open,
   initial,
   categories,
+  plans,
   students,
   studentsLoading,
   studentsError,
@@ -79,6 +87,7 @@ export function SubscriptionFormModal({
   const editing = initial !== null
 
   const [studentId, setStudentId] = useState('')
+  const [planId, setPlanId] = useState('')
   const [categoryId, setCategoryId] = useState('')
   const [amount, setAmount] = useState('')
   const [amountTouched, setAmountTouched] = useState(false)
@@ -93,6 +102,7 @@ export function SubscriptionFormModal({
     if (!open) return
     /* eslint-disable react-hooks/set-state-in-effect -- oyna ochilganda formani initial bilan sinxronlash (maqsadli) */
     setStudentId(initial?.studentId ?? presetStudentId ?? '')
+    setPlanId(initial?.planId ?? '')
     setCategoryId(initial?.categoryId ?? '')
     setAmount(initial ? String(initial.monthlyAmount) : '')
     setAmountTouched(false)
@@ -103,6 +113,10 @@ export function SubscriptionFormModal({
     /* eslint-enable react-hooks/set-state-in-effect */
   }, [open, initial, presetStudentId])
 
+  const activePlans = plans.filter((p) => p.isActive)
+  // New subscription from a plan; without active plans — the category flow as before.
+  const planMode = !editing && activePlans.length > 0
+
   /**
    * Sinf oylik to'lovidan taklif — faqat YANGI obunada va admin summani
    * hali qo'lda tegmagan bo'lsa. Hech narsa yozilmaydi, faqat forma to'ladi.
@@ -112,7 +126,8 @@ export function SubscriptionFormModal({
    */
   const applyDefault = useCallback(
     async (nextStudentId: string, nextCategoryId: string) => {
-      if (editing || !nextStudentId || !nextCategoryId || amountTouched) return
+      // In plan mode the price is the plan's — a class-fee suggestion must not overwrite it.
+      if (planMode || editing || !nextStudentId || !nextCategoryId || amountTouched) return
       try {
         const d = await getSubscriptionDefault(nextStudentId, nextCategoryId)
         if (d.source === 'class_fee' && d.monthlyAmount > 0) {
@@ -126,7 +141,7 @@ export function SubscriptionFormModal({
         setSuggestion(null)
       }
     },
-    [editing, amountTouched],
+    [planMode, editing, amountTouched],
   )
 
   useEffect(() => {
@@ -172,8 +187,18 @@ export function SubscriptionFormModal({
    */
   const categoryPrice =
     (editing ? categories.find((c) => c.id === initial?.categoryId) : selectedCategory)?.monthlyAmount ?? null
-  const amountLocked = categoryPrice != null || lockStudent
-  const noPrice = amountLocked && !editing && categoryId !== '' && amount.trim() === ''
+
+  /**
+   * The plan's price: the chosen plan when creating; when editing a subscription opened
+   * from a plan — that plan's current price (the server accepts no other amount for it).
+   */
+  const selectedPlan = planMode ? activePlans.find((p) => p.id === planId) : undefined
+  const initialPlan = editing && initial?.planId ? plans.find((p) => p.id === initial.planId) : undefined
+  const planPrice = (planMode ? selectedPlan : initialPlan)?.monthlyAmount ?? null
+  const fixedPrice = planPrice ?? categoryPrice
+  const amountLocked = planMode || fixedPrice != null || lockStudent
+  const noPrice = !planMode && amountLocked && !editing && categoryId !== '' && amount.trim() === ''
+  const planGroups = planMode ? groupPlansByType(activePlans) : []
 
   const amountNumber = Number(amount)
   const amountValid = amount.trim() !== '' && Number.isFinite(amountNumber) && amountNumber >= 0
@@ -181,7 +206,12 @@ export function SubscriptionFormModal({
   const valid =
     amountValid &&
     periodValid &&
-    (editing || (studentId !== '' && categoryId !== '' && startsOn !== '' && !clash))
+    (editing ||
+      (studentId !== '' &&
+        categoryId !== '' &&
+        (!planMode || planId !== '') &&
+        startsOn !== '' &&
+        !clash))
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -195,10 +225,13 @@ export function SubscriptionFormModal({
       })
       return
     }
+    // In plan mode `categoryId` and the amount were copied from the plan, so the request
+    // stays valid for the existing validator while the server takes both from `planId`.
     onCreate({
       studentId,
       categoryId,
       monthlyAmount: amountNumber,
+      planId: planMode && planId !== '' ? planId : undefined,
       detail: trimmedDetail === '' ? undefined : trimmedDetail,
       startsOn,
       endsOn: endsOn === '' ? undefined : endsOn,
@@ -227,7 +260,8 @@ export function SubscriptionFormModal({
           <div className="rounded-lg bg-slate-50 px-3 py-2 text-sm">
             <p className="font-medium text-slate-800">{initial.studentName}</p>
             <p className="text-slate-500">
-              {initial.categoryName} · {initial.startsOn} dan
+              {initial.planName ? `${initial.planName} (${initial.categoryName})` : initial.categoryName} ·{' '}
+              {initial.startsOn} dan
             </p>
           </div>
         ) : (
@@ -250,39 +284,72 @@ export function SubscriptionFormModal({
                 required
               />
             )}
-            <Select
-              label="To'lov toifasi"
-              required
-              value={categoryId}
-              onChange={(e) => {
-                const id = e.target.value
-                setCategoryId(id)
-                const price = categories.find((c) => c.id === id)?.monthlyAmount
-                if (price != null) {
-                  setAmount(String(price))
+            {planMode ? (
+              <Select
+                label="Abonement"
+                required
+                value={planId}
+                onChange={(e) => {
+                  const id = e.target.value
+                  const plan = activePlans.find((p) => p.id === id)
+                  setPlanId(id)
+                  // Type and price come from the plan; the server does the same with `planId`.
+                  setCategoryId(plan?.categoryId ?? '')
+                  setAmount(plan ? String(plan.monthlyAmount) : '')
                   setSuggestion(null)
-                  return
-                }
-                if (lockStudent) {
-                  // Oldingi toifaning narxi yangisiga ko'chib qolmasin.
-                  setAmount('')
-                  setSuggestion(null)
-                }
-                void applyDefault(studentId, id)
-              }}
-            >
-              <option value="">Tanlang...</option>
-              {categories
-                .filter((c) => c.isActive)
-                .map((c) => {
-                  const taken = Boolean(clashFor(c.id))
-                  return (
-                    <option key={c.id} value={c.id} disabled={taken && c.id !== categoryId}>
-                      {taken ? `${c.name} — faol obuna bor` : c.name}
-                    </option>
-                  )
-                })}
-            </Select>
+                }}
+              >
+                <option value="">Tanlang...</option>
+                {planGroups.map((group) => (
+                  <optgroup key={group.categoryId} label={group.categoryName}>
+                    {group.plans.map((p) => {
+                      // One live subscription per type — a plan of a taken type is not offered.
+                      const taken = Boolean(clashFor(p.categoryId))
+                      const label = `${p.name} — ${formatMoney(p.monthlyAmount)}`
+                      return (
+                        <option key={p.id} value={p.id} disabled={taken && p.id !== planId}>
+                          {taken ? `${label} (faol obuna bor)` : label}
+                        </option>
+                      )
+                    })}
+                  </optgroup>
+                ))}
+              </Select>
+            ) : (
+              <Select
+                label="To'lov toifasi"
+                required
+                value={categoryId}
+                onChange={(e) => {
+                  const id = e.target.value
+                  setCategoryId(id)
+                  const price = categories.find((c) => c.id === id)?.monthlyAmount
+                  if (price != null) {
+                    setAmount(String(price))
+                    setSuggestion(null)
+                    return
+                  }
+                  if (lockStudent) {
+                    // Oldingi toifaning narxi yangisiga ko'chib qolmasin.
+                    setAmount('')
+                    setSuggestion(null)
+                  }
+                  void applyDefault(studentId, id)
+                }}
+              >
+                <option value="">Tanlang...</option>
+                {categories
+                  .filter((c) => c.isActive)
+                  .map((c) => {
+                    const taken = Boolean(clashFor(c.id))
+                    return (
+                      <option key={c.id} value={c.id} disabled={taken && c.id !== categoryId}>
+                        {taken ? `${c.name} — faol obuna bor` : c.name}
+                      </option>
+                    )
+                  })}
+              </Select>
+            )}
           </>
         )}
 
@@ -293,17 +360,20 @@ export function SubscriptionFormModal({
               {amountValid ? formatMoney(amountNumber) : '—'}
             </div>
             <p className="mt-1 text-xs text-slate-400">
-              {categoryPrice != null
-                ? "Abonementning o'zgarmas narxi — faqat Moliya → Toifalar sahifasida o'zgaradi."
-                : "O'qish narxi sinfdan olinadi."}
+              {planMode || planPrice != null
+                ? "Abonement narxi — faqat Moliya sozlamalari → Abonementlar sahifasida o'zgaradi."
+                : categoryPrice != null
+                  ? "Abonementning o'zgarmas narxi — faqat Moliya → Toifalar sahifasida o'zgaradi."
+                  : "O'qish narxi sinfdan olinadi."}
             </p>
-            {editing && categoryPrice != null && amountValid && amountNumber !== categoryPrice && (
+            {editing && fixedPrice != null && amountValid && amountNumber !== fixedPrice && (
               <button
                 type="button"
-                onClick={() => setAmount(String(categoryPrice))}
+                onClick={() => setAmount(String(fixedPrice))}
                 className="mt-1 text-xs font-medium text-brand-600 hover:text-brand-700"
               >
-                Toifaning joriy narxiga o'tkazish: {formatMoney(categoryPrice)}
+                {planPrice != null ? 'Abonementning' : 'Toifaning'} joriy narxiga o'tkazish:{' '}
+                {formatMoney(fixedPrice)}
               </button>
             )}
           </div>
@@ -376,7 +446,10 @@ export function SubscriptionFormModal({
         )}
         {clash && (
           <Notice tone="danger">
-            Bu toifada {clash.startsOn} … {clash.endsOn ?? 'muddatsiz'} davrli obuna allaqachon bor.
+            {planMode
+              ? `"${clash.categoryName}" turida ${clash.planName ? `("${clash.planName}") ` : ''}`
+              : 'Bu toifada '}
+            {clash.startsOn} … {clash.endsOn ?? 'muddatsiz'} davrli obuna allaqachon bor.
             Avval uni yoping yoki yangisini u tugagandan keyingi sanadan boshlang.
           </Notice>
         )}

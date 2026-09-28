@@ -197,6 +197,107 @@ export async function suggestAllocation(
 export const PROBE_AMOUNT = 0.01
 
 /* ========================================================================
+   Kasallik chegirmasi (docs/modules/billing-plans.md §9)
+   ======================================================================== */
+
+/**
+ * One open invoice of the chosen month and what the sick days take off it. All sums are
+ * SERVER-computed: `daily = gross ÷ lessonDays` (lesson days by the subscription's abonement
+ * schedule, §7), `deduction = min(daily × days, remaining)`.
+ */
+export interface SickDiscountLine {
+  invoiceId: string
+  categoryName: string
+  /** The abonement; null = a subscription without one (counted as "Butun oy"). */
+  planName: string | null
+  gross: number
+  remaining: number
+  lessonDays: number
+  daily: number
+  deduction: number
+}
+
+/** Preview and apply answer with the same shape. */
+export interface SickDiscountResult {
+  /** "yyyy-MM" */
+  month: string
+  days: number
+  total: number
+  lines: SickDiscountLine[]
+  /** Set on an applied one — what `cancelSickDiscount` takes. null on a preview. */
+  groupId: string | null
+}
+
+/** A sickness discount still standing on the student's invoices (§9.1) — it can be cancelled. */
+export interface SickDiscountEntry {
+  groupId: string
+  /** "yyyy-MM" */
+  month: string
+  days: number
+  total: number
+  note: string | null
+  createdAt: string
+  createdByName: string | null
+}
+
+export interface SickDiscountCancelResult {
+  groupId: string
+  /** "yyyy-MM" */
+  month: string
+  total: number
+}
+
+export interface SickDiscountPayload {
+  studentId: string
+  /** "yyyy-MM" */
+  month: string
+  /** ≥ 1 and ≤ the month's lesson days — otherwise 400 `invalid_days`. */
+  days: number
+  note: string | null
+}
+
+/**
+ * What a sickness discount WOULD take off every open invoice of the month. Reads only.
+ * Errors: `invalid_days`, `nothing_to_deduct`.
+ */
+export async function previewSickDiscount(
+  studentId: string,
+  month: string,
+  days: number,
+  signal?: AbortSignal,
+): Promise<SickDiscountResult> {
+  const res = await api.get<SickDiscountResult>('/cash/sick-discount/preview', {
+    params: { studentId, month, days },
+    signal,
+  })
+  return res.data
+}
+
+/**
+ * Applies the sickness discount — put by the cashier, no approval, recorded per invoice as an
+ * invoice adjustment (§10). Nothing is taken below what is already paid.
+ */
+export async function applySickDiscount(payload: SickDiscountPayload): Promise<SickDiscountResult> {
+  const res = await api.post<SickDiscountResult>('/cash/sick-discount', payload)
+  return res.data
+}
+
+/** The student's sickness discounts that were not cancelled, newest first. */
+export async function listSickDiscounts(studentId: string, signal?: AbortSignal): Promise<SickDiscountEntry[]> {
+  const res = await api.get<SickDiscountEntry[]>('/cash/sick-discount', { params: { studentId }, signal })
+  return res.data
+}
+
+/**
+ * Cancels one application whole — the sum comes back onto the month's invoices (reversal rows,
+ * nothing is deleted). Errors: `sick_discount_already_cancelled`, `invoice_void`.
+ */
+export async function cancelSickDiscount(groupId: string): Promise<SickDiscountCancelResult> {
+  const res = await api.post<SickDiscountCancelResult>(`/cash/sick-discount/${groupId}/cancel`)
+  return res.data
+}
+
+/* ========================================================================
    Chek (SPEC §4.7)
    ======================================================================== */
 

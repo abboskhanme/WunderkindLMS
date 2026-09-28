@@ -207,6 +207,9 @@ FROM (VALUES
         -- is NOT in this list on purpose: it is an ordinary catalogue with
         -- no money in it, so it keeps the full CRUD step 4 already grants.
         ('payroll_adjustments'),
+        -- docs/modules/billing-plans.md §10 — a sickness / catalog discount taken off a
+        -- written invoice. Append-only; its ledger batch is append-only too.
+        ('invoice_adjustments'),
         -- docs/modules/mcp-readonly.md — what an AI client read is audited;
         -- the audit row can never be edited or deleted afterwards.
         ('mcp_audit')

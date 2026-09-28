@@ -210,14 +210,14 @@ function SalaryCalcView() {
             Boshqa xodimlar — belgilangan oylik (ishga kirgan oyi kunlar bo'yicha qisman).
           </p>
         </div>
-        <label className="flex items-center gap-2 text-sm text-slate-600">
+        <div className="flex items-center gap-2 text-sm text-slate-600">
           <span className="font-medium">Oy:</span>
           <MonthPicker
             value={month}
             onChange={(value: string) => setMonth(value)}
             className="w-44"
           />
-        </label>
+        </div>
       </div>
 
       {/* Toifa soat narxlari */}

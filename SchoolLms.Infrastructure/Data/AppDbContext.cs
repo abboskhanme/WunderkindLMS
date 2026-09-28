@@ -80,6 +80,9 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
     // olib tashlandi; bu to'plam YAGONA pul manbai. Konfiguratsiya BillingModel.cs da.
     public DbSet<FeeCategory> FeeCategories => Set<FeeCategory>();
     public DbSet<StudentSubscription> StudentSubscriptions => Set<StudentSubscription>();
+    public DbSet<SubscriptionPlan> SubscriptionPlans => Set<SubscriptionPlan>();
+    public DbSet<DiscountType> DiscountTypes => Set<DiscountType>();
+    public DbSet<InvoiceAdjustment> InvoiceAdjustments => Set<InvoiceAdjustment>();
     public DbSet<Discount> Discounts => Set<Discount>();
     public DbSet<Invoice> Invoices => Set<Invoice>();
     public DbSet<Payment> Payments => Set<Payment>();

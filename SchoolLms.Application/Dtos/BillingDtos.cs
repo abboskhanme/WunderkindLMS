@@ -69,12 +69,16 @@ public record StudentSubscriptionDto(
     decimal MonthlyAmount, string? Detail,
     DateOnly StartsOn, DateOnly? EndsOn,
     bool IsActive,
-    string CreatedByName, DateTimeOffset CreatedAt);
+    string CreatedByName, DateTimeOffset CreatedAt,
+    Guid? PlanId = null, string? PlanName = null);
 
-/// <summary>Obuna ochish. `created_by` JWT'dan (§4.4).</summary>
+/// <summary>
+/// Obuna ochish. `created_by` JWT'dan (§4.4). `PlanId` (abonement) berilsa, toifa va oylik summa
+/// abonementdan olinadi — so'rovdagilari e'tiborga olinmaydi (docs/modules/billing-plans.md).
+/// </summary>
 public record CreateSubscriptionRequest(
     string StudentId, Guid CategoryId, decimal MonthlyAmount,
-    string? Detail, DateOnly StartsOn, DateOnly? EndsOn);
+    string? Detail, DateOnly StartsOn, DateOnly? EndsOn, Guid? PlanId = null);
 
 /// <summary>Narx yoki tafsilotni o'zgartirish. Toifa va o'quvchi o'zgarmaydi.</summary>
 public record UpdateSubscriptionRequest(decimal MonthlyAmount, string? Detail, DateOnly? EndsOn);
@@ -96,7 +100,9 @@ public record DiscountDto(
     // pending | approved | rejected.
     string Status,
     string CreatedByName, string? ApprovedByName,
-    DateTimeOffset? DecidedAt, DateTimeOffset CreatedAt);
+    DateTimeOffset? DecidedAt, DateTimeOffset CreatedAt,
+    // Katalogdan biriktirilgan bo'lsa (billing-plans.md §8) — uning turi.
+    Guid? DiscountTypeId = null, string? DiscountTypeName = null);
 
 /// <summary>
 /// Chegirma so'rash. HAR DOIM `pending` holatda yaratiladi — bu yerda

@@ -108,7 +108,8 @@ public record EndSubscriptionPreviewDto(
 public record SubscriptionQuery(
     string? StudentId = null,
     Guid? CategoryId = null,
-    bool ActiveOnly = false);
+    bool ActiveOnly = false,
+    Guid? PlanId = null);
 
 /// <summary>
 /// Formaga oldindan qo'yiladigan oylik summa va u QAYERDAN kelgani.
@@ -172,6 +173,8 @@ public sealed class SubscriptionService(
             source = source.Where(s => s.StudentId == query.StudentId);
         if (query.CategoryId is { } categoryId)
             source = source.Where(s => s.CategoryId == categoryId);
+        if (query.PlanId is { } planId)
+            source = source.Where(s => s.PlanId == planId);
         if (query.ActiveOnly)
             source = source.Where(s => s.StartsOn <= today && (s.EndsOn == null || s.EndsOn >= today));
 
@@ -219,7 +222,18 @@ public sealed class SubscriptionService(
                 "student_archived",
                 $"{student.FullName} arxivlangan — unga yangi obuna ochib bo'lmaydi.");
 
-        var category = await RequireCategoryAsync(request.CategoryId, ct);
+        // An abonement decides the category and the price (docs/modules/billing-plans.md §2).
+        SubscriptionPlan? plan = null;
+        if (request.PlanId is { } planId)
+        {
+            plan = await db.SubscriptionPlans.FirstOrDefaultAsync(p => p.Id == planId, ct)
+                ?? throw BillingRuleException.NotFound("plan_not_found", "Abonement topilmadi.");
+            if (!plan.IsActive)
+                throw BillingRuleException.Conflict(
+                    "plan_inactive", $"'{plan.Name}' abonementi arxivda — unga yangi obuna ochib bo'lmaydi.");
+        }
+
+        var category = await RequireCategoryAsync(plan?.CategoryId ?? request.CategoryId, ct);
         if (!category.IsActive)
             throw BillingRuleException.Conflict(
                 "category_inactive",
@@ -231,7 +245,12 @@ public sealed class SubscriptionService(
         // to'ldiriladi. Tafsilot uchun `SuggestAmountAsync` izohiga qarang.
         var amount = decimal.Round(request.MonthlyAmount, MoneyScale);
         var amountSource = "so'rovda ko'rsatilgan";
-        if (category.MonthlyAmount is { } fixedPrice)
+        if (plan is not null)
+        {
+            amount = decimal.Round(plan.MonthlyAmount, MoneyScale);
+            amountSource = $"'{plan.Name}' abonementining narxi";
+        }
+        else if (category.MonthlyAmount is { } fixedPrice)
         {
             // Abonementning o'zgarmas narxi: so'rovdagi summa e'tiborga olinmaydi.
             amount = decimal.Round(fixedPrice, MoneyScale);
@@ -251,6 +270,7 @@ public sealed class SubscriptionService(
         {
             StudentId = student.Id,
             CategoryId = category.Id,
+            PlanId = plan?.Id,
             MonthlyAmount = amount,
             Detail = Trimmed(request.Detail),
             StartsOn = request.StartsOn,
@@ -262,7 +282,7 @@ public sealed class SubscriptionService(
 
         audit.Record(
             AuditEntity, subscription.Id.ToString(), "create",
-            $"Obuna ochildi: {category.Name} — {AuditService.Money(amount)} so'm/oy "
+            $"Obuna ochildi: {category.Name}{(plan is null ? "" : $" ({plan.Name})")} — {AuditService.Money(amount)} so'm/oy "
             + $"({request.StartsOn:yyyy-MM-dd} dan; summa manbai: {amountSource})",
             after: Snapshot(subscription), studentId: student.Id);
 
@@ -294,9 +314,19 @@ public sealed class SubscriptionService(
         var changes = new List<string>();
 
         var amount = decimal.Round(request.MonthlyAmount, MoneyScale);
+        // An abonement's subscription keeps its amount or takes the abonement's current price —
+        // the price itself is changed on the abonement (billing-plans.md §3).
+        if (subscription.PlanId is { } planId
+            && await db.SubscriptionPlans.AsNoTracking().FirstOrDefaultAsync(p => p.Id == planId, ct) is { } plan
+            && amount != subscription.MonthlyAmount
+            && amount != decimal.Round(plan.MonthlyAmount, MoneyScale))
+            throw BillingRuleException.Conflict(
+                "amount_fixed",
+                $"'{plan.Name}' abonementining narxi o'zgarmas — {AuditService.Money(plan.MonthlyAmount)} so'm. "
+                + "Narxni o'zgartirish uchun abonementning o'zini tahrirlang.");
         // Narxi belgilangan toifada summa qo'lda o'zgarmaydi: faqat o'z holicha qoladi
         // yoki toifaning joriy narxiga tenglashtiriladi.
-        if (category.MonthlyAmount is { } fixedPrice
+        if (subscription.PlanId is null && category.MonthlyAmount is { } fixedPrice
             && amount != subscription.MonthlyAmount
             && amount != decimal.Round(fixedPrice, MoneyScale))
             throw BillingRuleException.Conflict(
@@ -438,6 +468,8 @@ public sealed class SubscriptionService(
             join st in db.Students.AsNoTracking() on s.StudentId equals st.Id
             join c in db.FeeCategories.AsNoTracking() on s.CategoryId equals c.Id
             join u in db.Users.AsNoTracking() on s.CreatedBy equals u.Id
+            join pl in db.SubscriptionPlans.AsNoTracking() on s.PlanId equals (Guid?)pl.Id into plans
+            from pl in plans.DefaultIfEmpty()
             orderby st.FullName, c.Code, s.StartsOn descending
             select new
             {
@@ -453,6 +485,8 @@ public sealed class SubscriptionService(
                 s.EndsOn,
                 CreatedByName = u.FullName,
                 s.CreatedAt,
+                s.PlanId,
+                PlanName = pl == null ? null : pl.Name,
             }).ToListAsync(ct);
 
         return [.. rows.Select(r => new StudentSubscriptionDto(
@@ -461,7 +495,7 @@ public sealed class SubscriptionService(
             r.MonthlyAmount, r.Detail,
             r.StartsOn, r.EndsOn,
             r.StartsOn <= asOf && (r.EndsOn == null || r.EndsOn >= asOf),
-            r.CreatedByName, r.CreatedAt))];
+            r.CreatedByName, r.CreatedAt, r.PlanId, r.PlanName))];
     }
 
     /// <summary>
@@ -578,7 +612,7 @@ public sealed class SubscriptionService(
     private static string Show(DateOnly? date) => date?.ToString("yyyy-MM-dd") ?? "cheksiz";
 
     /// <summary>Audit uchun snapshot (<c>before</c>/<c>after</c>).</summary>
-    private static object Snapshot(StudentSubscription s) => new
+    internal static object Snapshot(StudentSubscription s) => new
     {
         s.StudentId,
         s.CategoryId,

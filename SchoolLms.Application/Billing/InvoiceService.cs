@@ -252,10 +252,11 @@ public sealed class InvoiceService(IAppDbContext db, ILedgerService ledger) : II
 
         // ---- 3. FAQAT TASDIQLANGAN chegirmalar (mijoz javobi, SPEC §8.1 Q5) ----
         // `status = 'approved'` VA `approved_by is not null` — ikkalasi ham.
-        // Tasdiq kutayotgan chegirma hisobni kamaytirmasligi SHART.
+        // Tasdiq kutayotgan chegirma hisobni kamaytirmasligi SHART. Istisno — katalogdan
+        // biriktirilgan chegirma: u tasdiqsiz (mijoz, 2026-09-28; billing-plans.md §8).
         var discounts = await db.Discounts.AsNoTracking()
             .Where(d => d.Status == DiscountStatus.Approved
-                        && d.ApprovedBy != null
+                        && (d.ApprovedBy != null || d.DiscountTypeId != null)
                         && d.StartsOn <= monthEnd
                         && (d.EndsOn == null || d.EndsOn >= monthStart))
             .Select(d => new { d.StudentId, d.CategoryId, d.Percent, d.Amount, d.StartsOn, d.CreatedAt })
