@@ -102,9 +102,12 @@ export function EmployeeModal({
   }, [employee])
 
   const usingExisting = !isEdit && mode === 'existing'
+  // Editing: name and phone come from Boshqaruv → Xodimlar (client, 2026-09-28) — not validated here.
   const nameError =
-    usingExisting ? null : fullName.trim().length < 3 ? 'F.I.Sh. kamida 3 ta belgidan iborat bo‘lsin' : fullName.trim().length > 160 ? 'F.I.Sh. 160 belgidan oshmasin' : null
-  const phoneError = usingExisting ? null : localDigits(phone).length !== 9 ? 'Telefon: 9 ta raqam kiriting (masalan 90 123 45 67)' : null
+    usingExisting || isEdit ? null : fullName.trim().length < 3 ? 'F.I.Sh. kamida 3 ta belgidan iborat bo‘lsin' : fullName.trim().length > 160 ? 'F.I.Sh. 160 belgidan oshmasin' : null
+  // A new user needs a phone (it is the login). On edit the phone is Boshqaruv's, not ours.
+  const phoneError =
+    usingExisting || isEdit ? null : localDigits(phone).length !== 9 ? 'Telefon: 9 ta raqam kiriting (masalan 90 123 45 67)' : null
   const candidateError = usingExisting && !candidate ? 'Foydalanuvchini tanlang' : null
   const noteError = note.trim().length > 2000 ? 'Izoh 2000 belgidan oshmasin' : null
   const managersLimit = managerIds.length > HR_MAX_MANAGERS ? `Rahbarlar soni ${HR_MAX_MANAGERS} tadan oshmasin` : null
@@ -131,9 +134,6 @@ export function EmployeeModal({
           }
         }
         await updateEmployee(employee.id, {
-          fullName: fullName.trim(),
-          phone: toContractPhone(phone),
-          positionId: positionId || null,
           note: note.trim() || null,
           ...(canSetHrRole ? { hrRole } : {}),
         })
@@ -229,7 +229,9 @@ export function EmployeeModal({
         }}
       >
         <p className="text-sm text-slate-400">
-          HR xodimi — bizning tizim foydalanuvchisi. Telefon bot bilan bog‘lashda ham ishlatiladi.
+          {isEdit
+            ? 'Ism, telefon va lavozim Boshqaruv → Xodimlar bo‘limida o‘zgartiriladi; bu yerda — rahbarlar va HR doirasi.'
+            : 'HR xodimi — bizning tizim foydalanuvchisi. Telefon bot bilan bog‘lashda ham ishlatiladi.'}
         </p>
 
         {!isEdit && (
@@ -322,6 +324,13 @@ export function EmployeeModal({
               </div>
             </div>
           </Field>
+        ) : isEdit ? (
+          <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5">
+            <p className="text-sm font-medium text-slate-800">{employee?.fullName}</p>
+            <p className="text-xs tabular-nums text-slate-500">
+              {[employee?.positionName ?? 'Lavozim belgilanmagan', employee?.phone ? formatPhone(employee.phone) : 'Telefon kiritilmagan'].join(' · ')}
+            </p>
+          </div>
         ) : (
           <>
             <Field label="F.I.Sh." required error={submitted ? nameError : null}>
@@ -329,7 +338,7 @@ export function EmployeeModal({
             </Field>
             <Field
               error={submitted ? phoneError : null}
-              hint={isEdit ? 'Xodim botga shu raqam bilan bog‘lanadi' : 'Login — telefon raqami; parol saqlangach bir marta ko‘rsatiladi'}
+              hint="Login — telefon raqami; parol saqlangach bir marta ko‘rsatiladi"
             >
               <PhoneInput label="Telefon" required value={phone} onChange={setPhone} />
             </Field>
@@ -337,16 +346,19 @@ export function EmployeeModal({
         )}
 
         <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Lavozim" hint="Lavozim — yorliq va guruhlash vositasi; panelga kirish huquqini bermaydi">
-            <select className={inputCls} value={positionId} onChange={(e) => setPositionId(e.target.value)}>
-              <option value="">Tanlanmagan</option>
-              {positionOptions.map((position) => (
-                <option key={position.id} value={position.id}>
-                  {position.isActive ? position.name : `${position.name} (nofaol)`}
-                </option>
-              ))}
-            </select>
-          </Field>
+          {/* Editing: the position is Boshqaruv's (shown in the summary above), not chosen here. */}
+          {!isEdit && (
+            <Field label="Lavozim" hint="Lavozim — yorliq va guruhlash vositasi; panelga kirish huquqini bermaydi">
+              <select className={inputCls} value={positionId} onChange={(e) => setPositionId(e.target.value)}>
+                <option value="">Tanlanmagan</option>
+                {positionOptions.map((position) => (
+                  <option key={position.id} value={position.id}>
+                    {position.isActive ? position.name : `${position.name} (nofaol)`}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          )}
           {canSetHrRole && (
             <Field label="HR doirasi" hint={HR_ROLE_HINT[hrRole]}>
               <select className={inputCls} value={hrRole} onChange={(e) => setHrRole(e.target.value as HrRole)}>

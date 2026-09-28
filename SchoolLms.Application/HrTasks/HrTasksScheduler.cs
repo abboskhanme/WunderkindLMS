@@ -30,6 +30,7 @@ public sealed class HrTasksScheduler(IServiceScopeFactory scopes, ILogger<HrTask
         {
             try
             {
+                await SyncPeopleAsync(stoppingToken);
                 await TickAsync(DateTimeOffset.UtcNow, stoppingToken);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
@@ -91,6 +92,27 @@ public sealed class HrTasksScheduler(IServiceScopeFactory scopes, ILogger<HrTask
 
         if (result.Count > 0) logger.LogInformation("HR tick {Day}: {@Result}", today, result);
         return result;
+    }
+
+    /// <summary>
+    /// New teachers/staff become HR employees (<see cref="HrTasksService.SyncLmsPeopleAsync"/>).
+    /// Not a Telegram job — runs whatever the message switches say. Kept OUT of
+    /// <see cref="TickAsync"/> on purpose: tests drive ticks against a shared database and must
+    /// not turn every test user into an HR employee.
+    /// </summary>
+    private async Task SyncPeopleAsync(CancellationToken ct)
+    {
+        try
+        {
+            using var scope = scopes.CreateScope();
+            var sync = await Service(scope).SyncLmsPeopleAsync(ct);
+            if (sync.Added + sync.Updated > 0)
+                logger.LogInformation("HR: LMS xodimlari — {Added} ta qo'shildi, {Updated} ta yangilandi", sync.Added, sync.Updated);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogError(ex, "HR: LMS xodimlari ro'yxatga qo'shilmadi");
+        }
     }
 
     private static HrTasksService Service(IServiceScope scope) => scope.ServiceProvider.GetRequiredService<HrTasksService>();

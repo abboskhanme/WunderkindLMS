@@ -107,7 +107,8 @@ public class StaffController(AppDbContext db, AuditService audit) : ControllerBa
         if (await db.Expenses.AnyAsync(e => e.EmployeeUserId == id))
             return Conflict(new { message = "Bu xodimga maosh berilgan — akkauntni o'chirib bo'lmaydi (moliyaviy tarix saqlanadi)." });
         // `hr_employees.user_id` is RESTRICT too (HR task history) — a readable 409, not a 23503 → 500.
-        if (await db.HrEmployees.AnyAsync(e => e.UserId == id))
+        // Every employee has an HR row now (auto-sync); only one WITH history blocks the delete.
+        if (!await SchoolLms.Application.HrTasks.HrTasksService.ReleaseUnusedEmployeeAsync(db, id))
             return Conflict(new { message = HrEmployeeDeleteMessage });
         db.Users.Remove(user);
         await db.SaveChangesAsync();

@@ -137,7 +137,7 @@ export function ManagerPicker({
                       <span className="min-w-0 flex-1">
                         <span className="block truncate text-sm text-slate-800">{item.fullName}</span>
                         <span className="block truncate text-xs text-slate-400">
-                          {[item.positionName ?? 'Lavozim belgilanmagan', formatPhone(item.phone)].join(' · ')}
+                          {[item.positionName ?? 'Lavozim belgilanmagan', item.phone ? formatPhone(item.phone) : null].filter(Boolean).join(' · ')}
                         </span>
                       </span>
                     </button>

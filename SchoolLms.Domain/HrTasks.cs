@@ -499,8 +499,12 @@ public class HrEmployee
     /// <summary><see cref="HrRoles"/>.</summary>
     public string HrRole { get; set; } = HrRoles.Employee;
     public string FullName { get; set; } = string.Empty;
-    /// <summary>Canonical <c>+998901234567</c>, unique.</summary>
-    public string Phone { get; set; } = string.Empty;
+    /// <summary>
+    /// Canonical <c>+998901234567</c>, unique when present. Null for people added from the LMS
+    /// lists without a phone (every teacher/staff member is an HR employee — client,
+    /// 2026-09-28); Telegram goes by <see cref="UserId"/>, so the phone is only a label.
+    /// </summary>
+    public string? Phone { get; set; }
     public string? PositionId { get; set; }
     /// <summary><see cref="HrBranches"/> or null — a label only (filter/report), never a permission.</summary>
     public string? Branch { get; set; }

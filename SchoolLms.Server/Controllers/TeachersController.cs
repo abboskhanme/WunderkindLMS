@@ -159,7 +159,9 @@ public class TeachersController(AppDbContext db, AuditService audit, IExpenseSer
         var teacher = await db.Teachers.FindAsync(id);
         if (teacher is null) return NotFound();
         // `hr_employees.user_id` is RESTRICT (HR task history) — a readable 409, not a 23503 → 500.
-        if (teacher.UserId is not null && await db.HrEmployees.AnyAsync(e => e.UserId == teacher.UserId))
+        // Every teacher has an HR row now (auto-sync); only one WITH history blocks the delete.
+        if (teacher.UserId is not null
+            && !await SchoolLms.Application.HrTasks.HrTasksService.ReleaseUnusedEmployeeAsync(db, teacher.UserId))
             return Conflict(new { message = StaffController.HrEmployeeDeleteMessage });
         // Biriktirilgan tizim akkauntini ham o'chiramiz.
         if (teacher.UserId is not null)

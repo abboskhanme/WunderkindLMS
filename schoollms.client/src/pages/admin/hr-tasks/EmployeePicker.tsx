@@ -166,7 +166,7 @@ export function EmployeePicker({
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-sm text-slate-800">{employee.fullName}</span>
                       <span className="block truncate text-xs text-slate-400">
-                        {[employee.positionName ?? 'Lavozim belgilanmagan', formatPhone(employee.phone)].join(' · ')}
+                        {[employee.positionName ?? 'Lavozim belgilanmagan', employee.phone ? formatPhone(employee.phone) : null].filter(Boolean).join(' · ')}
                       </span>
                     </span>
                   </button>

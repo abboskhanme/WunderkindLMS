@@ -115,7 +115,7 @@ public sealed partial class HrTasksService
             var term = filter.Q.Trim().ToLower();
             var digits = new string(filter.Q.Where(char.IsDigit).ToArray());
             query = digits.Length > 0
-                ? query.Where(e => e.FullName.ToLower().Contains(term) || e.Phone.Contains(digits))
+                ? query.Where(e => e.FullName.ToLower().Contains(term) || (e.Phone != null && e.Phone.Contains(digits)))
                 : query.Where(e => e.FullName.ToLower().Contains(term));
         }
         if (!string.IsNullOrWhiteSpace(filter.PositionId)) query = query.Where(e => e.PositionId == filter.PositionId);
@@ -204,7 +204,7 @@ public sealed partial class HrTasksService
                 Role = user?.Role ?? "",
                 HrRole = e.HrRole,
                 FullName = e.FullName,
-                Phone = e.Phone,
+                Phone = e.Phone ?? "",
                 PositionId = e.PositionId,
                 Branch = e.Branch,
                 TelegramUserId = account?.TelegramUserId,
@@ -298,9 +298,15 @@ public sealed partial class HrTasksService
                 ? user.Phone
                 : await db.Teachers.AsNoTracking().Where(t => t.UserId == uid).Select(t => t.Phone).FirstOrDefaultAsync(ct);
         }
-        if (string.IsNullOrWhiteSpace(rawPhone)) throw HrErrors.Validation("Telefon raqami kiritilmagan");
-        var phone = HrValues.RequirePhone(rawPhone);
-        if (await db.HrEmployees.AnyAsync(e => e.Phone == phone, ct)) throw HrErrors.PhoneAlreadyUsed();
+        // An existing user may have no phone (many teachers do) — the HR row then has none. A NEW
+        // user needs one: it becomes the login.
+        string? phone = null;
+        if (!string.IsNullOrWhiteSpace(rawPhone))
+        {
+            phone = HrValues.RequirePhone(rawPhone);
+            if (await db.HrEmployees.AnyAsync(e => e.Phone == phone, ct)) throw HrErrors.PhoneAlreadyUsed();
+        }
+        else if (user is null) throw HrErrors.Validation("Telefon raqami kiritilmagan");
 
         if (!string.IsNullOrWhiteSpace(input.PositionId) && !await db.HrPositions.AnyAsync(p => p.Id == input.PositionId, ct))
             throw HrErrors.PositionNotFound();
@@ -310,7 +316,7 @@ public sealed partial class HrTasksService
         HrCredentialsDto? credentials = null;
         if (user is null)
         {
-            var login = phone.TrimStart('+');
+            var login = phone!.TrimStart('+');
             if (await db.Users.AnyAsync(u => u.Email == login, ct)) throw HrErrors.LoginTaken();
             var (created, password) = newUser(fullName, login, HrValues.DisplayPhone(phone));
             user = created;

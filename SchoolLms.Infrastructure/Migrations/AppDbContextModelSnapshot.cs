@@ -3105,7 +3105,6 @@ namespace SchoolLms.Infrastructure.Migrations
                         .HasColumnName("note");
 
                     b.Property<string>("Phone")
-                        .IsRequired()
                         .HasMaxLength(20)
                         .HasColumnType("character varying(20)")
                         .HasColumnName("phone");

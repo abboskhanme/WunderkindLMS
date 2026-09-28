@@ -46,6 +46,20 @@ An HR employee is **always one of our users** (`staff`, `teacher`, `admin`,
   the system creates a `staff` user (login = phone digits, generated password shown
   once, no permissions) + the HR row. A manager who creates an employee becomes that
   employee's manager (old ASSUMPTIONS 2026-09-09).
+- **People are added and managed in Boshqaruv → Xodimlar, not in HR** (client, 2026-09-28).
+  The HR panel has no "+ Xodim" and no "Lavozimlar" button; its edit dialog shows name,
+  phone and position read-only (it edits managers, HR role, note). The create and position
+  endpoints stay for the API.
+- **Every LMS employee is an HR employee** (client, 2026-09-28). The HR scheduler's loop
+  adds a row for each active teacher (non-archived teacher card with an account, position
+  "O'qituvchi") and each staff/cashier/admin user (position = their LMS "Lavozim", else
+  "Xodim"); superadmins are skipped. Additive only — nothing is changed or deactivated. New
+  rows have no manager and show under "Biriktirilmagan" in the tree until a director places
+  them. Every pass also copies the LMS name and "Lavozim" onto each row (teacher →
+  "O'qituvchi"; an empty LMS position leaves the HR one alone) and fills a missing phone.
+  `hr_employees.phone` is nullable for them (unique when present; Telegram goes by
+  `user_id`). Deleting a teacher/staff account removes an HR row with no history (no task, no
+  rule aimed at it); with history it is still 409.
 - Deactivating an employee (HR) deactivates the HR row and cancels open tasks (old §15.7);
   it does NOT delete or block the user account.
 - Telegram: messages go to every `telegram_accounts` row of the employee's user.

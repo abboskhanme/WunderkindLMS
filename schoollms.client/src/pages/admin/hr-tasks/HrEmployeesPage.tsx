@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Briefcase, ChevronDown, ChevronRight, ChevronsDownUp, ChevronsUpDown, Pencil, Plus, RotateCcw, Search, UserMinus, Users, X } from 'lucide-react'
+import { ChevronDown, ChevronRight, ChevronsDownUp, ChevronsUpDown, Pencil, RotateCcw, Search, UserMinus, Users, X } from 'lucide-react'
 import { deactivateEmployee, getEmployeeTree, getPositions, hrErrorMessage, updateEmployee } from '@/api/services/hrTasks'
 import type { HrEmployee } from '@/types/hrTasks'
 import { HR_MAX_PAGE_SIZE } from '@/types/hrTasks'
@@ -13,7 +13,6 @@ import { formatPhone, phoneHref } from '@/lib/phone'
 import { cn } from '@/lib/utils'
 import { EmployeeModal } from './EmployeeModal'
 import { InviteCopyButton } from './InviteLink'
-import { PositionsModal } from './PositionsModal'
 import {
   hrAllTreePaths,
   hrBuildTreeRows,
@@ -78,7 +77,6 @@ export function HrEmployeesPage() {
   const visibleCount = isFlat ? flatRows.length : hrTreeSize(tree)
 
   const [dialog, setDialog] = useState<{ employee: HrEmployee | null } | null>(null)
-  const [positionsOpen, setPositionsOpen] = useState(false)
   const [confirmTarget, setConfirmTarget] = useState<HrEmployee | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
 
@@ -145,18 +143,17 @@ export function HrEmployeesPage() {
   ) : (
     <EmptyState
       title="Xodim topilmadi"
-      hint={activeCount > 0 ? 'Tanlangan filtrlar bo‘yicha hech narsa yo‘q.' : 'Birinchi xodimni qo‘shing — tizim unga taklif havolasini beradi.'}
+      hint={
+        activeCount > 0
+          ? 'Tanlangan filtrlar bo‘yicha hech narsa yo‘q.'
+          : 'Xodimlar Boshqaruv → Xodimlar bo‘limida qo‘shiladi va bir necha daqiqada shu yerga o‘zi tushadi.'
+      }
       action={
         activeCount > 0 ? (
           <Button variant="secondary" onClick={resetFilters}>
             Filtrlarni tozalash
           </Button>
-        ) : (
-          <Button onClick={() => setDialog({ employee: null })}>
-            <Plus className="h-4 w-4" />
-            Xodim qo‘shish
-          </Button>
-        )
+        ) : undefined
       }
     />
   )
@@ -178,21 +175,9 @@ export function HrEmployeesPage() {
     <div className="min-w-0 space-y-4">
       <PageHeader
         title="Xodimlar"
-        description="Bo‘ysunish daraxti, Telegram bog‘lanishi va lavozimlar"
-        actions={
-          <>
-            {isDirector && (
-              <Button variant="secondary" onClick={() => setPositionsOpen(true)}>
-                <Briefcase className="h-4 w-4" />
-                Lavozimlar
-              </Button>
-            )}
-            <Button onClick={() => setDialog({ employee: null })}>
-              <Plus className="h-4 w-4" />
-              Xodim
-            </Button>
-          </>
-        }
+        // No "+ Xodim" and no "Lavozimlar" (client, 2026-09-28): people and their positions are
+        // managed in Boshqaruv → Xodimlar; the HR list follows it (HrTasksService.SyncLmsPeopleAsync).
+        description="Bo‘ysunish daraxti va Telegram bog‘lanishi. Xodim va lavozimlar Boshqaruv → Xodimlar bo‘limidan o‘zi tushadi."
       />
 
       <Card className="space-y-3 p-4">
@@ -327,14 +312,6 @@ export function HrEmployeesPage() {
         />
       )}
 
-      {positionsOpen && (
-        <PositionsModal
-          onClose={() => setPositionsOpen(false)}
-          onChanged={() => setVersion((v) => v + 1)}
-          onToast={(message, tone) => (tone === 'success' ? toast.success(message) : toast.error(message))}
-        />
-      )}
-
       <ConfirmModal
         open={confirmTarget !== null}
         onClose={() => setConfirmTarget(null)}
@@ -421,7 +398,7 @@ function EmployeeTreeTable({ rows, flat, ariaLabel, ...h }: RowHandlers & { rows
                     </div>
                   </div>
                   <span className="truncate text-slate-700">{h.positionName(employee)}</span>
-                  <span className="truncate tabular-nums text-slate-700">{formatPhone(employee.phone)}</span>
+                  <span className="truncate tabular-nums text-slate-700">{employee.phone ? formatPhone(employee.phone) : '—'}</span>
                   <span className="truncate">
                     {employee.telegramUserId ? (
                       <Badge tone="success" dot>
@@ -519,11 +496,13 @@ function EmployeeCards({ rows, flat, ...h }: RowHandlers & { rows: HrTreeRow[]; 
                 <p className="mt-0.5 break-words text-xs text-slate-400">Rahbari: {hrManagerNames(employee)}</p>
               </div>
             </div>
-            <p className="mt-2 text-sm tabular-nums text-slate-700">
-              <a href={phoneHref(employee.phone)} className="underline decoration-slate-300 underline-offset-2">
-                {formatPhone(employee.phone)}
-              </a>
-            </p>
+            {employee.phone && (
+              <p className="mt-2 text-sm tabular-nums text-slate-700">
+                <a href={phoneHref(employee.phone)} className="underline decoration-slate-300 underline-offset-2">
+                  {formatPhone(employee.phone)}
+                </a>
+              </p>
+            )}
             <div className="mt-2 flex flex-wrap items-center gap-1.5">
               {employee.telegramUserId ? (
                 <Badge tone="success" dot>
