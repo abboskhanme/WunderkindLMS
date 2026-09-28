@@ -1,6 +1,6 @@
 import { useLayoutEffect, useRef, type ChangeEvent } from 'react'
 import { cn } from '@/lib/utils'
-import { localDigits, toPhoneValue } from '@/lib/phone'
+import { hasCountryCode, localDigits, toPhoneValue } from '@/lib/phone'
 
 interface PhoneInputProps {
   label?: string
@@ -49,9 +49,8 @@ export function PhoneInput({ label, required, value, onChange, disabled, autoFoc
   const handleChange = (e: ChangeEvent<HTMLInputElement>) => {
     const raw = e.target.value
     const caret = e.target.selectionStart ?? raw.length
-    const rawDigits = raw.replace(/\D/g, '')
     let before = raw.slice(0, caret).replace(/\D/g, '').length
-    if (rawDigits.length >= 12 && rawDigits.startsWith('998')) before = Math.max(0, before - 3)
+    if (hasCountryCode(raw)) before = Math.max(0, before - 3)
 
     let next = localDigits(raw)
     // Deleting only a space would leave the digits unchanged — take the digit beside it.

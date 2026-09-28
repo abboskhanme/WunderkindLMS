@@ -8,13 +8,28 @@
 const COUNTRY = '998'
 
 /**
+ * Whether `raw` carries the country code: written out as `+998…` (any length —
+ * a half-typed `+998 90 12` included), or 12+ bare digits starting with `998`.
+ * Bare `998…` shorter than that is a local number — `99 812 34 56` is valid.
+ */
+export function hasCountryCode(raw: string | null | undefined): boolean {
+  const s = raw ?? ''
+  if (/^\s*\+\s*998/.test(s)) return true
+  const d = s.replace(/\D/g, '')
+  return d.length >= 12 && d.startsWith(COUNTRY)
+}
+
+/**
  * The local nine digits of any spelling: `+998 97 666 66 66`, `998976666666`,
- * `97 666-66-66`. A leading `998` is only dropped when the number is long
- * enough to carry it — `99 812 34 56` is a valid local number.
+ * `97 666-66-66`.
+ *
+ * ⚠️ The `+` matters: `toPhoneValue` stores a PARTIAL number as `+998 90 12`,
+ * and reading that back must give `9012`, not `998901` — otherwise every
+ * keystroke in `PhoneInput` rewrote the number and a digit could not be deleted.
  */
 export function localDigits(raw: string | null | undefined): string {
   let d = (raw ?? '').replace(/\D/g, '')
-  if (d.length >= 12 && d.startsWith(COUNTRY)) d = d.slice(COUNTRY.length)
+  if (hasCountryCode(raw)) d = d.slice(COUNTRY.length)
   return d.slice(0, 9)
 }
 
