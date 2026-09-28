@@ -64,7 +64,8 @@ public class TelegramBotService(
         catch (OperationCanceledException) { return false; }
     }
 
-    private async Task HandleUpdateAsync(JsonElement upd, CancellationToken ct)
+    /// <summary>Bitta update. Testlar to'g'ridan-to'g'ri chaqiradi (polling'siz).</summary>
+    public async Task HandleUpdateAsync(JsonElement upd, CancellationToken ct)
     {
         if (!upd.TryGetProperty("message", out var msg)) return;
         if (!msg.TryGetProperty("chat", out var chat) || !chat.TryGetProperty("id", out var chatIdEl)) return;
@@ -73,6 +74,14 @@ public class TelegramBotService(
         // Kontakt ulashildi — ro'yxatdan o'tkazamiz.
         if (msg.TryGetProperty("contact", out var contact))
         {
+            // Faqat O'Z raqami: boshqa odamning kontakt kartasini yuborib, o'sha ota-onaning
+            // kvitansiya, intizom va shartnoma xabarlarini olib bo'lmasin.
+            if (!IsOwnContact(msg, contact))
+            {
+                await telegram.SendMessageAsync(chatId,
+                    "Faqat o'zingizning raqamingizni pastdagi tugma orqali ulashing.", ContactKeyboard, ct);
+                return;
+            }
             var phone = contact.TryGetProperty("phone_number", out var p) ? p.GetString() : null;
             await RegisterByPhoneAsync(chatId, phone, SenderName(msg), ct);
             return;
@@ -108,7 +117,8 @@ public class TelegramBotService(
         using var scope = sp.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<IAppDbContext>();
         {
-            var matchedStudents = (await db.Students.ToListAsync(ct))
+            // Arxivdagi o'quvchi (ketgan yoki test yozuvi) ota-onani ro'yxatga olmaydi.
+            var matchedStudents = (await db.Students.Where(s => !s.IsArchived).ToListAsync(ct))
                 .Where(s => PhoneUtil.Key(s.ParentPhone) == key).ToList();
             var matchedTeachers = (await db.Teachers.Where(t => !t.IsArchived).ToListAsync(ct))
                 .Where(t => PhoneUtil.Key(t.Phone) == key).ToList();
@@ -159,8 +169,18 @@ public class TelegramBotService(
 
         await telegram.SendMessageAsync(chatId,
             "✅ Ro'yxatdan o'tdingiz. Endi quyidagilar bo'yicha e'lon va shartnomalarni olasiz:\n• " +
-            string.Join("\n• ", linked), ct: ct);
+            string.Join("\n• ", linked), RemoveKeyboard, ct);
     }
+
+    /// <summary>
+    /// Kontakt yuboruvchining o'ziniki: <c>contact.user_id == from.id</c>. Telefon kitobidan
+    /// yuborilgan kartada <c>user_id</c> bo'lmasligi yoki boshqa odamniki bo'lishi mumkin.
+    /// </summary>
+    private static bool IsOwnContact(JsonElement msg, JsonElement contact) =>
+        msg.TryGetProperty("from", out var from)
+        && from.TryGetProperty("id", out var fromId) && fromId.ValueKind == JsonValueKind.Number
+        && contact.TryGetProperty("user_id", out var owner) && owner.ValueKind == JsonValueKind.Number
+        && owner.GetInt64() == fromId.GetInt64();
 
     private static string SenderName(JsonElement msg)
     {
@@ -169,6 +189,9 @@ public class TelegramBotService(
         var ln = from.TryGetProperty("last_name", out var l) ? l.GetString() : null;
         return string.Join(" ", new[] { fn, ln }.Where(x => !string.IsNullOrWhiteSpace(x)));
     }
+
+    /// <summary>Ro'yxatdan o'tgach "Telefon raqamni ulashish" tugmasi yopiladi.</summary>
+    private static object RemoveKeyboard => new { remove_keyboard = true };
 
     /// <summary>Telefon raqamini so'rovchi klaviatura (request_contact tugmasi).</summary>
     private static object ContactKeyboard => new
