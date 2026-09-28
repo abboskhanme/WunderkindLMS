@@ -118,8 +118,12 @@ export function HeroProgress({ value, max, lead, note }) {
 /* --------------------------------------------------------------- kartochka */
 
 export function Card({ title, action, children, className = '' }) {
+  // A caller's own background (the dark "hozirgi dars" card) REPLACES the white one: with
+  // both classes the stylesheet order decides, not the intent — and white won, leaving that
+  // card's white text invisible.
+  const bg = /(^|\s)bg-/.test(className) ? '' : 'bg-white '
   return (
-    <section className={'mx-4 mt-3 overflow-hidden rounded-card bg-white ' + className}>
+    <section className={'mx-4 mt-3 overflow-hidden rounded-card ' + bg + className}>
       {(title || action) && (
         <div className="flex items-center justify-between gap-3 px-4 pb-1 pt-4">
           {title && <h2 className="text-[17px] font-bold">{title}</h2>}

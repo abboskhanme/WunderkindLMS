@@ -12,7 +12,6 @@ import AssignmentCreateScreen from './screens/AssignmentCreateScreen'
 import AssignmentResultsScreen from './screens/AssignmentResultsScreen'
 import ChatChannelsScreen from './screens/ChatChannelsScreen'
 import ChatConversationScreen from './screens/ChatConversationScreen'
-import SalaryScreen from './screens/SalaryScreen'
 import ProfileScreen from './screens/ProfileScreen'
 import HomeroomScreen from './screens/HomeroomScreen'
 import GroupsScreen from './screens/GroupsScreen'
@@ -42,7 +41,6 @@ const SCREENS = {
   groups: { Comp: GroupsScreen },
   groupRoster: { Comp: GroupRosterScreen },
   notifications: { Comp: NotificationsScreen },
-  salary: { Comp: SalaryScreen },
   progress: { Comp: ProgressScreen },
   feedback: { Comp: FeedbackScreen },
   lms: { Comp: LmsSubjectsScreen },

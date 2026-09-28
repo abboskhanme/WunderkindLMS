@@ -154,9 +154,10 @@ filters and behaviour 1:1; visual language = our admin panel.
 **Telegram Mini App** (`schoollms.client/src/pages/miniapp/ui-tg`) — port the old
 `hrapp` (tasks by day with date strip, task card, complete sheet with comment + files
 + voice note, KPI progress, "+ o'zimga topshiriq", summary):
-- staff/admin/superadmin/cashier **with an HR row** → an employee panel (tabs
-  "Topshiriqlar", "Natijam") with a "Boshqaruv paneli" button that opens the web panel
-  the way `StaffPortal` does today; without an HR row → today's `StaffPortal` behaviour;
+- staff/admin/superadmin/cashier → straight into their own web panel (`StaffPortal`), as
+  before the HR port. Tasks are NOT a separate panel there (client, 2026-09-28: a tasks-only
+  panel shut people out of the CRM menus they use): "Mening topshiriqlarim" is a top-level
+  menu of the web panel beside the usual ones (the cashier's short menu has it too);
 - teacher **with an HR row** → an extra "Topshiriqlar" tab in `TeacherPanel`.
 Mobile-first, brand colours, rules of the rest of the Mini App (keyboard, safe area).
 

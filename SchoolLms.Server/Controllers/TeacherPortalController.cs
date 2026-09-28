@@ -504,16 +504,15 @@ public class TeacherPortalController(
         return await PortalSchedule.TeacherWeekAsync(db, t.Id, quarter ?? curQ, week ?? curW);
     }
 
-    // ---------- Maosh (faqat o'ziniki) ----------
-
+    // ---------- Maosh — o'qituvchiga KO'RSATILMAYDI ----------
+    //
+    // Client, 2026-09-28: "o'qituvchilar accountida o'zining oylik maoshi ko'rinmasin". A hard
+    // rule, not the per-teacher `salary` key any more: every teacher client (Mini App, PWA, web)
+    // read its salary here, so closing it here closes it everywhere — an old cached client gets
+    // a readable 403 instead of the numbers. The admin ledger is untouched.
     [HttpGet("salary")]
-    public async Task<ActionResult<SalaryLedgerDto>> Salary([FromQuery] string? from, [FromQuery] string? to)
-    {
-        var t = await Me();
-        if (t is null) return NotFound();
-        if (!t.Permissions.Contains(TeacherPermissions.Salary)) return Forbid();
-        return await SalaryLedger.BuildAsync(db, t, from, to);
-    }
+    public ActionResult Salary() =>
+        StatusCode(StatusCodes.Status403Forbidden, new { message = "Maosh ma'lumoti o'qituvchi hisobida ko'rsatilmaydi." });
 
     // ---------- Jurnal (faqat o'zi dars beradigan sinf+fan) ----------
 

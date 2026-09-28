@@ -74,6 +74,10 @@ export const navByRole: Record<Role, NavItem[]> = {
     // boshidan Xulq-atvorgacha uzilmay o'qiladi.
     // Mijoz, 2026-09-24: "bosh sahifa ham role uchun ... bazilarga u sahifa uchun ham dostup bo'lmaydi".
     { label: 'Bosh sahifa', to: '/admin', icon: LayoutDashboard, perm: 'dashboard' },
+    // Own HR tasks as a SEPARATE menu of everyone's own panel (client, 2026-09-28: tasks sit
+    // beside the usual menus, not instead of them). No key: every employee has an HR row
+    // (auto-sync); without one the page explains. Not part of the role catalog.
+    { label: 'Mening topshiriqlarim', to: '/admin/hr/mening-topshiriqlarim', icon: ListChecks, roles: ['staff', 'admin', 'superadmin'] },
     // Mijoz, 2026-09-22: "leadlar bo'limi uchun voronka kerakmas" — menyuda faqat
     // doska, ichki ro'yxatsiz. `/admin/leads/funnel` sahifasi o'chirilmadi (manzil
     // ishlaydi), faqat menyudan olindi; voronka bosh sahifada vidjet sifatida qoladi.
@@ -241,9 +245,7 @@ export const navByRole: Record<Role, NavItem[]> = {
         { label: 'Hisobotlar', to: '/admin/hr/topshiriqlar/hisobotlar', perm: 'hrTasks', group: 'TOPSHIRIQLAR' },
         // Settings — non-directors see "directors only" (server 403).
         { label: 'Sozlamalar', to: '/admin/hr/topshiriqlar/sozlamalar', perm: 'hrTasks', group: 'TOPSHIRIQLAR' },
-        // No key: anyone with an HR employee row sees their own tasks (`/api/hr/me/*`); without
-        // a row the page explains. Not part of the role catalog (no `perm`).
-        { label: 'Mening topshiriqlarim', to: '/admin/hr/mening-topshiriqlarim', roles: ['staff', 'admin', 'superadmin'], group: 'TOPSHIRIQLAR' },
+        // "Mening topshiriqlarim" is a top-level item now (see under "Bosh sahifa").
       ],
     },
     {
@@ -382,7 +384,7 @@ export const navByRole: Record<Role, NavItem[]> = {
     { label: "Ta'lim (LMS)", to: '/teacher/lms', icon: BookOpen },
     { label: 'Dars jadvali', to: '/teacher/schedule', icon: CalendarRange, perm: 'schedule' },
     { label: 'Xabarlar', to: '/teacher/messages', icon: MessageSquare, perm: 'messages' },
-    { label: 'Maosh', to: '/teacher/salary', icon: Wallet, perm: 'salary' },
+    // No 'Maosh' (client, 2026-09-28): teachers do not see their salary; /api/teacher/salary is 403.
   ],
   student: [
     { label: 'Bosh sahifa', to: '/student', icon: LayoutDashboard },

@@ -11,13 +11,14 @@ import { TeacherPanel } from './screens/TeacherPanel'
 import { ParentPanel } from './screens/ParentPanel'
 import { LinkScreen } from './screens/LinkScreen'
 import { BrowserLogin } from './screens/BrowserLogin'
-import { StaffHome } from './screens/EmployeePanel'
+import { StaffPortal } from './screens/StaffPortal'
 
 const TEACHER_ROLES = ['teacher']
 const PARENT_ROLES = ['parent', 'student']
 // Veb-panelda ishlaydiganlar — Mini App ularni panelga parolsiz o'tkazadi (2026-09-25).
-// HR xodimi bo'lsa (`GET /hr/me`) — avval xodim paneli (topshiriqlar), unda
-// "Boshqaruv paneli" tugmasi; aks holda avvalgidek darhol veb-panel (hr-tasks.md §8).
+// HR topshiriqlari alohida panel EMAS (mijoz, 2026-09-28: "yo unisi yo bunisi
+// bo'lmasdan"): xodim o'z ish joyiga kiradi, topshiriqlar u yerdagi menyuda —
+// "Mening topshiriqlarim". O'qituvchida esa o'z panelidagi "Topshiriqlar" tabi.
 const PANEL_ROLES = ['staff', 'admin', 'superadmin', 'cashier']
 
 function Shell() {
@@ -35,7 +36,7 @@ function Shell() {
 
   if (TEACHER_ROLES.includes(user.role)) return <TeacherPanel user={user} />
   if (PARENT_ROLES.includes(user.role)) return <ParentPanel user={user} />
-  if (PANEL_ROLES.includes(user.role)) return <StaffHome user={user} />
+  if (PANEL_ROLES.includes(user.role)) return <StaffPortal user={user} />
 
   // Admin, kassir va xodim uchun Mini App yo'q — ular veb-panelda ishlaydi.
   // Jimgina bo'sh ekran ko'rsatishdan ko'ra sababini aytgan ma'qul.

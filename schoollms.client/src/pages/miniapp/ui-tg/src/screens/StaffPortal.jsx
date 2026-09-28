@@ -13,7 +13,7 @@ import { Hero, Screen } from '../components/ui'
 
 const HOME = { cashier: '/cashier' }
 
-/** Veb-panelni shu oynada ochadi. HR xodim paneli ("Boshqaruv paneli" tugmasi) ham shuni chaqiradi. */
+/** Veb-panelni shu oynada ochadi. HR topshiriqlari o'sha yerda — "Mening topshiriqlarim" menyusi. */
 export function openPanel(user) {
   const token = tokenStore.get()
   if (token) {

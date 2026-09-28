@@ -10,6 +10,12 @@ public static class TeacherPermissions
     public const string Assignments = "assignments";
     public const string Schedule = "schedule";
     public const string Messages = "messages";
+
+    /// <summary>
+    /// Retired 2026-09-28: teachers never see their salary (client) — <c>/api/teacher/salary</c>
+    /// answers 403 whatever this key says. Kept only because existing rows still carry it;
+    /// no longer granted (<see cref="All"/>) nor offered in the admin form.
+    /// </summary>
     public const string Salary = "salary";
 
     /// <summary>
@@ -21,5 +27,5 @@ public static class TeacherPermissions
     public const string SeasonalMarks = "seasonalMarks";
 
     /// <summary>Barcha mavjud bo'lim kalitlari (yangi o'qituvchi uchun standart — hammasi ochiq).</summary>
-    public static readonly string[] All = { Journal, Assignments, Schedule, Messages, Salary, SeasonalMarks };
+    public static readonly string[] All = { Journal, Assignments, Schedule, Messages, SeasonalMarks };
 }

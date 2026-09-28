@@ -75,11 +75,6 @@ export const teacherApi = {
    */
   setJournalNote: (body) => api.put(`${BASE}/journal/notes`, body),
 
-  /* ---------- maosh ---------- */
-
-  /** O'quv yili bo'yicha maosh daftari: oylar, to'lovlar, qoldiq. */
-  salary: () => api.get(`${BASE}/salary`),
-
   /* ---------- yangiliklar ---------- */
 
   /**
@@ -120,4 +115,14 @@ export const teacherApi = {
   chatMessages: (channel, since) => api.get(`${channelPath(channel)}${qs({ since })}`),
   /** Kanalga xabar yuborish. */
   sendChatMessage: (channel, text) => api.post(channelPath(channel), { text }),
+
+  /* ---------- dars tahlili (faqat o'zi haqida) ---------- */
+
+  /**
+   * O'z dars tahlillarim. Server faqat YAKUNLANGANLARini beradi — qoralama
+   * kuzatuvchida qoladi (veb sahifadagi "Dars tahlilim" bilan bir xil manba).
+   */
+  lessonAnalyses: () => api.get(`${BASE}/lesson-analysis/observations${qs({ limit: 100 })}`),
+  /** Bitta tahlil: mezonlar javobi, xulosalar, AI tahlil va mezonlar katalogi (`sections`). */
+  lessonAnalysis: (id) => api.get(`${BASE}/lesson-analysis/observations/${encodeURIComponent(id)}`),
 }

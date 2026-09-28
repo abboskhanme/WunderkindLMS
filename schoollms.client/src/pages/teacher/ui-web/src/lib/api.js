@@ -109,7 +109,6 @@ export const api = {
   holidays: () => GET('/teacher/holidays'),
   classes: () => GET('/teacher/classes'),
   schedule: (quarter, week) => GET('/teacher/schedule', { quarter, week }),
-  salary: (from, to) => GET('/teacher/salary', { from, to }),
   progress: (quarter) => GET('/teacher/progress', { quarter }),
 
   // ---- Sinf rahbarligi ----

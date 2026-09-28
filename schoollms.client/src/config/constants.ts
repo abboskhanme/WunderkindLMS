@@ -63,7 +63,7 @@ export const teacherPermissions: { key: string; label: string }[] = [
   { key: 'assignments', label: 'Topshiriqlar' },
   { key: 'schedule', label: 'Dars jadvali' },
   { key: 'messages', label: 'Xabarlar (chat)' },
-  { key: 'salary', label: 'Maosh' },
+  // 'salary' retired 2026-09-28 — teachers never see their salary (TeacherPermissions.Salary).
 ]
 
 /**

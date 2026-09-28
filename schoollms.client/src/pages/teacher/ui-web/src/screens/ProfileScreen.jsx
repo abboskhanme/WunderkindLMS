@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import {
-  GraduationCap, Wallet, BookOpen, Badge, LineChart, Users2,
+  GraduationCap, BookOpen, Badge, LineChart, Users2,
   MessageSquareWarning, Moon, Lock, LogOut, ChevronRight, Download, Bell, ListChecks,
 } from 'lucide-react'
 import Avatar from '../components/Avatar'
@@ -22,28 +22,10 @@ const PUSH_MSG = {
   token: "Bildirishnomaga ulanib bo'lmadi — qayta urinib ko'ring.",
 }
 
-const ml = (v) => (Number(v || 0) / 1_000_000).toFixed(1)
-
 // Profile — gradient header card, info rows, "Bo'limlar" + "Hisob" lists.
 export default function ProfileScreen({ onNavigate, dark, onToggleTheme }) {
   const { logout } = useSession()
   const q = useFetch(() => api.profile(), [])
-
-  // Oylik — ixtiyoriy; xato bo'lsa ham profil ko'rinaveradi.
-  const [monthly, setMonthly] = useState(null)
-  useEffect(() => {
-    let alive = true
-    api.salary()
-      .then((d) => {
-        if (!alive || !d) return
-        const months = d.months || []
-        const cur = months[months.length - 1]
-        if (cur) setMonthly(cur.paid)
-        else if (d.salary != null) setMonthly(d.salary)
-      })
-      .catch(() => {})
-    return () => { alive = false }
-  }, [])
 
   // PWA o'rnatish tugmasi holati.
   const [installable, setInstallable] = useState(canInstall() && !isStandalone())
@@ -116,9 +98,6 @@ export default function ProfileScreen({ onNavigate, dark, onToggleTheme }) {
             <div className="w-full px-5 mt-4 space-y-0 divide-y divide-border/60">
               <InfoRow icon={<Badge size={18} />} label="Sinf rahbarligi" value={p.homeroomClass || '—'} />
               <InfoRow icon={<BookOpen size={18} />} label="Fanlar" value={subjectNames} />
-              {monthly != null && (
-                <InfoRow icon={<Wallet size={18} />} label="Oylik" value={`${ml(monthly)} mln so'm`} />
-              )}
             </div>
           </div>
         </div>
@@ -141,7 +120,7 @@ export default function ProfileScreen({ onNavigate, dark, onToggleTheme }) {
           <Card>
             <Item icon={<LineChart size={16} />} title="Dars o'tilishi" hint="O'tilgan darslar progresi" onClick={() => onNavigate?.('progress')} />
             <Item icon={<BookOpen size={16} />} title="Ta'lim" hint="O'quv materiallar va progress" onClick={() => onNavigate?.('lms')} />
-            <Item icon={<Wallet size={16} />} title="Maosh" hint="Oylik hisob-kitob" onClick={() => onNavigate?.('salary')} />
+            {/* "Maosh" yo'q (mijoz, 2026-09-28): o'qituvchi o'z oyligini ko'rmaydi — server ham bermaydi. */}
             {/* Dars tahlili asosiy ilovada (/teacher/dars-tahlili) — token ikkalasida bir xil kalitda. */}
             <Item icon={<ListChecks size={16} />} title="Dars tahlilim" hint="Darslarim tahlili va reytingim" onClick={() => window.location.assign('/teacher/dars-tahlili')} />
             <Item icon={<MessageSquareWarning size={16} />} title="Taklif va shikoyatlar" hint="Adminga murojaat yuborish" last onClick={() => onNavigate?.('feedback')} />

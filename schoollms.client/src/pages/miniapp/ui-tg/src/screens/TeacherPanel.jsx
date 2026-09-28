@@ -11,7 +11,7 @@
  * baribir 403 qaytaradi, ya'ni bu ko'z bo'yash emas.
  */
 import { useState } from 'react'
-import { CalendarDays, ClipboardCheck, Home, ListChecks, MessageSquare, Wallet } from 'lucide-react'
+import { CalendarDays, ClipboardCheck, Home, ListChecks, MessageSquare } from 'lucide-react'
 import { ErrorState, Loader, Screen, TabBar } from '../components/ui'
 import { useAsync } from '../lib/useAsync'
 import { teacherApi } from '../lib/teacherApi'
@@ -19,7 +19,6 @@ import { hrApi } from '../lib/hrApi'
 import { TodayTab } from './teacher/TodayTab'
 import { AttendanceTab } from './teacher/AttendanceTab'
 import { ScheduleTab } from './teacher/ScheduleTab'
-import { SalaryTab } from './teacher/SalaryTab'
 import { MessagesTab } from './teacher/MessagesTab'
 import { HrTab } from './hr/HrTab'
 
@@ -28,7 +27,7 @@ const TABS = [
   { value: 'home', label: 'Bugun', icon: Home, perm: null },
   { value: 'attendance', label: 'Davomat', icon: ClipboardCheck, perm: 'journal' },
   { value: 'schedule', label: 'Jadval', icon: CalendarDays, perm: 'schedule' },
-  { value: 'salary', label: 'Maosh', icon: Wallet, perm: 'salary' },
+  // No 'Maosh' tab (client, 2026-09-28): teachers do not see their salary; the server refuses it too.
   { value: 'chat', label: 'Xabarlar', icon: MessageSquare, perm: 'messages' },
 ]
 
@@ -94,7 +93,6 @@ export function TeacherPanel({ user }) {
         />
       )}
       {active === 'schedule' && <ScheduleTab meta={meta} />}
-      {active === 'salary' && <SalaryTab meta={meta} />}
       {/* `user` — sessiya identifikatori: chatda o'z xabarlarini ajratish uchun. */}
       {active === 'chat' && <MessagesTab profile={profile} user={user} />}
       {active === 'hr' && hrMe && <HrTab me={hrMe} />}
