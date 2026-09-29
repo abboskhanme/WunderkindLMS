@@ -188,13 +188,17 @@ export function FinanceView({ studentId, embedded = false }: Props) {
         <>
           <DebtSection data={data} />
           <MonthsSection months={data.months} />
-          <PaymentsSection
-            payments={data.payments}
-            busyReceipt={busyReceipt}
-            onReceipt={handleReceipt}
-            busyPrint={busyPrint}
-            onPrint={embedded ? handlePrint : undefined}
-          />
+          {/* To'lovlar tarixi faqat o'quvchi kartochkasida (admin/kassir). Ota-ona portalida
+              ko'rsatilmaydi (mijoz, 2026-09-29: "ota ona profilida to'lov tarixi ko'rinmasin"). */}
+          {embedded && (
+            <PaymentsSection
+              payments={data.payments}
+              busyReceipt={busyReceipt}
+              onReceipt={handleReceipt}
+              busyPrint={busyPrint}
+              onPrint={handlePrint}
+            />
+          )}
         </>
       )}
     </div>

@@ -25,7 +25,8 @@ import { HrTab } from './hr/HrTab'
 /** `perm` — shu tabni ko'rsatish uchun kerakli ruxsat (null = hammaga). */
 const TABS = [
   { value: 'home', label: 'Bugun', icon: Home, perm: null },
-  { value: 'attendance', label: 'Davomat', icon: ClipboardCheck, perm: 'journal' },
+  // "Jurnal": davomat va baho bitta ro'yxatda (mijoz, 2026-09-29).
+  { value: 'attendance', label: 'Jurnal', icon: ClipboardCheck, perm: 'journal' },
   { value: 'schedule', label: 'Jadval', icon: CalendarDays, perm: 'schedule' },
   // No 'Maosh' tab (client, 2026-09-28): teachers do not see their salary; the server refuses it too.
   { value: 'chat', label: 'Xabarlar', icon: MessageSquare, perm: 'messages' },

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
 import { ChevronDown, ChevronRight } from 'lucide-react'
 import { useAuth } from '@/context/auth-context'
@@ -142,8 +142,10 @@ function NavGroup({ item, onNavigate }: { item: NavItem; onNavigate: () => void 
       false)
 
   const [openGroup, setOpenGroup] = useState(isUnder)
+  /** The hovered row's top — where the panel wants to start; null = closed. */
   const [flyoutTop, setFlyoutTop] = useState<number | null>(null)
   const rowRef = useRef<HTMLDivElement>(null)
+  const panelRef = useRef<HTMLDivElement>(null)
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
@@ -153,6 +155,17 @@ function NavGroup({ item, onNavigate }: { item: NavItem; onNavigate: () => void 
 
   useEffect(() => () => { if (closeTimer.current) clearTimeout(closeTimer.current) }, [])
 
+  // A row low on the screen opened the panel downward and half of it went off the bottom
+  // (client, 2026-09-29). Measured before paint: the panel starts at its row, moved up just
+  // enough to fit the window.
+  useLayoutEffect(() => {
+    const panel = panelRef.current
+    if (flyoutTop === null || !panel) return
+    const margin = 8
+    const top = Math.max(margin, Math.min(flyoutTop, window.innerHeight - panel.offsetHeight - margin))
+    panel.style.top = `${top}px`
+  }, [flyoutTop])
+
   const groups = byGroup(item.children ?? [])
   // Ustun soni: ko'pi bilan uchta — undan keng panel ekranga sig'masligi mumkin.
   const columns = Math.min(groups.length || 1, 3)
@@ -161,7 +174,7 @@ function NavGroup({ item, onNavigate }: { item: NavItem; onNavigate: () => void 
   const openFlyout = () => {
     if (closeTimer.current) clearTimeout(closeTimer.current)
     const r = rowRef.current?.getBoundingClientRect()
-    if (r) setFlyoutTop(Math.min(r.top, window.innerHeight - 120))
+    if (r) setFlyoutTop(r.top)
   }
   const scheduleClose = () => {
     if (closeTimer.current) clearTimeout(closeTimer.current)
@@ -205,6 +218,7 @@ function NavGroup({ item, onNavigate }: { item: NavItem; onNavigate: () => void 
       {/* Keng ekran — yon panel */}
       {flyoutTop !== null && (
         <div
+          ref={panelRef}
           style={{ top: flyoutTop }}
           onMouseEnter={openFlyout}
           onMouseLeave={scheduleClose}

@@ -1,5 +1,11 @@
 /**
- * DAVOMAT — bir dars, bir ro'yxat, bitta "Saqlash".
+ * DAVOMAT VA BAHO — bir dars, bir ro'yxat, bitta "Saqlash".
+ *
+ * Baho ham shu ro'yxatda (mijoz, 2026-09-29: "o'qituvchi profilida baho qo'yish ham
+ * mumkin bo'lsin"): kelgan o'quvchi qatorida 1–5 tugmalari — admin jurnali va PWA bilan
+ * bir xil shkala. Bir katak (sana + dars) davomat sababini ham, bahoni ham saqlaydi,
+ * shuning uchun ikkalasi bitta so'rovda yoziladi va uyga vazifa / xulq / o'zlashtirishga
+ * tegilmaydi.
  *
  * Davomat DARSGA bog'liq, sinfga emas: bir kunda bir sinfda ikki dars bo'lishi
  * mumkin va jurnal katagi (sana + dars raqami) bilan aniqlanadi. Shuning uchun
@@ -80,7 +86,7 @@ export function AttendanceTab({ profile, meta, focusLesson, onClearFocus }) {
 
   return (
     <Screen>
-      <Hero title="Davomat" subtitle={fullDate(date)} />
+      <Hero title="Davomat va baho" subtitle={fullDate(date)} />
       <AsyncBlock query={q} loadingLabel="Bugungi darslar yuklanmoqda…">
         {(data) => (
           <>
@@ -163,6 +169,8 @@ function LessonAttendance({ lesson, quarter, date, reasons, onBack, onSaved }) {
 
   // Belgilar: { [studentId]: reasonId } — sababi yo'q o'quvchi "keldi".
   const [marks, setMarks] = useState(null)
+  // Baholar: { [studentId]: 1..5 } — yo'q = baho qo'yilmagan.
+  const [grades, setGrades] = useState(null)
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState(null)
   const [savedAt, setSavedAt] = useState(null)
@@ -172,9 +180,14 @@ function LessonAttendance({ lesson, quarter, date, reasons, onBack, onSaved }) {
   const [seededKey, setSeededKey] = useState(null)
   if (q.data && seededKey !== loadedKey) {
     const seed = {}
-    for (const e of q.data.todayEntries) if (e.reasonId) seed[e.studentId] = e.reasonId
+    const gradeSeed = {}
+    for (const e of q.data.todayEntries) {
+      if (e.reasonId) seed[e.studentId] = e.reasonId
+      if (e.grade != null) gradeSeed[e.studentId] = e.grade
+    }
     setSeededKey(loadedKey)
     setMarks(seed)
+    setGrades(gradeSeed)
     setSaveError(null)
   }
 
@@ -197,10 +210,12 @@ function LessonAttendance({ lesson, quarter, date, reasons, onBack, onSaved }) {
 
   const { roster, todayEntries, note } = q.data
   const current = marks || {}
+  const currentGrades = grades || {}
   // Faqat SHU ro'yxatdagilarni sanaymiz: bo'lingan darsda jurnalda boshqa
   // guruhning yozuvi ham bo'lishi mumkin, u bu darsga tegishli emas.
   const absentCount = roster.filter((s) => current[s.id]).length
   const presentCount = roster.length - absentCount
+  const gradedCount = roster.filter((s) => currentGrades[s.id] != null).length
   const conducted = Boolean(note?.conducted)
 
   const toggle = (studentId) => {
@@ -220,6 +235,18 @@ function LessonAttendance({ lesson, quarter, date, reasons, onBack, onSaved }) {
     setSavedAt(null)
   }
 
+  /** Bir teginish — baho qo'yiladi; o'sha bahoga yana teginish — olib tashlanadi. */
+  const setGrade = (studentId, grade) => {
+    haptic()
+    setGrades((prev) => {
+      const next = { ...(prev || {}) }
+      if (next[studentId] === grade) delete next[studentId]
+      else next[studentId] = grade
+      return next
+    })
+    setSavedAt(null)
+  }
+
   const markAllPresent = () => {
     haptic('medium')
     setMarks({})
@@ -233,12 +260,13 @@ function LessonAttendance({ lesson, quarter, date, reasons, onBack, onSaved }) {
       const byStudent = new Map(todayEntries.map((e) => [e.studentId, e]))
       for (const s of roster) {
         const desired = current[s.id] || null
+        const desiredGrade = currentGrades[s.id] ?? null
         const existing = byStudent.get(s.id) || null
-        if ((existing?.reasonId || null) === desired) continue
+        if ((existing?.reasonId || null) === desired && (existing?.grade ?? null) === desiredGrade) continue
 
         const keepsSomething =
           desired !== null ||
-          existing?.grade != null ||
+          desiredGrade !== null ||
           (existing?.homework ?? 0) !== 0 ||
           (existing?.behavior ?? 0) !== 0 ||
           existing?.mastery != null
@@ -257,9 +285,9 @@ function LessonAttendance({ lesson, quarter, date, reasons, onBack, onSaved }) {
           studentId: s.id,
           date,
           period,
-          // Bahoga TEGMAYMIZ — davomat ekrani bahoni o'chirib yubormasligi kerak.
-          grade: existing?.grade ?? null,
+          grade: desiredGrade,
           reasonId: desired,
+          // Uyga vazifa, xulq va o'zlashtirish bu ekranda yo'q — ular o'zgarmasdan qoladi.
           homework: existing?.homework ?? 0,
           behavior: existing?.behavior ?? 0,
           mastery: existing?.mastery ?? null,
@@ -286,7 +314,7 @@ function LessonAttendance({ lesson, quarter, date, reasons, onBack, onSaved }) {
     } catch (e) {
       setSaveError(
         e?.status === 400
-          ? "Kelajakdagi darsga davomat qo'yib bo'lmaydi."
+          ? e?.message || "Kelajakdagi darsga davomat yoki baho qo'yib bo'lmaydi."
           : e?.status === 403
             ? "Bu sinf jurnaliga ruxsatingiz yo'q."
             : e?.message || 'Saqlashda xatolik',
@@ -344,6 +372,8 @@ function LessonAttendance({ lesson, quarter, date, reasons, onBack, onSaved }) {
                 </span>
                 {' · '}
                 {roster.length} ta jami
+                {' · '}
+                <span className={gradedCount ? 'font-bold text-slate-700' : ''}>{gradedCount} ta baho</span>
               </p>
             </div>
             {roster.map((s, i) => (
@@ -353,8 +383,10 @@ function LessonAttendance({ lesson, quarter, date, reasons, onBack, onSaved }) {
                 student={s}
                 reasonId={current[s.id] || null}
                 reasons={reasons}
+                grade={currentGrades[s.id] ?? null}
                 onToggle={() => toggle(s.id)}
                 onReason={(rid) => setReason(s.id, rid)}
+                onGrade={(g) => setGrade(s.id, g)}
               />
             ))}
           </Card>
@@ -380,7 +412,7 @@ function LessonAttendance({ lesson, quarter, date, reasons, onBack, onSaved }) {
                   <Check className="h-5 w-5" /> Saqlandi
                 </>
               ) : (
-                'Davomatni saqlash'
+                'Saqlash'
               )}
             </button>
           </div>
@@ -419,11 +451,15 @@ function LessonHero({ lesson, date, conducted, onBack }) {
   )
 }
 
+/** Dars bahosi shkalasi — admin jurnali (`JournalCellModal`) va PWA bilan bir xil. */
+const GRADES = [1, 2, 3, 4, 5]
+
 /**
  * Bitta o'quvchi. Qatorning o'zi — bitta teginishda "keldi ⇄ kelmadi".
- * Kelmagan o'quvchida sabab tugmalari ochiladi (sukut: sababsiz).
+ * Kelgan o'quvchida baho tugmalari (1–5), kelmaganida sabab tugmalari (sukut: sababsiz).
+ * Kelmagan o'quvchining oldin qo'yilgan bahosi o'chirilmaydi — faqat tugmalari yashirinadi.
  */
-function StudentRow({ index, student, reasonId, reasons, onToggle, onReason }) {
+function StudentRow({ index, student, reasonId, reasons, grade, onToggle, onReason, onGrade }) {
   // Sabab bor = kelmagan. Sabablar ro'yxati bo'sh bo'lganda bu ekranga umuman
   // kirilmaydi (yuqorida tekshiriladi), shuning uchun bu yerda shart yetarli.
   const absent = Boolean(reasonId)
@@ -442,6 +478,28 @@ function StudentRow({ index, student, reasonId, reasons, onToggle, onReason }) {
           {absent ? "Yo'q" : 'Keldi'}
         </span>
       </button>
+
+      {!absent && (
+        <div className="mt-2 flex gap-1.5 pl-8" role="group" aria-label={`${student.fullName} — baho`}>
+          {GRADES.map((g) => {
+            const on = g === grade
+            return (
+              <button
+                key={g}
+                type="button"
+                onClick={() => onGrade(g)}
+                aria-pressed={on}
+                className={
+                  'h-9 min-w-[40px] flex-1 rounded-xl text-[15px] font-bold ' +
+                  (on ? 'bg-brand-ink text-brand' : 'bg-slate-100 text-slate-500')
+                }
+              >
+                {g}
+              </button>
+            )
+          })}
+        </div>
+      )}
 
       {absent && (
         <div className="mt-2 flex flex-wrap gap-1.5 pl-8">

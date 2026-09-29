@@ -203,7 +203,7 @@ export function GroupFormPage() {
       return
     }
     if (teacherIds.length === 0) {
-      setError("O'qituvchini tanlang")
+      setError(isTrack ? 'Sinf rahbarini tanlang' : "O'qituvchini tanlang")
       return
     }
 
@@ -353,8 +353,10 @@ export function GroupFormPage() {
 
         <div className="grid gap-4 md:grid-cols-2">
           <div>
+            {/* Yo'nalish guruhining o'qituvchisi — uning sinf rahbari (mijoz, 2026-09-29:
+                "o'qituvchi degan so'zni shunchaki Sinf rahbari deb qo'y"). */}
             <span className="mb-1 block text-sm font-medium text-slate-600">
-              O'qituvchi <span className="text-red-500">*</span>
+              {isTrack ? 'Sinf rahbari' : "O'qituvchi"} <span className="text-red-500">*</span>
             </span>
             {/* Guruhga BITTA o'qituvchi (mijoz, 2026-09-23). Server ro'yxat qabul qiladi —
                 shu ro'yxat bitta elementli yuboriladi. */}
@@ -362,9 +364,9 @@ export function GroupFormPage() {
               value={teacherIds[0] ?? ''}
               onChange={(e) => setTeacherIds(e.target.value ? [e.target.value] : [])}
               className="h-[42px] w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100"
-              aria-label="O'qituvchi"
+              aria-label={isTrack ? 'Sinf rahbari' : "O'qituvchi"}
             >
-              <option value="">O'qituvchi tanlang...</option>
+              <option value="">{isTrack ? 'Sinf rahbarini tanlang...' : "O'qituvchi tanlang..."}</option>
               {teachers.map((t) => (
                 <option key={t.id} value={t.id}>
                   {t.fullName}

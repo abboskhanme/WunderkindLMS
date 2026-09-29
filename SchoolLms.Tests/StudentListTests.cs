@@ -449,6 +449,67 @@ public class StudentListTests(ApiFixture fixture)
             Assert.Equal(2, await db.Students.CountAsync(s => s.Id == clean || s.Id == moneyed)));
     }
 
+    /// <summary>
+    /// "Telegram" ustuni (mijoz, 2026-09-29): o'quvchining o'z akkaunti, vasiysining akkaunti
+    /// YOKI botdagi ro'yxatdan o'tish (raqam ulashish) bo'lsa — true; hech biri bo'lmasa — false.
+    /// </summary>
+    [Fact]
+    public async Task Telegram_ustuni_oquvchi_yoki_vasiy_boglanganini_korsatadi()
+    {
+        using var client = await fixture.Api.ClientAsAsync(Roles.Admin);
+        var tag = Tag();
+        var self = await SeedAsync(tag, "Ozi");
+        var viaGuardian = await SeedAsync(tag, "Vasiysi");
+        var byBot = await SeedAsync(tag, "Botda");
+        var none = await SeedAsync(tag, "Hech kim");
+        var (studentUser, _) = await fixture.Api.SeedUserAsync(Roles.Student);
+        var (parentUser, _) = await fixture.Api.SeedUserAsync("parent");
+        await fixture.Api.WithDbAsync(async db =>
+        {
+            (await db.Students.SingleAsync(s => s.Id == self)).UserId = studentUser.Id;
+            // phone_key (oxirgi 9 raqam) unikal — har yurishda boshqa raqam.
+            var phone = $"+99890{Random.Shared.Next(1_000_000, 9_999_999)}";
+            var guardian = new Guardian { FullName = $"Vasiy {tag}", Phone = phone, UserId = parentUser.Id };
+            db.Guardians.Add(guardian);
+            db.StudentGuardians.Add(new StudentGuardian { StudentId = viaGuardian, GuardianId = guardian.Id, IsPrimary = true });
+            db.TelegramRegistrations.Add(new TelegramRegistration
+            {
+                StudentId = byBot, ChatId = Random.Shared.NextInt64(10_000_000_000, 99_999_999_999), ParentName = "Ota",
+            });
+            foreach (var user in new[] { studentUser, parentUser })
+                db.TelegramAccounts.Add(new TelegramAccount
+                {
+                    TelegramUserId = Random.Shared.NextInt64(10_000_000_000, 99_999_999_999),
+                    UserId = user.Id, DisplayName = user.FullName,
+                });
+            await db.SaveChangesAsync();
+        });
+
+        try
+        {
+            var page = await PageAsync(client, $"{Search}?search={tag}&pageSize=1000");
+            var linked = page.Items.ToDictionary(Id, r => r.GetProperty("telegramLinked").GetBoolean());
+            Assert.True(linked[self]);
+            Assert.True(linked[viaGuardian]);
+            Assert.True(linked[byBot]);
+            Assert.False(linked[none]);
+        }
+        finally
+        {
+            // Umumiy baza: o'quvchilar soni boshqa testlarning chegaralariga (arrears-pivot 600)
+            // ta'sir qilmasin — o'zimiznikini olib tashlaymiz.
+            string[] ids = [self, viaGuardian, byBot, none];
+            await fixture.Api.WithDbAsync(async db =>
+            {
+                db.TelegramRegistrations.RemoveRange(db.TelegramRegistrations.Where(r => ids.Contains(r.StudentId)));
+                db.TelegramAccounts.RemoveRange(db.TelegramAccounts.Where(a => a.UserId == studentUser.Id || a.UserId == parentUser.Id));
+                db.StudentGuardians.RemoveRange(db.StudentGuardians.Where(l => ids.Contains(l.StudentId)));
+                db.Students.RemoveRange(db.Students.Where(s => ids.Contains(s.Id)));
+                await db.SaveChangesAsync();
+            });
+        }
+    }
+
     [Fact]
     public async Task Bosh_royxat_rad_etiladi()
     {

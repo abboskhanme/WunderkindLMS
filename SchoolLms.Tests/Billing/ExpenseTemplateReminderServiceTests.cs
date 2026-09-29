@@ -41,11 +41,17 @@ public class ExpenseTemplateReminderServiceTests(ApiFixture fixture) : IAsyncLif
         return Task.CompletedTask;
     }
 
+    /// <summary>
+    /// Belgilangan "bugun": shablon kuni 1..28, shuning uchun haqiqiy sana oyning 29–31
+    /// kunlarida "bugungi shablon" yaratishga imkon bermasdi va testlar yiqilardi.
+    /// </summary>
+    private static readonly DateOnly Today = new(2026, 9, 15);
+
     [Fact]
     public async Task Bugun_kutilayotgan_shablonlar_direktorga_bitta_xabarda_yuboriladi()
     {
         await using var db = await NewDbAsync();
-        var today = AppClock.Today;
+        var today = Today;
         var directorTeacherId = await SeedDirectorAsync(db, chatId: 5001);
 
         await AddTemplateAsync(db, "Internet", "utilities", 350_000m, today.Day, isActive: true);
@@ -60,7 +66,7 @@ public class ExpenseTemplateReminderServiceTests(ApiFixture fixture) : IAsyncLif
         var (provider, _) = BuildProvider(db, handler, configured: true);
         var job = new ExpenseTemplateReminderService(provider, NullLogger<ExpenseTemplateReminderService>.Instance);
 
-        var result = await job.RunOnceAsync();
+        var result = await job.RunOnceAsync(today: today);
 
         Assert.Equal(2, result.DueCount);
         Assert.Equal(1, result.ChatsNotified);
@@ -81,7 +87,7 @@ public class ExpenseTemplateReminderServiceTests(ApiFixture fixture) : IAsyncLif
     public async Task Hech_narsa_kutilmasa_hech_kimga_yuborilmaydi()
     {
         await using var db = await NewDbAsync();
-        var today = AppClock.Today;
+        var today = Today;
         await SeedDirectorAsync(db, chatId: 5002);
         var otherDay = today.Day == 1 ? 2 : 1;
         await AddTemplateAsync(db, "Boshqa kun", "other", 100_000m, otherDay, isActive: true);
@@ -90,7 +96,7 @@ public class ExpenseTemplateReminderServiceTests(ApiFixture fixture) : IAsyncLif
         var (provider, _) = BuildProvider(db, handler, configured: true);
         var job = new ExpenseTemplateReminderService(provider, NullLogger<ExpenseTemplateReminderService>.Instance);
 
-        var result = await job.RunOnceAsync();
+        var result = await job.RunOnceAsync(today: today);
 
         Assert.Equal(0, result.DueCount);
         Assert.Equal(0, result.ChatsNotified);
@@ -101,7 +107,7 @@ public class ExpenseTemplateReminderServiceTests(ApiFixture fixture) : IAsyncLif
     public async Task Direktor_botga_ulanmagan_bolsa_jim_hech_narsa_yiqilmaydi()
     {
         await using var db = await NewDbAsync();
-        var today = AppClock.Today;
+        var today = Today;
         // Direktor bor, lekin botga ULANMAGAN (TelegramRegistration yo'q).
         await SeedDirectorAsync(db, chatId: null);
         await AddTemplateAsync(db, "Internet", "utilities", 100_000m, today.Day, isActive: true);
@@ -110,7 +116,7 @@ public class ExpenseTemplateReminderServiceTests(ApiFixture fixture) : IAsyncLif
         var (provider, _) = BuildProvider(db, handler, configured: true);
         var job = new ExpenseTemplateReminderService(provider, NullLogger<ExpenseTemplateReminderService>.Instance);
 
-        var result = await job.RunOnceAsync();
+        var result = await job.RunOnceAsync(today: today);
 
         Assert.Equal(1, result.DueCount);
         Assert.Equal(0, result.ChatsNotified);
@@ -121,7 +127,7 @@ public class ExpenseTemplateReminderServiceTests(ApiFixture fixture) : IAsyncLif
     public async Task Bot_sozlanmagan_bolsa_chat_umuman_qidirilmaydi()
     {
         await using var db = await NewDbAsync();
-        var today = AppClock.Today;
+        var today = Today;
         await SeedDirectorAsync(db, chatId: 5003);
         await AddTemplateAsync(db, "Internet", "utilities", 100_000m, today.Day, isActive: true);
 
@@ -129,7 +135,7 @@ public class ExpenseTemplateReminderServiceTests(ApiFixture fixture) : IAsyncLif
         var (provider, _) = BuildProvider(db, handler, configured: false);
         var job = new ExpenseTemplateReminderService(provider, NullLogger<ExpenseTemplateReminderService>.Instance);
 
-        var result = await job.RunOnceAsync();
+        var result = await job.RunOnceAsync(today: today);
 
         Assert.Equal(1, result.DueCount);
         Assert.Equal(0, result.ChatsNotified);

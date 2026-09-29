@@ -93,7 +93,7 @@ export function ProfileSheet({ user, panelChildren, activeChildId, onPickChild, 
               : panelChildren.map((c) => ({ ...c, relation: null, isPrimary: false, debt: null }))
             // Umumiy qarz ATAYLAB yo'q: pulni frontend qo'shmaydi (FinanceTab izohi),
             // har farzandning qarzi o'z qatorida serverdan tayyor keladi.
-            const tg = me.telegram ?? {}
+            // Bog'langan Telegram ko'rsatilmaydi (mijoz, 2026-09-29).
 
             return (
               <>
@@ -102,14 +102,6 @@ export function ProfileSheet({ user, panelChildren, activeChildId, onPickChild, 
                 <Card title="Ma'lumotlar">
                   {me.login && <InfoRow label="Login" value={me.login} />}
                   <InfoRow label="Maktab" value={me.schoolName || '—'} />
-                  <InfoRow
-                    label="Telegram"
-                    value={
-                      tg.id
-                        ? [tg.displayName, tg.username ? `@${tg.username}` : null].filter(Boolean).join(' · ')
-                        : 'Ulanmagan'
-                    }
-                  />
                   <InfoRow label="Farzandlar soni" value={String(children.length)} />
                 </Card>
 
@@ -163,7 +155,7 @@ function IdentityCard({ me }) {
   )
 }
 
-/** Yorliq chapda, qiymat o'ngda; uzun qiymat (login, Telegram nomi) o'raladi. */
+/** Yorliq chapda, qiymat o'ngda; uzun qiymat (login) o'raladi. */
 function InfoRow({ label, value }) {
   return (
     <div className="flex items-baseline gap-3 border-t border-slate-100 px-4 py-3 first:border-t-0">

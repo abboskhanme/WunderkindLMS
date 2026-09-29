@@ -1,14 +1,13 @@
 /**
  * TO'LOV — hisob-fakturalar, qarz va cheklar.
  *
- * TO'RTTA QOIDA (veb-portaldagi `FinanceView.tsx` bilan bir xil, chunki bu
+ * QOIDALAR (veb-portaldagi `FinanceView.tsx` bilan bir xil, chunki bu
  * ikkalasi bitta `/api/student/billing` javobini ko'rsatadi):
  *   1. Hisob-fakturalar OY bo'yicha, oy ichida TOIFA kesimida — ota-ona nima
  *      uchun to'layotganini bilishi kerak.
- *   2. Har to'lovda chek bor (SPEC §4.7 — maktab o'zgartira olmaydigan nusxa).
- *   3. Bekor qilingan to'lov YASHIRILMAYDI: ustidan chizilgan holda qoladi va
- *      sababi yoziladi.
- *   4. Ekranda birorta ichki id yo'q — chek raqami bor, uuid yo'q.
+ *   2. To'lovlar tarixi (cheklar bilan) ota-onaga KO'RSATILMAYDI (mijoz,
+ *      2026-09-29) — faqat qarz va hisob-fakturalar.
+ *   3. Ekranda birorta ichki id yo'q.
  *
  * PULNI SERVER QO'SHADI. Bu faylda birorta `+` yo'q: oy jamlari ham, qarz ham
  * `PortalFinanceController` da `decimal` da hisoblanadi. JavaScript'ning
@@ -19,14 +18,14 @@
  */
 import { useState } from 'react'
 import {
-  ChevronDown, ChevronRight, FileDown, ReceiptText, Send, TriangleAlert, Wallet,
+  ChevronDown, ChevronRight, ReceiptText, TriangleAlert, Wallet,
 } from 'lucide-react'
 import { Badge, Card, EmptyState, Row } from '../../components/ui'
 import { useAsync } from '../../lib/useAsync'
-import { dateTime, dayMonth, money, sum } from '../../lib/format'
-import { haptic, inTelegram } from '../../lib/telegram'
-import { downloadReceipt, getBilling, sendReceiptToTelegram } from '../../lib/parentApi'
-import { AsyncBlock, balanceText, lineStatus, methodLabel, monthLabel } from './shared'
+import { dayMonth, money, sum } from '../../lib/format'
+import { haptic } from '../../lib/telegram'
+import { getBilling } from '../../lib/parentApi'
+import { AsyncBlock, balanceText, lineStatus, monthLabel } from './shared'
 import { parseISO } from './weeks'
 
 export function FinanceTab({ child }) {
@@ -39,7 +38,8 @@ export function FinanceTab({ child }) {
           <SummaryCard billing={billing} />
           <DebtCard lines={billing.debtLines ?? []} />
           <MonthsCard months={billing.months ?? []} />
-          <PaymentsCard childId={child.id} payments={billing.payments ?? []} />
+          {/* "To'lovlar tarixi" ota-onaga ko'rsatilmaydi (mijoz, 2026-09-29: "ota ona profilida
+              to'lov tarixi ko'rinmasin"). Kassir va admin uni o'quvchi kartochkasida ko'radi. */}
         </>
       )}
     </AsyncBlock>
@@ -191,153 +191,6 @@ function MonthsCard({ months }) {
                   </div>
                 )
               })}
-          </div>
-        )
-      })}
-    </Card>
-  )
-}
-
-/* ------------------------------------------------------------- to'lovlar */
-
-function PaymentsCard({ childId, payments }) {
-  const [open, setOpen] = useState(() => new Set())
-  const [busy, setBusy] = useState(null)
-  const [error, setError] = useState(null)
-  const [sent, setSent] = useState(null)
-
-  const toggle = (id) => {
-    haptic('light')
-    setOpen((prev) => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
-  }
-
-  const take = async (p) => {
-    setBusy(p.paymentId)
-    setError(null)
-    setSent(null)
-    try {
-      // Telegram ichida — chatga; brauzerda — oddiy yuklab olish.
-      if (inTelegram) {
-        await sendReceiptToTelegram(p.paymentId)
-        setSent(p.paymentId)
-      } else {
-        await downloadReceipt(childId, p.paymentId, p.receiptNo)
-      }
-      haptic('medium')
-    } catch (e) {
-      // Xato AYNAN shu to'lov ostida chiqsin — ro'yxatda o'nta chek bo'lishi mumkin.
-      setError({ id: p.paymentId, message: e.message })
-    } finally {
-      setBusy(null)
-    }
-  }
-
-  if (payments.length === 0) {
-    return (
-      <Card title="To'lovlar tarixi">
-        <EmptyState
-          icon={<ReceiptText className="h-8 w-8" />}
-          title="To'lov qilinmagan"
-          note="Kassada to'lov qabul qilinishi bilan chek raqami bilan shu yerda ko'rinadi."
-        />
-      </Card>
-    )
-  }
-
-  return (
-    <Card title="To'lovlar tarixi">
-      {payments.map((p) => {
-        const expanded = open.has(p.paymentId)
-        const reversed = Boolean(p.reversal)
-        return (
-          <div key={p.paymentId} className="border-t border-slate-100">
-            <Row
-              onClick={() => toggle(p.paymentId)}
-              lead={
-                <div
-                  className={
-                    'flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ' +
-                    (reversed ? 'bg-slate-100 text-slate-400' : 'bg-emerald-50 text-emerald-600')
-                  }
-                >
-                  <ReceiptText className="h-5 w-5" />
-                </div>
-              }
-              title={
-                <span className={reversed ? 'line-through text-slate-400' : ''}>
-                  {money(p.amount)}
-                </span>
-              }
-              subtitle={`${dateTime(p.receivedAt)} · ${methodLabel(p.method)} · chek №${p.receiptNo}`}
-              right={
-                reversed ? (
-                  <Badge tone="neutral">Bekor qilingan</Badge>
-                ) : expanded ? (
-                  <ChevronDown className="h-5 w-5 shrink-0 text-slate-400" />
-                ) : (
-                  <ChevronRight className="h-5 w-5 shrink-0 text-slate-400" />
-                )
-              }
-            />
-
-            {expanded && (
-              <div className="border-t border-slate-100 bg-slate-50/60 px-4 py-3">
-                {p.parts.map((a) => (
-                  <div
-                    key={`${a.periodMonth}-${a.categoryCode}`}
-                    className="flex items-baseline gap-2 py-0.5"
-                  >
-                    <span className="min-w-0 flex-1 truncate text-[13px] text-slate-600">
-                      {monthLabel(a.periodMonth)} · {a.categoryName}
-                    </span>
-                    <span className="shrink-0 text-[13px] font-semibold">{sum(a.amount)}</span>
-                  </div>
-                ))}
-
-                {p.unallocated > 0 && (
-                  <div className="flex items-baseline gap-2 py-0.5">
-                    <span className="min-w-0 flex-1 text-[13px] text-slate-600">
-                      Avans (keyingi oylarga)
-                    </span>
-                    <span className="shrink-0 text-[13px] font-semibold">{sum(p.unallocated)}</span>
-                  </div>
-                )}
-
-                {p.note && <p className="mt-1 text-[12px] text-slate-400">Izoh: {p.note}</p>}
-
-                {reversed && (
-                  <p className="mt-2 rounded-xl bg-red-50 p-2.5 text-[12px] leading-relaxed text-red-700">
-                    To'lov bekor qilingan ({dateTime(p.reversal.reversedAt)}, chek №
-                    {p.reversal.receiptNo}). Sabab: {p.reversal.reason}
-                  </p>
-                )}
-
-                <button
-                  type="button"
-                  onClick={() => take(p)}
-                  disabled={busy === p.paymentId}
-                  className="mt-3 flex w-full items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white py-3 text-[14px] font-semibold disabled:opacity-50"
-                >
-                  {inTelegram ? <Send className="h-4 w-4" /> : <FileDown className="h-4 w-4" />}
-                  {busy === p.paymentId
-                    ? inTelegram ? 'Yuborilmoqda…' : 'Yuklanmoqda…'
-                    : inTelegram ? 'Chekni Telegramga yuborish (PDF)' : 'Chekni yuklab olish (PDF)'}
-                </button>
-                {sent === p.paymentId && (
-                  <p className="mt-2 text-[12px] text-emerald-700">
-                    Chek Telegram chatingizga yuborildi — bot bilan suhbatni oching.
-                  </p>
-                )}
-                {error?.id === p.paymentId && (
-                  <p className="mt-2 text-[12px] text-red-600">{error.message}</p>
-                )}
-              </div>
-            )}
           </div>
         )
       })}

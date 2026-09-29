@@ -279,6 +279,28 @@ public sealed class StudentListQuery(IAppDbContext db)
     //  2-bosqich — qoldiq, holat/shartnoma ustunlari, pul filtrlari, tartib
     // =====================================================================
 
+    /// <summary>
+    /// "Telegram" ustuni: o'quvchining o'z akkaunti yoki vasiylaridan birining akkaunti Mini
+    /// App'ga bog'langan, YOKI ota-ona botda raqamini ulashib shu o'quvchiga yozilgan
+    /// (telegram_registrations) — uchta to'plamli so'rov, siklda so'rov yo'q.
+    /// </summary>
+    private async Task<HashSet<string>> TelegramLinkedAsync(List<string> ids, CancellationToken ct)
+    {
+        var linkedSelf = await (from s in db.Students.AsNoTracking()
+                                join a in db.TelegramAccounts.AsNoTracking() on s.UserId equals a.UserId
+                                where ids.Contains(s.Id)
+                                select s.Id).ToListAsync(ct);
+        var linkedViaGuardian = await (from l in db.StudentGuardians.AsNoTracking()
+                                       join g in db.Guardians.AsNoTracking() on l.GuardianId equals g.Id
+                                       join a in db.TelegramAccounts.AsNoTracking() on g.UserId equals a.UserId
+                                       where ids.Contains(l.StudentId)
+                                       select l.StudentId).ToListAsync(ct);
+        var linkedByBot = await db.TelegramRegistrations.AsNoTracking()
+            .Where(r => ids.Contains(r.StudentId))
+            .Select(r => r.StudentId).ToListAsync(ct);
+        return linkedSelf.Concat(linkedViaGuardian).Concat(linkedByBot).ToHashSet(StringComparer.Ordinal);
+    }
+
     private async Task<List<StudentListRowDto>> DecorateAsync(
         List<Student> students,
         StudentListFilter f,
@@ -308,6 +330,10 @@ public sealed class StudentListQuery(IAppDbContext db)
                 g => g.OrderByDescending(x => x.SignedOn ?? DateOnly.MinValue).First().Number,
                 StringComparer.Ordinal);
         var hasContract = contracts.Select(c => c.StudentId).ToHashSet(StringComparer.Ordinal);
+
+        var telegramLinked = f.IncludeTelegram
+            ? await TelegramLinkedAsync(ids, ct)
+            : new HashSet<string>(StringComparer.Ordinal);
 
         var today = AppClock.Today;
 
@@ -339,7 +365,8 @@ public sealed class StudentListQuery(IAppDbContext db)
                 s.ArchiveReason,
                 s.ArchiveReasonId,
                 s.BirthCertificateUrl,
-                s.TargetGrade);
+                s.TargetGrade,
+                telegramLinked.Contains(s.Id));
         });
 
         // Pulga oid filtrlar — qoldiq hisoblangandan KEYIN.

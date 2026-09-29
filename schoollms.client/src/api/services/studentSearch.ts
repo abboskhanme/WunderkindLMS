@@ -21,6 +21,8 @@ export interface StudentListRow {
   grade: number
   /** Sinfi hali yo'q o'quvchining mo'ljaldagi sinf darajasi (S-9). Sinfi bor bo'lsa null. */
   targetGrade: number | null
+  /** O'quvchining o'zi yoki vasiysi Mini App'ga bog'langan yoki ota-ona botda ro'yxatdan o'tgan. */
+  telegramLinked: boolean
   gender: 'male' | 'female'
   birthDate: string
   /** To'liq yosh. Sana bo'sh yoki buzuq bo'lsa null. */

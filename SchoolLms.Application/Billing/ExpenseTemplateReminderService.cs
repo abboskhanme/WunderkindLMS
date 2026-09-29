@@ -86,23 +86,27 @@ public class ExpenseTemplateReminderService(
     /// Bitta yurish. Testdan ham shu metod chaqiriladi (fon tsiklidan
     /// mustaqil) — `AnomalyScanService.RunOnceAsync` bilan bir xil naqsh.
     /// </summary>
-    public async Task<ExpenseTemplateReminderResult> RunOnceAsync(CancellationToken ct = default)
+    /// <param name="today">
+    /// Testlar uchun: "bugun" ni belgilash. Shablon kuni 1..28 bo'lgani uchun oyning 29–31
+    /// kunlarida haqiqiy sana bilan "bugungi shablon" ni sinab bo'lmasdi. Ishda berilmaydi.
+    /// </param>
+    public async Task<ExpenseTemplateReminderResult> RunOnceAsync(CancellationToken ct = default, DateOnly? today = null)
     {
         using var scope = services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<IAppDbContext>();
         var telegram = scope.ServiceProvider.GetRequiredService<TelegramService>();
 
-        var today = AppClock.Today;
+        var day = today ?? AppClock.Today;
 
         var due = await db.ExpenseTemplates.AsNoTracking()
-            .Where(t => t.IsActive && t.DayOfMonth == today.Day)
+            .Where(t => t.IsActive && t.DayOfMonth == day.Day)
             .OrderBy(t => t.Name)
             .ToListAsync(ct);
 
         if (due.Count == 0)
         {
-            logger.LogDebug("Rejalashtirilgan chiqim eslatmasi: bugun ({Date}) hech qanday shablon yo'q.", today);
-            return new ExpenseTemplateReminderResult(today, 0, 0);
+            logger.LogDebug("Rejalashtirilgan chiqim eslatmasi: bugun ({Date}) hech qanday shablon yo'q.", day);
+            return new ExpenseTemplateReminderResult(day, 0, 0);
         }
 
         if (!telegram.IsConfigured)
@@ -110,7 +114,7 @@ public class ExpenseTemplateReminderService(
             logger.LogInformation(
                 "Rejalashtirilgan chiqim eslatmasi yuborilmadi (bot sozlanmagan): {Count} ta shablon bugun.",
                 due.Count);
-            return new ExpenseTemplateReminderResult(today, due.Count, 0);
+            return new ExpenseTemplateReminderResult(day, due.Count, 0);
         }
 
         var chatIds = await DirectorChatIdsAsync(db, ct);
@@ -119,19 +123,19 @@ public class ExpenseTemplateReminderService(
             logger.LogInformation(
                 "Rejalashtirilgan chiqim eslatmasi yuborilmadi (direktor botga ulanmagan): {Count} ta shablon bugun.",
                 due.Count);
-            return new ExpenseTemplateReminderResult(today, due.Count, 0);
+            return new ExpenseTemplateReminderResult(day, due.Count, 0);
         }
 
-        var text = BuildMessage(today, due);
+        var text = BuildMessage(day, due);
         var sent = 0;
         foreach (var chatId in chatIds)
             if (await telegram.SendMessageAsync(chatId, text, ct: ct)) sent++;
 
         logger.LogInformation(
             "Rejalashtirilgan chiqim eslatmasi: {Date}, {Count} ta shablon, {Chats} ta chatga yuborildi ({Sent} muvaffaqiyatli).",
-            today, due.Count, chatIds.Count, sent);
+            day, due.Count, chatIds.Count, sent);
 
-        return new ExpenseTemplateReminderResult(today, due.Count, sent);
+        return new ExpenseTemplateReminderResult(day, due.Count, sent);
     }
 
     /// <summary>

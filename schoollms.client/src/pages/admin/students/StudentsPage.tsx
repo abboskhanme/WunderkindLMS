@@ -17,6 +17,8 @@ import {
   ChevronDown,
   FileSpreadsheet,
   FileSignature,
+  CheckCircle2,
+  Circle,
 } from 'lucide-react'
 import type { Student } from '@/types'
 import type { StudentPayload } from '@/api/services/students'
@@ -591,6 +593,7 @@ export function StudentsPage({ initialTab = 'active' }: { initialTab?: Tab } = {
                   <th className="px-4 py-3">Telefon</th>
                   <th className="px-4 py-3">Ota-ona</th>
                   <th className="px-4 py-3">Ota-ona tel.</th>
+                  <th className="px-4 py-3">Telegram</th>
                   <SortHeader label="Holat" sortKey="status" active={sortBy} order={sortOrder} onSort={sortOn} />
                   <SortHeader label="Balans" sortKey="balance" active={sortBy} order={sortOrder} onSort={sortOn} />
                   {tab === 'archived' && (
@@ -641,6 +644,19 @@ export function StudentsPage({ initialTab = 'active' }: { initialTab?: Tab } = {
                       </span>
                     </td>
                     <td className="whitespace-nowrap px-4 py-3 text-slate-600">{formatPhone(s.parentPhone)}</td>
+                    {/* O'quvchi yoki vasiysi botga bog'langanmi (mijoz, 2026-09-29) — Ota-onalar
+                        ro'yxatidagi belgi bilan bir xil. */}
+                    <td className="whitespace-nowrap px-4 py-3">
+                      {s.telegramLinked ? (
+                        <span className="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">
+                          <CheckCircle2 className="h-3.5 w-3.5" /> Bog'langan
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 rounded-md bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700">
+                          <Circle className="h-3.5 w-3.5" /> Yo'q
+                        </span>
+                      )}
+                    </td>
                     <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                       {statuses.length === 0 ? (
                         <span className="text-slate-300">—</span>
@@ -724,7 +740,7 @@ export function StudentsPage({ initialTab = 'active' }: { initialTab?: Tab } = {
                 ))}
                 {rows.length === 0 && (
                   <tr>
-                    <td colSpan={tab === 'archived' ? 14 : 12} className="px-4 py-12 text-center text-slate-400">
+                    <td colSpan={tab === 'archived' ? 15 : 13} className="px-4 py-12 text-center text-slate-400">
                       {tab === 'archived' ? "Arxivda o'quvchi yo'q" : 'Hech narsa topilmadi'}
                     </td>
                   </tr>

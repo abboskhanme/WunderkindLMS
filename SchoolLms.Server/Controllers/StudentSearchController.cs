@@ -56,8 +56,11 @@ public class StudentSearchController(AppDbContext db, AuditService audit) : Cont
     /// </summary>
     [HttpGet("search")]
     public async Task<ActionResult<StudentListPageDto>> Search(
-        [FromQuery] StudentListFilter filter, CancellationToken ct = default) =>
-        await new StudentListQuery(db).RunAsync(filter, ct);
+        [FromQuery] StudentListFilter filter, CancellationToken ct = default)
+    {
+        filter.IncludeTelegram = true; // ro'yxatdagi "Telegram" ustuni
+        return await new StudentListQuery(db).RunAsync(filter, ct);
+    }
 
     /// <summary>
     /// S-2 — FILTRLANGAN ro'yxatning .xlsx eksporti (tanlangan qatorlarniki

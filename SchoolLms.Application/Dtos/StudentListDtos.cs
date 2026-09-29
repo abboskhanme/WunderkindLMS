@@ -126,12 +126,23 @@ public sealed class StudentListFilter
 
     /// <summary>Sahifadagi qatorlar soni (1..1000, sukut 200).</summary>
     public int? PageSize { get; set; }
+
+    /// <summary>
+    /// "Telegram" ustunini to'ldirish — faqat admin ro'yxati so'raydi (server o'zi qo'yadi).
+    /// MCP (app_ro) Telegram jadvallarini o'qimaydi, u yerda ustun false qoladi.
+    /// </summary>
+    public bool IncludeTelegram { get; set; }
 }
 
 /// <summary>Ro'yxatning bitta qatori — §2.3.1 dagi ustunlar.</summary>
 /// <param name="TargetGrade">
 /// §3.3 (S-9) — <paramref name="ClassName"/> bo'sh bo'lganda mo'ljaldagi sinf
 /// darajasi (0-11); sinfi bor o'quvchida har doim null.
+/// </param>
+/// <param name="TelegramLinked">
+/// O'quvchining o'zi yoki vasiylaridan biri Mini App'ga bog'langan yoki ota-ona botda raqamini
+/// ulashib shu o'quvchiga yozilgan (mijoz, 2026-09-29:
+/// "xodimlar kabi telegramga ulanganmi yoki yo'q alohida ustun bo'lsin").
 /// </param>
 public record StudentListRowDto(
     string Id,
@@ -158,7 +169,8 @@ public record StudentListRowDto(
     string? ArchiveReason,
     Guid? ArchiveReasonId,
     string? PhotoUrl,
-    short? TargetGrade = null);
+    short? TargetGrade = null,
+    bool TelegramLinked = false);
 
 /// <summary>
 /// Bitta sahifa. <paramref name="TotalDebt"/> va <paramref name="TotalCredit"/> —

@@ -263,7 +263,7 @@ function FocusLesson({ lessons, conducted, canJournal, canSchedule, onOpenAttend
             onClick={() => onOpenAttendance(lesson)}
             className="mt-4 flex w-full items-center justify-center gap-1.5 rounded-2xl bg-brand py-3 text-[15px] font-bold text-brand-ink"
           >
-            {isConducted ? "Davomatni ko'rish" : 'Davomat olish'}
+            {isConducted ? "Davomat va baholar" : 'Davomat va baho'}
             <ChevronRight className="h-4 w-4" />
           </button>
         )}
