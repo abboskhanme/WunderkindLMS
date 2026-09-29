@@ -19,7 +19,7 @@ import { voidInvoice } from '@/api/services/invoices'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { formatMoney } from '@/lib/utils'
-import { AsyncBlock, IconBtn, Notice, StatusPill } from '@/pages/admin/billing/BillingUi'
+import { AsyncBlock, IconBtn, Notice, SubscriptionStatusPill } from '@/pages/admin/billing/BillingUi'
 import { EndSubscriptionModal } from '@/pages/admin/billing/EndSubscriptionModal'
 import { SubscriptionFormModal } from '@/pages/admin/billing/SubscriptionFormModal'
 import type { StudentOption } from '@/pages/admin/billing/useStudents'
@@ -82,6 +82,7 @@ export function SubscriptionsTab({ studentId, studentName, className, onChanged 
           [...subs].sort(
             (a, b) =>
               Number(b.isActive) - Number(a.isActive) ||
+              Number(!!b.isUpcoming) - Number(!!a.isUpcoming) ||
               a.categoryName.localeCompare(b.categoryName, 'uz'),
           ),
         )
@@ -183,7 +184,7 @@ export function SubscriptionsTab({ studentId, studentName, className, onChanged 
                 onChange={(e) => setActiveOnly(e.target.checked)}
                 className="h-4 w-4 rounded border-slate-300 accent-brand-600"
               />
-              Faqat amaldagilar
+              Faqat amaldagi va boshlanadiganlar
             </label>
             <Button onClick={openCreate}>
               <Plus className="h-4 w-4" /> Abonement qo'shish
@@ -225,11 +226,7 @@ export function SubscriptionsTab({ studentId, studentName, className, onChanged 
                     <td className="whitespace-nowrap px-4 py-3 text-slate-600">{row.startsOn}</td>
                     <td className="whitespace-nowrap px-4 py-3 text-slate-600">{row.endsOn ?? 'muddatsiz'}</td>
                     <td className="px-4 py-3">
-                      {row.isActive ? (
-                        <StatusPill tone="success">Amalda</StatusPill>
-                      ) : (
-                        <StatusPill>Yopilgan</StatusPill>
-                      )}
+                      <SubscriptionStatusPill isActive={row.isActive} isUpcoming={row.isUpcoming} startsOn={row.startsOn} />
                     </td>
                     <td className="px-4 py-3">
                       <span className="flex justify-end gap-0.5">

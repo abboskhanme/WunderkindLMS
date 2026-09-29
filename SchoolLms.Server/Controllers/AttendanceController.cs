@@ -36,9 +36,8 @@ public class AttendanceController(AppDbContext db) : ControllerBase
         if (!await LessonRoster.LessonsLiveAsync(db, owner))
             return new DailyAttendanceDto(0, []);
 
-        // Bugungi so'rovning aynan o'zi: sinf uchun ARXIVLANGANLAR BILAN birga
-        // (bu ekran ularni ham sanaydi), guruh uchun faol a'zolar.
-        var students = await LessonRoster.ForLessonAsync(db, owner, includeArchived: true);
+        // Faqat faol o'quvchilar (mijoz, 2026-09-29: arxivdagilar bilan hech qayerda ishlanmaydi).
+        var students = await LessonRoster.ForLessonAsync(db, owner);
         var total = students.Count;
 
         if (!DateOnly.TryParseExact(date, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var d))
@@ -140,7 +139,7 @@ public class AttendanceController(AppDbContext db) : ControllerBase
         if (!await LessonRoster.LessonsLiveAsync(db, owner))
             return new List<StudentStatusDto>();
 
-        var students = await LessonRoster.ForLessonAsync(db, owner, includeArchived: true);
+        var students = await LessonRoster.ForLessonAsync(db, owner);
 
         var q = await db.Quarters.FirstOrDefaultAsync(x =>
             string.Compare(date, x.StartDate) >= 0 && string.Compare(date, x.EndDate) <= 0);

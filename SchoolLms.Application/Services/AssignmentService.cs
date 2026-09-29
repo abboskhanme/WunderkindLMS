@@ -184,10 +184,8 @@ public static class AssignmentService
         var a = await db.Assignments.FindAsync(assignmentId);
         if (a is null) return null;
 
-        // includeArchived:true — bugungi (sinf yo'li) xatti-harakat: natija
-        // ro'yxati arxivlangan o'quvchini ham ko'rsatardi, agar class_name
-        // hamon mos kelsa.
-        var students = (await RosterAsync(db, a, includeArchived: true))
+        // Faqat faol o'quvchilar (mijoz, 2026-09-29: arxivdagilar bilan hech qayerda ishlanmaydi).
+        var students = (await RosterAsync(db, a, includeArchived: false))
             .OrderBy(s => s.ClassName).ThenBy(s => s.FullName).ToList();
         var byStudent = (await db.AssignmentSubmissions.Where(x => x.AssignmentId == assignmentId).ToListAsync())
             .ToDictionary(x => x.StudentId);

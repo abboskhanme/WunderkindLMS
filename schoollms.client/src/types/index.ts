@@ -1606,6 +1606,8 @@ export interface StudentSubscription {
   /** The abonement this subscription was opened from; null = category-only (legacy). */
   planId: string | null
   planName: string | null
+  /** Hali boshlanmagan (starts_on > bugun) — "1-oktabrdan" deb ko'rsatiladi, "Yopilgan" emas. */
+  isUpcoming?: boolean
 }
 
 /* ---------- Chegirmalar ---------- */

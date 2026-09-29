@@ -120,8 +120,48 @@ public sealed class StudentArchiveService(IAppDbContext db)
         student.ArchiveReasonId = reasonId;
         // Alohida (sinfsiz) arxivlash — sinf arxivdan chiqarilganda qaytmaydi.
         student.ArchivedWithClass = false;
+        await LeaveClassAndGroupsAsync(student, "Arxivlandi: " + reasonText, ct);
 
         if (student.UserId is null) return null;
         return await db.Users.FirstOrDefaultAsync(u => u.Id == student.UserId, ct);
+    }
+
+    /// <summary>
+    /// Arxivdagi o'quvchi sinfda ham, guruhda ham QOLMAYDI (mijoz, 2026-09-29: "arxivdagi
+    /// barcha o'quvchilar sinfdan chiqarilsin ... hamma ishlar faqat active o'quvchilar bilan").
+    /// Aks holda <c>class_name</c> orqali davomat, jurnal va boshqa ro'yxatlarga tushib qolardi.
+    ///
+    /// <para>
+    /// Hech narsa o'chirilmaydi: sinf va guruh a'zoliklari sana va sabab bilan YOPILADI (tarix
+    /// qoladi, sinfni arxivdan chiqarish shu tarixdan qaytaradi), sinf darajasi
+    /// <c>target_grade</c> ga o'tadi — o'quvchi qaytsa "mo'ljal: N-sinf" bo'lib turadi.
+    /// SaveChanges chaqirilmaydi (chaqiruvchining tranzaksiyasi).
+    /// </para>
+    /// </summary>
+    public async Task LeaveClassAndGroupsAsync(Student student, string reason, CancellationToken ct = default)
+    {
+        var today = AppClock.Today;
+        var why = reason.Length > 200 ? reason[..200] : reason;
+
+        if (!string.IsNullOrWhiteSpace(student.ClassName))
+        {
+            var grade = await db.Classes.AsNoTracking()
+                .Where(c => c.Name == student.ClassName)
+                .Select(c => (int?)c.Grade).FirstOrDefaultAsync(ct);
+            if (student.TargetGrade is null && grade is >= 0 and <= 11) student.TargetGrade = (short)grade.Value;
+            student.ClassName = string.Empty;
+        }
+
+        foreach (var m in await db.ClassMemberships.Where(m => m.StudentId == student.Id && m.LeftOn == null).ToListAsync(ct))
+        {
+            // `left_on >= joined_on` check'i — bir kunda qo'shilib chiqarilgan ham to'g'ri.
+            m.LeftOn = today < m.JoinedOn ? m.JoinedOn : today;
+            m.LeaveReason = why;
+        }
+        foreach (var m in await db.StudyGroupMembers.Where(m => m.StudentId == student.Id && m.LeftOn == null).ToListAsync(ct))
+        {
+            m.LeftOn = today < m.JoinedOn ? m.JoinedOn : today;
+            m.LeaveReason = why;
+        }
     }
 }

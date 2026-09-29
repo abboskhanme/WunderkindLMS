@@ -166,6 +166,34 @@ export function StatusPill({
   )
 }
 
+const FROM_MONTH = [
+  'yanvardan', 'fevraldan', 'martdan', 'apreldan', 'maydan', 'iyundan',
+  'iyuldan', 'avgustdan', 'sentabrdan', 'oktabrdan', 'noyabrdan', 'dekabrdan',
+]
+
+/**
+ * Obuna holati: amalda / hali boshlanmagan ("1-oktabrdan") / yopilgan. Boshlanishi kutilayotgan
+ * obuna "Yopilgan" ko'rinmasin (mijoz, 2026-09-29: 1-oktabrdan ochilgan avtobus va yotoqxona
+ * abonementlari "yo'q" deb o'ylandi).
+ */
+export function SubscriptionStatusPill({
+  isActive,
+  isUpcoming,
+  startsOn,
+}: {
+  isActive: boolean
+  isUpcoming?: boolean
+  startsOn: string
+}) {
+  if (isActive) return <StatusPill tone="success">Amalda</StatusPill>
+  if (isUpcoming) {
+    const [, month, day] = startsOn.split('-').map(Number)
+    const label = month >= 1 && month <= 12 ? `${day}-${FROM_MONTH[month - 1]}` : startsOn
+    return <StatusPill tone="info">{label}</StatusPill>
+  }
+  return <StatusPill>Yopilgan</StatusPill>
+}
+
 /**
  * Tasdiq navbati uchun ko'zga tashlanadigan quti (P1-17 qabul mezoni:
  * "kutayotganlar alohida, ko'zga tashlanadigan ro'yxatda").

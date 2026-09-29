@@ -102,8 +102,10 @@ public record EndSubscriptionPreviewDto(
     DateOnly EndsOn, IReadOnlyList<InvoiceDto> FutureInvoices);
 
 /// <summary>
-/// Obunalar ro'yxati uchun filtr. <see cref="ActiveOnly"/> — BUGUNGI kunda
-/// amal qiladiganlar (<c>starts_on ≤ bugun ≤ ends_on</c>).
+/// Obunalar ro'yxati uchun filtr. <see cref="ActiveOnly"/> — yopilmaganlar: bugun
+/// amaldagi VA hali boshlanmagan (<c>ends_on ≥ bugun</c> yoki muddatsiz). Boshlanishi
+/// kutilayotgan obuna ham "amaldagi" ro'yxatida ko'rinadi — aks holda 1-oktabrdan
+/// ochilgan avtobus obunasi 30-sentabrgacha hech qayerda ko'rinmasdi.
 /// </summary>
 public record SubscriptionQuery(
     string? StudentId = null,
@@ -176,7 +178,7 @@ public sealed class SubscriptionService(
         if (query.PlanId is { } planId)
             source = source.Where(s => s.PlanId == planId);
         if (query.ActiveOnly)
-            source = source.Where(s => s.StartsOn <= today && (s.EndsOn == null || s.EndsOn >= today));
+            source = source.Where(s => s.EndsOn == null || s.EndsOn >= today);
 
         return await QueryAsync(source, today, ct);
     }
@@ -495,7 +497,8 @@ public sealed class SubscriptionService(
             r.MonthlyAmount, r.Detail,
             r.StartsOn, r.EndsOn,
             r.StartsOn <= asOf && (r.EndsOn == null || r.EndsOn >= asOf),
-            r.CreatedByName, r.CreatedAt, r.PlanId, r.PlanName))];
+            r.CreatedByName, r.CreatedAt, r.PlanId, r.PlanName,
+            IsUpcoming: r.StartsOn > asOf && (r.EndsOn == null || r.EndsOn >= r.StartsOn)))];
     }
 
     /// <summary>

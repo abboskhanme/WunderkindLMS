@@ -315,12 +315,16 @@ public class ClassesController(AppDbContext db, AuditService audit) : Controller
         cls.ArchivedAt = today;
 
         var students = await db.Students.Where(s => s.ClassName == cls.Name && !s.IsArchived).ToListAsync();
+        var archive = new StudentArchiveService(db);
         foreach (var s in students)
         {
             s.IsArchived = true;
             s.ArchivedAt = today;
             s.ArchiveReason = $"Sinf arxivlandi ({cls.Name})";
             s.ArchivedWithClass = true;
+            // Arxivdagi o'quvchi sinfda qolmaydi — a'zolik yopiladi, sinfni qaytarish shu
+            // yopilgan a'zolikdan qaytaradi (pastdagi Unarchive).
+            await archive.LeaveClassAndGroupsAsync(s, $"Sinf arxivlandi ({cls.Name})");
         }
 
         audit.Record(AuditService.EntityClassFee, cls.Id, "update",
@@ -343,14 +347,37 @@ public class ClassesController(AppDbContext db, AuditService audit) : Controller
         cls.IsArchived = false;
         cls.ArchivedAt = null;
 
-        var students = await db.Students
-            .Where(s => s.ClassName == cls.Name && s.IsArchived && s.ArchivedWithClass).ToListAsync();
+        // Sinf bilan arxivlanganlar: sinf nomi endi bo'sh, shuning uchun ular OXIRGI yopilgan
+        // sinf a'zoligi shu sinf bo'lgani bo'yicha topiladi (eski qatorlar — nom bo'yicha ham).
+        var candidates = await db.Students.Where(s => s.IsArchived && s.ArchivedWithClass).ToListAsync();
+        var candidateIds = candidates.Select(s => s.Id).ToList();
+        var lastClassOf = (await db.ClassMemberships.AsNoTracking()
+                .Where(m => candidateIds.Contains(m.StudentId)).ToListAsync())
+            .GroupBy(m => m.StudentId)
+            .ToDictionary(g => g.Key, g => g.OrderByDescending(m => m.LeftOn ?? DateOnly.MaxValue)
+                .ThenByDescending(m => m.CreatedAt).First().ClassId);
+        var students = candidates
+            .Where(s => s.ClassName == cls.Name || (lastClassOf.TryGetValue(s.Id, out var last) && last == cls.Id))
+            .ToList();
+        var openIds = (await db.ClassMemberships.AsNoTracking()
+                .Where(m => candidateIds.Contains(m.StudentId) && m.LeftOn == null)
+                .Select(m => m.StudentId).ToListAsync())
+            .ToHashSet(StringComparer.Ordinal);
+        var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
         foreach (var s in students)
         {
             s.IsArchived = false;
             s.ArchivedAt = null;
             s.ArchiveReason = null;
             s.ArchivedWithClass = false;
+            s.ClassName = cls.Name;
+            s.TargetGrade = null;
+            if (!openIds.Contains(s.Id))
+                db.ClassMemberships.Add(new ClassMembership
+                {
+                    StudentId = s.Id, ClassId = cls.Id, JoinedOn = AppClock.Today,
+                    CreatedBy = userId, CreatedAt = AppClock.NowInstant,
+                });
         }
 
         audit.Record(AuditService.EntityClassFee, cls.Id, "update",

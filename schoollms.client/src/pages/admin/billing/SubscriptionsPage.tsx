@@ -36,7 +36,7 @@ import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Select } from '@/components/ui/Input'
 import { formatMoney } from '@/lib/utils'
-import { AsyncBlock, BillingGuard, IconBtn, Notice, StatusPill } from './BillingUi'
+import { AsyncBlock, BillingGuard, IconBtn, Notice, SubscriptionStatusPill } from './BillingUi'
 import { useBillingAccess } from './access'
 import { EndSubscriptionModal } from './EndSubscriptionModal'
 import { StudentSelect } from './StudentSelect'
@@ -274,7 +274,7 @@ function SubscriptionsView() {
               onChange={(e) => setActiveOnly(e.target.checked)}
               className="h-4 w-4 rounded border-slate-300 accent-brand-600"
             />
-            Faqat amaldagi obunalar
+            Faqat amaldagi va boshlanadigan obunalar
           </label>
         </div>
       </Card>
@@ -345,11 +345,7 @@ function SubscriptionsView() {
                         <td className="px-4 py-3 text-slate-600">{row.startsOn}</td>
                         <td className="px-4 py-3 text-slate-600">{row.endsOn ?? 'muddatsiz'}</td>
                         <td className="px-4 py-3">
-                          {row.isActive ? (
-                            <StatusPill tone="success">Amalda</StatusPill>
-                          ) : (
-                            <StatusPill>Yopilgan</StatusPill>
-                          )}
+                          <SubscriptionStatusPill isActive={row.isActive} isUpcoming={row.isUpcoming} startsOn={row.startsOn} />
                         </td>
                         <td className="px-4 py-3">
                           <span className="flex justify-end gap-0.5">

@@ -70,7 +70,10 @@ public record StudentSubscriptionDto(
     DateOnly StartsOn, DateOnly? EndsOn,
     bool IsActive,
     string CreatedByName, DateTimeOffset CreatedAt,
-    Guid? PlanId = null, string? PlanName = null);
+    Guid? PlanId = null, string? PlanName = null,
+    // Hali boshlanmagan (starts_on > bugun) — ro'yxatda "Yopilgan" emas, "1-oktabrdan" deb
+    // ko'rinadi (mijoz, 2026-09-29: avtobus/yotoqxona 1-oktabrdan ochilgan edi).
+    bool IsUpcoming = false);
 
 /// <summary>
 /// Obuna ochish. `created_by` JWT'dan (§4.4). `PlanId` (abonement) berilsa, toifa va oylik summa

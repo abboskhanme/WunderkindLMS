@@ -520,9 +520,8 @@ public class TeacherPortalController(
     /// Eganing jurnal ro'yxati — <see cref="LessonRoster"/> dan (G-5/G-12).
     ///
     /// <para>
-    /// <b>Bugungi xatti-harakat saqlandi:</b> sinf uchun ro'yxat AYNAN eski
-    /// so'rov — <c>class_name == &lt;sinf nomi&gt;</c>, ARXIVLANGANLAR BILAN
-    /// birga (bu ekran ularni ko'rsatadi), F.I.SH bo'yicha tartiblangan.
+    /// <b>Faqat faol o'quvchilar</b> (mijoz, 2026-09-29): arxivdagilar jurnalda ham, davomatda
+    /// ham ko'rinmaydi — arxivlanganda ular sinfdan chiqariladi (StudentArchiveService).
     /// </para>
     /// </summary>
     [HttpGet("journal/students")]
@@ -535,7 +534,7 @@ public class TeacherPortalController(
 
         var owner = await LessonRoster.OwnerAsync(db, classId);
         if (owner is null) return NotFound();
-        var students = await LessonRoster.ForLessonAsync(db, owner, includeArchived: true);
+        var students = await LessonRoster.ForLessonAsync(db, owner);
 
         // O'qituvchi jurnalida pul KO'RSATILMAYDI: `Balance` null qoladi
         // (P1-21, SPEC §4.3 — o'quvchining qarzi o'qituvchining ishi emas).
@@ -733,7 +732,7 @@ public class TeacherPortalController(
         var owner = await LessonRoster.OwnerAsync(db, req.ClassId!);
         var student = await db.Students.FindAsync(req.StudentId);
         if (owner is null || student is null
-            || !(await LessonRoster.ForLessonAsync(db, owner, includeArchived: true))
+            || !(await LessonRoster.ForLessonAsync(db, owner))
                 .Any(s => s.Id == student.Id))
             return BadRequest(new
             {

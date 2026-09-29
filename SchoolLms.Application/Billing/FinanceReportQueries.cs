@@ -582,11 +582,18 @@ public sealed partial class FinanceReportQueries(IAppDbContext db)
     public const int MaxArrearsMonths = 12;
 
     /// <summary>
-    /// Filtrdan keyin qoladigan eng ko'p o'quvchi. Undan oshsa sinf filtri
-    /// talab qilinadi: 600 × 12 = 7 200 katak — brauzer chizadigan chegara,
-    /// undan keyingisi foydalanuvchi o'qiy olmaydigan devor.
+    /// Filtrdan keyin qoladigan eng ko'p o'quvchi — TO'LIQ 12 oylik jadval uchun.
+    /// Aslida chegara katakda (<see cref="MaxArrearsCells"/>): qisqa davrda ko'proq
+    /// o'quvchi sig'adi (mijoz, 2026-09-29: arxivdagilar bilan 842 o'quvchi, bir oy —
+    /// 842 katak, lekin "600" deb rad etilardi).
     /// </summary>
     public const int MaxArrearsStudents = 600;
+
+    /// <summary>
+    /// Jadvaldagi eng ko'p katak: o'quvchi × oy. 600 × 12 = 7 200 — brauzer chizadigan
+    /// chegara, undan keyingisi foydalanuvchi o'qiy olmaydigan devor.
+    /// </summary>
+    public const int MaxArrearsCells = MaxArrearsStudents * MaxArrearsMonths;
 
     /// <summary>
     /// Oyma-oy qarzdorlik: har o'quvchi bitta qator, har oy bitta katak
@@ -634,7 +641,7 @@ public sealed partial class FinanceReportQueries(IAppDbContext db)
     /// </para>
     /// </summary>
     /// <exception cref="ArgumentOutOfRangeException">Davr teskari, 12 oydan
-    /// uzun, yoki filtrdan keyin 600 dan ko'p o'quvchi qolgan.</exception>
+    /// uzun, yoki o'quvchi × oy <see cref="MaxArrearsCells"/> dan oshgan.</exception>
     public async Task<ArrearsPivotDto> ArrearsPivotAsync(
         ArrearsPivotQuery query, CancellationToken ct = default)
     {
@@ -655,11 +662,11 @@ public sealed partial class FinanceReportQueries(IAppDbContext db)
         // Chegara so'rovdan OLDIN tekshiriladi: 7 200 katakdan katta javobni
         // yig'ib, keyin tashlab yuborishning ma'nosi yo'q.
         var studentCount = await students.CountAsync(ct);
-        if (studentCount > MaxArrearsStudents)
+        if ((long)studentCount * monthCount > MaxArrearsCells)
             throw new ArgumentOutOfRangeException(
                 nameof(query), studentCount,
-                $"Filtrga {studentCount} o'quvchi tushdi, ruxsat etilgani — "
-                + $"{MaxArrearsStudents}. Sinf filtrini tanlang.");
+                $"Filtrga {studentCount} o'quvchi × {monthCount} oy tushdi — jadval juda katta "
+                + $"({MaxArrearsCells} katakdan ko'p). Davrni qisqartiring yoki sinf filtrini tanlang.");
 
         var invoices = BillableInvoices()
             .Where(i => i.PeriodMonth >= first && i.PeriodMonth <= last);
