@@ -284,7 +284,7 @@ function MoneyCard({ billing, onOpenTab }) {
             To'lovni ko'rish
           </button>
           <p className="mt-2 text-center text-[12px] text-slate-400">
-            To'lov maktab kassasida qabul qilinadi, chek shu ilovada saqlanadi.
+            To'lov maktab kassasida qabul qilinadi.
           </p>
         </div>
       </Card>

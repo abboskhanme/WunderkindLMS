@@ -75,8 +75,7 @@ function SummaryCard({ billing }) {
       </div>
       {billing.debt > 0 && (
         <p className="border-t border-slate-100 px-4 py-3 text-[13px] leading-relaxed text-slate-500">
-          To'lov maktab kassasida qabul qilinadi. To'lagach chek shu yerda paydo bo'ladi va uni
-          yuklab olishingiz mumkin.
+          To'lov maktab kassasida qabul qilinadi. Chekni kassada olasiz.
         </p>
       )}
     </Card>
