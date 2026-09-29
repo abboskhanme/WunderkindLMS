@@ -171,6 +171,29 @@ const FROM_MONTH = [
   'iyuldan', 'avgustdan', 'sentabrdan', 'oktabrdan', 'noyabrdan', 'dekabrdan',
 ]
 
+/** "2026-10-01" → "1-oktabrdan". */
+function fromDateLabel(date: string): string {
+  const [, month, day] = date.split('-').map(Number)
+  return month >= 1 && month <= 12 ? `${day}-${FROM_MONTH[month - 1]}` : date
+}
+
+/**
+ * Boshlanish sanasi va — hisob keyinroq boshlansa — "Hisob: 1-oktabrdan" izohi
+ * (StudentSubscription.AccrueFrom: sentyabr EduSchool'dan kelgan fakturada bor).
+ */
+export function SubscriptionStartCell({ startsOn, accrueFrom }: { startsOn: string; accrueFrom?: string | null }) {
+  return (
+    <>
+      {startsOn}
+      {accrueFrom && accrueFrom > startsOn && (
+        <span className="block text-xs text-slate-400" title="Sentyabr puli EduSchool'dan kelgan sentyabr fakturasida">
+          Hisob: {fromDateLabel(accrueFrom)}
+        </span>
+      )}
+    </>
+  )
+}
+
 /**
  * Obuna holati: amalda / hali boshlanmagan ("1-oktabrdan") / yopilgan. Boshlanishi kutilayotgan
  * obuna "Yopilgan" ko'rinmasin (mijoz, 2026-09-29: 1-oktabrdan ochilgan avtobus va yotoqxona
@@ -186,11 +209,7 @@ export function SubscriptionStatusPill({
   startsOn: string
 }) {
   if (isActive) return <StatusPill tone="success">Amalda</StatusPill>
-  if (isUpcoming) {
-    const [, month, day] = startsOn.split('-').map(Number)
-    const label = month >= 1 && month <= 12 ? `${day}-${FROM_MONTH[month - 1]}` : startsOn
-    return <StatusPill tone="info">{label}</StatusPill>
-  }
+  if (isUpcoming) return <StatusPill tone="info">{fromDateLabel(startsOn)}</StatusPill>
   return <StatusPill>Yopilgan</StatusPill>
 }
 

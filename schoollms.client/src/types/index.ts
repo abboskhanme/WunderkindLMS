@@ -1608,6 +1608,8 @@ export interface StudentSubscription {
   planName: string | null
   /** Hali boshlanmagan (starts_on > bugun) — "1-oktabrdan" deb ko'rsatiladi, "Yopilgan" emas. */
   isUpcoming?: boolean
+  /** Oylik hisob shu sanadan (null = startsOn dan) — EduSchool'dan kelganlarda sentyabr fakturada bor. */
+  accrueFrom?: string | null
 }
 
 /* ---------- Chegirmalar ---------- */

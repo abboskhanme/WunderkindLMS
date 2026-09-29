@@ -79,6 +79,8 @@ internal static class BillingModel
             {
                 t.HasCheckConstraint("ck_student_subscriptions_amount", "monthly_amount >= 0");
                 t.HasCheckConstraint("ck_student_subscriptions_period", "ends_on is null or ends_on >= starts_on");
+                // Hisob obuna boshlanishidan OLDIN boshlanmaydi (StudentSubscription.AccrueFrom).
+                t.HasCheckConstraint("ck_student_subscriptions_accrue_from", "accrue_from is null or accrue_from >= starts_on");
             });
         });
     }

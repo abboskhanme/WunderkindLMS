@@ -161,6 +161,8 @@ public sealed class SubscriptionPlanService(IAppDbContext db, AuditService audit
                     MonthlyAmount = price,
                     Detail = s.Detail,
                     StartsOn = next,
+                    // Hisob keyinroq boshlanadigan bo'lsa (AccrueFrom) — dumi ham o'sha oydan hisoblanadi.
+                    AccrueFrom = s.AccrueFrom > next ? s.AccrueFrom : null,
                     EndsOn = s.EndsOn,
                     CreatedBy = actorId,
                     CreatedAt = AppClock.NowInstant,

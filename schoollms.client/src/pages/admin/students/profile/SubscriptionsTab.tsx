@@ -19,7 +19,7 @@ import { voidInvoice } from '@/api/services/invoices'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { formatMoney } from '@/lib/utils'
-import { AsyncBlock, IconBtn, Notice, SubscriptionStatusPill } from '@/pages/admin/billing/BillingUi'
+import { AsyncBlock, IconBtn, Notice, SubscriptionStartCell, SubscriptionStatusPill } from '@/pages/admin/billing/BillingUi'
 import { EndSubscriptionModal } from '@/pages/admin/billing/EndSubscriptionModal'
 import { SubscriptionFormModal } from '@/pages/admin/billing/SubscriptionFormModal'
 import type { StudentOption } from '@/pages/admin/billing/useStudents'
@@ -223,7 +223,9 @@ export function SubscriptionsTab({ studentId, studentName, className, onChanged 
                       {formatMoney(row.monthlyAmount)}
                     </td>
                     <td className="px-4 py-3 text-slate-600">{row.detail || '—'}</td>
-                    <td className="whitespace-nowrap px-4 py-3 text-slate-600">{row.startsOn}</td>
+                    <td className="whitespace-nowrap px-4 py-3 text-slate-600">
+                      <SubscriptionStartCell startsOn={row.startsOn} accrueFrom={row.accrueFrom} />
+                    </td>
                     <td className="whitespace-nowrap px-4 py-3 text-slate-600">{row.endsOn ?? 'muddatsiz'}</td>
                     <td className="px-4 py-3">
                       <SubscriptionStatusPill isActive={row.isActive} isUpcoming={row.isUpcoming} startsOn={row.startsOn} />

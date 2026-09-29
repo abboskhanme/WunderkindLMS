@@ -145,6 +145,19 @@ Applying one: `invoices.discount += amount` (stays ≤ amount), status refreshed
 revenue net of discount, so the adjustment reduces both by the same sum. Nothing is ever deducted
 below what is already paid (allocations are append-only).
 
+## 10.1 Start date vs. first billed month — `accrue_from` (client, 2026-09-29: *"abonimentlar sentabrdan boshlanishi kerak, eduschool bila bir xil bo'lsin"*)
+
+`student_subscriptions.accrue_from` (nullable, `>= starts_on`): the subscription stands from
+`starts_on` (shown, counted as "Amalda", used by dormitory attendance), but accrual writes invoices
+only for months from `accrue_from`. Null = from `starts_on`, i.e. the old behaviour.
+
+Why: the bus / dormitory / evening abonements taken over from EduSchool were first opened from
+1 October, because the imported September "O'qish" invoice already carries the lumped September
+charge (tuition + bus/dorm). Migration `SubscriptionAccrueFrom` moves them to `starts_on =
+2026-09-01, accrue_from = 2026-10-01` — only for students who do have a September invoice (the rest
+have no September money anywhere and stay on 1 October). Screens show "Hisob: 1-oktabrdan" under the
+start date. A plan re-price carries `accrue_from` into the new tail only when it is still ahead.
+
 ## 11. API
 
 - `GET/POST discount-types`, `PUT discount-types/{id}` (`{ name, percent, amount, isActive }` →
@@ -160,3 +173,4 @@ below what is already paid (allocations are append-only).
 - `GET sick-discount?studentId` → standing ones, newest first: `[{ groupId, month, days, total, note,
   createdAt, createdByName }]`; `POST sick-discount/{groupId}/cancel` → `{ groupId, month, total }`.
 - `SubscriptionPlan` gains `daysPerWeek: number | null` (create/update send it; null = "Butun oy").
+- `StudentSubscription` gains `accrueFrom: string | null`.

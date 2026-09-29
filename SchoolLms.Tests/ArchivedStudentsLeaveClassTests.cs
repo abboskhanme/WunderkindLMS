@@ -1,4 +1,4 @@
-using System.Net;
+﻿using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
@@ -98,6 +98,33 @@ public class ArchivedStudentsLeaveClassTests(ApiFixture fixture)
         Assert.False(row.GetProperty("isActive").GetBoolean());
         Assert.True(row.GetProperty("isUpcoming").GetBoolean());
         Assert.Equal(nextMonth.ToString("yyyy-MM-dd"), row.GetProperty("startsOn").GetString());
+    }
+
+    [Fact]
+    public async Task Hisobi_keyinroq_boshlanadigan_obuna_amalda_va_accrueFrom_bilan_keladi()
+    {
+        using var admin = await fixture.Api.ClientAsAsync(Roles.Admin);
+        var (_, student, _) = await SeedClassAsync(grade: 8);
+        var today = AppClock.Today;
+        var thisMonth = new DateOnly(today.Year, today.Month, 1);
+        var nextMonth = thisMonth.AddMonths(1);
+        var actor = (await fixture.Api.SeedUserAsync(Roles.Admin)).User.Id;
+        await fixture.Api.WithDbAsync(async db =>
+        {
+            db.StudentSubscriptions.Add(new StudentSubscription
+            {
+                StudentId = student, CategoryId = TuitionCategory, MonthlyAmount = 160_000m,
+                StartsOn = thisMonth, AccrueFrom = nextMonth, CreatedBy = actor, CreatedAt = AppClock.NowInstant,
+            });
+            await db.SaveChangesAsync();
+        });
+
+        var rows = await admin.GetFromJsonAsync<JsonElement>($"/api/admin/billing/subscriptions?studentId={student}&activeOnly=true");
+        var row = Assert.Single(rows.EnumerateArray());
+        Assert.True(row.GetProperty("isActive").GetBoolean());
+        Assert.False(row.GetProperty("isUpcoming").GetBoolean());
+        Assert.Equal(thisMonth.ToString("yyyy-MM-dd"), row.GetProperty("startsOn").GetString());
+        Assert.Equal(nextMonth.ToString("yyyy-MM-dd"), row.GetProperty("accrueFrom").GetString());
     }
 
     // ---------------------------------------------------------------- helpers

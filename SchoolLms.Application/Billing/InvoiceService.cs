@@ -216,6 +216,8 @@ public sealed class InvoiceService(IAppDbContext db, ILedgerService ledger) : II
                   // oy bilan KESISHSA yetarli, kunlar bo'yicha bo'linmaydi.
                   && sub.StartsOn <= monthEnd
                   && (sub.EndsOn == null || sub.EndsOn >= monthStart)
+                  // Hisob boshlanadigan oy (EduSchool'dan kelgan obunalarda sentyabr allaqachon bor).
+                  && (sub.AccrueFrom == null || sub.AccrueFrom <= monthEnd)
             select new
             {
                 sub.StudentId,

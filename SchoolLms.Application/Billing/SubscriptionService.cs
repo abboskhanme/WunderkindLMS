@@ -485,6 +485,7 @@ public sealed class SubscriptionService(
                 s.Detail,
                 s.StartsOn,
                 s.EndsOn,
+                s.AccrueFrom,
                 CreatedByName = u.FullName,
                 s.CreatedAt,
                 s.PlanId,
@@ -498,7 +499,8 @@ public sealed class SubscriptionService(
             r.StartsOn, r.EndsOn,
             r.StartsOn <= asOf && (r.EndsOn == null || r.EndsOn >= asOf),
             r.CreatedByName, r.CreatedAt, r.PlanId, r.PlanName,
-            IsUpcoming: r.StartsOn > asOf && (r.EndsOn == null || r.EndsOn >= r.StartsOn)))];
+            IsUpcoming: r.StartsOn > asOf && (r.EndsOn == null || r.EndsOn >= r.StartsOn),
+            AccrueFrom: r.AccrueFrom))];
     }
 
     /// <summary>
@@ -623,6 +625,7 @@ public sealed class SubscriptionService(
         s.Detail,
         s.StartsOn,
         s.EndsOn,
+        s.AccrueFrom,
     };
 }
 

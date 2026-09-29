@@ -73,7 +73,9 @@ public record StudentSubscriptionDto(
     Guid? PlanId = null, string? PlanName = null,
     // Hali boshlanmagan (starts_on > bugun) — ro'yxatda "Yopilgan" emas, "1-oktabrdan" deb
     // ko'rinadi (mijoz, 2026-09-29: avtobus/yotoqxona 1-oktabrdan ochilgan edi).
-    bool IsUpcoming = false);
+    bool IsUpcoming = false,
+    // Oylik hisob shu sanadan (null = starts_on dan) — StudentSubscription.AccrueFrom.
+    DateOnly? AccrueFrom = null);
 
 /// <summary>
 /// Obuna ochish. `created_by` JWT'dan (§4.4). `PlanId` (abonement) berilsa, toifa va oylik summa

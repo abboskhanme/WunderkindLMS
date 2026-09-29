@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using SchoolLms.Application.Billing;
@@ -247,6 +247,47 @@ public class AccrualTests(ApiFixture fixture) : IAsyncLifetime
         // Jurnalga ham to'liq summa tushadi.
         Assert.Equal(1_000_000m, await new LedgerService(check).BalanceAsync(Accounts.Receivable));
         await AssertLedgerBalancedAsync(check);
+    }
+
+    /// <summary>
+    /// <c>AccrueFrom</c>: obuna o'tgan oydan turadi (EduSchool bilan bir xil), lekin oylik hisob
+    /// keyingi oydan — o'tgan oy puli ko'chirilgan fakturada bor, ikki marta yozilmaydi
+    /// (mijoz, 2026-09-29: "abonimentlar sentabrdan boshlanishi kerak").
+    /// </summary>
+    [Fact]
+    public async Task Hisob_boshlanish_oyidan_oldingi_oy_hisoblanmaydi()
+    {
+        await using var db = NewDb();
+        var actorId = await AddUserAsync(db, Roles.Admin);
+        var studentId = await AddStudentAsync(db);
+        var lastMonth = ThisMonth.AddMonths(-1);
+        db.StudentSubscriptions.Add(new StudentSubscription
+        {
+            StudentId = studentId, CategoryId = BusCategory, MonthlyAmount = 160_000m,
+            StartsOn = lastMonth, AccrueFrom = ThisMonth,
+            CreatedBy = actorId, CreatedAt = AppClock.NowInstant,
+        });
+        await db.SaveChangesAsync();
+
+        var before = await Invoices(db).AccrueMonthAsync(lastMonth, actorId);
+        Assert.Equal(0, before.Created);
+
+        var due = await Invoices(db).AccrueMonthAsync(ThisMonth, actorId);
+        Assert.Equal(1, due.Created);
+        Assert.Equal(160_000m, due.Total);
+
+        await using var check = NewDb();
+        var invoice = await check.Invoices.AsNoTracking().SingleAsync();
+        Assert.Equal(ThisMonth, invoice.PeriodMonth);
+
+        // Tekshiruv cheklovi: hisob obuna boshlanishidan oldin bo'la olmaydi.
+        check.StudentSubscriptions.Add(new StudentSubscription
+        {
+            StudentId = studentId, CategoryId = TuitionCategory, MonthlyAmount = 1m,
+            StartsOn = ThisMonth, AccrueFrom = lastMonth,
+            CreatedBy = actorId, CreatedAt = AppClock.NowInstant,
+        });
+        await Assert.ThrowsAsync<DbUpdateException>(() => check.SaveChangesAsync());
     }
 
     /// <summary>

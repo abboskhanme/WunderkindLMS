@@ -7022,6 +7022,10 @@ namespace SchoolLms.Infrastructure.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
+                    b.Property<DateOnly?>("AccrueFrom")
+                        .HasColumnType("date")
+                        .HasColumnName("accrue_from");
+
                     b.Property<Guid>("CategoryId")
                         .HasColumnType("uuid")
                         .HasColumnName("category_id");
@@ -7078,6 +7082,8 @@ namespace SchoolLms.Infrastructure.Migrations
 
                     b.ToTable("student_subscriptions", null, t =>
                         {
+                            t.HasCheckConstraint("ck_student_subscriptions_accrue_from", "accrue_from is null or accrue_from >= starts_on");
+
                             t.HasCheckConstraint("ck_student_subscriptions_amount", "monthly_amount >= 0");
 
                             t.HasCheckConstraint("ck_student_subscriptions_period", "ends_on is null or ends_on >= starts_on");

@@ -158,7 +158,9 @@ public sealed partial class FinanceReportQueries
         // =================================================================
         var touchedSubs = await (
             from s in db.StudentSubscriptions.AsNoTracking()
-            where (s.StartsOn >= periodMonth && s.StartsOn <= monthEnd)
+            // Hisob boshlanadigan oy — obuna "ochilgan" oy (AccrueFrom: EduSchool'dan kelgan obuna
+            // 1-sentabrdan turadi, lekin daromadga 1-oktabrdan ta'sir qiladi).
+            where ((s.AccrueFrom ?? s.StartsOn) >= periodMonth && (s.AccrueFrom ?? s.StartsOn) <= monthEnd)
                   || (s.EndsOn != null && s.EndsOn >= periodMonth && s.EndsOn <= monthEnd)
             join st in db.Students.AsNoTracking() on s.StudentId equals st.Id
             join c in db.FeeCategories.AsNoTracking() on s.CategoryId equals c.Id
@@ -172,7 +174,7 @@ public sealed partial class FinanceReportQueries
                 CategoryCode = c.Code,
                 CategoryName = c.Name,
                 s.MonthlyAmount,
-                s.StartsOn,
+                StartsOn = s.AccrueFrom ?? s.StartsOn,
                 s.EndsOn,
                 CreatedByName = u.FullName,
             }).ToListAsync(ct);

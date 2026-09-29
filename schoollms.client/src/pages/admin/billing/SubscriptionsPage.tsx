@@ -36,7 +36,7 @@ import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Select } from '@/components/ui/Input'
 import { formatMoney } from '@/lib/utils'
-import { AsyncBlock, BillingGuard, IconBtn, Notice, SubscriptionStatusPill } from './BillingUi'
+import { AsyncBlock, BillingGuard, IconBtn, Notice, SubscriptionStartCell, SubscriptionStatusPill } from './BillingUi'
 import { useBillingAccess } from './access'
 import { EndSubscriptionModal } from './EndSubscriptionModal'
 import { StudentSelect } from './StudentSelect'
@@ -342,7 +342,9 @@ function SubscriptionsView() {
                           {formatMoney(row.monthlyAmount)}
                         </td>
                         <td className="px-4 py-3 text-slate-600">{row.detail || '—'}</td>
-                        <td className="px-4 py-3 text-slate-600">{row.startsOn}</td>
+                        <td className="px-4 py-3 text-slate-600">
+                          <SubscriptionStartCell startsOn={row.startsOn} accrueFrom={row.accrueFrom} />
+                        </td>
                         <td className="px-4 py-3 text-slate-600">{row.endsOn ?? 'muddatsiz'}</td>
                         <td className="px-4 py-3">
                           <SubscriptionStatusPill isActive={row.isActive} isUpcoming={row.isUpcoming} startsOn={row.startsOn} />

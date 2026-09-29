@@ -104,6 +104,12 @@ public class StudentSubscription
     public DateOnly StartsOn { get; set; }
     /// <summary>null = hali tugamagan (faol obuna).</summary>
     public DateOnly? EndsOn { get; set; }
+    /// <summary>
+    /// Oylik hisoblash shu oydan boshlanadi; null = <see cref="StartsOn"/> dan. Obuna EduSchool'dagidek
+    /// 1-sentabrdan turadi, lekin sentyabr puli EduSchool'dan kelgan sentyabr fakturasida allaqachon
+    /// bor — ikkinchi marta yozilmasligi uchun hisob 1-oktabrdan (mijoz, 2026-09-29).
+    /// </summary>
+    public DateOnly? AccrueFrom { get; set; }
     /// <summary>Kim yaratgan (users.id) — JWT'dan olinadi, so'rov tanasidan EMAS (SPEC §4.4).</summary>
     public string CreatedBy { get; set; } = string.Empty;
     public DateTimeOffset CreatedAt { get; set; }
