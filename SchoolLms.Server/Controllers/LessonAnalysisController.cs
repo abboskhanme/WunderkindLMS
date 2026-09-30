@@ -15,8 +15,9 @@ namespace SchoolLms.Server.Controllers;
 /// <para>
 /// Access: admin / superadmin, and staff whose role carries <c>lessonAnalysis</c> (the old
 /// MANAGER). <c>GatedRead</c>: a staff account needs the key to READ too — the rating board
-/// is personnel data. Admin-only (the old ADMIN): delete an observation, create / patch
-/// criteria. A COMPLETED observation is corrected only by its observer or an admin (the
+/// is personnel data. Admin-only (the old ADMIN): delete an observation. Create / patch criteria:
+/// admin / superadmin, or staff whose role also carries <c>lessonAnalysisCriteria</c>
+/// (<see cref="LessonAnalysisAccess.CriteriaPermissionKey"/>). A COMPLETED observation is corrected only by its observer or an admin (the
 /// service answers 403). Every response is <c>no-store</c>.
 /// </para>
 /// </summary>
@@ -28,6 +29,10 @@ namespace SchoolLms.Server.Controllers;
 public sealed class LessonAnalysisController(LessonAnalysisService service) : ControllerBase
 {
     private bool IsAdmin => User.IsInRole(Roles.Admin) || User.IsInRole(Roles.SuperAdmin);
+
+    /// <summary>Mezonlarni boshqarish: admin/superadmin yoki rolida alohida belgi bor xodim.</summary>
+    private bool CanManageCriteria => IsAdmin
+        || User.HasClaim(AdminPermAttribute.ClaimType, LessonAnalysisAccess.CriteriaPermissionKey);
 
     private LessonAnalysisActor Actor => new(
         User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "", IsAdmin);
@@ -47,11 +52,11 @@ public sealed class LessonAnalysisController(LessonAnalysisService service) : Co
     public Task<ActionResult> Criteria([FromQuery] bool includeInactive = false) =>
         Run(() => service.CriteriaAsync(includeInactive, HttpContext.RequestAborted));
 
-    /// <summary>Admin only.</summary>
+    /// <summary>Admin, or staff with <see cref="LessonAnalysisAccess.CriteriaPermissionKey"/>.</summary>
     [HttpPost("criteria")]
     public async Task<ActionResult> CreateCriterion(LaCriterionCreateDto input)
     {
-        if (!IsAdmin) return Forbid();
+        if (!CanManageCriteria) return Forbid();
         try
         {
             var created = await service.CreateCriterionAsync(input, HttpContext.RequestAborted);
@@ -60,11 +65,11 @@ public sealed class LessonAnalysisController(LessonAnalysisService service) : Co
         catch (LessonAnalysisException ex) { return Fail(ex); }
     }
 
-    /// <summary>Admin only. text / orderIndex / isActive — no delete, deactivate instead.</summary>
+    /// <summary>Same gate as <see cref="CreateCriterion"/>. text / orderIndex / isActive — no delete, deactivate instead.</summary>
     [HttpPatch("criteria/{id}")]
     public async Task<ActionResult> PatchCriterion(string id, LaCriterionPatchDto input)
     {
-        if (!IsAdmin) return Forbid();
+        if (!CanManageCriteria) return Forbid();
         return await Run(() => service.PatchCriterionAsync(id, input, HttpContext.RequestAborted));
     }
 

@@ -36,8 +36,13 @@ repeat — read it:
 | MANAGER (observer) | `staff` with permission key **`lessonAnalysis`** (also admin/superadmin) |
 | TEACHER | `teacher` role — own COMPLETED observations only, via `/api/teacher/lesson-analysis` |
 
-ADMIN-only in the old app stays admin/superadmin-only here: delete an observation,
-create/patch criteria. Editing a COMPLETED observation: its observer or admin/superadmin
+ADMIN-only in the old app stays admin/superadmin-only here: delete an observation.
+Create/patch criteria: admin/superadmin, **or** staff whose role also carries the separate
+flag **`lessonAnalysisCriteria`** (client, 2026-09-29: "the academic director has full access
+but cannot add criteria — make it assignable by role"). It is a role-editor flag like
+`aiAccess`, not a menu page; plain `lessonAnalysis` does NOT open criteria (existing observers
+must not silently gain the right to change the school-wide checklist), and the flag alone does
+not pass the class gate — full `lessonAnalysis` is still required to write. Editing a COMPLETED observation: its observer or admin/superadmin
 (anyone else with `lessonAnalysis` → 403). Drafts: anyone with `lessonAnalysis`.
 A teacher never sees drafts (404 even by id), never sees other teachers, never sees a
 ranking of colleagues.
@@ -85,8 +90,8 @@ Staff (`[AdminPerm("lessonAnalysis")]`, admin/superadmin pass) — prefix `/api/
 
 ```
 GET    /criteria?includeInactive=           sections with nested criteria
-POST   /criteria                            admin only
-PATCH  /criteria/{id}                       admin only (text, orderIndex, isActive)
+POST   /criteria                            admin, or staff + lessonAnalysisCriteria
+PATCH  /criteria/{id}                       same (text, orderIndex, isActive)
 GET    /teachers?q=                         active teachers + observationsCount, rating, lastDate
 GET    /teachers/random                     random active teacher
 GET    /teachers/{id}                       one teacher + summary numbers
@@ -130,7 +135,8 @@ the network.
 
 Admin: **Boshqaruv → "Dars tahlili"** (one menu item, group `TA'LIM SIFATI`, perm
 `lessonAnalysis`), a page with tabs **Umumiy · Tahlillar · Reyting · Mezonlar**
-(Mezonlar editable by admin only). Routes under `/admin/boshqaruv/dars-tahlili`:
+(Mezonlar editable by admin, or staff with the `lessonAnalysisCriteria` role flag —
+`canManageLaCriteria` in `components/lesson-analysis/format.ts`). Routes under `/admin/boshqaruv/dars-tahlili`:
 `''` dashboard, `tahlillar`, `tahlillar/yangi?teacherId=`, `tahlillar/:id`,
 `tahlillar/:id/tahrir`, `reyting`, `oqituvchi/:teacherId`, `mezonlar`.
 Port the old screens' structure, texts and behaviour 1:1 (form tablet-first,

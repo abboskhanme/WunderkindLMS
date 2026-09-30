@@ -91,6 +91,13 @@ const GRANT_SEP = '|'
  */
 export const AI_ACCESS_KEY = 'aiAccess'
 
+/**
+ * Dars tahlili: mezon qo'shish/tahrirlash (mijoz, 2026-09-29) — AI belgisi kabi rol oynasidagi
+ * alohida belgi. Server: `LessonAnalysisAccess.CriteriaPermissionKey`. «Dars tahlili» sahifasi
+ * «To'liq» bo'lgandagina ishlaydi (yozish darvozasi). Admin/superadmin'ga kerak emas.
+ */
+export const LA_CRITERIA_KEY = 'lessonAnalysisCriteria'
+
 export const isPageGrant = (entry: string) => entry.startsWith('/')
 
 /** Rol/xodim ruxsatlari → sahifa → daraja. Eski shakl bo'lim kalitlaridan yoyiladi. */

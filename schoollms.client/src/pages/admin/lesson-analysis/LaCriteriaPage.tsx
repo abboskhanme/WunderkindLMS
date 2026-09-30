@@ -10,7 +10,7 @@ import { Input, Select, Textarea } from '@/components/ui/Input'
 import { Loader } from '@/components/ui/Loader'
 import { Modal } from '@/components/ui/Modal'
 import { Toast } from '@/components/ui/Toast'
-import { isLaAdmin } from '@/components/lesson-analysis/format'
+import { canManageLaCriteria } from '@/components/lesson-analysis/format'
 import { Notice } from '@/components/lesson-analysis/ui'
 import { useLoad } from '@/components/lesson-analysis/useLoad'
 import { cn } from '@/lib/utils'
@@ -29,13 +29,14 @@ function applyCriterion(sections: LaSection[], sectionId: string, saved: LaCrite
 }
 
 /**
- * Mezonlar — bo'limlar va ularning mezonlari. Admin/superadmin mezon qo'shadi, matn va
- * tartibini o'zgartiradi, faolligini yoqib-o'chiradi. O'chirish YO'Q (SPEC §3): nofaol
+ * Mezonlar — bo'limlar va ularning mezonlari. Admin/superadmin (yoki roliga «Mezonlar» belgisi
+ * berilgan xodim — `canManageLaCriteria`) mezon qo'shadi, matn va tartibini o'zgartiradi,
+ * faolligini yoqib-o'chiradi. O'chirish YO'Q (SPEC §3): nofaol
  * mezon eski tahlillarda ko'rinib turaveradi.
  */
 export function LaCriteriaPage() {
   const { user } = useAuth()
-  const admin = isLaAdmin(user)
+  const admin = canManageLaCriteria(user)
   const criteria = useLoad('criteria-all', () => getCriteria(true))
   const [editing, setEditing] = useState<Editing | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
@@ -83,7 +84,9 @@ export function LaCriteriaPage() {
       </div>
 
       {!admin && (
-        <Notice kind="info">Mezonlarni faqat administrator qo‘shishi va o‘zgartirishi mumkin.</Notice>
+        <Notice kind="info">
+          Mezonlarni administrator yoki roliga «Dars tahlili: mezonlar» ruxsati berilgan xodim qo‘shadi va o‘zgartiradi.
+        </Notice>
       )}
 
       {sections.map((section) => (

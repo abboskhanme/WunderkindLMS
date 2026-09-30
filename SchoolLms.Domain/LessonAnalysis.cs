@@ -14,6 +14,16 @@ public static class LessonAnalysisAccess
     /// "observer" (the old MANAGER role); admin/superadmin always pass.
     /// </summary>
     public const string PermissionKey = "lessonAnalysis";
+
+    /// <summary>
+    /// Mezon qo'shish/tahrirlash — rolga ALOHIDA beriladigan belgi (Boshqaruv → Rollar, xuddi
+    /// <see cref="McpAccess.PermissionKey"/> kabi: menyu sahifasi emas). Mijoz, 2026-09-29: akademik
+    /// direktor roliga dars tahlili to'liq ochiq, lekin mezon qo'sha olmasdi — bu faqat admin/superadmin
+    /// edi. ⚠️ <see cref="PermissionKey"/> o'zi mezonni OCHMAYDI: mavjud kuzatuvchilarning huquqi
+    /// jimgina kengaymasin — mezonlar butun maktab tahlil varag'ini o'zgartiradi. Yozish uchun
+    /// sinf darvozasi baribir to'liq <see cref="PermissionKey"/> ni ham talab qiladi.
+    /// </summary>
+    public const string CriteriaPermissionKey = "lessonAnalysisCriteria";
 }
 
 /// <summary><see cref="LessonObservation.Status"/> values (lowercase — API contract).</summary>

@@ -1,4 +1,6 @@
 import type { User } from '@/types'
+import { LA_CRITERIA_KEY, pageLevel } from '@/lib/access'
+import { LA_BASE } from '@/pages/admin/lesson-analysis/paths'
 
 /**
  * Dars tahlili — umumiy formatlash yordamchilari (komponent emas: react-refresh
@@ -82,6 +84,15 @@ export const initials = (name: string) =>
 /** Eski ilovada ADMIN — bizda admin va superadmin (SPEC §2). */
 export const isLaAdmin = (user: User | null | undefined) =>
   user?.role === 'admin' || user?.role === 'superadmin'
+
+/**
+ * Mezonlarni boshqara oladimi: admin/superadmin, yoki roliga «Mezonlar» belgisi berilgan va
+ * «Dars tahlili» sahifasi TO'LIQ ochiq xodim. Server bilan bir xil (`CanManageCriteria` +
+ * sinf darvozasi) — aks holda tugma ko'rinib, bosilganda 403 qaytardi.
+ */
+export const canManageLaCriteria = (user: User | null | undefined) =>
+  isLaAdmin(user) ||
+  (!!user?.permissions?.includes(LA_CRITERIA_KEY) && pageLevel(user ?? null, LA_BASE) === 'edit')
 
 /** O'rtacha — 2 xonagacha yaxlitlangan (reyting qoidasi, SPEC §4). */
 export function average(values: number[]): number | null {

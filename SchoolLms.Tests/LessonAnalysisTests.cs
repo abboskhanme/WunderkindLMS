@@ -202,6 +202,36 @@ public class LessonAnalysisTests(ApiFixture fixture)
         Assert.Equal(HttpStatusCode.NotFound, (await admin.DeleteAsync($"{Admin}/observations/{id}")).StatusCode);
     }
 
+    /// <summary>
+    /// Mijoz, 2026-09-29: mezon qo'shish ruxsati ROL orqali beriladi — alohida belgi
+    /// <see cref="LessonAnalysisAccess.CriteriaPermissionKey"/>. Oddiy <c>lessonAnalysis</c>
+    /// uni ochmaydi (yuqoridagi test), belgining o'zi esa sinf darvozasidan o'tkazmaydi.
+    /// </summary>
+    [Fact]
+    public async Task Mezon_ruxsati_rol_belgisi_bilan_beriladi()
+    {
+        using var admin = await fixture.Api.ClientAsAsync(Roles.Admin);
+        using var director = await fixture.Api.ClientAsAsync(Roles.Staff,
+            LessonAnalysisAccess.PermissionKey, LessonAnalysisAccess.CriteriaPermissionKey);
+        using var flagOnly = await fixture.Api.ClientAsAsync(Roles.Staff, LessonAnalysisAccess.CriteriaPermissionKey);
+        using var viewerWithFlag = await fixture.Api.ClientAsAsync(Roles.Staff,
+            LessonAnalysisAccess.PermissionKey + Roles.ViewSuffix, LessonAnalysisAccess.CriteriaPermissionKey);
+        var sectionId = (await SectionsAsync(admin, includeInactive: true))[0].GetProperty("id").GetString()!;
+        object Body() => new { sectionId, text = "Direktor mezoni " + Guid.NewGuid().ToString("N")[..6] };
+
+        var created = await director.PostAsJsonAsync($"{Admin}/criteria", Body());
+        Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+        var criterionId = (await ReadAsync(created)).GetProperty("id").GetString()!;
+        var patched = await director.PatchAsJsonAsync($"{Admin}/criteria/{criterionId}", new { text = "Tahrirlangan", isActive = false });
+        Assert.Equal(HttpStatusCode.OK, patched.StatusCode);
+
+        // Belgi bo'lsa ham dars tahlili bo'limining TO'LIQ ruxsati shart (sinf darvozasi).
+        Assert.Equal(HttpStatusCode.Forbidden, (await flagOnly.PostAsJsonAsync($"{Admin}/criteria", Body())).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await viewerWithFlag.PostAsJsonAsync($"{Admin}/criteria", Body())).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden,
+            (await viewerWithFlag.PatchAsJsonAsync($"{Admin}/criteria/{criterionId}", new { isActive = true })).StatusCode);
+    }
+
     // =====================================================================
     //  2. Scoring (SPEC §4)
     // =====================================================================

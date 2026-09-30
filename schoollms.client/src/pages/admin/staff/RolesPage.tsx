@@ -7,7 +7,7 @@ import {
   getAccessRoles,
   updateAccessRole,
 } from '@/api/services/accessRoles'
-import { ACCESS_CATALOG, ACCESS_PAGES, AI_ACCESS_KEY, encodeGrants, grantsOf, type AccessLevel } from '@/lib/access'
+import { ACCESS_CATALOG, ACCESS_PAGES, AI_ACCESS_KEY, LA_CRITERIA_KEY, encodeGrants, grantsOf, type AccessLevel } from '@/lib/access'
 import { useAuth } from '@/context/auth-context'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/Button'
@@ -55,6 +55,7 @@ export function RolesPage() {
   const [description, setDescription] = useState('')
   const [grants, setGrants] = useState<Map<string, AccessLevel>>(new Map())
   const [aiAccess, setAiAccess] = useState(false)
+  const [laCriteria, setLaCriteria] = useState(false)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
@@ -72,6 +73,7 @@ export function RolesPage() {
     setDescription(role?.description ?? '')
     setGrants(grantsOf(role?.permissions ?? []))
     setAiAccess((role?.permissions ?? []).includes(AI_ACCESS_KEY))
+    setLaCriteria((role?.permissions ?? []).includes(LA_CRITERIA_KEY))
     setExpanded(new Set())
     setFormError(null)
     setOpen(true)
@@ -107,7 +109,12 @@ export function RolesPage() {
       description: description.trim(),
       // Sahifa darajalari + ulardan hosil bo'ladigan server bo'lim kalitlari (lib/access.ts).
       // + AI ulanish belgisi (menyu sahifasi emas — alohida kalit, lib/access.ts AI_ACCESS_KEY).
-      permissions: [...encodeGrants(grants), ...(aiAccess ? [AI_ACCESS_KEY] : [])],
+      // + «Dars tahlili: mezonlar» belgisi (lib/access.ts LA_CRITERIA_KEY) — xuddi shunday alohida kalit.
+      permissions: [
+        ...encodeGrants(grants),
+        ...(aiAccess ? [AI_ACCESS_KEY] : []),
+        ...(laCriteria ? [LA_CRITERIA_KEY] : []),
+      ],
     }
     try {
       const saved = editing ? await updateAccessRole(editing.id, payload) : await createAccessRole(payload)
@@ -307,6 +314,16 @@ export function RolesPage() {
             </button>
           </div>
 
+          <FlagRow
+            label="Dars tahlili: mezonlar"
+            hint={
+              "Dars tahlili varag'iga mezon qo'shish, matnini o'zgartirish va nofaol qilish. " +
+              "«Dars tahlili» sahifasi «To'liq» bo'lganda ishlaydi."
+            }
+            checked={laCriteria}
+            onChange={setLaCriteria}
+          />
+
           <p className="text-xs text-slate-400">
             Ko'rish — sahifa va uning barcha ma'lumoti ko'rinadi, o'zgartirib bo'lmaydi. To'liq — qo'shish,
             o'zgartirish va o'chirish ham. Chegirma, chiqim va qaytarimni tasdiqlash — faqat direktor.
@@ -328,10 +345,11 @@ export function RolesPage() {
 function rolesSummary(permissions: string[]): string {
   const grants = grantsOf(permissions)
   const ai = permissions.includes(AI_ACCESS_KEY) ? ' · AI ulanish' : ''
-  if (grants.size === 0) return ai ? 'AI ulanish' : '—'
+  const la = permissions.includes(LA_CRITERIA_KEY) ? ' · Dars tahlili mezonlari' : ''
+  if (grants.size === 0) return ai || la ? (ai + la).slice(3) : '—'
   const view = [...grants.values()].filter((l) => l === 'view').length
   const total = grants.size === ALL_PAGES.length ? 'Barcha sahifa' : `${grants.size} ta sahifa`
-  return (view > 0 ? `${total} (${view} tasi faqat ko'rish)` : total) + ai
+  return (view > 0 ? `${total} (${view} tasi faqat ko'rish)` : total) + ai + la
 }
 
 /** Uch holatli tanlov: Yo'q / Ko'rish / To'liq. `null` — ichidagi sahifalar har xil. */
@@ -371,6 +389,46 @@ function LevelPicker({
           </button>
         )
       })}
+    </div>
+  )
+}
+
+/** Rol oynasidagi alohida belgi (menyu sahifasi emas) — yorliq, izoh va yoqish/o'chirish tugmasi. */
+function FlagRow({
+  label,
+  hint,
+  checked,
+  onChange,
+}: {
+  label: string
+  hint: string
+  checked: boolean
+  onChange: (value: boolean) => void
+}) {
+  return (
+    <div className="flex items-start justify-between gap-3 rounded-xl border border-slate-200 px-3 py-2.5">
+      <div className="min-w-0">
+        <p className="text-sm font-medium text-slate-700">{label}</p>
+        <p className="mt-0.5 text-xs text-slate-400">{hint}</p>
+      </div>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={checked}
+        aria-label={label}
+        onClick={() => onChange(!checked)}
+        className={cn(
+          'relative mt-0.5 inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors',
+          checked ? 'bg-brand-500' : 'bg-slate-200',
+        )}
+      >
+        <span
+          className={cn(
+            'inline-block h-5 w-5 rounded-full bg-white shadow-sm transition-transform',
+            checked ? 'translate-x-[22px]' : 'translate-x-0.5',
+          )}
+        />
+      </button>
     </div>
   )
 }
