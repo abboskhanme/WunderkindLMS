@@ -226,10 +226,10 @@ export function DailyMarkingPage() {
     try {
       const data = await getDailyClass(id, date)
       setDay(data)
-      // Ochilganda birinchi BELGILANMAGAN soat tanlanadi — xodim o'sha
-      // yerdan davom etadi.
-      const target = data.lessons.find((l) => !l.marked) ?? data.lessons[0] ?? null
-      setLessonKey(target ? keyOf(target) : '')
+      // Ochilganda "Barcha darslar" tanlanadi (mijoz, 2026-10-05: "default holatda barcha darslar
+      // belgilangan bo'lsin"). Bitta darsni dropdown'dan tanlash avvalgidek.
+      const target = allLessonsOf(data)
+      setLessonKey(target ? ALL_KEY : '')
       setDraft(draftOf(data, target))
       setPicked(pickedOf(data, target))
       setDirty(false)
