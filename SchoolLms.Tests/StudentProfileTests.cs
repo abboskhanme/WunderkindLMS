@@ -140,6 +140,53 @@ public class StudentProfileTests(ApiFixture fixture)
         Assert.Equal(JsonValueKind.Null, root.GetProperty("student").GetProperty("balance").ValueKind);
     }
 
+    /// <summary>
+    /// Kartochkada login bilan birga boshlang'ich parol ham (mijoz, 2026-10-06). Parol yangilansa —
+    /// yangisi; o'quvchi tizimga kirgach — yo'q (faqat hash qoladi).
+    /// </summary>
+    [Fact]
+    public async Task Kartochkada_login_bilan_parol_ham_bor()
+    {
+        using var client = await fixture.Api.ClientAsAsync(Roles.Admin);
+        var student = NewStudent($"Parol {Tag()}");
+        await fixture.Api.WithDbAsync(async db =>
+        {
+            db.Students.Add(student);
+            await db.SaveChangesAsync();
+        });
+
+        using var creds = await JsonAsync(client, $"/api/admin/students/{student.Id}/credentials");
+        var login = creds.RootElement.GetProperty("login").GetString();
+        var first = creds.RootElement.GetProperty("password").GetString();
+        Assert.False(string.IsNullOrEmpty(first));
+
+        using (var card = await JsonAsync(client, $"/api/admin/students/{student.Id}/card"))
+        {
+            Assert.Equal(login, card.RootElement.GetProperty("login").GetString());
+            Assert.Equal(first, card.RootElement.GetProperty("password").GetString());
+        }
+
+        var reset = await client.PostAsync($"/api/admin/students/{student.Id}/reset-password", null);
+        Assert.Equal(HttpStatusCode.OK, reset.StatusCode);
+        using (var fresh = JsonDocument.Parse(await reset.Content.ReadAsStringAsync()))
+        using (var card = await JsonAsync(client, $"/api/admin/students/{student.Id}/card"))
+        {
+            var second = fresh.RootElement.GetProperty("password").GetString();
+            Assert.NotEqual(first, second);
+            Assert.Equal(second, card.RootElement.GetProperty("password").GetString());
+        }
+
+        // O'quvchi kirdi — ochiq parol o'chadi (SessionFactory.IssueAsync), kartochka uni bermaydi.
+        await fixture.Api.WithDbAsync(async db =>
+        {
+            var user = await db.Users.SingleAsync(u => u.Email == login);
+            user.InitialPassword = null;
+            await db.SaveChangesAsync();
+        });
+        using (var card = await JsonAsync(client, $"/api/admin/students/{student.Id}/card"))
+            Assert.Equal(JsonValueKind.Null, card.RootElement.GetProperty("password").ValueKind);
+    }
+
     // =====================================================================
     //  3. Faoliyat tarixi — pul darvozasi (S-12)
     // =====================================================================

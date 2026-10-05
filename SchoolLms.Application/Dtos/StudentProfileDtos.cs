@@ -41,7 +41,11 @@ public record StudentCardDto(
     double? Longitude,
     string? LocationAddress,
     string? LocationUpdatedAt,
-    int ActiveDays);
+    int ActiveDays,
+    // Boshlang'ich (admin bergan) parol — o'quvchi tizimga kirgunicha yoki o'zi o'zgartirgunicha
+    // (keyin null: faqat hash qoladi, "Parol" tugmasi yangisini beradi). Mijoz, 2026-10-06:
+    // "o'quvchi accountida login bilan birga parol ham ko'rinsin". Darvoza — AdminPerm("students").
+    string? Password = null);
 
 /// <summary>
 /// Kartochkaning "Jadval" tab'i — bitta haftaning darslari.

@@ -119,10 +119,11 @@ public class StudentProfileController(AppDbContext db, AuditService audit) : Con
             ? await db.StudentStatuses.AsNoTracking().FirstOrDefaultAsync(s => s.Id == statusId, ct)
             : null;
 
-        var login = st.UserId is null
+        var account = st.UserId is null
             ? null
             : await db.Users.AsNoTracking().Where(u => u.Id == st.UserId)
-                .Select(u => u.Email).FirstOrDefaultAsync(ct);
+                .Select(u => new { u.Email, u.InitialPassword }).FirstOrDefaultAsync(ct);
+        var login = account?.Email;
 
         var homeroom = string.IsNullOrEmpty(st.ClassName)
             ? ""
@@ -142,7 +143,8 @@ public class StudentProfileController(AppDbContext db, AuditService audit) : Con
             st.StatusId, status?.Name, status?.Color,
             login, homeroom,
             st.Latitude, st.Longitude, st.LocationAddress, st.LocationUpdatedAt,
-            ActiveDays(st));
+            ActiveDays(st),
+            string.IsNullOrEmpty(account?.InitialPassword) ? null : account.InitialPassword);
     }
 
     // =====================================================================

@@ -718,8 +718,9 @@ public class StudentsController(AppDbContext db, AuditService audit) : Controlle
         return new CredentialsDto(user.Email, user.InitialPassword ?? "", user.Role);
     }
 
-    /// <summary>O'quvchiga yangi tasodifiy parol generatsiya qiladi va BIR MARTA qaytaradi
-    /// (DB'da faqat hash saqlanadi).</summary>
+    /// <summary>O'quvchiga yangi tasodifiy parol beradi. O'qituvchi/xodimdagi kabi u boshlang'ich parol
+    /// bo'lib saqlanadi va o'quvchi kirgunicha kartochkada ko'rinadi (mijoz, 2026-10-06) — aks holda
+    /// kartochka eski, endi ishlamaydigan parolni ko'rsatardi.</summary>
     [HttpPost("{id}/reset-password")]
     public async Task<ActionResult<CredentialsDto>> ResetPassword(string id)
     {
@@ -732,7 +733,7 @@ public class StudentsController(AppDbContext db, AuditService audit) : Controlle
             student.UserId = user.Id;
         }
         var pwd = AccountFactory.GeneratePassword();
-        user.PasswordHash = PasswordHasher.Hash(pwd);
+        user.SetInitialPassword(pwd);
         await db.SaveChangesAsync();
         return new CredentialsDto(user.Email, pwd, user.Role);
     }

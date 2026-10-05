@@ -28,8 +28,10 @@ export interface StudentCard {
   statusName: string | null
   /** `#RRGGBB` yoki null. */
   statusColor: string | null
-  /** Tizimga kirish logini (parol bu yerda qaytmaydi). */
+  /** Tizimga kirish logini. */
   login: string | null
+  /** Boshlang'ich parol — o'quvchi kirgunicha; kirgach null (yangisi "Parol" tugmasidan). */
+  password?: string | null
   homeroomTeacher: string
   latitude: number | null
   longitude: number | null

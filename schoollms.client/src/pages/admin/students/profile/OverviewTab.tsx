@@ -216,6 +216,13 @@ export function OverviewTab({ data, card }: Props) {
             />
           )}
           {card && <InfoRow icon={KeyRound} label="Login" value={card.login || '—'} />}
+          {card && (
+            <InfoRow
+              icon={KeyRound}
+              label="Parol"
+              value={card.password || (card.login ? "O'quvchi tizimga kirgan — yangisi «Parol» tugmasidan" : '—')}
+            />
+          )}
           {/*
             Chegirma qatori BU YERDAN OLIB TASHLANDI (P1-21). Sabab: chegirma
             endi TOIFAGA bog'liq (o'qish alohida, avtobus alohida) va direktor

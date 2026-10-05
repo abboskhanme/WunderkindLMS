@@ -193,6 +193,8 @@ export function StudentDetailPage() {
   const resetPassword = async () => {
     if (!id) return
     setCredentials(await resetStudentPassword(id))
+    // Kartochkadagi "Parol" qatori yangisini ko'rsatsin.
+    getStudentCard(id).then(setCard).catch(() => undefined)
   }
 
   if (loading && !data) return <Loader label="Yuklanmoqda..." />
