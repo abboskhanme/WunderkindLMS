@@ -104,16 +104,21 @@ public class SubscriptionPlanTests(ApiFixture fixture) : IAsyncLifetime
         await using var db = NewDb();
         var plan = await Plans(db).CreateAsync(new CreateSubscriptionPlanRequest($"5-11 sinflar {Tag()}", tuition.Id, 1_590_000m), actor);
         var subs = Subscriptions(db);
+        // Opening a subscription writes this month at once (SubscriptionService.AccrueNowAsync).
         var a = await subs.CreateAsync(new CreateSubscriptionRequest(invoiced.Id, tuition.Id, 0m, null, MonthStart, null, plan.Id), actor);
-        var b = await subs.CreateAsync(new CreateSubscriptionRequest(notYet.Id, tuition.Id, 0m, null, MonthStart, null, plan.Id), actor);
         var c = await subs.CreateAsync(new CreateSubscriptionRequest(later.Id, tuition.Id, 0m, null, NextMonth, null, plan.Id), actor);
-        var invoice = new Invoice
+        var invoice = await db.Invoices.AsNoTracking()
+            .SingleAsync(i => i.StudentId == invoiced.Id && i.CategoryId == tuition.Id && i.PeriodMonth == MonthStart);
+        // "Active but this month not written yet" — a subscription that reached the table without the
+        // service (imported), so the background accrual has not run for it.
+        var bRow = new StudentSubscription
         {
-            StudentId = invoiced.Id, CategoryId = tuition.Id, PeriodMonth = MonthStart, Amount = 1_590_000m,
-            DueOn = MonthStart.AddDays(9), Status = InvoiceStatus.Open, CreatedAt = AppClock.NowInstant,
+            StudentId = notYet.Id, CategoryId = tuition.Id, PlanId = plan.Id, MonthlyAmount = 1_590_000m,
+            StartsOn = MonthStart, CreatedBy = actor, CreatedAt = AppClock.NowInstant,
         };
-        db.Invoices.Add(invoice);
+        db.StudentSubscriptions.Add(bRow);
         await db.SaveChangesAsync();
+        var b = new { bRow.Id };
 
         var result = await Plans(db).UpdateAsync(plan.Id, new UpdateSubscriptionPlanRequest(plan.Name, 1_690_000m, true), actor);
 

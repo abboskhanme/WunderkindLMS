@@ -190,8 +190,16 @@ public sealed class InvoiceService(IAppDbContext db, ILedgerService ledger) : II
     // =================================================================
 
     /// <inheritdoc />
-    public async Task<AccrualResultDto> AccrueMonthAsync(
-        DateOnly periodMonth, string actorId, CancellationToken ct = default)
+    public Task<AccrualResultDto> AccrueMonthAsync(
+        DateOnly periodMonth, string actorId, CancellationToken ct = default) =>
+        AccrueMonthCoreAsync(periodMonth, actorId, studentId: null, ct);
+
+    /// <summary>
+    /// Bitta oy; <paramref name="studentId"/> berilsa — faqat shu o'quvchining obunalari
+    /// (<see cref="AccrueStudentAsync"/>). Qolgan qoidalar bir xil.
+    /// </summary>
+    private async Task<AccrualResultDto> AccrueMonthCoreAsync(
+        DateOnly periodMonth, string actorId, string? studentId, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(actorId))
             throw new ArgumentException("Hisoblashni kim boshlagani noma'lum (actorId bo'sh).", nameof(actorId));
@@ -212,6 +220,7 @@ public sealed class InvoiceService(IAppDbContext db, ILedgerService ledger) : II
             join cat in db.FeeCategories.AsNoTracking() on sub.CategoryId equals cat.Id
             where !st.IsArchived
                   && cat.IsActive
+                  && (studentId == null || sub.StudentId == studentId)
                   // Mijoz javobi (Q12): to'liq bo'lmagan oy ham TO'LIQ oy — obuna
                   // oy bilan KESISHSA yetarli, kunlar bo'yicha bo'linmaydi.
                   && sub.StartsOn <= monthEnd
@@ -246,7 +255,7 @@ public sealed class InvoiceService(IAppDbContext db, ILedgerService ledger) : II
 
         // ---- 2. Allaqachon hisoblanganlar (TEZLIK filtri, kafolat EMAS) ----
         var existing = (await db.Invoices.AsNoTracking()
-                .Where(i => i.PeriodMonth == monthStart)
+                .Where(i => i.PeriodMonth == monthStart && (studentId == null || i.StudentId == studentId))
                 .Select(i => new { i.StudentId, i.CategoryId })
                 .ToListAsync(ct))
             .Select(x => (x.StudentId, x.CategoryId))
@@ -258,6 +267,7 @@ public sealed class InvoiceService(IAppDbContext db, ILedgerService ledger) : II
         // biriktirilgan chegirma: u tasdiqsiz (mijoz, 2026-09-28; billing-plans.md §8).
         var discounts = await db.Discounts.AsNoTracking()
             .Where(d => d.Status == DiscountStatus.Approved
+                        && (studentId == null || d.StudentId == studentId)
                         && (d.ApprovedBy != null || d.DiscountTypeId != null)
                         && d.StartsOn <= monthEnd
                         && (d.EndsOn == null || d.EndsOn >= monthStart))
@@ -336,6 +346,26 @@ public sealed class InvoiceService(IAppDbContext db, ILedgerService ledger) : II
     public async Task<IReadOnlyList<AccrualResultDto>> AccrueDueAsync(
         string actorId, CancellationToken ct = default)
     {
+        var results = new List<AccrualResultDto>();
+        foreach (var month in await MonthsToAccrueAsync(studentId: null, ct))
+            results.Add(await AccrueMonthAsync(month, actorId, ct));
+        return results;
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<AccrualResultDto>> AccrueStudentAsync(
+        string studentId, string actorId, CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(studentId);
+        var results = new List<AccrualResultDto>();
+        foreach (var month in await MonthsToAccrueAsync(studentId, ct))
+            results.Add(await AccrueMonthCoreAsync(month, actorId, studentId, ct));
+        return results;
+    }
+
+    /// <summary>O'quv yili boshidan (yoki undan oldingi eng erta obunadan) joriy oygacha.</summary>
+    private async Task<List<DateOnly>> MonthsToAccrueAsync(string? studentId, CancellationToken ct)
+    {
         // Oy oralig'ini eski kodning O'ZI hisoblaydi — `TuitionService.MonthRange`
         // va `AcademicYearStartMonthAsync` qayta yozilmaydi (docs/TASKS.md §1.3).
         var current = TuitionService.CurrentMonth();
@@ -345,6 +375,7 @@ public sealed class InvoiceService(IAppDbContext db, ILedgerService ledger) : II
         // yoki chorak sanalari kech qo'yilgan) — o'sha oydan boshlaymiz, aks holda
         // o'sha oylar hech qachon hisoblanmay qolardi.
         var earliest = await db.StudentSubscriptions.AsNoTracking()
+            .Where(s => studentId == null || s.StudentId == studentId)
             .Select(s => (DateOnly?)s.StartsOn)
             .MinAsync(ct);
         if (earliest is { } first)
@@ -356,11 +387,7 @@ public sealed class InvoiceService(IAppDbContext db, ILedgerService ledger) : II
         // O'quv yili hali boshlanmagan bo'lsa — kelajakni hisoblab qo'ymaymiz.
         if (string.CompareOrdinal(start, current) > 0) start = current;
 
-        var results = new List<AccrualResultDto>();
-        foreach (var month in TuitionService.MonthRange(start, current))
-            results.Add(await AccrueMonthAsync(ParseMonth(month), actorId, ct));
-
-        return results;
+        return TuitionService.MonthRange(start, current).Select(ParseMonth).ToList();
     }
 
     /// <summary>

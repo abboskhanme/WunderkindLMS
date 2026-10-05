@@ -107,6 +107,14 @@ public interface IInvoiceService
     Task<IReadOnlyList<AccrualResultDto>> AccrueDueAsync(
         string actorId, CancellationToken ct = default);
 
+    /// <summary>
+    /// <see cref="AccrueDueAsync"/> faqat bitta o'quvchi uchun — obuna ochilgan yoki o'zgargan
+    /// zahoti (mijoz, 2026-10-05: "1-sentabrdan boshlansin desam ham sentabrga qo'shmayapti" —
+    /// fon xizmati 12 soatda bir yuradi, shu orada qarz ko'rinmasdi).
+    /// </summary>
+    Task<IReadOnlyList<AccrualResultDto>> AccrueStudentAsync(
+        string studentId, string actorId, CancellationToken ct = default);
+
     Task<IReadOnlyList<InvoiceDto>> ListAsync(InvoiceQuery query, CancellationToken ct = default);
 
     /// <summary>

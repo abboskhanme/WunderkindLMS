@@ -148,7 +148,9 @@ public sealed class SubscriptionService(
     // orqali): "kelajakdagi qarz" ro'yxati hisob-faktura xizmatining o'z hisob-kitobi
     // (Paid/Remaining/Status) ustida quriladi, bu yerda TAKRORLANMAYDI. Dumaloq
     // bog'liqlik yo'q — InvoiceService hech qachon ISubscriptionService ni bilmaydi.
-    IInvoiceService invoices) : ISubscriptionService
+    // Obuna ochilgan/o'zgargan zahoti o'sha o'quvchini hisoblash ham shu orqali (AccrueNowAsync).
+    IInvoiceService invoices,
+    ILogger<SubscriptionService>? logger = null) : ISubscriptionService
 {
     /// <summary>Audit yozuvidagi ob'ekt turi (<c>AuditService.Entity*</c> qatoriga mos).</summary>
     private const string AuditEntity = "StudentSubscription";
@@ -289,6 +291,7 @@ public sealed class SubscriptionService(
             after: Snapshot(subscription), studentId: student.Id);
 
         await db.SaveChangesAsync(ct);
+        await AccrueNowAsync(student.Id, createdByUserId, ct);
         return await RequireDtoAsync(subscription.Id, ct);
     }
 
@@ -354,7 +357,33 @@ public sealed class SubscriptionService(
             before: before, after: Snapshot(subscription), studentId: subscription.StudentId);
 
         await db.SaveChangesAsync(ct);
+        // Tugash sanasi uzaytirilsa, hisoblanmay qolgan oylar ochiladi.
+        await AccrueNowAsync(subscription.StudentId, actorId, ct);
         return await RequireDtoAsync(subscription.Id, ct);
+    }
+
+    /// <summary>
+    /// Obuna saqlangan zahoti o'quvchining hisoblanmagan oylarini yozadi — o'tgan sanadan
+    /// boshlangan obuna ham darhol qarz bo'lib ko'rinadi (mijoz, 2026-10-05). Fon xizmatining
+    /// o'zi bilan bir xil "tizim" nomidan yoziladi, shuning uchun kassir bu oylarni keyin o'zi
+    /// bekor qila oladi (SPEC §4.5: o'zi qo'ygan yozuvni o'zi qaytara olmaydi).
+    ///
+    /// <para>
+    /// Xato obunani orqaga qaytarmaydi: u allaqachon saqlangan, oy esa fon xizmatining
+    /// keyingi yurishida (12 soatda) baribir yoziladi.
+    /// </para>
+    /// </summary>
+    private async Task AccrueNowAsync(string studentId, string userId, CancellationToken ct)
+    {
+        try
+        {
+            var actor = await BillingAccrualService.ResolveActorAsync(db, ct) ?? userId;
+            await invoices.AccrueStudentAsync(studentId, actor, ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger?.LogError(ex, "Obunadan keyingi hisoblash bajarilmadi (o'quvchi {StudentId}); fon xizmati qayta urinadi", studentId);
+        }
     }
 
     /// <inheritdoc />

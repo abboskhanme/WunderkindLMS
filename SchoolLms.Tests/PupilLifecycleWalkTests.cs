@@ -159,12 +159,18 @@ public class PupilLifecycleWalkTests(ApiFixture fixture)
             new CreateSubscriptionRequest(studentId, tuition.Id, monthlyAmount, "Namuna obuna", monthStart, null));
         Assert.Equal(HttpStatusCode.OK, subResponse.StatusCode);
 
+        // Obuna ochilgan zahoti oy yozilgan bo'ladi (SubscriptionService.AccrueNowAsync); qo'lda
+        // hisoblash endi shu o'quvchiga ikkinchi qator yozmasligi kerak — pastdagi Assert.Single.
+        var beforeRun = await admin.GetFromJsonAsync<InvoicePageDto>(
+            $"/api/admin/billing/invoices?studentId={studentId}");
+        Assert.Single(beforeRun!.Rows, i => i.StudentId == studentId && i.PeriodMonth == monthStart);
+
         var accrualResponse = await admin.PostAsync(
             $"/api/admin/billing/accrual/run?month={monthStart:yyyy-MM}", null);
         Assert.Equal(HttpStatusCode.OK, accrualResponse.StatusCode);
         var accrualResults = await accrualResponse.Content.ReadFromJsonAsync<List<AccrualResultDto>>();
         Assert.NotNull(accrualResults);
-        Assert.Contains(accrualResults!, r => r.Created >= 1);
+        Assert.Contains(accrualResults!, r => r.PeriodMonth == monthStart);
 
         await AssertLedgerBalancedAsync();
 

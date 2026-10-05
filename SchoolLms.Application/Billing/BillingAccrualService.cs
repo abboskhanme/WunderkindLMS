@@ -99,7 +99,7 @@ public class BillingAccrualService(IServiceProvider services, ILogger<BillingAcc
     /// (<c>id</c> bo'yicha), ya'ni har yurishda bir xil odam ko'rinadi va
     /// jurnalni o'qish chalkashmaydi.
     /// </summary>
-    private static async Task<string?> ResolveActorAsync(IAppDbContext db, CancellationToken ct) =>
+    internal static async Task<string?> ResolveActorAsync(IAppDbContext db, CancellationToken ct) =>
         await db.Users.AsNoTracking()
             .Where(u => u.Role == Roles.SuperAdmin || u.Role == Roles.Admin)
             .OrderBy(u => u.Role == Roles.SuperAdmin ? 0 : 1)

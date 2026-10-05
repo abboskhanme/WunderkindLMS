@@ -740,6 +740,32 @@ public class BillingCatalogTests(ApiFixture fixture)
     }
 
     /// <summary>
+    /// O'tgan sanadan ochilgan obuna DARHOL qarz bo'ladi — fon xizmatini (12 soatda bir) kutmaydi
+    /// (mijoz, 2026-10-05: "1-sentabrdan boshlansin desam ham sentabrga qo'shmayapti").
+    /// </summary>
+    [Fact]
+    public async Task Otgan_sanadan_ochilgan_obuna_darhol_hisoblanadi()
+    {
+        var student = await NewStudentAsync();
+        var bus = await CategoryAsync(FeeCategoryCodes.Bus);
+        var (client, _) = await WiredClientAsync(Roles.Admin);
+        using var _client = client;
+        var thisMonth = new DateOnly(AppClock.Today.Year, AppClock.Today.Month, 1);
+        var lastMonth = thisMonth.AddMonths(-1);
+
+        var response = await client.PostAsJsonAsync("/api/admin/billing/subscriptions",
+            new CreateSubscriptionRequest(student.Id, bus.Id, 400_000m, null, lastMonth, null));
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var subscription = await response.Content.ReadFromJsonAsync<StudentSubscriptionDto>();
+
+        var page = await client.GetFromJsonAsync<InvoicePageDto>(
+            $"/api/admin/billing/invoices?studentId={student.Id}&fromMonth={lastMonth:yyyy-MM-dd}&toMonth={thisMonth:yyyy-MM-dd}");
+        var rows = page!.Rows.Where(r => r.StudentId == student.Id && r.CategoryId == bus.Id).OrderBy(r => r.PeriodMonth).ToList();
+        Assert.Equal([lastMonth, thisMonth], rows.Select(r => r.PeriodMonth));
+        Assert.All(rows, r => Assert.Equal(subscription!.MonthlyAmount, r.Payable));
+    }
+
+    /// <summary>
     /// SPEC §4.4 — shaxs SERVERDA aniqlanadi. Direktor o'zi so'ragan chegirmani
     /// o'zi tasdiqlay olmaydi: roli yetarli, lekin ikkinchi shaxs kerak (§4.5).
     /// </summary>
