@@ -189,6 +189,10 @@ export interface CashBoxTransactionsResult {
   totalsByMethod: Partial<Record<PaymentMethod, number>>
   inTotal: number
   outTotal: number
+  /** Davrda shu usulda KIRGAN pul (to'lov, kirim, qabul qilingan ko'chirish, ayirboshlash). */
+  inByMethod?: Partial<Record<PaymentMethod, number>>
+  /** Davrda shu usulda CHIQQAN pul (chiqim, buxgalterga ko'chirish, ayirboshlash). */
+  outByMethod?: Partial<Record<PaymentMethod, number>>
 }
 
 export interface CashBoxTransactionsFilters {

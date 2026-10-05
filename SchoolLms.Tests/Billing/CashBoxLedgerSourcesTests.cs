@@ -92,6 +92,38 @@ public class CashBoxLedgerSourcesTests(ApiFixture fixture)
     }
 
     /// <summary>
+    /// Kun bo'yicha kirim va chiqim usul kesimida ALOHIDA (mijoz, 2026-10-05: kassir kunlik pulni
+    /// buxgalterga ko'chirsa sof yig'indi 0/manfiy chiqib, "sana filtri ishlamayapti" deb o'qilardi).
+    /// Ko'chirish yuborgan kassada chiqim, qabul qilgan kassada KIRIM — avval u ham minus edi.
+    /// </summary>
+    [Fact]
+    public async Task Kochirish_qabul_qilgan_kassada_kirim_yuborganda_chiqim()
+    {
+        var (_, admin) = await ActorAsync(Roles.Admin);
+        var (_, cashier) = await ActorAsync(Roles.Cashier);
+        var desk = await CreateBoxAsync(admin);
+        var accountant = await CreateBoxAsync(admin);
+        var student = await NewStudentAsync();
+
+        await PayAsync(cashier, student.Id, desk.Id, 600_000m, PaymentMethod.Cash);
+        var transfer = await admin.PostAsJsonAsync($"{Boxes}/{desk.Id}/transfer",
+            new { toBoxId = accountant.Id, amount = 600_000m, method = PaymentMethod.Cash });
+        Assert.Equal(HttpStatusCode.OK, transfer.StatusCode);
+
+        var sent = await LedgerAsync(admin, desk.Id, AppClock.Today, AppClock.Today);
+        Assert.Equal(600_000m, sent.InByMethod![PaymentMethod.Cash]);
+        Assert.Equal(600_000m, sent.OutByMethod![PaymentMethod.Cash]);
+        Assert.Equal(0m, sent.TotalsByMethod[PaymentMethod.Cash]);
+
+        var received = await LedgerAsync(admin, accountant.Id, AppClock.Today, AppClock.Today);
+        Assert.Equal(600_000m, received.InByMethod![PaymentMethod.Cash]);
+        Assert.Equal(0m, received.OutByMethod![PaymentMethod.Cash]);
+        Assert.Equal(600_000m, received.TotalsByMethod[PaymentMethod.Cash]);
+        Assert.Equal((await GetBoxAsync(admin, accountant.Id)).ByMethod[PaymentMethod.Cash],
+            received.TotalsByMethod[PaymentMethod.Cash]);
+    }
+
+    /// <summary>
     /// To'lov FAQAT o'z kassasiga tegadi. Nazorat tekshiruvi: "hamma
     /// to'lovni hamma kassaga qo'shib yubor" degan implementatsiya
     /// yuqoridagi test bilan ham yashil bo'lardi.

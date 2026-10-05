@@ -20,6 +20,9 @@ interface Props {
   /** Usul kesimidagi yig'indi — QANCHA USUL BO'LSA, SHUNCHA kartochka (EduSchool skrinshotida 5 ta,
    *  qatorlar sayoz ekranga sig'may, YONGA aylanadi — sobit to'rttalik EMAS). */
   totalsByMethod: Partial<Record<PaymentMethod, number>>
+  /** Davrdagi kirim / chiqim usul kesimida — kartochkada asosiy raqam kirim, ostida chiqim. */
+  inByMethod?: Partial<Record<PaymentMethod, number>>
+  outByMethod?: Partial<Record<PaymentMethod, number>>
   rows: CashBoxTransactionRow[]
   /** true — usul/turi/o'quvchi/sinf filtridan biri ishga tushgan: jadval torroq, yig'indilar EMAS. */
   narrowed?: boolean
@@ -50,6 +53,8 @@ interface Props {
  */
 export function CashLedger({
   totalsByMethod,
+  inByMethod,
+  outByMethod,
   rows,
   narrowed,
   loading,
@@ -77,14 +82,27 @@ export function CashLedger({
           (mijoz, 2026-09-18: "siqilib qolmasin"). `auto-fit` tufayli usullar
           soni nechta bo'lsa, shuncha ustun chiqadi va qator to'liq to'ladi. --- */}
       <div className="grid grid-cols-[repeat(auto-fit,minmax(120px,1fr))] gap-3">
-        {methodEntries.map(([m, sum]) => (
-          <Card key={m} className="p-3">
-            <p className="text-xs font-medium uppercase leading-tight tracking-wide text-slate-400">
-              {methodLabels[m as PaymentMethod] ?? m}
-            </p>
-            <p className="mt-1 text-base font-semibold tabular-nums text-slate-800">{formatSum(sum)}</p>
-          </Card>
-        ))}
+        {/* Asosiy raqam — davrda shu usulda KIRGAN pul; ostida chiqqani (mijoz, 2026-10-05: kassir
+            kunlik pulni buxgalterga ko'chirsa sof yig'indi 0/manfiy chiqib, "sana filtri ishlamayapti"
+            deb o'qilardi). Eski javobda (kirim/chiqim yo'q) — sof yig'indi, avvalgidek. */}
+        {methodEntries.map(([m, sum]) => {
+          const method = m as PaymentMethod
+          const income = inByMethod?.[method]
+          const spent = outByMethod?.[method] ?? 0
+          return (
+            <Card key={m} className="p-3">
+              <p className="text-xs font-medium uppercase leading-tight tracking-wide text-slate-400">
+                {methodLabels[method] ?? m}
+              </p>
+              <p className="mt-1 text-base font-semibold tabular-nums text-slate-800">
+                {formatSum(income ?? sum)}
+              </p>
+              {income !== undefined && spent > 0 && (
+                <p className="mt-0.5 text-xs tabular-nums text-slate-400">chiqim: {formatSum(spent)}</p>
+              )}
+            </Card>
+          )
+        })}
       </div>
       {narrowed && (
         <p className="text-xs text-slate-400">

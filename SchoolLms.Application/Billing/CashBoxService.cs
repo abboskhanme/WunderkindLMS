@@ -181,7 +181,12 @@ public record CashBoxTransactionsQuery(
 public record CashBoxTransactionsPageDto(
     IReadOnlyList<CashBoxTransactionRowDto> Rows,
     IReadOnlyDictionary<string, decimal> TotalsByMethod,
-    decimal InTotal, decimal OutTotal);
+    decimal InTotal, decimal OutTotal,
+    // Usul kesimida davr ichida KIRGAN va CHIQQAN pul alohida (mijoz, 2026-10-05: kassir kun bo'yicha
+    // hammasini buxgalterga ko'chirsa sof yig'indi 0 yoki manfiy chiqib, "filtr ishlamayapti" deb
+    // o'qilardi). Storno o'z asl qatorining ustunidan ayiriladi.
+    IReadOnlyDictionary<string, decimal>? InByMethod = null,
+    IReadOnlyDictionary<string, decimal>? OutByMethod = null);
 
 /// <summary>
 /// Kassalar: kataloq (ochish/o'zgartirish) va to'rtta pul amali (kirim,
@@ -791,7 +796,8 @@ public sealed class CashBoxService(IAppDbContext db) : ICashBoxService
         CashBoxTransactionRowDto Dto,
         IReadOnlyList<(string Method, decimal Delta)> ByMethod,
         decimal In,
-        decimal Out);
+        decimal Out,
+        bool Reversal = false);
 
     /// <inheritdoc />
     public async Task<CashBoxTransactionsPageDto> TransactionsAsync(
@@ -829,7 +835,8 @@ public sealed class CashBoxService(IAppDbContext db) : ICashBoxService
         // kassaga ta'siri (`Contributions`) shu indeks orqali olinadi.
         var lines = native
             .Select((dto, i) => new LedgerLine(
-                dto, [.. Contributions(rows[i])], InOf(rows[i]), OutOf(rows[i])))
+                dto, [.. ContributionsFor(rows[i], query.BoxId)], InOf(rows[i]), OutOf(rows[i]),
+                rows[i].ReversalOf is not null))
             .Concat(externals.Select(LineOf))
             .OrderByDescending(l => l.Dto.CreatedAt)
             // Bir xil lahzali ikki qator har so'rovda joyini almashtirmasin:
@@ -848,13 +855,21 @@ public sealed class CashBoxService(IAppDbContext db) : ICashBoxService
         // kartochkalardagi davr yakunini EMAS — ekrandagi izoh ham shunday
         // va'da beradi.
         var totalsByMethod = new Dictionary<string, decimal>(StringComparer.Ordinal);
-        foreach (var m in PaymentMethod.All) totalsByMethod[m] = 0m;
+        var inByMethod = new Dictionary<string, decimal>(StringComparer.Ordinal);
+        var outByMethod = new Dictionary<string, decimal>(StringComparer.Ordinal);
+        foreach (var m in PaymentMethod.All) totalsByMethod[m] = inByMethod[m] = outByMethod[m] = 0m;
         decimal inTotal = 0m, outTotal = 0m;
 
         foreach (var line in lines)
         {
             foreach (var (method, delta) in line.ByMethod)
+            {
                 totalsByMethod[method] = decimal.Round(totalsByMethod[method] + delta, MoneyScale);
+                // Storno ishorasi teskari: kirimning stornosi kirimni kamaytiradi, chiqimga qo'shilmaydi.
+                var isIn = line.Reversal ? delta < 0m : delta > 0m;
+                if (isIn) inByMethod[method] = decimal.Round(inByMethod[method] + delta, MoneyScale);
+                else if (delta != 0m) outByMethod[method] = decimal.Round(outByMethod[method] - delta, MoneyScale);
+            }
 
             inTotal += line.In;
             outTotal += line.Out;
@@ -872,7 +887,8 @@ public sealed class CashBoxService(IAppDbContext db) : ICashBoxService
         var dtos = lines.Select((l, i) => l.Dto with { No = i + 1 }).ToList();
 
         return new CashBoxTransactionsPageDto(
-            dtos, totalsByMethod, decimal.Round(inTotal, MoneyScale), decimal.Round(outTotal, MoneyScale));
+            dtos, totalsByMethod, decimal.Round(inTotal, MoneyScale), decimal.Round(outTotal, MoneyScale),
+            inByMethod, outByMethod);
     }
 
     /// <summary>Kassa harakatining "Jami kirim" ga qo'shadigan qismi (storno — manfiy).</summary>
@@ -941,6 +957,22 @@ public sealed class CashBoxService(IAppDbContext db) : ICashBoxService
     /// ikkalasini ham qamrab oladi.
     /// </para>
     /// </summary>
+    /// <summary>
+    /// <see cref="Contributions"/> — so'ralgan kassa nuqtai nazaridan. Ko'chirish manzil kassaning
+    /// ro'yxatida KIRIM (+), manba kassada CHIQIM (−); kassa tanlanmagan bo'lsa maktab ichida
+    /// neytral — pul bir javondan ikkinchisiga o'tdi, xolos.
+    /// </summary>
+    private static IEnumerable<(string Method, decimal Amount)> ContributionsFor(CashBoxTransaction row, Guid? boxId)
+    {
+        if (row.Kind == CashBoxTransactionKind.Transfer)
+        {
+            if (boxId is null) return [];
+            if (row.TransferToBoxId == boxId && row.CashBoxId != boxId)
+                return [(row.Method, (row.ReversalOf is null ? 1m : -1m) * row.Amount)];
+        }
+        return Contributions(row);
+    }
+
     private static IEnumerable<(string Method, decimal Amount)> Contributions(CashBoxTransaction row)
     {
         var sign = row.ReversalOf is null ? 1m : -1m;

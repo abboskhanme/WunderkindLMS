@@ -777,6 +777,8 @@ export function CashierPage() {
 
           <CashLedger
             totalsByMethod={ledger?.totalsByMethod ?? {}}
+            inByMethod={ledger?.inByMethod}
+            outByMethod={ledger?.outByMethod}
             rows={filteredRows}
             narrowed={rowsNarrowed}
             loading={ledgerLoading}
