@@ -322,7 +322,6 @@ function ActionsMenu({
     }
   }, [open])
 
-  const item = 'flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50'
   const run = (fn: () => void) => () => {
     setOpen(false)
     fn()
@@ -334,28 +333,66 @@ function ActionsMenu({
         <MoreVertical className="h-4 w-4" />
       </Button>
       {open && (
-        <div role="menu" className="absolute right-0 z-20 mt-1 w-52 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-lg">
-          <button type="button" role="menuitem" className={item} onClick={run(onPassword)}>
-            <KeyRound className="h-4 w-4 text-slate-400" /> Parol
-          </button>
+        <div
+          role="menu"
+          className="absolute right-0 z-20 mt-2 w-72 overflow-hidden rounded-2xl border border-slate-200 bg-white p-1.5 shadow-xl"
+        >
+          <MenuItem icon={KeyRound} title="Parol" hint="Login va parolni ko'rish yoki yangilash" onClick={run(onPassword)} />
           {onWithdraw && (
-            <button type="button" role="menuitem" className={item} onClick={run(onWithdraw)}>
-              <UserMinus className="h-4 w-4 text-slate-400" /> Chiqib ketdi — abonement
-            </button>
+            <MenuItem
+              icon={UserMinus}
+              title="Chiqib ketdi"
+              hint="Abonementni oxirgi o'qigan kundan bekor qilish"
+              onClick={run(onWithdraw)}
+            />
           )}
           {archived ? (
-            <button type="button" role="menuitem" className={item} onClick={run(onRestore)}>
-              <RotateCcw className="h-4 w-4 text-slate-400" /> Arxivdan qaytarish
-            </button>
+            <MenuItem icon={RotateCcw} title="Arxivdan qaytarish" hint="O'quvchini faol ro'yxatga qaytarish" onClick={run(onRestore)} />
           ) : (
             canArchive && (
-              <button type="button" role="menuitem" className={cn(item, 'text-red-600')} onClick={run(onArchive)}>
-                <Archive className="h-4 w-4" /> Arxivlash
-              </button>
+              <>
+                <div className="mx-2 my-1 border-t border-slate-100" role="separator" />
+                <MenuItem icon={Archive} title="Arxivlash" hint="Faol ro'yxatdan chiqarish" danger onClick={run(onArchive)} />
+              </>
             )
           )}
         </div>
       )}
     </div>
+  )
+}
+
+function MenuItem({
+  icon: Icon, title, hint, danger, onClick,
+}: {
+  icon: LucideIcon
+  title: string
+  hint: string
+  danger?: boolean
+  onClick: () => void
+}) {
+  return (
+    <button
+      type="button"
+      role="menuitem"
+      onClick={onClick}
+      className={cn(
+        'flex w-full items-start gap-3 rounded-xl px-2.5 py-2 text-left transition-colors focus:outline-none',
+        danger ? 'hover:bg-red-50 focus-visible:bg-red-50' : 'hover:bg-slate-50 focus-visible:bg-slate-50',
+      )}
+    >
+      <span
+        className={cn(
+          'mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg',
+          danger ? 'bg-red-50 text-red-600' : 'bg-slate-100 text-slate-500',
+        )}
+      >
+        <Icon className="h-4 w-4" />
+      </span>
+      <span className="min-w-0">
+        <span className={cn('block text-sm font-medium', danger ? 'text-red-600' : 'text-slate-800')}>{title}</span>
+        <span className="block text-xs leading-snug text-slate-400">{hint}</span>
+      </span>
+    </button>
   )
 }
