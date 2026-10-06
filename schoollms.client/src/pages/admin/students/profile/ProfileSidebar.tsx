@@ -142,13 +142,7 @@ export function ProfileSidebar({
           )}
           <Row icon={MapPin} label="Manzil" value={data.address || '—'} />
           {card && <Row icon={KeyRound} label="Login" value={card.login || '—'} />}
-          {card && (
-            <Row
-              icon={KeyRound}
-              label="Parol"
-              value={card.password || (card.login ? "O'quvchi tizimga kirgan — yangisini ⋮ → Parol orqali bering" : '—')}
-            />
-          )}
+          {card && <PasswordRow password={card.password ?? null} hasLogin={!!card.login} onNew={onPassword} />}
           {archived && (
             <Row
               icon={Archive}
@@ -202,6 +196,59 @@ function Row({ icon: Icon, label, value }: { icon: LucideIcon; label: string; va
         <p className="break-words text-sm font-medium text-slate-700">{value}</p>
         <p className="text-xs text-slate-400">{label}</p>
       </div>
+    </div>
+  )
+}
+
+/**
+ * Parol: boshlang'ich parol bo'lsa — o'zi va nusxalash. O'quvchi tizimga kirib o'zgartirgan bo'lsa,
+ * u ko'rsatilmaydi (faqat hash qoladi) — yonida yangisini berish tugmasi.
+ */
+function PasswordRow({ password, hasLogin, onNew }: { password: string | null; hasLogin: boolean; onNew: () => void }) {
+  const [copied, setCopied] = useState(false)
+  const copy = async () => {
+    if (!password) return
+    try {
+      await navigator.clipboard.writeText(password)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    } catch {
+      /* brauzer ruxsat bermadi — parol baribir ekranda */
+    }
+  }
+  return (
+    <div className="flex items-start gap-2.5">
+      <KeyRound className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
+      <div className="min-w-0 flex-1">
+        {password ? (
+          <p className="flex items-center gap-1.5 text-sm font-medium text-slate-700">
+            <span className="break-all font-mono">{password}</span>
+            <button
+              type="button"
+              onClick={copy}
+              title="Nusxalash"
+              aria-label="Parolni nusxalash"
+              className="rounded p-0.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+            >
+              {copied ? <Check className="h-3.5 w-3.5 text-emerald-500" /> : <Copy className="h-3.5 w-3.5" />}
+            </button>
+          </p>
+        ) : (
+          <p className="text-sm font-medium text-slate-400">{hasLogin ? "Ko'rinmaydi" : '—'}</p>
+        )}
+        <p className="text-xs text-slate-400">
+          Parol{!password && hasLogin ? " · o'quvchi tizimga kirgan" : ''}
+        </p>
+      </div>
+      {!password && hasLogin && (
+        <button
+          type="button"
+          onClick={onNew}
+          className="shrink-0 rounded-md px-2 py-0.5 text-xs font-medium text-brand-600 hover:bg-brand-50"
+        >
+          Yangi parol
+        </button>
+      )}
     </div>
   )
 }
