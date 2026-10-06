@@ -713,7 +713,7 @@ public sealed class CashDayQueries(IAppDbContext db, ICashShiftService shifts)
         var ids = sign.Keys.ToList();
         var rows = await (
             from a in db.PaymentAllocations.AsNoTracking()
-            where ids.Contains(a.PaymentId)
+            where ids.Contains(a.PaymentId) && a.Kind == PaymentAllocationKind.Normal
             join inv in db.Invoices.AsNoTracking() on a.InvoiceId equals inv.Id
             join c in db.FeeCategories.AsNoTracking() on inv.CategoryId equals c.Id
             group a by new { a.PaymentId, CategoryId = c.Id, c.Code, c.Name } into g

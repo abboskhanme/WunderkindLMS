@@ -88,7 +88,7 @@ public sealed class InvoiceAdjustmentService(IAppDbContext db, AuditService audi
         };
         db.InvoiceAdjustments.Add(row);
 
-        var what = kind == InvoiceAdjustmentKind.Sick ? $"kasallik chegirmasi ({sickDays} kun)" : "chegirma";
+        var what = Label(kind, sickDays);
         audit.Record(AuditService.EntityInvoice, invoice.Id.ToString(), "adjust",
             $"{invoice.PeriodMonth:yyyy-MM} hisobidan {what}: {AuditService.Money(amount)} so'm ayrildi",
             before: before, after: new { invoice.Amount, invoice.Discount, invoice.Status },
@@ -141,7 +141,7 @@ public sealed class InvoiceAdjustmentService(IAppDbContext db, AuditService audi
         };
         db.InvoiceAdjustments.Add(row);
 
-        var what = original.Kind == InvoiceAdjustmentKind.Sick ? $"kasallik chegirmasi ({original.SickDays} kun)" : "chegirma";
+        var what = Label(original.Kind, original.SickDays);
         audit.Record(AuditService.EntityInvoice, invoice.Id.ToString(), "adjust_cancel",
             $"{invoice.PeriodMonth:yyyy-MM} hisobidagi {what} bekor qilindi: {AuditService.Money(original.Amount)} so'm qaytdi",
             before: before, after: new { invoice.Amount, invoice.Discount, invoice.Status },
@@ -176,6 +176,14 @@ public sealed class InvoiceAdjustmentService(IAppDbContext db, AuditService audi
         return rows.ToDictionary(r => r.InvoiceId, r => r.Net);
     }
 
+    /// <summary>Audit / ledger wording of an adjustment kind.</summary>
+    private static string Label(string kind, int? sickDays) => kind switch
+    {
+        InvoiceAdjustmentKind.Sick => $"kasallik chegirmasi ({sickDays} kun)",
+        InvoiceAdjustmentKind.Withdrawal => "chiqib ketish (o'qilmagan kunlar)",
+        _ => "chegirma",
+    };
+
     private static string? Clip(string? note) =>
         string.IsNullOrWhiteSpace(note) ? null : note.Trim()[..Math.Min(note.Trim().Length, 500)];
 
@@ -202,6 +210,29 @@ public static class LessonDays
     /// null ("Butun oy") → every calendar day; N → days whose ISO weekday ≤ N (5 = Mon–Fri,
     /// 6 = Mon–Sat, 7 = all), minus school holidays. Never below 1.
     /// </summary>
+    /// <summary>
+    /// Maktab haftasi — dushanbadan shanbagacha (dars jadvali shunday). Jadvali belgilanmagan
+    /// ("Butun oy") abonement "chiqib ketdi" hisobida shu bilan sanaladi: mijoz, 2026-10-06 —
+    /// "yakshanba va bayramlar sanalmaydi".
+    /// </summary>
+    public const int SchoolWeek = 6;
+
+    /// <summary>
+    /// Dars kunlari <paramref name="from"/>..<paramref name="to"/> oralig'ida (ikkalasi ham kiradi),
+    /// bitta oy ichida. <paramref name="daysPerWeek"/> — <see cref="Count"/> dagi bilan bir xil ma'no.
+    /// Oraliq bo'sh bo'lsa 0.
+    /// </summary>
+    public static int CountBetween(DateOnly from, DateOnly to, int daysPerWeek, IReadOnlySet<DateOnly> holidays)
+    {
+        var count = 0;
+        for (var d = from; d <= to; d = d.AddDays(1))
+        {
+            var iso = d.DayOfWeek == DayOfWeek.Sunday ? 7 : (int)d.DayOfWeek;
+            if (iso <= daysPerWeek && !holidays.Contains(d)) count++;
+        }
+        return count;
+    }
+
     public static int Count(DateOnly monthStart, int? daysPerWeek, IReadOnlySet<DateOnly> holidays)
     {
         var days = DateTime.DaysInMonth(monthStart.Year, monthStart.Month);

@@ -33,6 +33,7 @@ internal static class BillingModel
         ConfigureDiscounts(b);
         ConfigureInvoices(b);
         ConfigureInvoiceAdjustments(b);
+        ConfigureWithdrawals(b);
         ConfigurePayments(b);
         ConfigureAllocations(b);
         ConfigureCashShifts(b);
@@ -147,8 +148,31 @@ internal static class BillingModel
             e.ToTable(t =>
             {
                 t.HasCheckConstraint("ck_invoice_adjustments_amount", "amount > 0");
-                t.HasCheckConstraint("ck_invoice_adjustments_kind", "kind in ('sick','discount')");
+                t.HasCheckConstraint("ck_invoice_adjustments_kind", "kind in ('sick','discount','withdrawal')");
                 t.HasCheckConstraint("ck_invoice_adjustments_days", "sick_days is null or sick_days > 0");
+            });
+        });
+    }
+
+    private static void ConfigureWithdrawals(ModelBuilder b)
+    {
+        b.Entity<StudentWithdrawal>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Note).HasMaxLength(500);
+            e.Property(x => x.WrittenOff).HasPrecision(14, 2);
+            e.Property(x => x.Released).HasPrecision(14, 2);
+            e.Property(x => x.Details).HasColumnType("jsonb");
+            e.HasOne<Student>().WithMany().HasForeignKey(x => x.StudentId)
+                .OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<AppUser>().WithMany().HasForeignKey(x => x.CreatedBy)
+                .OnDelete(DeleteBehavior.Restrict);
+            e.HasIndex(x => x.StudentId);
+            e.ToTable(t =>
+            {
+                t.HasCheckConstraint("ck_student_withdrawals_amounts", "written_off >= 0 and released >= 0");
+                t.HasCheckConstraint("ck_student_withdrawals_cancel",
+                    "(cancelled_at is null) = (cancelled_by is null)");
             });
         });
     }
@@ -286,7 +310,12 @@ internal static class BillingModel
             // Hisob-faktura qoldig'i: Σ allocations — qarz hisobidagi eng issiq so'rov.
             e.HasIndex(x => x.InvoiceId);
 
-            e.ToTable(t => t.HasCheckConstraint("ck_payment_allocations_amount", "amount > 0"));
+            e.Property(x => x.Kind).HasMaxLength(16).HasDefaultValue(PaymentAllocationKind.Normal);
+            e.HasOne<StudentWithdrawal>().WithMany().HasForeignKey(x => x.WithdrawalId)
+                .OnDelete(DeleteBehavior.Restrict);
+            // Oddiy taqsimot musbat; bo'shatish (`release`) manfiy va doim "chiqib ketdi" amaliga bog'langan.
+            e.ToTable(t => t.HasCheckConstraint("ck_payment_allocations_amount",
+                "(kind = 'normal' and amount > 0) or (kind = 'release' and amount < 0 and withdrawal_id is not null)"));
         });
     }
 

@@ -91,6 +91,7 @@ public interface IAppDbContext
     DbSet<SubscriptionPlan> SubscriptionPlans { get; }
     DbSet<DiscountType> DiscountTypes { get; }
     DbSet<InvoiceAdjustment> InvoiceAdjustments { get; }
+    DbSet<StudentWithdrawal> StudentWithdrawals { get; }
     DbSet<Discount> Discounts { get; }
     DbSet<Invoice> Invoices { get; }
     DbSet<Payment> Payments { get; }

@@ -232,6 +232,7 @@ public static class ReceiptPrintQuery
                 from a in db.PaymentAllocations.AsNoTracking()
                 join p in db.Payments.AsNoTracking() on a.PaymentId equals p.Id
                 where ids.Contains(a.InvoiceId) && p.ReversalOf == null && p.ReceivedAt <= at
+                      && a.Kind == PaymentAllocationKind.Normal
                       && !db.Payments.Any(r => r.ReversalOf == p.Id && r.ReceivedAt <= at)
                 group a by a.InvoiceId into g
                 select new { InvoiceId = g.Key, Total = g.Sum(x => x.Amount) })

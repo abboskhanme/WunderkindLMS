@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { LucideIcon } from 'lucide-react'
 import {
   Archive, CalendarDays, CalendarPlus, Check, Copy, FileSignature, GraduationCap, Hourglass, IdCard,
-  KeyRound, Languages, MapPin, MoreVertical, Pencil, Phone, RotateCcw, ShieldCheck, User, Users, Wallet,
+  KeyRound, Languages, MapPin, MoreVertical, Pencil, Phone, RotateCcw, ShieldCheck, User, UserMinus, Users, Wallet,
 } from 'lucide-react'
 import type { StudentNotebook } from '@/api/services/studentNotebook'
 import type { StudentCard } from '@/api/services/studentProfile'
@@ -40,6 +40,8 @@ interface Props {
   onPassword: () => void
   onArchive: () => void
   onRestore: () => void
+  /** "Chiqib ketdi — abonementni bekor qilish"; berilmasa (huquq yo'q / arxivda) menyuda yo'q. */
+  onWithdraw?: () => void
 }
 
 /**
@@ -49,7 +51,7 @@ interface Props {
  */
 export function ProfileSidebar({
   data, card, statuses, balance, canTakePayment,
-  onStatusChange, onPay, onContract, onEdit, onPassword, onArchive, onRestore,
+  onStatusChange, onPay, onContract, onEdit, onPassword, onArchive, onRestore, onWithdraw,
 }: Props) {
   const archived = card?.student.isArchived ?? false
   const odob = data.disciplinePoints.reduce((sum, p) => sum + p.points, 0)
@@ -58,7 +60,14 @@ export function ProfileSidebar({
     <Card className="relative space-y-5">
       {/* "⋮" — kamroq ishlatiladigan amallar, kartochka burchagida (EduSchool tuzilishi). */}
       <div className="absolute right-3 top-3">
-        <ActionsMenu archived={archived} canArchive={!!card} onPassword={onPassword} onArchive={onArchive} onRestore={onRestore} />
+        <ActionsMenu
+          archived={archived}
+          canArchive={!!card}
+          onPassword={onPassword}
+          onArchive={onArchive}
+          onRestore={onRestore}
+          onWithdraw={onWithdraw}
+        />
       </div>
 
       {/* ---------- Kim ---------- */}
@@ -288,13 +297,14 @@ function CopyId({ id }: { id: string }) {
 
 /** "⋮" — kamroq ishlatiladigan amallar. Tashqariga bosilsa yoki Esc — yopiladi. */
 function ActionsMenu({
-  archived, canArchive, onPassword, onArchive, onRestore,
+  archived, canArchive, onPassword, onArchive, onRestore, onWithdraw,
 }: {
   archived: boolean
   canArchive: boolean
   onPassword: () => void
   onArchive: () => void
   onRestore: () => void
+  onWithdraw?: () => void
 }) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
@@ -328,6 +338,11 @@ function ActionsMenu({
           <button type="button" role="menuitem" className={item} onClick={run(onPassword)}>
             <KeyRound className="h-4 w-4 text-slate-400" /> Parol
           </button>
+          {onWithdraw && (
+            <button type="button" role="menuitem" className={item} onClick={run(onWithdraw)}>
+              <UserMinus className="h-4 w-4 text-slate-400" /> Chiqib ketdi — abonement
+            </button>
+          )}
           {archived ? (
             <button type="button" role="menuitem" className={item} onClick={run(onRestore)}>
               <RotateCcw className="h-4 w-4 text-slate-400" /> Arxivdan qaytarish

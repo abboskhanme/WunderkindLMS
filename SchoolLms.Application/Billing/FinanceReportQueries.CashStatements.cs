@@ -522,7 +522,7 @@ public sealed partial class FinanceReportQueries
             ? []
             : await (
                 from a in db.PaymentAllocations.AsNoTracking()
-                where paymentIds.Contains(a.PaymentId)
+                where paymentIds.Contains(a.PaymentId) && a.Kind == PaymentAllocationKind.Normal
                 join inv in db.Invoices.AsNoTracking() on a.InvoiceId equals inv.Id
                 join c in db.FeeCategories.AsNoTracking() on inv.CategoryId equals c.Id
                 group a by new { a.PaymentId, c.Code } into g

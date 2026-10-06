@@ -83,6 +83,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<SubscriptionPlan> SubscriptionPlans => Set<SubscriptionPlan>();
     public DbSet<DiscountType> DiscountTypes => Set<DiscountType>();
     public DbSet<InvoiceAdjustment> InvoiceAdjustments => Set<InvoiceAdjustment>();
+    public DbSet<StudentWithdrawal> StudentWithdrawals => Set<StudentWithdrawal>();
     public DbSet<Discount> Discounts => Set<Discount>();
     public DbSet<Invoice> Invoices => Set<Invoice>();
     public DbSet<Payment> Payments => Set<Payment>();

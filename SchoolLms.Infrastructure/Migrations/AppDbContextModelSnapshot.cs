@@ -4011,7 +4011,7 @@ namespace SchoolLms.Infrastructure.Migrations
 
                             t.HasCheckConstraint("ck_invoice_adjustments_days", "sick_days is null or sick_days > 0");
 
-                            t.HasCheckConstraint("ck_invoice_adjustments_kind", "kind in ('sick','discount')");
+                            t.HasCheckConstraint("ck_invoice_adjustments_kind", "kind in ('sick','discount','withdrawal')");
                         });
                 });
 
@@ -5398,9 +5398,21 @@ namespace SchoolLms.Infrastructure.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("invoice_id");
 
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasDefaultValue("normal")
+                        .HasColumnName("kind");
+
                     b.Property<Guid>("PaymentId")
                         .HasColumnType("uuid")
                         .HasColumnName("payment_id");
+
+                    b.Property<Guid?>("WithdrawalId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("withdrawal_id");
 
                     b.HasKey("Id")
                         .HasName("pk_payment_allocations");
@@ -5411,9 +5423,12 @@ namespace SchoolLms.Infrastructure.Migrations
                     b.HasIndex("PaymentId")
                         .HasDatabaseName("ix_payment_allocations_payment_id");
 
+                    b.HasIndex("WithdrawalId")
+                        .HasDatabaseName("ix_payment_allocations_withdrawal_id");
+
                     b.ToTable("payment_allocations", null, t =>
                         {
-                            t.HasCheckConstraint("ck_payment_allocations_amount", "amount > 0");
+                            t.HasCheckConstraint("ck_payment_allocations_amount", "(kind = 'normal' and amount > 0) or (kind = 'release' and amount < 0 and withdrawal_id is not null)");
                         });
                 });
 
@@ -7087,6 +7102,76 @@ namespace SchoolLms.Infrastructure.Migrations
                             t.HasCheckConstraint("ck_student_subscriptions_amount", "monthly_amount >= 0");
 
                             t.HasCheckConstraint("ck_student_subscriptions_period", "ends_on is null or ends_on >= starts_on");
+                        });
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.StudentWithdrawal", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset?>("CancelledAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("cancelled_at");
+
+                    b.Property<string>("CancelledBy")
+                        .HasColumnType("text")
+                        .HasColumnName("cancelled_by");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("created_by");
+
+                    b.Property<string>("Details")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("details");
+
+                    b.Property<DateOnly>("LastDay")
+                        .HasColumnType("date")
+                        .HasColumnName("last_day");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("note");
+
+                    b.Property<decimal>("Released")
+                        .HasPrecision(14, 2)
+                        .HasColumnType("numeric(14,2)")
+                        .HasColumnName("released");
+
+                    b.Property<string>("StudentId")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("student_id");
+
+                    b.Property<decimal>("WrittenOff")
+                        .HasPrecision(14, 2)
+                        .HasColumnType("numeric(14,2)")
+                        .HasColumnName("written_off");
+
+                    b.HasKey("Id")
+                        .HasName("pk_student_withdrawals");
+
+                    b.HasIndex("CreatedBy")
+                        .HasDatabaseName("ix_student_withdrawals_created_by");
+
+                    b.HasIndex("StudentId")
+                        .HasDatabaseName("ix_student_withdrawals_student_id");
+
+                    b.ToTable("student_withdrawals", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_student_withdrawals_amounts", "written_off >= 0 and released >= 0");
+
+                            t.HasCheckConstraint("ck_student_withdrawals_cancel", "(cancelled_at is null) = (cancelled_by is null)");
                         });
                 });
 
@@ -9026,6 +9111,12 @@ namespace SchoolLms.Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_payment_allocations_payments_payment_id");
+
+                    b.HasOne("SchoolLms.Domain.StudentWithdrawal", null)
+                        .WithMany()
+                        .HasForeignKey("WithdrawalId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_payment_allocations_student_withdrawals_withdrawal_id");
                 });
 
             modelBuilder.Entity("SchoolLms.Domain.PayrollAdjustment", b =>
@@ -9291,6 +9382,23 @@ namespace SchoolLms.Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("fk_student_subscriptions_students_student_id");
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.StudentWithdrawal", b =>
+                {
+                    b.HasOne("SchoolLms.Domain.AppUser", null)
+                        .WithMany()
+                        .HasForeignKey("CreatedBy")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_student_withdrawals_users_created_by");
+
+                    b.HasOne("SchoolLms.Domain.Student", null)
+                        .WithMany()
+                        .HasForeignKey("StudentId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_student_withdrawals_students_student_id");
                 });
 
             modelBuilder.Entity("SchoolLms.Domain.StudyGroup", b =>

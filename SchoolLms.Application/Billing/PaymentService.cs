@@ -708,7 +708,7 @@ public sealed class PaymentService(
         var allocations = await (from a in db.PaymentAllocations.AsNoTracking()
                                  join i in db.Invoices.AsNoTracking() on a.InvoiceId equals i.Id
                                  join c in db.FeeCategories.AsNoTracking() on i.CategoryId equals c.Id
-                                 where ids.Contains(a.PaymentId)
+                                 where ids.Contains(a.PaymentId) && a.Kind == PaymentAllocationKind.Normal
                                  select new
                                  {
                                      a.Id,

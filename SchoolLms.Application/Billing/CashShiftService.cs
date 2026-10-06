@@ -453,7 +453,7 @@ public sealed class CashShiftService(IAppDbContext db) : ICashShiftService
             join payment in db.Payments.AsNoTracking() on allocation.PaymentId equals payment.Id
             join invoice in db.Invoices.AsNoTracking() on allocation.InvoiceId equals invoice.Id
             join category in db.FeeCategories.AsNoTracking() on invoice.CategoryId equals category.Id
-            where payment.CashShiftId == shiftId
+            where payment.CashShiftId == shiftId && allocation.Kind == PaymentAllocationKind.Normal
             group allocation.Amount by new { category.Id, category.Code, category.Name } into g
             orderby g.Key.Code
             select new ZReportCategoryRowDto(g.Key.Id, g.Key.Code, g.Key.Name, g.Sum()))

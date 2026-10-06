@@ -252,6 +252,42 @@ public static class InvoiceAdjustmentKind
     public const string Sick = "sick";
     /// <summary>A catalog discount reaching a month that was already invoiced.</summary>
     public const string Discount = "discount";
+    /// <summary>
+    /// "Chiqib ketdi": the part of a month the student did not study, and every month after —
+    /// written off when the student leaves (<see cref="StudentWithdrawal"/>).
+    /// </summary>
+    public const string Withdrawal = "withdrawal";
+}
+
+/// <summary>
+/// O'quvchi maktabdan chiqib ketdi (mijoz, 2026-10-06): abonementlar oxirgi o'qigan kundan yopiladi,
+/// o'sha oy o'qilgan dars kunlari bo'yicha olib qolinadi, qolgani va keyingi oylar hisobdan
+/// chiqariladi. Kassaga tegmaydi.
+///
+/// <para>
+/// Bitta amal = bitta qator; uning <see cref="Id"/> si hisobdan chiqarish yozuvlarining
+/// (<see cref="InvoiceAdjustment.GroupId"/>) va bo'shatilgan taqsimotlarning
+/// (<see cref="PaymentAllocation.WithdrawalId"/>) umumiy kaliti. <see cref="Details"/> — bekor qilish
+/// uchun abonementlarning oldingi holati (JSON).
+/// </para>
+/// </summary>
+public class StudentWithdrawal
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public string StudentId { get; set; } = string.Empty;
+    /// <summary>Oxirgi o'qigan kun (shu kun o'qilgan hisoblanadi).</summary>
+    public DateOnly LastDay { get; set; }
+    public string? Note { get; set; }
+    /// <summary>Jami hisobdan chiqarilgan summa.</summary>
+    public decimal WrittenOff { get; set; }
+    /// <summary>Ortiqcha to'langan va avansga qaytarilgan summa.</summary>
+    public decimal Released { get; set; }
+    /// <summary>JSON: abonementlarning oldingi <c>EndsOn</c>/<c>AccrueFrom</c> qiymatlari.</summary>
+    public string Details { get; set; } = "{}";
+    public string CreatedBy { get; set; } = string.Empty;
+    public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset? CancelledAt { get; set; }
+    public string? CancelledBy { get; set; }
 }
 
 /// <summary>
@@ -387,8 +423,27 @@ public class PaymentAllocation
     public Guid Id { get; set; } = Guid.NewGuid();
     public Guid PaymentId { get; set; }
     public Guid InvoiceId { get; set; }
-    /// <summary>Shu hisob-fakturaga yo'naltirilgan qism (&gt; 0).</summary>
+    /// <summary>
+    /// Shu hisob-fakturaga yo'naltirilgan qism: <see cref="PaymentAllocationKind.Normal"/> da &gt; 0,
+    /// <see cref="PaymentAllocationKind.Release"/> da &lt; 0 (taqsimotning bir qismi qaytarildi).
+    /// </summary>
     public decimal Amount { get; set; }
+    /// <summary><see cref="PaymentAllocationKind"/>.</summary>
+    public string Kind { get; set; } = PaymentAllocationKind.Normal;
+    /// <summary>Bo'shatish qatori qaysi "chiqib ketdi" amaliga tegishli.</summary>
+    public Guid? WithdrawalId { get; set; }
+}
+
+/// <summary>
+/// Taqsimot jadvali faqat qo'shiladi. Taqsimotni kamaytirish — manfiy "release" qatori: oy hisobdan
+/// chiqarilganda (<see cref="StudentWithdrawal"/>) unga to'langan ortiqcha pul to'lovning
+/// taqsimlanmagan qismiga, ya'ni avansga qaytadi. Yig'indilar (qarz, avans) uni o'zi hisobga oladi;
+/// to'lovning o'z paytidagi tarkibini ko'rsatadigan joylar (chek, Z-hisobot, kunlik kassa) uni o'tkazib yuboradi.
+/// </summary>
+public static class PaymentAllocationKind
+{
+    public const string Normal = "normal";
+    public const string Release = "release";
 }
 
 /// <summary>

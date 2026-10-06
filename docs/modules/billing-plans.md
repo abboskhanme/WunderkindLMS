@@ -158,6 +158,32 @@ charge (tuition + bus/dorm). Migration `SubscriptionAccrueFrom` moves them to `s
 have no September money anywhere and stay on 1 October). Screens show "Hisob: 1-oktabrdan" under the
 start date. A plan re-price carries `accrue_from` into the new tail only when it is still ahead.
 
+## 10.2 Student leaves mid-month — "Chiqib ketdi" (client, 2026-10-06)
+
+A month already invoiced for a student who left must not stay as debt, must not be "paid" with
+invented cash, and must not block archiving. From the **last day studied** (≤ today):
+
+- **leave month:** `keep = payable × studied lesson days ÷ lesson days of the month`; lesson days
+  follow the abonement schedule, "Butun oy" counts the school week Mon–Sat, holidays excluded;
+- **later months:** keep 0;
+- **write-off** = payable − keep → `invoice_adjustments` row, kind `withdrawal` (ledger: debit
+  revenue, credit receivable — no cash row);
+- **paid beyond keep** → negative `payment_allocations` rows, kind `release` (append-only; the
+  money goes back to the payment's unallocated part = advance), then `AdvanceAllocator` lets it
+  close the student's other debts first; what is left is refundable;
+- the selected subscriptions end on the last day (one not started yet: ends on its start with
+  `accrue_from` past it), so accrual never writes those months again.
+
+One action = one `student_withdrawals` row (group id of its adjustments and releases, previous
+subscription state in `details`). Cancelling within 30 days reverses the adjustments, restores the
+subscriptions (refused if one was changed since) and lets the advance pay the months back; skipped
+months are accrued. Release rows are hidden where a payment is shown as it was taken (receipt
+reprint, Z-report, cash day, cash statement, payment details, journal categories).
+
+API (`Roles.FinanceStaff`, writes `ManageSubscriptions`): `GET|POST
+/api/admin/billing/students/{id}/withdrawals`, `POST …/preview`, `POST …/{withdrawalId}/cancel`.
+UI: student profile ⋮ → "Chiqib ketdi — abonement"; Abonement tab shows standing ones with cancel.
+
 ## 11. API
 
 - `GET/POST discount-types`, `PUT discount-types/{id}` (`{ name, percent, amount, isActive }` →

@@ -13,7 +13,7 @@ import {
   type StudentPayload,
 } from '@/api/services/students'
 import { getStudentStatuses, setStudentStatus, type StudentStatusTag } from '@/api/services/studentStatuses'
-import { cn } from '@/lib/utils'
+import { cn, formatMoney } from '@/lib/utils'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { CredentialsBox } from '@/components/ui/CredentialsBox'
@@ -35,6 +35,8 @@ import { SubscriptionsTab } from '@/pages/admin/students/profile/SubscriptionsTa
 import { useBillingAccess } from '@/pages/admin/billing/access'
 import { ProfileError } from '@/pages/admin/students/profile/ProfileUi'
 import { ProfileSidebar } from '@/pages/admin/students/profile/ProfileSidebar'
+import { WithdrawModal } from '@/pages/admin/students/profile/WithdrawModal'
+import { WithdrawalNotices } from '@/pages/admin/students/profile/WithdrawalNotices'
 import { hasFinanceAccess } from '@/pages/admin/billing/access'
 import { getPortalFinance } from '@/api/services/portalFinance'
 import { TimetableTab } from '@/pages/admin/students/profile/TimetableTab'
@@ -110,6 +112,9 @@ export function StudentDetailPage() {
   const [passwordOpen, setPasswordOpen] = useState(false)
   const [credentials, setCredentials] = useState<Credentials | null>(null)
   const [payOpen, setPayOpen] = useState(false)
+  const [withdrawOpen, setWithdrawOpen] = useState(false)
+  // "Chiqib ketdi" amalidan keyin abonementlar va ularning yozuvlari qayta yuklansin.
+  const [withdrawKey, setWithdrawKey] = useState(0)
   // To'lovdan keyin "To'lovlar" tab'i qaytadan yuklanishi uchun.
   const [financeKey, setFinanceKey] = useState(0)
   const { user } = useAuth()
@@ -254,6 +259,7 @@ export function StudentDetailPage() {
             onPassword={openPassword}
             onArchive={() => card && setArchiveTargets([card.student])}
             onRestore={restore}
+            onWithdraw={canManageSubscriptions && !card?.student.isArchived ? () => setWithdrawOpen(true) : undefined}
           />
         </aside>
 
@@ -280,7 +286,20 @@ export function StudentDetailPage() {
       {tab === 'finance' && <FinanceView key={financeKey} studentId={data.id} embedded />}
 
       {tab === 'subscriptions' && canManageSubscriptions && (
+        <WithdrawalNotices
+          studentId={data.id}
+          reloadKey={withdrawKey}
+          onChanged={() => {
+            setBanner("Chiqib ketish bekor qilindi — qarz va abonement qaytdi")
+            setFinanceKey((k) => k + 1)
+            setWithdrawKey((k) => k + 1)
+            load()
+          }}
+        />
+      )}
+      {tab === 'subscriptions' && canManageSubscriptions && (
         <SubscriptionsTab
+          key={withdrawKey}
           studentId={data.id}
           studentName={data.fullName}
           className={data.className}
@@ -332,6 +351,26 @@ export function StudentDetailPage() {
             setPayOpen(false)
             setFinanceKey((n) => n + 1)
             setBanner("To'lov qabul qilindi")
+          }}
+        />
+      )}
+      {withdrawOpen && (
+        <WithdrawModal
+          open
+          studentId={data.id}
+          studentName={data.fullName}
+          onClose={() => setWithdrawOpen(false)}
+          onDone={(result) => {
+            setWithdrawOpen(false)
+            setBanner(
+              result.totalWriteOff > 0
+                ? `Abonement bekor qilindi: ${formatMoney(result.totalWriteOff)} hisobdan chiqarildi. Balans: ${formatMoney(result.balanceAfter)}`
+                : 'Abonement oxirgi o\'qigan kundan yopildi',
+            )
+            setFinanceKey((k) => k + 1)
+            setWithdrawKey((k) => k + 1)
+            setTab('subscriptions')
+            load()
           }}
         />
       )}

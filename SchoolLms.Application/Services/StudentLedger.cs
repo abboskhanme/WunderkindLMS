@@ -86,7 +86,7 @@ public static class StudentLedger
             : (await (
                     from a in db.PaymentAllocations.AsNoTracking()
                     join inv in db.Invoices.AsNoTracking() on a.InvoiceId equals inv.Id
-                    where paymentIds.Contains(a.PaymentId)
+                    where paymentIds.Contains(a.PaymentId) && a.Kind == PaymentAllocationKind.Normal
                     select new { a.PaymentId, inv.PeriodMonth })
                 .Distinct()
                 .ToListAsync())

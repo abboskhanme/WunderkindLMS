@@ -597,7 +597,7 @@ public sealed class TransactionJournalQuery(IAppDbContext db)
         var categories = await (from a in db.PaymentAllocations.AsNoTracking()
                                 join i in db.Invoices.AsNoTracking() on a.InvoiceId equals i.Id
                                 join c in db.FeeCategories.AsNoTracking() on i.CategoryId equals c.Id
-                                where ids.Contains(a.PaymentId)
+                                where ids.Contains(a.PaymentId) && a.Kind == PaymentAllocationKind.Normal
                                 select new { a.PaymentId, c.Code, c.Name })
                                .Distinct()
                                .ToListAsync(ct);
