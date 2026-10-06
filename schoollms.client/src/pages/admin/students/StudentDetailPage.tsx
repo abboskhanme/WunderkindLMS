@@ -1,9 +1,8 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import {
-  Archive, ArrowLeft, Award, CalendarCheck, CalendarDays, FileSignature,
-  GraduationCap, History, KeyRound, MapPin, MessageSquare, Pencil, Phone,
-  Repeat, RotateCcw, ShieldAlert, User, Users, Wallet,
+  ArrowLeft, Award, BarChart3, CalendarCheck, CalendarDays, ChevronDown, FileSignature,
+  History, MapPin, MessageSquare, Repeat, ShieldAlert, User, Users, Wallet,
 } from 'lucide-react'
 import { useAuth } from '@/context/auth-context'
 import type { Credentials, Student } from '@/types'
@@ -14,7 +13,7 @@ import {
   type StudentPayload,
 } from '@/api/services/students'
 import { getStudentStatuses, setStudentStatus, type StudentStatusTag } from '@/api/services/studentStatuses'
-import { cn, formatDate } from '@/lib/utils'
+import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { CredentialsBox } from '@/components/ui/CredentialsBox'
@@ -22,7 +21,6 @@ import { Loader } from '@/components/ui/Loader'
 import { Modal } from '@/components/ui/Modal'
 import { FinanceView } from '@/pages/portal/FinanceView'
 import { ArchiveStudentsModal } from '@/pages/admin/students/ArchiveStudentsModal'
-import { StatusChip } from '@/pages/admin/students/StatusChip'
 import { StudentFormModal } from '@/pages/admin/students/StudentFormModal'
 import { ActivityTab } from '@/pages/admin/students/profile/ActivityTab'
 import { AttendanceTab } from '@/pages/admin/students/profile/AttendanceTab'
@@ -36,10 +34,12 @@ import { OverviewTab } from '@/pages/admin/students/profile/OverviewTab'
 import { SubscriptionsTab } from '@/pages/admin/students/profile/SubscriptionsTab'
 import { useBillingAccess } from '@/pages/admin/billing/access'
 import { ProfileError } from '@/pages/admin/students/profile/ProfileUi'
+import { ProfileSidebar } from '@/pages/admin/students/profile/ProfileSidebar'
+import { hasFinanceAccess } from '@/pages/admin/billing/access'
+import { getPortalFinance } from '@/api/services/portalFinance'
 import { TimetableTab } from '@/pages/admin/students/profile/TimetableTab'
 import { canUseCashDesk } from '@/pages/cashier/cashDeskRoles'
 import { StudentPaymentModal } from '@/pages/cashier/StudentPaymentModal'
-import { formatPhone } from '@/lib/phone'
 
 /**
  * O'quvchi kartochkasi — docs/modules/students-parity.md §2.3 (S-10).
@@ -68,28 +68,32 @@ type TabId =
   | 'overview' | 'timetable' | 'finance' | 'subscriptions' | 'memberships' | 'attendance'
   | 'certificates' | 'contracts' | 'comments' | 'discipline' | 'location' | 'activity'
 
-const tabs: { id: TabId; label: string; icon: typeof User }[] = [
-  { id: 'overview', label: 'Umumiy', icon: User },
-  { id: 'timetable', label: 'Jadval', icon: CalendarDays },
-  { id: 'finance', label: "To'lovlar", icon: Wallet },
-  { id: 'subscriptions', label: 'Abonementlar', icon: Repeat },
+type TabDef = { id: TabId; label: string; icon: typeof User }
+
+/**
+ * Tuzilish EduSchool'dagidek (mijoz, 2026-10-06): to'rtta asosiy tab doim ko'rinadi, qolgani
+ * "Ko'proq" ichida. Ko'rinish (rang, komponentlar) o'zimizniki — CLAUDE.md.
+ */
+const primaryTabs: TabDef[] = [
+  { id: 'timetable', label: 'Dars jadvali', icon: CalendarDays },
+  { id: 'finance', label: 'Tranzaksiya tarixi', icon: Wallet },
+  { id: 'subscriptions', label: 'Abonement', icon: Repeat },
+  { id: 'comments', label: 'Izoh', icon: MessageSquare },
+]
+
+const moreTabs: TabDef[] = [
+  { id: 'overview', label: "O'zlashtirish ko'rsatkichlari", icon: BarChart3 },
   { id: 'memberships', label: 'Sinf va guruhlar', icon: Users },
   { id: 'attendance', label: 'Davomat', icon: CalendarCheck },
   { id: 'certificates', label: 'Sertifikatlar', icon: Award },
   { id: 'contracts', label: 'Shartnomalar', icon: FileSignature },
-  { id: 'comments', label: 'Izohlar', icon: MessageSquare },
-  { id: 'discipline', label: 'Intizom', icon: ShieldAlert },
+  { id: 'discipline', label: 'Xulq-atvor', icon: ShieldAlert },
   { id: 'location', label: 'Manzil', icon: MapPin },
-  { id: 'activity', label: 'Faoliyat tarixi', icon: History },
+  { id: 'activity', label: 'Harakat tarixi', icon: History },
 ]
 
 const errorText = (e: unknown, fallback: string) =>
   (e as { response?: { data?: { message?: string } } })?.response?.data?.message ?? fallback
-
-function initials(name: string): string {
-  const parts = name.trim().split(/\s+/)
-  return ((parts[0]?.[0] ?? '') + (parts[1]?.[0] ?? '')).toUpperCase() || '?'
-}
 
 export function StudentDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -98,7 +102,7 @@ export function StudentDetailPage() {
   const [statuses, setStatuses] = useState<StudentStatusTag[]>([])
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)
-  const [tab, setTab] = useState<TabId>('overview')
+  const [tab, setTab] = useState<TabId>('timetable')
   const [banner, setBanner] = useState<string | null>(null)
 
   const [editOpen, setEditOpen] = useState(false)
@@ -112,7 +116,10 @@ export function StudentDetailPage() {
   const canTakePayment = canUseCashDesk(user)
   // Abonementlar — moliya rollari (admin, direktor); server ham shu chegarada.
   const { canManageSubscriptions } = useBillingAccess()
-  const visibleTabs = tabs.filter((t) => t.id !== 'subscriptions' || canManageSubscriptions)
+  const visiblePrimary = primaryTabs.filter((t) => t.id !== 'subscriptions' || canManageSubscriptions)
+  // Balans — faqat moliya huquqi bor xodimga (server ham shu chegarada). Boshqalarda qator yo'q.
+  const canSeeBalance = hasFinanceAccess(user)
+  const [balance, setBalance] = useState<number | null>(null)
 
   const load = useCallback(() => {
     if (!id) return
@@ -129,6 +136,21 @@ export function StudentDetailPage() {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- sahifa ochilganda o'quvchi ma'lumoti yuklanadi (maqsadli, loyihadagi mavjud naqsh)
     load()
   }, [load])
+
+  useEffect(() => {
+    if (!id || !canSeeBalance) return
+    let active = true
+    getPortalFinance(id)
+      .then((f) => {
+        if (active) setBalance(f.credit - f.debt)
+      })
+      .catch(() => {
+        if (active) setBalance(null)
+      })
+    return () => {
+      active = false
+    }
+  }, [id, canSeeBalance, financeKey])
 
   useEffect(() => {
     let active = true
@@ -206,8 +228,6 @@ export function StudentDetailPage() {
       </div>
     )
 
-  const archived = card?.student.isArchived ?? false
-
   return (
     <div className="space-y-6">
       <BackLink />
@@ -218,127 +238,35 @@ export function StudentDetailPage() {
         </div>
       )}
 
-      {/* ---------- Sarlavha (chap panel) ---------- */}
-      <Card className="flex flex-wrap items-start gap-5">
-        <div className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-brand-50 text-2xl font-semibold text-brand-600">
-          {data.photoUrl ? (
-            <img src={data.photoUrl} alt={data.fullName} className="h-full w-full object-cover" />
-          ) : (
-            initials(data.fullName)
-          )}
-        </div>
+      <div className="grid items-start gap-6 lg:grid-cols-[320px_minmax(0,1fr)]">
+        {/* ---------- Chap ustun: doimiy kartochka ---------- */}
+        <aside className="lg:sticky lg:top-4">
+          <ProfileSidebar
+            data={data}
+            card={card}
+            statuses={statuses}
+            balance={canSeeBalance ? balance : null}
+            canTakePayment={canTakePayment}
+            onStatusChange={changeStatus}
+            onPay={() => setPayOpen(true)}
+            onContract={() => setTab('contracts')}
+            onEdit={() => setEditOpen(true)}
+            onPassword={openPassword}
+            onArchive={() => card && setArchiveTargets([card.student])}
+            onRestore={restore}
+          />
+        </aside>
 
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <h1 className="text-2xl font-semibold text-slate-800">{data.fullName}</h1>
-            {card?.statusName && <StatusChip name={card.statusName} color={card.statusColor} />}
-            {archived && (
-              <span className="rounded-md bg-slate-200 px-2 py-0.5 text-xs font-medium text-slate-600">
-                Arxivda
-                {card?.student.archivedAt ? ` · ${formatDate(card.student.archivedAt)}` : ''}
-              </span>
-            )}
+        {/* ---------- O'ng tomon: tab'lar ---------- */}
+        <div className="min-w-0 space-y-4">
+          <div className="flex flex-wrap gap-1 rounded-xl bg-slate-100 p-1">
+            {visiblePrimary.map((t) => (
+              <TabButton key={t.id} def={t} active={tab === t.id} onClick={() => setTab(t.id)} />
+            ))}
+            <MoreTabs tabs={moreTabs} active={tab} onPick={setTab} />
           </div>
 
-          <div className="mt-1 flex flex-wrap gap-x-5 gap-y-1 text-sm text-slate-500">
-            <span className="inline-flex items-center gap-1.5">
-              <GraduationCap className="h-4 w-4 text-slate-400" /> {data.className || '—'}
-            </span>
-            {data.homeroomTeacher && (
-              <span className="inline-flex items-center gap-1.5">
-                <User className="h-4 w-4 text-slate-400" /> {data.homeroomTeacher}
-              </span>
-            )}
-            {data.parentFullName && (
-              <span className="inline-flex items-center gap-1.5">
-                <User className="h-4 w-4 text-slate-400" /> Ota-ona: {data.parentFullName}
-              </span>
-            )}
-            {(card?.phone || data.parentPhone) && (
-              <span className="inline-flex items-center gap-1.5">
-                <Phone className="h-4 w-4 text-slate-400" /> {formatPhone(card?.phone || data.parentPhone)}
-              </span>
-            )}
-            {card && (
-              <span className="inline-flex items-center gap-1.5">
-                <CalendarDays className="h-4 w-4 text-slate-400" />
-                Maktabda {card.activeDays} kun
-              </span>
-            )}
-          </div>
-
-          {/* Arxiv sababi — arxivlangan bolada eng kerakli ma'lumot. */}
-          {archived && card?.student.archiveReason && (
-            <p className="mt-2 text-sm text-slate-500">Sabab: {card.student.archiveReason}</p>
-          )}
-        </div>
-
-        {/* ---------- Amallar ---------- */}
-        <div className="flex flex-wrap items-center gap-2">
-          {statuses.length > 0 && card && (
-            <select
-              value={card.statusId ?? ''}
-              onChange={(e) => changeStatus(e.target.value)}
-              title="Holat tagi"
-              className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-brand-400"
-            >
-              <option value="">Holatsiz</option>
-              {statuses.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name}
-                </option>
-              ))}
-            </select>
-          )}
-          {canTakePayment && !archived && (
-            <Button onClick={() => setPayOpen(true)} className="px-5 py-2.5 text-base">
-              <Wallet className="h-5 w-5" /> To'lov qilish
-            </Button>
-          )}
-          <Button variant="secondary" onClick={() => setTab('contracts')}>
-            <FileSignature className="h-4 w-4" /> Shartnoma
-          </Button>
-          <Button variant="secondary" onClick={openPassword}>
-            <KeyRound className="h-4 w-4" /> Parol
-          </Button>
-          {card && (
-            <Button variant="secondary" onClick={() => setEditOpen(true)}>
-              <Pencil className="h-4 w-4" /> Tahrirlash
-            </Button>
-          )}
-          {card && !archived && (
-            <Button variant="secondary" onClick={() => setArchiveTargets([card.student])}>
-              <Archive className="h-4 w-4" /> Arxivlash
-            </Button>
-          )}
-          {archived && (
-            <Button variant="secondary" onClick={restore}>
-              <RotateCcw className="h-4 w-4" /> Qaytarish
-            </Button>
-          )}
-        </div>
-      </Card>
-
-      {/* ---------- Tab'lar ---------- */}
-      <div className="overflow-x-auto">
-        <div className="flex w-max gap-1 rounded-xl bg-slate-100 p-1">
-          {visibleTabs.map((t) => (
-            <button
-              key={t.id}
-              type="button"
-              onClick={() => setTab(t.id)}
-              className={cn(
-                'inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-medium transition-colors',
-                tab === t.id ? 'bg-white text-brand-700 shadow-sm' : 'text-slate-500 hover:text-slate-700',
-              )}
-            >
-              <t.icon className="h-4 w-4" /> {t.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {tab === 'overview' && <OverviewTab data={data} card={card} />}
+      {tab === 'overview' && <OverviewTab data={data} card={card} showPersonal={false} />}
 
       {tab === 'timetable' && <TimetableTab studentId={data.id} />}
 
@@ -385,6 +313,8 @@ export function StudentDetailPage() {
         ))}
 
       {tab === 'activity' && <ActivityTab studentId={data.id} />}
+        </div>
+      </div>
 
       {/* ---------- Oynalar ---------- */}
       {payOpen && (
@@ -429,6 +359,82 @@ export function StudentDetailPage() {
       >
         <CredentialsBox credentials={credentials} loading={!credentials} onReset={resetPassword} />
       </Modal>
+    </div>
+  )
+}
+
+function TabButton({ def, active, onClick }: { def: TabDef; active: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        'inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-medium transition-colors',
+        active ? 'bg-white text-brand-700 shadow-sm' : 'text-slate-500 hover:text-slate-700',
+      )}
+    >
+      <def.icon className="h-4 w-4" /> {def.label}
+    </button>
+  )
+}
+
+/** "Ko'proq" — qolgan tab'lar. Ichidagi biri ochiq bo'lsa tugmada uning nomi turadi. */
+function MoreTabs({ tabs, active, onPick }: { tabs: TabDef[]; active: TabId; onPick: (id: TabId) => void }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+  const current = tabs.find((t) => t.id === active)
+
+  useEffect(() => {
+    if (!open) return
+    const onDown = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false)
+    document.addEventListener('mousedown', onDown)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [open])
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        aria-haspopup="menu"
+        className={cn(
+          'inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-medium transition-colors',
+          current ? 'bg-white text-brand-700 shadow-sm' : 'text-slate-500 hover:text-slate-700',
+        )}
+      >
+        {current ? <current.icon className="h-4 w-4" /> : null}
+        {current ? current.label : "Ko'proq"}
+        <ChevronDown className={cn('h-4 w-4 transition-transform', open && 'rotate-180')} />
+      </button>
+      {open && (
+        <div role="menu" className="absolute right-0 z-20 mt-1 w-64 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-lg">
+          {tabs.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                setOpen(false)
+                onPick(t.id)
+              }}
+              className={cn(
+                'flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-slate-50',
+                t.id === active ? 'font-semibold text-brand-700' : 'text-slate-700',
+              )}
+            >
+              <t.icon className="h-4 w-4 text-slate-400" /> {t.label}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

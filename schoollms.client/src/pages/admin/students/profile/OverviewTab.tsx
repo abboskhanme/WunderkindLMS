@@ -88,9 +88,11 @@ interface Props {
   data: StudentNotebook
   /** Kartochka ma'lumoti — telefon, til, login, hujjat. Kelmagan bo'lsa qatorlar chiqmaydi. */
   card: StudentCard | null
+  /** false — "Shaxsiy ma'lumotlar" bo'limi yo'q (kartochka sahifasida u chap ustunda turadi). */
+  showPersonal?: boolean
 }
 
-export function OverviewTab({ data, card }: Props) {
+export function OverviewTab({ data, card, showPersonal = true }: Props) {
   /** Oylik baholash jadvalida tanlangan oy ("YYYY-MM"). */
   const [evalMonth, setEvalMonth] = useState('')
   /** Fan baholari dinamikasida tanlangan chorak ("1".."4"). */
@@ -193,6 +195,7 @@ export function OverviewTab({ data, card }: Props) {
   return (
     <div className="space-y-6">
       {/* Shaxsiy ma'lumotlar */}
+      {showPersonal && (
       <ProfileSection title="Shaxsiy ma'lumotlar" icon={User}>
         <div className="grid gap-x-6 gap-y-4 sm:grid-cols-2 lg:grid-cols-3">
           <InfoRow icon={User} label="Jinsi" value={genderLabels[data.gender as 'male' | 'female'] ?? data.gender} />
@@ -251,6 +254,7 @@ export function OverviewTab({ data, card }: Props) {
           </div>
         )}
       </ProfileSection>
+      )}
 
       {/* Stat kartalar */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
