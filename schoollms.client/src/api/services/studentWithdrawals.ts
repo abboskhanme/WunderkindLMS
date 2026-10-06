@@ -36,6 +36,8 @@ export interface WithdrawalLine {
   keep: number
   writeOff: number
   released: number
+  /** Ketgan oyning kasallik chegirmasi — qoladigan summadan to'liq ayiriladi. */
+  sickDeduction: number
 }
 
 export interface WithdrawalPreview {

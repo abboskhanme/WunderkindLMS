@@ -180,6 +180,11 @@ export function WithdrawModal({ open, studentId, studentName, onClose, onDone }:
                             {l.studiedDays} / {l.lessonDays} dars kuni o'qidi
                           </span>
                         )}
+                        {l.sickDeduction > 0 && (
+                          <span className="block text-xs text-slate-400">
+                            kasallik chegirmasi −{formatMoney(l.sickDeduction)} hisobga olindi
+                          </span>
+                        )}
                       </td>
                       <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-slate-600">{formatMoney(l.payable)}</td>
                       <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-slate-700">{formatMoney(l.keep)}</td>

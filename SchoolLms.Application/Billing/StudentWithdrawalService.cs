@@ -12,8 +12,12 @@ namespace SchoolLms.Application.Billing;
 //  A student leaves mid-month, but the month (and maybe the next) was already invoiced. Marking it
 //  paid would invent cash; archiving is refused while debt stands. So, from the last day studied:
 //
-//    leave month:  keep  = payable × studied lesson days ÷ lesson days of the month
+//    leave month:  keep  = max(0, (payable + sick) × studied lesson days ÷ lesson days of the month − sick)
 //    later months: keep  = 0
+//
+//  `sick` is the month's standing sickness discount. Its days carry no dates, but they were days
+//  the student missed while still enrolled, so they come off what stays in full — prorating them
+//  would bill a sick child for the very days the discount was given for.
 //    write-off     = payable − keep         (an `invoice_adjustments` row, kind "withdrawal")
 //    released      = max(0, paid − keep)   (negative "release" allocations → the payment's
 //                                           unallocated part, i.e. advance, refundable)
@@ -24,8 +28,10 @@ namespace SchoolLms.Application.Billing;
 //  (AdvanceAllocator — the same oldest-month rule as a payment). No cash row, no cash-box change.
 //
 //  One action = one `student_withdrawals` row, the group id of its adjustments and releases.
-//  Cancelling (30 days) reverses the adjustments, restores the subscriptions and lets the advance
-//  close the debt again — released money is not "un-released", it simply pays the month back.
+//  Cancelling (30 days) reverses the adjustments, restores the subscriptions and puts the released
+//  money back on the very invoices and payments it came from (as far as it is still unspent and not
+//  refunded), so each receipt's split by category is what it was. Whatever cannot go back that way
+//  is left to the advance rule.
 // ===========================================================================
 
 public record WithdrawalRequest(DateOnly LastDay, IReadOnlyList<Guid>? SubscriptionIds = null, string? Note = null);
@@ -33,10 +39,13 @@ public record WithdrawalRequest(DateOnly LastDay, IReadOnlyList<Guid>? Subscript
 public record WithdrawalSubscriptionDto(
     Guid Id, string CategoryName, string? PlanName, decimal MonthlyAmount, DateOnly StartsOn, DateOnly? EndsOn, bool Selected);
 
-/// <summary>One invoice the action touches. <see cref="StudiedDays"/>/<see cref="LessonDays"/> only matter in the leave month.</summary>
+/// <summary>
+/// One invoice the action touches. <see cref="StudiedDays"/>/<see cref="LessonDays"/> only matter in the leave
+/// month; <see cref="SickDeduction"/> is the month's sickness discount taken off what stays.
+/// </summary>
 public record WithdrawalLineDto(
     Guid InvoiceId, string Month, string CategoryName, decimal Payable, decimal Paid,
-    int LessonDays, int StudiedDays, decimal Keep, decimal WriteOff, decimal Released);
+    int LessonDays, int StudiedDays, decimal Keep, decimal WriteOff, decimal Released, decimal SickDeduction = 0m);
 
 public record WithdrawalPreviewDto(
     DateOnly LastDay,
@@ -260,7 +269,8 @@ public sealed class StudentWithdrawalService(IAppDbContext db, AuditService audi
             $"Chiqib ketish bekor qilindi ({withdrawal.LastDay:dd.MM.yyyy}): {AuditService.Money(withdrawal.WrittenOff)} so'm qarz qaytdi",
             studentId: studentId);
         await db.SaveChangesAsync(ct);
-        // The released money (if still not refunded) pays the restored months back.
+        // The released money goes back where it came from; anything it cannot cover is left to the advance rule.
+        await PutBackReleasesAsync(studentId, withdrawalId, invoices, paid, ct);
         await AdvanceAllocator.ApplyAsync(db, studentId, ct);
         await tx.CommitAsync(ct);
 
@@ -311,6 +321,13 @@ public sealed class StudentWithdrawalService(IAppDbContext db, AuditService audi
             .Where(p => planIds.Contains(p.Id))
             .ToDictionaryAsync(p => p.Id, p => p.DaysPerWeek, ct);
         var holidays = await LessonDays.HolidaysAsync(db, leaveMonth, ct);
+        var leaveIds = touched.Where(i => i.PeriodMonth == leaveMonth).Select(i => i.Id).ToList();
+        var sickByInvoice = await db.InvoiceAdjustments.AsNoTracking()
+            .Where(a => leaveIds.Contains(a.InvoiceId) && a.Kind == InvoiceAdjustmentKind.Sick && a.ReversalOf == null
+                        && !db.InvoiceAdjustments.Any(r => r.ReversalOf == a.Id))
+            .GroupBy(a => a.InvoiceId)
+            .Select(g => new { g.Key, Total = g.Sum(a => a.Amount) })
+            .ToDictionaryAsync(x => x.Key, x => x.Total, ct);
 
         var lines = new List<WithdrawalLineDto>();
         foreach (var invoice in touched)
@@ -318,7 +335,7 @@ public sealed class StudentWithdrawalService(IAppDbContext db, AuditService audi
             var payable = invoice.Amount - invoice.Discount;
             var already = paid.GetValueOrDefault(invoice.Id);
             int lessonDays = 0, studied = 0;
-            decimal keep = 0m;
+            decimal keep = 0m, sick = 0m;
             if (invoice.PeriodMonth == leaveMonth)
             {
                 var monthEnd = leaveMonth.AddMonths(1).AddDays(-1);
@@ -329,13 +346,16 @@ public sealed class StudentWithdrawalService(IAppDbContext db, AuditService audi
                 lessonDays = Math.Max(1, LessonDays.CountBetween(leaveMonth, monthEnd, perWeek, holidays));
                 var from = sub is not null && sub.StartsOn > leaveMonth ? sub.StartsOn : leaveMonth;
                 studied = Math.Min(lessonDays, LessonDays.CountBetween(from, lastDay, perWeek, holidays));
-                keep = studied >= lessonDays ? payable : decimal.Round(payable * studied / lessonDays, MoneyScale);
+                sick = sickByInvoice.GetValueOrDefault(invoice.Id);
+                keep = studied >= lessonDays
+                    ? payable
+                    : Math.Max(0m, decimal.Round((payable + sick) * studied / lessonDays, MoneyScale) - sick);
             }
             var writeOff = payable - keep;
             if (writeOff <= 0m) continue;
             lines.Add(new WithdrawalLineDto(
                 invoice.Id, invoice.PeriodMonth.ToString("yyyy-MM"), names.GetValueOrDefault(invoice.CategoryId, "—"),
-                payable, already, lessonDays, studied, keep, writeOff, Math.Max(0m, already - keep)));
+                payable, already, lessonDays, studied, keep, writeOff, Math.Max(0m, already - keep), sick));
         }
         return lines;
     }
@@ -368,6 +388,50 @@ public sealed class StudentWithdrawalService(IAppDbContext db, AuditService audi
         }
         if (left > 0m)
             throw BillingRuleException.Conflict("withdrawal_changed", "To'lovlar shu orada o'zgardi — oynani qayta oching.");
+    }
+
+    /// <summary>
+    /// Cancelling: each release goes back onto its own invoice from its own payment — as far as that payment
+    /// still holds it unspent, the advance was not refunded meanwhile, and the restored invoice owes it.
+    /// </summary>
+    private async Task PutBackReleasesAsync(
+        string studentId, Guid withdrawalId, List<Invoice> invoices, Dictionary<Guid, decimal> paid, CancellationToken ct)
+    {
+        var releases = await db.PaymentAllocations.AsNoTracking()
+            .Where(a => a.WithdrawalId == withdrawalId && a.Kind == PaymentAllocationKind.Release)
+            .ToListAsync(ct);
+        if (releases.Count == 0) return;
+
+        var paymentIds = releases.Select(a => a.PaymentId).Distinct().ToList();
+        var unallocated = await db.Payments.AsNoTracking()
+            .Where(p => paymentIds.Contains(p.Id) && p.ReversalOf == null && !db.Payments.Any(r => r.ReversalOf == p.Id))
+            .Select(p => new
+            {
+                p.Id,
+                Left = p.Amount - (db.PaymentAllocations.Where(a => a.PaymentId == p.Id).Sum(a => (decimal?)a.Amount) ?? 0m),
+            })
+            .ToDictionaryAsync(x => x.Id, x => x.Left, ct);
+        // Refunded advance is the parent's now — the same limit a refund is checked against.
+        var budget = await new StudentBalanceQuery(db).AdvanceForAsync(studentId, ct);
+
+        var touched = new HashSet<Guid>();
+        foreach (var release in releases)
+        {
+            var invoice = invoices.SingleOrDefault(i => i.Id == release.InvoiceId);
+            if (invoice is null || budget <= 0m) continue;
+            var take = decimal.Round(Math.Min(
+                Math.Min(-release.Amount, unallocated.GetValueOrDefault(release.PaymentId)),
+                Math.Min(InvoiceAdjustmentService.Remaining(invoice, paid), budget)), MoneyScale);
+            if (take <= 0m) continue;
+            db.PaymentAllocations.Add(new PaymentAllocation { PaymentId = release.PaymentId, InvoiceId = invoice.Id, Amount = take });
+            unallocated[release.PaymentId] -= take;
+            paid[invoice.Id] = paid.GetValueOrDefault(invoice.Id) + take;
+            budget -= take;
+            touched.Add(invoice.Id);
+        }
+        foreach (var invoice in invoices.Where(i => touched.Contains(i.Id)))
+            invoice.Status = InvoiceService.StatusFor(invoice.Amount - invoice.Discount, paid[invoice.Id]);
+        await db.SaveChangesAsync(ct);
     }
 
     private static SubscriptionChange End(StudentSubscription sub, DateOnly lastDay)

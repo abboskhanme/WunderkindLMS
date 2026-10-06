@@ -159,6 +159,78 @@ public class StudentWithdrawalTests(ApiFixture fixture) : IAsyncLifetime
         Assert.Equal("withdrawal_already_cancelled", again.Code);
     }
 
+    /// <summary>
+    /// Kasallik chegirmasi berilgan kunlar ham "o'qilmagan": qoladigan summadan to'liq ayiriladi, proporsional
+    /// emas. 20 kun kasal bo'lsa chegirma o'qilgan qismdan katta — oydan hech narsa qolmaydi.
+    /// </summary>
+    [Theory]
+    [InlineData(3)]
+    [InlineData(20)]
+    public async Task Kasal_bolgan_kunlari_uchun_haq_olinmaydi(int sickDays)
+    {
+        await using var db = NewDb();
+        var world = await NewWorldAsync(db);
+        await AddSubscriptionAsync(db, world, TuitionCategory, 1_600_000m, LastMonth);
+        await Invoices(db).AccrueMonthAsync(LastMonth, world.ActorId);
+        await Invoices(db).AccrueMonthAsync(ThisMonth, world.ActorId);
+        var sick = (await new SickDiscountService(db, new AuditService(db, new HttpContextAccessor())).ApplyAsync(
+            new SickDiscountRequest(world.StudentId, LastMonth.ToString("yyyy-MM"), sickDays), world.CashierId)).Total;
+        Assert.True(sick > 0m);
+        var keep = Math.Max(0m, await ExpectedKeepAsync(db, 1_600_000m) - sick);
+
+        var result = await Withdrawals(db).ApplyAsync(world.StudentId, new WithdrawalRequest(LastDay), world.ActorId);
+
+        var leave = result.Lines.Single(l => l.Month == LastMonth.ToString("yyyy-MM"));
+        Assert.Equal(sick, leave.SickDeduction);
+        Assert.Equal(keep, leave.Keep);
+        await using var check = NewDb();
+        var invoice = await check.Invoices.AsNoTracking()
+            .SingleAsync(i => i.StudentId == world.StudentId && i.PeriodMonth == LastMonth);
+        Assert.Equal(keep, invoice.Amount - invoice.Discount);
+        Assert.Equal(-keep, await new StudentBalanceQuery(check).ForAsync(world.StudentId));
+        await AssertLedgerBalancedAsync(check);
+    }
+
+    /// <summary>
+    /// Bekor qilish — to'liq "undo": qaytarilgan pul o'sha to'lovdan o'sha hisob-fakturaga qaytadi, keyingi
+    /// oyga emas (avans qoidasi eng eski oydan boshlardi, bu yerda esa oy allaqachon to'langan edi).
+    /// </summary>
+    [Fact]
+    public async Task Bekor_qilinsa_tolov_oldingi_toifalariga_aynan_qaytadi()
+    {
+        await using var db = NewDb();
+        var world = await NewWorldAsync(db);
+        await AddSubscriptionAsync(db, world, TuitionCategory, 1_600_000m, LastMonth);
+        await AddSubscriptionAsync(db, world, BusCategory, 300_000m, LastMonth);
+        await Invoices(db).AccrueMonthAsync(LastMonth, world.ActorId);
+        await Invoices(db).AccrueMonthAsync(ThisMonth, world.ActorId);
+        var month = await db.Invoices.AsNoTracking()
+            .Where(i => i.StudentId == world.StudentId && i.PeriodMonth == LastMonth).ToListAsync();
+        var tuition = month.Single(i => i.CategoryId == TuitionCategory).Id;
+        var bus = month.Single(i => i.CategoryId == BusCategory).Id;
+        await new PaymentService(db, new LedgerService(db)).AcceptAsync(
+            new AcceptPaymentRequest(world.StudentId, 1_900_000m, PaymentMethod.Cash, null, []), world.CashierId);
+
+        var applied = await Withdrawals(db).ApplyAsync(world.StudentId, new WithdrawalRequest(LastDay), world.ActorId);
+        Assert.True(applied.TotalReleased > 0m);
+        await using (var other = NewDb())
+            await Withdrawals(other).CancelAsync(world.StudentId, applied.WithdrawalId!.Value, world.ActorId);
+
+        await using var check = NewDb();
+        var paid = await check.PaymentAllocations.AsNoTracking()
+            .Where(a => a.InvoiceId == tuition || a.InvoiceId == bus)
+            .GroupBy(a => a.InvoiceId).Select(g => new { g.Key, Total = g.Sum(a => a.Amount) })
+            .ToDictionaryAsync(x => x.Key, x => x.Total);
+        Assert.Equal(1_600_000m, paid[tuition]);
+        Assert.Equal(300_000m, paid[bus]);
+        var statuses = await check.Invoices.AsNoTracking().Where(i => i.Id == tuition || i.Id == bus)
+            .ToDictionaryAsync(i => i.Id, i => i.Status);
+        Assert.Equal(InvoiceStatus.Paid, statuses[tuition]);
+        Assert.Equal(InvoiceStatus.Paid, statuses[bus]);
+        Assert.Equal(-1_900_000m, await new StudentBalanceQuery(check).ForAsync(world.StudentId));
+        await AssertLedgerBalancedAsync(check);
+    }
+
     [Fact]
     public async Task Kelajakdagi_sana_va_abonementsiz_holat_rad_etiladi()
     {

@@ -207,10 +207,6 @@ public sealed class InvoiceAdjustmentService(IAppDbContext db, AuditService audi
 public static class LessonDays
 {
     /// <summary>
-    /// null ("Butun oy") → every calendar day; N → days whose ISO weekday ≤ N (5 = Mon–Fri,
-    /// 6 = Mon–Sat, 7 = all), minus school holidays. Never below 1.
-    /// </summary>
-    /// <summary>
     /// Maktab haftasi — dushanbadan shanbagacha (dars jadvali shunday). Jadvali belgilanmagan
     /// ("Butun oy") abonement "chiqib ketdi" hisobida shu bilan sanaladi: mijoz, 2026-10-06 —
     /// "yakshanba va bayramlar sanalmaydi".
@@ -233,6 +229,10 @@ public static class LessonDays
         return count;
     }
 
+    /// <summary>
+    /// null ("Butun oy") → every calendar day; N → days whose ISO weekday ≤ N (5 = Mon–Fri,
+    /// 6 = Mon–Sat, 7 = all), minus school holidays. Never below 1.
+    /// </summary>
     public static int Count(DateOnly monthStart, int? daysPerWeek, IReadOnlySet<DateOnly> holidays)
     {
         var days = DateTime.DaysInMonth(monthStart.Year, monthStart.Month);
