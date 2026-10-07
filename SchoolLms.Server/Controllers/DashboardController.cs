@@ -233,13 +233,25 @@ public class DashboardController(AppDbContext db) : ControllerBase
             .Select(m => (Lesson: m, Roster: RosterOf(m)))
             .ToList();
 
+        // Today's timetable lessons that have already started (2026-10-07): a class nobody marked is
+        // expected too, so it shows as "tekshirilmagan" instead of dropping out of the widget.
+        var todayIso = AppClock.Today.ToString("yyyy-MM-dd");
+        var now = TimeOnly.FromDateTime(AppClock.Now);
+        var startOf = (await db.LessonTimes.AsNoTracking().ToListAsync())
+            .GroupBy(t => t.Period)
+            .ToDictionary(g => g.Key, g => TimeOnly.TryParse(g.First().StartTime, out var t) ? t : (TimeOnly?)null);
+        var startedToday = (await HeldLessons.ScheduledAsync(db, null, todayIso, todayIso))
+            .Where(l => scope.Allows(l.OwnerKind, l.ClassId)
+                        && (startOf.GetValueOrDefault(l.Period) is not { } start || start <= now))
+            .ToList();
+
         var reasonRows = await db.AbsenceReasons.AsNoTracking().ToListAsync();
         var unexcusedIds = reasonRows.Where(AttendanceAnalytics.IsUnexcusedReason)
             .Select(r => r.Id).ToHashSet(StringComparer.Ordinal);
 
         return new AdminDashboardDto(
             stats, classPerformance, topClasses,
-            AttendanceByPeriod(students, entries, lateReasonIds, groupSizes, classNameById, markedLessons),
+            AttendanceByPeriod(students, entries, lateReasonIds, groupSizes, classNameById, markedLessons, startedToday),
             await AbsentStudentsAsync(students, lateReasonIds, unexcusedIds, markedLessons),
             classHeadcounts);
     }
@@ -312,10 +324,12 @@ public class DashboardController(AppDbContext db) : ControllerBase
     /// "Davomat belgilash" ekranida belgilangan darslar va ularning ro'yxati. Bugungi shunday
     /// darsdagi HAR BIR o'quvchi tekshirilgan: yozuvi yo'q — keldi (HeldLessons qoidasi).
     /// </param>
+    /// <param name="startedToday">Today's timetable lessons that have started — their class (or group)
+    /// is expected even when nobody marked it, so the gap shows as "tekshirilmagan".</param>
     private static List<AttendanceByPeriodDto> AttendanceByPeriod(
         List<Student> students, List<JournalEntry> entries, HashSet<string> lateReasonIds,
         Dictionary<string, int> groupSizes, Dictionary<string, string> classNameById,
-        List<(HeldLesson Lesson, List<string> Roster)> markedLessons)
+        List<(HeldLesson Lesson, List<string> Roster)> markedLessons, List<HeldLesson> startedToday)
     {
         // `JournalEntry.Date` — `yyyy-MM-dd` satri, shuning uchun solishtirish ham satrda.
         var today = AppClock.Today.ToString("yyyy-MM-dd");
@@ -332,6 +346,7 @@ public class DashboardController(AppDbContext db) : ControllerBase
             var slot = all.Where(e => e.OwnerKind != LessonOwnerKind.Group).ToList();
             var groupSlot = all.Where(e => e.OwnerKind == LessonOwnerKind.Group).ToList();
             var markedSlot = todaysMarked.Where(m => m.Lesson.Period == period).ToList();
+            var scheduledSlot = startedToday.Where(l => l.Period == period).ToList();
 
             var marked = all.Select(e => e.StudentId)
                 .Concat(markedSlot.SelectMany(m => m.Roster))
@@ -344,6 +359,8 @@ public class DashboardController(AppDbContext db) : ControllerBase
                 .Select(e => students.FirstOrDefault(s => s.Id == e.StudentId)?.ClassName)
                 .Concat(markedSlot.Where(m => m.Lesson.OwnerKind != LessonOwnerKind.Group)
                     .Select(m => classNameById.GetValueOrDefault(m.Lesson.ClassId)))
+                .Concat(scheduledSlot.Where(l => l.OwnerKind != LessonOwnerKind.Group)
+                    .Select(l => classNameById.GetValueOrDefault(l.ClassId)))
                 .Where(n => n is not null)
                 .ToHashSet(StringComparer.Ordinal);
             var totalInClasses = byClass
@@ -352,6 +369,7 @@ public class DashboardController(AppDbContext db) : ControllerBase
             // Guruh darsida esa — guruhning o'z a'zolari soni (sinfniki emas).
             var totalInGroups = groupSlot.Select(e => e.ClassId)
                 .Concat(markedSlot.Where(m => m.Lesson.OwnerKind == LessonOwnerKind.Group).Select(m => m.Lesson.ClassId))
+                .Concat(scheduledSlot.Where(l => l.OwnerKind == LessonOwnerKind.Group).Select(l => l.ClassId))
                 .Distinct(StringComparer.Ordinal)
                 .Sum(id => groupSizes.GetValueOrDefault(id));
             var expected = Math.Max(totalInClasses + totalInGroups, marked);

@@ -321,7 +321,9 @@ public class AnalyticsReportsTests(ApiFixture fixture) : IAsyncLifetime
         Assert.Equal(1, row.Absences);        // 11-sentyabr — kun bo'yi
         Assert.Equal(1, row.Lates);           // 10-sentyabr
         Assert.Equal(1, row.Unchecked);       // 12-sentyabr
-        Assert.Equal(66.7, row.AttendancePercent);
+        // Over the CHECKED days (2026-10-07): 10 and 11 — one came, one did not. The unchecked
+        // 12th is not "keldi" (it used to make this 66.7).
+        Assert.Equal(50, row.AttendancePercent);
 
         // Ball: −10 (10-sen, sababsiz) −5 (10-sen, kech) −10 (11-sen, sababsiz — 3 dars, bir marta) = −25.
         Assert.Equal(-25, row.AttendancePoints);

@@ -22,7 +22,10 @@ namespace SchoolLms.Application.Services;
 ///   <item><b>Kech keldi</b> (<c>AbsenceReason.IsLate</c>) — yo'qlik EMAS: o'quvchi darsda
 ///     qatnashgan. U <c>Present</c> ichida qoladi va alohida son sifatida ko'rsatiladi.</item>
 ///   <item><b>Tekshirilmagan</b> — dars o'tilgan, lekin o'quvchi uchun jurnalda YOZUV YO'Q.
-///     U hech qachon "keldi"ga qo'shilmaydi (bosh sahifadagi ustun bilan bir xil sabab).</item>
+///     U hech qachon "keldi"ga qo'shilmaydi (bosh sahifadagi ustun bilan bir xil sabab).
+///     2026-10-07: dars jadvalidagi, lekin hech kim o'tmagan va belgilamagan dars ham shu
+///     (<see cref="HeldLessons.ForReportAsync"/>) — davomati olinmagan sinf hisobotdan
+///     yo'qolib qolmaydi. <c>Lessons</c> soniga u kirmaydi.</item>
 ///   <item><b>O'quv guruhi</b> (G-13, students-parity.md §2.1.4) — guruh darsi ham
 ///     o'quvchining IMKONIYATI: u ham o'tilgan dars, unda ham davomat belgilanadi.
 ///     Guruh darsi har bir qatnashuvchining O'Z SINFI qatoriga yoziladi (§2.1.6 G-15:
@@ -179,7 +182,9 @@ public static class AttendanceAnalytics
 
         // Sanalar "yyyy-MM-dd" satr — leksikografik taqqoslash xronologik bilan bir xil.
         // "Bo'lgan" dars = o'tildi (conducted) YOKI davomat belgilangan (HeldLessons qoidasi).
-        var notes = await HeldLessons.ListAsync(db, ownerIds, fromDate, toDate);
+        // Plus the timetable's lessons nobody held or marked (2026-10-07): their students are
+        // "tekshirilmagan" — a class without attendance no longer drops out of the report.
+        var notes = await HeldLessons.ForReportAsync(db, ownerIds, fromDate, toDate);
 
         var entries = await db.JournalEntries.AsNoTracking()
             .Where(e => ownerIds.Contains(e.ClassId)
@@ -238,14 +243,18 @@ public static class AttendanceAnalytics
             // "3-darsda 40 ta yo'q" degan ma'nosiz raqam berardi.
             var periodTally = n.Date == dayIso ? Get(byPeriod, n.Period) : null;
 
-            total.Lessons++;
-            dateTally.Lessons++;
-            if (periodTally is not null) periodTally.Lessons++;
-            // Sinf darsi — o'sha sinfning bitta darsi. Guruh darsi esa har bir BOQUVCHI
-            // sinf uchun ham bitta dars (o'sha sinfning bolalari o'sha kuni yana bir
-            // darsda bo'lgan), lekin jami (`total`) bo'yicha — BITTA.
-            foreach (var feedingClassId in participants.Select(p => p.ClassId).Distinct(StringComparer.Ordinal))
-                if (byClass.TryGetValue(feedingClassId, out var t)) t.Lessons++;
+            // `Lessons` counts conducted lessons only — a timetable lesson nobody held is not one.
+            if (!n.Scheduled)
+            {
+                total.Lessons++;
+                dateTally.Lessons++;
+                if (periodTally is not null) periodTally.Lessons++;
+                // Sinf darsi — o'sha sinfning bitta darsi. Guruh darsi esa har bir BOQUVCHI
+                // sinf uchun ham bitta dars (o'sha sinfning bolalari o'sha kuni yana bir
+                // darsda bo'lgan), lekin jami (`total`) bo'yicha — BITTA.
+                foreach (var feedingClassId in participants.Select(p => p.ClassId).Distinct(StringComparer.Ordinal))
+                    if (byClass.TryGetValue(feedingClassId, out var t)) t.Lessons++;
+            }
 
             foreach (var (studentId, homeroomId) in participants)
             {

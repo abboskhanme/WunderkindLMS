@@ -64,6 +64,16 @@ public static class AttendanceDisciplineReport
     /// <summary>Har o'quvchi shundan boshlaydi — <c>DisciplineController.BaseScore</c> bilan bir xil.</summary>
     private const int BaseScore = 100;
 
+    /// <summary>
+    /// Attendance % over the CHECKED days (2026-10-07): an unchecked day is neither present nor
+    /// absent — counting it as present showed a class nobody checked as 100%. Null — nothing checked.
+    /// </summary>
+    private static double? Percent(int days, int unchecked_, int absences)
+    {
+        var checkedDays = days - unchecked_;
+        return checkedDays > 0 ? Math.Round((double)(checkedDays - absences) / checkedDays * 100, 1) : null;
+    }
+
     /// <summary>Bitta dars kataqchasi: fan + sana + dars raqami.</summary>
     private readonly record struct Slot(string SubjectId, string Date, int Period);
 
@@ -113,8 +123,9 @@ public static class AttendanceDisciplineReport
             .Distinct(StringComparer.Ordinal).ToList();
 
         // Bo'lgan darslar — davomat maxraji: o'tildi YOKI davomat belgilangan (HeldLessons).
-        // Bo'lmagan dars umuman hisobga olinmaydi.
-        var conducted = (await HeldLessons.ListAsync(
+        // Plus the timetable's lessons nobody held or marked (2026-10-07) — "tekshirilmagan" days,
+        // so a class without attendance shows up instead of dropping out.
+        var conducted = (await HeldLessons.ForReportAsync(
                     db, classId == null ? null : [classId, .. groupIdsInScope], from, to))
             .Where(n => scope.Allows(n.OwnerKind, n.ClassId))
             .GroupBy(n => n.ClassId, StringComparer.Ordinal)
@@ -258,9 +269,7 @@ public static class AttendanceDisciplineReport
                     st.Id, st.FullName, st.ClassName,
                     opportunities, absences, lates, unchecked_,
                     attendancePoints, manualPoints, remaining,
-                    opportunities > 0
-                        ? Math.Round((double)(opportunities - absences) / opportunities * 100, 1)
-                        : null));
+                    Percent(opportunities, unchecked_, absences)));
             }
 
             if (agg.Students > 0) classAgg[cls.Id] = agg;
@@ -273,7 +282,7 @@ public static class AttendanceDisciplineReport
                 var a = classAgg[c.Id];
                 return new AttendanceDisciplineClassDto(
                     c.Id, c.Name, a.Students, a.Opp, a.Abs, a.Late, a.Unchecked, a.Points,
-                    a.Opp > 0 ? Math.Round((double)(a.Opp - a.Abs) / a.Opp * 100, 1) : null,
+                    Percent(a.Opp, a.Unchecked, a.Abs),
                     a.Students > 0 ? Math.Round((double)Math.Abs(Math.Min(0, a.Points)) / a.Students, 1) : 0);
             })
             .OrderBy(r => r.AttendancePoints)
@@ -332,9 +341,7 @@ public static class AttendanceDisciplineReport
             classAgg.Values.Sum(a => a.Unchecked),
             classAgg.Values.Sum(a => a.Points),
             manualInRange.Where(p => studentIds.Contains(p.StudentId)).Sum(p => p.Points),
-            totalOpportunities > 0
-                ? Math.Round((double)(totalOpportunities - totalAbsences) / totalOpportunities * 100, 1)
-                : null);
+            Percent(totalOpportunities, classAgg.Values.Sum(a => a.Unchecked), totalAbsences));
 
         // Eng ko'p ball yo'qotgan birinchi turadi (ball manfiy — o'sish tartibi).
         studentRows = studentRows

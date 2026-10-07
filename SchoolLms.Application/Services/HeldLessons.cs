@@ -45,9 +45,13 @@ namespace SchoolLms.Application.Services;
 /// jurnalda yozuvi YO'Q o'quvchi — KELDI (ekran qoidasi: "ro'yxatda yo'q o'quvchi — keldi"),
 /// "tekshirilmagan" emas.
 /// </param>
+/// <param name="Scheduled">
+/// Not held — a timetable lesson nobody conducted or marked (<see cref="HeldLessons.ForReportAsync"/>).
+/// Its students are "tekshirilmagan"; it is not counted as a conducted lesson.
+/// </param>
 public sealed record HeldLesson(
     string ClassId, string OwnerKind, string SubjectId, string Date, int Period, int SubGroup, int Quarter,
-    bool Marked = false);
+    bool Marked = false, bool Scheduled = false);
 
 /// <summary>
 /// "Bu dars davomat statistikasida bo'lgan deb sanaladimi" — yagona javob beruvchi.
@@ -83,6 +87,94 @@ public static class HeldLessons
             .ToList();
         result.AddRange(marked.Where(m => !noted.Contains((m.ClassId, m.SubjectId, m.Date, m.Period))));
         return result;
+    }
+
+    /// <summary>
+    /// For attendance REPORTS (2026-10-07): the held lessons plus every timetable lesson up to today
+    /// that nobody conducted or marked (<c>Scheduled = true</c>). Without them a class where no one
+    /// took attendance vanished from the reports instead of showing as "tekshirilmagan" (client:
+    /// "bitta sinf davomat qilinmagan lekin bu haqda malumot hisobi chiqmagan").
+    /// Only for reports that keep "unchecked" apart — never for a rate that treats it as present.
+    /// </summary>
+    public static async Task<List<HeldLesson>> ForReportAsync(
+        IAppDbContext db, IReadOnlyCollection<string>? ownerIds, string from, string to,
+        CancellationToken ct = default)
+    {
+        var held = await ListAsync(db, ownerIds, from, to, ct);
+        var scheduled = await ScheduledAsync(db, ownerIds, from, to, ct);
+        if (scheduled.Count == 0) return held;
+
+        // A held lesson covers the timetable cell: the whole class, or the same half.
+        var heldHalves = held
+            .GroupBy(h => (h.ClassId, h.SubjectId, h.Date, h.Period))
+            .ToDictionary(g => g.Key, g => g.Select(h => h.SubGroup).ToHashSet());
+        foreach (var s in scheduled)
+        {
+            if (heldHalves.TryGetValue((s.ClassId, s.SubjectId, s.Date, s.Period), out var halves)
+                && (s.SubGroup == 0 || halves.Contains(0) || halves.Contains(s.SubGroup))) continue;
+            held.Add(s);
+        }
+        return held;
+    }
+
+    /// <summary>
+    /// The timetable's lessons from <paramref name="from"/> to <paramref name="to"/> (never past today):
+    /// quarter → week → the template assigned to that week → that weekday's lessons. Sundays and
+    /// holidays have none. <paramref name="ownerIds"/> null — every class and group.
+    /// </summary>
+    public static async Task<List<HeldLesson>> ScheduledAsync(
+        IAppDbContext db, IReadOnlyCollection<string>? ownerIds, string from, string to,
+        CancellationToken ct = default)
+    {
+        var today = AppClock.Today.ToString("yyyy-MM-dd");
+        if (string.CompareOrdinal(to, today) > 0) to = today;
+        if (!DateOnly.TryParseExact(from, "yyyy-MM-dd", out var start)
+            || !DateOnly.TryParseExact(to, "yyyy-MM-dd", out var end) || start > end) return [];
+
+        var ids = ownerIds?.ToList();
+        var assignmentsQ = db.WeekAssignments.AsNoTracking().Where(a => a.TemplateId != null);
+        if (ids is not null) assignmentsQ = assignmentsQ.Where(a => ids.Contains(a.ClassId));
+        var assignments = await assignmentsQ
+            .Select(a => new { a.ClassId, a.OwnerKind, a.Quarter, a.Week, a.TemplateId })
+            .ToListAsync(ct);
+        if (assignments.Count == 0) return [];
+
+        var templateIds = assignments.Select(a => a.TemplateId!).Distinct().ToList();
+        var lessonsByTemplate = (await db.ScheduleTemplates.AsNoTracking().Include(t => t.Lessons)
+                .Where(t => templateIds.Contains(t.Id)).ToListAsync(ct))
+            .ToDictionary(t => t.Id, t => t.Lessons, StringComparer.Ordinal);
+        var byWeek = assignments
+            .GroupBy(a => (a.Quarter, a.Week))
+            .ToDictionary(g => g.Key, g => g.ToList());
+        var quarters = await db.Quarters.AsNoTracking().ToListAsync(ct);
+        var holidays = (await db.Holidays.AsNoTracking()
+                .Where(h => string.Compare(h.Date, from) >= 0 && string.Compare(h.Date, to) <= 0)
+                .Select(h => h.Date).ToListAsync(ct))
+            .ToHashSet(StringComparer.Ordinal);
+
+        var result = new HashSet<HeldLesson>();
+        for (var day = start; day <= end; day = day.AddDays(1))
+        {
+            if (day.DayOfWeek == DayOfWeek.Sunday) continue;
+            var date = day.ToString("yyyy-MM-dd");
+            if (holidays.Contains(date)) continue;
+            var quarter = quarters.FirstOrDefault(q =>
+                string.CompareOrdinal(date, q.StartDate) >= 0 && string.CompareOrdinal(date, q.EndDate) <= 0);
+            if (quarter is null) continue;
+            var week = ScheduleMath.GetQuarterWeeks(quarter.StartDate, quarter.EndDate).FirstOrDefault(w =>
+                string.CompareOrdinal(date, w.StartISO) >= 0 && string.CompareOrdinal(date, w.EndISO) <= 0);
+            if (week is null || !byWeek.TryGetValue((quarter.Quarter, week.Week), out var weekAssignments)) continue;
+
+            var lessonDay = (int)day.DayOfWeek - 1; // dushanba = 0
+            foreach (var a in weekAssignments)
+            {
+                if (!lessonsByTemplate.TryGetValue(a.TemplateId!, out var lessons)) continue;
+                foreach (var l in lessons.Where(l => l.Day == lessonDay))
+                    result.Add(new HeldLesson(
+                        a.ClassId, a.OwnerKind, l.SubjectId, date, l.Period, l.SubGroup, quarter.Quarter, Scheduled: true));
+            }
+        }
+        return [.. result];
     }
 
     /// <summary>
