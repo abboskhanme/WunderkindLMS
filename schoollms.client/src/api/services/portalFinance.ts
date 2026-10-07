@@ -43,6 +43,8 @@ export interface PortalCategoryLine {
   isOverdue: boolean
   /** "YYYY-MM-DD" */
   dueOn: string
+  /** The month was removed for good — its payments reversed into the archive (2026-10-07). */
+  removed?: boolean
 }
 
 /** Bitta oy — jamlar SERVERDA qo'shilgan; `void` qatorlar jamga kirmaydi. */

@@ -54,7 +54,7 @@ namespace SchoolLms.Server.Controllers;
 public sealed record PortalCategoryLineDto(
     string CategoryCode, string CategoryName,
     decimal Amount, decimal Discount, decimal Payable, decimal Paid, decimal Remaining,
-    string Status, bool IsOverdue, DateOnly DueOn);
+    string Status, bool IsOverdue, DateOnly DueOn, bool Removed = false);
 
 /// <summary>
 /// Bitta oy — ichida toifalar kesimi. Jamlar SERVERDA qo'shiladi; bekor
@@ -245,7 +245,7 @@ public sealed class PortalFinanceController(
                          .Select(i => new PortalCategoryLineDto(
                              i.CategoryCode, i.CategoryName,
                              i.Amount, i.Discount, i.Payable, i.Paid, i.Remaining,
-                             i.Status, i.IsOverdue && i.Remaining > 0m, i.DueOn))]);
+                             i.Status, i.IsOverdue && i.Remaining > 0m, i.DueOn, i.RemovedAt != null))]);
             })
             .ToList();
 

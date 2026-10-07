@@ -225,6 +225,9 @@ internal static class BillingModel
             e.HasKey(x => x.Id);
             e.Property(x => x.Amount).HasPrecision(14, 2);
             e.Property(x => x.Discount).HasPrecision(14, 2);
+            // "Oyni butunlay o'chirish" (2026-10-07) — only a void row can be removed.
+            e.Property(x => x.RemoveReason).HasMaxLength(500);
+            e.ToTable(t => t.HasCheckConstraint("ck_invoices_removed_is_void", "removed_at is null or status = 'void'"));
 
             // Hisob-faktura — moliyaviy tarix. O'quvchi qatori bilan birga o'chib ketmasin.
             e.HasOne<Student>().WithMany().HasForeignKey(x => x.StudentId)

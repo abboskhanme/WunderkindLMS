@@ -278,16 +278,22 @@ public sealed class InvoiceService(IAppDbContext db, ILedgerService ledger) : II
         // abonement ochadi (billing-plans.md §10.3).
         var monthRows = await db.Invoices.AsNoTracking()
             .Where(i => i.PeriodMonth == monthStart && (studentId == null || i.StudentId == studentId))
-            .Select(i => new { i.StudentId, i.CategoryId, i.Status, i.VoidedAt, i.CreatedAt })
+            .Select(i => new { i.StudentId, i.CategoryId, i.Status, i.VoidedAt, i.RemovedAt, i.CreatedAt })
             .ToListAsync(ct);
         var existing = monthRows
             .Where(x => x.Status != InvoiceStatus.Void)
             .Select(x => (x.StudentId, x.CategoryId))
             .ToHashSet();
         var voidedAt = monthRows
-            .Where(x => x.Status == InvoiceStatus.Void)
+            .Where(x => x.Status == InvoiceStatus.Void && x.RemovedAt == null)
             .GroupBy(x => (x.StudentId, x.CategoryId))
             .ToDictionary(g => g.Key, g => g.Max(x => x.VoidedAt ?? DateTimeOffset.MaxValue));
+        // A month removed for good (2026-10-07) is not billed again when the subscription is EDITED —
+        // only a subscription OPENED after the removal bills it (compared with CreatedAt, not ChangedAt).
+        var removedAt = monthRows
+            .Where(x => x.RemovedAt != null)
+            .GroupBy(x => (x.StudentId, x.CategoryId))
+            .ToDictionary(g => g.Key, g => g.Max(x => x.RemovedAt!.Value));
 
         // ---- 3. FAQAT TASDIQLANGAN chegirmalar (mijoz javobi, SPEC §8.1 Q5) ----
         // `status = 'approved'` VA `approved_by is not null` — ikkalasi ham.
@@ -314,7 +320,8 @@ public sealed class InvoiceService(IAppDbContext db, ILedgerService ledger) : II
         foreach (var s in subscriptions)
         {
             if (existing.Contains((s.StudentId, s.CategoryId))
-                || (voidedAt.TryGetValue((s.StudentId, s.CategoryId), out var voided) && voided >= s.ChangedAt))
+                || (voidedAt.TryGetValue((s.StudentId, s.CategoryId), out var voided) && voided >= s.ChangedAt)
+                || (removedAt.TryGetValue((s.StudentId, s.CategoryId), out var removed) && removed >= s.CreatedAt))
             {
                 skipped++;
                 continue;
@@ -975,7 +982,9 @@ public sealed class InvoiceService(IAppDbContext db, ILedgerService ledger) : II
                 payable, allocated, remaining,
                 i.DueOn, i.Status,
                 IsOverdue(i, remaining, settings),
-                i.CreatedAt));
+                i.CreatedAt,
+                i.RemovedAt,
+                i.RemoveReason));
         }
 
         return result;

@@ -327,6 +327,16 @@ public class Invoice
     /// before it; one opened after it bills the month as a new invoice (billing-plans.md §10.3).
     /// </summary>
     public DateTimeOffset? VoidedAt { get; set; }
+
+    /// <summary>
+    /// "Oyni butunlay o'chirish" (client, 2026-10-07): the month was taken out of the accounts —
+    /// void, its payments' share reversed, its adjustments undone. Unlike a plain void it is not
+    /// billed again when the subscription is edited later; only a subscription opened after this
+    /// moment bills the month anew. The rows stay as the archive.
+    /// </summary>
+    public DateTimeOffset? RemovedAt { get; set; }
+    public string? RemovedBy { get; set; }
+    public string? RemoveReason { get; set; }
 }
 
 /// <summary>Hisob-faktura holatlari (<see cref="Invoice.Status"/>).</summary>

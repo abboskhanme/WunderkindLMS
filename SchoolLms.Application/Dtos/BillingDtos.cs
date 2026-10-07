@@ -146,7 +146,10 @@ public record InvoiceDto(
     string Status,
     // Muddati o'tganmi (`overdue_after_day` sozlamasi bo'yicha).
     bool IsOverdue,
-    DateTimeOffset CreatedAt);
+    DateTimeOffset CreatedAt,
+    // "Oyni butunlay o'chirish" (2026-10-07): when and why the month was taken out of the accounts.
+    DateTimeOffset? RemovedAt = null,
+    string? RemoveReason = null);
 
 /// <summary>Hisob-fakturalar ro'yxati uchun filtr (query string).</summary>
 public record InvoiceQuery(

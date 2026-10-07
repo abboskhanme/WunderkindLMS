@@ -420,8 +420,13 @@ function CategoryTable({
                 key={line.categoryCode}
                 className={cn('hover:bg-slate-50/60', isVoid && 'text-slate-400')}
               >
-                <td className={cn('px-4 py-2.5 font-medium text-slate-700', isVoid && 'text-slate-400 line-through')}>
-                  {line.categoryName}
+                <td className={cn('px-4 py-2.5 font-medium text-slate-700', isVoid && 'text-slate-400')}>
+                  <span className={cn(isVoid && 'line-through')}>{line.categoryName}</span>
+                  {line.removed && (
+                    <span className="ml-2 rounded bg-slate-100 px-1.5 py-0.5 text-[11px] font-medium text-slate-500 no-underline">
+                      o'chirilgan
+                    </span>
+                  )}
                 </td>
                 <td className="whitespace-nowrap px-4 py-2.5 text-right text-slate-600">
                   {formatMoney(line.amount)}

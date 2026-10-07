@@ -4263,6 +4263,19 @@ namespace SchoolLms.Infrastructure.Migrations
                         .HasColumnType("date")
                         .HasColumnName("period_month");
 
+                    b.Property<string>("RemoveReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("remove_reason");
+
+                    b.Property<DateTimeOffset?>("RemovedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("removed_at");
+
+                    b.Property<string>("RemovedBy")
+                        .HasColumnType("text")
+                        .HasColumnName("removed_by");
+
                     b.Property<string>("Status")
                         .IsRequired()
                         .HasColumnType("text")
@@ -4301,6 +4314,8 @@ namespace SchoolLms.Infrastructure.Migrations
                             t.HasCheckConstraint("ck_invoices_discount", "discount >= 0 and discount <= amount");
 
                             t.HasCheckConstraint("ck_invoices_period_first_day", "extract(day from period_month) = 1");
+
+                            t.HasCheckConstraint("ck_invoices_removed_is_void", "removed_at is null or status = 'void'");
 
                             t.HasCheckConstraint("ck_invoices_status", "status in ('open','partial','paid','void')");
                         });

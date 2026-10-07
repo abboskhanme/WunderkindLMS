@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { CalendarOff, Pencil, Plus } from 'lucide-react'
+import { CalendarOff, Pencil, Plus, Trash2 } from 'lucide-react'
 import type { FeeCategory, SubscriptionPlan } from '@/types'
 import type {
   SubscriptionInput,
@@ -21,6 +21,7 @@ import { Card } from '@/components/ui/Card'
 import { formatMoney } from '@/lib/utils'
 import { AsyncBlock, IconBtn, Notice, SubscriptionStartCell, SubscriptionStatusPill } from '@/pages/admin/billing/BillingUi'
 import { EndSubscriptionModal } from '@/pages/admin/billing/EndSubscriptionModal'
+import { RemoveMonthsModal } from '@/pages/admin/billing/RemoveMonthsModal'
 import { SubscriptionFormModal } from '@/pages/admin/billing/SubscriptionFormModal'
 import type { StudentOption } from '@/pages/admin/billing/useStudents'
 import { StudentDiscountsCard } from './StudentDiscountsCard'
@@ -58,6 +59,8 @@ export function SubscriptionsTab({ studentId, studentName, className, onChanged 
   const [formOpen, setFormOpen] = useState(false)
   const [editing, setEditing] = useState<SubscriptionRecord | null>(null)
   const [ending, setEnding] = useState<SubscriptionRecord | null>(null)
+  // "Oylarini butunlay o'chirish" — paid months too (client, 2026-10-07).
+  const [removing, setRemoving] = useState<SubscriptionRecord | null>(null)
   const [busy, setBusy] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
@@ -244,6 +247,12 @@ export function SubscriptionsTab({ studentId, studentName, className, onChanged 
                             }}
                           />
                         )}
+                        <IconBtn
+                          icon={Trash2}
+                          title="Oylarini butunlay o'chirish (to'langan bo'lsa ham)"
+                          tone="danger"
+                          onClick={() => setRemoving(row)}
+                        />
                       </span>
                     </td>
                   </tr>
@@ -275,6 +284,21 @@ export function SubscriptionsTab({ studentId, studentName, className, onChanged 
         }}
         onCreate={handleCreate}
         onUpdate={handleUpdate}
+      />
+      <RemoveMonthsModal
+        subscription={removing}
+        onClose={() => setRemoving(null)}
+        onDone={(r) => {
+          setRemoving(null)
+          setNotice(
+            `${r.months} ta oy o'chirildi` +
+              (r.reversedPaid > 0 ? `, ${formatMoney(r.reversedPaid)} to'lov hisobdan chiqdi (cheklar arxivda)` : '') +
+              (r.paymentsReissued > 0 ? `, ${r.paymentsReissued} ta chek qayta rasmiylashtirildi` : '') +
+              (r.subscriptionDeleted ? ', abonement o\'chirildi' : '') +
+              '.',
+          )
+          changed()
+        }}
       />
       <EndSubscriptionModal
         open={ending !== null}
