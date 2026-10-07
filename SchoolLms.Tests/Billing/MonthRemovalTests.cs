@@ -174,6 +174,60 @@ public class MonthRemovalTests(ApiFixture fixture) : IAsyncLifetime
         Assert.Equal(0, (await Invoices(check).AccrueStudentAsync(world.StudentId, world.ActorId)).Sum(r => r.Created));
     }
 
+    /// <summary>
+    /// Prod, 2026-10-07: the subscription was closed after the next month had already been accrued.
+    /// That month is still the subscription's — it must be listed and removable, and the subscription
+    /// cannot be deleted while it is left (it used to be orphaned with no way to remove it).
+    /// A month that a LATER subscription of the category starts in belongs to that one.
+    /// </summary>
+    [Fact]
+    public async Task Yopilgandan_keyin_qolgan_oy_ham_abonementniki()
+    {
+        await using var db = NewDb();
+        var world = await NewWorldAsync(db);
+        var sub = await AddSubscriptionAsync(db, world, 900_000m, LastMonth);
+        await Invoices(db).AccrueMonthAsync(LastMonth, world.ActorId);
+        await Invoices(db).AccrueMonthAsync(ThisMonth, world.ActorId);
+        // Closed to end last month — this month's bill is already there.
+        var entity = await db.StudentSubscriptions.SingleAsync(s => s.Id == sub);
+        entity.EndsOn = LastMonth;
+        await db.SaveChangesAsync();
+
+        var months = (await Removal(db).PreviewAsync(sub, world.RemoverId)).Months;
+        Assert.Equal(2, months.Count);
+
+        var partial = await Assert.ThrowsAsync<BillingRuleException>(() =>
+            Removal(db).RemoveAsync(sub, new MonthRemovalRequest([months[0].InvoiceId], "O'qimay ketgan", DeleteSubscription: true), world.RemoverId));
+        Assert.Equal("subscription_has_months", partial.Code);
+
+        await using (var fresh = NewDb())
+        {
+            var result = await Removal(fresh).RemoveAsync(sub,
+                new MonthRemovalRequest([.. months.Select(m => m.InvoiceId)], "O'qimay ketgan", DeleteSubscription: true), world.RemoverId);
+            Assert.True(result.SubscriptionDeleted);
+        }
+
+        await using var check = NewDb();
+        Assert.Equal(0m, await new StudentBalanceQuery(check).ForAsync(world.StudentId));
+        await AssertLedgerBalancedAsync(check);
+    }
+
+    [Fact]
+    public async Task Keyingi_abonement_boshlangan_oy_unga_tegishli()
+    {
+        await using var db = NewDb();
+        var world = await NewWorldAsync(db);
+        var old = await AddSubscriptionAsync(db, world, 900_000m, LastMonth, LastMonth);
+        var next = await AddSubscriptionAsync(db, world, 700_000m, ThisMonth);
+        await Invoices(db).AccrueMonthAsync(LastMonth, world.ActorId);
+        await Invoices(db).AccrueMonthAsync(ThisMonth, world.ActorId);
+
+        var oldMonths = (await Removal(db).PreviewAsync(old, world.RemoverId)).Months;
+        Assert.Equal(LastMonth.ToString("yyyy-MM"), Assert.Single(oldMonths).Month);
+        var nextMonths = (await Removal(db).PreviewAsync(next, world.RemoverId)).Months;
+        Assert.Equal(ThisMonth.ToString("yyyy-MM"), Assert.Single(nextMonths).Month);
+    }
+
     [Theory]
     [InlineData(Roles.Staff)]
     [InlineData(Roles.Cashier)]

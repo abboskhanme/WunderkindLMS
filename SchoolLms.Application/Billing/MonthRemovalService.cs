@@ -253,13 +253,22 @@ public sealed class MonthRemovalService(IAppDbContext db, AuditService audit)
 
     // =====================================================================
 
-    /// <summary>The subscription's invoices: same student and category, months within its period.</summary>
+    /// <summary>
+    /// The subscription's invoices: same student and category, from its start month until the next
+    /// subscription of the category starts. Its end date does NOT cut the list: a month accrued before
+    /// the subscription was closed stays billed (prod, 2026-10-07: closed on the 2nd to end in
+    /// September, October already accrued on the 1st) and must be removable here — otherwise removing
+    /// the subscription left that bill with no way to reach it.
+    /// </summary>
     private IQueryable<Invoice> InRange(StudentSubscription sub)
     {
         var from = new DateOnly(sub.StartsOn.Year, sub.StartsOn.Month, 1);
-        var to = sub.EndsOn is { } e ? new DateOnly(e.Year, e.Month, 1) : DateOnly.MaxValue;
         return db.Invoices.Where(i => i.StudentId == sub.StudentId && i.CategoryId == sub.CategoryId
-                                      && i.PeriodMonth >= from && i.PeriodMonth <= to);
+                                      && i.PeriodMonth >= from
+                                      && !db.StudentSubscriptions.Any(s =>
+                                          s.StudentId == sub.StudentId && s.CategoryId == sub.CategoryId && s.Id != sub.Id
+                                          && s.StartsOn > sub.StartsOn
+                                          && s.StartsOn.Year * 12 + s.StartsOn.Month <= i.PeriodMonth.Year * 12 + i.PeriodMonth.Month));
     }
 
     /// <summary>
