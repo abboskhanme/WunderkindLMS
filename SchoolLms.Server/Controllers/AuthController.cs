@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using SchoolLms.Infrastructure.Auth;
+using SchoolLms.Application.Services;
 using SchoolLms.Infrastructure.Data;
 using SchoolLms.Application.Dtos;
 
@@ -19,7 +20,8 @@ public class AuthController(AppDbContext db, JwtTokenService jwt, ILogger<AuthCo
     [EnableRateLimiting("login")]
     public async Task<ActionResult<LoginResponse>> Login(LoginRequest req)
     {
-        var user = await db.Users.FirstOrDefaultAsync(u => u.Email == req.Email);
+        // Case, spaces and apostrophes do not matter; "Familiya Ism" finds the login (LoginLookup).
+        var user = await LoginLookup.FindAsync(db, req.Email);
         if (user is null || !PasswordHasher.Verify(req.Password, user.PasswordHash))
         {
             // Brute-force/credential-stuffing kuzatuvi uchun — IP va urinilgan login bilan.

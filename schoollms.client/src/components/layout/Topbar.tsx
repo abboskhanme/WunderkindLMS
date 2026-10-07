@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { unlinkTelegramSession } from '@/api/services/auth'
 import { ChevronDown, LogOut, PanelLeftClose, PanelLeftOpen, Settings } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '@/context/auth-context'
@@ -45,8 +46,10 @@ export function Topbar({ sidebarOpen, onMenuClick }: TopbarProps) {
 
   if (!user) return null
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
     setMenuOpen(false)
+    // Opened from Telegram — that Telegram is unlinked too, so it does not sign the old account back in.
+    await unlinkTelegramSession()
     logout()
     navigate('/login', { replace: true })
   }

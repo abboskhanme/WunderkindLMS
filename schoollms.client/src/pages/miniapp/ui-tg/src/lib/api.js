@@ -144,7 +144,7 @@ function safeJson(text) {
 
 export const api = {
   get: (p) => request('GET', p),
-  post: (p, b) => request('POST', p, b ?? {}),
+  post: (p, b, headers) => request('POST', p, b ?? {}, headers),
   put: (p, b) => request('PUT', p, b ?? {}),
   // DELETE tanasiz ketadi — parametrlar so'rov satrida (backend shunday kutadi).
   del: (p, headers) => request('DELETE', p, undefined, headers),

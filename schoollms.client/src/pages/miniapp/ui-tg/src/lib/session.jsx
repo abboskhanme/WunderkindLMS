@@ -15,6 +15,7 @@ import { createContext, useCallback, useContext, useEffect, useState } from 'rea
 import { api, setUnauthorizedHandler, tokenStore } from './api'
 import { bootstrap, initData, inTelegram } from './telegram'
 import { forgetPanelKey, panelKey } from './panelKey'
+import { linkTicket } from './linkTicket'
 
 const SessionContext = createContext(null)
 
@@ -32,6 +33,13 @@ export function SessionProvider({ children }) {
           tokenStore.set(res.token)
           setState({ status: 'ready', user: res.user, error: null })
         } catch (e) {
+          // Bog'langan akkaunt arxivlangan: server bog'lanishni uzib, chipta berdi — boshqa akkaunt bilan kiriladi.
+          if (e.code === 'not_linked') {
+            linkTicket.set(e.body?.ticket)
+            forgetPanelKey()
+            setState({ status: 'unlinked', user: null, error: e.message })
+            return
+          }
           const stale = e.code === 'panel_key_invalid'
           setState({
             status: 'error',
@@ -54,7 +62,8 @@ export function SessionProvider({ children }) {
       // Server "bu Telegram hisobi hech kimga bog'lanmagan" deganda — bu xato
       // emas, bu OQIM. Foydalanuvchiga ulash ekrani ko'rsatiladi.
       if (e.status === 409 || e.code === 'not_linked') {
-        setState({ status: 'unlinked', user: null, error: null })
+        linkTicket.set(e.body?.ticket)
+        setState({ status: 'unlinked', user: null, error: e.message || null })
         return
       }
       setState({ status: 'error', user: null, error: e.message })
@@ -103,10 +112,12 @@ export function SessionProvider({ children }) {
       // "hammasini uzish" emas: ota chiqsa, onaning Telegram'i bog'langanicha qoladi.
       const who = inTelegram ? { 'X-Telegram-Init-Data': initData } : { 'X-Telegram-Panel-Key': panelKey }
       try {
-        await api.del('/tg/link', who)
+        const res = await api.del('/tg/link', who)
+        linkTicket.set(res?.ticket)
       } catch (e) {
         // 404 — bog'lanish allaqachon yo'q: chiqish baribir bajarilgan.
         if (e.status !== 404) throw e
+        linkTicket.set(e.body?.ticket)
       }
     }
     tokenStore.clear()

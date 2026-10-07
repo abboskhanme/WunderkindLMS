@@ -244,7 +244,7 @@ public class TelegramMiniAppTests(ApiFixture fixture)
 
         // ---- Bog'lanishni uzish mumkin ----
         var unlink = await parent.DeleteAsync("/api/tg/link");
-        Assert.Equal(HttpStatusCode.NoContent, unlink.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, unlink.StatusCode);   // with the link ticket (2026-10-07)
         await fixture.Api.WithDbAsync(async db =>
             Assert.False(await db.TelegramAccounts.AnyAsync(a => a.TelegramUserId == telegramId)));
     }
@@ -412,8 +412,8 @@ public class TelegramMiniAppTests(ApiFixture fixture)
         Assert.Equal(HttpStatusCode.BadRequest, await UnlinkAsync(forged));
         Assert.Equal(2, (await LinkedAsync()).Count);
 
-        // Otaning imzosi — faqat ota chiqadi, ona qoladi.
-        Assert.Equal(HttpStatusCode.NoContent,
+        // Otaning imzosi — faqat ota chiqadi, ona qoladi. 200: javobda bog'lash chiptasi (2026-10-07).
+        Assert.Equal(HttpStatusCode.OK,
             await UnlinkAsync(TelegramInitData.Sign(InitFields(father), BotToken)));
         Assert.Equal(new[] { mother }, await LinkedAsync());
 

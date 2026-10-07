@@ -83,3 +83,32 @@ export async function removeAvatar(): Promise<User> {
   const { data } = await api.delete<User>('/auth/avatar')
   return data
 }
+
+/**
+ * The Telegram account a session was opened from (the `tg_uid` claim) — set only when the web panel
+ * was opened from the Mini App ("Panelni ochish" for staff). Read from the token, never trusted for
+ * access: it only decides whether "Chiqish" should unlink that Telegram too.
+ */
+export function telegramOfToken(token: string | null): string | null {
+  if (!token) return null
+  try {
+    const part = token.split('.')[1] ?? ''
+    const json = JSON.parse(atob(part.replace(/-/g, '+').replace(/_/g, '/')))
+    return typeof json.tg_uid === 'string' ? json.tg_uid : null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * "Chiqish" from a panel opened through Telegram (2026-10-07): unlink that Telegram as well, so the
+ * next open asks for a login instead of signing the old account in again. Never blocks the logout.
+ */
+export async function unlinkTelegramSession(): Promise<void> {
+  if (!telegramOfToken(localStorage.getItem('token'))) return
+  try {
+    await api.delete('/tg/link')
+  } catch {
+    /* the logout goes on regardless */
+  }
+}

@@ -55,12 +55,17 @@ public record TgTelegramUserDto(string Id, string DisplayName, string? Username)
 /// holatlar HTTP kodi bilan ajratiladi (401 — imzo yaroqsiz, 409 — bog'lanmagan).
 /// </para>
 /// </summary>
+/// <param name="PanelKey">
+/// Only after linking from a keyboard-launched Mini App (no initData): the key of the fresh
+/// "🏫 Panelni ochish" button, so the open app can sign in again when its token expires (2026-10-07).
+/// </param>
 public record TgAuthResponse(
     string Status,
     string? Token,
     UserDto? User,
     TgTelegramUserDto Telegram,
-    string? Message);
+    string? Message,
+    string? PanelKey = null);
 
 /// <summary>
 /// `POST /api/tg/auth` — imzo TO'G'RI, lekin bu Telegram akkaunti hech kimga
@@ -73,7 +78,9 @@ public record TgAuthResponse(
 /// oling". <c>Code</c> doim <c>"not_linked"</c>.
 /// </para>
 /// </summary>
-public record TgNotLinkedDto(string Code, string Message, TgTelegramUserDto Telegram);
+/// <param name="Ticket">The link ticket also in the body — a Mini App inside Telegram Web runs in a
+/// cross-site iframe and may not send the cookie back (2026-10-07).</param>
+public record TgNotLinkedDto(string Code, string Message, TgTelegramUserDto Telegram, string? Ticket = null);
 
 /// <summary>Admin panel: bir martalik kod chiqarish so'rovi.</summary>
 public record IssueLinkCodeRequest(string UserId);

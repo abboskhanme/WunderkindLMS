@@ -36,3 +36,11 @@ export let panelKey = capture()
 export function forgetPanelKey() {
   panelKey = ''
 }
+
+/**
+ * Tugmadan ochilgan ilovada qayta ulangach (2026-10-07): server yangi tugmaning kalitini ham
+ * qaytaradi — token eskirsa, ilova shu kalit bilan o'zi qayta kiradi.
+ */
+export function setPanelKey(key) {
+  panelKey = typeof key === 'string' ? key.trim() : ''
+}

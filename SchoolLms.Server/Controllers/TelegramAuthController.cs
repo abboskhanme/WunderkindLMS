@@ -104,8 +104,14 @@ public sealed class TelegramAuthController(
             return NotLinked(tgUser);
         }
 
+        // An archived/stopped account: the link goes, so this Telegram can sign in to another
+        // account (2026-10-07) — before, it stayed stuck on "akkaunt arxivlangan" for good.
         if (await SessionFactory.IsBlockedAsync(db, user, ct))
-            return Unauthorized(new { code = "account_blocked", message = "Akkaunt arxivlangan yoki to'xtatilgan" });
+        {
+            db.TelegramAccounts.Remove(account);
+            await db.SaveChangesAsync(ct);
+            return NotLinked(tgUser, BlockedMessage);
+        }
 
         account.LastSeenAt = AppClock.Now;
         account.DisplayName = tgUser.DisplayName;
@@ -135,7 +141,13 @@ public sealed class TelegramAuthController(
             return Unauthorized(new { code = "panel_key_invalid", message = "Tugma eskirgan — botda /start ni bosing" });
 
         if (await SessionFactory.IsBlockedAsync(db, user, ct))
-            return Unauthorized(new { code = "account_blocked", message = "Akkaunt arxivlangan yoki to'xtatilgan" });
+        {
+            // The same as the initData path: unlink, and a ticket lets this Telegram link another account.
+            var leaving = new TelegramWebAppUser(account.TelegramUserId, account.DisplayName, null, account.Username, null);
+            db.TelegramAccounts.Remove(account);
+            await db.SaveChangesAsync(ct);
+            return NotLinked(leaving, BlockedMessage);
+        }
 
         account.LastSeenAt = AppClock.Now;
         var session = await SessionFactory.IssueAsync(db, jwt, user, ct, account.TelegramUserId);
@@ -147,19 +159,21 @@ public sealed class TelegramAuthController(
     /// Just linked in the Mini App → the bot sends the "🏫 Panelni ochish" keyboard, so from now on
     /// the panel opens from the chat. Never fails the sign-in: a send error is only logged.
     /// </summary>
-    private async Task SendPanelKeyboardAsync(long telegramUserId, CancellationToken ct)
+    /// <returns>The new button's key, or null when the bot could not send it.</returns>
+    private async Task<string?> SendPanelKeyboardAsync(long telegramUserId, CancellationToken ct)
     {
         try
         {
             var account = await db.TelegramAccounts.FirstOrDefaultAsync(a => a.TelegramUserId == telegramUserId, ct);
             if (account is not null)
-                await TelegramPanelKeys.SendKeyboardAsync(db, telegram, TelegramPanelKeys.MiniAppUrl(config), account,
+                return await TelegramPanelKeys.SendKeyboardWithKeyAsync(db, telegram, TelegramPanelKeys.MiniAppUrl(config), account,
                     "✅ Hisobingiz ulandi. Endi panelni pastdagi «🏫 Panelni ochish» tugmasi orqali ochasiz.", ct);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             logger.LogWarning(ex, "Panel tugmasi yuborilmadi: tg={TelegramUserId}", telegramUserId);
         }
+        return null;
     }
 
     /// <summary>
@@ -190,7 +204,8 @@ public sealed class TelegramAuthController(
         var tgUser = check.User!;
 
         var login = (req!.Login ?? "").Trim();
-        var user = login.Length == 0 ? null : await db.Users.FirstOrDefaultAsync(u => u.Email == login, ct);
+        // Case, spaces and apostrophes do not matter; "Familiya Ism" finds the login (LoginLookup).
+        var user = await LoginLookup.FindAsync(db, login, ct);
         if (user is null || !PasswordHasher.Verify(req.Password ?? "", user.PasswordHash))
         {
             logger.LogWarning("Telegram orqali muvaffaqiyatsiz login: login={Login}, tg={TelegramUserId}", login, tgUser.Id);
@@ -218,8 +233,11 @@ public sealed class TelegramAuthController(
 
         ClearLinkTicket();
         var session = await SessionFactory.IssueAsync(db, jwt, user, ct, tgUser.Id);
-        await SendPanelKeyboardAsync(tgUser.Id, ct);
-        return Ok(new TgAuthResponse("ok", session.Token, session.User, Profile(tgUser), null));
+        var key = await SendPanelKeyboardAsync(tgUser.Id, ct);
+        // Linked from a keyboard-launched app (no initData): hand it the new button's key, so it can
+        // sign in again by itself when the token expires (2026-10-07).
+        var keyless = string.IsNullOrWhiteSpace(req.InitData) && string.IsNullOrWhiteSpace(HeaderInitData());
+        return Ok(new TgAuthResponse("ok", session.Token, session.User, Profile(tgUser), null, keyless ? key : null));
     }
 
     [HttpPost("link")]
@@ -380,16 +398,19 @@ public sealed class TelegramAuthController(
         }
 
         var accounts = await query.ToListAsync(ct);
+        string? ticket = null;
         if (leaving is { } tg)
         {
             var gone = accounts.FirstOrDefault();
-            IssueLinkTicket(new TelegramWebAppUser(tg, gone?.DisplayName ?? "", null, gone?.Username, null));
+            ticket = IssueLinkTicket(new TelegramWebAppUser(tg, gone?.DisplayName ?? "", null, gone?.Username, null));
         }
-        if (accounts.Count == 0) return NotFound(new { message = "Telegram bog'lanishi topilmadi" });
+        if (accounts.Count == 0) return NotFound(new { message = "Telegram bog'lanishi topilmadi", ticket });
 
         db.TelegramAccounts.RemoveRange(accounts);
         await db.SaveChangesAsync(ct);
-        return NoContent();
+        // The ticket is in the body too: inside Telegram Web the app is a cross-site iframe and the
+        // cookie may not come back with the next request (2026-10-07).
+        return ticket is null ? NoContent() : Ok(new { ticket });
     }
 
     // ------------------------------------------------------------------
@@ -435,14 +456,16 @@ public sealed class TelegramAuthController(
     /// 409 + <c>code: "not_linked"</c>, va yonida bog'lash chiptasi (cookie) —
     /// keyingi <c>POST /api/tg/link</c> faqat kod bilan kelishi mumkin.
     /// </summary>
-    private ActionResult<TgAuthResponse> NotLinked(TelegramWebAppUser u)
+    private const string BlockedMessage =
+        "Avval ulangan akkaunt arxivlangan yoki to'xtatilgan. Maktab bergan boshqa login va parol bilan kiring.";
+
+    private ActionResult<TgAuthResponse> NotLinked(TelegramWebAppUser u, string? message = null)
     {
-        IssueLinkTicket(u);
+        var ticket = IssueLinkTicket(u);
         return Conflict(new TgNotLinkedDto(
             "not_linked",
-            "Telegram akkauntingiz maktab tizimiga bog'lanmagan. "
-            + "Maktab ma'muriyatidan bir martalik kod oling va shu yerga kiriting.",
-            Profile(u)));
+            message ?? "Telegram akkauntingiz maktab tizimiga bog'lanmagan. Maktab bergan login va parol bilan kiring.",
+            Profile(u), ticket));
     }
 
     /// <summary>Sarlavhadagi `initData` (tanada bo'lmasa).</summary>
@@ -486,7 +509,11 @@ public sealed class TelegramAuthController(
     /// </summary>
     private const string TicketPurpose = "tg-link-ticket\n";
 
-    private void IssueLinkTicket(TelegramWebAppUser user)
+    /// <summary>Also accepted from this header — the cookie may not reach a cross-site iframe (Telegram Web).</summary>
+    private const string LinkTicketHeader = "X-Telegram-Link-Ticket";
+
+    /// <returns>The ticket value (also set as the cookie).</returns>
+    private string IssueLinkTicket(TelegramWebAppUser user)
     {
         var expires = DateTimeOffset.UtcNow.Add(LinkTicketLifetime);
         // Ajratgich '\n', shuning uchun nomdagi yangi qator bo'sh joyga almashtiriladi.
@@ -510,6 +537,7 @@ public sealed class TelegramAuthController(
             Expires = expires,
             IsEssential = true,
         });
+        return value;
     }
 
     private void ClearLinkTicket() =>
@@ -519,7 +547,8 @@ public sealed class TelegramAuthController(
     private TelegramWebAppUser? ReadLinkTicket()
     {
         if (!Request.Cookies.TryGetValue(LinkTicketCookie, out var raw) || string.IsNullOrEmpty(raw))
-            return null;
+            raw = Request.Headers[LinkTicketHeader].ToString();
+        if (string.IsNullOrEmpty(raw)) return null;
 
         var dot = raw.IndexOf('.');
         if (dot <= 0 || dot == raw.Length - 1) return null;

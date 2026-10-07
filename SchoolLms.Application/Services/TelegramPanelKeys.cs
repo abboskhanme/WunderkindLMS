@@ -99,9 +99,15 @@ public static class TelegramPanelKeys
     /// </summary>
     public static async Task<bool> SendKeyboardAsync(
         IAppDbContext db, TelegramService telegram, string? miniAppUrl, TelegramAccount account, string text,
+        CancellationToken ct = default) =>
+        await SendKeyboardWithKeyAsync(db, telegram, miniAppUrl, account, text, ct) is not null;
+
+    /// <summary><see cref="SendKeyboardAsync"/> that returns the new key (null — not sent, nothing changed).</summary>
+    public static async Task<string?> SendKeyboardWithKeyAsync(
+        IAppDbContext db, TelegramService telegram, string? miniAppUrl, TelegramAccount account, string text,
         CancellationToken ct = default)
     {
-        if (string.IsNullOrWhiteSpace(miniAppUrl) || !telegram.IsConfigured) return false;
+        if (string.IsNullOrWhiteSpace(miniAppUrl) || !telegram.IsConfigured) return null;
         var chat = account.TelegramUserId;
         var role = await db.Users.Where(u => u.Id == account.UserId).Select(u => u.Role).FirstOrDefaultAsync(ct);
         var askContact = (role is "parent" or Roles.Teacher)
@@ -112,10 +118,10 @@ public static class TelegramPanelKeys
         if (!await telegram.SendMessageAsync(chat, text, Keyboard(PanelUrl(miniAppUrl, key), askContact), ct))
         {
             (account.PanelKeyHash, account.PanelKeyIssuedAt) = (oldHash, oldIssued);
-            return false;
+            return null;
         }
         await db.SaveChangesAsync(ct);
-        return true;
+        return key;
     }
 
     /// <summary>

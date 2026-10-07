@@ -98,7 +98,8 @@ public class TelegramPanelKeyTests(ApiFixture fixture)
         request.Headers.Add("X-Telegram-Panel-Key", key);
         var response = await client.SendAsync(request);
 
-        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+        // 200 with the link ticket in the body (2026-10-07) — this Telegram may link another account.
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         await fixture.Api.WithDbAsync(async db =>
         {
             Assert.False(await db.TelegramAccounts.AnyAsync(a => a.Id == father.Id));
@@ -133,7 +134,7 @@ public class TelegramPanelKeyTests(ApiFixture fixture)
         using var leave = new HttpRequestMessage(HttpMethod.Delete, "/api/tg/link");
         leave.Headers.Add("X-Telegram-Panel-Key", key);           // stale — refused before the fix
         var left = await session.SendAsync(leave);
-        Assert.Equal(HttpStatusCode.NoContent, left.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, left.StatusCode);
         var ticket = left.Headers.GetValues("Set-Cookie").Single(c => c.StartsWith("tg_link=", StringComparison.Ordinal));
         await fixture.Api.WithDbAsync(async db =>
         {
@@ -151,6 +152,68 @@ public class TelegramPanelKeyTests(ApiFixture fixture)
         Assert.Equal(second.Id, (await ReadAnyAsync(linked)).GetProperty("user").GetProperty("id").GetString());
         await fixture.Api.WithDbAsync(async db =>
             Assert.Equal(second.Id, (await db.TelegramAccounts.SingleAsync(a => a.TelegramUserId == account.TelegramUserId)).UserId));
+    }
+
+    /// <summary>
+    /// Telegram Web runs the Mini App in a cross-site iframe — the ticket cookie may not come back.
+    /// The ticket is in the unlink body too, and link-login takes it from a header.
+    /// </summary>
+    [Fact]
+    public async Task Chipta_cookiesiz_sarlavha_bilan_ham_ishlaydi()
+    {
+        var (first, account) = await LinkedAsync(Roles.Teacher);
+        var (second, password) = await fixture.Api.SeedUserAsync(Roles.Teacher);
+        var key = await IssueAsync(account.Id);
+
+        using var anonymous = fixture.Api.AnonymousClient();
+        var token = (await ReadAnyAsync(await anonymous.PostAsJsonAsync("/api/tg/auth/key", new { key }))).GetProperty("token").GetString()!;
+        using var session = fixture.Api.ClientWithToken(token);
+        var left = await session.DeleteAsync("/api/tg/link");
+        Assert.Equal(HttpStatusCode.OK, left.StatusCode);
+        var ticket = (await ReadAnyAsync(left)).GetProperty("ticket").GetString()!;
+
+        using var relink = new HttpRequestMessage(HttpMethod.Post, "/api/tg/link-login")
+        {
+            Content = JsonContent.Create(new { login = second.Email, password, initData = "" }),
+        };
+        relink.Headers.Add("X-Telegram-Link-Ticket", ticket);          // no cookie at all
+        var linked = await anonymous.SendAsync(relink);
+        Assert.Equal(HttpStatusCode.OK, linked.StatusCode);
+        await fixture.Api.WithDbAsync(async db =>
+            Assert.Equal(second.Id, (await db.TelegramAccounts.SingleAsync(a => a.TelegramUserId == account.TelegramUserId)).UserId));
+        _ = first;
+    }
+
+    /// <summary>
+    /// The linked account was archived: the button no longer dead-ends on "akkaunt arxivlangan" —
+    /// the link goes and the same Telegram signs in to another account.
+    /// </summary>
+    [Fact]
+    public async Task Arxivlangan_akkaunt_boglanishi_uziladi_va_boshqasiga_ulanadi()
+    {
+        var (archived, account) = await LinkedAsync(Roles.Teacher);
+        var (other, password) = await fixture.Api.SeedUserAsync(Roles.Teacher);
+        var key = await IssueAsync(account.Id);
+        await fixture.Api.WithDbAsync(async db =>
+        {
+            (await db.Teachers.SingleAsync(t => t.UserId == archived.Id)).IsArchived = true;
+            await db.SaveChangesAsync();
+        });
+
+        using var anonymous = fixture.Api.AnonymousClient();
+        var opened = await anonymous.PostAsJsonAsync("/api/tg/auth/key", new { key });
+        Assert.Equal(HttpStatusCode.Conflict, opened.StatusCode);
+        var body = await ReadAnyAsync(opened);
+        Assert.Equal("not_linked", body.GetProperty("code").GetString());
+        Assert.Contains("arxivlangan", body.GetProperty("message").GetString(), StringComparison.Ordinal);
+        await fixture.Api.WithDbAsync(async db => Assert.False(await db.TelegramAccounts.AnyAsync(a => a.Id == account.Id)));
+
+        using var relink = new HttpRequestMessage(HttpMethod.Post, "/api/tg/link-login")
+        {
+            Content = JsonContent.Create(new { login = other.Email, password, initData = "" }),
+        };
+        relink.Headers.Add("X-Telegram-Link-Ticket", body.GetProperty("ticket").GetString()!);
+        Assert.Equal(HttpStatusCode.OK, (await anonymous.SendAsync(relink)).StatusCode);
     }
 
     // ------------------------------------------------------------------ bot
