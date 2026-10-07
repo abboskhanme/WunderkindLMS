@@ -7,6 +7,20 @@
     <link rel="apple-touch-icon" href="/favicon-180.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Wunderkind International School</title>
+    <script>
+      // Opened BY TELEGRAM as a Mini App but not at /tg/ (the bot's "Open" button set in BotFather
+      // to the site root, an old keyboard, a forwarded link): Telegram puts its launch data in the
+      // hash (#tgWebAppData=…). Then the school's Mini App opens instead of the web portal, with the
+      // same launch data — one look for everyone (client, 2026-10-08: "bitta accountga 2 ta telefonda
+      // 2 xil ochadigan holat"). A normal browser has no such hash and is not touched.
+      (function () {
+        var h = location.hash || ''
+        if (location.pathname.indexOf('/tg/') !== 0
+            && (h.indexOf('tgWebAppData=') !== -1 || h.indexOf('tgWebAppPlatform=') !== -1)) {
+          location.replace('/tg/' + location.search + h)
+        }
+      })()
+    </script>
   </head>
   <body>
     <div id="root"></div>
