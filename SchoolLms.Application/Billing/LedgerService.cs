@@ -167,8 +167,28 @@ public sealed class LedgerService(IAppDbContext db) : ILedgerService
     }
 
     /// <inheritdoc />
-    public async Task<IReadOnlyList<LedgerEntry>> ReverseAsync(
+    public Task<IReadOnlyList<LedgerEntry>> ReverseAsync(
+        long entryId, string reason, string approverId, CancellationToken ct = default) =>
+        ReverseCoreAsync(entryId, reason, approverId, twoPerson: true, ct);
+
+    /// <summary>
+    /// Reverses a month's ACCRUAL batch (<see cref="LedgerRefType.Invoice"/>) without the two-person
+    /// check (client, 2026-10-07, "abonement oyini butunlay o'chirish": the rule stays for money only).
+    /// Accrual is written by the background job or right after a subscription is saved, under some
+    /// admin's name — it is bookkeeping, not that person's own cash. Any other batch is refused here.
+    /// </summary>
+    public async Task<IReadOnlyList<LedgerEntry>> ReverseAccrualAsync(
         long entryId, string reason, string approverId, CancellationToken ct = default)
+    {
+        var refType = await db.LedgerEntries.AsNoTracking().Where(e => e.Id == entryId)
+            .Select(e => e.RefType).FirstOrDefaultAsync(ct);
+        if (refType != LedgerRefType.Invoice)
+            throw new InvalidOperationException("Faqat oy hisobi (accrual) partiyasi shu yo'l bilan teskari qilinadi.");
+        return await ReverseCoreAsync(entryId, reason, approverId, twoPerson: false, ct);
+    }
+
+    private async Task<IReadOnlyList<LedgerEntry>> ReverseCoreAsync(
+        long entryId, string reason, string approverId, bool twoPerson, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(reason))
             throw new ArgumentException("Storno sababi majburiy (SPEC §4.3).", nameof(reason));
@@ -205,7 +225,7 @@ public sealed class LedgerService(IAppDbContext db) : ILedgerService
         // SPEC §4.5 — ikki qavatli nazorat. Yozuvni qo'ygan odam uni o'zi
         // teskari qila olmaydi: aks holda "yozdim — o'chirdim" bitta odamning
         // qo'lida qolardi, ya'ni butun himoya ma'nosiz bo'lardi.
-        if (batch.Any(e => string.Equals(e.CreatedBy, approverId, StringComparison.Ordinal)))
+        if (twoPerson && batch.Any(e => string.Equals(e.CreatedBy, approverId, StringComparison.Ordinal)))
             throw new InvalidOperationException(
                 "Yozuvni qo'ygan foydalanuvchi uni o'zi storno qila olmaydi (SPEC §4.5) — "
                 + "ikkinchi shaxs tasdig'i kerak.");

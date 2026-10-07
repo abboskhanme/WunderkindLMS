@@ -117,6 +117,28 @@ public class MonthRemovalTests(ApiFixture fixture) : IAsyncLifetime
         await AssertLedgerBalancedAsync(check);
     }
 
+    /// <summary>The month's accrual is bookkeeping — the admin it was posted under may remove it (client, 2026-10-07).</summary>
+    [Fact]
+    public async Task Oy_hisobi_ozi_nomidan_yozilgan_admin_ham_ochira_oladi()
+    {
+        await using var db = NewDb();
+        var world = await NewWorldAsync(db);
+        var sub = await AddSubscriptionAsync(db, world, 700_000m, ThisMonth);
+        await Invoices(db).AccrueMonthAsync(ThisMonth, world.ActorId);
+        await new PaymentService(db, new LedgerService(db)).AcceptAsync(
+            new AcceptPaymentRequest(world.StudentId, 700_000m, PaymentMethod.Cash, null, []), world.CashierId);
+
+        var month = Assert.Single((await Removal(db).PreviewAsync(sub, world.ActorId)).Months);
+        Assert.Null(month.BlockedReason);
+        var result = await Removal(db).RemoveAsync(sub, new MonthRemovalRequest([month.InvoiceId], "Xato"), world.ActorId);
+        Assert.Equal(700_000m, result.ReversedPaid);
+
+        await using var check = NewDb();
+        Assert.NotNull((await check.Invoices.AsNoTracking().SingleAsync(i => i.Id == month.InvoiceId)).RemovedAt);
+        Assert.Equal(0m, await new LedgerService(check).BalanceAsync(Accounts.Receivable));
+        await AssertLedgerBalancedAsync(check);
+    }
+
     [Fact]
     public async Task Hamma_oylari_ochirilsa_abonementning_ozi_ham_ochiriladi()
     {

@@ -24,7 +24,8 @@ namespace SchoolLms.Application.Billing;
 //      status void + removed_at — accrual does not bill it again when the subscription is edited.
 //
 //  Optionally the subscription itself goes when none of its months is left.
-//  Two-person rule stays: whoever took a payment or posted the accrual cannot remove that month.
+//  Two-person rule — for money only (client, 2026-10-07): whoever took a receipt cannot remove the
+//  month it paid; the month's accrual (background job / saved subscription) does not count as own.
 // ===========================================================================
 
 public record MonthRemovalPaymentDto(Guid PaymentId, long ReceiptNo, DateTimeOffset ReceivedAt, decimal Amount, decimal Share, bool Own);
@@ -61,11 +62,6 @@ public sealed class MonthRemovalService(IAppDbContext db, AuditService audit)
         var net = await NetAsync(sub.StudentId, ct);
         var paymentIds = net.Keys.Where(k => live.Any(i => i.Id == k.InvoiceId)).Select(k => k.PaymentId).Distinct().ToList();
         var payments = await db.Payments.AsNoTracking().Where(p => paymentIds.Contains(p.Id)).ToDictionaryAsync(p => p.Id, ct);
-        var liveIds = live.Select(i => i.Id).ToList();
-        var accrualBy = (await db.LedgerEntries.AsNoTracking()
-                .Where(e => e.RefType == LedgerRefType.Invoice && e.RefId != null && liveIds.Contains(e.RefId.Value) && e.ReversalOf == null)
-                .Select(e => new { e.RefId, e.CreatedBy }).ToListAsync(ct))
-            .GroupBy(e => e.RefId!.Value).ToDictionary(g => g.Key, g => g.First().CreatedBy);
 
         var lines = live.Select(i =>
         {
@@ -78,11 +74,7 @@ public sealed class MonthRemovalService(IAppDbContext db, AuditService audit)
                 })
                 .OrderBy(x => x.ReceivedAt).ToList();
             var own = shares.FirstOrDefault(x => x.Own);
-            var blocked = own is not null
-                ? $"Chek #{own.ReceiptNo} ni o'zingiz qabul qilgansiz — boshqa admin yoki direktor o'chiradi"
-                : string.Equals(accrualBy.GetValueOrDefault(i.Id), actorId, StringComparison.Ordinal)
-                    ? "Bu oy hisobi sizning nomingizdan yozilgan — boshqa admin yoki direktor o'chiradi"
-                    : null;
+            var blocked = own is null ? null : $"Chek #{own.ReceiptNo} ni o'zingiz qabul qilgansiz — boshqa admin yoki direktor o'chiradi";
             return new MonthRemovalLineDto(i.Id, Month(i.PeriodMonth), i.Amount, i.Discount, i.Amount - i.Discount,
                 shares.Sum(x => x.Share), i.Status, shares, blocked);
         }).ToList();
@@ -157,7 +149,7 @@ public sealed class MonthRemovalService(IAppDbContext db, AuditService audit)
                 ReversalOf = original.Id,
             });
             await db.SaveChangesAsync(ct);
-            await ReverseLedgerAsync(ledger, anchor, $"Oy o'chirildi ({months}): {reason}", actorId, ct);
+            await ReverseLedgerAsync(() => ledger.ReverseAsync(anchor, $"Oy o'chirildi ({months}): {reason}", actorId, ct));
 
             var mine = net.Where(kv => kv.Key.PaymentId == original.Id).ToList();
             foreach (var kv in mine) touchedInvoiceIds.Add(kv.Key.InvoiceId);
@@ -214,13 +206,10 @@ public sealed class MonthRemovalService(IAppDbContext db, AuditService audit)
             var accrual = await db.LedgerEntries.AsNoTracking()
                 .Where(e => e.RefType == LedgerRefType.Invoice && e.RefId == invoice.Id && e.ReversalOf == null)
                 .OrderBy(e => e.Id).Select(e => new { e.Id, e.CreatedBy }).FirstOrDefaultAsync(ct);
+            // The month's accrual is bookkeeping (background job / saved subscription), not anyone's own
+            // cash — the two-person rule stays for the receipts above only (client, 2026-10-07).
             if (accrual is not null)
-            {
-                if (string.Equals(accrual.CreatedBy, actorId, StringComparison.Ordinal))
-                    throw BillingRuleException.Forbidden("self_reversal",
-                        $"{Month(invoice.PeriodMonth)} hisobini jurnalga o'zingiz yozgansiz — uni boshqa admin yoki direktor o'chirishi kerak (ikki shaxs nazorati).");
-                await ReverseLedgerAsync(ledger, accrual.Id, $"Oy o'chirildi: {reason}", actorId, ct);
-            }
+                await ReverseLedgerAsync(() => ledger.ReverseAccrualAsync(accrual.Id, $"Oy o'chirildi: {reason}", actorId, ct));
 
             var before = new { invoice.Id, invoice.PeriodMonth, invoice.Amount, invoice.Discount, invoice.Status };
             removedPayable += invoice.Amount - invoice.Discount;
@@ -303,11 +292,11 @@ public sealed class MonthRemovalService(IAppDbContext db, AuditService audit)
         return await CashBoxService.DefaultBoxIdAsync(db, ct);
     }
 
-    private static async Task ReverseLedgerAsync(LedgerService ledger, long anchor, string reason, string actorId, CancellationToken ct)
+    private static async Task ReverseLedgerAsync(Func<Task> reverse)
     {
         try
         {
-            await ledger.ReverseAsync(anchor, reason, actorId, ct);
+            await reverse();
         }
         catch (BillingRuleException)
         {
