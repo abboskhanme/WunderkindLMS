@@ -103,6 +103,8 @@ public class FinanceController(AppDbContext db) : ControllerBase
         var absentAll = await db.TeacherAttendances
             .Where(a => a.Status == "absent" && a.Date.Length >= 7)
             .Select(a => new { a.TeacherId, a.Date }).ToListAsync(ct);
+        // O'rindosh ustoz (2026-10-07): covered lessons in, lessons covered by others out.
+        var substitutions = await LessonSubstitutionService.MonthDeltaAsync(db, ct);
 
         var report = teachers.Select(te =>
         {
@@ -127,7 +129,8 @@ public class FinanceController(AppDbContext db) : ControllerBase
             var totalPaid = rows.Sum(r => r.Amount);
             var expected = monthList.Sum(mn => TeacherSalaryCalc.MonthlyForMonth(
                 byWeekday, te.Category, meta, mn, startDate,
-                absByMonth.GetValueOrDefault(mn) ?? Enumerable.Empty<string>(), te.BonusPct, quarters));
+                absByMonth.GetValueOrDefault(mn) ?? Enumerable.Empty<string>(), te.BonusPct, quarters,
+                substitutions.GetValueOrDefault((te.Id, mn))));
             return new SalaryReportRowDto(
                 te.Id, te.FullName, nominalMonthly, totalPaid, rows.Count,
                 monthList.Count, expected, expected - totalPaid,

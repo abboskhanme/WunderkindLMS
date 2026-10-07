@@ -544,7 +544,9 @@ public class TeacherPortalController(
     {
         var t = await Me();
         if (t is null) return NotFound();
-        if (!t.Permissions.Contains(TeacherPermissions.Journal) || !await TeachesClass(t, classId))
+        // O'rindosh ustoz (2026-10-07): the class of a lesson they cover.
+        if (!t.Permissions.Contains(TeacherPermissions.Journal)
+            || (!await TeachesClass(t, classId) && !await LessonSubstitutionService.CoversClassAsync(db, t.Id, classId)))
             return Forbid();
 
         var owner = await LessonRoster.OwnerAsync(db, classId);
@@ -582,7 +584,7 @@ public class TeacherPortalController(
     [HttpPut("journal")]
     public async Task<IActionResult> SetEntry(SetJournalEntryRequest req)
     {
-        if (!await Authorized(req.ClassId, req.SubjectId)) return Forbid();
+        if (!await Authorized(req.ClassId, req.SubjectId, req.Date)) return Forbid();
         // Hali o'tilmagan (sanasi kelmagan) darsga baho/jurnal kiritib bo'lmaydi.
         if (string.CompareOrdinal(req.Date, AppClock.Now.ToString("yyyy-MM-dd")) > 0)
             return BadRequest(new { message = "Dars hali o'tilmagan — kelajakdagi sanaga baho qo'yib bo'lmaydi" });
@@ -596,7 +598,7 @@ public class TeacherPortalController(
         [FromQuery] string classId, [FromQuery] string subjectId, [FromQuery] int quarter,
         [FromQuery] string studentId, [FromQuery] string date, [FromQuery] int period)
     {
-        if (!await Authorized(classId, subjectId)) return Forbid();
+        if (!await Authorized(classId, subjectId, date)) return Forbid();
         await JournalService.ClearEntryAsync(db, classId, subjectId, quarter, studentId, date, period);
         return NoContent();
     }
@@ -612,7 +614,7 @@ public class TeacherPortalController(
     [HttpPut("journal/notes")]
     public async Task<IActionResult> SetNote(SetLessonNoteRequest req)
     {
-        if (!await Authorized(req.ClassId, req.SubjectId)) return Forbid();
+        if (!await Authorized(req.ClassId, req.SubjectId, req.Date)) return Forbid();
         var error = await JournalService.SetNoteAsync(db, req);
         if (error is not null) return BadRequest(new { message = error });
         return NoContent();
@@ -796,11 +798,14 @@ public class TeacherPortalController(
     }
 
     /// <summary>Jurnal ruxsati + shu sinf+fanga dars beradimi.</summary>
-    private async Task<bool> Authorized(string classId, string subjectId)
+    /// <param name="date">A write's lesson date — a substitute writes only on the day they cover.</param>
+    private async Task<bool> Authorized(string classId, string subjectId, string? date = null)
     {
         var t = await Me();
-        return t is not null && t.Permissions.Contains(TeacherPermissions.Journal)
-            && await Teaches(t.Id, classId, subjectId);
+        if (t is null || !t.Permissions.Contains(TeacherPermissions.Journal)) return false;
+        if (await Teaches(t.Id, classId, subjectId)) return true;
+        // O'rindosh ustoz (2026-10-07): the class+subject of a lesson they cover.
+        return await LessonSubstitutionService.CoversAsync(db, t.Id, classId, subjectId, date);
     }
 
     // ---------- Guruh chati (dars beradigan sinflar + sinf rahbarligi) ----------

@@ -64,3 +64,31 @@ internal static class FeedbackModel
         });
     }
 }
+
+/// <summary>O'rindosh ustoz — one lesson on one date taught by another teacher (LessonSubstitution.cs).</summary>
+internal static class LessonSubstitutionModel
+{
+    public static void Apply(ModelBuilder b)
+    {
+        b.Entity<LessonSubstitution>(e =>
+        {
+            e.ToTable("lesson_substitutions");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.OwnerKind).HasMaxLength(10);
+            e.Property(x => x.Reason).HasMaxLength(300);
+            e.Property(x => x.Date).HasColumnType("date");
+            e.HasOne<Teacher>().WithMany().HasForeignKey(x => x.AbsentTeacherId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<Teacher>().WithMany().HasForeignKey(x => x.SubstituteTeacherId).OnDelete(DeleteBehavior.Restrict);
+            // One standing substitution per lesson on a date.
+            e.HasIndex(x => new { x.Date, x.Period, x.OwnerId, x.SubjectId, x.SubGroup })
+                .IsUnique().HasFilter("cancelled_at is null");
+            e.HasIndex(x => new { x.SubstituteTeacherId, x.Date });
+            e.HasIndex(x => new { x.AbsentTeacherId, x.Date });
+            e.ToTable(t =>
+            {
+                t.HasCheckConstraint("ck_lesson_substitutions_people", "absent_teacher_id <> substitute_teacher_id");
+                t.HasCheckConstraint("ck_lesson_substitutions_cancel", "(cancelled_at is null) = (cancelled_by is null)");
+            });
+        });
+    }
+}

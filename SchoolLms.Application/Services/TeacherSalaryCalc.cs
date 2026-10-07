@@ -139,17 +139,21 @@ public static class TeacherSalaryCalc
     /// <summary>
     /// Bitta oy uchun yakuniy maosh (so'm): chorak davri + qisman birinchi oy + davomat + ustama bilan.
     /// </summary>
+    /// <param name="lessonDelta">
+    /// O'rindosh ustoz (2026-10-07): lessons covered for others minus own lessons someone else covered
+    /// (<see cref="LessonSubstitutionService.MonthDeltaAsync"/>); paid at this teacher's own rate.
+    /// </param>
     public static decimal MonthlyForMonth(
         int[] byWeekday, string? category, SchoolMeta? meta, string month, string? startDate,
         IEnumerable<string> absentDatesInMonth, decimal bonusPct,
-        IReadOnlyList<(string Start, string End)>? quarters = null)
+        IReadOnlyList<(string Start, string End)>? quarters = null, int lessonDelta = 0)
     {
         var planned = PlannedLessonsForMonth(byWeekday, month, startDate, quarters);
         // Ishga kirgan oyda — faqat kelgan kunidan keyingi yo'qliklar hisobga olinadi.
         var absences = startDate is { Length: >= 10 } && startDate[..7] == month
             ? absentDatesInMonth.Where(d => string.CompareOrdinal(d, startDate) >= 0)
             : absentDatesInMonth;
-        var net = Math.Max(0, planned - MissedLessons(byWeekday, absences, quarters));
+        var net = Math.Max(0, planned - MissedLessons(byWeekday, absences, quarters) + lessonDelta);
         return WithBonus(net * RateFor(meta, category), bonusPct);
     }
 

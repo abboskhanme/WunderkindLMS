@@ -14,6 +14,8 @@ export interface TeacherPayrollRow {
   missedLessons: number
   /** Ustama foizi (%) — 0 = yo'q */
   bonusPct: number
+  /** O'rindosh ustoz: boshqalar o'rniga o'tilgan darslar minus o'z darsi boshqaga berilgani */
+  substitutionLessons?: number
   /** Hisoblangan oylik maosh (davomatga moslangan + ustama, so'm) */
   monthlySalary: number
 }
@@ -88,6 +90,18 @@ export interface TeacherSalaryDetail {
   paid: number
   remaining: number
   absentDays: AbsentDay[]
+  /** O'rindosh ustoz: covered for others minus own lessons covered by others (this month) */
+  substitutionLessons?: number
+  substitutions?: {
+    id: string
+    date: string
+    period: number
+    ownerName: string
+    subjectName: string
+    absentTeacherId: string
+    absentTeacherName: string
+    substituteTeacherName: string
+  }[]
 }
 
 export async function getTeacherSalaryDetail(teacherId: string, month: string): Promise<TeacherSalaryDetail> {

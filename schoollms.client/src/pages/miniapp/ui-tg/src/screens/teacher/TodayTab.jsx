@@ -255,6 +255,11 @@ function FocusLesson({ lessons, conducted, canJournal, canSchedule, onOpenAttend
             {lesson.startTime}–{lesson.endTime}
           </span>
         </div>
+        {substituteNote(lesson) && (
+          <p className="mt-2 inline-flex rounded-lg bg-brand/15 px-2.5 py-1 text-[12px] font-bold text-brand">
+            {substituteNote(lesson)}
+          </p>
+        )}
 
         {live && (
           <div className="mt-4 flex items-center gap-3">
@@ -328,6 +333,13 @@ function QuarterProgress({ progress }) {
 
 /* ------------------------------------------------------------- dars qatori */
 
+/** O'rindosh ustoz (2026-10-07): "covering for X" on a substitute's lesson, "X covers" on one's own. */
+function substituteNote(lesson) {
+  if (lesson.substituteFor) return `O'rindosh: ${lesson.substituteFor} o'rniga`
+  if (lesson.substitutedBy) return `${lesson.substitutedBy} o'tadi`
+  return null
+}
+
 function LessonListRow({ lesson, conducted, onClick }) {
   const state = lessonTimeState(lesson)
   const badge = conducted
@@ -348,7 +360,9 @@ function LessonListRow({ lesson, conducted, onClick }) {
         />
       }
       title={lessonOwnerTitle(lesson)}
-      subtitle={`${lesson.subjectName} · ${lesson.startTime}–${lesson.endTime}`}
+      subtitle={[`${lesson.subjectName} · ${lesson.startTime}–${lesson.endTime}`, substituteNote(lesson)]
+        .filter(Boolean)
+        .join(' · ')}
       right={<Badge tone={badge.tone}>{badge.text}</Badge>}
       onClick={onClick}
     />

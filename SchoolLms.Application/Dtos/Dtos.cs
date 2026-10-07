@@ -102,9 +102,10 @@ public static class SalaryReportKinds
 public record SalaryRatesDto(
     decimal Oliy, decimal T1, decimal T2, decimal Mutaxasis,
     int WeeksPerMonth, string Month, List<TeacherPayrollRowDto> Teachers);
+/// <param name="SubstitutionLessons">O'rindosh ustoz: lessons covered for others minus own lessons covered by others.</param>
 public record TeacherPayrollRowDto(
     string Id, string FullName, string Category, int WeeklyLessons, int MonthlyLessons,
-    int MissedLessons, decimal BonusPct, decimal MonthlySalary);
+    int MissedLessons, decimal BonusPct, decimal MonthlySalary, int SubstitutionLessons = 0);
 public record SalaryRatesRequest(decimal Oliy, decimal T1, decimal T2, decimal Mutaxasis);
 public record SetTeacherBonusRequest(decimal BonusPct);
 public record SetBonusBulkRequest(List<string> TeacherIds, decimal BonusPct);
@@ -116,7 +117,8 @@ public record TeacherSalaryDetailDto(
     decimal HourlyRate, int WeeklyLessons, int MonthlyLessons,
     decimal PlannedSalary, int MissedLessons, decimal Deduction,
     decimal BaseSalary, decimal BonusPct, decimal BonusAmount, decimal NetSalary,
-    decimal Paid, decimal Remaining, List<AbsentDayDto> AbsentDays);
+    decimal Paid, decimal Remaining, List<AbsentDayDto> AbsentDays,
+    int SubstitutionLessons = 0, List<SchoolLms.Application.Services.SubstitutionDto>? Substitutions = null);
 
 /// <summary>O'qituvchilar davomati — oylik board (o'qituvchilar + belgilangan kunlar).</summary>
 public record TeacherNameDto(string Id, string FullName, string StartDate = "");
@@ -926,10 +928,12 @@ public record TeacherGroupDto(
 /// turibdi va sukut qiymati bor: eski mijoz kodini buzmaydi.
 /// </para>
 /// </summary>
+/// <param name="SubstituteFor">This teacher covers the lesson as a substitute — the absent teacher's name.</param>
+/// <param name="SubstitutedBy">This teacher's own lesson is covered by someone else — their name.</param>
 public record TeacherLessonDto(
     int Day, int Period, string? StartTime, string? EndTime,
     string ClassId, string ClassName, string SubjectId, string SubjectName, int SubGroup = 0,
-    string OwnerKind = "class");
+    string OwnerKind = "class", string? SubstituteFor = null, string? SubstitutedBy = null);
 
 /* ---------- Student portal (ilova) ---------- */
 /// <summary>O'quvchining o'z profili (ilovada ko'rsatish uchun).</summary>

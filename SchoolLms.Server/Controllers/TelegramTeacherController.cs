@@ -124,7 +124,11 @@ public sealed class TelegramTeacherController(
 
         // Faqat o'zi dars beradigan ega+fan — `TeacherPortalController.Authorized` bilan
         // bir xil qoida, bitta manbadan (G-12).
-        if (!await TeachesAsync(t.Id, classId, subjectId, ct)) return Forbid();
+        // O'rindosh ustoz (2026-10-07): a covered lesson's roster, on its date only.
+        if (!await TeachesAsync(t.Id, classId, subjectId, ct)
+            && !await LessonSubstitutionService.CoversAsync(db, t.Id, classId, subjectId,
+                string.IsNullOrWhiteSpace(date) ? AppClock.Today.ToString("yyyy-MM-dd") : date, ct))
+            return Forbid();
 
         var owner = await LessonRoster.OwnerAsync(db, classId, ct);
         if (owner is null) return NotFound(new { message = "Sinf topilmadi" });

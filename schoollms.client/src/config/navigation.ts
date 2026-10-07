@@ -232,6 +232,8 @@ export const navByRole: Record<Role, NavItem[]> = {
         // o'qituvchi va boshqa xodimlar BITTA ro'yxatda, farqi "Lavozim" ustunida).
         // `/admin/teachers` manzili o'sha sahifaga `?position=teacher` bilan yo'naltiradi.
         { label: "O'qituvchilar davomati", to: '/admin/teachers/attendance', perm: 'teachers', group: 'XODIMLAR' },
+        // O'rindosh ustoz (client, 2026-10-07) — same key: whoever marks absence names the cover.
+        { label: "O'rindosh ustozlar", to: '/admin/teachers/substitutions', perm: 'teachers', group: 'XODIMLAR' },
         // 'Oylik hisoblash' MOLIYA ostiga ko'chdi — EduSchool'da Ish haqi
         // aynan o'sha yerda turadi. Ikki joyda ko'rsatish menyuni chalkashtirardi.
         //

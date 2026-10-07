@@ -162,6 +162,14 @@ public static class TeacherActivityReport
         if (quarter > 0) entriesQ = entriesQ.Where(e => e.Quarter == quarter);
         var entries = await entriesQ.ToListAsync();
 
+        // O'rindosh ustoz (2026-10-07): a covered lesson — its plan, mark and grades — is the substitute's.
+        var covered = (await db.LessonSubstitutions.AsNoTracking().Where(x => x.CancelledAt == null).ToListAsync())
+            .ToDictionary(x => (x.Date.ToString("yyyy-MM-dd"), x.Period, x.OwnerId, x.SubjectId, x.SubGroup), x => x.SubstituteTeacherId);
+        string? CoveredBy(string date, int period, string classId, string subjectId, int sub) =>
+            covered.Count == 0 ? null
+            : covered.GetValueOrDefault((date, period, classId, subjectId, sub))
+              ?? covered.GetValueOrDefault((date, period, classId, subjectId, 0));
+
         // (ClassId, SubjectId, SubGroup) -> TeacherId; va (ClassId, SubjectId) -> o'qituvchilar to'plami.
         var exact = new Dictionary<(string, string, int), string>();
         var bySubject = new Dictionary<(string, string), HashSet<string>>();
@@ -226,7 +234,8 @@ public static class TeacherActivityReport
                         if (string.CompareOrdinal(date, q.StartDate) < 0 ||
                             string.CompareOrdinal(date, q.EndDate) > 0) continue;
                         if (string.CompareOrdinal(date, today) > 0) continue; // kelajak dars — hali reja emas
-                        Key(l.TeacherId, owner.Id, owner.Kind, l.SubjectId, l.SubGroup).Expected++;
+                        var planned = CoveredBy(date, l.Period, owner.Id, l.SubjectId, l.SubGroup) ?? l.TeacherId;
+                        Key(planned, owner.Id, owner.Kind, l.SubjectId, l.SubGroup).Expected++;
                     }
                 }
         }
@@ -236,7 +245,8 @@ public static class TeacherActivityReport
         {
             if (!n.Conducted) continue;
             if (!scope.Allows(n.OwnerKind, n.ClassId)) continue;
-            var teacher = Attribute(n.ClassId, n.SubjectId, n.SubGroup);
+            var teacher = CoveredBy(n.Date, n.Period, n.ClassId, n.SubjectId, n.SubGroup)
+                          ?? Attribute(n.ClassId, n.SubjectId, n.SubGroup);
             if (teacher is null) continue;
             var agg = Key(teacher, n.ClassId, OwnerKindOf(n.ClassId, n.OwnerKind), n.SubjectId, n.SubGroup);
             agg.Conducted++;
@@ -249,7 +259,8 @@ public static class TeacherActivityReport
         foreach (var e in entries)
         {
             if (!scope.Allows(e.OwnerKind, e.ClassId)) continue;
-            var teacher = Attribute(e.ClassId, e.SubjectId, e.SubGroup);
+            var teacher = CoveredBy(e.Date, e.Period, e.ClassId, e.SubjectId, e.SubGroup)
+                          ?? Attribute(e.ClassId, e.SubjectId, e.SubGroup);
             if (teacher is null) continue;
             Key(teacher, e.ClassId, OwnerKindOf(e.ClassId, e.OwnerKind), e.SubjectId, e.SubGroup).Grades++;
             Touch(teacher, e.Date);

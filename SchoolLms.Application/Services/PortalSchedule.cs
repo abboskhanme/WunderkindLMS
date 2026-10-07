@@ -88,20 +88,48 @@ public static class PortalSchedule
         // bitta joyda birlashadi. O'chirgich o'chiq bo'lsa guruh biriktirishlari
         // ko'rinmaydi va natija bugungi ro'yxatning aynan o'zi.
         var lessons = await TeacherLessons.ForWeekAsync(db, teacherId, quarter, week);
-        if (lessons.Count == 0) return [];
+
+        // O'rindosh ustoz (2026-10-07): this week's substitutions on either side of the teacher.
+        var monday = await LessonSubstitutionService.WeekMondayAsync(db, quarter, week);
+        var subs = monday is { } m
+            ? await db.LessonSubstitutions.AsNoTracking()
+                .Where(s => s.CancelledAt == null && s.Date >= m && s.Date <= m.AddDays(5)
+                            && (s.AbsentTeacherId == teacherId || s.SubstituteTeacherId == teacherId))
+                .ToListAsync()
+            : [];
+        if (lessons.Count == 0 && subs.Count == 0) return [];
 
         var subjects = await db.Subjects.ToDictionaryAsync(s => s.Id, s => s.Name);
         var times = await db.LessonTimes.ToDictionaryAsync(x => x.Period);
+        var otherIds = subs.SelectMany(s => new[] { s.AbsentTeacherId, s.SubstituteTeacherId }).Distinct().ToList();
+        var teacherNames = await db.Teachers.AsNoTracking().Where(t => otherIds.Contains(t.Id)).ToDictionaryAsync(t => t.Id, t => t.FullName);
+        int DayOf(DateOnly d) => ((int)d.DayOfWeek + 6) % 7;
 
         var result = new List<TeacherLessonDto>();
         foreach (var l in lessons)
         {
             times.TryGetValue(l.Period, out var lt);
+            var coveredBy = subs.FirstOrDefault(s => s.AbsentTeacherId == teacherId && DayOf(s.Date) == l.Day
+                && s.Period == l.Period && s.OwnerId == l.Owner.Id && s.SubjectId == l.SubjectId && s.SubGroup == l.SubGroup);
             result.Add(new TeacherLessonDto(
                 l.Day, l.Period, lt?.StartTime, lt?.EndTime,
                 l.Owner.Id, l.Owner.Name,
                 l.SubjectId, subjects.GetValueOrDefault(l.SubjectId, ""), l.SubGroup,
-                l.Owner.Kind));
+                l.Owner.Kind,
+                SubstitutedBy: coveredBy is null ? null : teacherNames.GetValueOrDefault(coveredBy.SubstituteTeacherId, "")));
+        }
+        if (subs.Any(s => s.SubstituteTeacherId == teacherId))
+        {
+            var owners = await LessonRoster.AllOwnersAsync(db);
+            foreach (var s in subs.Where(s => s.SubstituteTeacherId == teacherId))
+            {
+                times.TryGetValue(s.Period, out var lt);
+                result.Add(new TeacherLessonDto(
+                    DayOf(s.Date), s.Period, lt?.StartTime, lt?.EndTime,
+                    s.OwnerId, owners.TryGetValue(s.OwnerId, out var o) ? o.Name : "",
+                    s.SubjectId, subjects.GetValueOrDefault(s.SubjectId, ""), s.SubGroup,
+                    s.OwnerKind, SubstituteFor: teacherNames.GetValueOrDefault(s.AbsentTeacherId, "")));
+            }
         }
         return [.. result.OrderBy(r => r.Day).ThenBy(r => r.Period)];
     }

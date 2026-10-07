@@ -61,6 +61,7 @@ public class SalaryRatesController(AppDbContext db, AuditService audit) : Contro
             .GroupBy(a => a.TeacherId)
             .ToDictionary(g => g.Key, g => (IEnumerable<string>)g.Select(x => x.Date).ToList());
 
+        var substitutions = await LessonSubstitutionService.MonthDeltaAsync(db);
         var rows = teachers.Select(t =>
         {
             var byWeekday = byWeekdayAll.GetValueOrDefault(t.Id) ?? new int[6];
@@ -73,9 +74,10 @@ public class SalaryRatesController(AppDbContext db, AuditService audit) : Contro
                 ? absentRaw.Where(d => string.CompareOrdinal(d, startDate) >= 0).ToList()
                 : absentRaw.ToList();
             var missed = TeacherSalaryCalc.MissedLessons(byWeekday, absent, quarters);
-            var salary = TeacherSalaryCalc.MonthlyForMonth(byWeekday, t.Category, meta, m, startDate, absent, t.BonusPct, quarters);
+            var delta = substitutions.GetValueOrDefault((t.Id, m));
+            var salary = TeacherSalaryCalc.MonthlyForMonth(byWeekday, t.Category, meta, m, startDate, absent, t.BonusPct, quarters, delta);
             return new TeacherPayrollRowDto(
-                t.Id, t.FullName, t.Category, weekly, planned, missed, t.BonusPct, salary);
+                t.Id, t.FullName, t.Category, weekly, planned, missed, t.BonusPct, salary, delta);
         }).ToList();
 
         return new SalaryRatesDto(
@@ -122,7 +124,11 @@ public class SalaryRatesController(AppDbContext db, AuditService audit) : Contro
         }).ToList();
 
         var missed = absentDays.Sum(x => x.Lessons);
-        var net = Math.Max(0, monthlyLessons - missed);
+        // O'rindosh ustoz (2026-10-07): covered lessons in, own lessons covered by others out.
+        var delta = (await LessonSubstitutionService.MonthDeltaAsync(db)).GetValueOrDefault((t.Id, m));
+        var monthFrom = new DateOnly(int.Parse(m[..4]), int.Parse(m[5..7]), 1);
+        var monthSubs = await LessonSubstitutionService.ListAsync(db, monthFrom, monthFrom.AddMonths(1).AddDays(-1), t.Id);
+        var net = Math.Max(0, monthlyLessons - missed + delta);
 
         // Berilgan maosh — `expenses` dan (P1-21). Faqat jurnalga tushgan va
         // storno qilinmagan chiqim sanaladi: tasdiq kutayotgani hali berilmagan
@@ -139,7 +145,7 @@ public class SalaryRatesController(AppDbContext db, AuditService audit) : Contro
             t.Id, t.FullName, t.Category, m, startDate ?? "", partialMonth, rate, weekly, monthlyLessons,
             monthlyLessons * rate, missed, missed * rate,
             baseSalary, t.BonusPct, bonusAmount, netSalary,
-            paid, netSalary - paid, absentDays);
+            paid, netSalary - paid, absentDays, delta, monthSubs);
     }
 
     /// <summary>

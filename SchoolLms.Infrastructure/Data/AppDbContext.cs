@@ -228,6 +228,9 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<FeedbackDepartmentMember> FeedbackDepartmentMembers => Set<FeedbackDepartmentMember>();
     public DbSet<FeedbackEvent> FeedbackEvents => Set<FeedbackEvent>();
 
+    // O'rindosh ustoz (LessonSubstitution.cs). Configuration: FeedbackModel.cs → LessonSubstitutionModel.
+    public DbSet<LessonSubstitution> LessonSubstitutions => Set<LessonSubstitution>();
+
     /// <inheritdoc />
     public Task<Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction> BeginTransactionAsync(
         CancellationToken cancellationToken = default) =>
@@ -483,6 +486,9 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
 
         // Taklif va shikoyatlar: bo'limlar, mas'ullar, tarix (client, 2026-10-07).
         FeedbackModel.Apply(b);
+
+        // O'rindosh ustoz — one lesson on one date taught by another teacher (2026-10-07).
+        LessonSubstitutionModel.Apply(b);
 
         // ----- PostgreSQL: vaqt turi -----
         // Tizim sanalarni Toshkent "devor soati" sifatida saqlaydi (AppClock.Now — Kind=Unspecified),

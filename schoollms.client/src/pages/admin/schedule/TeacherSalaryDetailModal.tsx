@@ -90,6 +90,13 @@ export function TeacherSalaryDetailModal({
                 color="text-red-600"
               />
             )}
+            {(data.substitutionLessons ?? 0) !== 0 && (
+              <Row
+                label={`O'rindosh (${(data.substitutionLessons ?? 0) > 0 ? '+' : '−'}${Math.abs(data.substitutionLessons ?? 0)} dars)`}
+                value={`${(data.substitutionLessons ?? 0) > 0 ? '+' : '−'} ${formatMoney(Math.abs(data.substitutionLessons ?? 0) * data.hourlyRate)}`}
+                color={(data.substitutionLessons ?? 0) > 0 ? 'text-emerald-600' : 'text-red-600'}
+              />
+            )}
             {data.bonusPct > 0 && (
               <Row
                 label={`Ustama (${data.bonusPct}%)`}
@@ -119,6 +126,27 @@ export function TeacherSalaryDetailModal({
             suggested={Math.max(0, data.remaining)}
             onPaid={handlePaid}
           />
+
+          {(data.substitutions?.length ?? 0) > 0 && (
+            <div>
+              <p className="mb-2 text-sm font-medium text-slate-600">O'rindosh darslar ({data.substitutions!.length})</p>
+              <div className="space-y-1.5">
+                {data.substitutions!.map((s) => {
+                  const covered = s.absentTeacherId !== data.teacherId
+                  return (
+                    <div key={s.id} className="flex items-center justify-between rounded-lg border border-slate-100 px-3 py-2 text-sm">
+                      <span className="text-slate-700">
+                        {formatDate(s.date)} · {s.period}-dars · {s.ownerName} · {s.subjectName}
+                      </span>
+                      <span className={covered ? 'text-emerald-600' : 'text-red-600'}>
+                        {covered ? `${s.absentTeacherName} o'rniga` : `${s.substituteTeacherName} o'tdi`}
+                      </span>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
 
           {/* Qachon kelmagan */}
           <div>

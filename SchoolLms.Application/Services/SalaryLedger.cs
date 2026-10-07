@@ -59,12 +59,14 @@ public static class SalaryLedger
             .GroupBy(p => p.Month)
             .ToDictionary(g => g.Key, g => g.Sum(x => x.Amount));
 
+        var substitutions = await LessonSubstitutionService.MonthDeltaAsync(db);
         var months = new List<MonthSalaryDto>();
         foreach (var month in TuitionService.MonthRange(startMonth, toMonth))
         {
             var expected = TeacherSalaryCalc.MonthlyForMonth(
                 byWeekday, teacher.Category, meta, month, startDate,
-                absentByMonth.GetValueOrDefault(month) ?? Enumerable.Empty<string>(), teacher.BonusPct, quarters);
+                absentByMonth.GetValueOrDefault(month) ?? Enumerable.Empty<string>(), teacher.BonusPct, quarters,
+                substitutions.GetValueOrDefault((teacher.Id, month)));
             var paid = paidByMonth.GetValueOrDefault(month, 0m);
             var remaining = expected - paid;
             var status = remaining <= 0 ? "paid" : paid > 0 ? "partial" : "unpaid";

@@ -4934,6 +4934,95 @@ namespace SchoolLms.Infrastructure.Migrations
                         });
                 });
 
+            modelBuilder.Entity("SchoolLms.Domain.LessonSubstitution", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("AbsentTeacherId")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("absent_teacher_id");
+
+                    b.Property<DateTimeOffset?>("CancelledAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("cancelled_at");
+
+                    b.Property<string>("CancelledBy")
+                        .HasColumnType("text")
+                        .HasColumnName("cancelled_by");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("created_by");
+
+                    b.Property<DateOnly>("Date")
+                        .HasColumnType("date")
+                        .HasColumnName("date");
+
+                    b.Property<string>("OwnerId")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("owner_id");
+
+                    b.Property<string>("OwnerKind")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)")
+                        .HasColumnName("owner_kind");
+
+                    b.Property<int>("Period")
+                        .HasColumnType("integer")
+                        .HasColumnName("period");
+
+                    b.Property<string>("Reason")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .HasColumnName("reason");
+
+                    b.Property<int>("SubGroup")
+                        .HasColumnType("integer")
+                        .HasColumnName("sub_group");
+
+                    b.Property<string>("SubjectId")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("subject_id");
+
+                    b.Property<string>("SubstituteTeacherId")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("substitute_teacher_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_lesson_substitutions");
+
+                    b.HasIndex("AbsentTeacherId", "Date")
+                        .HasDatabaseName("ix_lesson_substitutions_absent_teacher_id_date");
+
+                    b.HasIndex("SubstituteTeacherId", "Date")
+                        .HasDatabaseName("ix_lesson_substitutions_substitute_teacher_id_date");
+
+                    b.HasIndex("Date", "Period", "OwnerId", "SubjectId", "SubGroup")
+                        .IsUnique()
+                        .HasDatabaseName("ix_lesson_substitutions_date_period_owner_id_subject_id_sub_gr")
+                        .HasFilter("cancelled_at is null");
+
+                    b.ToTable("lesson_substitutions", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_lesson_substitutions_cancel", "(cancelled_at is null) = (cancelled_by is null)");
+
+                            t.HasCheckConstraint("ck_lesson_substitutions_people", "absent_teacher_id <> substitute_teacher_id");
+                        });
+                });
+
             modelBuilder.Entity("SchoolLms.Domain.LessonTime", b =>
                 {
                     b.Property<string>("Id")
@@ -9331,6 +9420,23 @@ namespace SchoolLms.Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_lesson_observation_sections_lesson_observation_templates_te");
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.LessonSubstitution", b =>
+                {
+                    b.HasOne("SchoolLms.Domain.Teacher", null)
+                        .WithMany()
+                        .HasForeignKey("AbsentTeacherId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_lesson_substitutions_teachers_absent_teacher_id");
+
+                    b.HasOne("SchoolLms.Domain.Teacher", null)
+                        .WithMany()
+                        .HasForeignKey("SubstituteTeacherId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_lesson_substitutions_teachers_substitute_teacher_id");
                 });
 
             modelBuilder.Entity("SchoolLms.Domain.LmsMaterial", b =>

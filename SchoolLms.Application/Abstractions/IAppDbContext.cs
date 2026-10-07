@@ -297,6 +297,9 @@ public interface IAppDbContext
     DbSet<FeedbackDepartmentMember> FeedbackDepartmentMembers { get; }
     DbSet<FeedbackEvent> FeedbackEvents { get; }
 
+    /// <summary>O'rindosh ustoz: a lesson on a date taught by another teacher.</summary>
+    DbSet<LessonSubstitution> LessonSubstitutions { get; }
+
     int SaveChanges();
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 

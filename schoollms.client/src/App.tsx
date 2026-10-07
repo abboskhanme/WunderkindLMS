@@ -25,6 +25,7 @@ import { EvaluationTypesPage } from '@/pages/admin/students/EvaluationTypesPage'
 import { StudentDetailPage } from '@/pages/admin/students/StudentDetailPage'
 import { StudentTurnstilePage } from '@/pages/admin/students/StudentTurnstilePage'
 import { TeacherAttendancePage } from '@/pages/admin/teachers/TeacherAttendancePage'
+import { SubstitutionsPage } from '@/pages/admin/teachers/SubstitutionsPage'
 import { ClassesPage } from '@/pages/admin/classes/ClassesPage'
 import { ClassDetailPage } from '@/pages/admin/classes/ClassDetailPage'
 import { ClassRatingPage } from '@/pages/admin/classes/ClassRatingPage'
@@ -168,6 +169,7 @@ export default function App() {
               (dashboard, global qidiruv `?q=&tab=`) o'sha sahifaga `?position=teacher` bilan o'tadi. */}
           <Route path="teachers" element={<TeachersRedirect />} />
           <Route path="teachers/attendance" element={<RequirePerm perm="teachers"><TeacherAttendancePage /></RequirePerm>} />
+          <Route path="teachers/substitutions" element={<RequirePerm perm="teachers"><SubstitutionsPage /></RequirePerm>} />
           <Route path="classes" element={<RequirePerm perm="classes"><ClassesPage /></RequirePerm>} />
           <Route path="classes/rating" element={<RequirePerm perm="classes"><ClassRatingPage /></RequirePerm>} />
           <Route path="classes/:id" element={<RequirePerm perm="classes"><ClassDetailPage /></RequirePerm>} />

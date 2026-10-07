@@ -129,7 +129,7 @@ function SalaryCalcView() {
     const rateOf = (c: string) =>
       c === 'oliy' ? rates.oliy : c === '1' ? rates.t1 : c === '2' ? rates.t2 : c === 'mutaxasis' ? rates.mutaxasis : 0
     return data.teachers.map((t) => {
-      const base = Math.max(0, t.monthlyLessons - t.missedLessons) * rateOf(t.category)
+      const base = Math.max(0, t.monthlyLessons - t.missedLessons + (t.substitutionLessons ?? 0)) * rateOf(t.category)
       return { ...t, monthlySalary: base * (1 + (t.bonusPct || 0) / 100) }
     })
   }, [data, rates])
@@ -351,6 +351,18 @@ function SalaryCalcView() {
                       <span className="font-medium text-red-600">−{t.missedLessons}</span>
                     ) : (
                       <span className="text-slate-300">0</span>
+                    )}
+                    {(t.substitutionLessons ?? 0) !== 0 && (
+                      <span
+                        className={cn(
+                          'mt-0.5 block text-xs font-medium',
+                          (t.substitutionLessons ?? 0) > 0 ? 'text-emerald-600' : 'text-red-600',
+                        )}
+                        title="O'rindosh darslar: boshqalar o'rniga o'tilgan minus o'z darsi boshqaga berilgan"
+                      >
+                        o'rindosh {(t.substitutionLessons ?? 0) > 0 ? '+' : '−'}
+                        {Math.abs(t.substitutionLessons ?? 0)}
+                      </span>
                     )}
                   </td>
                   <td className="px-4 py-3 text-center">
