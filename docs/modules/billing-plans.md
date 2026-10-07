@@ -201,6 +201,24 @@ void rows, so the month could never be billed again and the debt stayed 0.
   invoice and the void row stays as history. A deliberate void (subscription untouched) is never undone.
 - Existing voids got `voided_at` from their ledger reversal; a void with no reversal stays NULL = holds.
 
+## 10.4 The month an abonement starts in — by lesson days (client, 2026-10-07)
+
+*"oyni 10-kunidan boshlanadi deb belgilangan lekin to'liq abonimentga hisoblab yuborganlari bor edi …
+o'qigan kuniga qarab hisoblashi kerak edi"* — replaces Q12 for the **start** month only.
+
+- Start month: `charge = monthly × lesson days from the start to the month's end ÷ lesson days of the
+  month` — the abonement's schedule, "Butun oy" = Mon–Sat, holidays excluded (the same rule as §10.2;
+  the cashier took Jaloliddinov's 25 September exactly so: 1 690 000 × 5 ÷ 25 = 338 000).
+- A switch inside the month (one ends, the next starts): each part at its own price for its own days.
+- The month an abonement **ends** in stays a full month (Q12) — leaving mid-month is "Chiqib ketdi".
+- A fixed-sum discount shrinks in the same proportion; a percent does so by itself.
+- "Chiqib ketdi" in a start month counts studied and billed days from the start (no double proration).
+- Old invoices billed in full before this rule were corrected with `invoice_adjustments` kind
+  `late_start` ("kech boshlangan (o'qilmagan kunlar)"): revenue down, receivable down, no cash.
+- `LessonDays.MonthCharge` / `BilledFrom` hold the rule; holidays come from `holidays` (Sozlamalar →
+  Bayramlar). Prod got the official days off for 2026/27 on 2026-10-07; Ramazon and Qurbon hayit are
+  added by the school once their dates are announced.
+
 ## 11. API
 
 - `GET/POST discount-types`, `PUT discount-types/{id}` (`{ name, percent, amount, isActive }` →

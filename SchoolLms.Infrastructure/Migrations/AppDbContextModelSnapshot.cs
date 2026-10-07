@@ -4016,7 +4016,7 @@ namespace SchoolLms.Infrastructure.Migrations
 
                             t.HasCheckConstraint("ck_invoice_adjustments_days", "sick_days is null or sick_days > 0");
 
-                            t.HasCheckConstraint("ck_invoice_adjustments_kind", "kind in ('sick','discount','withdrawal')");
+                            t.HasCheckConstraint("ck_invoice_adjustments_kind", "kind in ('sick','discount','withdrawal','late_start')");
                         });
                 });
 

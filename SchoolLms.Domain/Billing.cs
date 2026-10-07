@@ -263,6 +263,11 @@ public static class InvoiceAdjustmentKind
     /// written off when the student leaves (<see cref="StudentWithdrawal"/>).
     /// </summary>
     public const string Withdrawal = "withdrawal";
+    /// <summary>
+    /// The days before the abonement's start in a month that was billed in full before the start
+    /// month was prorated (billing-plans.md §10.4) — a correction of old invoices.
+    /// </summary>
+    public const string LateStart = "late_start";
 }
 
 /// <summary>

@@ -301,12 +301,12 @@ public class InvoiceServiceTests(ApiFixture fixture) : IAsyncLifetime
     }
 
     /// <summary>
-    /// Mijoz javobi Q12 (docs/ASSUMPTIONS.md): to'liq bo'lmagan oy ham TO'LIQ oy.
-    /// Oy o'rtasida boshlangan ham, oy o'rtasida tugagan obuna ham to'liq summa oladi —
-    /// eski <c>TuitionService</c> xulqi saqlanadi.
+    /// Oy o'rtasida TUGAGAN obuna — to'liq oy (mijoz javobi Q12; ketishni "Chiqib ketdi" hisoblaydi).
+    /// Oy o'rtasida BOSHLANGANI esa 2026-10-07 dan boshlanish kunidan dars kunlari bo'yicha
+    /// (mijoz: "o'qigan kuniga qarab hisoblashi kerak edi", billing-plans.md §10.4).
     /// </summary>
     [Fact]
-    public async Task Oy_ortasida_boshlangan_yoki_tugagan_obuna_toliq_oy_hisoblanadi()
+    public async Task Oy_ortasida_tugagan_obuna_toliq_boshlangani_dars_kunlari_boyicha_hisoblanadi()
     {
         await using var db = NewDb();
         var actorId = await AddUserAsync(db);
@@ -320,9 +320,17 @@ public class InvoiceServiceTests(ApiFixture fixture) : IAsyncLifetime
         await ServiceFor(db).AccrueMonthAsync(ThisMonth, actorId);
 
         await using var check = NewDb();
-        var invoices = await check.Invoices.AsNoTracking().Where(i => i.PeriodMonth == ThisMonth).ToListAsync();
+        var invoices = await check.Invoices.AsNoTracking().Where(i => i.PeriodMonth == ThisMonth)
+            .ToDictionaryAsync(i => i.StudentId, i => i.Amount);
         Assert.Equal(2, invoices.Count);
-        Assert.All(invoices, i => Assert.Equal(1_000_000m, i.Amount));
+        Assert.Equal(1_000_000m, invoices[leavingId]);
+
+        var holidays = await LessonDays.HolidaysAsync(check, ThisMonth, CancellationToken.None);
+        var monthEnd = ThisMonth.AddMonths(1).AddDays(-1);
+        var billed = LessonDays.CountBetween(ThisMonth.AddDays(19), monthEnd, LessonDays.SchoolWeek, holidays);
+        var month = LessonDays.CountBetween(ThisMonth, monthEnd, LessonDays.SchoolWeek, holidays);
+        Assert.InRange(billed, 1, month - 1);
+        Assert.Equal(decimal.Round(1_000_000m * billed / month, 2), invoices[lateId]);
     }
 
     // =================================================================
@@ -686,6 +694,57 @@ public class InvoiceServiceTests(ApiFixture fixture) : IAsyncLifetime
         var live = await check.Invoices.AsNoTracking().SingleAsync(i => i.Status != InvoiceStatus.Void);
         Assert.Equal(ThisMonth, live.PeriodMonth);
         Assert.Equal(1_000_000m, live.Amount);
+    }
+
+    // =================================================================
+    //  Boshlanish oyi dars kunlari bo'yicha (billing-plans.md §10.4)
+    // =================================================================
+
+    private static readonly DateOnly September = new(2026, 9, 1);
+
+    /// <summary>
+    /// Prod, Jaloliddinov: abonement 25-sentabrdan, kassir 1 690 000 × 5 ÷ 25 = 338 000 olgan (dushanba–shanba,
+    /// 1-sentabr bayram). Tizim esa to'liq oyni yozgan edi.
+    /// </summary>
+    [Fact]
+    public async Task Oy_ortasida_boshlangan_abonement_dars_kunlari_boyicha_hisoblanadi()
+    {
+        await using var db = NewDb();
+        var actorId = await AddUserAsync(db);
+        db.Holidays.Add(new Holiday { Date = "2026-09-01", Name = "Mustaqillik kuni" });
+        await db.SaveChangesAsync();
+        var late = await AddStudentAsync(db);
+        var full = await AddStudentAsync(db);
+        await AddSubscriptionAsync(db, late, TuitionCategory, 1_690_000m, new DateOnly(2026, 9, 25), actorId);
+        await AddSubscriptionAsync(db, full, TuitionCategory, 1_690_000m, new DateOnly(2026, 9, 2), actorId);
+
+        await ServiceFor(db).AccrueMonthAsync(September, actorId);
+
+        await using var check = NewDb();
+        var rows = await check.Invoices.AsNoTracking().ToDictionaryAsync(i => i.StudentId, i => i.Amount);
+        Assert.Equal(338_000m, rows[late]);
+        // 1-sentabr bayram — 2-sentabrdan boshlagan o'quvchi oyning hamma dars kunini o'qiydi.
+        Assert.Equal(1_690_000m, rows[full]);
+    }
+
+    /// <summary>Oy o'rtasida abonement almashsa — har qism o'z narxida, o'z kunlari bo'yicha.</summary>
+    [Fact]
+    public async Task Oy_ortasida_almashgan_abonement_qismlar_boyicha_hisoblanadi()
+    {
+        await using var db = NewDb();
+        var actorId = await AddUserAsync(db);
+        db.Holidays.Add(new Holiday { Date = "2026-09-01", Name = "Mustaqillik kuni" });
+        await db.SaveChangesAsync();
+        var studentId = await AddStudentAsync(db);
+        await AddSubscriptionAsync(db, studentId, TuitionCategory, 1_690_000m, September, actorId, new DateOnly(2026, 9, 15));
+        await AddSubscriptionAsync(db, studentId, TuitionCategory, 1_590_000m, new DateOnly(2026, 9, 16), actorId);
+
+        await ServiceFor(db).AccrueMonthAsync(September, actorId);
+
+        // 1–15: 12 dars kuni eski narxda, 16–30: 13 kun yangi narxda, oyda 25 kun.
+        await using var check = NewDb();
+        var invoice = await check.Invoices.AsNoTracking().SingleAsync();
+        Assert.Equal(1_690_000m * 12 / 25 + 1_590_000m * 13 / 25, invoice.Amount);
     }
 
     // =================================================================

@@ -202,7 +202,7 @@ export function PlanFormModal({
             ))}
           </Select>
           <p className="mt-1 text-xs text-slate-400">
-            Narx oylik qoladi — jadval faqat kasallik chegirmasida dars kunlarini sanash uchun.
+            Narx oylik qoladi — jadval dars kunlarini sanash uchun: oy o'rtasida boshlash, chiqib ketish va kasallik chegirmasi.
           </p>
         </div>
 

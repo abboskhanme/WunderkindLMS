@@ -148,7 +148,7 @@ internal static class BillingModel
             e.ToTable(t =>
             {
                 t.HasCheckConstraint("ck_invoice_adjustments_amount", "amount > 0");
-                t.HasCheckConstraint("ck_invoice_adjustments_kind", "kind in ('sick','discount','withdrawal')");
+                t.HasCheckConstraint("ck_invoice_adjustments_kind", "kind in ('sick','discount','withdrawal','late_start')");
                 t.HasCheckConstraint("ck_invoice_adjustments_days", "sick_days is null or sick_days > 0");
             });
         });

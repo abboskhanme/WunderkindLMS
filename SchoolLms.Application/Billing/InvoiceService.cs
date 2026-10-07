@@ -221,8 +221,8 @@ public sealed class InvoiceService(IAppDbContext db, ILedgerService ledger) : II
             where !st.IsArchived
                   && cat.IsActive
                   && (studentId == null || sub.StudentId == studentId)
-                  // Mijoz javobi (Q12): to'liq bo'lmagan oy ham TO'LIQ oy — obuna
-                  // oy bilan KESISHSA yetarli, kunlar bo'yicha bo'linmaydi.
+                  // Obuna oy bilan KESISHSA yetarli. Tugash oyi bo'linmaydi (Q12; ketishni
+                  // "Chiqib ketdi" hisoblaydi), boshlanish oyi esa dars kunlari bo'yicha (§10.4).
                   && sub.StartsOn <= monthEnd
                   && (sub.EndsOn == null || sub.EndsOn >= monthStart)
                   // Hisob boshlanadigan oy (EduSchool'dan kelgan obunalarda sentyabr allaqachon bor).
@@ -236,6 +236,8 @@ public sealed class InvoiceService(IAppDbContext db, ILedgerService ledger) : II
                 CategoryName = cat.Name,
                 sub.MonthlyAmount,
                 sub.StartsOn,
+                sub.EndsOn,
+                sub.PlanId,
                 sub.CreatedAt,
                 // The subscription's last change — a void older than it does not hold the month (§10.3).
                 ChangedAt = sub.UpdatedAt ?? sub.CreatedAt,
@@ -254,6 +256,20 @@ public sealed class InvoiceService(IAppDbContext db, ILedgerService ledger) : II
 
         if (subscriptions.Count == 0)
             return new AccrualResultDto(monthStart, 0, 0, 0m);
+
+        // Boshlanish oyi dars kunlari bo'yicha (billing-plans.md §10.4): abonement jadvali, "Butun oy" —
+        // dushanba–shanba, bayramlar sanalmaydi ("Chiqib ketdi" bilan bir xil qoida).
+        var planIds = candidates.Where(c => c.PlanId != null).Select(c => c.PlanId!.Value).Distinct().ToList();
+        var schedules = await db.SubscriptionPlans.AsNoTracking()
+            .Where(p => planIds.Contains(p.Id))
+            .ToDictionaryAsync(p => p.Id, p => p.DaysPerWeek, ct);
+        var holidays = await LessonDays.HolidaysAsync(db, monthStart, ct);
+        var covering = candidates
+            .GroupBy(x => (x.StudentId, x.CategoryId))
+            .ToDictionary(g => g.Key, g => g
+                .Select(x => new LessonDays.Segment(x.StartsOn, x.EndsOn, x.CreatedAt, x.MonthlyAmount,
+                    (x.PlanId is { } plan ? schedules.GetValueOrDefault(plan) : null) ?? LessonDays.SchoolWeek))
+                .ToList());
 
         // ---- 2. Allaqachon hisoblanganlar (TEZLIK filtri, kafolat EMAS) ----
         // Tirik qator bor — oy hisoblangan. Faqat void qator bor — void kuchda, agar obuna undan KEYIN
@@ -304,7 +320,9 @@ public sealed class InvoiceService(IAppDbContext db, ILedgerService ledger) : II
                 continue;
             }
 
-            var gross = decimal.Round(s.MonthlyAmount, MoneyScale);
+            var gross = LessonDays.MonthCharge(covering[(s.StudentId, s.CategoryId)], monthStart, holidays);
+            // A fixed-sum discount shrinks with the month like the charge; a percent does so by itself.
+            var share = s.MonthlyAmount > 0m ? Math.Min(1m, gross / s.MonthlyAmount) : 1m;
 
             // Eng ANIQ chegirma yutadi: toifaga tegishlisi umumiysidan ustun,
             // tenglashsa — keyinroq boshlangani. Chegirmalar QO'SHILMAYDI: eski
@@ -321,7 +339,7 @@ public sealed class InvoiceService(IAppDbContext db, ILedgerService ledger) : II
 
             var discount = applied is null
                 ? 0m
-                : DiscountMath.DiscountFor(gross, applied.Percent, applied.Amount);
+                : DiscountMath.DiscountFor(gross, applied.Percent, decimal.Round(applied.Amount * share, MoneyScale));
             var payable = gross - discount;
 
             var invoice = new Invoice

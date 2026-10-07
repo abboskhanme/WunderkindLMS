@@ -12,9 +12,11 @@ namespace SchoolLms.Application.Billing;
 //  A student leaves mid-month, but the month (and maybe the next) was already invoiced. Marking it
 //  paid would invent cash; archiving is refused while debt stands. So, from the last day studied:
 //
-//    leave month:  keep  = max(0, (payable + sick) × studied lesson days ÷ lesson days of the month − sick)
+//    leave month:  keep  = max(0, (payable + sick) × studied lesson days ÷ billed lesson days − sick)
 //    later months: keep  = 0
 //
+//  Billed lesson days run from the month's start — or from the abonement's start when it opened inside
+//  the month and was billed from there (billing-plans.md §10.4) — to the month's end.
 //  `sick` is the month's standing sickness discount. Its days carry no dates, but they were days
 //  the student missed while still enrolled, so they come off what stays in full — prorating them
 //  would bill a sick child for the very days the discount was given for.
@@ -88,7 +90,7 @@ public sealed class StudentWithdrawalService(IAppDbContext db, AuditService audi
             .Where(i => i.StudentId == studentId && i.Status != InvoiceStatus.Void)
             .ToListAsync(ct);
         var paid = await PaidAsync(invoices.Select(i => i.Id).ToList(), ct);
-        var lines = await LinesAsync(invoices, paid, selected, request.LastDay, ct);
+        var lines = await LinesAsync(studentId, invoices, paid, selected, request.LastDay, ct);
         var before = await new StudentBalanceQuery(db).ForAsync(studentId, ct);
         return await ToDtoAsync(request.LastDay, subscriptions, selected, lines, before, null, ct);
     }
@@ -113,7 +115,7 @@ public sealed class StudentWithdrawalService(IAppDbContext db, AuditService audi
         if (selected.Count == 0)
             throw BillingRuleException.Conflict("nothing_to_withdraw",
                 $"{request.LastDay:dd.MM.yyyy} dan keyin davom etadigan abonement yo'q.");
-        var lines = await LinesAsync(invoices, paid, selected, request.LastDay, ct);
+        var lines = await LinesAsync(studentId, invoices, paid, selected, request.LastDay, ct);
 
         var withdrawal = new StudentWithdrawal
         {
@@ -304,7 +306,7 @@ public sealed class StudentWithdrawalService(IAppDbContext db, AuditService audi
     }
 
     private async Task<List<WithdrawalLineDto>> LinesAsync(
-        List<Invoice> invoices, IReadOnlyDictionary<Guid, decimal> paid, List<StudentSubscription> selected,
+        string studentId, List<Invoice> invoices, IReadOnlyDictionary<Guid, decimal> paid, List<StudentSubscription> selected,
         DateOnly lastDay, CancellationToken ct)
     {
         var leaveMonth = new DateOnly(lastDay.Year, lastDay.Month, 1);
@@ -321,6 +323,17 @@ public sealed class StudentWithdrawalService(IAppDbContext db, AuditService audi
             .Where(p => planIds.Contains(p.Id))
             .ToDictionaryAsync(p => p.Id, p => p.DaysPerWeek, ct);
         var holidays = await LessonDays.HolidaysAsync(db, leaveMonth, ct);
+        // Where the leave month's billing starts per category: an abonement opened inside the month was
+        // billed from its start (billing-plans.md §10.4), so its days are counted from there too.
+        var leaveEnd = leaveMonth.AddMonths(1).AddDays(-1);
+        var startsByCategory = (await db.StudentSubscriptions.AsNoTracking()
+                .Where(s => s.StudentId == studentId && categoryIds.Contains(s.CategoryId)
+                            && s.StartsOn <= leaveEnd && (s.EndsOn == null || s.EndsOn >= leaveMonth)
+                            && (s.AccrueFrom == null || s.AccrueFrom <= leaveEnd))
+                .Select(s => new { s.CategoryId, s.StartsOn })
+                .ToListAsync(ct))
+            .GroupBy(s => s.CategoryId)
+            .ToDictionary(g => g.Key, g => g.Select(s => s.StartsOn).ToList());
         var leaveIds = touched.Where(i => i.PeriodMonth == leaveMonth).Select(i => i.Id).ToList();
         var sickByInvoice = await db.InvoiceAdjustments.AsNoTracking()
             .Where(a => leaveIds.Contains(a.InvoiceId) && a.Kind == InvoiceAdjustmentKind.Sick && a.ReversalOf == null
@@ -343,8 +356,8 @@ public sealed class StudentWithdrawalService(IAppDbContext db, AuditService audi
                 var sub = selected.Where(s => s.CategoryId == invoice.CategoryId && s.StartsOn <= monthEnd)
                     .OrderByDescending(s => s.StartsOn).FirstOrDefault();
                 var perWeek = (sub?.PlanId is { } planId ? schedules.GetValueOrDefault(planId) : null) ?? LessonDays.SchoolWeek;
-                lessonDays = Math.Max(1, LessonDays.CountBetween(leaveMonth, monthEnd, perWeek, holidays));
-                var from = sub is not null && sub.StartsOn > leaveMonth ? sub.StartsOn : leaveMonth;
+                var from = LessonDays.BilledFrom(startsByCategory.GetValueOrDefault(invoice.CategoryId) ?? [], leaveMonth);
+                lessonDays = Math.Max(1, LessonDays.CountBetween(from, monthEnd, perWeek, holidays));
                 studied = Math.Min(lessonDays, LessonDays.CountBetween(from, lastDay, perWeek, holidays));
                 sick = sickByInvoice.GetValueOrDefault(invoice.Id);
                 keep = studied >= lessonDays

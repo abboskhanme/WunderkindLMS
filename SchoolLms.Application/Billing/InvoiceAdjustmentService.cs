@@ -181,6 +181,7 @@ public sealed class InvoiceAdjustmentService(IAppDbContext db, AuditService audi
     {
         InvoiceAdjustmentKind.Sick => $"kasallik chegirmasi ({sickDays} kun)",
         InvoiceAdjustmentKind.Withdrawal => "chiqib ketish (o'qilmagan kunlar)",
+        InvoiceAdjustmentKind.LateStart => "kech boshlangan (o'qilmagan kunlar)",
         _ => "chegirma",
     };
 
@@ -246,6 +247,52 @@ public static class LessonDays
         }
         return Math.Max(1, count);
     }
+
+    /// <summary>One subscription of a category that covers the month being billed.</summary>
+    public sealed record Segment(DateOnly StartsOn, DateOnly? EndsOn, DateTimeOffset CreatedAt, decimal MonthlyAmount, int PerWeek);
+
+    /// <summary>
+    /// The month's charge for one category (billing-plans.md §10.4). A subscription running from before
+    /// the month is the full price. One that starts inside it is billed for its lesson days from the start
+    /// to the month's end; when one replaces another inside the month, each is billed for its own part at
+    /// its own price. The end of the last one is not prorated (Q12 — leaving is "Chiqib ketdi").
+    /// </summary>
+    public static decimal MonthCharge(IReadOnlyList<Segment> covering, DateOnly monthStart, IReadOnlySet<DateOnly> holidays)
+    {
+        // One per start date — the later created wins, as accrual picks the subscription.
+        var subs = covering
+            .GroupBy(s => s.StartsOn)
+            .Select(g => g.OrderByDescending(s => s.CreatedAt).First())
+            .OrderBy(s => s.StartsOn)
+            .ToList();
+        if (subs.Count == 1 && subs[0].StartsOn <= monthStart) return decimal.Round(subs[0].MonthlyAmount, 2);
+
+        var monthEnd = monthStart.AddMonths(1).AddDays(-1);
+        var total = 0m;
+        for (var i = 0; i < subs.Count; i++)
+        {
+            var s = subs[i];
+            var from = s.StartsOn > monthStart ? s.StartsOn : monthStart;
+            var to = i == subs.Count - 1 ? monthEnd : Min(s.EndsOn ?? monthEnd, subs[i + 1].StartsOn.AddDays(-1));
+            if (to < from) continue;
+            var days = CountBetween(from, to, s.PerWeek, holidays);
+            var monthDays = Math.Max(1, CountBetween(monthStart, monthEnd, s.PerWeek, holidays));
+            total += s.MonthlyAmount * days / monthDays;
+        }
+        return decimal.Round(total, 2);
+    }
+
+    /// <summary>
+    /// The first day the category is billed in the month — where its lesson days start counting
+    /// for a part of a month ("Chiqib ketdi", billing-plans.md §10.2).
+    /// </summary>
+    public static DateOnly BilledFrom(IEnumerable<DateOnly> startsOn, DateOnly monthStart)
+    {
+        var first = startsOn.DefaultIfEmpty(monthStart).Min();
+        return first > monthStart ? first : monthStart;
+    }
+
+    private static DateOnly Min(DateOnly a, DateOnly b) => a < b ? a : b;
 
     /// <summary>School holidays (<c>holidays.date</c> "yyyy-MM-dd") inside the month.</summary>
     public static async Task<HashSet<DateOnly>> HolidaysAsync(IAppDbContext db, DateOnly monthStart, CancellationToken ct)

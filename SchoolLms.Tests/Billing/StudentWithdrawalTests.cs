@@ -231,6 +231,38 @@ public class StudentWithdrawalTests(ApiFixture fixture) : IAsyncLifetime
         await AssertLedgerBalancedAsync(check);
     }
 
+    /// <summary>
+    /// Abonement oy o'rtasida boshlangan — oy boshlanish kunidan hisoblangan (§10.4). Shu oyda ketsa,
+    /// o'qilgan kunlar ham shu kundan sanaladi; butun oyga bo'linsa, ikki marta kamayib ketardi.
+    /// </summary>
+    [Fact]
+    public async Task Oy_ortasida_boshlab_shu_oyda_ketsa_kunlar_boshlanishdan_sanaladi()
+    {
+        await using var db = NewDb();
+        var world = await NewWorldAsync(db);
+        var start = LastMonth.AddDays(4);
+        var lastDay = LastMonth.AddDays(19);
+        await AddSubscriptionAsync(db, world, TuitionCategory, 1_600_000m, start);
+        await Invoices(db).AccrueMonthAsync(LastMonth, world.ActorId);
+        await Invoices(db).AccrueMonthAsync(ThisMonth, world.ActorId);
+
+        var holidays = await LessonDays.HolidaysAsync(db, LastMonth, CancellationToken.None);
+        var monthEnd = ThisMonth.AddDays(-1);
+        var month = LessonDays.CountBetween(LastMonth, monthEnd, LessonDays.SchoolWeek, holidays);
+        var billed = LessonDays.CountBetween(start, monthEnd, LessonDays.SchoolWeek, holidays);
+        var studied = LessonDays.CountBetween(start, lastDay, LessonDays.SchoolWeek, holidays);
+        var payable = decimal.Round(1_600_000m * billed / month, 2);
+        var invoice = await db.Invoices.AsNoTracking().SingleAsync(i => i.PeriodMonth == LastMonth);
+        Assert.Equal(payable, invoice.Amount);
+
+        var result = await Withdrawals(db).ApplyAsync(world.StudentId, new WithdrawalRequest(lastDay), world.ActorId);
+
+        var line = result.Lines.Single(l => l.Month == LastMonth.ToString("yyyy-MM"));
+        Assert.Equal(billed, line.LessonDays);
+        Assert.Equal(studied, line.StudiedDays);
+        Assert.Equal(decimal.Round(payable * studied / billed, 2), line.Keep);
+    }
+
     [Fact]
     public async Task Kelajakdagi_sana_va_abonementsiz_holat_rad_etiladi()
     {
