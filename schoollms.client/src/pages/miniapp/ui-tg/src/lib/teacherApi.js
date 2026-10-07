@@ -125,4 +125,9 @@ export const teacherApi = {
   lessonAnalyses: () => api.get(`${BASE}/lesson-analysis/observations${qs({ limit: 100 })}`),
   /** Bitta tahlil: mezonlar javobi, xulosalar, AI tahlil va mezonlar katalogi (`sections`). */
   lessonAnalysis: (id) => api.get(`${BASE}/lesson-analysis/observations/${encodeURIComponent(id)}`),
+
+  /* ---------- jarimalar ---------- */
+
+  /** O'zimga yozilgan jarimalar, yangisi tepada; bekor qilingani `cancelled` bilan. */
+  penalties: () => api.get(`${BASE}/penalties`),
 }

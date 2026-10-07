@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using SchoolLms.Infrastructure.Data;
 using SchoolLms.Application.Abstractions;
 using SchoolLms.Application.Dtos;
+using SchoolLms.Application.Hr;
 using SchoolLms.Domain;
 using SchoolLms.Application.Services;
 using System.Security.Claims;
@@ -513,6 +514,20 @@ public class TeacherPortalController(
     [HttpGet("salary")]
     public ActionResult Salary() =>
         StatusCode(StatusCodes.Status403Forbidden, new { message = "Maosh ma'lumoti o'qituvchi hisobida ko'rsatilmaydi." });
+
+    // ---------- Jarimalar — o'qituvchining o'zi ko'radi ----------
+    //
+    // Client, 2026-10-07: "qo'yilgan jarima ustozga shaxsiy kabinetida ko'rinishi". Only the
+    // teacher's own fines, cancelled ones marked; no salary figure leaks through here.
+
+    /// <summary>The signed-in teacher's own fines, newest first.</summary>
+    [HttpGet("penalties")]
+    public async Task<ActionResult<IEnumerable<EmployeePenaltyDto>>> Penalties(CancellationToken ct)
+    {
+        var t = await Me();
+        if (t is null) return NotFound();
+        return Ok(await new PayrollAdjustmentService(db).PenaltiesForTeacherAsync(t.Id, ct));
+    }
 
     // ---------- Jurnal (faqat o'zi dars beradigan sinf+fan) ----------
 

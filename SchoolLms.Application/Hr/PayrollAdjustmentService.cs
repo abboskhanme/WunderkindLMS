@@ -91,6 +91,23 @@ public record CreatePayrollAdjustmentRequest(
     string? Comment,
     string? ImageUrl);
 
+/// <summary>
+/// A fine as the employee sees it in their own cabinet (client, 2026-10-07: "qo'yilgan jarima ustozga
+/// shaxsiy kabinetida ko'rinishi"). A cancelled one stays in the list, marked, with the reason.
+/// </summary>
+public record EmployeePenaltyDto(
+    Guid Id,
+    string ReasonName,
+    decimal Amount,
+    short PeriodYear,
+    short PeriodMonth,
+    string? Comment,
+    string? ImageUrl,
+    DateTimeOffset CreatedAt,
+    string CreatedByName,
+    bool Cancelled,
+    string? CancelReason);
+
 /// <summary>Registr filtri.</summary>
 public record PayrollAdjustmentQuery(
     string? Kind = null,
@@ -123,6 +140,9 @@ public interface IPayrollAdjustmentService
     Task<IReadOnlyList<PayrollAdjustmentDto>> ListAsync(
         PayrollAdjustmentQuery query, CancellationToken ct = default);
     Task<PayrollAdjustmentDto?> GetAsync(Guid id, CancellationToken ct = default);
+
+    /// <summary>One teacher's own fines, newest first (the teacher's cabinet).</summary>
+    Task<IReadOnlyList<EmployeePenaltyDto>> PenaltiesForTeacherAsync(string teacherId, CancellationToken ct = default);
 }
 
 /// <inheritdoc cref="IPayrollAdjustmentService"/>
@@ -363,6 +383,42 @@ public sealed class PayrollAdjustmentService(IAppDbContext db) : IPayrollAdjustm
     {
         var row = await db.PayrollAdjustments.AsNoTracking().FirstOrDefaultAsync(a => a.Id == id, ct);
         return row is null ? null : (await ToDtosAsync([row], ct))[0];
+    }
+
+    public async Task<IReadOnlyList<EmployeePenaltyDto>> PenaltiesForTeacherAsync(
+        string teacherId, CancellationToken ct = default)
+    {
+        var rows = await db.PayrollAdjustments.AsNoTracking()
+            .Where(a => a.TeacherId == teacherId && a.Kind == AdjustmentKind.Penalty)
+            .ToListAsync(ct);
+        if (rows.Count == 0) return [];
+
+        // A cancellation is a mirror row pointing at the fine (append-only, SPEC §4.1).
+        var mirrors = rows.Where(a => a.ReversalOf != null).ToDictionary(a => a.ReversalOf!.Value);
+        var fines = rows.Where(a => a.ReversalOf == null).OrderByDescending(a => a.CreatedAt).ToList();
+
+        var reasonIds = fines.Select(a => a.ReasonId).Distinct().ToList();
+        var reasons = await db.AdjustmentReasons.AsNoTracking()
+            .Where(r => reasonIds.Contains(r.Id))
+            .ToDictionaryAsync(r => r.Id, r => r.Name, ct);
+        var authorIds = fines.Select(a => a.CreatedBy).Distinct().ToList();
+        var authors = await db.Users.AsNoTracking()
+            .Where(u => authorIds.Contains(u.Id))
+            .ToDictionaryAsync(u => u.Id, u => u.FullName, ct);
+
+        return fines.Select(a => new EmployeePenaltyDto(
+                a.Id,
+                reasons.GetValueOrDefault(a.ReasonId, "—"),
+                a.Amount,
+                a.PeriodYear,
+                a.PeriodMonth,
+                a.Comment,
+                a.ImageUrl,
+                a.CreatedAt,
+                authors.GetValueOrDefault(a.CreatedBy, "—"),
+                mirrors.ContainsKey(a.Id),
+                mirrors.TryGetValue(a.Id, out var m) ? m.ReversalReason : null))
+            .ToList();
     }
 
     // -----------------------------------------------------------------

@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using SchoolLms.Application.Abstractions;
 using SchoolLms.Application.Hr;
+using SchoolLms.Application.Services;
 using SchoolLms.Domain;
 
 namespace SchoolLms.Server.Controllers;
@@ -38,8 +39,12 @@ namespace SchoolLms.Server.Controllers;
 [Route("api/admin/hr")]
 [BillingFault]
 [Produces("application/json")]
-public sealed class PayrollAdjustmentsController(IAppDbContext db) : ControllerBase
+public sealed class PayrollAdjustmentsController(
+    IAppDbContext db, TelegramService telegram, ILogger<PenaltyNotifier> notifierLogger) : ControllerBase
 {
+    /// <summary>A fine (and its cancellation) reaches the employee on Telegram (client, 2026-10-07).</summary>
+    private PenaltyNotifier Notifier => new(db, telegram, notifierLogger);
+
     /// <summary>
     /// Nega xizmat DI'dan emas, shu yerda quriladi: `Program.cs` bu
     /// vazifaning orqasidan boruvchi bir nechta agent bilan bo'lishiladigan
@@ -109,6 +114,7 @@ public sealed class PayrollAdjustmentsController(IAppDbContext db) : ControllerB
             return BadRequest(new BillingErrorDto("invalid_body", "So'rov tanasi o'qilmadi."));
 
         var created = await adjustments.CreateAsync(request, FinanceActor.RequireUserId(User), ct);
+        await Notifier.NotifyCreatedAsync(created, ct);
         return Ok(created);
     }
 
@@ -130,6 +136,7 @@ public sealed class PayrollAdjustmentsController(IAppDbContext db) : ControllerB
 
         var reversed = await adjustments.ReverseAsync(
             id, request.Reason ?? string.Empty, FinanceActor.RequireUserId(User), ct);
+        await Notifier.NotifyCancelledAsync(reversed, request.Reason, ct);
         return Ok(reversed);
     }
 

@@ -23,6 +23,7 @@ import {
   nowHHmm,
 } from './shared'
 import { NewsCard } from './NewsCard'
+import { PenaltiesCard } from './PenaltiesCard'
 import { LessonAnalysisCard } from './LessonAnalysis'
 
 export function TodayTab({ profile, meta, onOpenAttendance }) {
@@ -178,6 +179,9 @@ export function TodayTab({ profile, meta, onOpenAttendance }) {
             {/* Lesson analysis results (client, 2026-09-28). Loads itself and hides
                 when there is nothing to show — like the news card below. */}
             <LessonAnalysisCard />
+
+            {/* Own fines (client, 2026-10-07). Hidden while there are none. */}
+            <PenaltiesCard />
 
             {/* School news, after today's lessons (§3.4). It loads itself:
                 the feed can never take the day's schedule down with it. */}
