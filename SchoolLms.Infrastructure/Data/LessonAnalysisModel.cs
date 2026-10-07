@@ -12,11 +12,37 @@ internal static class LessonAnalysisModel
 {
     public static void Apply(ModelBuilder b)
     {
+        // Sheets (varaqlar, client 2026-10-07). The first one holds everything that existed before.
+        b.Entity<LessonObservationTemplate>(e =>
+        {
+            e.ToTable("lesson_observation_templates");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Name).HasMaxLength(120);
+            e.Property(x => x.Description).HasMaxLength(500);
+            e.HasIndex(x => x.Name).IsUnique();
+            // At most one default sheet.
+            e.HasIndex(x => x.IsDefault).IsUnique().HasFilter("is_default");
+            e.ToTable(t => t.HasCheckConstraint("ck_lesson_observation_templates_name", "btrim(name) <> ''"));
+            e.HasData(new LessonObservationTemplate
+            {
+                Id = LessonObservationTemplate.DefaultId,
+                Name = "Asosiy tahlil varag'i",
+                OrderIndex = 1,
+                IsActive = true,
+                IsDefault = true,
+                CreatedAt = new DateTimeOffset(2026, 10, 7, 0, 0, 0, TimeSpan.Zero),
+            });
+        });
+
         b.Entity<LessonObservationSection>(e =>
         {
             e.ToTable("lesson_observation_sections");
             e.HasKey(x => x.Id);
             e.Property(x => x.Color).HasMaxLength(20);
+            e.Property(x => x.TemplateId).HasDefaultValue(LessonObservationTemplate.DefaultId);
+            // RESTRICT: a sheet with sections is switched off, never deleted.
+            e.HasOne<LessonObservationTemplate>().WithMany().HasForeignKey(x => x.TemplateId).OnDelete(DeleteBehavior.Restrict);
+            e.HasIndex(x => new { x.TemplateId, x.OrderIndex });
             e.HasIndex(x => x.OrderIndex);
             // The one-time import re-runs idempotently by this key.
             e.HasIndex(x => x.LegacyId).IsUnique().HasFilter("legacy_id is not null");
@@ -49,6 +75,7 @@ internal static class LessonAnalysisModel
 
             e.HasMany(x => x.Details).WithOne()
                 .HasForeignKey(d => d.ObservationId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne<LessonObservationTemplate>().WithMany().HasForeignKey(x => x.TemplateId).OnDelete(DeleteBehavior.Restrict);
 
             // Rating board / teacher card: completed rows of one teacher by date.
             e.HasIndex(x => new { x.TeacherId, x.Status, x.LessonDate });

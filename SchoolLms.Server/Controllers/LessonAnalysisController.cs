@@ -48,9 +48,54 @@ public sealed class LessonAnalysisController(LessonAnalysisService service) : Co
 
     // ---------- Criteria ----------
 
+    /// <param name="templateId">The sheet (varaq); none — the default sheet.</param>
     [HttpGet("criteria")]
-    public Task<ActionResult> Criteria([FromQuery] bool includeInactive = false) =>
-        Run(() => service.CriteriaAsync(includeInactive, HttpContext.RequestAborted));
+    public Task<ActionResult> Criteria([FromQuery] bool includeInactive = false, [FromQuery] string? templateId = null) =>
+        Run(() => service.CriteriaAsync(includeInactive, templateId, HttpContext.RequestAborted));
+
+    // ---------- Sheets (varaqlar) and sections — client, 2026-10-07 ----------
+
+    [HttpGet("templates")]
+    public Task<ActionResult> Templates() => Run(() => service.TemplatesAsync(HttpContext.RequestAborted));
+
+    /// <summary>Same gate as the criteria: admin, or staff with the criteria flag.</summary>
+    [HttpPost("templates")]
+    public async Task<ActionResult> CreateTemplate(LaTemplateCreateDto input)
+    {
+        if (!CanManageCriteria) return Forbid();
+        try
+        {
+            var created = await service.CreateTemplateAsync(input, HttpContext.RequestAborted);
+            return StatusCode(StatusCodes.Status201Created, created);
+        }
+        catch (LessonAnalysisException ex) { return Fail(ex); }
+    }
+
+    [HttpPatch("templates/{id}")]
+    public async Task<ActionResult> PatchTemplate(string id, LaTemplatePatchDto input)
+    {
+        if (!CanManageCriteria) return Forbid();
+        return await Run(() => service.PatchTemplateAsync(id, input, HttpContext.RequestAborted));
+    }
+
+    [HttpPost("sections")]
+    public async Task<ActionResult> CreateSection(LaSectionCreateDto input)
+    {
+        if (!CanManageCriteria) return Forbid();
+        try
+        {
+            var created = await service.CreateSectionAsync(input, HttpContext.RequestAborted);
+            return StatusCode(StatusCodes.Status201Created, created);
+        }
+        catch (LessonAnalysisException ex) { return Fail(ex); }
+    }
+
+    [HttpPatch("sections/{id}")]
+    public async Task<ActionResult> PatchSection(string id, LaSectionPatchDto input)
+    {
+        if (!CanManageCriteria) return Forbid();
+        return await Run(() => service.PatchSectionAsync(id, input, HttpContext.RequestAborted));
+    }
 
     /// <summary>Admin, or staff with <see cref="LessonAnalysisAccess.CriteriaPermissionKey"/>.</summary>
     [HttpPost("criteria")]

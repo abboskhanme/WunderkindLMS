@@ -31,7 +31,10 @@ export function ObservationView({
           {fmtDate(o.lessonDate)} · {o.subject || 'Fan yo‘q'} · {o.className || '—'}
           {o.lessonTime ? ` · ${o.lessonTime}` : ''}
         </p>
-        <p className="mt-0.5 text-xs text-slate-400">Kuzatuvchi: {o.observerName}</p>
+        <p className="mt-0.5 text-xs text-slate-400">
+          Kuzatuvchi: {o.observerName}
+          {o.templateName ? ` · Varaq: ${o.templateName}` : ''}
+        </p>
       </div>
 
       <div className="grid gap-4 lg:grid-cols-3">
@@ -167,7 +170,8 @@ function CriteriaResults({ observation, sections }: { observation: LaObservation
                       )}
                     </span>
                     <div className="min-w-0">
-                      <p className="text-sm leading-snug text-slate-800">{criterion.text}</p>
+                      {/* The text it was answered against — the sheet may have been edited since. */}
+                      <p className="text-sm leading-snug text-slate-800">{answer.criterionText ?? criterion.text}</p>
                       {answer.comment && (
                         <p className="mt-1.5 flex items-start gap-1.5 rounded-lg bg-slate-50 px-2.5 py-1.5 text-xs text-slate-600">
                           <MessageSquareText className="mt-0.5 h-3.5 w-3.5 shrink-0" />

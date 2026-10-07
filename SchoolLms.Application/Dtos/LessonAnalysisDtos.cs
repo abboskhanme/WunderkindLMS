@@ -22,14 +22,33 @@ public record LaTeacherLessonDto(
 
 public record LaCriterionDto(string Id, string Text, int OrderIndex, bool IsActive);
 
+/// <summary>A lesson analysis sheet (varaq) with its size and use.</summary>
+public record LaTemplateDto(
+    string Id, string Name, string? Description, int OrderIndex, bool IsActive, bool IsDefault,
+    int SectionCount, int CriterionCount, int ObservationCount);
+
+/// <summary><c>POST /templates</c>. <c>CopyFromId</c> — start from another sheet's sections and active criteria.</summary>
+public record LaTemplateCreateDto(string? Name, string? Description, string? CopyFromId);
+
+/// <summary><c>PATCH /templates/{id}</c> — only given fields change.</summary>
+public record LaTemplatePatchDto(string? Name, string? Description, bool? IsActive, bool? IsDefault, int? OrderIndex);
+
+/// <summary><c>POST /sections</c>.</summary>
+public record LaSectionCreateDto(string? TemplateId, string? Title, string? Color);
+
+/// <summary><c>PATCH /sections/{id}</c> — only given fields change.</summary>
+public record LaSectionPatchDto(string? Title, string? Color, int? OrderIndex);
+
 public record LaSectionDto(string Id, string Title, int OrderIndex, string Color, List<LaCriterionDto> Criteria);
 
-public record LaDetailDto(string CriterionId, bool? IsDone, string? Comment);
+/// <param name="CriterionText">The text when answered (read-only; null on input).</param>
+/// <param name="SectionTitle">The section title when answered (read-only; null on input).</param>
+public record LaDetailDto(string CriterionId, bool? IsDone, string? Comment, string? CriterionText = null, string? SectionTitle = null);
 
 public record LaObservationListItemDto(
     string Id, string TeacherId, string TeacherName, string ObserverName, string LessonDate,
     string? ClassName, string? Subject, string Status,
-    int ScoreDone, int ScoreTotal, double ScorePercent, bool HasAiSummary);
+    int ScoreDone, int ScoreTotal, double ScorePercent, bool HasAiSummary, string? TemplateName = null);
 
 public record LaObservationDto(
     string Id, string TeacherId, string TeacherName, string ObserverId, string ObserverName,
@@ -41,19 +60,21 @@ public record LaObservationDto(
     // Teacher endpoint only: the checklist (as GET /criteria?includeInactive=true) — a teacher
     // has no /criteria endpoint but needs the criterion texts. Omitted on the staff endpoints
     // (TS: `sections?: LaSection[]` — absent, not null).
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] List<LaSectionDto>? Sections = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] List<LaSectionDto>? Sections = null,
+    string? TemplateId = null, string? TemplateName = null);
 
 /// <summary><c>POST /observations</c> body (<c>LaObservationInput</c>). PATCH reads the same
 /// fields but only the ones present in the body (see <c>LessonAnalysisService.UpdateAsync</c>).</summary>
 public record LaObservationInputDto(
     string? TeacherId, string? LessonDate, string? LessonTime, string? ClassName, string? Subject,
-    string? Strengths, string? GrowthAreas, string? NextLessonAdvice, List<LaDetailDto>? Details);
+    string? Strengths, string? GrowthAreas, string? NextLessonAdvice, List<LaDetailDto>? Details,
+    string? TemplateId = null);
 
 /// <summary><c>POST /criteria</c> body. <c>OrderIndex</c> null = end of the section.</summary>
 public record LaCriterionCreateDto(string? SectionId, string? Text, int? OrderIndex);
 
 /// <summary><c>PATCH /criteria/{id}</c> body — only given fields change.</summary>
-public record LaCriterionPatchDto(string? Text, int? OrderIndex, bool? IsActive);
+public record LaCriterionPatchDto(string? Text, int? OrderIndex, bool? IsActive, string? SectionId = null);
 
 public record LaRatingRowDto(
     string TeacherId, string TeacherName, string? Subject, int ObservationsCount,

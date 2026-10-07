@@ -270,6 +270,7 @@ public interface IAppDbContext
     /// Dars tahlili (<c>docs/modules/lesson-analysis.md</c> §3): checklist sections and
     /// criteria, observations and their per-criterion answers. Not financial — full CRUD.
     /// </summary>
+    DbSet<LessonObservationTemplate> LessonObservationTemplates { get; }
     DbSet<LessonObservationSection> LessonObservationSections { get; }
     DbSet<LessonObservationCriterion> LessonObservationCriteria { get; }
     DbSet<LessonObservation> LessonObservations { get; }

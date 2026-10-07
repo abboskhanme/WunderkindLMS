@@ -9,9 +9,14 @@ import type {
   LaObservationListItem,
   LaRatingBoard,
   LaSection,
+  LaSectionCreateInput,
+  LaSectionPatchInput,
   LaTeacher,
   LaTeacherLesson,
   LaTeacherSummary,
+  LaTemplate,
+  LaTemplateCreateInput,
+  LaTemplatePatchInput,
   ObservationStatus,
 } from '@/types/lessonAnalysis'
 import { api } from '../client'
@@ -148,10 +153,38 @@ export interface DateRange {
   dateTo?: string
 }
 
-export async function getCriteria(includeInactive = false): Promise<LaSection[]> {
+/** Bitta varaqning mezonlari; `templateId` berilmasa — standart varaq. */
+export async function getCriteria(includeInactive = false, templateId?: string): Promise<LaSection[]> {
   const { data } = await api.get<LaSection[]>(`${ADMIN}/criteria`, {
-    params: clean({ includeInactive: includeInactive || undefined }),
+    params: clean({ includeInactive: includeInactive || undefined, templateId }),
   })
+  return data
+}
+
+/* ---------- Tahlil varaqlari va bo'limlar (mijoz, 2026-10-07) ---------- */
+
+export async function getTemplates(): Promise<LaTemplate[]> {
+  const { data } = await api.get<LaTemplate[]>(`${ADMIN}/templates`)
+  return data
+}
+
+export async function createTemplate(input: LaTemplateCreateInput): Promise<LaTemplate> {
+  const { data } = await api.post<LaTemplate>(`${ADMIN}/templates`, input)
+  return data
+}
+
+export async function updateTemplate(id: string, input: LaTemplatePatchInput): Promise<LaTemplate> {
+  const { data } = await api.patch<LaTemplate>(`${ADMIN}/templates/${id}`, input)
+  return data
+}
+
+export async function createSection(input: LaSectionCreateInput): Promise<LaSection> {
+  const { data } = await api.post<LaSection>(`${ADMIN}/sections`, input)
+  return data
+}
+
+export async function updateSection(id: string, input: LaSectionPatchInput): Promise<LaSection> {
+  const { data } = await api.patch<LaSection>(`${ADMIN}/sections/${id}`, input)
   return data
 }
 

@@ -334,7 +334,8 @@ function Criteria({ observation }) {
                 )}
               </span>
               <div className="min-w-0 flex-1">
-                <p className="break-words text-[14px] leading-snug text-slate-800">{criterion.text}</p>
+                {/* The text it was answered against — the sheet may have been edited since. */}
+                <p className="break-words text-[14px] leading-snug text-slate-800">{answer.criterionText ?? criterion.text}</p>
                 {answer.comment && (
                   <p className="mt-1.5 flex items-start gap-1.5 rounded-lg bg-slate-50 px-2.5 py-1.5 text-[12px] text-slate-600">
                     <MessageSquareText className="mt-0.5 h-3.5 w-3.5 shrink-0" />

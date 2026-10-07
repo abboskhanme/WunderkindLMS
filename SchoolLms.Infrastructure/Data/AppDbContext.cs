@@ -203,6 +203,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
 
     // Dars tahlili — lesson observation checklist + teacher rating
     // (docs/modules/lesson-analysis.md §3). Configuration: LessonAnalysisModel.cs.
+    public DbSet<LessonObservationTemplate> LessonObservationTemplates => Set<LessonObservationTemplate>();
     public DbSet<LessonObservationSection> LessonObservationSections => Set<LessonObservationSection>();
     public DbSet<LessonObservationCriterion> LessonObservationCriteria => Set<LessonObservationCriterion>();
     public DbSet<LessonObservation> LessonObservations => Set<LessonObservation>();

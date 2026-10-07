@@ -54,10 +54,16 @@ public sealed class LessonAnalysisService(IAppDbContext db, ILessonAnalysisAi ai
     //  Criteria
     // =====================================================================
 
-    public async Task<List<LaSectionDto>> CriteriaAsync(bool includeInactive, CancellationToken ct = default)
+    public Task<List<LaSectionDto>> CriteriaAsync(bool includeInactive, CancellationToken ct = default) =>
+        CriteriaAsync(includeInactive, null, ct);
+
+    /// <summary>One sheet's checklist; <paramref name="templateId"/> null — the default sheet.</summary>
+    public async Task<List<LaSectionDto>> CriteriaAsync(bool includeInactive, string? templateId, CancellationToken ct = default)
     {
+        var sheet = await SheetIdAsync(templateId, ct);
         var sections = await db.LessonObservationSections.AsNoTracking()
             .Include(s => s.Criteria)
+            .Where(s => s.TemplateId == sheet)
             .OrderBy(s => s.OrderIndex).ThenBy(s => s.Title)
             .ToListAsync(ct);
         return [.. sections.Select(s => new LaSectionDto(
@@ -66,6 +72,161 @@ public sealed class LessonAnalysisService(IAppDbContext db, ILessonAnalysisAi ai
                 .Where(c => includeInactive || c.IsActive)
                 .OrderBy(c => c.OrderIndex).ThenBy(c => c.Text, StringComparer.Ordinal)
                 .Select(ToDto)]))];
+    }
+
+    /// <summary>The given sheet if it exists, else the default sheet's id.</summary>
+    private async Task<string> SheetIdAsync(string? templateId, CancellationToken ct)
+    {
+        if (!string.IsNullOrWhiteSpace(templateId))
+        {
+            if (await db.LessonObservationTemplates.AnyAsync(t => t.Id == templateId, ct)) return templateId;
+            throw new LessonAnalysisException(404, "Tahlil varag'i topilmadi");
+        }
+        return await db.LessonObservationTemplates.Where(t => t.IsDefault).Select(t => t.Id).FirstOrDefaultAsync(ct)
+               ?? LessonObservationTemplate.DefaultId;
+    }
+
+    // =====================================================================
+    //  Sheets (varaqlar) and sections — client, 2026-10-07
+    // =====================================================================
+
+    public async Task<List<LaTemplateDto>> TemplatesAsync(CancellationToken ct = default)
+    {
+        var sheets = await db.LessonObservationTemplates.AsNoTracking()
+            .OrderBy(t => t.OrderIndex).ThenBy(t => t.Name).ToListAsync(ct);
+        var sections = await db.LessonObservationSections.AsNoTracking()
+            .GroupBy(s => s.TemplateId).Select(g => new { g.Key, Count = g.Count() })
+            .ToDictionaryAsync(x => x.Key, x => x.Count, ct);
+        var criteria = await (from c in db.LessonObservationCriteria.AsNoTracking()
+                              join s in db.LessonObservationSections.AsNoTracking() on c.SectionId equals s.Id
+                              where c.IsActive
+                              group c by s.TemplateId into g
+                              select new { g.Key, Count = g.Count() })
+            .ToDictionaryAsync(x => x.Key, x => x.Count, ct);
+        var observations = await db.LessonObservations.AsNoTracking()
+            .GroupBy(o => o.TemplateId ?? LessonObservationTemplate.DefaultId).Select(g => new { g.Key, Count = g.Count() })
+            .ToDictionaryAsync(x => x.Key, x => x.Count, ct);
+        return [.. sheets.Select(t => new LaTemplateDto(
+            t.Id, t.Name, t.Description, t.OrderIndex, t.IsActive, t.IsDefault,
+            sections.GetValueOrDefault(t.Id), criteria.GetValueOrDefault(t.Id), observations.GetValueOrDefault(t.Id)))];
+    }
+
+    /// <summary>A new sheet — empty, or a copy of another one's sections and active criteria.</summary>
+    public async Task<LaTemplateDto> CreateTemplateAsync(LaTemplateCreateDto input, CancellationToken ct = default)
+    {
+        var name = await SheetNameAsync(input.Name, null, ct);
+        var sheet = new LessonObservationTemplate
+        {
+            Name = name,
+            Description = Clean(input.Description, 500),
+            OrderIndex = (await db.LessonObservationTemplates.MaxAsync(t => (int?)t.OrderIndex, ct) ?? 0) + 1,
+            IsActive = true,
+            CreatedAt = DateTimeOffset.UtcNow,
+        };
+        db.LessonObservationTemplates.Add(sheet);
+
+        if (!string.IsNullOrWhiteSpace(input.CopyFromId))
+        {
+            var source = await db.LessonObservationSections.AsNoTracking()
+                .Include(s => s.Criteria)
+                .Where(s => s.TemplateId == input.CopyFromId)
+                .OrderBy(s => s.OrderIndex)
+                .ToListAsync(ct);
+            if (source.Count == 0 && !await db.LessonObservationTemplates.AnyAsync(t => t.Id == input.CopyFromId, ct))
+                throw new LessonAnalysisException(404, "Nusxa olinadigan varaq topilmadi");
+            foreach (var s in source)
+            {
+                var copy = new LessonObservationSection { TemplateId = sheet.Id, Title = s.Title, Color = s.Color, OrderIndex = s.OrderIndex };
+                foreach (var c in s.Criteria.Where(c => c.IsActive).OrderBy(c => c.OrderIndex))
+                    copy.Criteria.Add(new LessonObservationCriterion { SectionId = copy.Id, Text = c.Text, OrderIndex = c.OrderIndex, IsActive = true });
+                db.LessonObservationSections.Add(copy);
+            }
+        }
+        await db.SaveChangesAsync(ct);
+        return (await TemplatesAsync(ct)).Single(t => t.Id == sheet.Id);
+    }
+
+    public async Task<LaTemplateDto> PatchTemplateAsync(string id, LaTemplatePatchDto input, CancellationToken ct = default)
+    {
+        var sheet = await db.LessonObservationTemplates.FirstOrDefaultAsync(t => t.Id == id, ct)
+            ?? throw new LessonAnalysisException(404, "Tahlil varag'i topilmadi");
+        if (input.Name is not null) sheet.Name = await SheetNameAsync(input.Name, id, ct);
+        if (input.Description is not null) sheet.Description = Clean(input.Description, 500);
+        if (input.OrderIndex is { } order) sheet.OrderIndex = order;
+        if (input.IsDefault == true && !sheet.IsDefault)
+        {
+            // one default: the old one steps down first (the unique index allows only one)
+            await db.LessonObservationTemplates.Where(t => t.IsDefault && t.Id != id)
+                .ExecuteUpdateAsync(s => s.SetProperty(t => t.IsDefault, false), ct);
+            sheet.IsDefault = true;
+            sheet.IsActive = true;
+        }
+        if (input.IsActive is { } active)
+        {
+            if (!active && sheet.IsDefault)
+                throw new LessonAnalysisException(400, "Asosiy (standart) varaqni o'chirib bo'lmaydi — avval boshqasini standart qiling");
+            sheet.IsActive = active;
+        }
+        await db.SaveChangesAsync(ct);
+        return (await TemplatesAsync(ct)).Single(t => t.Id == id);
+    }
+
+    private async Task<string> SheetNameAsync(string? raw, string? exceptId, CancellationToken ct)
+    {
+        var name = (raw ?? "").Trim();
+        if (name.Length < 2) throw new LessonAnalysisException(400, "Varaq nomi kamida 2 belgi bo'lsin");
+        if (name.Length > 120) throw new LessonAnalysisException(400, "Varaq nomi 120 belgidan oshmasin");
+        var lowered = name.ToLowerInvariant();
+        if (await db.LessonObservationTemplates.AnyAsync(t => t.Name.ToLower() == lowered && t.Id != exceptId, ct))
+            throw new LessonAnalysisException(409, $"«{name}» nomli varaq allaqachon bor");
+        return name;
+    }
+
+    public async Task<LaSectionDto> CreateSectionAsync(LaSectionCreateDto input, CancellationToken ct = default)
+    {
+        var sheet = await SheetIdAsync(input.TemplateId, ct);
+        var title = (input.Title ?? "").Trim();
+        if (title.Length < 2) throw new LessonAnalysisException(400, "Bo'lim nomi kamida 2 belgi bo'lsin");
+        var section = new LessonObservationSection
+        {
+            TemplateId = sheet,
+            Title = title,
+            Color = ValidColor(input.Color) ?? "#4b5563",
+            OrderIndex = (await db.LessonObservationSections.Where(s => s.TemplateId == sheet).MaxAsync(s => (int?)s.OrderIndex, ct) ?? 0) + 1,
+        };
+        db.LessonObservationSections.Add(section);
+        await db.SaveChangesAsync(ct);
+        return new LaSectionDto(section.Id, section.Title, section.OrderIndex, section.Color, []);
+    }
+
+    public async Task<LaSectionDto> PatchSectionAsync(string id, LaSectionPatchDto input, CancellationToken ct = default)
+    {
+        var section = await db.LessonObservationSections.Include(s => s.Criteria).FirstOrDefaultAsync(s => s.Id == id, ct)
+            ?? throw new LessonAnalysisException(404, "Bo'lim topilmadi");
+        if (input.Title is not null)
+        {
+            var title = input.Title.Trim();
+            if (title.Length < 2) throw new LessonAnalysisException(400, "Bo'lim nomi kamida 2 belgi bo'lsin");
+            section.Title = title;
+        }
+        if (input.Color is not null)
+            section.Color = ValidColor(input.Color) ?? throw new LessonAnalysisException(400, "Rang #rrggbb ko'rinishida bo'lsin");
+        if (input.OrderIndex is { } order) section.OrderIndex = order;
+        await db.SaveChangesAsync(ct);
+        return new LaSectionDto(section.Id, section.Title, section.OrderIndex, section.Color,
+            [.. section.Criteria.OrderBy(c => c.OrderIndex).Select(ToDto)]);
+    }
+
+    private static string? ValidColor(string? color)
+    {
+        var c = (color ?? "").Trim();
+        return c.Length == 7 && c[0] == '#' && c.Skip(1).All(Uri.IsHexDigit) ? c.ToLowerInvariant() : null;
+    }
+
+    private static string? Clean(string? text, int max)
+    {
+        var t = (text ?? "").Trim();
+        return t.Length == 0 ? null : t[..Math.Min(t.Length, max)];
     }
 
     public async Task<LaCriterionDto> CreateCriterionAsync(LaCriterionCreateDto input, CancellationToken ct = default)
@@ -101,6 +262,18 @@ public sealed class LessonAnalysisService(IAppDbContext db, ILessonAnalysisAi ai
             var text = input.Text.Trim();
             if (text.Length < 3) throw new LessonAnalysisException(400, "Mezon matni kamida 3 belgi bo'lishi kerak");
             criterion.Text = text;
+        }
+        if (!string.IsNullOrWhiteSpace(input.SectionId) && input.SectionId != criterion.SectionId)
+        {
+            // Moving within the same sheet only — another sheet is another checklist.
+            var from = await db.LessonObservationSections.Where(s => s.Id == criterion.SectionId).Select(s => s.TemplateId).FirstAsync(ct);
+            var to = await db.LessonObservationSections.Where(s => s.Id == input.SectionId).Select(s => s.TemplateId).FirstOrDefaultAsync(ct)
+                ?? throw new LessonAnalysisException(404, "Bo'lim topilmadi");
+            if (to != from) throw new LessonAnalysisException(400, "Mezonni boshqa varaqqa ko'chirib bo'lmaydi");
+            criterion.SectionId = input.SectionId;
+            if (input.OrderIndex is null)
+                criterion.OrderIndex = (await db.LessonObservationCriteria.Where(c => c.SectionId == input.SectionId)
+                    .MaxAsync(c => (int?)c.OrderIndex, ct) ?? 0) + 1;
         }
         if (input.OrderIndex is { } order) criterion.OrderIndex = order;
         if (input.IsActive is { } active) criterion.IsActive = active;
@@ -260,17 +433,19 @@ public sealed class LessonAnalysisService(IAppDbContext db, ILessonAnalysisAi ai
                 join t in db.Teachers on o.TeacherId equals t.Id
                 join u in db.Users on o.ObserverUserId equals u.Id
                 orderby o.LessonDate descending, o.CreatedAt descending
+                from tp in db.LessonObservationTemplates.Where(x => x.Id == (o.TemplateId ?? LessonObservationTemplate.DefaultId)).DefaultIfEmpty()
                 select new
                 {
                     o.Id, o.TeacherId, TeacherName = t.FullName, ObserverName = u.FullName, o.LessonDate,
                     o.ClassName, o.Subject, o.Status, o.ScoreDone, o.ScoreTotal, o.ScorePercent, o.AiSummary,
+                    TemplateName = tp == null ? null : tp.Name,
                 })
             .Skip(filter.Offset).Take(filter.Limit)
             .ToListAsync(ct);
 
         return [.. rows.Select(r => new LaObservationListItemDto(
             r.Id, r.TeacherId, r.TeacherName, r.ObserverName, Iso(r.LessonDate), r.ClassName, r.Subject, r.Status,
-            r.ScoreDone, r.ScoreTotal, (double)r.ScorePercent, !string.IsNullOrEmpty(r.AiSummary)))];
+            r.ScoreDone, r.ScoreTotal, (double)r.ScorePercent, !string.IsNullOrEmpty(r.AiSummary), r.TemplateName))];
     }
 
     /// <summary>One observation for staff; <paramref name="actor"/> drives <c>canEdit</c>.</summary>
@@ -286,7 +461,7 @@ public sealed class LessonAnalysisService(IAppDbContext db, ILessonAnalysisAi ai
         var o = await LoadForTeacherAsync(id, teacherId, ct);
         // raw provider errors are for staff; the teacher's page never shows them
         var dto = await ToDtoAsync(o, canEdit: false, hideAiError: true, ct);
-        return dto with { Sections = await CriteriaAsync(includeInactive: true, ct) };
+        return dto with { Sections = await CriteriaAsync(includeInactive: true, o.TemplateId, ct) };
     }
 
     private async Task<LessonObservation> LoadForTeacherAsync(string id, string? teacherId, CancellationToken ct)
@@ -312,10 +487,15 @@ public sealed class LessonAnalysisService(IAppDbContext db, ILessonAnalysisAi ai
         var lessonDate = ParseDate(input.LessonDate) ?? throw new LessonAnalysisException(400, "Dars sanasi kerak (yyyy-MM-dd)");
         if (!await db.Teachers.AnyAsync(t => t.Id == input.TeacherId, ct))
             throw new LessonAnalysisException(404, TeacherNotFoundMessage);
+        var sheet = await SheetIdAsync(input.TemplateId, ct);
+        if (!string.IsNullOrWhiteSpace(input.TemplateId)
+            && !await db.LessonObservationTemplates.AnyAsync(t => t.Id == sheet && t.IsActive, ct))
+            throw new LessonAnalysisException(400, "Bu tahlil varag'i faol emas");
 
         var now = DateTimeOffset.UtcNow;
         var o = new LessonObservation
         {
+            TemplateId = sheet,
             TeacherId = input.TeacherId,
             ObserverUserId = actor.UserId,
             LessonDate = lessonDate,
@@ -339,7 +519,7 @@ public sealed class LessonAnalysisService(IAppDbContext db, ILessonAnalysisAi ai
     private static readonly HashSet<string> AllFields = new(StringComparer.OrdinalIgnoreCase)
     {
         "teacherId", "lessonDate", "lessonTime", "className", "subject",
-        "strengths", "growthAreas", "nextLessonAdvice", "details",
+        "strengths", "growthAreas", "nextLessonAdvice", "details", "templateId",
     };
 
     /// <summary>
@@ -368,6 +548,13 @@ public sealed class LessonAnalysisService(IAppDbContext db, ILessonAnalysisAi ai
         var o = await LoadAsync(id, tracked: true, ct);
         EnsureCanEdit(o, actor);
 
+        if (present.Contains("templateId") && !string.IsNullOrWhiteSpace(input.TemplateId) && input.TemplateId != o.TemplateId)
+        {
+            // Another sheet is another checklist: only before the first answer.
+            if (o.Details.Count > 0)
+                throw new LessonAnalysisException(400, "Javob berilgan tahlilning varag'ini almashtirib bo'lmaydi");
+            o.TemplateId = await SheetIdAsync(input.TemplateId, ct);
+        }
         if (present.Contains("teacherId") && !string.IsNullOrWhiteSpace(input.TeacherId))
         {
             if (!await db.Teachers.AnyAsync(t => t.Id == input.TeacherId, ct))
@@ -478,8 +665,14 @@ public sealed class LessonAnalysisService(IAppDbContext db, ILessonAnalysisAi ai
     /// </summary>
     private async Task ApplyDetailsAsync(LessonObservation o, List<LaDetailDto> details, CancellationToken ct)
     {
-        var valid = (await db.LessonObservationCriteria.AsNoTracking().Select(c => c.Id).ToListAsync(ct))
-            .ToHashSet(StringComparer.Ordinal);
+        // Only the observation's sheet; every answer keeps the text it was given against.
+        var sheet = o.TemplateId ?? LessonObservationTemplate.DefaultId;
+        var catalog = await (from c in db.LessonObservationCriteria.AsNoTracking()
+                             join s in db.LessonObservationSections.AsNoTracking() on c.SectionId equals s.Id
+                             where s.TemplateId == sheet
+                             select new { c.Id, c.Text, s.Title })
+            .ToDictionaryAsync(x => x.Id, StringComparer.Ordinal, ct);
+        var valid = catalog.Keys.ToHashSet(StringComparer.Ordinal);
         var existing = o.Details.ToDictionary(d => d.CriterionId, StringComparer.Ordinal);
 
         foreach (var item in details)
@@ -506,6 +699,8 @@ public sealed class LessonAnalysisService(IAppDbContext db, ILessonAnalysisAi ai
             }
             detail.IsDone = item.IsDone;
             detail.Comment = item.Comment;
+            detail.CriterionText = catalog[item.CriterionId].Text;
+            detail.SectionTitle = catalog[item.CriterionId].Title;
         }
     }
 
@@ -557,13 +752,18 @@ public sealed class LessonAnalysisService(IAppDbContext db, ILessonAnalysisAi ai
         var teacherName = await db.Teachers.AsNoTracking().Where(t => t.Id == o.TeacherId).Select(t => t.FullName).FirstOrDefaultAsync(ct) ?? "";
         var observerName = await db.Users.AsNoTracking().Where(u => u.Id == o.ObserverUserId).Select(u => u.FullName).FirstOrDefaultAsync(ct) ?? "";
         var criteria = await CriteriaInfoAsync(ct);
+        var sheetId = o.TemplateId ?? LessonObservationTemplate.DefaultId;
+        var sheetName = await db.LessonObservationTemplates.AsNoTracking().Where(t => t.Id == sheetId).Select(t => t.Name).FirstOrDefaultAsync(ct);
         return new LaObservationDto(
             o.Id, o.TeacherId, teacherName, o.ObserverUserId, observerName,
             Iso(o.LessonDate), o.LessonTime, o.ClassName, o.Subject, o.Status,
             o.Strengths, o.GrowthAreas, o.NextLessonAdvice,
             o.AiSummary, hideAiError ? null : o.AiError,
             o.ScoreDone, o.ScoreTotal, (double)o.ScorePercent, o.CreatedAt, canEdit,
-            [.. Ordered(o, criteria).Select(x => new LaDetailDto(x.Detail.CriterionId, x.Detail.IsDone, x.Detail.Comment))]);
+            [.. Ordered(o, criteria).Select(x => new LaDetailDto(
+                x.Detail.CriterionId, x.Detail.IsDone, x.Detail.Comment,
+                x.Detail.CriterionText ?? x.Criterion.Text, x.Detail.SectionTitle ?? x.Criterion.SectionTitle))],
+            TemplateId: sheetId, TemplateName: sheetName);
     }
 
     private async Task<LessonAiResult> SummarizeAsync(LessonObservation o, CancellationToken ct)
@@ -574,7 +774,8 @@ public sealed class LessonAnalysisService(IAppDbContext db, ILessonAnalysisAi ai
             o.Id, teacherName, o.Subject, o.ClassName, o.LessonDate,
             o.ScoreDone, o.ScoreTotal, o.ScorePercent,
             [.. Ordered(o, criteria).Select(x => new LessonAiDetail(
-                x.Criterion.SectionTitle, x.Criterion.Text, x.Detail.IsDone, x.Detail.Comment))],
+                x.Detail.SectionTitle ?? x.Criterion.SectionTitle, x.Detail.CriterionText ?? x.Criterion.Text,
+                x.Detail.IsDone, x.Detail.Comment))],
             o.Strengths, o.GrowthAreas, o.NextLessonAdvice);
         try
         {
@@ -608,8 +809,8 @@ public sealed class LessonAnalysisService(IAppDbContext db, ILessonAnalysisAi ai
             teacherName, observerName, o.LessonDate, o.LessonTime, o.Subject, o.ClassName,
             o.ScoreDone, o.ScoreTotal, o.ScorePercent,
             [.. Ordered(o, criteria).Select(x => new LessonReportRow(
-                x.Criterion.SectionId, x.Criterion.SectionTitle, x.Criterion.SectionColor,
-                x.Criterion.Text, x.Detail.IsDone, x.Detail.Comment))],
+                x.Criterion.SectionId, x.Detail.SectionTitle ?? x.Criterion.SectionTitle, x.Criterion.SectionColor,
+                x.Detail.CriterionText ?? x.Criterion.Text, x.Detail.IsDone, x.Detail.Comment))],
             o.Strengths, o.GrowthAreas, o.NextLessonAdvice, o.AiSummary);
         return (new LessonObservationPdf(model).Render(), LessonObservationPdf.FileName(teacherName, o.LessonDate));
     }
@@ -740,7 +941,15 @@ public sealed class LessonAnalysisService(IAppDbContext db, ILessonAnalysisAi ai
             .ToListAsync(ct);
 
         var criteria = await CriteriaInfoAsync(ct);
+        // Sections of the sheets used in scope (the default sheet when nothing is) — several sheets
+        // must not show every sheet's sections side by side.
+        var sheets = await db.LessonObservations.AsNoTracking()
+            .Where(o => ids.Contains(o.Id))
+            .Select(o => o.TemplateId ?? LessonObservationTemplate.DefaultId)
+            .Distinct().ToListAsync(ct);
+        if (sheets.Count == 0) sheets.Add(await SheetIdAsync(null, ct));
         var sectionRows = await db.LessonObservationSections.AsNoTracking()
+            .Where(s => sheets.Contains(s.TemplateId))
             .OrderBy(s => s.OrderIndex).ThenBy(s => s.Title)
             .Select(s => new { s.Id, s.Title, s.Color })
             .ToListAsync(ct);

@@ -51,10 +51,28 @@ export interface LaSection {
   criteria: LaCriterion[]
 }
 
+/** Tahlil varag'i (mijoz, 2026-10-07): o'z bo'limlari va mezonlari bilan. */
+export interface LaTemplate {
+  id: string
+  name: string
+  description: string | null
+  orderIndex: number
+  isActive: boolean
+  /** Yangi tahlilda oldindan tanlanadi; bittasi standart. */
+  isDefault: boolean
+  sectionCount: number
+  criterionCount: number
+  observationCount: number
+}
+
 export interface LaDetail {
   criterionId: string
   isDone: boolean | null
   comment: string | null
+  /** Javob berilgan paytdagi mezon matni (faqat o'qish) — mezon keyin tahrirlansa ham o'zgarmaydi. */
+  criterionText?: string | null
+  /** Javob berilgan paytdagi bo'lim nomi (faqat o'qish). */
+  sectionTitle?: string | null
 }
 
 export interface LaObservationListItem {
@@ -71,6 +89,7 @@ export interface LaObservationListItem {
   scoreTotal: number
   scorePercent: number
   hasAiSummary: boolean
+  templateName?: string | null
 }
 
 export interface LaObservation {
@@ -106,6 +125,9 @@ export interface LaObservation {
    * endpoint'i to'ldirmasa ham bo'ladi (staff sahifasi `/criteria` ni o'zi o'qiydi).
    */
   sections?: LaSection[]
+  /** Qaysi varaq bo'yicha tahlil qilingan. */
+  templateId?: string | null
+  templateName?: string | null
 }
 
 /** `POST /observations`, `PATCH /observations/{id}` tanasi. */
@@ -119,6 +141,8 @@ export interface LaObservationInput {
   growthAreas: string | null
   nextLessonAdvice: string | null
   details: LaDetail[]
+  /** Tahlil varag'i; berilmasa — standart varaq. Javob berilgach almashtirib bo'lmaydi. */
+  templateId?: string | null
 }
 
 export interface LaRatingRow {
@@ -213,4 +237,33 @@ export interface LaCriterionPatchInput {
   text?: string
   orderIndex?: number
   isActive?: boolean
+  /** Shu varaq ichidagi boshqa bo'limga ko'chirish. */
+  sectionId?: string
+}
+
+export interface LaTemplateCreateInput {
+  name: string
+  description?: string | null
+  /** Shu varaqning bo'limlari va faol mezonlaridan nusxa. */
+  copyFromId?: string | null
+}
+
+export interface LaTemplatePatchInput {
+  name?: string
+  description?: string | null
+  isActive?: boolean
+  isDefault?: boolean
+  orderIndex?: number
+}
+
+export interface LaSectionCreateInput {
+  templateId: string
+  title: string
+  color?: string
+}
+
+export interface LaSectionPatchInput {
+  title?: string
+  color?: string
+  orderIndex?: number
 }

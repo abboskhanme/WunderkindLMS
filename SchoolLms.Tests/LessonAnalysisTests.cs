@@ -673,12 +673,13 @@ public class LessonAnalysisTests(ApiFixture fixture)
     [Fact]
     public async Task Seeder_34_mezon_8_bolim_faqat_bosh_jadvalga()
     {
-        // the shared database was seeded at start-up; a second run does nothing
+        // the shared database was seeded at start-up; a second run does nothing. Other sheets
+        // (tests add their own) are not the seed's business — count the default sheet.
         await fixture.Api.WithDbAsync(async db =>
         {
-            Assert.Equal(8, await db.LessonObservationSections.CountAsync());
+            Assert.Equal(8, await db.LessonObservationSections.CountAsync(s => s.TemplateId == LessonObservationTemplate.DefaultId));
             Assert.False(await LessonAnalysisSeeder.SeedAsync(db));
-            Assert.Equal(8, await db.LessonObservationSections.CountAsync());
+            Assert.Equal(8, await db.LessonObservationSections.CountAsync(s => s.TemplateId == LessonObservationTemplate.DefaultId));
         });
 
         // a pristine database: seeded once, verbatim, then left alone
@@ -778,13 +779,13 @@ public class LessonAnalysisTests(ApiFixture fixture)
         AssertKeys(obs,
             "id", "teacherId", "teacherName", "observerId", "observerName", "lessonDate", "lessonTime", "className",
             "subject", "status", "strengths", "growthAreas", "nextLessonAdvice", "aiSummary", "aiError", "scoreDone",
-            "scoreTotal", "scorePercent", "createdAt", "canEdit", "details");
-        AssertKeys(obs.GetProperty("details")[0], "criterionId", "isDone", "comment");
+            "scoreTotal", "scorePercent", "createdAt", "canEdit", "details", "templateId", "templateName");
+        AssertKeys(obs.GetProperty("details")[0], "criterionId", "isDone", "comment", "criterionText", "sectionTitle");
 
         var item = (await ReadAsync(await staff.GetAsync($"{Admin}/observations?teacherId={teacherId}")))[0];
         AssertKeys(item,
             "id", "teacherId", "teacherName", "observerName", "lessonDate", "className", "subject", "status",
-            "scoreDone", "scoreTotal", "scorePercent", "hasAiSummary");
+            "scoreDone", "scoreTotal", "scorePercent", "hasAiSummary", "templateName");
 
         var summary = await ReadAsync(await staff.GetAsync($"{Admin}/teachers/{teacherId}"));
         AssertKeys(summary, "id", "fullName", "phone", "subject", "photoUrl", "observationsCount", "drafts", "rating", "lastObservationDate");
@@ -805,6 +806,127 @@ public class LessonAnalysisTests(ApiFixture fixture)
     // =====================================================================
     //  Helpers
     // =====================================================================
+
+    // =====================================================================
+    //  11. Bir nechta tahlil varag'i (mijoz, 2026-10-07)
+    // =====================================================================
+
+    /// <summary>
+    /// Nusxadan yangi varaq: bo'limlar va faol mezonlar ko'chadi; shu varaqdagi tahlil faqat o'z
+    /// mezonlarini qabul qiladi (boshqa varaqning mezoni jim tashlanadi); o'qituvchi ham shu varaqni ko'radi.
+    /// </summary>
+    [Fact]
+    public async Task Nusxa_varaq_oz_mezonlari_bilan_ishlaydi()
+    {
+        using var admin = await fixture.Api.ClientAsAsync(Roles.Admin);
+        var name = "Boshlang'ich sinf varag'i " + Guid.NewGuid().ToString("N")[..6];
+        var created = await admin.PostAsJsonAsync($"{Admin}/templates", new { name, copyFromId = LessonObservationTemplate.DefaultId });
+        Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+        var sheet = await ReadAsync(created);
+        var sheetId = sheet.GetProperty("id").GetString()!;
+        Assert.True(sheet.GetProperty("criterionCount").GetInt32() > 0);
+        Assert.False(sheet.GetProperty("isDefault").GetBoolean());
+
+        var sheetSections = (await ReadAsync(await admin.GetAsync($"{Admin}/criteria?templateId={sheetId}"))).EnumerateArray().ToList();
+        var own = AllCriterionIds(sheetSections).First()!;
+        var foreign = (await ActiveCriteriaAsync(admin))[0];
+        Assert.DoesNotContain(foreign, AllCriterionIds(sheetSections));
+
+        var teacherId = await NewTeacherAsync("Varaq");
+        var body = new
+        {
+            teacherId, lessonDate = "2026-05-20", templateId = sheetId,
+            details = new[] { new { criterionId = own, isDone = (bool?)true, comment = (string?)null }, new { criterionId = foreign, isDone = (bool?)false, comment = (string?)null } },
+        };
+        var obs = await ReadAsync(await admin.PostAsJsonAsync($"{Admin}/observations", body));
+        Assert.Equal(sheetId, obs.GetProperty("templateId").GetString());
+        Assert.Equal(name, obs.GetProperty("templateName").GetString());
+        var detail = Assert.Single(obs.GetProperty("details").EnumerateArray());
+        Assert.Equal(own, detail.GetProperty("criterionId").GetString());
+    }
+
+    /// <summary>
+    /// Mezon matni tahrirlansa — eski tahlil o'sha paytdagi matnni ko'rsatadi (PDF, AI, o'qituvchi
+    /// ko'rinishi ham shuni o'qiydi); yangi tahlil yangi matn bilan yoziladi.
+    /// </summary>
+    [Fact]
+    public async Task Mezon_tahrirlansa_eski_tahlil_ozgarmaydi()
+    {
+        using var admin = await fixture.Api.ClientAsAsync(Roles.Admin);
+        var sectionId = (await SectionsAsync(admin, includeInactive: true))[0].GetProperty("id").GetString()!;
+        var original = "Asl mezon " + Guid.NewGuid().ToString("N")[..6];
+        var criterionId = (await ReadAsync(await admin.PostAsJsonAsync($"{Admin}/criteria", new { sectionId, text = original })))
+            .GetProperty("id").GetString()!;
+        var teacherId = await NewTeacherAsync("Snapshot");
+        var oldObs = await CreateAsync(admin, teacherId, "2026-05-21", (criterionId, true, null));
+
+        Assert.Equal(HttpStatusCode.OK, (await admin.PatchAsJsonAsync($"{Admin}/criteria/{criterionId}", new { text = "Yangi matn" })).StatusCode);
+
+        var again = await ReadAsync(await admin.GetAsync($"{Admin}/observations/{oldObs.GetProperty("id").GetString()}"));
+        Assert.Equal(original, again.GetProperty("details")[0].GetProperty("criterionText").GetString());
+        var fresh = await CreateAsync(admin, teacherId, "2026-05-22", (criterionId, true, null));
+        Assert.Equal("Yangi matn", fresh.GetProperty("details")[0].GetProperty("criterionText").GetString());
+
+        await admin.PatchAsJsonAsync($"{Admin}/criteria/{criterionId}", new { isActive = false });
+    }
+
+    /// <summary>Bo'lim qo'shiladi va nomlanadi; mezon shu varaq ichida ko'chadi, boshqa varaqqa — yo'q.</summary>
+    [Fact]
+    public async Task Bolim_qoshiladi_mezon_varaq_ichida_kochadi()
+    {
+        using var admin = await fixture.Api.ClientAsAsync(Roles.Admin);
+        var sheetId = (await ReadAsync(await admin.PostAsJsonAsync($"{Admin}/templates",
+            new { name = "Bo'sh varaq " + Guid.NewGuid().ToString("N")[..6] }))).GetProperty("id").GetString()!;
+        var a = (await ReadAsync(await admin.PostAsJsonAsync($"{Admin}/sections", new { templateId = sheetId, title = "Kirish", color = "#2563EB" })))
+            .GetProperty("id").GetString()!;
+        var b = (await ReadAsync(await admin.PostAsJsonAsync($"{Admin}/sections", new { templateId = sheetId, title = "Asosiy qism" })))
+            .GetProperty("id").GetString()!;
+        var renamed = await ReadAsync(await admin.PatchAsJsonAsync($"{Admin}/sections/{a}", new { title = "Darsga kirish" }));
+        Assert.Equal("Darsga kirish", renamed.GetProperty("title").GetString());
+        Assert.Equal("#2563eb", renamed.GetProperty("color").GetString());
+
+        var c = (await ReadAsync(await admin.PostAsJsonAsync($"{Admin}/criteria", new { sectionId = a, text = "Salomlashdi" })))
+            .GetProperty("id").GetString()!;
+        Assert.Equal(HttpStatusCode.OK, (await admin.PatchAsJsonAsync($"{Admin}/criteria/{c}", new { sectionId = b })).StatusCode);
+        var sections = (await ReadAsync(await admin.GetAsync($"{Admin}/criteria?templateId={sheetId}"))).EnumerateArray().ToList();
+        Assert.Contains(c, AllCriterionIds(sections.Where(s => s.GetProperty("id").GetString() == b)));
+
+        var defaultSection = (await SectionsAsync(admin, includeInactive: true))[0].GetProperty("id").GetString()!;
+        Assert.Equal(HttpStatusCode.BadRequest, (await admin.PatchAsJsonAsync($"{Admin}/criteria/{c}", new { sectionId = defaultSection })).StatusCode);
+    }
+
+    /// <summary>Standart varaq o'chirilmaydi; boshqasi standart qilinsa, avvalgisi standartlikdan tushadi.</summary>
+    [Fact]
+    public async Task Standart_varaq_bitta_va_ochirilmaydi()
+    {
+        using var admin = await fixture.Api.ClientAsAsync(Roles.Admin);
+        Assert.Equal(HttpStatusCode.BadRequest,
+            (await admin.PatchAsJsonAsync($"{Admin}/templates/{LessonObservationTemplate.DefaultId}", new { isActive = false })).StatusCode);
+
+        var other = (await ReadAsync(await admin.PostAsJsonAsync($"{Admin}/templates",
+            new { name = "Vaqtinchalik " + Guid.NewGuid().ToString("N")[..6] }))).GetProperty("id").GetString()!;
+        try
+        {
+            Assert.True((await ReadAsync(await admin.PatchAsJsonAsync($"{Admin}/templates/{other}", new { isDefault = true })))
+                .GetProperty("isDefault").GetBoolean());
+            var all = (await ReadAsync(await admin.GetAsync($"{Admin}/templates"))).EnumerateArray().ToList();
+            Assert.Single(all, t => t.GetProperty("isDefault").GetBoolean());
+        }
+        finally
+        {
+            // give the default back — the other tests read the default sheet
+            await admin.PatchAsJsonAsync($"{Admin}/templates/{LessonObservationTemplate.DefaultId}", new { isDefault = true });
+        }
+    }
+
+    [Fact]
+    public async Task Varaq_yaratish_mezon_ruxsatini_talab_qiladi()
+    {
+        using var observer = await fixture.Api.ClientAsAsync(Roles.Staff, LessonAnalysisAccess.PermissionKey);
+        Assert.Equal(HttpStatusCode.Forbidden, (await observer.PostAsJsonAsync($"{Admin}/templates", new { name = "X varaq" })).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await observer.PostAsJsonAsync($"{Admin}/sections", new { title = "X" })).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await observer.GetAsync($"{Admin}/templates")).StatusCode);
+    }
 
     private static void AssertKeys(JsonElement e, params string[] expected) =>
         Assert.Equal(expected.Order(StringComparer.Ordinal), e.EnumerateObject().Select(p => p.Name).Order(StringComparer.Ordinal));

@@ -35,10 +35,33 @@ public static class LessonObservationStatus
     public static bool IsValid(string? value) => value is Draft or Completed;
 }
 
+/// <summary>
+/// A lesson analysis sheet (varaq) — its own sections and criteria (client, 2026-10-07: "dars tahlil
+/// varog'ini edit qilish yoki bir nechta dars tahlil varoqlari qo'shish"). The observer picks one per
+/// observation; the sheet the school started with is <see cref="DefaultId"/>.
+/// </summary>
+public class LessonObservationTemplate
+{
+    /// <summary>The first sheet — every section and observation that existed before sheets lives on it.</summary>
+    public const string DefaultId = "la-template-default";
+
+    public string Id { get; set; } = Guid.NewGuid().ToString();
+    public string Name { get; set; } = string.Empty;
+    public string? Description { get; set; }
+    public int OrderIndex { get; set; }
+    /// <summary>false — not offered for new observations; old ones keep it.</summary>
+    public bool IsActive { get; set; } = true;
+    /// <summary>Preselected on a new observation. Exactly one sheet is the default.</summary>
+    public bool IsDefault { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+}
+
 /// <summary>A checklist section ("1-BO'LIM: DARSGA TAYYORGARLIK").</summary>
 public class LessonObservationSection
 {
     public string Id { get; set; } = Guid.NewGuid().ToString();
+    /// <summary>The sheet the section belongs to (<see cref="LessonObservationTemplate"/>).</summary>
+    public string TemplateId { get; set; } = LessonObservationTemplate.DefaultId;
     public string Title { get; set; } = string.Empty;
     public int OrderIndex { get; set; }
     /// <summary>Identity colour of the section, <c>#rrggbb</c>.</summary>
@@ -84,6 +107,8 @@ public class LessonObservation
     public string? Strengths { get; set; }
     public string? GrowthAreas { get; set; }
     public string? NextLessonAdvice { get; set; }
+    /// <summary>The sheet used (<see cref="LessonObservationTemplate"/>); null — the default sheet.</summary>
+    public string? TemplateId { get; set; }
     /// <summary>The text the AI model returned (a JSON object for new rows; plain text for imported ones).</summary>
     public string? AiSummary { get; set; }
     public string? AiError { get; set; }
@@ -109,4 +134,11 @@ public class LessonObservationDetail
     public string CriterionId { get; set; } = string.Empty;
     public bool? IsDone { get; set; }
     public string? Comment { get; set; }
+    /// <summary>
+    /// The criterion's text when it was answered — editing the sheet later must not rewrite what was
+    /// observed (the PDF, the AI summary and the teacher's view read this first).
+    /// </summary>
+    public string? CriterionText { get; set; }
+    /// <summary>The section's title when it was answered (same reason).</summary>
+    public string? SectionTitle { get; set; }
 }

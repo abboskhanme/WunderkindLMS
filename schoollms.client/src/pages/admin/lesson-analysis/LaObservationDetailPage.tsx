@@ -27,7 +27,11 @@ export function LaObservationDetailPage() {
   const admin = isLaAdmin(user)
 
   const observation = useLoad(`obs|${id}`, () => getObservation(id))
-  const criteria = useLoad('criteria-all', () => getCriteria(true))
+  // The observation's own sheet (varaq) — another sheet's sections would not match its answers.
+  const sheetId = observation.data?.templateId ?? null
+  const criteria = useLoad(observation.data ? `criteria-all|${sheetId ?? 'default'}` : null, () =>
+    getCriteria(true, sheetId ?? undefined),
+  )
   const [busy, setBusy] = useState<'ai' | 'pdf' | 'delete' | null>(null)
   const [error, setError] = useState<string | null>(null)
   const clearError = useCallback(() => setError(null), [])

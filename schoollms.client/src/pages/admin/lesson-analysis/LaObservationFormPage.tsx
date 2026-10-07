@@ -9,6 +9,7 @@ import {
   getRandomTeacher,
   getTeacherLessons,
   getTeachers,
+  getTemplates,
   laErrorMessage,
   updateObservation,
 } from '@/api/services/lessonAnalysis'
@@ -18,6 +19,7 @@ import type {
   LaSection,
   LaTeacherLesson,
   LaTeacherSummary,
+  LaTemplate,
 } from '@/types/lessonAnalysis'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
@@ -57,11 +59,20 @@ export function LaObservationFormPage() {
   const [searchParams] = useSearchParams()
   const presetTeacher = searchParams.get('teacherId')
 
-  const criteria = useLoad('criteria', () => getCriteria())
+  const templates = useLoad('la-templates', () => getTemplates())
   const teachers = useLoad('teachers', () => getTeachers())
   const observation = useLoad(id ? `obs|${id}` : null, () => getObservation(id!))
+  // Tahlil varag'i (mijoz, 2026-10-07): yangi tahlilda standart varaq, mavjudida o'zining varag'i.
+  const [chosenSheet, setChosenSheet] = useState<string | null>(null)
+  const sheetId =
+    chosenSheet ??
+    observation.data?.templateId ??
+    templates.data?.find((t) => t.isDefault)?.id ??
+    null
+  const ready = templates.data && (!id || observation.data)
+  const criteria = useLoad(ready && sheetId ? `criteria|${sheetId}` : null, () => getCriteria(false, sheetId ?? undefined))
 
-  const error = criteria.error ?? teachers.error ?? observation.error
+  const error = criteria.error ?? teachers.error ?? observation.error ?? templates.error
   if (error) {
     return (
       <div className="space-y-3">
@@ -70,7 +81,7 @@ export function LaObservationFormPage() {
       </div>
     )
   }
-  if (!criteria.data || !teachers.data || (id && !observation.data)) return <Loader label="Yuklanmoqda..." />
+  if (!criteria.data || !teachers.data || !templates.data || (id && !observation.data)) return <Loader label="Yuklanmoqda..." />
 
   if (observation.data && observation.data.status === 'completed' && !observation.data.canEdit) {
     return (
@@ -91,6 +102,10 @@ export function LaObservationFormPage() {
       teachers={teachers.data}
       initial={observation.data}
       presetTeacherId={id ? null : presetTeacher}
+      templates={templates.data.filter((t) => t.isActive || t.id === sheetId)}
+      templateId={sheetId ?? ''}
+      // Another sheet is another checklist: only before the first answer (the server agrees).
+      onTemplateChange={observation.data && observation.data.details.length > 0 ? undefined : setChosenSheet}
     />
   )
 }
@@ -114,11 +129,17 @@ function ObservationForm({
   teachers,
   initial,
   presetTeacherId,
+  templates,
+  templateId,
+  onTemplateChange,
 }: {
   sections: LaSection[]
   teachers: LaTeacherSummary[]
   initial: LaObservation | null
   presetTeacherId: string | null
+  templates: LaTemplate[]
+  templateId: string
+  onTemplateChange?: (id: string) => void
 }) {
   const navigate = useNavigate()
   const preset = presetTeacherId ? teachers.find((t) => t.id === presetTeacherId) : undefined
@@ -207,6 +228,7 @@ function ObservationForm({
       strengths: strengths.trim() || null,
       growthAreas: growthAreas.trim() || null,
       nextLessonAdvice: advice.trim() || null,
+      templateId: templateId || null,
       // ko'rsatilgan har bir mezon yuboriladi, tozalangani null bilan — server eski belgini tashlaydi
       details: allCriteria.map((c) => ({
         criterionId: c.id,
@@ -312,6 +334,28 @@ function ObservationForm({
 
       {/* sarlavha maydonlari — qog'oz shakldagidek */}
       <Card className="space-y-4">
+        {templates.length > 1 && (
+          <label className="block max-w-md">
+            <span className="mb-1 block text-sm font-medium text-slate-600">Tahlil varag‘i</span>
+            <select
+              className={fieldCls}
+              value={templateId}
+              disabled={!onTemplateChange}
+              onChange={(e) => onTemplateChange?.(e.target.value)}
+              aria-label="Tahlil varag‘i"
+            >
+              {templates.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name}
+                  {t.isDefault ? ' (standart)' : ''}
+                </option>
+              ))}
+            </select>
+            {!onTemplateChange && (
+              <span className="mt-1 block text-xs text-slate-400">Javob berilgan tahlilning varag‘i almashmaydi.</span>
+            )}
+          </label>
+        )}
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
           <div className="md:col-span-2">
             <span className="mb-1 block text-sm font-medium text-slate-600">
