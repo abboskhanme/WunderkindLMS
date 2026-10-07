@@ -765,14 +765,23 @@ export interface Feedback {
   type: 'suggestion' | 'complaint'
   text: string
   createdAt: string
-  /** new | resolved */
-  status: 'new' | 'resolved'
+  /** new (qabul qilindi) | in_progress (jarayonda) | resolved (hal qilindi) */
+  status: 'new' | 'in_progress' | 'resolved'
   /** parent | teacher — yuboruvchi roli */
   senderRole: 'parent' | 'teacher'
   /** Yuboruvchining ismi (ota-ona yoki o'qituvchi) */
   senderName: string
   /** Biriktirilgan rasm ("/uploads/...") yoki null */
   imageUrl: string | null
+  /** Bo'lim va mas'ul (2026-10-07) */
+  departmentId?: string | null
+  departmentName?: string | null
+  assigneeId?: string | null
+  assigneeName?: string | null
+  /** Yuboruvchiga ko'rinadigan javob */
+  answer?: string | null
+  updatedAt?: string | null
+  resolvedAt?: string | null
 }
 
 /* ---------- O'qituvchi maoshi ---------- */

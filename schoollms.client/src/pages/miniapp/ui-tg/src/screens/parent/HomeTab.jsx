@@ -16,8 +16,8 @@
  */
 import { useEffect, useState } from 'react'
 import {
-  AlertTriangle, CalendarOff, CheckCircle2, Clock, DoorOpen, HelpCircle,
-  Megaphone, Wallet,
+  AlertTriangle, CalendarOff, CheckCircle2, ChevronRight, Clock, DoorOpen, HelpCircle,
+  Megaphone, MessageSquareText, Wallet,
 } from 'lucide-react'
 import { Badge, Card, DateChip, EmptyState, Row, StatGrid } from '../../components/ui'
 import { useAsync } from '../../lib/useAsync'
@@ -31,7 +31,7 @@ import { NewsCard } from './NewsCard'
 import { CertificatesCard } from './CertificatesCard'
 import { todayISO } from '../../lib/weeks'
 
-export function HomeTab({ child, onOpenTab, showGrades = true }) {
+export function HomeTab({ child, onOpenTab, showGrades = true, onOpenFeedback }) {
   const state = useAsync(
     () =>
       Promise.all([
@@ -96,6 +96,26 @@ export function HomeTab({ child, onOpenTab, showGrades = true }) {
             {/* School news, under the announcements block (§3.4). It loads
                 itself, so it does not join the five requests above. */}
             <NewsCard />
+
+            {/* Taklif va shikoyatlar (client, 2026-10-07) — the same sheet the profile opens. */}
+            {onOpenFeedback && (
+              <Card>
+                <Row
+                  lead={
+                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-brand/25 text-brand-ink">
+                      <MessageSquareText className="h-5 w-5" />
+                    </div>
+                  }
+                  title="Taklif va shikoyatlar"
+                  subtitle="Murojaat yuborish va holatini ko'rish"
+                  right={<ChevronRight className="h-5 w-5 text-slate-400" />}
+                  onClick={() => {
+                    haptic('light')
+                    onOpenFeedback()
+                  }}
+                />
+              </Card>
+            )}
           </>
         )
       }}

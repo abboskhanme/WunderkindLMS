@@ -113,6 +113,27 @@ async function request(method, path, body, headers) {
   return parsed
 }
 
+/**
+ * Multipart POST (a photo with a form). Same token and 401 rule as `request`; no `Content-Type`
+ * header — `FormData` sets it with its boundary.
+ */
+async function requestForm(path, formData) {
+  const token = tokenStore.get()
+  const res = await send('/api' + path, {
+    method: 'POST',
+    headers: token ? { Authorization: 'Bearer ' + token } : {},
+    body: formData,
+  })
+  if (res.status === 401 && token) {
+    tokenStore.clear()
+    onUnauthorized?.()
+  }
+  const text = await res.text()
+  const parsed = text ? safeJson(text) : null
+  if (!res.ok) throw new ApiError(res.status, parsed)
+  return parsed
+}
+
 function safeJson(text) {
   try {
     return JSON.parse(text)
@@ -127,4 +148,6 @@ export const api = {
   put: (p, b) => request('PUT', p, b ?? {}),
   // DELETE tanasiz ketadi — parametrlar so'rov satrida (backend shunday kutadi).
   del: (p, headers) => request('DELETE', p, undefined, headers),
+  /** Multipart POST — matn + rasm (taklif va shikoyatlar). */
+  form: (p, formData) => requestForm(p, formData),
 }

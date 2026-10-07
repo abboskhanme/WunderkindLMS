@@ -82,8 +82,18 @@ public class Feedback
     /// <summary>O'qituvchi yuborgan bo'lsa — uning id'si (parent bo'lsa null).</summary>
     public string? TeacherId { get; set; }
     public DateTime CreatedAt { get; set; } = AppClock.Now;
-    /// <summary>new | resolved</summary>
+    /// <summary><see cref="FeedbackStatus"/>: new (qabul qilindi) | in_progress | resolved.</summary>
     public string Status { get; set; } = "new";
+    /// <summary>The department it is routed to (FeedbackWorkflow.cs). null = not routed yet.</summary>
+    public Guid? DepartmentId { get; set; }
+    /// <summary>The responsible person (users.id). null = the department as a whole.</summary>
+    public string? AssigneeId { get; set; }
+    /// <summary>The account that sent it (users.id) — "my items" in the sender's app.</summary>
+    public string? SenderUserId { get; set; }
+    /// <summary>The school's answer the sender sees.</summary>
+    public string? Answer { get; set; }
+    public DateTime? UpdatedAt { get; set; }
+    public DateTime? ResolvedAt { get; set; }
 }
 
 /// <summary>O'quvchi.</summary>

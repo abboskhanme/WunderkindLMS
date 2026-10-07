@@ -24,6 +24,7 @@ import {
 } from './shared'
 import { NewsCard } from './NewsCard'
 import { PenaltiesCard } from './PenaltiesCard'
+import { FeedbackCard } from './FeedbackCard'
 import { LessonAnalysisCard } from './LessonAnalysis'
 
 export function TodayTab({ profile, meta, onOpenAttendance }) {
@@ -186,6 +187,9 @@ export function TodayTab({ profile, meta, onOpenAttendance }) {
             {/* School news, after today's lessons (§3.4). It loads itself:
                 the feed can never take the day's schedule down with it. */}
             <NewsCard />
+
+            {/* Taklif va shikoyatlar: own items with status + a new one (client, 2026-10-07). */}
+            <FeedbackCard />
 
             <div className="h-4" />
           </>

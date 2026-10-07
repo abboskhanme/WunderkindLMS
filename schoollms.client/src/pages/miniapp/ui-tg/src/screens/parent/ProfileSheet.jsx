@@ -14,7 +14,7 @@
  * fayli — uni avatar qilib qo'yish hujjatni ekranga chiqarish bo'lardi.
  */
 import { useEffect } from 'react'
-import { ChevronRight, X } from 'lucide-react'
+import { ChevronRight, MessageSquareText, X } from 'lucide-react'
 import { Badge, Card, EmptyState, Hero, Row } from '../../components/ui'
 import { LogoutButton } from '../../components/LogoutButton'
 import { useAsync } from '../../lib/useAsync'
@@ -62,7 +62,7 @@ export function ProfileButton({ fullName, onClick }) {
  * @param panelChildren   qobiqdagi farzandlar ro'yxati — o'quvchi hisobida
  *                        `/tg/me` farzand qaytarmaydi, u holda shu ko'rsatiladi
  */
-export function ProfileSheet({ user, panelChildren, activeChildId, onPickChild, onClose }) {
+export function ProfileSheet({ user, panelChildren, activeChildId, onPickChild, onClose, onOpenFeedback }) {
   const state = useAsync(() => getProfile(), [])
 
   useEffect(() => showBackButton(onClose), [onClose])
@@ -132,6 +132,25 @@ export function ProfileSheet({ user, panelChildren, activeChildId, onPickChild, 
             )
           }}
         </AsyncBlock>
+
+        {onOpenFeedback && (
+          <Card>
+            <Row
+              lead={
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-brand/25 text-brand-ink">
+                  <MessageSquareText className="h-5 w-5" />
+                </div>
+              }
+              title="Taklif va shikoyatlar"
+              subtitle="Murojaat yuborish va holatini ko'rish"
+              right={<ChevronRight className="h-5 w-5 text-slate-400" />}
+              onClick={() => {
+                haptic('light')
+                onOpenFeedback()
+              }}
+            />
+          </Card>
+        )}
 
         <LogoutButton variant="block" />
       </div>

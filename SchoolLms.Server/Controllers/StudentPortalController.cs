@@ -151,19 +151,24 @@ public class StudentPortalController(
     [Authorize(Roles = "student,parent")]
     [RequestSizeLimit(20_000_000)]
     public async Task<IActionResult> SubmitFeedback(
-        [FromForm] string type, [FromForm] string text, IFormFile? image)
+        [FromForm] string type, [FromForm] string text, IFormFile? image,
+        [FromForm] string? departmentId = null, [FromForm] string? studentId = null)
     {
-        // Student o'zi, parent farzandi nomidan yuboradi.
-        var s = User.IsInRole("parent") ? await TargetAsync(null) : await MeAsync();
+        // Student o'zi, parent farzandi nomidan yuboradi (bir nechta farzand — `studentId`).
+        var s = User.IsInRole("parent") ? await TargetAsync(studentId) : await MeAsync();
         if (s is null) return Unauthorized();
         var body = (text ?? "").Trim();
         if (body.Length == 0) return BadRequest(new { message = "Matn bo'sh" });
         if (image is not null && Application.Services.UploadGuard.Validate(image) is { } imgError)
             return BadRequest(new { message = imgError });
 
+        if (body.Length > FeedbackWorkflowService.MaxText)
+            return BadRequest(new { message = $"Matn {FeedbackWorkflowService.MaxText} belgidan oshmasin" });
+
         var feedbackType = type == "complaint" ? "complaint" : "suggestion";
         var senderName = s.ParentFullName ?? "";
-        db.Feedbacks.Add(new Feedback
+        var uid = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        var item = new Feedback
         {
             StudentId = s.Id,
             ParentName = senderName,
@@ -173,11 +178,38 @@ public class StudentPortalController(
             Text = body,
             ImageUrl = image is { Length: > 0 } ? await SaveUploadAsync(image) : null,
             CreatedAt = AppClock.Now,
-            Status = "new",
-        });
+            Status = FeedbackStatus.New,
+            SenderUserId = uid,
+            DepartmentId = await FeedbackWorkflowService.ChosenDepartmentAsync(db, departmentId),
+        };
+        db.Feedbacks.Add(item);
+        db.FeedbackEvents.Add(FeedbackWorkflowService.Received(item, uid ?? "", senderName));
         await db.SaveChangesAsync();
+        await FeedbackNotifier.NewAsync(item);
         return NoContent();
     }
+
+    private FeedbackNotifier FeedbackNotifier =>
+        new(db, telegram, HttpContext.RequestServices.GetRequiredService<ILogger<FeedbackNotifier>>());
+
+    /// <summary>
+    /// "Mening murojaatlarim" — what this account sent, with the status (qabul qilindi → jarayonda →
+    /// hal qilindi) and the school's answer (client, 2026-10-07).
+    /// </summary>
+    [HttpGet("feedback")]
+    [Authorize(Roles = "student,parent")]
+    public async Task<ActionResult<IEnumerable<MyFeedbackDto>>> MyFeedback(CancellationToken ct)
+    {
+        var uid = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (uid is null) return Unauthorized();
+        return await FeedbackWorkflowService.MineAsync(db, uid, null, ct);
+    }
+
+    /// <summary>The departments a sender can address (bo'limlar).</summary>
+    [HttpGet("feedback/departments")]
+    [Authorize(Roles = "student,parent")]
+    public async Task<ActionResult<IEnumerable<FeedbackDepartmentOptionDto>>> FeedbackDepartments(CancellationToken ct) =>
+        await FeedbackWorkflowService.OptionsAsync(db, ct);
 
     // ---------- Oshxona (kunlik menyu — butun maktab, faqat ko'rish) ----------
 

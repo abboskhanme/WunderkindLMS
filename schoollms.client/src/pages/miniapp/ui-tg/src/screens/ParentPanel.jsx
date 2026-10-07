@@ -16,8 +16,11 @@ import { useCallback, useEffect, useState } from 'react'
 import { CalendarDays, GraduationCap, Home, UserRoundX, UtensilsCrossed, Wallet } from 'lucide-react'
 import { EmptyState, ErrorState, Hero, Loader, Screen, TabBar } from '../components/ui'
 import { ProfileButton, ProfileSheet } from './parent/ProfileSheet'
+import { FeedbackSheet } from '../components/FeedbackSheet'
 import { useAsync } from '../lib/useAsync'
-import { getShowLearningProgress, listChildren } from '../lib/parentApi'
+import {
+  getFeedbackDepartments, getMyFeedback, getShowLearningProgress, listChildren, sendFeedback,
+} from '../lib/parentApi'
 import { showBackButton } from '../lib/telegram'
 import { ChildSwitcher } from './parent/ChildSwitcher'
 import { HomeTab } from './parent/HomeTab'
@@ -67,12 +70,20 @@ export function ParentPanel({ user }) {
     setProfileOpen(false)
   }, [])
 
+  // Taklif va shikoyatlar — butun ekranli varaq (profil va Bosh ochadi; mijoz, 2026-10-07).
+  const [feedbackOpen, setFeedbackOpen] = useState(false)
+  const openFeedback = useCallback(() => {
+    setProfileOpen(false)
+    setFeedbackOpen(true)
+  }, [])
+  const closeFeedback = useCallback(() => setFeedbackOpen(false), [])
+
   // Telegramning o'z "orqaga" tugmasi — ichki tabdan Boshga qaytaradi.
-  // Profil ochiq bo'lsa tugma profilniki (u o'zi ro'yxatdan o'tkazadi).
+  // Profil yoki murojaatlar ochiq bo'lsa tugma o'shaniki (u o'zi ro'yxatdan o'tkazadi).
   useEffect(() => {
-    if (tab === 'home' || profileOpen) return undefined
+    if (tab === 'home' || profileOpen || feedbackOpen) return undefined
     return showBackButton(() => setTab('home'))
-  }, [tab, profileOpen])
+  }, [tab, profileOpen, feedbackOpen])
 
   const roleWord = user.role === 'student' ? "O'quvchi" : 'Ota-ona'
   const subtitle = child
@@ -110,7 +121,13 @@ export function ParentPanel({ user }) {
         )}
 
         {child && tab === 'home' && (
-          <HomeTab key={child.id} child={child} onOpenTab={setTab} showGrades={showGrades} />
+          <HomeTab
+            key={child.id}
+            child={child}
+            onOpenTab={setTab}
+            showGrades={showGrades}
+            onOpenFeedback={openFeedback}
+          />
         )}
         {child && showGrades && tab === 'grades' && <GradesTab key={child.id} child={child} />}
         {child && tab === 'schedule' && <ScheduleTab key={child.id} child={child} />}
@@ -127,6 +144,18 @@ export function ParentPanel({ user }) {
           activeChildId={child?.id ?? null}
           onPickChild={pickFromProfile}
           onClose={closeProfile}
+          onOpenFeedback={openFeedback}
+        />
+      )}
+
+      {feedbackOpen && (
+        <FeedbackSheet
+          api={{
+            list: getMyFeedback,
+            departments: getFeedbackDepartments,
+            submit: (formData) => sendFeedback(child?.id, formData),
+          }}
+          onClose={closeFeedback}
         />
       )}
     </>

@@ -2933,9 +2933,22 @@ namespace SchoolLms.Infrastructure.Migrations
                         .HasColumnType("text")
                         .HasColumnName("id");
 
+                    b.Property<string>("Answer")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)")
+                        .HasColumnName("answer");
+
+                    b.Property<string>("AssigneeId")
+                        .HasColumnType("text")
+                        .HasColumnName("assignee_id");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp without time zone")
                         .HasColumnName("created_at");
+
+                    b.Property<Guid?>("DepartmentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("department_id");
 
                     b.Property<string>("ImageUrl")
                         .HasColumnType("text")
@@ -2946,6 +2959,10 @@ namespace SchoolLms.Infrastructure.Migrations
                         .HasColumnType("text")
                         .HasColumnName("parent_name");
 
+                    b.Property<DateTime?>("ResolvedAt")
+                        .HasColumnType("timestamp without time zone")
+                        .HasColumnName("resolved_at");
+
                     b.Property<string>("SenderName")
                         .IsRequired()
                         .HasColumnType("text")
@@ -2955,6 +2972,10 @@ namespace SchoolLms.Infrastructure.Migrations
                         .IsRequired()
                         .HasColumnType("text")
                         .HasColumnName("sender_role");
+
+                    b.Property<string>("SenderUserId")
+                        .HasColumnType("text")
+                        .HasColumnName("sender_user_id");
 
                     b.Property<string>("Status")
                         .IsRequired()
@@ -2980,13 +3001,198 @@ namespace SchoolLms.Infrastructure.Migrations
                         .HasColumnType("text")
                         .HasColumnName("type");
 
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp without time zone")
+                        .HasColumnName("updated_at");
+
                     b.HasKey("Id")
                         .HasName("pk_feedbacks");
+
+                    b.HasIndex("SenderUserId")
+                        .HasDatabaseName("ix_feedbacks_sender_user_id");
+
+                    b.HasIndex("DepartmentId", "Status")
+                        .HasDatabaseName("ix_feedbacks_department_id_status");
 
                     b.HasIndex("Status", "CreatedAt")
                         .HasDatabaseName("ix_feedbacks_status_created_at");
 
                     b.ToTable("feedbacks", (string)null);
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.FeedbackDepartment", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_active");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("name");
+
+                    b.Property<int>("Position")
+                        .HasColumnType("integer")
+                        .HasColumnName("position");
+
+                    b.HasKey("Id")
+                        .HasName("pk_feedback_departments");
+
+                    b.HasIndex("Name")
+                        .IsUnique()
+                        .HasDatabaseName("ix_feedback_departments_name");
+
+                    b.ToTable("feedback_departments", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_feedback_departments_name", "btrim(name) <> ''");
+                        });
+
+                    b.HasData(
+                        new
+                        {
+                            Id = new Guid("0f3d1a00-0000-4000-8000-000000000001"),
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 7, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            IsActive = true,
+                            Name = "O'quv bo'limi",
+                            Position = 1
+                        },
+                        new
+                        {
+                            Id = new Guid("0f3d1a00-0000-4000-8000-000000000002"),
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 7, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            IsActive = true,
+                            Name = "Moliya",
+                            Position = 2
+                        },
+                        new
+                        {
+                            Id = new Guid("0f3d1a00-0000-4000-8000-000000000003"),
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 7, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            IsActive = true,
+                            Name = "Ovqatlanish",
+                            Position = 3
+                        },
+                        new
+                        {
+                            Id = new Guid("0f3d1a00-0000-4000-8000-000000000004"),
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 7, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            IsActive = true,
+                            Name = "Transport",
+                            Position = 4
+                        },
+                        new
+                        {
+                            Id = new Guid("0f3d1a00-0000-4000-8000-000000000005"),
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 7, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            IsActive = true,
+                            Name = "Yotoqxona",
+                            Position = 5
+                        },
+                        new
+                        {
+                            Id = new Guid("0f3d1a00-0000-4000-8000-000000000006"),
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 7, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            IsActive = true,
+                            Name = "HR",
+                            Position = 6
+                        },
+                        new
+                        {
+                            Id = new Guid("0f3d1a00-0000-4000-8000-000000000007"),
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 7, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            IsActive = true,
+                            Name = "Rahbariyat",
+                            Position = 7
+                        });
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.FeedbackDepartmentMember", b =>
+                {
+                    b.Property<Guid>("DepartmentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("department_id");
+
+                    b.Property<string>("UserId")
+                        .HasColumnType("text")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("DepartmentId", "UserId")
+                        .HasName("pk_feedback_department_members");
+
+                    b.HasIndex("UserId")
+                        .HasDatabaseName("ix_feedback_department_members_user_id");
+
+                    b.ToTable("feedback_department_members", (string)null);
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.FeedbackEvent", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("ActorId")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("actor_id");
+
+                    b.Property<string>("ActorName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("actor_name");
+
+                    b.Property<string>("AssigneeId")
+                        .HasColumnType("text")
+                        .HasColumnName("assignee_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("DepartmentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("department_id");
+
+                    b.Property<string>("FeedbackId")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("feedback_id");
+
+                    b.Property<bool>("IsPublic")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_public");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)")
+                        .HasColumnName("note");
+
+                    b.Property<string>("Status")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("status");
+
+                    b.HasKey("Id")
+                        .HasName("pk_feedback_events");
+
+                    b.HasIndex("FeedbackId", "CreatedAt")
+                        .HasDatabaseName("ix_feedback_events_feedback_id_created_at");
+
+                    b.ToTable("feedback_events", (string)null);
                 });
 
             modelBuilder.Entity("SchoolLms.Domain.FinanceAnomalyFlag", b =>
@@ -8739,6 +8945,42 @@ namespace SchoolLms.Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_expense_attachments_users_uploaded_by");
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.Feedback", b =>
+                {
+                    b.HasOne("SchoolLms.Domain.FeedbackDepartment", null)
+                        .WithMany()
+                        .HasForeignKey("DepartmentId")
+                        .OnDelete(DeleteBehavior.SetNull)
+                        .HasConstraintName("fk_feedbacks_feedback_departments_department_id");
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.FeedbackDepartmentMember", b =>
+                {
+                    b.HasOne("SchoolLms.Domain.FeedbackDepartment", null)
+                        .WithMany()
+                        .HasForeignKey("DepartmentId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_feedback_department_members_feedback_departments_department");
+
+                    b.HasOne("SchoolLms.Domain.AppUser", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_feedback_department_members_users_user_id");
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.FeedbackEvent", b =>
+                {
+                    b.HasOne("SchoolLms.Domain.Feedback", null)
+                        .WithMany()
+                        .HasForeignKey("FeedbackId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_feedback_events_feedbacks_feedback_id");
                 });
 
             modelBuilder.Entity("SchoolLms.Domain.FinanceAnomalyFlag", b =>

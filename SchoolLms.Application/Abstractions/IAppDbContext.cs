@@ -291,6 +291,11 @@ public interface IAppDbContext
     DbSet<HrSettings> HrSettings { get; }
     DbSet<HrJobRun> HrJobRuns { get; }
 
+    /// <summary>Taklif va shikoyatlar workflow: departments, their responsible people, item history.</summary>
+    DbSet<FeedbackDepartment> FeedbackDepartments { get; }
+    DbSet<FeedbackDepartmentMember> FeedbackDepartmentMembers { get; }
+    DbSet<FeedbackEvent> FeedbackEvents { get; }
+
     int SaveChanges();
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 

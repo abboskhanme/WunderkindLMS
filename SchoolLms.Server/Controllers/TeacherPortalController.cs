@@ -988,12 +988,14 @@ public class TeacherPortalController(
     [HttpPost("feedback")]
     [RequestSizeLimit(20_000_000)]
     public async Task<IActionResult> SubmitFeedback(
-        [FromForm] string type, [FromForm] string text, IFormFile? image)
+        [FromForm] string type, [FromForm] string text, IFormFile? image, [FromForm] string? departmentId = null)
     {
         var t = await Me();
         if (t is null) return NotFound();
         var body = (text ?? "").Trim();
         if (body.Length == 0) return BadRequest(new { message = "Matn bo'sh" });
+        if (body.Length > FeedbackWorkflowService.MaxText)
+            return BadRequest(new { message = $"Matn {FeedbackWorkflowService.MaxText} belgidan oshmasin" });
         if (image is not null && Application.Services.UploadGuard.Validate(image) is { } imgError)
             return BadRequest(new { message = imgError });
 
@@ -1008,7 +1010,8 @@ public class TeacherPortalController(
             imageUrl = $"/uploads/{stored}";
         }
 
-        db.Feedbacks.Add(new Feedback
+        var uid = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        var item = new Feedback
         {
             StudentId = "",
             ParentName = "",
@@ -1019,11 +1022,34 @@ public class TeacherPortalController(
             Text = body,
             ImageUrl = imageUrl,
             CreatedAt = AppClock.Now,
-            Status = "new",
-        });
+            Status = FeedbackStatus.New,
+            SenderUserId = uid,
+            DepartmentId = await FeedbackWorkflowService.ChosenDepartmentAsync(db, departmentId),
+        };
+        db.Feedbacks.Add(item);
+        db.FeedbackEvents.Add(FeedbackWorkflowService.Received(item, uid ?? "", t.FullName));
         await db.SaveChangesAsync();
+        await new FeedbackNotifier(db,
+                HttpContext.RequestServices.GetRequiredService<TelegramService>(),
+                HttpContext.RequestServices.GetRequiredService<ILogger<FeedbackNotifier>>())
+            .NewAsync(item);
         return NoContent();
     }
+
+    /// <summary>"Mening murojaatlarim" — the teacher's own items with status and answer (2026-10-07).</summary>
+    [HttpGet("feedback")]
+    public async Task<ActionResult<IEnumerable<MyFeedbackDto>>> MyFeedback(CancellationToken ct)
+    {
+        var t = await Me();
+        if (t is null) return NotFound();
+        var uid = User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "";
+        return await FeedbackWorkflowService.MineAsync(db, uid, t.Id, ct);
+    }
+
+    /// <summary>The departments a teacher can address (bo'limlar).</summary>
+    [HttpGet("feedback/departments")]
+    public async Task<ActionResult<IEnumerable<FeedbackDepartmentOptionDto>>> FeedbackDepartments(CancellationToken ct) =>
+        await FeedbackWorkflowService.OptionsAsync(db, ct);
 
     // ---------- LMS (Ta'lim) — FAQAT KO'RISH + progress ----------
     // O'qituvchi LMS kontentini yaratmaydi (uni admin qiladi); faqat o'zi dars beradigan

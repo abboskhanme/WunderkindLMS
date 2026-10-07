@@ -211,6 +211,20 @@ export const requestPickup = (childId) => api.post('/student/pickup', { studentI
 /** Fan × chorak o'rtacha baholari + chorak bo'yicha davomat jamlamasi. */
 export const getGrades = (childId) => api.get('/student/grades' + forChild(childId))
 
+/* ------------------------------------------------- Taklif va shikoyatlar */
+
+/** Mening murojaatlarim — holati (qabul qilindi → jarayonda → hal qilindi) va javobi bilan. */
+export const getMyFeedback = () => api.get('/student/feedback')
+
+/** Murojaat yuboriladigan bo'limlar. */
+export const getFeedbackDepartments = () => api.get('/student/feedback/departments')
+
+/** Yangi murojaat (matn + ixtiyoriy rasm) — tanlangan farzand nomidan. */
+export function sendFeedback(childId, formData) {
+  if (childId) formData.append('studentId', childId)
+  return api.form('/student/feedback', formData)
+}
+
 /** Sertifikatlar (ball / daraja), yangisi tepada — "hozircha necha balli" (mijoz, 2026-10-07). */
 export const getCertificates = (childId) => api.get('/student/certificates' + forChild(childId))
 

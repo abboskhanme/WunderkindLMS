@@ -1219,7 +1219,10 @@ public record AccessRolePayload(string Name, string? Description, List<string>? 
 public record FeedbackDto(
     string Id, string StudentName, string ParentName, string ClassName,
     string Type, string Text, string CreatedAt, string Status,
-    string SenderRole, string SenderName, string? ImageUrl);
+    string SenderRole, string SenderName, string? ImageUrl,
+    Guid? DepartmentId = null, string? DepartmentName = null,
+    string? AssigneeId = null, string? AssigneeName = null,
+    string? Answer = null, string? UpdatedAt = null, string? ResolvedAt = null);
 /// <summary>Ota-ona ilovasidan taklif/shikoyat yuborish (matn; rasm multipart `image` orqali).</summary>
 public record SubmitFeedbackRequest(string Type, string Text);
 /// <summary>

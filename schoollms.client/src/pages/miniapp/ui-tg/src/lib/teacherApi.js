@@ -130,4 +130,13 @@ export const teacherApi = {
 
   /** O'zimga yozilgan jarimalar, yangisi tepada; bekor qilingani `cancelled` bilan. */
   penalties: () => api.get(`${BASE}/penalties`),
+
+  /* ---------- taklif va shikoyatlar ---------- */
+
+  /** Mening murojaatlarim — holati va javobi bilan. */
+  myFeedback: () => api.get(`${BASE}/feedback`),
+  /** Murojaat yuboriladigan bo'limlar. */
+  feedbackDepartments: () => api.get(`${BASE}/feedback/departments`),
+  /** Yangi murojaat (matn + ixtiyoriy rasm). */
+  sendFeedback: (formData) => api.form(`${BASE}/feedback`, formData),
 }

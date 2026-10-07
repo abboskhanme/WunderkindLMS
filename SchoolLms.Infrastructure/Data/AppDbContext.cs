@@ -222,6 +222,11 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<HrSettings> HrSettings => Set<HrSettings>();
     public DbSet<HrJobRun> HrJobRuns => Set<HrJobRun>();
 
+    // Taklif va shikoyatlar workflow (FeedbackWorkflow.cs). Configuration: FeedbackModel.cs.
+    public DbSet<FeedbackDepartment> FeedbackDepartments => Set<FeedbackDepartment>();
+    public DbSet<FeedbackDepartmentMember> FeedbackDepartmentMembers => Set<FeedbackDepartmentMember>();
+    public DbSet<FeedbackEvent> FeedbackEvents => Set<FeedbackEvent>();
+
     /// <inheritdoc />
     public Task<Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction> BeginTransactionAsync(
         CancellationToken cancellationToken = default) =>
@@ -474,6 +479,9 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
 
         // ----- HR topshiriqlari: positions, employees, templates, tasks, proofs, jobs (hr-tasks.md §4) -----
         HrTasksModel.Apply(b);
+
+        // Taklif va shikoyatlar: bo'limlar, mas'ullar, tarix (client, 2026-10-07).
+        FeedbackModel.Apply(b);
 
         // ----- PostgreSQL: vaqt turi -----
         // Tizim sanalarni Toshkent "devor soati" sifatida saqlaydi (AppClock.Now — Kind=Unspecified),
