@@ -30,6 +30,12 @@ export interface SubjectAttendance {
 export interface DailyAttendance {
   total: number
   subjects: SubjectAttendance[]
+  /** PEOPLE who did not come at all that day — one per student, not per lesson (2026-10-07). */
+  absentStudents?: number
+  /** Came but missed some lessons (counted as present). */
+  partialStudents?: number
+  /** Came and were late at least once. */
+  lateStudents?: number
 }
 
 function compute(classId: string, date: string): DailyAttendance {

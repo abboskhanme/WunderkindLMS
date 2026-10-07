@@ -56,10 +56,13 @@ namespace SchoolLms.Application.Services;
 /// <param name="MarkedLessons">Shulardan nechtasi belgilab bo'lingan.</param>
 /// <param name="OwnerKind"><c>class</c> yoki <c>group</c> — yo'nalish guruhi o'zini boqadigan
 /// sinflar (9–11) o'rnida turadi (docs/modules/track-groups-as-classes.md).</param>
+/// <param name="AbsentCount">PEOPLE who did not come that day — one per student, not per lesson (2026-10-07).</param>
+/// <param name="LateCount">People who came and were late at least once.</param>
+/// <param name="PartialCount">People who came but missed some lessons.</param>
 public record DailyAttendanceClassDto(
     string ClassId, string ClassName, int StudentCount,
     int LessonCount, int MarkedLessons, int AbsentCount, int LateCount,
-    string OwnerKind = LessonOwnerKind.Class, bool IsTrack = false);
+    string OwnerKind = LessonOwnerKind.Class, bool IsTrack = false, int PartialCount = 0);
 
 /// <summary>Kunning ro'yxati: sinflar va umumiy yakun.</summary>
 /// <param name="MarkedLessons">Shu kunda belgilangan DARS SOATLARI soni.</param>
@@ -71,7 +74,7 @@ public record DailyAttendanceClassDto(
 public record DailyAttendanceOverviewDto(
     string Date, IReadOnlyList<DailyAttendanceClassDto> Classes,
     int MarkedClasses, int TotalClasses, int AbsentTotal, int LateTotal,
-    int MarkedLessons, int TotalLessons);
+    int MarkedLessons, int TotalLessons, int PartialTotal = 0);
 
 /// <summary>Bitta dars soati va undagi belgilar.</summary>
 /// <param name="SubGroup">
@@ -166,11 +169,48 @@ public sealed class DailyAttendanceService(IAppDbContext db)
                 .GroupBy(g => g.ToString())
                 .ToDictionary(g => g.Key, g => g.Count(), StringComparer.Ordinal);
 
+        // People, not lessons (2026-10-07): a student absent all day is ONE absence for the class,
+        // not one per lesson — the per-lesson snapshots (`AbsentCount` on a mark) are no longer summed.
+        var ownerIds = owners.Select(o => o.Id).ToList();
+        var held = (await HeldLessons.ListAsync(db, ownerIds, date, date, ct))
+            .GroupBy(h => h.ClassId, StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.Ordinal);
+        var journal = (await db.JournalEntries.AsNoTracking()
+                .Where(e => e.Date == date && ownerIds.Contains(e.ClassId))
+                .Select(e => new { e.ClassId, e.SubjectId, e.Period, e.StudentId, e.ReasonId })
+                .ToListAsync(ct))
+            .GroupBy(e => e.ClassId, StringComparer.Ordinal)
+            .ToDictionary(
+                g => g.Key,
+                g => g.GroupBy(e => (e.SubjectId, e.Period, e.StudentId)).ToDictionary(x => x.Key, x => x.First().ReasonId),
+                StringComparer.Ordinal);
+        var lateIds = (await db.AbsenceReasons.AsNoTracking().Where(r => r.IsLate).Select(r => r.Id).ToListAsync(ct))
+            .ToHashSet(StringComparer.Ordinal);
+        var classStudents = (await db.Students.AsNoTracking().Where(s => !s.IsArchived)
+                .Select(s => new { s.Id, s.ClassName, s.SubGroup }).ToListAsync(ct))
+            .GroupBy(s => s.ClassName ?? "", StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => g.Select(s => (s.Id, s.SubGroup)).ToList(), StringComparer.Ordinal);
+        var groupMembers = groupGuids.Count == 0
+            ? new Dictionary<string, List<(string, int)>>(StringComparer.Ordinal)
+            : (await db.StudyGroupMembers.AsNoTracking()
+                    .Where(m => m.JoinedOn <= day && (m.LeftOn == null || m.LeftOn >= day)
+                                && groupGuids.Contains(m.GroupId)
+                                && db.Students.Any(s => s.Id == m.StudentId && !s.IsArchived))
+                    .Select(m => new { m.GroupId, m.StudentId }).ToListAsync(ct))
+                .GroupBy(m => m.GroupId.ToString(), StringComparer.Ordinal)
+                .ToDictionary(g => g.Key, g => g.Select(m => (m.StudentId, 0)).ToList(), StringComparer.Ordinal);
+        var noRows = new Dictionary<(string, int, string), string?>();
+
         var rows = new List<DailyAttendanceClassDto>();
         foreach (var o in owners)
         {
             var lessons = await DayLessonsAsync(o.Id, o.Kind, day, ct);
             var mine = marks.Where(m => m.ClassId == o.Id).ToList();
+            var roster = o.Kind == LessonOwnerKind.Group
+                ? groupMembers.GetValueOrDefault(o.Id) ?? []
+                : classStudents.GetValueOrDefault(o.Name) ?? [];
+            var people = StudentDayCounts.Of(StudentDays.Build(
+                held.GetValueOrDefault(o.Id) ?? [], roster, journal.GetValueOrDefault(o.Id) ?? noRows, lateIds).Values);
             rows.Add(new DailyAttendanceClassDto(
                 o.Id, o.Name,
                 o.Kind == LessonOwnerKind.Group
@@ -178,9 +218,9 @@ public sealed class DailyAttendanceService(IAppDbContext db)
                     : countByName.GetValueOrDefault(o.Name, 0),
                 lessons.Count,
                 mine.Count,
-                mine.Sum(m => m.AbsentCount),
-                mine.Sum(m => m.LateCount),
-                o.Kind, o.IsTrack));
+                people.Absent,
+                people.Late,
+                o.Kind, o.IsTrack, people.Partial));
         }
 
         return new DailyAttendanceOverviewDto(
@@ -188,7 +228,7 @@ public sealed class DailyAttendanceService(IAppDbContext db)
             // "Belgilandi" = kunning BARCHA darslari belgilangan sinf.
             rows.Count(r => r.LessonCount > 0 && r.MarkedLessons >= r.LessonCount), rows.Count,
             rows.Sum(r => r.AbsentCount), rows.Sum(r => r.LateCount),
-            rows.Sum(r => r.MarkedLessons), rows.Sum(r => r.LessonCount));
+            rows.Sum(r => r.MarkedLessons), rows.Sum(r => r.LessonCount), rows.Sum(r => r.PartialCount));
     }
 
     /// <summary>Bitta sinfning kuni — o'quvchilar va kunning barcha darslari.</summary>

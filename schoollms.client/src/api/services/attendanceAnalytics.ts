@@ -9,14 +9,19 @@ import { api, USE_MOCK } from '../client'
  */
 
 /** Bitta kesim bo'yicha yig'indi. `present + absent + unchecked = opportunities`. */
+/**
+ * Totals, classes and the trend count STUDENT-DAYS (client, 2026-10-07: "bitta o'quvchi bir kishiga"):
+ * a student absent all day is one "kelmadi", absent in some lessons — "keldi" (and `partial`). The
+ * period cut (one lesson) counts one student per lesson as before.
+ */
 export interface AttendanceTally {
   /** Kesimga tushgan o'tilgan dars kataklari soni */
   lessons: number
-  /** O'tilgan dars × shu darsga tegishli o'quvchi (maxraj) */
+  /** O'quvchi × kun (dars soatlari kesimida — o'quvchi × dars) */
   opportunities: number
-  /** Belgilangan va yo'qlik sababi qo'yilmagan (kech kelganlar ham shu yerda) */
+  /** Kelgan o'quvchi-kunlar (kech kelganlar va qisman qoldirganlar ham shu yerda) */
   present: number
-  /** Sababli + sababsiz yo'qliklar ("kech keldi" bunga KIRMAYDI) */
+  /** Kun bo'yi kelmaganlar — sababli + sababsiz ("kech keldi" bunga KIRMAYDI) */
   absent: number
   excused: number
   unexcused: number
@@ -27,6 +32,8 @@ export interface AttendanceTally {
   presentPct: number | null
   absentPct: number | null
   uncheckedPct: number | null
+  /** Kelgan, lekin ayrim darslarga kelmagan o'quvchi-kunlar — `present` ICHIDAN (2026-10-07) */
+  partial?: number
 }
 
 export interface AttendanceClassRow {

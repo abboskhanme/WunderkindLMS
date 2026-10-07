@@ -80,7 +80,12 @@ export function GradesTab({ child }) {
                   value: overall === null ? '—' : overall.toFixed(2),
                   note: `${graded.length} ta fandan`,
                 },
-                { label: 'Qoldirilgan dars', value: String(perQuarter(summary.missedLessons, quarter)) },
+                {
+                  label: 'Qoldirilgan dars',
+                  value: String(perQuarter(summary.missedLessons, quarter)),
+                  // The days behind them (2026-10-07: 7 lessons of one day are one day).
+                  note: `${perQuarter(summary.missedDays, quarter)} kunda`,
+                },
                 { label: 'Shundan kasal', value: String(perQuarter(summary.illnessLessons, quarter)) },
                 { label: 'Kech qolgan', value: String(perQuarter(summary.lateCount, quarter)) },
               ]}

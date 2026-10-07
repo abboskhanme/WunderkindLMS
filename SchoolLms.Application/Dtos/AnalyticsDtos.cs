@@ -47,7 +47,9 @@ public record AttendanceTallyDto(
     int Unchecked,
     double? PresentPct,
     double? AbsentPct,
-    double? UncheckedPct);
+    double? UncheckedPct,
+    // Came but missed some lessons — inside Present (client, 2026-10-07: "kelgan bo'ladi").
+    int Partial = 0);
 
 /// <summary>Sinf kesimidagi davomat qatori.</summary>
 /// <param name="Students">Sinfdagi (arxivlanmagan) o'quvchilar soni.</param>

@@ -103,7 +103,18 @@ public class AttendanceController(AppDbContext db) : ControllerBase
                 markedLessons.Contains($"{l.SubjectId}|{l.Period}")));
         }
 
-        return new DailyAttendanceDto(total, result);
+        // People, not lessons (2026-10-07): each student's day from the day's held lessons.
+        var held = await HeldLessons.ListAsync(db, [classId], date, date);
+        var rows = (await db.JournalEntries.AsNoTracking()
+                .Where(e => e.ClassId == classId && e.Date == date && e.OwnerKind == owner.Kind)
+                .Select(e => new { e.SubjectId, e.Period, e.StudentId, e.ReasonId })
+                .ToListAsync())
+            .GroupBy(e => (e.SubjectId, e.Period, e.StudentId))
+            .ToDictionary(g => g.Key, g => g.First().ReasonId);
+        var days = StudentDays.Build(held, students.Select(s => (s.Id, s.SubGroup)), rows, lateReasonIds);
+        var people = StudentDayCounts.Of(days.Values);
+
+        return new DailyAttendanceDto(total, result, people.Absent, people.Partial, people.Late);
     }
 
     /// <summary>

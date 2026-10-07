@@ -21,8 +21,12 @@ export interface DailyAttendanceClass {
   lessonCount: number
   /** Shulardan nechtasi belgilangan. */
   markedLessons: number
+  /** PEOPLE who did not come that day — one per student, not per lesson (2026-10-07). */
   absentCount: number
+  /** People who came and were late at least once. */
   lateCount: number
+  /** People who came but missed some lessons. */
+  partialCount?: number
   /**
    * 'class' | 'group' — yo'nalish guruhi o'zini boqadigan sinflar (9–11) o'rnida turadi
    * (docs/modules/track-groups-as-classes.md). Tartib serverda: sinflar, keyin yo'nalishlar.
@@ -37,8 +41,11 @@ export interface DailyAttendanceOverview {
   /** Kunning BARCHA darsi belgilangan sinflar soni. */
   markedClasses: number
   totalClasses: number
+  /** People absent all day across the school (2026-10-07: not a sum over lessons). */
   absentTotal: number
   lateTotal: number
+  /** People who missed some lessons only. */
+  partialTotal?: number
   /** Shu kunda belgilangan dars soatlari. */
   markedLessons: number
   /** Shu kunda jadval bo'yicha o'tiladigan jami dars soati. */

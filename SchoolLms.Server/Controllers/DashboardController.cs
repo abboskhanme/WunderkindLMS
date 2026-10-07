@@ -47,10 +47,16 @@ public class DashboardController(AppDbContext db) : ControllerBase
 
         // Davomat FAQAT bo'lgan darslar bo'yicha: o'tildi (Conducted) YOKI davomat belgilangan
         // (HeldLessons qoidasi). Bo'lmagan darslar hisobga olinmaydi.
-        var conductedByClass = (await HeldLessons.ListAsync(db))
+        var heldLessons = (await HeldLessons.ListAsync(db))
             .Where(n => scope.Allows(n.OwnerKind, n.ClassId))
+            .ToList();
+        var conductedByClass = heldLessons
             .GroupBy(n => n.ClassId)
             .ToDictionary(g => g.Key, g => g.Select(n => (n.SubjectId, n.Date, n.Period)).ToHashSet());
+        // Held lessons per owner with the half they are for — the student-day count below needs it.
+        var heldByOwner = heldLessons
+            .GroupBy(n => n.ClassId)
+            .ToDictionary(g => g.Key, g => g.ToList());
 
         // O'quvchi → uning faol guruhlari (o'chirgich o'chiq bo'lsa — bo'sh).
         var groupsByStudent = await GroupIdsByStudentAsync(db, scope);
@@ -81,8 +87,18 @@ public class DashboardController(AppDbContext db) : ControllerBase
                 || (groupIds.Contains(e.ClassId) && ids.Contains(e.StudentId)));
         }
 
-        // Sinf davomati: o'tilgan darslar × o'quvchilar = imkoniyatlar; davomatsizliklar ayriladi.
-        // O'tilgan dars bo'lmasa — ma'lumot yo'q (null), o'rtachaga qo'shilmaydi.
+        // Absent lessons on held lessons, per (student, date) — the student-day count below.
+        var absentLessons = new Dictionary<(string StudentId, string Date), int>();
+        foreach (var e in entries)
+        {
+            if (e.ReasonId is null || lateReasonIds.Contains(e.ReasonId)) continue;
+            if (!conductedByClass.TryGetValue(e.ClassId, out var slots) || !slots.Contains((e.SubjectId, e.Date, e.Period))) continue;
+            absentLessons[(e.StudentId, e.Date)] = absentLessons.GetValueOrDefault((e.StudentId, e.Date)) + 1;
+        }
+
+        // Sinf davomati — O'QUVCHI-KUN bo'yicha (mijoz, 2026-10-07: "bitta o'quvchi bir kishiga"):
+        // har o'quvchining o'tilgan darsi bor har kuni bitta imkoniyat; o'sha kunning HAMMA darsida
+        // yo'q bo'lsa — bitta "kelmadi". Bir qismida yo'q bo'lgani — keldi. Dars bo'lmasa — null.
         (long Opp, int Abs) ClassAttParts(SchoolClass c)
         {
             var classStudents = StudentsOf(c);
@@ -90,27 +106,22 @@ public class DashboardController(AppDbContext db) : ControllerBase
 
             long opp = 0;
             var abs = 0;
-
-            if (conductedByClass.TryGetValue(c.Id, out var set) && set.Count > 0)
+            var classLessons = heldByOwner.GetValueOrDefault(c.Id) ?? [];
+            foreach (var s in classStudents)
             {
-                opp += (long)set.Count * classStudents.Count;
-                abs += entries.Count(e => e.ClassId == c.Id && e.ReasonId != null
-                    && !lateReasonIds.Contains(e.ReasonId) && set.Contains((e.SubjectId, e.Date, e.Period)));
-            }
+                var held = new Dictionary<string, int>(StringComparer.Ordinal);
+                foreach (var l in classLessons.Where(l => l.SubGroup == 0 || l.SubGroup == s.SubGroup))
+                    held[l.Date] = held.GetValueOrDefault(l.Date) + 1;
+                // Guruh darslari (o'chirgich yoqilgan bo'lsa) — o'quvchining o'z guruhlari.
+                foreach (var groupId in groupsByStudent.GetValueOrDefault(s.Id) ?? [])
+                    foreach (var l in heldByOwner.GetValueOrDefault(groupId) ?? [])
+                        held[l.Date] = held.GetValueOrDefault(l.Date) + 1;
 
-            // Guruh darslari: har guruh uchun SHU SINFdan nechta bola qatnashadi.
-            foreach (var groupId in GroupIdsOf(classStudents))
-            {
-                if (!conductedByClass.TryGetValue(groupId, out var groupSet) || groupSet.Count == 0) continue;
-                var mine = classStudents
-                    .Where(s => (groupsByStudent.GetValueOrDefault(s.Id) ?? []).Contains(groupId))
-                    .Select(s => s.Id).ToHashSet(StringComparer.Ordinal);
-                if (mine.Count == 0) continue;
-
-                opp += (long)groupSet.Count * mine.Count;
-                abs += entries.Count(e => e.ClassId == groupId && mine.Contains(e.StudentId)
-                    && e.ReasonId != null && !lateReasonIds.Contains(e.ReasonId)
-                    && groupSet.Contains((e.SubjectId, e.Date, e.Period)));
+                foreach (var (date, lessons) in held)
+                {
+                    opp++;
+                    if (absentLessons.GetValueOrDefault((s.Id, date)) >= lessons) abs++;
+                }
             }
 
             return (opp, abs);

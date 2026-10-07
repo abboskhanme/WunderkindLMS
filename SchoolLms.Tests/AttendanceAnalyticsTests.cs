@@ -196,19 +196,19 @@ public class AttendanceAnalyticsTests(ApiFixture fixture) : IAsyncLifetime
 
         var report = await AttendanceAnalytics.BuildAsync(db, s.ClassId, "2026-03-01", "2026-03-07", "2026-03-02");
 
+        // Birlik — O'QUVCHI-KUN (mijoz, 2026-10-07): 5 o'quvchi × 1 kun. A va B 1-darsda yo'q, lekin
+        // 2-darsda bor — "kelgan" (qisman qoldirgan); E 1-darsda belgilanmagan, 2-darsda kelgan.
         var t = report.Total;
         Assert.Equal(2, t.Lessons);              // o'tilMAGAN dars sanalmaydi
-        Assert.Equal(10, t.Opportunities);       // 2 dars × 5 o'quvchi
+        Assert.Equal(5, t.Opportunities);        // 5 o'quvchi × 1 kun
         Assert.Equal(t.Opportunities, t.Present + t.Absent + t.Unchecked);
-        Assert.Equal(7, t.Present);              // 1-darsda C va D, 2-darsda 5 ta
-        Assert.Equal(2, t.Absent);               // A (sababsiz) + B (kasal)
-        Assert.Equal(1, t.Excused);
-        Assert.Equal(1, t.Unexcused);
+        Assert.Equal(5, t.Present);
+        Assert.Equal(2, t.Partial);              // A, B
+        Assert.Equal(0, t.Absent);
         Assert.Equal(1, t.Late);                 // C — Present ICHIDA
-        Assert.Equal(1, t.Unchecked);            // E
-        Assert.Equal(70.0, t.PresentPct);
-        Assert.Equal(20.0, t.AbsentPct);
-        Assert.Equal(10.0, t.UncheckedPct);
+        Assert.Equal(0, t.Unchecked);
+        Assert.Equal(100.0, t.PresentPct);
+        Assert.Equal(0.0, t.AbsentPct);
 
         // Dars soatlari kesimi — tanlangan kun bo'yicha, 1- va 2-dars alohida.
         Assert.Equal(2, report.Periods.Count);
@@ -218,11 +218,49 @@ public class AttendanceAnalyticsTests(ApiFixture fixture) : IAsyncLifetime
         Assert.Equal("08:30", first.StartTime);
         Assert.Equal(0, report.Periods.Single(p => p.Period == 2).Tally.Unchecked);
 
-        // Sabablar taqsimoti — xom haqiqat, sababli/sababsiz ta'rifidan mustaqil.
+        // Sabablar taqsimoti — shu sabab qo'yilgan o'quvchi-kunlar, sababli/sababsiz ta'rifidan mustaqil.
         Assert.Equal(1, report.Reasons.Single(r => r.ReasonId == s.Unexcused).Count);
         Assert.True(report.Reasons.Single(r => r.ReasonId == s.Unexcused).Unexcused);
         Assert.False(report.Reasons.Single(r => r.ReasonId == s.Illness).Unexcused);
         Assert.Equal(1, report.Reasons.Single(r => r.ReasonId == s.Late).Count);
+    }
+
+    /// <summary>
+    /// Client, 2026-10-07: a student absent in all lessons of a day is ONE absence, not one per
+    /// lesson; absent in some — present ("kelgan"), counted apart as partial; nothing checked — unchecked.
+    /// </summary>
+    [Fact]
+    public async Task Kun_boyi_kelmagan_bitta_kelmadi_qisman_kelgan_keldi()
+    {
+        await using var db = await NewDbAsync("att_days");
+        var s = await SeedSchoolAsync(db);
+        var date = "2026-03-03";
+        foreach (var (subject, period) in new[] { (s.Math, 1), (s.Physics, 2), (s.Math, 3) })
+        {
+            Conducted(db, s, subject, date, period);
+            Mark(db, s, subject, date, period, s.A, s.Unexcused);            // A — kun bo'yi yo'q
+            Mark(db, s, subject, date, period, s.D, null);                   // D — hammasida bor
+            Mark(db, s, subject, date, period, s.C, period == 1 ? s.Late : null); // C — kechikdi
+            Mark(db, s, subject, date, period, s.B, period == 2 ? s.Illness : null); // B — bitta darsda yo'q
+            // E — hech qaysi darsda belgilanmagan
+        }
+        await db.SaveChangesAsync();
+
+        var report = await AttendanceAnalytics.BuildAsync(db, s.ClassId, date, date, date);
+
+        var t = report.Total;
+        Assert.Equal(3, t.Lessons);
+        Assert.Equal(5, t.Opportunities);        // 5 o'quvchi × 1 kun — 15 emas
+        Assert.Equal(1, t.Absent);               // A — BITTA, 3 ta emas
+        Assert.Equal(1, t.Unexcused);
+        Assert.Equal(3, t.Present);              // B, C, D
+        Assert.Equal(1, t.Partial);              // B
+        Assert.Equal(1, t.Late);                 // C
+        Assert.Equal(1, t.Unchecked);            // E
+        Assert.Equal(1, Assert.Single(report.Trend).Tally.Absent);
+        Assert.Equal(1, report.Reasons.Single(r => r.ReasonId == s.Unexcused).Count); // bitta kun
+        // Dars soatlari kesimi — bitta dars: u yerda A har darsda alohida.
+        Assert.All(report.Periods, p => Assert.Equal(p.Period == 2 ? 2 : 1, p.Tally.Absent)); // 2-darsda B ham
     }
 
     /// <summary>

@@ -15,7 +15,8 @@ public sealed class AttendanceTools(McpToolContext t)
     [McpServerTool(Name = "attendance_daily", Title = "Kunlik davomat",
         ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
     [Description("Bir kunlik davomat: har bir sinf/yo'nalish guruhi bo'yicha o'quvchilar soni, darslar soni, belgilangan darslar, "
-        + "kelmaganlar va kechikkanlar; umumiy yakun. Daily attendance overview per class for a date (default today).")]
+        + "kelmaganlar va kechikkanlar (O'QUVCHI soni: kun bo'yi kelmagan bola bir marta sanaladi; qisman qoldirganlar alohida); "
+        + "umumiy yakun. Daily attendance overview per class for a date (default today); absent/late/partial count PEOPLE, not lessons.")]
     public async Task<string> AttendanceDaily(
         [Description("Sana YYYY-MM-DD (sukut — bugun)")] string? date = null,
         CancellationToken ct = default)
@@ -27,12 +28,13 @@ public sealed class AttendanceTools(McpToolContext t)
         {
             c.ClassId, c.ClassName, kind = c.IsTrack ? "track" : c.OwnerKind, pupils = c.StudentCount,
             lessons = c.LessonCount, markedLessons = c.MarkedLessons, absent = c.AbsentCount, late = c.LateCount,
+            partial = c.PartialCount,
         }).ToList();
         return t.Json(new
         {
             o.Date, totalLessons = o.TotalLessons, markedLessons = o.MarkedLessons,
             markedClasses = o.MarkedClasses, totalClasses = o.TotalClasses, absent = o.AbsentTotal, late = o.LateTotal,
-            classes,
+            partial = o.PartialTotal, classes,
         }, classes.Count);
     }
 
@@ -77,7 +79,8 @@ public sealed class AttendanceTools(McpToolContext t)
     [McpServerTool(Name = "attendance_analytics", Title = "Davomat tahlili (davr)",
         ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
     [Description("Davr bo'yicha davomat tahlili (ko'pi bilan 92 kun): jami, sababli/sababsiz/kechikish, sinflar kesimi, kunlik trend, "
-        + "sabablar taqsimoti. Attendance analytics for a date range: excused/unexcused/late, per class, daily trend, reasons.")]
+        + "sabablar taqsimoti. Birlik — o'quvchi-kun (kun bo'yi kelmagan — bitta 'kelmadi'; ayrim darsga kelmagan — 'keldi', partial). "
+        + "Attendance analytics for a date range in student-days: excused/unexcused/late/partial, per class, daily trend, reasons.")]
     public async Task<string> AttendanceAnalyticsTool(
         [Description("Davr boshi YYYY-MM-DD (sukut — 30 kun oldin)")] string? from = null,
         [Description("Davr oxiri YYYY-MM-DD (sukut — bugun)")] string? to = null,

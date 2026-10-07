@@ -222,6 +222,32 @@ public class DailyAttendanceMarkingTests(ApiFixture fixture) : IAsyncLifetime
     }
 
     /// <summary>
+    /// Client, 2026-10-07: "7 soat dars bo'lsa va biror o'quvchi umuman kelmasa 7 ta odam kelmagan
+    /// bo'lib chiqyapti". Absent in every lesson of the day — ONE person, for the class and the school.
+    /// </summary>
+    [Fact]
+    public async Task Kun_boyi_kelmagan_oquvchi_bitta_odam_sanaladi()
+    {
+        await using var db = await NewDbAsync("overview_people");
+        var s = await SeedAsync(db);
+        var service = new DailyAttendanceService(db);
+
+        await service.SaveAsync(
+            new SaveDailyAttendanceRequest(s.ClassId, Monday, s.Math, 1, [new(s.A, s.Unexcused), new(s.B, s.Late)]),
+            s.ActorId);
+        await service.SaveAsync(
+            new SaveDailyAttendanceRequest(s.ClassId, Monday, s.Physics, 2, [new(s.A, s.Unexcused)]), s.ActorId);
+
+        var overview = await service.OverviewAsync(Monday);
+        var row = Assert.Single(overview.Classes, c => c.ClassId == s.ClassId);
+        Assert.Equal(1, row.AbsentCount);      // A — ikkala soatda yo'q, lekin BITTA odam
+        Assert.Equal(1, row.LateCount);        // B
+        Assert.Equal(0, row.PartialCount);
+        Assert.Equal(1, overview.AbsentTotal);
+        Assert.Equal(1, overview.LateTotal);
+    }
+
+    /// <summary>
     /// Ro'yxat ishning holatini ko'rsatadi: nechta sinf belgilangan, nechtasi
     /// qolgan, kim belgilagan.
     /// </summary>
@@ -248,7 +274,9 @@ public class DailyAttendanceMarkingTests(ApiFixture fixture) : IAsyncLifetime
         var marked = Assert.Single(overview.Classes, c => c.ClassName == "5-A");
         Assert.Equal(2, marked.LessonCount);
         Assert.Equal(2, marked.MarkedLessons);
-        Assert.Equal(1, marked.AbsentCount);
+        // Odamlar (2026-10-07): A 1-soatda yo'q, 2-soatda bor — "kelgan", qisman qoldirgan.
+        Assert.Equal(0, marked.AbsentCount);
+        Assert.Equal(1, marked.PartialCount);
 
         var pending = Assert.Single(overview.Classes, c => c.ClassName == "6-A");
         Assert.Equal(0, pending.MarkedLessons);

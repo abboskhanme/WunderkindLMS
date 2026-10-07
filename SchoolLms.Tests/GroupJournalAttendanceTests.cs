@@ -228,13 +228,15 @@ public class GroupJournalAttendanceTests(ApiFixture fixture) : IAsyncLifetime
 
         await SetSwitchAsync(db, true);
 
+        // Imkoniyat — O'QUVCHI-KUN (mijoz, 2026-10-07: "bitta o'quvchi bir kishiga"): A1 ning sinf
+        // darsi va guruh darsi bir kunda — bitta kun. Guruh darsi "Dars" ustuniga qo'shiladi.
         var on = await AttendanceAnalytics.BuildAsync(db, null, GroupDate, GroupDate, GroupDate);
         var onA = on.Classes.Single(c => c.ClassId == w.ClassAId);
-        Assert.Equal(3, onA.Tally.Opportunities);  // +A1 ning guruh darsi
+        Assert.Equal(2, onA.Tally.Opportunities);  // A1 va A2 — har biri bitta kun
         Assert.Equal(2, onA.Tally.Lessons);        // sinf darsi + guruh darsi
         var onB = on.Classes.Single(c => c.ClassId == w.ClassBId);
-        Assert.Equal(2, onB.Tally.Opportunities);  // +B1 ning guruh darsi
-        Assert.Equal(5, on.Total.Opportunities);
+        Assert.Equal(1, onB.Tally.Opportunities);  // B1 — bitta kun
+        Assert.Equal(3, on.Total.Opportunities);
 
         // Guruh ro'yxatda ALOHIDA qator emas.
         Assert.DoesNotContain(on.Classes, c => c.ClassId == w.GroupId);
@@ -253,7 +255,8 @@ public class GroupJournalAttendanceTests(ApiFixture fixture) : IAsyncLifetime
         await SetSwitchAsync(db, true);
 
         var onlyA = await AttendanceAnalytics.BuildAsync(db, w.ClassAId, GroupDate, GroupDate, GroupDate);
-        Assert.Equal(3, onlyA.Total.Opportunities); // sinf 2 + guruhdan faqat A1
+        Assert.Equal(2, onlyA.Total.Opportunities); // A1 va A2 — o'quvchi-kun; B1 kirmaydi
+        Assert.Equal(2, onlyA.Total.Lessons);       // sinf darsi + guruh darsi (faqat A1 uchun)
         Assert.Single(onlyA.Classes);
     }
 

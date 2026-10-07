@@ -1047,7 +1047,12 @@ public record ReasonCountDto(string Name, int Count);
 public record SubjectAttendanceDto(
     string SubjectId, string SubjectName, int Period, int Total, int Present, int Absent,
     List<ReasonCountDto> Reasons, bool Marked = false);
-public record DailyAttendanceDto(int Total, List<SubjectAttendanceDto> Subjects);
+/// <param name="AbsentStudents">PEOPLE who did not come that day (absent in every checked lesson) — a student
+/// absent all 7 lessons is one, not seven (2026-10-07).</param>
+/// <param name="PartialStudents">Came but missed some lessons (counted as present).</param>
+/// <param name="LateStudents">Came and were late at least once.</param>
+public record DailyAttendanceDto(int Total, List<SubjectAttendanceDto> Subjects,
+    int AbsentStudents = 0, int PartialStudents = 0, int LateStudents = 0);
 public record StudentStatusDto(StudentDto Student, bool Absent, string? ReasonName);
 
 /* ---------- Messaging (chat + e'lon + telegram) ---------- */

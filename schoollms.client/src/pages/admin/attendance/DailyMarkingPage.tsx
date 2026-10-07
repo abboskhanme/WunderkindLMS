@@ -430,7 +430,12 @@ export function DailyMarkingPage() {
             <span className="text-slate-500">
               {overview.markedClasses} / {overview.totalClasses} sinf tugadi
             </span>
-            <span className="text-red-600">{overview.absentTotal} yo'q</span>
+            <span className="text-red-600" title="Kun bo'yi kelmagan o'quvchilar — har biri bir marta sanaladi">
+              {overview.absentTotal} o'quvchi kelmadi
+            </span>
+            {(overview.partialTotal ?? 0) > 0 && (
+              <span className="text-amber-600">{overview.partialTotal} nafari ayrim darslarga kelmadi</span>
+            )}
           </div>
         )}
       </header>

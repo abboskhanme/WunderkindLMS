@@ -74,7 +74,9 @@ export function AttendancePage() {
   }, [classId, date])
 
   const subjects = data?.subjects ?? []
-  const totalAbsent = subjects.reduce((a, s) => a + s.absent, 0)
+  // People, not lessons (2026-10-07): a student absent all 7 lessons is ONE — the server counts it.
+  const absentPeople = data?.absentStudents ?? 0
+  const partialPeople = data?.partialStudents ?? 0
 
   const openDetail = (s: SubjectAttendance) => {
     setDetail(s)
@@ -142,10 +144,11 @@ export function AttendancePage() {
             />
             <StatCard
               label="Kelmaganlar"
-              value={totalAbsent}
+              value={absentPeople}
               icon={UserX}
               iconBg="bg-red-50"
               iconColor="text-red-600"
+              hint={partialPeople > 0 ? `yana ${partialPeople} nafari ayrim darslarga kelmadi` : 'kun bo\'yi kelmaganlar'}
             />
           </div>
 

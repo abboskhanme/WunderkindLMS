@@ -51,6 +51,9 @@ const pct = (v: number | null) => (v == null ? '—' : `${v.toFixed(1).replace('
  * <b>"Tekshirilmagan" alohida ustun</b> va hech qachon "keldi"ga qo'shilmaydi — bu ekranning
  * asosiy ma'nosi: 100% davomat ko'rsatib, aslida jurnal ochilmaganini yashirmaslik.
  * Barcha foizlar SERVERDA hisoblanadi.
+ *
+ * <b>Birlik — o'quvchi-kun</b> (mijoz, 2026-10-07): 7 darsga kelmagan bola — bitta "kelmadi".
+ * Faqat "Dars soatlari" jadvali bitta dars bo'yicha.
  */
 export function AttendanceAnalyticsPage() {
   // Sinflar (9–11 dan tashqari) va yo'nalish guruhlari — tanlagich qoidasi serverda.
@@ -158,7 +161,11 @@ export function AttendanceAnalyticsPage() {
               icon={UserCheck}
               iconBg="bg-emerald-50"
               iconColor="text-emerald-600"
-              hint={`${total?.present ?? 0} ta belgi`}
+              hint={
+                (total?.partial ?? 0) > 0
+                  ? `${total?.present ?? 0} o'quvchi-kun · ${total?.partial} tasida ayrim darsga kelmagan`
+                  : `${total?.present ?? 0} o'quvchi-kun`
+              }
             />
             <StatCard
               label="Kelmadi"
@@ -166,7 +173,7 @@ export function AttendanceAnalyticsPage() {
               icon={UserX}
               iconBg="bg-red-50"
               iconColor="text-red-600"
-              hint={`Sababli ${total?.excused ?? 0} · sababsiz ${total?.unexcused ?? 0}`}
+              hint={`Kun bo'yi: sababli ${total?.excused ?? 0} · sababsiz ${total?.unexcused ?? 0}`}
             />
             <StatCard
               label="Tekshirilmagan"
@@ -174,7 +181,7 @@ export function AttendanceAnalyticsPage() {
               icon={HelpCircle}
               iconBg="bg-amber-50"
               iconColor="text-amber-600"
-              hint={`${total?.unchecked ?? 0} ta dars belgilanmagan`}
+              hint={`${total?.unchecked ?? 0} o'quvchi-kun belgilanmagan`}
             />
             <StatCard
               label="Kech keldi"

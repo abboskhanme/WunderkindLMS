@@ -32,6 +32,12 @@ namespace SchoolLms.Application.Services;
 ///     yo'q: quyidagi sikl bugungi siklning aynan o'zi bo'lib qoladi.</item>
 /// </list>
 ///
+/// <para><b>Birlik — o'quvchi-kun</b> (mijoz, 2026-10-07: "bitta o'quvchi bir kishiga yurish kerak").
+/// Jami, sinflar va kunlik trend O'QUVCHI × KUN bo'yicha sanaladi (<see cref="StudentDay"/>): 7 darsga
+/// kelmagan bola — bitta "kelmadi", 7 ta emas; bir qismida yo'q bo'lgani — "keldi" va alohida
+/// <c>Partial</c>. <c>Lessons</c> — o'tilgan darslar soni. Dars soatlari kesimi (<c>Periods</c>) esa
+/// bitta darsning o'zi — u yerda bitta qator bitta o'quvchi, o'zgarmaydi.</para>
+///
 /// <para><b>Sababli / sababsiz.</b> Bazada "sababli" bayrog'i YO'Q va uni qo'shish bu ish
 /// doirasidan tashqarida (migratsiyasiz). Shuning uchun ajratish MAVJUD ma'lumotdan olinadi:
 /// sabab nomida "sababsiz" bo'lsa YOKI sababga manfiy intizomiy ball berilgan bo'lsa
@@ -47,7 +53,7 @@ public static class AttendanceAnalytics
     /// <summary>Yig'ib borish uchun o'zgaruvchan hisoblagich (DTO — faqat chiqishda).</summary>
     private sealed class Tally
     {
-        public int Lessons, Opportunities, Present, Absent, Excused, Unexcused, Late, Unchecked;
+        public int Lessons, Opportunities, Present, Absent, Excused, Unexcused, Late, Unchecked, Partial;
 
         public AttendanceTallyDto ToDto()
         {
@@ -56,7 +62,31 @@ public static class AttendanceAnalytics
                 : null;
             return new AttendanceTallyDto(
                 Lessons, Opportunities, Present, Absent, Excused, Unexcused, Late, Unchecked,
-                Pct(Present), Pct(Absent), Pct(Unchecked));
+                Pct(Present), Pct(Absent), Pct(Unchecked), Partial);
+        }
+
+        /// <summary>One student-day (2026-10-07).</summary>
+        public void AddDay(StudentDay day, ISet<string> unexcusedIds)
+        {
+            Opportunities++;
+            switch (day.Status)
+            {
+                case StudentDay.Unchecked:
+                    Unchecked++;
+                    return;
+                case StudentDay.Absent:
+                    Absent++;
+                    if (day.MainReason is { } r && unexcusedIds.Contains(r)) Unexcused++; else Excused++;
+                    return;
+                case StudentDay.Partial:
+                    Present++;
+                    Partial++;
+                    break;
+                default:
+                    Present++;
+                    break;
+            }
+            if (day.IsLate) Late++;
         }
     }
 
@@ -178,6 +208,8 @@ public static class AttendanceAnalytics
         var byPeriod = new Dictionary<int, Tally>();
         var byDate = new Dictionary<string, Tally>(StringComparer.Ordinal);
         var reasonCounts = new Dictionary<string, int>(StringComparer.Ordinal);
+        // (student, date) → that student's day and the row (class) it is counted under.
+        var days = new Dictionary<(string StudentId, string Date), (StudentDay Day, string Row)>();
 
         foreach (var n in notes)
         {
@@ -220,12 +252,12 @@ public static class AttendanceAnalytics
                 var has = entryByKey.TryGetValue(
                     (n.ClassId, n.SubjectId, n.Date, n.Period, studentId), out var reasonId);
 
-                Add(total); Add(dateTally);
-                if (byClass.TryGetValue(homeroomId, out var classTally)) Add(classTally);
+                // Totals, classes and the trend count PEOPLE: the lesson goes into the student's day.
+                if (!days.TryGetValue((studentId, n.Date), out var slot))
+                    days[(studentId, n.Date)] = slot = (new StudentDay(), homeroomId);
+                slot.Day.Add(has, n.Marked, reasonId, lateIds);
+                // The period cut is one lesson — one row per student there.
                 if (periodTally is not null) Add(periodTally);
-
-                if (reasonId is not null)
-                    reasonCounts[reasonId] = reasonCounts.GetValueOrDefault(reasonId) + 1;
 
                 void Add(Tally t)
                 {
@@ -238,6 +270,16 @@ public static class AttendanceAnalytics
                     if (unexcusedIds.Contains(reasonId)) t.Unexcused++; else t.Excused++;
                 }
             }
+        }
+
+        foreach (var ((_, date), (studentDay, row)) in days)
+        {
+            total.AddDay(studentDay, unexcusedIds);
+            Get(byDate, date).AddDay(studentDay, unexcusedIds);
+            if (byClass.TryGetValue(row, out var classTally)) classTally.AddDay(studentDay, unexcusedIds);
+            // "Sabablar": how many student-days carried each reason.
+            foreach (var reasonId in studentDay.AllReasons)
+                reasonCounts[reasonId] = reasonCounts.GetValueOrDefault(reasonId) + 1;
         }
 
         var lessonTimes = await db.LessonTimes.AsNoTracking().ToListAsync();
