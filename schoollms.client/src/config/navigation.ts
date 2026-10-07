@@ -372,7 +372,7 @@ export const navByRole: Record<Role, NavItem[]> = {
         { label: 'Topshiriqlar', to: '/admin/assignments', perm: 'app', group: 'ILOVA' },
         { label: 'Topshiriqlar bali', to: '/admin/assignment-scores', perm: 'app', group: 'ILOVA' },
         { label: "Ta'lim (LMS)", to: '/admin/lms', perm: 'app', group: 'ILOVA' },
-        { label: 'Oshxona', to: '/admin/canteen', perm: 'app', group: 'ILOVA' },
+        // Oshxona — Sozlamalar → Umumiy sozlamalar → "Oshxona menyusi" ga ko'chdi (mijoz, 2026-10-07).
         { label: "O'qituvchilar", to: '/admin/app/teachers', perm: 'app', group: 'ILOVA' },
         // Qabul hozircha ishlatilmaydi (mijoz, 2026-09-23) — asosiy menyudan shu yerga ko'chdi.
         // Sahifalar va manzillar o'zgarmagan.

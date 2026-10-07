@@ -6,6 +6,10 @@ import { LessonTimesSettings } from './LessonTimesSettings'
 import { AttendanceReasonsSettings } from './AttendanceReasonsSettings'
 // Bayram kunlari — Dars jadvalidan KO'CHDI: u jadval emas, sozlama.
 import { HolidaysPage } from '../schedule/HolidaysPage'
+// Oshxona menyusi — Future menyusidan KO'CHDI (mijoz, 2026-10-07). `/admin/canteen` ham ishlaydi.
+import { CanteenPage } from '../canteen/CanteenPage'
+import { useAuth } from '@/context/auth-context'
+import { hasSection } from '@/lib/access'
 import { cn } from '@/lib/utils'
 
 const sections = [
@@ -18,6 +22,8 @@ const sections = [
   { key: 'lesson-times', label: 'Dars vaqtlari' },
   { key: 'reasons', label: 'Davomat sabablari' },
   { key: 'holidays', label: 'Bayram kunlari' },
+  // Its API sits behind `app` (CanteenController), so the section shows only to who holds it.
+  { key: 'canteen', label: 'Oshxona menyusi', perm: 'app' },
 ] as const
 
 /**
@@ -34,6 +40,8 @@ const sections = [
  * qoldiradi.
  */
 export function GeneralSettingsPage() {
+  const { user } = useAuth()
+  const visible = sections.filter((s) => !('perm' in s) || hasSection(user, s.perm))
   const [active, setActive] = useState<(typeof sections)[number]['key']>(sections[0].key)
 
   return (
@@ -41,13 +49,13 @@ export function GeneralSettingsPage() {
       <div>
         <h1 className="text-xl font-semibold text-slate-800">Umumiy sozlamalar</h1>
         <p className="text-sm text-slate-400">
-          Maktab ma'lumotlari, arxivlash sabablari va dars jadvali katalogi.
+          Maktab ma'lumotlari, arxivlash sabablari, dars jadvali katalogi va oshxona menyusi.
         </p>
       </div>
 
       <div className="flex flex-col gap-6 lg:flex-row">
         <nav className="flex shrink-0 gap-1 overflow-x-auto pb-1 lg:w-56 lg:flex-col lg:overflow-visible lg:pb-0">
-          {sections.map((s) => (
+          {visible.map((s) => (
             <button
               key={s.key}
               type="button"
@@ -64,13 +72,15 @@ export function GeneralSettingsPage() {
           ))}
         </nav>
 
-        <div className="min-w-0 max-w-3xl flex-1">
+        {/* The canteen menu has a weekly/monthly grid — it gets the full width. */}
+        <div className={cn('min-w-0 flex-1', active !== 'canteen' && 'max-w-3xl')}>
           {active === 'school' && <SchoolSettings />}
           {active === 'archive-reasons' && <ArchiveReasonsSettings />}
           {active === 'quarters' && <QuartersSettings />}
           {active === 'lesson-times' && <LessonTimesSettings />}
           {active === 'holidays' && <HolidaysPage />}
           {active === 'reasons' && <AttendanceReasonsSettings />}
+          {active === 'canteen' && <CanteenPage />}
         </div>
       </div>
     </div>
