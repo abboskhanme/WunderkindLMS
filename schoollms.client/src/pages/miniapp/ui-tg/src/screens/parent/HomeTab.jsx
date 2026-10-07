@@ -6,13 +6,16 @@
  * bolam maktabdami, bugun nima dars, pul qarzimiz bormi, maktabdan xabar
  * bormi va "kelib oldim" tugmasi.
  *
- * QARZ BO'LSA U YUQORIGA CHIQADI. Pul kartochkasining o'rni qat'iy emas:
- * qarz bo'lsa u darslardan OLDIN, bo'lmasa keyin turadi. Yaxshi xabarni
- * pastga surish mumkin, yomonini — yo'q.
+ * HAMMADA BIR XIL EKRAN (mijoz, 2026-10-07: "o'quvchilar profillari ham hammada har xil
+ * chiqyapti"). Kartochkalar tartibi qat'iy — bugun, raqamlar, pul, darslar, so'rovnomalar,
+ * sertifikatlar, olib ketish, e'lonlar, yangiliklar, murojaat — va hech biri ma'lumot yo'qligi
+ * uchun yashirilmaydi: bo'sh bo'lsa "yo'q" deb turadi. Qarz pul kartochkasining RANGI va
+ * mazmuni bilan ko'rinadi, joyi bilan emas (ilgari qarzi borlarda u darslardan oldin, yo'qlarida
+ * keyin turardi — ekran ikki xil bo'lib qolardi).
  *
- * BESHTA SO'ROV BIR VAQTDA ketadi va bittasi yiqilsa butun tab xato holatiga
- * o'tadi. Ular bitta serverga boradi: bittasi yiqilgan bo'lsa, qolgani ham
- * ishonchsiz — yarim to'ldirilgan ekran ota-onani chalg'itadi.
+ * Kun jadvali (dashboard) — ekranning asosi: u yiqilsa butun tab xato holatiga o'tadi. Qolgan
+ * to'rt so'rov (pul, davomat, e'lonlar, olib ketish) o'z kartochkasida "yuklab bo'lmadi" deydi —
+ * bitta so'rovning xatosi butun profilni buzilgandek ko'rsatmaydi.
  */
 import { useEffect, useState } from 'react'
 import {
@@ -32,15 +35,18 @@ import { CertificatesCard } from './CertificatesCard'
 import { PollsCard } from '../../components/PollSheet'
 import { todayISO } from '../../lib/weeks'
 
+/** A request that may fail without taking the screen down: `{ value }` or `{ error }`. */
+const settle = (promise) => promise.then((value) => ({ value }), (e) => ({ error: e?.message || 'Yuklab bo\'lmadi' }))
+
 export function HomeTab({ child, onOpenTab, showGrades = true, onOpenFeedback }) {
   const state = useAsync(
     () =>
       Promise.all([
         getDashboard(child.id),
-        getBilling(child.id),
-        getAttendance(child.id),
-        getAnnouncements(child.id),
-        getPickup(child.id),
+        settle(getBilling(child.id)),
+        settle(getAttendance(child.id)),
+        settle(getAnnouncements(child.id)),
+        settle(getPickup(child.id)),
       ]).then(([dashboard, billing, attendance, announcements, pickup]) => ({
         dashboard, billing, attendance, announcements, pickup,
       })),
@@ -49,16 +55,12 @@ export function HomeTab({ child, onOpenTab, showGrades = true, onOpenFeedback })
 
   return (
     <AsyncBlock state={state} loadingLabel="Bugungi ma'lumot yuklanmoqda…">
-      {({ dashboard, billing, attendance, announcements, pickup }) => {
+      {({ dashboard, billing: billingResult, attendance, announcements, pickup }) => {
         const lessons = dashboard.todayLessons ?? []
         const grades = dashboard.todayGrades ?? []
         const today = todayISO()
-        const todayRows = (attendance.rows ?? []).filter((r) => r.date === today)
-        const owes = billing.debt > 0
-
-        const moneyCard = (
-          <MoneyCard billing={billing} onOpenTab={onOpenTab} />
-        )
+        const todayRows = (attendance.value?.rows ?? []).filter((r) => r.date === today)
+        const billing = billingResult.value
 
         return (
           <>
@@ -77,31 +79,44 @@ export function HomeTab({ child, onOpenTab, showGrades = true, onOpenFeedback })
                   label: 'Bajarilmagan vazifa',
                   value: String(dashboard.pendingAssignmentsCount ?? 0),
                 },
-                balanceShort(billing.debt, billing.credit),
+                billing
+                  ? balanceShort(billing.debt, billing.credit)
+                  : { value: '—', label: "To'lov" },
               ].filter(Boolean)}
             />
 
-            {owes && moneyCard}
+            {billing ? (
+              <MoneyCard billing={billing} onOpenTab={onOpenTab} />
+            ) : (
+              <FailedCard title="To'lov" message={billingResult.error} />
+            )}
 
             <LessonsCard lessons={lessons} grades={grades} rows={todayRows} />
 
-            {/* An open poll waiting for this child's answer (client, 2026-10-07). Hidden otherwise. */}
+            {/* Polls (client, 2026-10-07) — the row stays with nothing open, like the teacher panel. */}
             <PollsCard
               key={child.id}
+              alwaysShow
               api={{
                 list: () => getPolls(child.id),
                 submit: (id, answers) => answerPoll(child.id, id, answers),
               }}
             />
 
-            {/* Certificates and the current results (client, 2026-10-07). Loads itself, hidden when empty. */}
+            {/* Certificates and the current results (client, 2026-10-07). Loads itself; "yo'q" when empty. */}
             <CertificatesCard childId={child.id} />
 
-            {!owes && moneyCard}
+            {pickup.error ? (
+              <FailedCard title="Farzandni olib ketish" message={pickup.error} />
+            ) : (
+              <PickupCard childId={child.id} initial={pickup.value} />
+            )}
 
-            <PickupCard childId={child.id} initial={pickup} />
-
-            <AnnouncementsCard items={announcements} />
+            {announcements.error ? (
+              <FailedCard title="Maktab e'lonlari" message={announcements.error} />
+            ) : (
+              <AnnouncementsCard items={announcements.value ?? []} />
+            )}
 
             {/* School news, under the announcements block (§3.4). It loads
                 itself, so it does not join the five requests above. */}
@@ -130,6 +145,17 @@ export function HomeTab({ child, onOpenTab, showGrades = true, onOpenFeedback })
         )
       }}
     </AsyncBlock>
+  )
+}
+
+/** A card whose request failed — it keeps its place and says so, the rest of the screen stays. */
+function FailedCard({ title, message }) {
+  return (
+    <Card title={title}>
+      <p className="px-4 pb-4 pt-1 text-[13px] text-slate-500">
+        Yuklab bo'lmadi{message ? `: ${message}` : ''}. Ilovani qayta ochib ko'ring.
+      </p>
+    </Card>
   )
 }
 
@@ -342,8 +368,8 @@ function MoneyCard({ billing, onOpenTab }) {
     )
   }
 
-  // Qarz ham, avans ham nolga teng bo'lishining IKKI sababi bor va ular bir
-  // xil emas: hammasi to'langan yoki hali hisob-faktura chiqarilmagan.
+  // Qarz ham, avans ham nolga teng bo'lishining ikki sababi bor — hammasi to'langan yoki hali
+  // hisob-faktura chiqarilmagan. Kartochka bitta (bir xil ekran), farqni faqat izoh aytadi.
   const billed = (billing.months ?? []).length > 0
 
   return (
@@ -354,13 +380,9 @@ function MoneyCard({ billing, onOpenTab }) {
             <CheckCircle2 className="h-5 w-5" />
           </div>
         }
-        title={billed ? "Qarz yo'q" : "Hisob-faktura yo'q"}
-        subtitle={
-          billed
-            ? "Barcha hisob-fakturalar to'langan."
-            : "Bu farzand uchun hali oylik hisob-faktura chiqarilmagan."
-        }
-        right={billed ? <Badge tone="success">Toza</Badge> : null}
+        title="Qarz yo'q"
+        subtitle={billed ? "Barcha hisob-fakturalar to'langan." : "Hozircha to'lanadigan hisob-faktura yo'q."}
+        right={<Badge tone="success">Toza</Badge>}
       />
     </Card>
   )

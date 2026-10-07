@@ -85,7 +85,14 @@ function SummaryCard({ billing }) {
 /* ------------------------------------------------------- to'lanmaganlari */
 
 function DebtCard({ lines }) {
-  if (lines.length === 0) return null
+  // Stays on screen when nothing is owed (client, 2026-10-07: the same screen for everyone).
+  if (lines.length === 0) {
+    return (
+      <Card title="Nimalar to'lanmagan">
+        <EmptyState title="To'lanmagan narsa yo'q" note="Barcha chiqarilgan hisob-fakturalar to'langan." />
+      </Card>
+    )
+  }
 
   return (
     <Card title="Nimalar to'lanmagan">

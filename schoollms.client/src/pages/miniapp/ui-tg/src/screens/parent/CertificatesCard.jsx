@@ -5,12 +5,12 @@
  * The top line answers "how many points now": the latest result per certificate type (a score,
  * a level like "B2", or both). Below — the documents themselves, newest first.
  *
- * It loads itself and hides when there is nothing to show, like the news card: a child without
- * certificates gets no empty box, and a failure here never takes the home screen down.
+ * It loads itself, so a failure here never takes the home screen down. It does NOT hide when
+ * empty (client, 2026-10-07: profiles must look the same for everyone) — "hali yo'q" instead.
  */
 import { useState } from 'react'
 import { Award } from 'lucide-react'
-import { Badge, Card } from '../../components/ui'
+import { Badge, Card, EmptyState } from '../../components/ui'
 import { useAsync } from '../../lib/useAsync'
 import { fullDate } from '../../lib/format'
 import { haptic } from '../../lib/telegram'
@@ -29,7 +29,21 @@ export function CertificatesCard({ childId }) {
   const [expanded, setExpanded] = useState(false)
 
   const rows = q.data ?? []
-  if (q.error || rows.length === 0) return null
+  if (q.error || rows.length === 0) {
+    return (
+      <Card title="Sertifikatlar va natijalar">
+        {q.error ? (
+          <p className="px-4 pb-4 pt-1 text-[13px] text-slate-500">Yuklab bo'lmadi. Ilovani qayta ochib ko'ring.</p>
+        ) : (
+          <EmptyState
+            icon={<Award className="h-8 w-8" />}
+            title={q.loading ? 'Yuklanmoqda…' : "Hozircha sertifikat yo'q"}
+            note={q.loading ? null : "Maktab natija yoki sertifikat kiritsa, shu yerda ko'rinadi."}
+          />
+        )}
+      </Card>
+    )
+  }
 
   // Latest result per type — rows come newest first, so the first one of each type wins.
   const latest = []
