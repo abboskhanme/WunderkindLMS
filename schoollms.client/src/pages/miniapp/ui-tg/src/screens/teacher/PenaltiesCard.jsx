@@ -24,7 +24,15 @@ export function PenaltiesCard() {
   const [expanded, setExpanded] = useState(false)
 
   const rows = q.data ?? []
-  if (q.error || rows.length === 0) return null
+  // Always on the screen (2026-10-07: the same windows for every teacher) — empty says so.
+  if (q.error || rows.length === 0)
+    return (
+      <Card title="Jarimalar">
+        <p className="px-4 pb-4 text-[14px] text-slate-500">
+          {q.loading && !q.data ? 'Yuklanmoqda…' : q.error ? "Ma'lumot olinmadi" : "Jarima yo'q"}
+        </p>
+      </Card>
+    )
 
   const now = new Date()
   const thisMonth = rows.filter(

@@ -93,21 +93,23 @@ export function TodayTab({ profile, meta, onOpenAttendance }) {
   const total = d?.lessons.length ?? 0
   const done = d ? d.lessons.filter((l) => d.conducted.has(`${l.classId}|${l.period}`)).length : 0
 
-  const subjectLine = (profile.subjects || []).map((s) => s.name).join(', ')
+  // One shape for every teacher (2026-10-07): the homeroom first — at the end it was cut off for
+  // primary teachers with seven subjects — then at most two subjects and "+N".
+  const subjectNames = (profile.subjects || []).map((s) => s.name)
+  const subjectLine =
+    subjectNames.length > 2 ? `${subjectNames.slice(0, 2).join(', ')} +${subjectNames.length - 2}` : subjectNames.join(', ')
   const homeroomLine = profile.homeroomClass ? `${profile.homeroomClass} sinf rahbari` : null
-  const subtitle = [subjectLine, homeroomLine].filter(Boolean).join(' · ') || "O'qituvchi"
+  const subtitle = ["O'qituvchi", homeroomLine, subjectLine].filter(Boolean).join(' · ')
 
   return (
     <Screen>
       <Hero title={profile.fullName} subtitle={subtitle} right={<LogoutButton />}>
-        {total > 0 && (
-          <HeroProgress
-            value={done}
-            max={total}
-            lead={`${done}/${total}`}
-            note={done === total ? "bugungi darslar o'tildi" : "dars o'tildi"}
-          />
-        )}
+        <HeroProgress
+          value={done}
+          max={total}
+          lead={`${done}/${total}`}
+          note={total === 0 ? "bugun dars yo'q" : done === total ? "bugungi darslar o'tildi" : "dars o'tildi"}
+        />
       </Hero>
 
       <AsyncBlock query={q} loadingLabel="Bugungi kun yuklanmoqda…">
@@ -138,20 +140,15 @@ export function TodayTab({ profile, meta, onOpenAttendance }) {
                   value: `${meta.currentQuarter}-chorak`,
                   note: `${meta.currentWeek}-hafta`,
                 },
-                canMessages
-                  ? {
-                      label: 'Yangi xabar',
-                      value: String(data.unread),
-                      note:
-                        data.unread > 0
-                          ? `${data.unreadChannels} ta guruhda`
-                          : `${data.channels.length} ta guruh o'qilgan`,
-                    }
-                  : {
-                      label: 'Sinf rahbarligi',
-                      value: profile.homeroomClass || '—',
-                      note: profile.homeroomClass ? 'sinf' : 'biriktirilmagan',
-                    },
+                {
+                  label: 'Yangi xabar',
+                  value: canMessages ? String(data.unread) : '—',
+                  note: !canMessages
+                    ? 'bo\'lim yopiq'
+                    : data.unread > 0
+                      ? `${data.unreadChannels} ta guruhda`
+                      : `${data.channels.length} ta guruh o'qilgan`,
+                },
               ]}
             />
 
@@ -184,14 +181,13 @@ export function TodayTab({ profile, meta, onOpenAttendance }) {
               )}
             </Card>
 
-            {/* An open poll waiting for an answer (client, 2026-10-07). Hidden otherwise. */}
-            <PollsCard api={POLLS_API} />
+            {/* Polls (client, 2026-10-07) — always present for teachers, "none open" when empty. */}
+            <PollsCard api={POLLS_API} alwaysShow />
 
-            {/* Lesson analysis results (client, 2026-09-28). Loads itself and hides
-                when there is nothing to show — like the news card below. */}
+            {/* Lesson analysis results (client, 2026-09-28) — always present, "none yet" when empty. */}
             <LessonAnalysisCard />
 
-            {/* Own fines (client, 2026-10-07). Hidden while there are none. */}
+            {/* Own fines (client, 2026-10-07) — always present, "none" when empty. */}
             <PenaltiesCard />
 
             {/* School news, after today's lessons (§3.4). It loads itself:
@@ -216,7 +212,20 @@ export function TodayTab({ profile, meta, onOpenAttendance }) {
  * kartochka oq, shuning uchun ko'z avval shu yerga tushadi.
  */
 function FocusLesson({ lessons, conducted, canJournal, canSchedule, onOpenAttendance }) {
-  if (!canSchedule || lessons.length === 0) return null
+  // The same dark card for every teacher (2026-10-07) — also on a day without lessons.
+  if (!canSchedule || lessons.length === 0)
+    return (
+      <Card className="bg-brand-ink text-white">
+        <div className="px-4 py-5">
+          <p className="text-[12px] font-bold tracking-wide text-brand">{canSchedule ? "BUGUN DARS YO'Q" : 'JADVAL YOPIQ'}</p>
+          <p className="mt-2 text-[16px] font-semibold leading-snug">
+            {canSchedule
+              ? `${weekdayName(todayIndex())} kuniga jadvalda sizga dars biriktirilmagan.`
+              : "Dars jadvalini ko'rish ruxsati yo'q — maktab administratoriga murojaat qiling."}
+          </p>
+        </div>
+      </Card>
+    )
 
   const now = nowHHmm()
   const current = lessons.find((l) => lessonTimeState(l, now) === 'now')

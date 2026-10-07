@@ -27,4 +27,12 @@ function capture() {
   }
 }
 
-export const panelKey = capture()
+export let panelKey = capture()
+
+/**
+ * "Chiqish" dan keyin: kalit egasining bog'lanishi uzildi, kalit endi hech narsa ochmaydi. Xotirada
+ * qolsa, keyingi 401 da ilova shu kalit bilan qayta kirishga urinib, "Tugma eskirgan" ko'rsatardi.
+ */
+export function forgetPanelKey() {
+  panelKey = ''
+}

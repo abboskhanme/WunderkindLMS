@@ -77,7 +77,15 @@ export function LessonAnalysisCard() {
   const [sheet, setSheet] = useState(null) // null | { id: string | null }
 
   const rows = completed(q.data)
-  if (q.error || rows.length === 0) return null
+  // Always on the screen (2026-10-07: the same windows for every teacher) — empty says so.
+  if (q.error || rows.length === 0)
+    return (
+      <Card title="Dars tahlilim">
+        <p className="px-4 pb-4 text-[14px] text-slate-500">
+          {q.loading && !q.data ? 'Yuklanmoqda…' : q.error ? "Ma'lumot olinmadi" : "Hali dars tahlili yo'q"}
+        </p>
+      </Card>
+    )
   const avg = averagePercent(rows)
 
   const open = (id) => {

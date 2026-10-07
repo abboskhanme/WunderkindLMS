@@ -114,7 +114,7 @@ public sealed class TelegramAuthController(
         // Bog'landi — endi chipta kerak emas.
         ClearLinkTicket();
 
-        var session = await SessionFactory.IssueAsync(db, jwt, user, ct);
+        var session = await SessionFactory.IssueAsync(db, jwt, user, ct, tgUser.Id);
         return Ok(new TgAuthResponse("ok", session.Token, session.User, Profile(tgUser), null));
     }
 
@@ -138,7 +138,7 @@ public sealed class TelegramAuthController(
             return Unauthorized(new { code = "account_blocked", message = "Akkaunt arxivlangan yoki to'xtatilgan" });
 
         account.LastSeenAt = AppClock.Now;
-        var session = await SessionFactory.IssueAsync(db, jwt, user, ct);
+        var session = await SessionFactory.IssueAsync(db, jwt, user, ct, account.TelegramUserId);
         return Ok(new TgAuthResponse("ok", session.Token, session.User,
             new TgTelegramUserDto(account.TelegramUserId.ToString(), account.DisplayName, account.Username), null));
     }
@@ -217,7 +217,7 @@ public sealed class TelegramAuthController(
         }
 
         ClearLinkTicket();
-        var session = await SessionFactory.IssueAsync(db, jwt, user, ct);
+        var session = await SessionFactory.IssueAsync(db, jwt, user, ct, tgUser.Id);
         await SendPanelKeyboardAsync(tgUser.Id, ct);
         return Ok(new TgAuthResponse("ok", session.Token, session.User, Profile(tgUser), null));
     }
@@ -261,7 +261,7 @@ public sealed class TelegramAuthController(
 
         ClearLinkTicket();
 
-        var session = await SessionFactory.IssueAsync(db, jwt, user!, ct);
+        var session = await SessionFactory.IssueAsync(db, jwt, user!, ct, tgUser.Id);
         await SendPanelKeyboardAsync(tgUser.Id, ct);
         return Ok(new TgAuthResponse("ok", session.Token, session.User, Profile(tgUser), null));
     }
@@ -338,9 +338,20 @@ public sealed class TelegramAuthController(
         if (uid is null) return Unauthorized();
 
         var query = db.TelegramAccounts.Where(a => a.UserId == uid);
+        // Which Telegram is leaving — known for a Mini App session; then a link ticket lets the same
+        // Telegram sign in to another account right away (keyboard launches carry no initData).
+        long? leaving = null;
 
         var raw = HeaderInitData();
-        if (!string.IsNullOrWhiteSpace(raw))
+        if (long.TryParse(User.FindFirst(JwtTokenService.TelegramClaim)?.Value, CultureInfo.InvariantCulture, out var fromSession))
+        {
+            // The session itself says which Telegram it was opened from (2026-10-07): exact, and it
+            // does not fail when the initData is older than 24 h or the bot has replaced the panel key —
+            // before, such a "Chiqish" was refused and the next open landed in the old account again.
+            leaving = fromSession;
+            query = query.Where(a => a.TelegramUserId == fromSession);
+        }
+        else if (!string.IsNullOrWhiteSpace(raw))
         {
             // Imzo tekshirilmasa — hech narsa uzilmaydi. "Hammasini uzish" ga
             // tushib ketish boshqa oila a'zosini jimgina chiqarib yuborardi.
@@ -353,6 +364,7 @@ public sealed class TelegramAuthController(
                     message = "Telegram ma'lumoti eskirgan. Ilovani yopib, qaytadan oching.",
                 });
             var telegramUserId = check.User!.Id;
+            leaving = telegramUserId;
             query = query.Where(a => a.TelegramUserId == telegramUserId);
         }
         else if (Request.Headers[PanelKeyHeader].ToString() is { Length: > 0 } panelKey)
@@ -363,10 +375,16 @@ public sealed class TelegramAuthController(
             if (keyAccount is null || keyAccount.UserId != uid)
                 return BadRequest(new { code = "panel_key_invalid", message = "Tugma eskirgan — botda /start ni bosing" });
             var keyId = keyAccount.Id;
+            leaving = keyAccount.TelegramUserId;
             query = query.Where(a => a.Id == keyId);
         }
 
         var accounts = await query.ToListAsync(ct);
+        if (leaving is { } tg)
+        {
+            var gone = accounts.FirstOrDefault();
+            IssueLinkTicket(new TelegramWebAppUser(tg, gone?.DisplayName ?? "", null, gone?.Username, null));
+        }
         if (accounts.Count == 0) return NotFound(new { message = "Telegram bog'lanishi topilmadi" });
 
         db.TelegramAccounts.RemoveRange(accounts);

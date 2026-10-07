@@ -54,8 +54,9 @@ public static class SessionFactory
     /// ushlab turishning ma'nosi qolmadi (parolni tiklash yo'li baribir bor).
     /// </para>
     /// </summary>
+    /// <param name="telegramUserId">The Telegram account a Mini App session comes from (see <see cref="JwtTokenService.TelegramClaim"/>).</param>
     public static async Task<LoginResponse> IssueAsync(
-        AppDbContext db, JwtTokenService jwt, AppUser user, CancellationToken ct = default)
+        AppDbContext db, JwtTokenService jwt, AppUser user, CancellationToken ct = default, long? telegramUserId = null)
     {
         var now = AppClock.Now.ToString("yyyy-MM-ddTHH:mm:ss");
         if (string.IsNullOrEmpty(user.FirstLoginAt)) user.FirstLoginAt = now;
@@ -64,7 +65,7 @@ public static class SessionFactory
         await db.SaveChangesAsync(ct);
 
         return new LoginResponse(
-            jwt.CreateToken(user),
+            jwt.CreateToken(user, telegramUserId),
             new UserDto(user.Id, user.FullName, user.Role, user.Email, user.AvatarUrl,
                 await PermissionsAsync(db, user, ct)));
     }

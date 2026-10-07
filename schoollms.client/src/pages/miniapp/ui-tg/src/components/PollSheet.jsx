@@ -15,14 +15,33 @@ import { Badge, Card, EmptyState, Hero, Row } from './ui'
 import { useAsync } from '../lib/useAsync'
 import { haptic, hapticNotify, showBackButton } from '../lib/telegram'
 
-export function PollsCard({ api }) {
+/** `alwaysShow` — the teacher panel keeps the row even with nothing open (the same windows for everyone). */
+export function PollsCard({ api, alwaysShow = false }) {
   const [open, setOpen] = useState(false)
   const q = useAsync(() => api.list().catch(() => []), [])
   const waiting = (q.data ?? []).filter((p) => !p.answered)
-  if (waiting.length === 0 && !open) return null
+  if (waiting.length === 0 && !open && !alwaysShow) return null
 
   return (
     <>
+      {waiting.length === 0 && alwaysShow && (
+        <Card>
+          <Row
+            lead={
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-brand/25 text-brand-ink">
+                <ClipboardList className="h-5 w-5" />
+              </div>
+            }
+            title="So'rovnomalar"
+            subtitle={q.loading && !q.data ? 'Yuklanmoqda…' : "Hozir ochiq so'rovnoma yo'q"}
+            right={<ChevronRight className="h-5 w-5 text-slate-400" />}
+            onClick={() => {
+              haptic('light')
+              setOpen(true)
+            }}
+          />
+        </Card>
+      )}
       {waiting.length > 0 && (
         <Card>
           <Row

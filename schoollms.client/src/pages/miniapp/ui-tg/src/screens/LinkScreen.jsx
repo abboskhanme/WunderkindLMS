@@ -11,7 +11,7 @@
  */
 import { useState } from 'react'
 import { KeyRound, LogIn } from 'lucide-react'
-import { api } from '../lib/api'
+import { api, tokenStore } from '../lib/api'
 import { useSession } from '../lib/session'
 import { haptic, initData } from '../lib/telegram'
 import { Hero, Screen } from '../components/ui'
@@ -20,7 +20,7 @@ const inputClass =
   'mt-3 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-[16px] outline-none focus:border-brand'
 
 export function LinkScreen() {
-  const { retry } = useSession()
+  const { retry, adoptSession } = useSession()
   const [mode, setMode] = useState('login')
   const [code, setCode] = useState('')
   const [login, setLogin] = useState('')
@@ -32,9 +32,16 @@ export function LinkScreen() {
     setBusy(true)
     setError(null)
     try {
-      await request()
+      const res = await request()
       haptic('medium')
-      await retry()
+      // The server answers with the new account's session — use it as is. Re-authenticating would
+      // need initData, which a Mini App opened from the bot's keyboard button never has.
+      if (res?.token) {
+        tokenStore.set(res.token)
+        await adoptSession(res.user ?? null)
+      } else {
+        await retry()
+      }
     } catch (err) {
       setError(err.message)
     } finally {

@@ -110,6 +110,49 @@ public class TelegramPanelKeyTests(ApiFixture fixture)
             (await anonymous.PostAsJsonAsync("/api/tg/auth/key", new { key })).StatusCode);
     }
 
+    /// <summary>
+    /// Client, 2026-10-07: "kirilgan accountidan chiqib keyin boshqa akkountga kirmoqchi bo'lsa yana
+    /// eskiga kirib qolyapti". The session knows which Telegram it came from, so "Chiqish" works even
+    /// with a key the bot has since replaced, hands back a link ticket, and the same Telegram then
+    /// signs in to ANOTHER account with login + password — no initData needed.
+    /// </summary>
+    [Fact]
+    public async Task Chiqib_boshqa_akkauntga_kirsa_yangisi_ochiladi_eskisiga_qaytmaydi()
+    {
+        var (first, account) = await LinkedAsync(Roles.Teacher);
+        var other = await AddAccountAsync(first.Id);              // the same login on another phone
+        var (second, password) = await fixture.Api.SeedUserAsync(Roles.Teacher);
+        var key = await IssueAsync(account.Id);
+
+        using var anonymous = fixture.Api.AnonymousClient();
+        var login = await ReadAnyAsync(await anonymous.PostAsJsonAsync("/api/tg/auth/key", new { key }));
+        var token = login.GetProperty("token").GetString()!;
+        await IssueAsync(account.Id);                             // the bot sent a new keyboard meanwhile
+
+        using var session = fixture.Api.ClientWithToken(token);
+        using var leave = new HttpRequestMessage(HttpMethod.Delete, "/api/tg/link");
+        leave.Headers.Add("X-Telegram-Panel-Key", key);           // stale — refused before the fix
+        var left = await session.SendAsync(leave);
+        Assert.Equal(HttpStatusCode.NoContent, left.StatusCode);
+        var ticket = left.Headers.GetValues("Set-Cookie").Single(c => c.StartsWith("tg_link=", StringComparison.Ordinal));
+        await fixture.Api.WithDbAsync(async db =>
+        {
+            Assert.False(await db.TelegramAccounts.AnyAsync(a => a.Id == account.Id));
+            Assert.True(await db.TelegramAccounts.AnyAsync(a => a.Id == other.Id));   // only this Telegram left
+        });
+
+        using var relink = new HttpRequestMessage(HttpMethod.Post, "/api/tg/link-login")
+        {
+            Content = JsonContent.Create(new { login = second.Email, password, initData = "" }),
+        };
+        relink.Headers.Add("Cookie", ticket.Split(';')[0]);
+        var linked = await anonymous.SendAsync(relink);
+        Assert.Equal(HttpStatusCode.OK, linked.StatusCode);
+        Assert.Equal(second.Id, (await ReadAnyAsync(linked)).GetProperty("user").GetProperty("id").GetString());
+        await fixture.Api.WithDbAsync(async db =>
+            Assert.Equal(second.Id, (await db.TelegramAccounts.SingleAsync(a => a.TelegramUserId == account.TelegramUserId)).UserId));
+    }
+
     // ------------------------------------------------------------------ bot
 
     [Fact]

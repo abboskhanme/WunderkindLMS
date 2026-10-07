@@ -18,8 +18,14 @@ public class JwtTokenService(JwtOptions options)
 {
     private readonly JwtOptions _o = options;
 
+    /// <summary>
+    /// The Telegram account a Mini App session was opened from. "Chiqish" unlinks exactly that one,
+    /// even after the initData aged past 24 h or the bot replaced the panel key (2026-10-07).
+    /// </summary>
+    public const string TelegramClaim = "tg_uid";
+
     /// <summary>Foydalanuvchi uchun token.</summary>
-    public string CreateToken(AppUser user)
+    public string CreateToken(AppUser user, long? telegramUserId = null)
     {
         var claims = new List<Claim>
         {
@@ -29,6 +35,8 @@ public class JwtTokenService(JwtOptions options)
             new(ClaimTypes.Email, user.Email),
             new(ClaimTypes.Role, user.Role),
         };
+        if (telegramUserId is { } tg)
+            claims.Add(new Claim(TelegramClaim, tg.ToString(System.Globalization.CultureInfo.InvariantCulture)));
         return Write(claims);
     }
 

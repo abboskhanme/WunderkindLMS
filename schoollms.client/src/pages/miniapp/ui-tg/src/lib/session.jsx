@@ -14,7 +14,7 @@
 import { createContext, useCallback, useContext, useEffect, useState } from 'react'
 import { api, setUnauthorizedHandler, tokenStore } from './api'
 import { bootstrap, initData, inTelegram } from './telegram'
-import { panelKey } from './panelKey'
+import { forgetPanelKey, panelKey } from './panelKey'
 
 const SessionContext = createContext(null)
 
@@ -96,7 +96,9 @@ export function SessionProvider({ children }) {
    * va ilova login ekraniga qaytadi.
    */
   const logout = useCallback(async () => {
-    if (inTelegram || panelKey) {
+    // Telegram ichidamizmi — imzo bo'yicha yoki botdagi tugma kaliti bo'yicha (kalit pastda unutiladi).
+    const fromTelegram = inTelegram || Boolean(panelKey)
+    if (fromTelegram) {
       // Qaysi Telegram chiqayotganini imzo yoki (pastki tugmadan ochilganda) kalit aytadi —
       // "hammasini uzish" emas: ota chiqsa, onaning Telegram'i bog'langanicha qoladi.
       const who = inTelegram ? { 'X-Telegram-Init-Data': initData } : { 'X-Telegram-Panel-Key': panelKey }
@@ -108,7 +110,11 @@ export function SessionProvider({ children }) {
       }
     }
     tokenStore.clear()
-    setState({ status: inTelegram ? 'unlinked' : 'outside', user: null, error: null })
+    forgetPanelKey()
+    // Telegram ichida — har doim Telegram'ning login ekrani (2026-10-07). Avval tugmadan ochilganda
+    // brauzer login ekrani chiqardi: yangi akkaunt Telegram'ga bog'lanmas, keyingi ochilishda esa
+    // eski tugma "eskirgan" deb qolardi. Server chiqishda bog'lash chiptasini beradi — imzosiz ham ulanadi.
+    setState({ status: fromTelegram ? 'unlinked' : 'outside', user: null, error: null })
   }, [])
 
   return (
