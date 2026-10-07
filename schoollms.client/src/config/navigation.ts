@@ -234,6 +234,8 @@ export const navByRole: Record<Role, NavItem[]> = {
         { label: "O'qituvchilar davomati", to: '/admin/teachers/attendance', perm: 'teachers', group: 'XODIMLAR' },
         // O'rindosh ustoz (client, 2026-10-07) — same key: whoever marks absence names the cover.
         { label: "O'rindosh ustozlar", to: '/admin/teachers/substitutions', perm: 'teachers', group: 'XODIMLAR' },
+        // Ishga qabul va adaptatsiya (client, 2026-10-07): arizalar → 5 bosqich → 30 kunlik adaptatsiya.
+        { label: 'Ishga qabul', to: '/admin/hr/ishga-qabul', perm: 'recruitment', group: 'XODIMLAR' },
         // 'Oylik hisoblash' MOLIYA ostiga ko'chdi — EduSchool'da Ish haqi
         // aynan o'sha yerda turadi. Ikki joyda ko'rsatish menyuni chalkashtirardi.
         //

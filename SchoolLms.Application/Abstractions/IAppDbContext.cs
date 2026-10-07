@@ -308,6 +308,14 @@ public interface IAppDbContext
     /// <summary>KPI weights — one row.</summary>
     DbSet<KpiSettings> KpiSettings { get; }
 
+    /// <summary>Ishga qabul va adaptatsiya (Recruitment.cs).</summary>
+    DbSet<Vacancy> Vacancies { get; }
+    DbSet<JobApplicant> JobApplicants { get; }
+    DbSet<ApplicantStageResult> ApplicantStageResults { get; }
+    DbSet<ApplicantEvent> ApplicantEvents { get; }
+    DbSet<OnboardingStepTemplate> OnboardingStepTemplates { get; }
+    DbSet<ApplicantOnboardingStep> ApplicantOnboardingSteps { get; }
+
     int SaveChanges();
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 

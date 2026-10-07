@@ -83,6 +83,8 @@ import { SurveysPage } from '@/pages/admin/marketing/SurveysPage'
 import { SubmissionsPage } from '@/pages/admin/marketing/SubmissionsPage'
 import { NewsPage } from '@/pages/admin/marketing/NewsPage'
 import { SurveyPage } from '@/pages/public/SurveyPage'
+import { VacancyListPage, VacancyPage } from '@/pages/public/VacancyPage'
+import { RecruitmentPage } from '@/pages/admin/recruitment/RecruitmentPage'
 import { ReceiptVerifyPage } from '@/pages/public/ReceiptVerifyPage'
 import { PortalNewsPage } from '@/pages/portal/PortalNewsPage'
 import { CandidatesPage } from '@/pages/admin/admission/CandidatesPage'
@@ -145,6 +147,9 @@ export default function App() {
       {/* Ommaviy ariza formasi — tizimga kirmagan ota-ona uchun; o'z to'liq ekrani bor.
           Server `/ariza/` ni HAR QANDAY hostda shu SPA'ga beradi (sales-marketing.md D2). */}
       <Route path="/ariza/:slug" element={<SurveyPage />} />
+      {/* Ochiq vakansiyalar va ariza (2026-10-07) — server `/vakansiya` ni har qanday hostda SPA'ga beradi. */}
+      <Route path="/vakansiya" element={<VacancyListPage />} />
+      <Route path="/vakansiya/:slug" element={<VacancyPage />} />
       {/* Chek QR kodi (2026-09-24) — login'siz. */}
       <Route path="/r/:token" element={<ReceiptVerifyPage />} />
 
@@ -173,6 +178,7 @@ export default function App() {
           <Route path="teachers" element={<TeachersRedirect />} />
           <Route path="teachers/attendance" element={<RequirePerm perm="teachers"><TeacherAttendancePage /></RequirePerm>} />
           <Route path="teachers/substitutions" element={<RequirePerm perm="teachers"><SubstitutionsPage /></RequirePerm>} />
+          <Route path="hr/ishga-qabul" element={<RequirePerm perm="recruitment"><RecruitmentPage /></RequirePerm>} />
           <Route path="classes" element={<RequirePerm perm="classes"><ClassesPage /></RequirePerm>} />
           <Route path="classes/rating" element={<RequirePerm perm="classes"><ClassRatingPage /></RequirePerm>} />
           <Route path="classes/:id" element={<RequirePerm perm="classes"><ClassDetailPage /></RequirePerm>} />

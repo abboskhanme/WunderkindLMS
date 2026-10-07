@@ -238,6 +238,14 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<PollAnswer> PollAnswers => Set<PollAnswer>();
     public DbSet<KpiSettings> KpiSettings => Set<KpiSettings>();
 
+    // Ishga qabul va adaptatsiya (Recruitment.cs). Configuration: RecruitmentModel.cs.
+    public DbSet<Vacancy> Vacancies => Set<Vacancy>();
+    public DbSet<JobApplicant> JobApplicants => Set<JobApplicant>();
+    public DbSet<ApplicantStageResult> ApplicantStageResults => Set<ApplicantStageResult>();
+    public DbSet<ApplicantEvent> ApplicantEvents => Set<ApplicantEvent>();
+    public DbSet<OnboardingStepTemplate> OnboardingStepTemplates => Set<OnboardingStepTemplate>();
+    public DbSet<ApplicantOnboardingStep> ApplicantOnboardingSteps => Set<ApplicantOnboardingStep>();
+
     /// <inheritdoc />
     public Task<Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction> BeginTransactionAsync(
         CancellationToken cancellationToken = default) =>
@@ -499,6 +507,9 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
 
         // So'rovnomalar va NPS, KPI weights (2026-10-07).
         PollModel.Apply(b);
+
+        // Ishga qabul va adaptatsiya (2026-10-07).
+        RecruitmentModel.Apply(b);
 
         // ----- PostgreSQL: vaqt turi -----
         // Tizim sanalarni Toshkent "devor soati" sifatida saqlaydi (AppClock.Now — Kind=Unspecified),

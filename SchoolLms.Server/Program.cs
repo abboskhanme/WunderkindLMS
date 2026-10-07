@@ -571,6 +571,18 @@ app.UseStaticFiles(new StaticFileOptions
     },
 });
 
+// uploads/private (job applicants' CVs — personal data) is never served statically; the gated
+// admin endpoint reads it (RecruitmentFiles). Must stay before the /uploads static files below.
+app.Use(async (ctx, next) =>
+{
+    if (ctx.Request.Path.StartsWithSegments("/uploads/private", StringComparison.OrdinalIgnoreCase))
+    {
+        ctx.Response.StatusCode = StatusCodes.Status404NotFound;
+        return;
+    }
+    await next();
+});
+
 // Yuklangan materiallar (/uploads) — alohida papkadan, 1 kunlik kesh bilan.
 var uploadsDir = Path.Combine(app.Environment.ContentRootPath, "uploads");
 Directory.CreateDirectory(uploadsDir);
@@ -705,7 +717,10 @@ app.MapFallback(async ctx =>
     // apex domeniga (Instagram bio, Telegram post) qo'yiladi, u yerda esa pastdagi
     // qoida `landing.html` berardi — havola jimgina bosh sahifaga aylanib qolardi.
     // docs/modules/sales-marketing.md D2.
-    if (path.StartsWith("/ariza/", StringComparison.OrdinalIgnoreCase))
+    // The public vacancy page (/vakansiya, /vakansiya/{slug}) — the same rule, any host.
+    if (path.StartsWith("/ariza/", StringComparison.OrdinalIgnoreCase)
+        || path.Equals("/vakansiya", StringComparison.OrdinalIgnoreCase)
+        || path.StartsWith("/vakansiya/", StringComparison.OrdinalIgnoreCase))
     {
         var spaIndex = Path.Combine(webRoot, "index.html");
         if (!File.Exists(spaIndex)) { ctx.Response.StatusCode = StatusCodes.Status404NotFound; return; }

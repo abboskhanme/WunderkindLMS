@@ -228,6 +228,151 @@ namespace SchoolLms.Infrastructure.Migrations
                         });
                 });
 
+            modelBuilder.Entity("SchoolLms.Domain.ApplicantEvent", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("ApplicantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("applicant_id");
+
+                    b.Property<DateTimeOffset>("At")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("at");
+
+                    b.Property<string>("By")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("by");
+
+                    b.Property<string>("FromStage")
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasColumnName("from_stage");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("note");
+
+                    b.Property<string>("ToStage")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasColumnName("to_stage");
+
+                    b.HasKey("Id")
+                        .HasName("pk_applicant_events");
+
+                    b.HasIndex("ApplicantId", "At")
+                        .HasDatabaseName("ix_applicant_events_applicant_id_at");
+
+                    b.ToTable("applicant_events", (string)null);
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.ApplicantOnboardingStep", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("ApplicantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("applicant_id");
+
+                    b.Property<string>("Comment")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("comment");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("description");
+
+                    b.Property<DateTimeOffset?>("DoneAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("done_at");
+
+                    b.Property<string>("DoneBy")
+                        .HasColumnType("text")
+                        .HasColumnName("done_by");
+
+                    b.Property<DateOnly>("DueOn")
+                        .HasColumnType("date")
+                        .HasColumnName("due_on");
+
+                    b.Property<int>("Position")
+                        .HasColumnType("integer")
+                        .HasColumnName("position");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("title");
+
+                    b.HasKey("Id")
+                        .HasName("pk_applicant_onboarding_steps");
+
+                    b.HasIndex("ApplicantId", "Position")
+                        .HasDatabaseName("ix_applicant_onboarding_steps_applicant_id_position");
+
+                    b.ToTable("applicant_onboarding_steps", (string)null);
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.ApplicantStageResult", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("ApplicantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("applicant_id");
+
+                    b.Property<DateTimeOffset>("At")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("at");
+
+                    b.Property<string>("By")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("by");
+
+                    b.Property<string>("Comment")
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)")
+                        .HasColumnName("comment");
+
+                    b.Property<int?>("Score")
+                        .HasColumnType("integer")
+                        .HasColumnName("score");
+
+                    b.Property<string>("Stage")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasColumnName("stage");
+
+                    b.HasKey("Id")
+                        .HasName("pk_applicant_stage_results");
+
+                    b.HasIndex("ApplicantId", "Stage")
+                        .IsUnique()
+                        .HasDatabaseName("ix_applicant_stage_results_applicant_id_stage");
+
+                    b.ToTable("applicant_stage_results", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_applicant_stage_results_score", "score is null or (score >= 0 and score <= 100)");
+                        });
+                });
+
             modelBuilder.Entity("SchoolLms.Domain.Assignment", b =>
                 {
                     b.Property<string>("Id")
@@ -4242,6 +4387,115 @@ namespace SchoolLms.Infrastructure.Migrations
                         });
                 });
 
+            modelBuilder.Entity("SchoolLms.Domain.JobApplicant", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("About")
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)")
+                        .HasColumnName("about");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("CreatedBy")
+                        .HasColumnType("text")
+                        .HasColumnName("created_by");
+
+                    b.Property<string>("CvName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("cv_name");
+
+                    b.Property<string>("CvPath")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .HasColumnName("cv_path");
+
+                    b.Property<string>("Email")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("email");
+
+                    b.Property<string>("Experience")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)")
+                        .HasColumnName("experience");
+
+                    b.Property<string>("FullName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("full_name");
+
+                    b.Property<DateOnly?>("HiredOn")
+                        .HasColumnType("date")
+                        .HasColumnName("hired_on");
+
+                    b.Property<string>("Phone")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("phone");
+
+                    b.Property<string>("Position")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("position");
+
+                    b.Property<string>("RejectReason")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("reject_reason");
+
+                    b.Property<string>("RejectedAtStage")
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasColumnName("rejected_at_stage");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("source");
+
+                    b.Property<string>("Stage")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasColumnName("stage");
+
+                    b.Property<DateTimeOffset>("StageChangedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("stage_changed_at");
+
+                    b.Property<Guid?>("VacancyId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("vacancy_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_job_applicants");
+
+                    b.HasIndex("Phone")
+                        .HasDatabaseName("ix_job_applicants_phone");
+
+                    b.HasIndex("VacancyId")
+                        .HasDatabaseName("ix_job_applicants_vacancy_id");
+
+                    b.HasIndex("Stage", "StageChangedAt")
+                        .HasDatabaseName("ix_job_applicants_stage_stage_changed_at");
+
+                    b.ToTable("job_applicants", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_job_applicants_stage", "stage in ('new','cv','test','demo','hr_interview','director_interview','onboarding','adapted','rejected')");
+                        });
+                });
+
             modelBuilder.Entity("SchoolLms.Domain.JournalEntry", b =>
                 {
                     b.Property<string>("Id")
@@ -5752,6 +6006,146 @@ namespace SchoolLms.Infrastructure.Migrations
                         .HasName("pk_notification_states");
 
                     b.ToTable("notification_states", (string)null);
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.OnboardingStepTemplate", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("description");
+
+                    b.Property<int>("DueDay")
+                        .HasColumnType("integer")
+                        .HasColumnName("due_day");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_active");
+
+                    b.Property<int>("Position")
+                        .HasColumnType("integer")
+                        .HasColumnName("position");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("title");
+
+                    b.HasKey("Id")
+                        .HasName("pk_onboarding_step_templates");
+
+                    b.ToTable("onboarding_step_templates", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_onboarding_step_templates_day", "due_day >= 1 and due_day <= 30");
+                        });
+
+                    b.HasData(
+                        new
+                        {
+                            Id = new Guid("7b1e0c00-0000-4000-8000-000000000001"),
+                            Description = "Shaxsiy hujjatlar topshiriladi, mehnat shartnomasi imzolanadi.",
+                            DueDay = 1,
+                            IsActive = true,
+                            Position = 1,
+                            Title = "Hujjatlar va mehnat shartnomasi"
+                        },
+                        new
+                        {
+                            Id = new Guid("7b1e0c00-0000-4000-8000-000000000002"),
+                            Description = "Ish joyi tayyorlanadi, LMS login beriladi, Telegram botga ulanadi.",
+                            DueDay = 1,
+                            IsActive = true,
+                            Position = 2,
+                            Title = "Ish joyi va tizimga kirish"
+                        },
+                        new
+                        {
+                            Id = new Guid("7b1e0c00-0000-4000-8000-000000000003"),
+                            Description = "Binolar, xavfsizlik qoidalari, ichki tartib va kiyinish qoidalari.",
+                            DueDay = 2,
+                            IsActive = true,
+                            Position = 3,
+                            Title = "Maktab bilan tanishuv"
+                        },
+                        new
+                        {
+                            Id = new Guid("7b1e0c00-0000-4000-8000-000000000004"),
+                            Description = "Tajribali hamkasb murabbiy (mentor) etib tayinlanadi.",
+                            DueDay = 2,
+                            IsActive = true,
+                            Position = 4,
+                            Title = "Mentor biriktirish"
+                        },
+                        new
+                        {
+                            Id = new Guid("7b1e0c00-0000-4000-8000-000000000005"),
+                            Description = "Direktor, o'rinbosarlar, metodbirlashma va bo'lim bilan tanishuv.",
+                            DueDay = 3,
+                            IsActive = true,
+                            Position = 5,
+                            Title = "Rahbariyat va jamoa bilan tanishuv"
+                        },
+                        new
+                        {
+                            Id = new Guid("7b1e0c00-0000-4000-8000-000000000006"),
+                            Description = "O'quv dasturi, dars jadvali, jurnal va baholash tartibi.",
+                            DueDay = 5,
+                            IsActive = true,
+                            Position = 6,
+                            Title = "O'quv dasturi va LMS treningi"
+                        },
+                        new
+                        {
+                            Id = new Guid("7b1e0c00-0000-4000-8000-000000000007"),
+                            Description = "Kamida ikkita mentor darsini kuzatib, xulosa yoziladi.",
+                            DueDay = 7,
+                            IsActive = true,
+                            Position = 7,
+                            Title = "Mentor darslarini kuzatish"
+                        },
+                        new
+                        {
+                            Id = new Guid("7b1e0c00-0000-4000-8000-000000000008"),
+                            Description = "Birinchi mustaqil darslar mentor ishtirokida o'tiladi.",
+                            DueDay = 10,
+                            IsActive = true,
+                            Position = 8,
+                            Title = "Mentor kuzatuvida birinchi darslar"
+                        },
+                        new
+                        {
+                            Id = new Guid("7b1e0c00-0000-4000-8000-000000000009"),
+                            Description = "Ikki haftalik natijalar, qiyinchiliklar va yordam ehtiyoji muhokamasi.",
+                            DueDay = 14,
+                            IsActive = true,
+                            Position = 9,
+                            Title = "Oraliq suhbat (HR)"
+                        },
+                        new
+                        {
+                            Id = new Guid("7b1e0c00-0000-4000-8000-000000000010"),
+                            Description = "Metodist darsni kuzatadi va dars tahlili varag'ini to'ldiradi.",
+                            DueDay = 21,
+                            IsActive = true,
+                            Position = 10,
+                            Title = "Dars tahlili (metodist)"
+                        },
+                        new
+                        {
+                            Id = new Guid("7b1e0c00-0000-4000-8000-000000000011"),
+                            Description = "Adaptatsiya natijalari va doimiy ishga o'tkazish qarori.",
+                            DueDay = 30,
+                            IsActive = true,
+                            Position = 11,
+                            Title = "Yakuniy baholash (direktor)"
+                        });
                 });
 
             modelBuilder.Entity("SchoolLms.Domain.Payment", b =>
@@ -8872,6 +9266,72 @@ namespace SchoolLms.Infrastructure.Migrations
                         });
                 });
 
+            modelBuilder.Entity("SchoolLms.Domain.Vacancy", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset?>("ClosedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("closed_at");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("created_by");
+
+                    b.Property<string>("Department")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("department");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)")
+                        .HasColumnName("description");
+
+                    b.Property<string>("Requirements")
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)")
+                        .HasColumnName("requirements");
+
+                    b.Property<string>("Slug")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)")
+                        .HasColumnName("slug");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("status");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("title");
+
+                    b.HasKey("Id")
+                        .HasName("pk_vacancies");
+
+                    b.HasIndex("Slug")
+                        .IsUnique()
+                        .HasDatabaseName("ix_vacancies_slug");
+
+                    b.ToTable("vacancies", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_vacancies_status", "status in ('open','closed')");
+                        });
+                });
+
             modelBuilder.Entity("SchoolLms.Domain.WeekAssignment", b =>
                 {
                     b.Property<string>("Id")
@@ -8921,6 +9381,36 @@ namespace SchoolLms.Infrastructure.Migrations
                         .HasForeignKey("AccessRoleId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .HasConstraintName("fk_users_access_roles_access_role_id");
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.ApplicantEvent", b =>
+                {
+                    b.HasOne("SchoolLms.Domain.JobApplicant", null)
+                        .WithMany()
+                        .HasForeignKey("ApplicantId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_applicant_events_job_applicants_applicant_id");
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.ApplicantOnboardingStep", b =>
+                {
+                    b.HasOne("SchoolLms.Domain.JobApplicant", null)
+                        .WithMany()
+                        .HasForeignKey("ApplicantId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_applicant_onboarding_steps_job_applicants_applicant_id");
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.ApplicantStageResult", b =>
+                {
+                    b.HasOne("SchoolLms.Domain.JobApplicant", null)
+                        .WithMany()
+                        .HasForeignKey("ApplicantId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_applicant_stage_results_job_applicants_applicant_id");
                 });
 
             modelBuilder.Entity("SchoolLms.Domain.AssignmentMaterial", b =>
@@ -9610,6 +10100,15 @@ namespace SchoolLms.Infrastructure.Migrations
                         .HasForeignKey("ReversalOf")
                         .OnDelete(DeleteBehavior.Restrict)
                         .HasConstraintName("fk_invoice_adjustments_invoice_adjustments_reversal_of");
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.JobApplicant", b =>
+                {
+                    b.HasOne("SchoolLms.Domain.Vacancy", null)
+                        .WithMany()
+                        .HasForeignKey("VacancyId")
+                        .OnDelete(DeleteBehavior.SetNull)
+                        .HasConstraintName("fk_job_applicants_vacancies_vacancy_id");
                 });
 
             modelBuilder.Entity("SchoolLms.Domain.Lead", b =>
