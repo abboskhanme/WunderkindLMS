@@ -65,19 +65,23 @@ public static class StudentProfileBuilder
 
         // ---- Intizomiy ball (100 + plus − minus) ----
         var manual = await db.DisciplinePoints.Where(p => p.StudentId == st.Id).ToListAsync();
+        // Attendance marks once per day and reason (AttendanceDisciplineDays) — not once per lesson.
+        var markDays = AttendanceDisciplineDays.Collapse(entries
+            .Where(e => e.ReasonId != null)
+            .Select(e => new AttendanceDisciplineDays.Mark(e.Id, e.StudentId, e.Date, e.ReasonId!)));
         int plus = 0, minus = 0;
         void Apply(int pts) { if (pts > 0) plus += pts; else if (pts < 0) minus += -pts; }
         foreach (var m in manual) Apply(m.Points);
-        foreach (var e in entries)
-            if (e.ReasonId != null && reasonMap.TryGetValue(e.ReasonId, out var r) && r.Points != 0) Apply(r.Points);
+        foreach (var d in markDays)
+            if (reasonMap.TryGetValue(d.ReasonId, out var r) && r.Points != 0) Apply(r.Points);
         var disciplineScore = 100 + plus - minus;
 
         var dPoints = manual.Select(p => new DisciplinePointDto(
             p.Id, p.StudentId, string.IsNullOrEmpty(p.ReasonName) ? "—" : p.ReasonName,
             p.Points, p.Note, p.CreatedAt, p.CreatedBy, "manual")).ToList();
-        foreach (var e in entries)
-            if (e.ReasonId != null && reasonMap.TryGetValue(e.ReasonId, out var r) && r.Points != 0)
-                dPoints.Add(new DisciplinePointDto(e.Id, st.Id, r.Name, r.Points, "Jurnal davomati", e.Date, "", "attendance"));
+        foreach (var d in markDays)
+            if (reasonMap.TryGetValue(d.ReasonId, out var r) && r.Points != 0)
+                dPoints.Add(new DisciplinePointDto(d.Id, st.Id, r.Name, r.Points, AttendanceDisciplineDays.Note(d.Lessons), d.Date, "", "attendance"));
         dPoints = dPoints.OrderByDescending(p => p.CreatedAt, StringComparer.Ordinal).ToList();
 
         // ---- Topshiriqlar ballari ----

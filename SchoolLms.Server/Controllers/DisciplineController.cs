@@ -194,8 +194,9 @@ public class DisciplineController(
             .Select(s => new { s.Id, s.FullName, s.ClassName }).ToListAsync();
         var manual = await db.DisciplinePoints.Select(p => new { p.StudentId, p.Points }).ToListAsync();
         var absPts = await db.AbsenceReasons.ToDictionaryAsync(r => r.Id, r => r.Points);
+        // One event per pupil, day and reason (AttendanceDisciplineDays): seven absent lessons, one penalty.
         var journal = await db.JournalEntries.Where(e => e.ReasonId != null)
-            .Select(e => new { e.StudentId, e.ReasonId }).ToListAsync();
+            .Select(e => new { e.StudentId, e.ReasonId, e.Date }).Distinct().ToListAsync();
 
         var plusBy = new Dictionary<string, int>();
         var minusBy = new Dictionary<string, int>();
@@ -352,13 +353,15 @@ public class DisciplineController(
             p.Points, p.Note, p.CreatedAt, p.CreatedBy, "manual")).ToList();
 
         // Jurnal davomati — sabab balli != 0 bo'lganlari (qoldiga ta'sir qilgani uchun ko'rsatamiz).
+        // Bitta kun + bitta sabab = bitta qator (AttendanceDisciplineDays), nechta darsligi izohda.
         var journal = await db.JournalEntries
-            .Where(e => e.StudentId == studentId && e.ReasonId != null).ToListAsync();
-        foreach (var e in journal)
+            .Where(e => e.StudentId == studentId && e.ReasonId != null)
+            .Select(e => new AttendanceDisciplineDays.Mark(e.Id, e.StudentId, e.Date, e.ReasonId!)).ToListAsync();
+        foreach (var d in AttendanceDisciplineDays.Collapse(journal))
         {
-            if (e.ReasonId is null || !absReasons.TryGetValue(e.ReasonId, out var r) || r.Points == 0) continue;
+            if (!absReasons.TryGetValue(d.ReasonId, out var r) || r.Points == 0) continue;
             result.Add(new DisciplinePointDto(
-                e.Id, studentId, r.Name, r.Points, "Jurnal davomati", e.Date, "", "attendance"));
+                d.Id, studentId, r.Name, r.Points, AttendanceDisciplineDays.Note(d.Lessons), d.Date, "", "attendance"));
         }
 
         return result.OrderByDescending(p => p.CreatedAt, StringComparer.Ordinal).ToList();
@@ -460,15 +463,17 @@ public class DisciplineController(
             if (toText is { } t) q = q.Where(e => string.Compare(e.Date, t) <= 0);
             if (!string.IsNullOrWhiteSpace(reasonId)) q = q.Where(e => e.ReasonId == reasonId);
 
-            foreach (var e in await q.ToListAsync())
+            // Bitta o'quvchi, bitta kun, bitta sabab — lentada bitta qator (AttendanceDisciplineDays).
+            var marks = await q.Select(e => new AttendanceDisciplineDays.Mark(e.Id, e.StudentId, e.Date, e.ReasonId!)).ToListAsync();
+            foreach (var d in AttendanceDisciplineDays.Collapse(marks))
             {
-                if (e.ReasonId is null || !absReasons.TryGetValue(e.ReasonId, out var r) || r.Points == 0) continue;
+                if (!absReasons.TryGetValue(d.ReasonId, out var r) || r.Points == 0) continue;
                 if (sign == "positive" && r.Points < 0) continue;
                 if (sign == "negative" && r.Points > 0) continue;
-                if (Student(e.StudentId) is not { } s) continue;
+                if (Student(d.StudentId) is not { } s) continue;
                 rows.Add(new DisciplineFeedRowDto(
-                    e.Id, e.StudentId, s.FullName, s.ClassName, r.Name, r.Points,
-                    "Jurnal davomati", e.Date, "", "attendance"));
+                    d.Id, d.StudentId, s.FullName, s.ClassName, r.Name, r.Points,
+                    AttendanceDisciplineDays.Note(d.Lessons), d.Date, "", "attendance"));
             }
         }
 

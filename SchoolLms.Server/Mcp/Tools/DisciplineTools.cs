@@ -68,8 +68,9 @@ public sealed class DisciplineTools(McpToolContext t)
         var manual = await db.DisciplinePoints.Where(p => ids.Contains(p.StudentId) && string.Compare(p.CreatedAt, yearStart) >= 0)
             .Select(p => new { p.StudentId, p.Points }).ToListAsync(ct);
         var absPts = await db.AbsenceReasons.ToDictionaryAsync(r => r.Id, r => r.Points, ct);
+        // Once per pupil, day and reason — the same rule as the web screens (AttendanceDisciplineDays).
         var journal = await db.JournalEntries.Where(e => e.ReasonId != null && ids.Contains(e.StudentId) && string.Compare(e.Date, yearStart) >= 0)
-            .Select(e => new { e.StudentId, e.ReasonId }).ToListAsync(ct);
+            .Select(e => new { e.StudentId, e.ReasonId, e.Date }).Distinct().ToListAsync(ct);
 
         var plus = new Dictionary<string, int>();
         var minus = new Dictionary<string, int>();

@@ -321,12 +321,13 @@ public class GroupJournalAttendanceTests(ApiFixture fixture) : IAsyncLifetime
 
         await SetSwitchAsync(db, true);
 
+        // Birlik o'quvchi-kun (2026-10-07): sinf darsi va guruh darsi bitta kunda — bitta imkoniyat.
         var on = await AttendanceDisciplineReport.BuildAsync(db, GroupDate, GroupDate);
-        Assert.Equal(5, on.Totals.Opportunities);
+        Assert.Equal(3, on.Totals.Opportunities);          // 3 o'quvchi × 1 kun
         Assert.Equal(1, on.Totals.Absences);
         Assert.Equal(-10, on.Totals.AttendancePoints);
         var row = on.Students.Single(s => s.StudentId == w.A1);
-        Assert.Equal(2, row.Opportunities);                // sinf darsi + guruh darsi
+        Assert.Equal(1, row.Opportunities);                // sinf darsi + guruh darsi — bitta kun
         Assert.Equal(1, row.Absences);
         Assert.Equal(-10, row.AttendancePoints);
     }

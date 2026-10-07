@@ -7,6 +7,9 @@
  * Bu yerda hech narsa qayta hisoblanmaydi — foiz ham, yig'indi ham serverniki.
  * Ikki ta'rif farqi (yo'qlik faqat o'tilgan darslar bo'yicha; ball esa Ballar
  * nazoratidagidek barcha belgilar bo'yicha) serverda, izoh bilan yozilgan.
+ *
+ * Birlik — O'QUVCHI-KUN (mijoz, 2026-10-07): kun bo'yi kelmagan o'quvchi bitta yo'qlik,
+ * 7 ta emas; ball ham kuniga bir sabab uchun bir marta.
  */
 import { useState } from 'react'
 import { AlertTriangle, CalendarX, Clock, Download, HelpCircle } from 'lucide-react'
@@ -66,8 +69,8 @@ export function AttendanceDisciplineReportPage() {
       [
         'O\'quvchi',
         'Sinf',
-        'Darslar',
-        "Yo'qlik",
+        "O'qish kunlari",
+        "Yo'qlik (kun)",
         'Kechikish',
         'Tekshirilmagan',
         'Davomat balli',
@@ -143,7 +146,7 @@ export function AttendanceDisciplineReportPage() {
                 hint={
                   report.totals.attendancePercent === null
                     ? "O'tilgan dars yo'q"
-                    : `Davomat: ${report.totals.attendancePercent}%`
+                    : `Kun bo'yi kelmagan · davomat ${report.totals.attendancePercent}%`
                 }
               />
               <StatCard
@@ -160,7 +163,7 @@ export function AttendanceDisciplineReportPage() {
                 icon={HelpCircle}
                 iconBg="bg-slate-100"
                 iconColor="text-slate-500"
-                hint="Davomati belgilanmagan darslar"
+                hint="Bitta darsi ham belgilanmagan kunlar"
               />
               <StatCard
                 label="Yo'qotilgan ball"
@@ -174,10 +177,11 @@ export function AttendanceDisciplineReportPage() {
 
             <Card className="border-slate-200 bg-slate-50/60">
               <p className="text-sm text-slate-600">
-                Davomati <b>belgilanmagan</b> katak "keldi" deb hisoblanmaydi — u alohida
-                ustunda turadi. "Kech keldi" yo'qlik emas, lekin sababiga ball qo'yilgan
-                bo'lsa ballga ta'sir qiladi. <b>Qoldi</b> — butun tarix bo'yicha (100 balldan),
-                davr filtri unga ta'sir qilmaydi.
+                Hisob <b>o'quvchi-kun</b> bo'yicha: kun bo'yi kelmagan o'quvchi bitta yo'qlik, qisman
+                qoldirgani "keldi". Ball kuniga bir sabab uchun <b>bir marta</b> — 7 darsga kelmasa ham.
+                Davomati <b>belgilanmagan</b> kun "keldi" deb hisoblanmaydi — u alohida ustunda turadi.
+                "Kech keldi" yo'qlik emas, lekin sababiga ball qo'yilgan bo'lsa ballga ta'sir qiladi.
+                <b> Qoldi</b> — butun tarix bo'yicha (100 balldan), davr filtri unga ta'sir qilmaydi.
               </p>
             </Card>
 

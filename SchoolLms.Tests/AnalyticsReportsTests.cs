@@ -285,41 +285,51 @@ public class AnalyticsReportsTests(ApiFixture fixture) : IAsyncLifetime
     // =====================================================================
 
     /// <summary>
-    /// Hisobotning butun mag'zi bitta testda, chunki uchta ta'rif bir-biriga tegib turadi:
+    /// Hisobotning butun mag'zi bitta testda. Birlik — O'QUVCHI-KUN (mijoz, 2026-10-07: "bitta
+    /// o'quvchi bir kishiga yurish kerak"):
     ///
     /// <list type="bullet">
-    ///   <item><b>Belgilanmagan katak "keldi" EMAS</b> — u <c>Unchecked</c> ustuniga tushadi
-    ///     (bosh sahifadagi kabi).</item>
-    ///   <item><b>"Kech keldi" yo'qlik EMAS</b>, lekin balli bor — ball yeydi.</item>
-    ///   <item><b>O'tilmagan dars davomatga kirmaydi</b> (na maxrajga, na yo'qlikka), AMMO
-    ///     uning balli <c>DisciplineController.GetScores</c> dagidek hisoblanadi — aks holda
-    ///     bu hisobot va Ballar nazorati bir o'quvchi uchun ikki xil raqam ko'rsatardi.</item>
+    ///   <item><b>Kun bo'yi kelmagan</b> (belgilangan hamma darsida yo'q) — bitta yo'qlik, 3 ta emas.</item>
+    ///   <item><b>Qisman qoldirgan — "keldi"</b>; kechikish belgisi bo'lsa — bitta kechikish kuni.</item>
+    ///   <item><b>Bitta darsi ham belgilanmagan kun</b> — tekshirilmagan, "keldi" EMAS.</item>
+    ///   <item><b>Ball kuniga bir sabab uchun bir marta</b>, o'tilmagan dars belgisi ham (Ballar
+    ///     nazorati bilan bir xil raqam).</item>
     /// </list>
     /// </summary>
     [Fact]
-    public async Task Yoqlik_kechikish_va_belgilanmagan_katak_ozicha_sanaladi()
+    public async Task Yoqlik_kechikish_va_belgilanmagan_kun_ozicha_sanaladi()
     {
         await using var db = NewDb();
         var world = await SchoolAsync(db);
+        await HeldAsync(db, world, "2026-09-11", 3);
+        await HeldAsync(db, world, "2026-09-12", 2);
 
-        // 1-dars: sababsiz (yo'qlik, −10). 2-dars: kech keldi (yo'qlik emas, −5).
-        // 3-dars: hech kim belgilamagan → tekshirilmagan. 4-dars: O'TILMAGAN, lekin belgi bor.
+        // 10-sentyabr: 1-dars sababsiz, 2-dars kech keldi, 3-dars belgilanmagan, 4-dars O'TILMAGAN
+        // lekin sababsiz → qisman qoldirgan = keldi, kechikish kuni; ball −10 (bir marta) −5.
         await MarkAsync(db, world, world.StudentA, period: 1, reasonId: world.Unexcused);
         await MarkAsync(db, world, world.StudentA, period: 2, reasonId: world.Late);
         await MarkAsync(db, world, world.StudentA, period: 4, reasonId: world.Unexcused);
+        // 11-sentyabr: uchala darsda sababsiz → bitta yo'qlik kuni, ball −10 bir marta.
+        for (var p = 1; p <= 3; p++)
+            await MarkAsync(db, world, world.StudentA, period: p, reasonId: world.Unexcused, date: "2026-09-11");
+        // 12-sentyabr: hech kim belgilamagan → tekshirilmagan kun.
 
         var report = await AttendanceDisciplineReport.BuildAsync(db, From, To);
 
         var row = report.Students.Single(r => r.StudentId == world.StudentA);
-        Assert.Equal(3, row.Opportunities);   // o'tilgan darslar: 1, 2, 3
-        Assert.Equal(1, row.Absences);        // faqat 1-dars
-        Assert.Equal(1, row.Lates);           // 2-dars
-        Assert.Equal(1, row.Unchecked);       // 3-dars
+        Assert.Equal(3, row.Opportunities);   // o'tilgan darsi bo'lgan kunlar: 10, 11, 12
+        Assert.Equal(1, row.Absences);        // 11-sentyabr — kun bo'yi
+        Assert.Equal(1, row.Lates);           // 10-sentyabr
+        Assert.Equal(1, row.Unchecked);       // 12-sentyabr
         Assert.Equal(66.7, row.AttendancePercent);
 
-        // Ball: −10 (1-dars) −5 (2-dars) −10 (o'tilmagan 4-dars ham) = −25.
+        // Ball: −10 (10-sen, sababsiz) −5 (10-sen, kech) −10 (11-sen, sababsiz — 3 dars, bir marta) = −25.
         Assert.Equal(-25, row.AttendancePoints);
         Assert.Equal(100 - 25, row.Remaining);
+
+        var reason = report.Reasons.Single(r => r.ReasonId == world.Unexcused);
+        Assert.Equal(2, reason.Count);        // ikki o'quvchi-kun, besh dars emas
+        Assert.Equal(-20, reason.TotalPoints);
     }
 
     /// <summary>
@@ -338,9 +348,9 @@ public class AnalyticsReportsTests(ApiFixture fixture) : IAsyncLifetime
 
         var cls = Assert.Single(report.Classes);
         Assert.Equal(2, cls.Students);
-        Assert.Equal(6, cls.Opportunities);   // 3 o'tilgan dars × 2 o'quvchi
-        Assert.Equal(1, cls.Absences);
-        Assert.Equal(5, cls.Unchecked);       // A: 2 ta, B: 3 ta
+        Assert.Equal(2, cls.Opportunities);   // 1 o'tilgan kun × 2 o'quvchi (o'quvchi-kun, 2026-10-07)
+        Assert.Equal(1, cls.Absences);        // A: belgilangan yagona darsida yo'q
+        Assert.Equal(1, cls.Unchecked);       // B: bitta darsi ham belgilanmagan
         Assert.Equal(-10, cls.AttendancePoints);
 
         // Jadvalda esa faqat belgisi borlar — toza o'quvchi qatorni ko'mib tashlamaydi.
@@ -565,6 +575,18 @@ public class AnalyticsReportsTests(ApiFixture fixture) : IAsyncLifetime
 
         await db.SaveChangesAsync();
         return new World(cls.Id, subject.Id, a.Id, b.Id, unexcused.Id, late.Id, ill.Id);
+    }
+
+    /// <summary>Yana bitta o'tilgan kun: 1..<paramref name="lessons"/> darslar.</summary>
+    private static async Task HeldAsync(AppDbContext db, World world, string date, int lessons)
+    {
+        for (var period = 1; period <= lessons; period++)
+            db.LessonNotes.Add(new LessonNote
+            {
+                ClassId = world.ClassId, SubjectId = world.SubjectId, Quarter = 1,
+                Date = date, Period = period, Topic = "Mavzu", Conducted = true,
+            });
+        await db.SaveChangesAsync();
     }
 
     private static async Task MarkAsync(

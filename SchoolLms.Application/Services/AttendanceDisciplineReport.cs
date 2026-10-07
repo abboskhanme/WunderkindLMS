@@ -43,6 +43,14 @@ namespace SchoolLms.Application.Services;
 /// </para>
 ///
 /// <para>
+/// <b>BIRLIK — O'QUVCHI-KUN</b> (mijoz, 2026-10-07: "bitta o'quvchi bir kishiga yurish kerak").
+/// Imkoniyat = o'tilgan darsi bo'lgan KUN; yo'qlik = o'sha kunning belgilangan HAMMA darsida yo'q
+/// (qisman qoldirgan — "keldi"); kechikish = kechikish belgisi bor, yo'q bo'lmagan kun; tekshirilmagan
+/// = bitta darsi ham belgilanmagan kun. Ball — kuniga bir sabab uchun bir marta
+/// (<see cref="AttendanceDisciplineDays"/>): 7 darsga kelmasa ham −5, −35 emas.
+/// </para>
+///
+/// <para>
 /// <b>O'QUV GURUHI</b> (G-13, students-parity.md §2.1.4). Guruh darsi ham o'tiladi va unda
 /// ham davomat belgilanadi, ya'ni u o'quvchining imkoniyatlari (maxraji) va ballariga
 /// SINF darsi kabi kiradi. Qator esa o'quvchining O'Z SINFI ostida qoladi — hisobot
@@ -121,7 +129,7 @@ public static class AttendanceDisciplineReport
                 .Where(e => (groupsOn || e.OwnerKind != LessonOwnerKind.Group || trackIds.Contains(e.ClassId))
                     && (classId == null || e.ClassId == classId || groupIdsInScope.Contains(e.ClassId))
                     && string.Compare(e.Date, from) >= 0 && string.Compare(e.Date, to) <= 0)
-                .Select(e => new { e.ClassId, e.StudentId, e.SubjectId, e.Date, e.Period, e.ReasonId })
+                .Select(e => new { e.Id, e.ClassId, e.StudentId, e.SubjectId, e.Date, e.Period, e.ReasonId })
                 .ToListAsync())
             .GroupBy(e => e.StudentId, StringComparer.Ordinal)
             .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.Ordinal);
@@ -141,15 +149,18 @@ public static class AttendanceDisciplineReport
                 .Select(g => new { StudentId = g.Key, Points = g.Sum(p => p.Points) })
                 .ToListAsync())
             .ToDictionary(x => x.StudentId, x => x.Points, StringComparer.Ordinal);
+        // Kuniga bir sabab — bir marta (AttendanceDisciplineDays): kunlar soni, darslar emas.
         var allJournalPoints = new Dictionary<string, int>(StringComparer.Ordinal);
         foreach (var row in await db.JournalEntries.AsNoTracking()
             .Where(e => e.ReasonId != null)
+            .Select(e => new { e.StudentId, e.ReasonId, e.Date })
+            .Distinct()
             .GroupBy(e => new { e.StudentId, e.ReasonId })
-            .Select(g => new { g.Key.StudentId, g.Key.ReasonId, Count = g.Count() })
+            .Select(g => new { g.Key.StudentId, g.Key.ReasonId, Days = g.Count() })
             .ToListAsync())
         {
             if (row.ReasonId is null || !reasonById.TryGetValue(row.ReasonId, out var r) || r.Points == 0) continue;
-            allJournalPoints[row.StudentId] = allJournalPoints.GetValueOrDefault(row.StudentId) + r.Points * row.Count;
+            allJournalPoints[row.StudentId] = allJournalPoints.GetValueOrDefault(row.StudentId) + r.Points * row.Days;
         }
 
         // ---- O'quvchi qatorlari ----
@@ -199,26 +210,34 @@ public static class AttendanceDisciplineReport
                     .Where(e => mySlots.Contains(new Slot(e.SubjectId, e.Date, e.Period)))
                     .ToList();
 
+                // Birlik — O'QUVCHI-KUN (sinf izohi): o'tilgan darsi bo'lgan har kun bitta imkoniyat.
                 var absences = 0;
                 var lates = 0;
-                foreach (var e in onConducted)
+                var unchecked_ = 0;
+                var heldDays = mySlots.GroupBy(s => s.Date, StringComparer.Ordinal).ToList();
+                foreach (var day in heldDays)
                 {
-                    if (e.ReasonId is null || !reasonById.TryGetValue(e.ReasonId, out var r)) continue;
-                    if (r.IsLate) lates++; else absences++;
+                    var dayEntries = onConducted.Where(e => e.Date == day.Key).ToList();
+                    var checkedLessons = dayEntries.Select(e => new Slot(e.SubjectId, e.Date, e.Period))
+                        .Concat(checkedSlots.Where(s => s.Date == day.Key))
+                        .ToHashSet().Count;
+                    if (checkedLessons == 0) { unchecked_++; continue; }
+                    var absentLessons = dayEntries.Count(e =>
+                        e.ReasonId is not null && reasonById.TryGetValue(e.ReasonId, out var r) && !r.IsLate);
+                    // Kun bo'yi kelmagan — belgilangan HAMMA darsida yo'q. Qisman qoldirgan "keldi" (mijoz).
+                    if (absentLessons >= checkedLessons) { absences++; continue; }
+                    if (dayEntries.Any(e => e.ReasonId is not null && reasonById.TryGetValue(e.ReasonId, out var r) && r.IsLate))
+                        lates++;
                 }
+                var opportunities = heldDays.Count;
 
-                var opportunities = mySlots.Count;
-                var marked = onConducted
-                    .Select(e => new Slot(e.SubjectId, e.Date, e.Period))
-                    .Concat(checkedSlots)
-                    .ToHashSet().Count;
-                var unchecked_ = Math.Max(0, opportunities - marked);
-
-                // Ball — O'TILGANLIK FILTRISIZ (yuqoridagi 2-izoh).
+                // Ball — O'TILGANLIK FILTRISIZ (yuqoridagi 2-izoh), kuniga bir sabab bir marta.
                 var attendancePoints = 0;
-                foreach (var e in myClassEntries)
+                foreach (var d in AttendanceDisciplineDays.Collapse(myClassEntries
+                             .Where(e => e.ReasonId is not null)
+                             .Select(e => new AttendanceDisciplineDays.Mark(e.Id, e.StudentId, e.Date, e.ReasonId!))))
                 {
-                    if (e.ReasonId is null || !reasonById.TryGetValue(e.ReasonId, out var r)) continue;
+                    if (!reasonById.TryGetValue(d.ReasonId, out var r)) continue;
                     attendancePoints += r.Points;
                 }
 
@@ -264,14 +283,17 @@ public static class AttendanceDisciplineReport
         // ---- Sabablar kesimi ----
         var studentIds = students.Select(s => s.Id).ToHashSet(StringComparer.Ordinal);
         var reasonRows = new List<AttendanceDisciplineReasonDto>();
+        // Sabab bo'yicha — O'QUVCHI-KUNLAR soni (bitta kun, bitta sabab = 1), ball ham shunga ko'paytiriladi.
         var attendanceReasonCounts = new Dictionary<string, int>(StringComparer.Ordinal);
         foreach (var kv in entries)
         {
             if (!studentIds.Contains(kv.Key)) continue;
-            foreach (var e in kv.Value)
+            foreach (var d in AttendanceDisciplineDays.Collapse(kv.Value
+                         .Where(e => e.ReasonId is not null)
+                         .Select(e => new AttendanceDisciplineDays.Mark(e.Id, e.StudentId, e.Date, e.ReasonId!))))
             {
-                if (e.ReasonId is null || !reasonById.ContainsKey(e.ReasonId)) continue;
-                attendanceReasonCounts[e.ReasonId] = attendanceReasonCounts.GetValueOrDefault(e.ReasonId) + 1;
+                if (!reasonById.ContainsKey(d.ReasonId)) continue;
+                attendanceReasonCounts[d.ReasonId] = attendanceReasonCounts.GetValueOrDefault(d.ReasonId) + 1;
             }
         }
         foreach (var (reasonId, count) in attendanceReasonCounts)
@@ -298,8 +320,8 @@ public static class AttendanceDisciplineReport
             .ToList();
 
         // Jamlama BARCHA faol o'quvchilar bo'yicha — jadvaldagi qatorlar esa faqat belgisi
-        // borlar. Ikkisi ataylab farq qiladi: "sinfda 40 ta katak belgilanmagan" degan xabar
-        // faqat hamma o'quvchi hisobga olinganda chiqadi.
+        // borlar. Ikkisi ataylab farq qiladi: "sinfda 40 ta o'quvchi-kun belgilanmagan" degan
+        // xabar faqat hamma o'quvchi hisobga olinganda chiqadi.
         var totalOpportunities = classAgg.Values.Sum(a => a.Opp);
         var totalAbsences = classAgg.Values.Sum(a => a.Abs);
         var totals = new AttendanceDisciplineTotalsDto(

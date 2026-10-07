@@ -394,12 +394,14 @@ public class StudentPortalController(
             string.IsNullOrEmpty(p.ReasonName) ? drNames.GetValueOrDefault(p.ReasonId, "—") : p.ReasonName,
             p.Points, p.Note, p.CreatedAt, p.CreatedBy, "manual")).ToList();
 
+        // Bitta kun + bitta sabab = bitta hodisa (AttendanceDisciplineDays): 7 darsga kelmasa ham ball bir marta.
         var journal = await db.JournalEntries
-            .Where(e => e.StudentId == s.Id && e.ReasonId != null).ToListAsync();
-        foreach (var e in journal)
+            .Where(e => e.StudentId == s.Id && e.ReasonId != null)
+            .Select(e => new AttendanceDisciplineDays.Mark(e.Id, e.StudentId, e.Date, e.ReasonId!)).ToListAsync();
+        foreach (var d in AttendanceDisciplineDays.Collapse(journal))
         {
-            if (e.ReasonId is null || !absReasons.TryGetValue(e.ReasonId, out var r) || r.Points == 0) continue;
-            items.Add(new DisciplinePointDto(e.Id, s.Id, r.Name, r.Points, "Jurnal davomati", e.Date, "", "attendance"));
+            if (!absReasons.TryGetValue(d.ReasonId, out var r) || r.Points == 0) continue;
+            items.Add(new DisciplinePointDto(d.Id, s.Id, r.Name, r.Points, AttendanceDisciplineDays.Note(d.Lessons), d.Date, "", "attendance"));
         }
 
         var plus = items.Where(i => i.Points > 0).Sum(i => i.Points);
