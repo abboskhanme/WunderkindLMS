@@ -4,6 +4,17 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1" />
     <title>O'qituvchi kabineti</title>
+    <script>
+      // Opened BY TELEGRAM as a Mini App (launch data #tgWebApp… in the hash): the teacher's Telegram
+      // panel is the Mini App at /tg/ — the same one every teacher gets (client, 2026-10-08). A normal
+      // browser or the installed PWA has no such hash and is not touched.
+      (function () {
+        var h = location.hash || ''
+        if (h.indexOf('tgWebAppData=') !== -1 || h.indexOf('tgWebAppPlatform=') !== -1) {
+          location.replace('/tg/' + location.search + h)
+        }
+      })()
+    </script>
 
     <link rel="manifest" href="manifest.webmanifest" />
     <meta name="theme-color" content="#0d9488" media="(prefers-color-scheme: light)" />
