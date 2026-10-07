@@ -25,6 +25,13 @@ import {
 import { NewsCard } from './NewsCard'
 import { PenaltiesCard } from './PenaltiesCard'
 import { FeedbackCard } from './FeedbackCard'
+import { PollsCard } from '../../components/PollSheet'
+
+// So'rovnomalar (2026-10-07): the teacher's open polls.
+const POLLS_API = {
+  list: () => teacherApi.polls(),
+  submit: (id, answers) => teacherApi.answerPoll(id, answers),
+}
 import { LessonAnalysisCard } from './LessonAnalysis'
 
 export function TodayTab({ profile, meta, onOpenAttendance }) {
@@ -176,6 +183,9 @@ export function TodayTab({ profile, meta, onOpenAttendance }) {
                 ))
               )}
             </Card>
+
+            {/* An open poll waiting for an answer (client, 2026-10-07). Hidden otherwise. */}
+            <PollsCard api={POLLS_API} />
 
             {/* Lesson analysis results (client, 2026-09-28). Loads itself and hides
                 when there is nothing to show — like the news card below. */}

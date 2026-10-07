@@ -309,3 +309,11 @@ export const sendReceiptToTelegram = (paymentId) => api.post(`/tg/receipts/${pay
  */
 export const getMenu = (childId, startISO, endISO) =>
   api.get(`/student/canteen?start=${startISO}&end=${endISO}`)
+
+/* ------------------------------------------------------------ so'rovnomalar */
+
+/** Open polls for parents, answered per child (client, 2026-10-07). */
+export const getPolls = (childId) => api.get('/student/polls' + forChild(childId))
+
+export const answerPoll = (childId, pollId, answers) =>
+  api.post(`/student/polls/${pollId}` + forChild(childId), { answers })

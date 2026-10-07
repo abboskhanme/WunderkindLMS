@@ -139,4 +139,8 @@ export const teacherApi = {
   feedbackDepartments: () => api.get(`${BASE}/feedback/departments`),
   /** Yangi murojaat (matn + ixtiyoriy rasm). */
   sendFeedback: (formData) => api.form(`${BASE}/feedback`, formData),
+
+  // So'rovnomalar (client, 2026-10-07) — open polls for teachers, one answer sheet each.
+  polls: () => api.get(`${BASE}/polls`),
+  answerPoll: (id, answers) => api.post(`${BASE}/polls/${id}`, { answers }),
 }

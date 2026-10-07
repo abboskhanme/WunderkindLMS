@@ -231,6 +231,13 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
     // O'rindosh ustoz (LessonSubstitution.cs). Configuration: FeedbackModel.cs → LessonSubstitutionModel.
     public DbSet<LessonSubstitution> LessonSubstitutions => Set<LessonSubstitution>();
 
+    // So'rovnomalar va NPS, KPI (Polls.cs). Configuration: PollModel.cs.
+    public DbSet<Poll> Polls => Set<Poll>();
+    public DbSet<PollQuestion> PollQuestions => Set<PollQuestion>();
+    public DbSet<PollResponse> PollResponses => Set<PollResponse>();
+    public DbSet<PollAnswer> PollAnswers => Set<PollAnswer>();
+    public DbSet<KpiSettings> KpiSettings => Set<KpiSettings>();
+
     /// <inheritdoc />
     public Task<Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction> BeginTransactionAsync(
         CancellationToken cancellationToken = default) =>
@@ -489,6 +496,9 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
 
         // O'rindosh ustoz — one lesson on one date taught by another teacher (2026-10-07).
         LessonSubstitutionModel.Apply(b);
+
+        // So'rovnomalar va NPS, KPI weights (2026-10-07).
+        PollModel.Apply(b);
 
         // ----- PostgreSQL: vaqt turi -----
         // Tizim sanalarni Toshkent "devor soati" sifatida saqlaydi (AppClock.Now — Kind=Unspecified),

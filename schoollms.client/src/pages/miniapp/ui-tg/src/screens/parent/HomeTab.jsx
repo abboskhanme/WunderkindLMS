@@ -24,11 +24,12 @@ import { useAsync } from '../../lib/useAsync'
 import { dateTime, money, sum } from '../../lib/format'
 import { haptic } from '../../lib/telegram'
 import {
-  getAnnouncements, getAttendance, getBilling, getDashboard, getPickup, requestPickup,
+  getAnnouncements, getAttendance, getBilling, getDashboard, getPickup, requestPickup, getPolls, answerPoll,
 } from '../../lib/parentApi'
 import { AsyncBlock, balanceShort, gradeTone, monthLabel } from './shared'
 import { NewsCard } from './NewsCard'
 import { CertificatesCard } from './CertificatesCard'
+import { PollsCard } from '../../components/PollSheet'
 import { todayISO } from '../../lib/weeks'
 
 export function HomeTab({ child, onOpenTab, showGrades = true, onOpenFeedback }) {
@@ -83,6 +84,15 @@ export function HomeTab({ child, onOpenTab, showGrades = true, onOpenFeedback })
             {owes && moneyCard}
 
             <LessonsCard lessons={lessons} grades={grades} rows={todayRows} />
+
+            {/* An open poll waiting for this child's answer (client, 2026-10-07). Hidden otherwise. */}
+            <PollsCard
+              key={child.id}
+              api={{
+                list: () => getPolls(child.id),
+                submit: (id, answers) => answerPoll(child.id, id, answers),
+              }}
+            />
 
             {/* Certificates and the current results (client, 2026-10-07). Loads itself, hidden when empty. */}
             <CertificatesCard childId={child.id} />

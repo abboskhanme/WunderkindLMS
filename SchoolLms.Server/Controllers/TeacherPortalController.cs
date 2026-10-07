@@ -1041,6 +1041,31 @@ public class TeacherPortalController(
         return NoContent();
     }
 
+    // ---------- So'rovnomalar (2026-10-07) ----------
+
+    /// <summary>Open polls for teachers — with the management members a question may rate.</summary>
+    [HttpGet("polls")]
+    public async Task<ActionResult<IEnumerable<PortalPollDto>>> Polls(CancellationToken ct)
+    {
+        var t = await Me();
+        if (t is null) return NotFound();
+        var managers = await PollService.ManagersAsync(db, t.UserId, ct);
+        return await PollService.OpenForAsync(db, PollRespondentOf(t), [], managers, ct);
+    }
+
+    [HttpPost("polls/{id:guid}")]
+    public async Task<IActionResult> AnswerPoll(Guid id, PollSubmitRequest req, CancellationToken ct)
+    {
+        var t = await Me();
+        if (t is null) return NotFound();
+        var managers = (await PollService.ManagersAsync(db, t.UserId, ct)).Select(m => m.Id).ToList();
+        var (status, error) = await PollService.SubmitAsync(db, id, PollRespondentOf(t), req, [], managers, ct);
+        return error is null ? NoContent() : StatusCode(status, new { message = error });
+    }
+
+    private static PollRespondent PollRespondentOf(Teacher t) =>
+        new(PollAudience.Teachers, $"teacher:{t.Id}", null, t.Id, null);
+
     /// <summary>"Mening murojaatlarim" — the teacher's own items with status and answer (2026-10-07).</summary>
     [HttpGet("feedback")]
     public async Task<ActionResult<IEnumerable<MyFeedbackDto>>> MyFeedback(CancellationToken ct)

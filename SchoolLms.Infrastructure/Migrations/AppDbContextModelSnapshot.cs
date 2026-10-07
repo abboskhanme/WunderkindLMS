@@ -4319,6 +4319,71 @@ namespace SchoolLms.Infrastructure.Migrations
                         });
                 });
 
+            modelBuilder.Entity("SchoolLms.Domain.KpiSettings", b =>
+                {
+                    b.Property<int>("Id")
+                        .HasColumnType("integer")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasColumnType("text")
+                        .HasColumnName("updated_by");
+
+                    b.Property<int>("WeightAttendance")
+                        .HasColumnType("integer")
+                        .HasColumnName("weight_attendance");
+
+                    b.Property<int>("WeightJournal")
+                        .HasColumnType("integer")
+                        .HasColumnName("weight_journal");
+
+                    b.Property<int>("WeightLessonAnalysis")
+                        .HasColumnType("integer")
+                        .HasColumnName("weight_lesson_analysis");
+
+                    b.Property<int>("WeightParentNps")
+                        .HasColumnType("integer")
+                        .HasColumnName("weight_parent_nps");
+
+                    b.Property<int>("WeightPenalties")
+                        .HasColumnType("integer")
+                        .HasColumnName("weight_penalties");
+
+                    b.Property<int>("WeightStaffNps")
+                        .HasColumnType("integer")
+                        .HasColumnName("weight_staff_nps");
+
+                    b.Property<int>("WeightTasks")
+                        .HasColumnType("integer")
+                        .HasColumnName("weight_tasks");
+
+                    b.HasKey("Id")
+                        .HasName("pk_kpi_settings");
+
+                    b.ToTable("kpi_settings", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_kpi_settings_single", "id = 1");
+                        });
+
+                    b.HasData(
+                        new
+                        {
+                            Id = 1,
+                            UpdatedAt = new DateTimeOffset(new DateTime(2026, 10, 7, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            WeightAttendance = 5,
+                            WeightJournal = 10,
+                            WeightLessonAnalysis = 25,
+                            WeightParentNps = 15,
+                            WeightPenalties = 10,
+                            WeightStaffNps = 10,
+                            WeightTasks = 25
+                        });
+                });
+
             modelBuilder.Entity("SchoolLms.Domain.Lead", b =>
                 {
                     b.Property<string>("Id")
@@ -5989,6 +6054,227 @@ namespace SchoolLms.Infrastructure.Migrations
                         .HasName("pk_pickup_requests");
 
                     b.ToTable("pickup_requests", (string)null);
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.Poll", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<bool>("Anonymous")
+                        .HasColumnType("boolean")
+                        .HasColumnName("anonymous");
+
+                    b.Property<string>("Audience")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("audience");
+
+                    b.Property<DateTimeOffset?>("ClosedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("closed_at");
+
+                    b.Property<DateOnly?>("ClosesOn")
+                        .HasColumnType("date")
+                        .HasColumnName("closes_on");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("created_by");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)")
+                        .HasColumnName("description");
+
+                    b.Property<DateTimeOffset?>("NotifiedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("notified_at");
+
+                    b.Property<DateTimeOffset?>("OpenedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("opened_at");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("status");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("title");
+
+                    b.HasKey("Id")
+                        .HasName("pk_polls");
+
+                    b.HasIndex("Status", "Audience")
+                        .HasDatabaseName("ix_polls_status_audience");
+
+                    b.ToTable("polls", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_polls_audience", "audience in ('parents','teachers')");
+
+                            t.HasCheckConstraint("ck_polls_status", "status in ('draft','open','closed')");
+                        });
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.PollAnswer", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("Choice")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("choice");
+
+                    b.Property<Guid>("QuestionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("question_id");
+
+                    b.Property<Guid>("ResponseId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("response_id");
+
+                    b.Property<int?>("Score")
+                        .HasColumnType("integer")
+                        .HasColumnName("score");
+
+                    b.Property<string>("SubjectId")
+                        .HasColumnType("text")
+                        .HasColumnName("subject_id");
+
+                    b.Property<string>("Text")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)")
+                        .HasColumnName("text");
+
+                    b.HasKey("Id")
+                        .HasName("pk_poll_answers");
+
+                    b.HasIndex("ResponseId")
+                        .HasDatabaseName("ix_poll_answers_response_id");
+
+                    b.HasIndex("QuestionId", "SubjectId")
+                        .HasDatabaseName("ix_poll_answers_question_id_subject_id");
+
+                    b.ToTable("poll_answers", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_poll_answers_score", "score is null or (score >= 0 and score <= 10)");
+                        });
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.PollQuestion", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("kind");
+
+                    b.Property<string>("Options")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)")
+                        .HasColumnName("options");
+
+                    b.Property<Guid>("PollId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("poll_id");
+
+                    b.Property<int>("Position")
+                        .HasColumnType("integer")
+                        .HasColumnName("position");
+
+                    b.Property<bool>("Required")
+                        .HasColumnType("boolean")
+                        .HasColumnName("required");
+
+                    b.Property<string>("Target")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("target");
+
+                    b.Property<string>("Text")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("text");
+
+                    b.HasKey("Id")
+                        .HasName("pk_poll_questions");
+
+                    b.HasIndex("PollId", "Position")
+                        .HasDatabaseName("ix_poll_questions_poll_id_position");
+
+                    b.ToTable("poll_questions", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_poll_questions_kind", "kind in ('nps','stars','choice','text')");
+
+                            t.HasCheckConstraint("ck_poll_questions_target", "target in ('school','teachers','management')");
+                        });
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.PollResponse", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("ClassName")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("class_name");
+
+                    b.Property<Guid>("PollId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("poll_id");
+
+                    b.Property<string>("RespondentKey")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("respondent_key");
+
+                    b.Property<string>("StudentId")
+                        .HasColumnType("text")
+                        .HasColumnName("student_id");
+
+                    b.Property<DateTimeOffset>("SubmittedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("submitted_at");
+
+                    b.Property<string>("TeacherId")
+                        .HasColumnType("text")
+                        .HasColumnName("teacher_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_poll_responses");
+
+                    b.HasIndex("PollId", "RespondentKey")
+                        .IsUnique()
+                        .HasDatabaseName("ix_poll_responses_poll_id_respondent_key");
+
+                    b.ToTable("poll_responses", (string)null);
                 });
 
             modelBuilder.Entity("SchoolLms.Domain.PushMessage", b =>
@@ -9631,6 +9917,43 @@ namespace SchoolLms.Infrastructure.Migrations
                         .HasConstraintName("fk_payroll_adjustments_adjustment_reasons_reason_id_kind");
                 });
 
+            modelBuilder.Entity("SchoolLms.Domain.PollAnswer", b =>
+                {
+                    b.HasOne("SchoolLms.Domain.PollQuestion", null)
+                        .WithMany()
+                        .HasForeignKey("QuestionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_poll_answers_poll_questions_question_id");
+
+                    b.HasOne("SchoolLms.Domain.PollResponse", null)
+                        .WithMany("Answers")
+                        .HasForeignKey("ResponseId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_poll_answers_poll_responses_response_id");
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.PollQuestion", b =>
+                {
+                    b.HasOne("SchoolLms.Domain.Poll", null)
+                        .WithMany("Questions")
+                        .HasForeignKey("PollId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_poll_questions_polls_poll_id");
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.PollResponse", b =>
+                {
+                    b.HasOne("SchoolLms.Domain.Poll", null)
+                        .WithMany()
+                        .HasForeignKey("PollId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_poll_responses_polls_poll_id");
+                });
+
             modelBuilder.Entity("SchoolLms.Domain.Question", b =>
                 {
                     b.HasOne("SchoolLms.Domain.QuestionBank", null)
@@ -10083,6 +10406,16 @@ namespace SchoolLms.Infrastructure.Migrations
                     b.Navigation("Materials");
 
                     b.Navigation("Progresses");
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.Poll", b =>
+                {
+                    b.Navigation("Questions");
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.PollResponse", b =>
+                {
+                    b.Navigation("Answers");
                 });
 
             modelBuilder.Entity("SchoolLms.Domain.Question", b =>

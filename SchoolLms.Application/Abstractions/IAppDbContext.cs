@@ -300,6 +300,14 @@ public interface IAppDbContext
     /// <summary>O'rindosh ustoz: a lesson on a date taught by another teacher.</summary>
     DbSet<LessonSubstitution> LessonSubstitutions { get; }
 
+    /// <summary>So'rovnomalar va NPS (Polls.cs).</summary>
+    DbSet<Poll> Polls { get; }
+    DbSet<PollQuestion> PollQuestions { get; }
+    DbSet<PollResponse> PollResponses { get; }
+    DbSet<PollAnswer> PollAnswers { get; }
+    /// <summary>KPI weights — one row.</summary>
+    DbSet<KpiSettings> KpiSettings { get; }
+
     int SaveChanges();
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 

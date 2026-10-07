@@ -282,6 +282,9 @@ export const navByRole: Record<Role, NavItem[]> = {
         { label: 'Avtobus-gps', to: '/admin/boshqaruv/gps', perm: 'gps', group: 'KUZATUV' },
         { label: 'Kameralar', to: '/admin/boshqaruv/cameras', perm: 'cameras', group: 'KUZATUV' },
         { label: 'Taklif va shikoyatlar', to: '/admin/boshqaruv/feedback', perm: 'feedback', group: 'FIKR' },
+        // So'rovnomalar va NPS, KPI (client, 2026-10-07).
+        { label: "So'rovnomalar va NPS", to: '/admin/boshqaruv/polls', perm: 'polls', group: 'FIKR' },
+        { label: 'Xodimlar KPI', to: '/admin/boshqaruv/kpi', perm: 'kpi', group: "TA'LIM SIFATI" },
         // Dars tahlili (lesson-analysis.md §7, mijoz 2026-09-27) — eski rating.wunderkindedu.uz
         // o'rnida. Bitta yozuv, ichida tablar (Umumiy · Tahlillar · Reyting · Mezonlar).
         // `end` YO'Q — ichki sahifalarda ham yozuv faol turadi, ruxsat ham prefiks bo'yicha.

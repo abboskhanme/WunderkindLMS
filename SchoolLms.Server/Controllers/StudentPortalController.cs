@@ -205,6 +205,33 @@ public class StudentPortalController(
         return await FeedbackWorkflowService.MineAsync(db, uid, null, ct);
     }
 
+    // ---------- So'rovnomalar (2026-10-07) ----------
+
+    /// <summary>Open polls for parents — answered per child, with the child's teachers to rate.</summary>
+    [HttpGet("polls")]
+    [Authorize(Roles = "student,parent")]
+    public async Task<ActionResult<IEnumerable<PortalPollDto>>> Polls([FromQuery] string? studentId, CancellationToken ct)
+    {
+        var s = User.IsInRole("parent") ? await TargetAsync(studentId) : await MeAsync();
+        if (s is null) return NotFound();
+        var teachers = await PollService.TeachersOfAsync(db, s, ct);
+        return await PollService.OpenForAsync(db, PollRespondentOf(s), teachers, [], ct);
+    }
+
+    [HttpPost("polls/{id:guid}")]
+    [Authorize(Roles = "student,parent")]
+    public async Task<IActionResult> AnswerPoll(Guid id, [FromQuery] string? studentId, PollSubmitRequest req, CancellationToken ct)
+    {
+        var s = User.IsInRole("parent") ? await TargetAsync(studentId) : await MeAsync();
+        if (s is null) return NotFound();
+        var teachers = (await PollService.TeachersOfAsync(db, s, ct)).Select(t => t.Id).ToList();
+        var (status, error) = await PollService.SubmitAsync(db, id, PollRespondentOf(s), req, teachers, [], ct);
+        return error is null ? NoContent() : StatusCode(status, new { message = error });
+    }
+
+    private static PollRespondent PollRespondentOf(Student s) =>
+        new(PollAudience.Parents, $"student:{s.Id}", s.Id, null, s.ClassName);
+
     /// <summary>The departments a sender can address (bo'limlar).</summary>
     [HttpGet("feedback/departments")]
     [Authorize(Roles = "student,parent")]

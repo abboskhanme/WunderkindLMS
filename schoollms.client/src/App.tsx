@@ -46,6 +46,9 @@ import { EmployeesPage, TeachersRedirect } from '@/pages/admin/staff/EmployeesPa
 import { RolesPage } from '@/pages/admin/staff/RolesPage'
 import { AiConnectionsPage } from '@/pages/admin/ai/AiConnectionsPage'
 import { FeedbackPage } from '@/pages/admin/feedback/FeedbackPage'
+import { PollsPage } from '@/pages/admin/polls/PollsPage'
+import { PollResultsPage } from '@/pages/admin/polls/PollResultsPage'
+import { KpiPage } from '@/pages/admin/polls/KpiPage'
 import { AcademicYearPage } from '@/pages/admin/academic-year/AcademicYearPage'
 import { SubjectsPage } from '@/pages/admin/subjects/SubjectsPage'
 import { JournalPage } from '@/pages/admin/journal/JournalPage'
@@ -277,6 +280,9 @@ export default function App() {
           {/* Xodimlar — o'qituvchilar + boshqa xodimlar bitta ro'yxatda; sahifa ruxsati yo'q qismini yashiradi. */}
           <Route path="boshqaruv/staff" element={<RequirePerm perm={['staff', 'teachers']}><EmployeesPage /></RequirePerm>} />
           <Route path="boshqaruv/feedback" element={<RequirePerm perm="feedback"><FeedbackPage /></RequirePerm>} />
+          <Route path="boshqaruv/polls" element={<RequirePerm perm="polls"><PollsPage /></RequirePerm>} />
+          <Route path="boshqaruv/polls/:id" element={<RequirePerm perm="polls"><PollResultsPage /></RequirePerm>} />
+          <Route path="boshqaruv/kpi" element={<RequirePerm perm="kpi"><KpiPage /></RequirePerm>} />
           {/* Dars tahlili (docs/modules/lesson-analysis.md §7) — bitta menyu yozuvi, ichida tablar
               Umumiy · Tahlillar · Reyting · Mezonlar. Mezonlarni o'zgartirish va o'chirish —
               faqat admin/superadmin (sahifa ichida; server ham tekshiradi). */}
