@@ -208,6 +208,8 @@ public sealed class StudentWithdrawalService(IAppDbContext db, AuditService audi
             throw BillingRuleException.Invalid("actor_required", "Amalni bajaruvchi aniqlanmadi.");
         if (!await db.StudentWithdrawals.AsNoTracking().AnyAsync(w => w.Id == withdrawalId && w.StudentId == studentId, ct))
             throw BillingRuleException.NotFound("withdrawal_not_found", "Bunday amal topilmadi.");
+        // Cancelling brings the debt and the abonement back — not for an archived pupil (2026-10-08).
+        await ArchivedStudents.EnsureActiveAsync(db, studentId, ct);
 
         await using var tx = await db.BeginTransactionAsync(ct);
         var adjuster = new InvoiceAdjustmentService(db, audit);

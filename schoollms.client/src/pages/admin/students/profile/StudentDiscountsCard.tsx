@@ -26,6 +26,8 @@ interface Props {
   studentName: string
   /** A discount changes the debt — the "To'lovlar" tab reloads. */
   onChanged?: () => void
+  /** Arxivdagi o'quvchi (2026-10-08): yangi chegirma yo'q — tugatish qoladi. */
+  archived?: boolean
 }
 
 const stateOrder: Record<StudentDiscountState, number> = {
@@ -67,8 +69,9 @@ function attachedMessage(adjustedInvoices: number, adjustedTotal: number): strin
  * Write controls follow the subscriptions tab: `canManageSubscriptions` (the tab itself is only
  * shown under it; checked again here so the card stays safe wherever it is rendered).
  */
-export function StudentDiscountsCard({ studentId, studentName, onChanged }: Props) {
+export function StudentDiscountsCard({ studentId, studentName, onChanged, archived = false }: Props) {
   const { canManageSubscriptions } = useBillingAccess()
+  const canAttach = canManageSubscriptions && !archived
 
   const [rows, setRows] = useState<DiscountRecord[]>([])
   const [loading, setLoading] = useState(true)
@@ -158,7 +161,7 @@ export function StudentDiscountsCard({ studentId, studentName, onChanged }: Prop
               {loading || error ? '—' : `${rows.length} ta · ${runningCount} tasi amalda`}
             </p>
           </div>
-          {canManageSubscriptions && (
+          {canAttach && (
             <Button onClick={openAttach}>
               <Plus className="h-4 w-4" /> Chegirma biriktirish
             </Button>
@@ -171,7 +174,7 @@ export function StudentDiscountsCard({ studentId, studentName, onChanged }: Prop
           empty={rows.length === 0}
           emptyText="Bu o'quvchida chegirma yo'q."
           emptyAction={
-            canManageSubscriptions ? (
+            canAttach ? (
               <Button variant="secondary" onClick={openAttach}>
                 <Plus className="h-4 w-4" /> Chegirma biriktirish
               </Button>

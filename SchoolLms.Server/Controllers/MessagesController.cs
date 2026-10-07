@@ -210,7 +210,9 @@ public class MessagesController(AppDbContext db, ChatService chat, TelegramServi
                 break;
         }
 
-        var students = await studentsQ.ToListAsync();
+        // Former pupils get no school announcement, whatever the scope (client, 2026-10-08: "ular endi
+        // bizning o'quvchi emas") — the archive tab's selection or filter included.
+        var students = await studentsQ.Where(s => !s.IsArchived).ToListAsync();
 
         // Qoldiq HISOBLANADI (P1-21) — bitta partiya so'rov, siklda emas.
         var balances = await Balances.ForManyAsync([.. students.Select(s => s.Id)]);

@@ -252,6 +252,7 @@ public class StudentEvaluationController(AppDbContext db) : ControllerBase
     /// Bitta o'quvchiga bitta tur bo'yicha BIR OYDA baho qo'yish (1-5). Har (o'quvchi, tur, oy)
     /// uchun yagona yozuv. Score bo'sh/oraliqdan tashqari = o'sha oy bahosini tozalash.
     /// </summary>
+    [ActiveStudent]
     [HttpPost("grade")]
     public async Task<IActionResult> SetGrade(SetEvaluationGradeRequest req)
     {

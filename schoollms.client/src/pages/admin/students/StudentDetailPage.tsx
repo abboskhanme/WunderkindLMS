@@ -304,6 +304,7 @@ export function StudentDetailPage() {
           studentName={data.fullName}
           className={data.className}
           onChanged={() => setFinanceKey((k) => k + 1)}
+          archived={!!card?.student.isArchived}
         />
       )}
 

@@ -180,6 +180,7 @@ public class StudentContractsController(
     /// Yangi yozuv. Fayl AVVAL <c>POST /api/admin/uploads</c> orqali yuklanadi
     /// (K-3) va bu yerga faqat <c>/uploads/...</c> manzili keladi.
     /// </summary>
+    [ActiveStudent]
     [HttpPost]
     public async Task<ActionResult<StudentContractDto>> Create(
         SaveStudentContractRequest req, CancellationToken ct = default)
@@ -233,6 +234,7 @@ public class StudentContractsController(
     }
 
     /// <summary>Yozuvni tahrirlash. Berilmagan maydon TEGILMAYDI.</summary>
+    [ActiveStudent]
     [HttpPut("{id:guid}")]
     public async Task<ActionResult<StudentContractDto>> Update(
         Guid id, SaveStudentContractRequest req, CancellationToken ct = default)
@@ -242,6 +244,9 @@ public class StudentContractsController(
 
         var student = await db.Students.FirstOrDefaultAsync(s => s.Id == row.StudentId, ct);
         if (student is null) return NotFound();
+        // The body may not name the pupil — the contract's own pupil decides (2026-10-08).
+        if (student.IsArchived)
+            return Conflict(new { code = ArchivedStudents.Code, message = ArchivedStudents.Message([student.FullName]) });
 
         if (req.Source is not null)
         {
@@ -345,6 +350,7 @@ public class StudentContractsController(
     /// yozuvi yo'q o'quvchi — nomzod.
     /// </para>
     /// </summary>
+    [ActiveStudent]
     [HttpPost("attach-many")]
     public async Task<ActionResult<BulkAttachContractResultDto>> AttachMany(
         BulkAttachContractRequest req, CancellationToken ct = default)
@@ -466,6 +472,7 @@ public class StudentContractsController(
     /// bog'liq emas va o'zgartirilmadi.
     /// </para>
     /// </summary>
+    [ActiveStudent]
     [HttpPost("generate")]
     public async Task<ActionResult<StudentContractDto>> Generate(
         GenerateStudentContractRequest req, CancellationToken ct = default)

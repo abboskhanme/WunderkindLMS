@@ -211,6 +211,8 @@ public sealed class DiscountService(IAppDbContext db, AuditService audit) : IDis
         Guid discountId, string approverId, CancellationToken ct = default)
     {
         var (discount, approver) = await RequireDecidableAsync(discountId, approverId, ct);
+        // A discount asked for before the archiving is not approved after it (2026-10-08); rejecting stays open.
+        await ArchivedStudents.EnsureActiveAsync(db, discount.StudentId, ct);
 
         var before = Snapshot(discount);
         discount.Status = DiscountStatus.Approved;

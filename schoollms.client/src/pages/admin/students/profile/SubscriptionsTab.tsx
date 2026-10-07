@@ -32,6 +32,8 @@ interface Props {
   className: string
   /** Obuna o'zgargach "To'lovlar" tab'i yangidan yuklanishi uchun. */
   onChanged?: () => void
+  /** Arxivdagi o'quvchi (2026-10-08): yangi abonement va tahrir yo'q — yopish va oy o'chirish qoladi. */
+  archived?: boolean
 }
 
 /**
@@ -48,7 +50,7 @@ interface Props {
  * Under the subscriptions: the student's discounts (`StudentDiscountsCard`) — attaching a
  * catalog type and ending a running discount.
  */
-export function SubscriptionsTab({ studentId, studentName, className, onChanged }: Props) {
+export function SubscriptionsTab({ studentId, studentName, className, onChanged, archived = false }: Props) {
   const [rows, setRows] = useState<SubscriptionRecord[]>([])
   const [categories, setCategories] = useState<FeeCategory[]>([])
   const [plans, setPlans] = useState<SubscriptionPlan[]>([])
@@ -189,9 +191,11 @@ export function SubscriptionsTab({ studentId, studentName, className, onChanged 
               />
               Faqat amaldagi va boshlanadiganlar
             </label>
-            <Button onClick={openCreate}>
-              <Plus className="h-4 w-4" /> Abonement qo'shish
-            </Button>
+            {!archived && (
+              <Button onClick={openCreate}>
+                <Plus className="h-4 w-4" /> Abonement qo'shish
+              </Button>
+            )}
           </div>
         </header>
 
@@ -235,7 +239,9 @@ export function SubscriptionsTab({ studentId, studentName, className, onChanged 
                     </td>
                     <td className="px-4 py-3">
                       <span className="flex justify-end gap-0.5">
-                        <IconBtn icon={Pencil} title="Narx / tafsilotni tahrirlash" onClick={() => openEdit(row)} />
+                        {!archived && (
+                          <IconBtn icon={Pencil} title="Narx / tafsilotni tahrirlash" onClick={() => openEdit(row)} />
+                        )}
                         {row.isActive && (
                           <IconBtn
                             icon={CalendarOff}
@@ -264,7 +270,7 @@ export function SubscriptionsTab({ studentId, studentName, className, onChanged 
       </Card>
 
       {/* Discounts (docs/modules/billing-plans.md §8) — a card of their own, under the subscriptions. */}
-      <StudentDiscountsCard studentId={studentId} studentName={studentName} onChanged={onChanged} />
+      <StudentDiscountsCard studentId={studentId} studentName={studentName} onChanged={onChanged} archived={archived} />
 
       <SubscriptionFormModal
         open={formOpen}

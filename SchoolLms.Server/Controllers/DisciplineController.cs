@@ -231,6 +231,7 @@ public class DisciplineController(
     /// Xabar yuborilmagani ball yozilmaganini ANGLATMAYDI.
     /// </para>
     /// </summary>
+    [ActiveStudent]
     [HttpPost("points")]
     public async Task<ActionResult<DisciplinePointDto>> AddPoint(
         AddDisciplinePointRequest req, CancellationToken ct = default)

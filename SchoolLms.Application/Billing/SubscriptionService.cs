@@ -309,6 +309,9 @@ public sealed class SubscriptionService(
             throw BillingRuleException.Invalid("invalid_amount", "Oylik summa manfiy bo'la olmaydi.");
 
         var student = await RequireStudentAsync(subscription.StudentId, ct);
+        // An archived pupil's abonement is not edited (client, 2026-10-08) — ending it stays open.
+        if (student.IsArchived)
+            throw BillingRuleException.Conflict(ArchivedStudents.Code, ArchivedStudents.Message([student.FullName]));
         var category = await RequireCategoryAsync(subscription.CategoryId, ct);
 
         // Tugash sanasini UZAYTIRISH keyingi obuna bilan kesishib qolishi mumkin

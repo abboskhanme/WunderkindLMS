@@ -81,6 +81,7 @@ public sealed class StudentGuardiansController(AppDbContext db) : ControllerBase
     /// biriktiriladi (dublikat yaratilmaydi) — "bir raqam, bir vasiy"
     /// qoidasi `ux_guardians_phone_key` bilan baza darajasida ham bor.
     /// </summary>
+    [ActiveStudent(Route = "studentId")]
     [HttpPost("{studentId}/guardians")]
     public async Task<ActionResult<StudentGuardianDto>> Attach(
         string studentId, StudentGuardianInput input, CancellationToken ct)
@@ -100,6 +101,7 @@ public sealed class StudentGuardiansController(AppDbContext db) : ControllerBase
     }
 
     /// <summary>Vasiy ma'lumotini va bog'lanish turini tahrirlash.</summary>
+    [ActiveStudent(Route = "studentId")]
     [HttpPut("{studentId}/guardians/{guardianId}")]
     public async Task<ActionResult<StudentGuardianDto>> Update(
         string studentId, string guardianId, StudentGuardianInput input, CancellationToken ct)
@@ -143,6 +145,7 @@ public sealed class StudentGuardiansController(AppDbContext db) : ControllerBase
     }
 
     /// <summary>Asosiy vasiyni almashtirish — chek, shartnoma va xabar shu odamga boradi.</summary>
+    [ActiveStudent(Route = "studentId")]
     [HttpPost("{studentId}/guardians/{guardianId}/primary")]
     public async Task<IActionResult> MakePrimary(
         string studentId, string guardianId, CancellationToken ct)

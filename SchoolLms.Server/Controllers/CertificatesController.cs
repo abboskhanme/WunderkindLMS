@@ -139,6 +139,7 @@ public class CertificatesController(AppDbContext db, AuditService audit) : Contr
             .ToListAsync(ct);
     }
 
+    [ActiveStudent]
     [HttpPost]
     public async Task<ActionResult<CertificateDto>> Create(
         CertificatePayload p, CancellationToken ct = default)
@@ -157,6 +158,7 @@ public class CertificatesController(AppDbContext db, AuditService audit) : Contr
         return await ReadBackAsync(row.Id, ct);
     }
 
+    [ActiveStudent]
     [HttpPut("{id:guid}")]
     public async Task<ActionResult<CertificateDto>> Update(
         Guid id, CertificatePayload p, CancellationToken ct = default)

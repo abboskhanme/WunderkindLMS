@@ -350,6 +350,7 @@ public class StudentsController(AppDbContext db, AuditService audit) : Controlle
     /// Sinf o'zgarishi ham endi pulga tegmaydi: narxni obuna belgilaydi.
     /// </para>
     /// </summary>
+    [ActiveStudent(Route = "id")]
     [HttpPut("{id}")]
     public async Task<IActionResult> Update(string id, StudentPayload p)
     {
@@ -700,6 +701,7 @@ public class StudentsController(AppDbContext db, AuditService audit) : Controlle
     }
 
     /// <summary>O'quvchining tizim akkaunti (login/parol). Akkaunt yo'q bo'lsa — yaratib biriktiradi.</summary>
+    [ActiveStudent(Route = "id")]
     [HttpGet("{id}/credentials")]
     public async Task<ActionResult<CredentialsDto>> Credentials(string id)
     {
@@ -721,6 +723,7 @@ public class StudentsController(AppDbContext db, AuditService audit) : Controlle
     /// <summary>O'quvchiga yangi tasodifiy parol beradi. O'qituvchi/xodimdagi kabi u boshlang'ich parol
     /// bo'lib saqlanadi va o'quvchi kirgunicha kartochkada ko'rinadi (mijoz, 2026-10-06) — aks holda
     /// kartochka eski, endi ishlamaydigan parolni ko'rsatardi.</summary>
+    [ActiveStudent(Route = "id")]
     [HttpPost("{id}/reset-password")]
     public async Task<ActionResult<CredentialsDto>> ResetPassword(string id)
     {

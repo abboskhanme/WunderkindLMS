@@ -183,6 +183,7 @@ public partial class StudentStatusesController(AppDbContext db, AuditService aud
     /// katalogdan chiqarilgan qator qaytadan tarqalib ketmasligi uchun.
     /// </para>
     /// </summary>
+    [ActiveStudent(Route = "studentId")]
     [HttpPut("~/api/admin/students/{studentId}/status")]
     public async Task<IActionResult> SetStudentStatus(
         string studentId, SetStudentStatusRequest req, CancellationToken ct = default)

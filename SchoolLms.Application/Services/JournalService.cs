@@ -114,6 +114,10 @@ public static class JournalService
     /// </returns>
     public static async Task<string?> SetEntryAsync(IAppDbContext db, SetJournalEntryRequest req, FcmService? fcm = null)
     {
+        // An archived pupil's journal is closed (client, 2026-10-08).
+        var archived = await ArchivedStudents.NamesAsync(db, [req.StudentId]);
+        if (archived.Count > 0) return ArchivedStudents.Message(archived);
+
         var flags = await JournalSettingsGuard.FlagsAsync(db);
 
         // §5.5 — sababsiz yo'qlik yozilmaydi: id bo'sh yoki katalogda yo'q bo'lsa rad.

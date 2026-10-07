@@ -374,6 +374,7 @@ public class StudentProfileController(AppDbContext db, AuditService audit) : Con
     /// to'ldiriladi.
     /// </para>
     /// </summary>
+    [ActiveStudent(Route = "id")]
     [HttpPut("{id}/location")]
     public async Task<ActionResult<StudentCardDto>> SetLocation(
         string id, SaveStudentLocationRequest req, CancellationToken ct = default)
@@ -447,6 +448,7 @@ public class StudentProfileController(AppDbContext db, AuditService audit) : Con
     /// Bir turdan bittadan qator bo'ladi (<c>ux_student_locations_student_kind</c>) —
     /// mavjud bo'lsa yangilanadi, aks holda yaratiladi.
     /// </summary>
+    [ActiveStudent(Route = "id")]
     [HttpPut("{id}/locations/{kind}")]
     public async Task<ActionResult<IReadOnlyList<StudentLocationEntryDto>>> SaveTypedLocation(
         string id, string kind, SaveTypedLocationRequest req, CancellationToken ct = default)

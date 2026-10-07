@@ -219,10 +219,13 @@ public sealed class PaymentService(
         // ---- 2. O'quvchi ----
         var student = await db.Students.AsNoTracking()
             .Where(s => s.Id == request.StudentId)
-            .Select(s => new { s.Id, s.FullName })
+            .Select(s => new { s.Id, s.FullName, s.IsArchived })
             .FirstOrDefaultAsync(ct)
             ?? throw PaymentException.Invalid("student_not_found",
                 "O'quvchi topilmadi. Bitta to'lov — bitta o'quvchi (SPEC §8.1 Q14).");
+        // An archived pupil takes no payment (client, 2026-10-08) — restore first.
+        if (student.IsArchived)
+            throw PaymentException.Conflict(ArchivedStudents.Code, ArchivedStudents.Message([student.FullName]));
 
         // ---- 3. Kassa (endi SMENA emas — mijoz javobi, 2026-09) ----
         // So'rovda ko'rsatilgan, aks holda SUKUT (default) kassa. Bo'lmagan

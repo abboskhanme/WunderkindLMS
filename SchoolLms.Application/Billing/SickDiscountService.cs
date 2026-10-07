@@ -61,6 +61,7 @@ public sealed class SickDiscountService(IAppDbContext db, AuditService audit)
             throw BillingRuleException.Invalid("actor_required", "Amalni bajaruvchi aniqlanmadi.");
         var monthStart = RequireMonth(request.Month);
         RequireDays(request.Days);
+        await ArchivedStudents.EnsureActiveAsync(db, request.StudentId, ct); // 2026-10-08
 
         await using var tx = await db.BeginTransactionAsync(ct);
         var adjuster = new InvoiceAdjustmentService(db, audit);
@@ -121,6 +122,8 @@ public sealed class SickDiscountService(IAppDbContext db, AuditService audit)
                 select i.StudentId)
             .FirstOrDefaultAsync(ct)
             ?? throw BillingRuleException.NotFound("sick_discount_not_found", "Kasallik chegirmasi topilmadi.");
+        // Cancelling brings the debt back — not for an archived pupil (2026-10-08).
+        await ArchivedStudents.EnsureActiveAsync(db, studentId, ct);
 
         await using var tx = await db.BeginTransactionAsync(ct);
         var adjuster = new InvoiceAdjustmentService(db, audit);

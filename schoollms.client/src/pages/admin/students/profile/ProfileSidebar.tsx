@@ -87,7 +87,7 @@ export function ProfileSidebar({
           )}
         </div>
         <CopyId id={data.id} />
-        {statuses.length > 0 && card && (
+        {statuses.length > 0 && card && !archived && (
           <select
             value={card.statusId ?? ''}
             onChange={(e) => onStatusChange(e.target.value)}
@@ -121,6 +121,12 @@ export function ProfileSidebar({
             <Wallet className="h-5 w-5" /> To'lov qilish
           </Button>
         )}
+        {archived ? (
+          // 2026-10-08: an archived pupil is no longer the school's — no payment, edit, contract or class.
+          <p className="rounded-xl bg-slate-100 px-3 py-2.5 text-center text-xs leading-relaxed text-slate-500">
+            O'quvchi arxivda — amallar yopiq. Kerak bo'lsa, ⋮ menyusidan arxivdan qaytaring.
+          </p>
+        ) : (
         <div className="grid grid-cols-2 gap-2">
           <Button variant="secondary" onClick={onContract} className="min-w-0 justify-center px-2">
             <FileSignature className="h-4 w-4 shrink-0" /> <span className="truncate">Shartnoma</span>
@@ -131,6 +137,7 @@ export function ProfileSidebar({
             </Button>
           )}
         </div>
+        )}
       </div>
 
       {/* ---------- Asosiy ma'lumotlar ---------- */}
@@ -337,7 +344,9 @@ function ActionsMenu({
           role="menu"
           className="absolute right-0 z-20 mt-2 w-72 overflow-hidden rounded-2xl border border-slate-200 bg-white p-1.5 shadow-xl"
         >
-          <MenuItem icon={KeyRound} title="Parol" hint="Login va parolni ko'rish yoki yangilash" onClick={run(onPassword)} />
+          {!archived && (
+            <MenuItem icon={KeyRound} title="Parol" hint="Login va parolni ko'rish yoki yangilash" onClick={run(onPassword)} />
+          )}
           {onWithdraw && (
             <MenuItem
               icon={UserMinus}

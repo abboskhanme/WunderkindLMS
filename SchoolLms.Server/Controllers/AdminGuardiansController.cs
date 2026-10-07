@@ -136,6 +136,7 @@ public sealed class AdminGuardiansController(AppDbContext db) : ControllerBase
     }
 
     /// <summary>Vasiyga farzand biriktirish (ikkinchi farzand shu yerdan qo'shiladi).</summary>
+    [ActiveStudent]
     [HttpPost("{id}/children")]
     public async Task<ActionResult<GuardianDto>> AttachChild(
         string id, AttachChildRequest req, CancellationToken ct)

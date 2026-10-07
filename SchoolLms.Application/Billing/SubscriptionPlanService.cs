@@ -133,8 +133,10 @@ public sealed class SubscriptionPlanService(IAppDbContext db, AuditService audit
         var next = monthStart.AddMonths(1);
         var price = decimal.Round(plan.MonthlyAmount, MoneyScale);
 
+        // An archived pupil's abonement is left as it is (client, 2026-10-08: nothing is done with them).
         var live = await db.StudentSubscriptions
-            .Where(s => s.PlanId == plan.Id && (s.EndsOn == null || s.EndsOn >= next))
+            .Where(s => s.PlanId == plan.Id && (s.EndsOn == null || s.EndsOn >= next)
+                        && !db.Students.Any(st => st.Id == s.StudentId && st.IsArchived))
             .ToListAsync(ct);
         var studentIds = live.Select(s => s.StudentId).Distinct().ToList();
         var invoicedThisMonth = (await db.Invoices.AsNoTracking()
