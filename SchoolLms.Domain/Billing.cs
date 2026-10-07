@@ -113,6 +113,12 @@ public class StudentSubscription
     /// <summary>Kim yaratgan (users.id) — JWT'dan olinadi, so'rov tanasidan EMAS (SPEC §4.4).</summary>
     public string CreatedBy { get; set; } = string.Empty;
     public DateTimeOffset CreatedAt { get; set; }
+    /// <summary>
+    /// Last change of the terms (amount or end date) by a person; a note or an unchanged save leaves it.
+    /// A month voided BEFORE this moment is billed again by accrual — the new terms are the answer to
+    /// the void (billing-plans.md §10.3).
+    /// </summary>
+    public DateTimeOffset? UpdatedAt { get; set; }
 }
 
 /// <summary>
@@ -311,6 +317,11 @@ public class Invoice
     /// <summary>open | partial | paid | void — <see cref="InvoiceStatus"/>.</summary>
     public string Status { get; set; } = InvoiceStatus.Open;
     public DateTimeOffset CreatedAt { get; set; }
+    /// <summary>
+    /// When it was voided. The void keeps the month unbilled only for subscriptions created or edited
+    /// before it; one opened after it bills the month as a new invoice (billing-plans.md §10.3).
+    /// </summary>
+    public DateTimeOffset? VoidedAt { get; set; }
 }
 
 /// <summary>Hisob-faktura holatlari (<see cref="Invoice.Status"/>).</summary>

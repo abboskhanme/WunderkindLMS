@@ -605,6 +605,89 @@ public class InvoiceServiceTests(ApiFixture fixture) : IAsyncLifetime
         Assert.Single(card.Invoices);
     }
 
+    /// <summary>
+    /// billing-plans.md §10.3 (prod, 2026-10-06): xodim oktabrni "Oiladan 2 kishi o'qiydi" deb bekor qilib,
+    /// 1 590 000 lik yangi abonement ochdi — oy hech qachon qayta yozilmasdi, qarz 0 bo'lib qolardi.
+    /// Void'dan keyin ochilgan abonement oyni yangi qator bilan yozadi; void qator tarix bo'lib qoladi.
+    /// </summary>
+    [Fact]
+    public async Task Bekor_qilingan_oy_keyin_ochilgan_abonement_bilan_qayta_hisoblanadi()
+    {
+        await using var db = NewDb();
+        var actorId = await AddUserAsync(db);
+        var directorId = await AddUserAsync(db, Roles.SuperAdmin);
+        var studentId = await AddStudentAsync(db);
+        await AddSubscriptionAsync(db, studentId, TuitionCategory, 1_000_000m, ThisMonth.AddMonths(-1), actorId);
+        var service = ServiceFor(db);
+        await service.AccrueMonthAsync(ThisMonth, actorId);
+        var old = await db.Invoices.AsNoTracking().SingleAsync();
+        await service.VoidAsync(old.Id, "Oiladan 2 kishi o'qiydi", directorId);
+
+        // Abonement o'zgarmagan — void kuchda, oy qayta yozilmaydi.
+        await ServiceFor(NewDb()).AccrueMonthAsync(ThisMonth, actorId);
+        await using (var peek = NewDb())
+            Assert.Equal(1, await peek.Invoices.CountAsync());
+
+        // Eski abonement yopiladi, yangi narx bilan yangisi ochiladi.
+        await using (var edit = NewDb())
+        {
+            var sub = await edit.StudentSubscriptions.SingleAsync();
+            sub.EndsOn = ThisMonth.AddDays(-1);
+            await edit.SaveChangesAsync();
+            await AddSubscriptionAsync(edit, studentId, TuitionCategory, 900_000m, ThisMonth, actorId);
+        }
+        await ServiceFor(NewDb()).AccrueMonthAsync(ThisMonth, actorId);
+        await ServiceFor(NewDb()).AccrueMonthAsync(ThisMonth, actorId);   // idempotent
+
+        await using var check = NewDb();
+        var rows = await check.Invoices.AsNoTracking().OrderBy(i => i.CreatedAt).ToListAsync();
+        Assert.Equal(2, rows.Count);
+        Assert.Equal(InvoiceStatus.Void, rows[0].Status);
+        Assert.NotNull(rows[0].VoidedAt);
+        Assert.Equal(900_000m, rows[1].Amount);
+        Assert.Equal(InvoiceStatus.Open, rows[1].Status);
+        Assert.Equal(-900_000m, await new StudentBalanceQuery(check).ForAsync(studentId));
+        var receivable = await check.LedgerEntries.AsNoTracking()
+            .Where(e => e.Account == Accounts.Receivable).ToListAsync();
+        Assert.Equal(900_000m, receivable.Sum(e => e.Direction == LedgerDirection.Debit ? e.Amount : -e.Amount));
+    }
+
+    /// <summary>
+    /// Mavjud abonementning SHARTI (summa yoki tugash sanasi) void'dan keyin o'zgarsa — oy qayta yoziladi;
+    /// faqat izoh o'zgarsa yoki o'zgarishsiz saqlansa — ataylab bekor qilingan oy bekorligicha qoladi.
+    /// </summary>
+    [Fact]
+    public async Task Void_dan_keyin_faqat_shart_ozgarsa_oy_qayta_yoziladi()
+    {
+        await using var db = NewDb();
+        var actorId = await AddUserAsync(db);
+        var directorId = await AddUserAsync(db, Roles.SuperAdmin);
+        var studentId = await AddStudentAsync(db);
+        await AddSubscriptionAsync(db, studentId, TuitionCategory, 1_000_000m, ThisMonth, actorId);
+        await ServiceFor(db).AccrueMonthAsync(ThisMonth, actorId);
+        await ServiceFor(db).VoidAsync((await db.Invoices.AsNoTracking().SingleAsync()).Id, "Bu oy kechirildi", directorId);
+        var subId = (await db.StudentSubscriptions.AsNoTracking().SingleAsync()).Id;
+
+        SubscriptionService Subs(AppDbContext c) =>
+            new(c, new AuditService(c, new Microsoft.AspNetCore.Http.HttpContextAccessor()), ServiceFor(c));
+
+        await using (var note = NewDb())
+            await Subs(note).UpdateAsync(subId, new UpdateSubscriptionRequest(1_000_000m, "Izoh", null), actorId);
+        await using (var peek = NewDb())
+        {
+            Assert.Null((await peek.StudentSubscriptions.AsNoTracking().SingleAsync()).UpdatedAt);
+            Assert.Equal(1, await peek.Invoices.CountAsync());
+        }
+
+        await using (var terms = NewDb())
+            await Subs(terms).UpdateAsync(subId, new UpdateSubscriptionRequest(1_000_000m, "Izoh", ThisMonth.AddMonths(6)), actorId);
+        await using var check = NewDb();
+        Assert.NotNull((await check.StudentSubscriptions.AsNoTracking().SingleAsync()).UpdatedAt);
+        var live = await check.Invoices.AsNoTracking().SingleAsync(i => i.Status != InvoiceStatus.Void);
+        Assert.Equal(ThisMonth, live.PeriodMonth);
+        Assert.Equal(1_000_000m, live.Amount);
+    }
+
     // =================================================================
     //  O'quvchi kartochkasi
     // =================================================================

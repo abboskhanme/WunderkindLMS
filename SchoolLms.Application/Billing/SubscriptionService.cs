@@ -346,6 +346,9 @@ public sealed class SubscriptionService(
         if (subscription.EndsOn != request.EndsOn)
             changes.Add($"tugash sanasi {Show(subscription.EndsOn)} → {Show(request.EndsOn)}");
 
+        // Only a change of terms answers a void (billing-plans.md §10.3) — a note or an unchanged save does not.
+        if (subscription.MonthlyAmount != amount || subscription.EndsOn != request.EndsOn)
+            subscription.UpdatedAt = AppClock.NowInstant;
         subscription.MonthlyAmount = amount;
         subscription.Detail = detail;
         subscription.EndsOn = request.EndsOn;

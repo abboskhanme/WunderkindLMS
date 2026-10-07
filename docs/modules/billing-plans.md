@@ -163,8 +163,10 @@ start date. A plan re-price carries `accrue_from` into the new tail only when it
 A month already invoiced for a student who left must not stay as debt, must not be "paid" with
 invented cash, and must not block archiving. From the **last day studied** (≤ today):
 
-- **leave month:** `keep = payable × studied lesson days ÷ lesson days of the month`; lesson days
-  follow the abonement schedule, "Butun oy" counts the school week Mon–Sat, holidays excluded;
+- **leave month:** `keep = max(0, (payable + sick) × studied lesson days ÷ lesson days of the month − sick)`;
+  lesson days follow the abonement schedule, "Butun oy" counts the school week Mon–Sat, holidays
+  excluded; `sick` is the month's standing sickness discount — its days were missed while enrolled, so
+  it comes off what stays in full instead of being prorated;
 - **later months:** keep 0;
 - **write-off** = payable − keep → `invoice_adjustments` row, kind `withdrawal` (ledger: debit
   revenue, credit receivable — no cash row);
@@ -176,13 +178,28 @@ invented cash, and must not block archiving. From the **last day studied** (≤ 
 
 One action = one `student_withdrawals` row (group id of its adjustments and releases, previous
 subscription state in `details`). Cancelling within 30 days reverses the adjustments, restores the
-subscriptions (refused if one was changed since) and lets the advance pay the months back; skipped
-months are accrued. Release rows are hidden where a payment is shown as it was taken (receipt
+subscriptions (refused if one was changed since) and puts each released sum back on the invoice and
+payment it came from (as far as it is unspent and not refunded; the rest goes by the advance rule), so
+every receipt's split by category is what it was; skipped months are accrued. Release rows are hidden where a payment is shown as it was taken (receipt
 reprint, Z-report, cash day, cash statement, payment details, journal categories).
 
 API (`Roles.FinanceStaff`, writes `ManageSubscriptions`): `GET|POST
 /api/admin/billing/students/{id}/withdrawals`, `POST …/preview`, `POST …/{withdrawalId}/cancel`.
 UI: student profile ⋮ → "Chiqib ketdi — abonement"; Abonement tab shows standing ones with cancel.
+
+## 10.3 A voided month and a new subscription (prod, 2026-10-06)
+
+Staff answer a wrong price by ending the subscription (which voids the month) and opening a new one —
+"Oiladan 2 kishi o'qiydi": 1 690 000 voided, 1 590 000 opened. The invoice unique index used to count
+void rows, so the month could never be billed again and the debt stayed 0.
+
+- The unique index `(student_id, category_id, period_month)` covers live rows only (`status <> 'void'`).
+- `invoices.voided_at` records the void; `student_subscriptions.updated_at` records the last change of
+  **terms** (amount or end date — a note or an unchanged save does not count).
+- Accrual: a live row means the month is billed. Only void rows → the void holds unless the subscription
+  behind the month was created or had its terms changed **after** it; then the month is billed as a new
+  invoice and the void row stays as history. A deliberate void (subscription untouched) is never undone.
+- Existing voids got `voided_at` from their ledger reversal; a void with no reversal stays NULL = holds.
 
 ## 11. API
 

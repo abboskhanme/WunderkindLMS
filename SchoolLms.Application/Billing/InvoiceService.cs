@@ -237,6 +237,8 @@ public sealed class InvoiceService(IAppDbContext db, ILedgerService ledger) : II
                 sub.MonthlyAmount,
                 sub.StartsOn,
                 sub.CreatedAt,
+                // The subscription's last change — a void older than it does not hold the month (§10.3).
+                ChangedAt = sub.UpdatedAt ?? sub.CreatedAt,
             }).ToListAsync(ct);
 
         // Bitta (o'quvchi, toifa) juftiga bir oyda BITTA qator sig'adi (unikal
@@ -254,12 +256,22 @@ public sealed class InvoiceService(IAppDbContext db, ILedgerService ledger) : II
             return new AccrualResultDto(monthStart, 0, 0, 0m);
 
         // ---- 2. Allaqachon hisoblanganlar (TEZLIK filtri, kafolat EMAS) ----
-        var existing = (await db.Invoices.AsNoTracking()
-                .Where(i => i.PeriodMonth == monthStart && (studentId == null || i.StudentId == studentId))
-                .Select(i => new { i.StudentId, i.CategoryId })
-                .ToListAsync(ct))
+        // Tirik qator bor — oy hisoblangan. Faqat void qator bor — void kuchda, agar obuna undan KEYIN
+        // ochilmagan/o'zgartirilmagan bo'lsa (ataylab bekor qilingan oy qayta yozilmaydi); keyin ochilgan
+        // obuna esa oyni yangi qator bilan yozadi — xodim eski fakturani bekor qilib, yangi narx bilan
+        // abonement ochadi (billing-plans.md §10.3).
+        var monthRows = await db.Invoices.AsNoTracking()
+            .Where(i => i.PeriodMonth == monthStart && (studentId == null || i.StudentId == studentId))
+            .Select(i => new { i.StudentId, i.CategoryId, i.Status, i.VoidedAt, i.CreatedAt })
+            .ToListAsync(ct);
+        var existing = monthRows
+            .Where(x => x.Status != InvoiceStatus.Void)
             .Select(x => (x.StudentId, x.CategoryId))
             .ToHashSet();
+        var voidedAt = monthRows
+            .Where(x => x.Status == InvoiceStatus.Void)
+            .GroupBy(x => (x.StudentId, x.CategoryId))
+            .ToDictionary(g => g.Key, g => g.Max(x => x.VoidedAt ?? DateTimeOffset.MaxValue));
 
         // ---- 3. FAQAT TASDIQLANGAN chegirmalar (mijoz javobi, SPEC §8.1 Q5) ----
         // `status = 'approved'` VA `approved_by is not null` — ikkalasi ham.
@@ -285,7 +297,8 @@ public sealed class InvoiceService(IAppDbContext db, ILedgerService ledger) : II
 
         foreach (var s in subscriptions)
         {
-            if (existing.Contains((s.StudentId, s.CategoryId)))
+            if (existing.Contains((s.StudentId, s.CategoryId))
+                || (voidedAt.TryGetValue((s.StudentId, s.CategoryId), out var voided) && voided >= s.ChangedAt))
             {
                 skipped++;
                 continue;
@@ -829,6 +842,7 @@ public sealed class InvoiceService(IAppDbContext db, ILedgerService ledger) : II
         // to'lovi storno qilinib qayta hisoblangan holat).
         var previousStatus = invoice.Status;
         invoice.Status = InvoiceStatus.Void;
+        invoice.VoidedAt = AppClock.NowInstant;
 
         // Audit (SPEC §4.6). Jurnal partiyasi qaytarilganda `LedgerService` o'z
         // qatorini yozadi, lekin u "qaysi hisob-faktura" degan savolga javob

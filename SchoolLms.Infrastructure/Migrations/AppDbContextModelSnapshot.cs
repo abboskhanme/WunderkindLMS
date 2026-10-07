@@ -3906,6 +3906,10 @@ namespace SchoolLms.Infrastructure.Migrations
                         .HasColumnType("text")
                         .HasColumnName("student_id");
 
+                    b.Property<DateTimeOffset?>("VoidedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("voided_at");
+
                     b.HasKey("Id")
                         .HasName("pk_invoices");
 
@@ -3920,7 +3924,8 @@ namespace SchoolLms.Infrastructure.Migrations
 
                     b.HasIndex("StudentId", "CategoryId", "PeriodMonth")
                         .IsUnique()
-                        .HasDatabaseName("ix_invoices_student_id_category_id_period_month");
+                        .HasDatabaseName("ix_invoices_student_id_category_id_period_month")
+                        .HasFilter("status <> 'void'");
 
                     b.ToTable("invoices", null, t =>
                         {
@@ -7079,6 +7084,10 @@ namespace SchoolLms.Infrastructure.Migrations
                         .IsRequired()
                         .HasColumnType("text")
                         .HasColumnName("student_id");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
 
                     b.HasKey("Id")
                         .HasName("pk_student_subscriptions");

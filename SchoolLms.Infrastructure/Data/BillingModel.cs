@@ -232,8 +232,11 @@ internal static class BillingModel
             e.HasOne<FeeCategory>().WithMany().HasForeignKey(x => x.CategoryId)
                 .OnDelete(DeleteBehavior.Restrict);
 
-            // Accrual idempotentligi SHU indeksga tayanadi: bir oy ikki marta hisoblanmaydi.
-            e.HasIndex(x => new { x.StudentId, x.CategoryId, x.PeriodMonth }).IsUnique();
+            // Accrual idempotentligi SHU indeksga tayanadi: bir oy ikki marta hisoblanmaydi. Void qator
+            // tarix — u yangi abonement bilan qayta yozilgan oyga to'sqinlik qilmaydi (§10.3); void'ning
+            // o'zi kuchda qolishini hisoblash `voided_at` bo'yicha tekshiradi.
+            e.HasIndex(x => new { x.StudentId, x.CategoryId, x.PeriodMonth }).IsUnique()
+                .HasFilter("status <> 'void'");
             // Qarzdorlar hisoboti: ochiq/qisman to'langanlar, muddati bo'yicha.
             e.HasIndex(x => new { x.Status, x.DueOn });
             e.HasIndex(x => x.PeriodMonth);
