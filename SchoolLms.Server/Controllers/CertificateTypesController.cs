@@ -40,11 +40,14 @@ public class CertificateTypesController(AppDbContext db, AuditService audit) : C
     [HttpGet]
     public async Task<ActionResult<IEnumerable<CertificateTypeDto>>> GetAll(
         [FromQuery] bool activeOnly = false, [FromQuery] bool scoredOnly = false,
+        [FromQuery] bool resultsOnly = false,
         CancellationToken ct = default)
     {
         var q = db.CertificateTypes.AsNoTracking();
         if (activeOnly) q = q.Where(t => t.IsActive);
         if (scoredOnly) q = q.Where(t => t.IsScored);
+        // "Natijalar" tab: a score OR a level is a result (client, 2026-10-07).
+        if (resultsOnly) q = q.Where(t => t.IsScored || t.UsesLevel);
 
         // Hujjatlar soni SERVERDA sanaladi: "o'chirib bo'ladimi" savolining javobi
         // brauzerga taxmin qilib qoldirilmaydi.
@@ -63,19 +66,23 @@ public class CertificateTypesController(AppDbContext db, AuditService audit) : C
     {
         if (await CertificateService.ValidateTypeAsync(db, p.Name, null, ct) is { } error)
             return BadRequest(new { message = error });
+        var (levels, levelError) = CertificateService.NormalizeLevelOptions(p.UsesLevel ? p.LevelOptions : null);
+        if (levelError is not null) return BadRequest(new { message = levelError });
 
         var type = new CertificateType
         {
             Name = p.Name.Trim(),
             IsScored = p.IsScored,
             IsActive = p.IsActive,
+            UsesLevel = p.UsesLevel,
+            LevelOptions = levels,
         };
         db.CertificateTypes.Add(type);
 
         audit.Record(CertificateService.AuditEntityType, type.Id.ToString(), "create",
             $"Sertifikat turi qo'shildi: «{type.Name}»"
-            + (type.IsScored ? " (ballik)" : ""),
-            after: new { type.Name, type.IsScored, type.IsActive });
+            + (type.IsScored ? " (ballik)" : "") + (type.UsesLevel ? " (darajali)" : ""),
+            after: new { type.Name, type.IsScored, type.IsActive, type.UsesLevel, type.LevelOptions });
 
         await db.SaveChangesAsync(ct);
         return ToDto(type, 0);
@@ -105,14 +112,27 @@ public class CertificateTypesController(AppDbContext db, AuditService audit) : C
                         + "bu turni «Faol emas» qilib qo'ying.",
             });
 
-        var before = new { type.Name, type.IsScored, type.IsActive };
+        // The same guard for levels: switching them off would strand the levels already written.
+        if (type.UsesLevel && !p.UsesLevel
+            && await db.Certificates.AnyAsync(c => c.TypeId == id && c.Level != null, ct))
+            return BadRequest(new
+            {
+                message = $"«{type.Name}» turida daraja qo'yilgan sertifikatlar bor — «daraja qo'yiladi» "
+                        + "belgisini endi o'chirib bo'lmaydi.",
+            });
+        var (levels, levelError) = CertificateService.NormalizeLevelOptions(p.UsesLevel ? p.LevelOptions : null);
+        if (levelError is not null) return BadRequest(new { message = levelError });
+
+        var before = new { type.Name, type.IsScored, type.IsActive, type.UsesLevel, type.LevelOptions };
         type.Name = p.Name.Trim();
         type.IsScored = p.IsScored;
         type.IsActive = p.IsActive;
+        type.UsesLevel = p.UsesLevel;
+        type.LevelOptions = levels;
 
         audit.Record(CertificateService.AuditEntityType, type.Id.ToString(), "update",
             $"Sertifikat turi tahrirlandi: «{type.Name}»",
-            before: before, after: new { type.Name, type.IsScored, type.IsActive });
+            before: before, after: new { type.Name, type.IsScored, type.IsActive, type.UsesLevel, type.LevelOptions });
 
         await db.SaveChangesAsync(ct);
         return ToDto(type, used);
@@ -142,5 +162,5 @@ public class CertificateTypesController(AppDbContext db, AuditService audit) : C
     }
 
     private static CertificateTypeDto ToDto(CertificateType t, int count) =>
-        new(t.Id, t.Name, t.IsScored, t.IsActive, count);
+        new(t.Id, t.Name, t.IsScored, t.IsActive, count, t.UsesLevel, CertificateService.LevelOptionsOf(t.LevelOptions));
 }

@@ -28,6 +28,7 @@ import {
 } from '../../lib/parentApi'
 import { AsyncBlock, balanceShort, gradeTone, monthLabel } from './shared'
 import { NewsCard } from './NewsCard'
+import { CertificatesCard } from './CertificatesCard'
 import { todayISO } from '../../lib/weeks'
 
 export function HomeTab({ child, onOpenTab, showGrades = true }) {
@@ -82,6 +83,9 @@ export function HomeTab({ child, onOpenTab, showGrades = true }) {
             {owes && moneyCard}
 
             <LessonsCard lessons={lessons} grades={grades} rows={todayRows} />
+
+            {/* Certificates and the current results (client, 2026-10-07). Loads itself, hidden when empty. */}
+            <CertificatesCard childId={child.id} />
 
             {!owes && moneyCard}
 

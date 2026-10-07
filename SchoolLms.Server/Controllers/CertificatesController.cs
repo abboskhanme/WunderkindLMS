@@ -93,7 +93,7 @@ public class CertificatesController(AppDbContext db, AuditService audit) : Contr
         var headers = new[]
         {
             "O'quvchi", "Sinf", "Turi", "Fan(lar)", "O'qituvchi", "Raqami",
-            "Ball", "Berilgan", "Muddati", "Fayl", "Izoh",
+            "Ball", "Daraja", "Berilgan", "Muddati", "Fayl", "Izoh",
         };
 
         var data = rows.Select(r => (IReadOnlyList<string>)new[]
@@ -106,6 +106,7 @@ public class CertificatesController(AppDbContext db, AuditService audit) : Contr
             r.TeacherName ?? "",
             r.Number ?? "",
             r.Score?.ToString("0.##", CultureInfo.InvariantCulture) ?? "",
+            r.Level ?? "",
             r.IssuedOn,
             r.ExpiresOn ?? "",
             r.FileUrl ?? "",
@@ -218,8 +219,9 @@ public class CertificatesController(AppDbContext db, AuditService audit) : Contr
             .Where(t => t.Id == row.TypeId).Select(t => t.Name).FirstOrDefaultAsync(ct);
 
         var score = row.Score is { } s2 ? $", ball {s2:0.##}" : "";
+        var level = row.Level is { } l ? $", daraja {l}" : "";
         return $"Sertifikat {verb}: {student ?? row.StudentId} — «{type ?? "?"}»"
-             + $"{score} ({CertificateService.Fmt(row.IssuedOn)})";
+             + $"{score}{level} ({CertificateService.Fmt(row.IssuedOn)})";
     }
 
     /// <summary>Audit jurnalidagi before/after uchun qator surati.</summary>
@@ -231,6 +233,7 @@ public class CertificatesController(AppDbContext db, AuditService audit) : Contr
         c.TeacherId,
         c.Number,
         c.Score,
+        c.Level,
         IssuedOn = CertificateService.Fmt(c.IssuedOn),
         ExpiresOn = c.ExpiresOn is { } e ? CertificateService.Fmt(e) : null,
         c.FileUrl,

@@ -105,6 +105,11 @@ export function CertificatesTab({ student }: { student: Student }) {
                       {row.score} ball
                     </span>
                   )}
+                  {row.level && (
+                    <span className="rounded bg-indigo-50 px-2 py-0.5 text-xs font-semibold text-indigo-700">
+                      {row.level}
+                    </span>
+                  )}
                   {row.isExpired && (
                     <span className="rounded bg-red-50 px-2 py-0.5 text-xs font-medium text-red-600">
                       Muddati o'tgan

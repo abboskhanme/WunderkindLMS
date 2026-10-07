@@ -747,6 +747,84 @@ public class CertificatesTests(ApiFixture fixture)
         string TeacherId, string TeacherName, string SubjectId, string SubjectId2,
         Guid ScoredTypeId, Guid PlainTypeId);
 
+    // =====================================================================
+    //  DARAJA — harfli natija (mijoz, 2026-10-07)
+    // =====================================================================
+
+    /// <summary>
+    /// "Sertifikat faqat raqamli emas harfli holatda": darajali turda faqat ro'yxatdagi daraja
+    /// qabul qilinadi (katta-kichik harf farqsiz, ro'yxatdagi yozuvda saqlanadi); ballik/oddiy
+    /// turga daraja qo'yib bo'lmaydi. Natijalar daraja tartibida, taqsimot bilan.
+    /// </summary>
+    [Fact]
+    public async Task Darajali_tur_royxatdagi_darajani_qabul_qiladi_natijalar_darajada_saralanadi()
+    {
+        var seed = await SeedAsync();
+        using var client = await fixture.Api.ClientAsAsync(Roles.Admin);
+        var response = await client.PostAsJsonAsync(Types, new
+        {
+            name = $"CEFR {seed.Tag}", isScored = false, isActive = true,
+            usesLevel = true, levelOptions = " A1, A2,B1 ,B2,C1,C2,b2",
+        });
+        response.EnsureSuccessStatusCode();
+        using var typeJson = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var cefr = typeJson.RootElement.GetProperty("id").GetGuid();
+        Assert.Equal(["A1", "A2", "B1", "B2", "C1", "C2"],
+            typeJson.RootElement.GetProperty("levelOptions").EnumerateArray().Select(x => x.GetString()));
+
+        object Cert(string studentId, string? level) => new { studentId, typeId = cefr, level, issuedOn = "2026-05-01" };
+        await CreateCertificateAsync(client, Cert(seed.StudentA, "B2"));
+        await CreateCertificateAsync(client, Cert(seed.StudentB, "c1"));
+        await CreateCertificateAsync(client, Cert(seed.StudentC, "B1"));
+
+        var wrong = await client.PostAsJsonAsync(Certificates, Cert(seed.StudentA, "D9"));
+        Assert.Equal(HttpStatusCode.BadRequest, wrong.StatusCode);
+        Assert.Contains("A1, A2, B1, B2, C1, C2", await MessageAsync(wrong), StringComparison.Ordinal);
+        var onPlain = await client.PostAsJsonAsync(Certificates,
+            new { studentId = seed.StudentA, typeId = seed.ScoredTypeId, level = "B2", issuedOn = "2026-05-01" });
+        Assert.Equal(HttpStatusCode.BadRequest, onPlain.StatusCode);
+
+        using var results = await JsonAsync(client, $"{Certificates}/results?typeId={cefr}");
+        var rows = results.RootElement.GetProperty("rows").EnumerateArray().ToList();
+        Assert.Equal(["C1", "B2", "B1"], rows.Select(r => r.GetProperty("bestLevel").GetString()));
+        Assert.Equal(seed.StudentB, rows[0].GetProperty("studentId").GetString());
+        var levels = results.RootElement.GetProperty("levels").EnumerateArray()
+            .Select(l => (l.GetProperty("level").GetString(), l.GetProperty("students").GetInt32())).ToList();
+        Assert.Equal([("C1", 1), ("B2", 1), ("B1", 1)], levels);
+
+        using var types = await JsonAsync(client, $"{Types}?resultsOnly=true");
+        Assert.Contains(types.RootElement.EnumerateArray(), t => t.GetProperty("id").GetGuid() == cefr);
+        Assert.DoesNotContain(types.RootElement.EnumerateArray(), t => t.GetProperty("id").GetGuid() == seed.PlainTypeId);
+    }
+
+    /// <summary>
+    /// "O'quvchilarni hozircha necha balli borligi shaxsiy kabinetda ko'rinib turishi": o'quvchi
+    /// o'z sertifikatlarini (ball, daraja) ko'radi, boshqa bolaniki unga ko'rinmaydi.
+    /// </summary>
+    [Fact]
+    public async Task Oquvchi_oz_sertifikatlarini_kabinetda_koradi()
+    {
+        var seed = await SeedAsync();
+        using var admin = await fixture.Api.ClientAsAsync(Roles.Admin);
+        await CreateCertificateAsync(admin, new { studentId = seed.StudentA, typeId = seed.ScoredTypeId, score = 6.5m, issuedOn = "2026-05-01" });
+        await CreateCertificateAsync(admin, new { studentId = seed.StudentB, typeId = seed.ScoredTypeId, score = 7.5m, issuedOn = "2026-05-01" });
+
+        var (user, _) = await fixture.Api.SeedUserAsync(Roles.Student);
+        await fixture.Api.WithDbAsync(async db =>
+        {
+            var a = await db.Students.FindAsync(seed.StudentA);
+            a!.UserId = user.Id;
+            await db.SaveChangesAsync();
+        });
+        using var student = fixture.Api.ClientWithToken(fixture.Api.TokenFor(Roles.Student, user.Id, user.FullName, user.Email));
+
+        var rows = await RowsAsync(student, "/api/student/certificates");
+        var row = Assert.Single(rows);
+        Assert.Equal(6.5m, row.GetProperty("score").GetDecimal());
+        Assert.StartsWith("IELTS", row.GetProperty("typeName").GetString(), StringComparison.Ordinal);
+        Assert.False(row.TryGetProperty("comment", out _));                 // internal note stays inside
+    }
+
     private static string Tag() => Guid.NewGuid().ToString("N")[..8];
 
     /// <summary>

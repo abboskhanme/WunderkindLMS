@@ -22,10 +22,12 @@ namespace SchoolLms.Application.Dtos;
 /// <param name="CertificateCount">Shu turda nechta hujjat bor. SERVERDA sanaladi —
 /// "o'chirib bo'lmaydi" tugmasini brauzer o'zi o'ylab topmasin.</param>
 public record CertificateTypeDto(
-    Guid Id, string Name, bool IsScored, bool IsActive, int CertificateCount);
+    Guid Id, string Name, bool IsScored, bool IsActive, int CertificateCount,
+    bool UsesLevel = false, IReadOnlyList<string>? LevelOptions = null);
 
 /// <summary>Tur formasi.</summary>
-public record CertificateTypePayload(string Name, bool IsScored, bool IsActive);
+public record CertificateTypePayload(
+    string Name, bool IsScored, bool IsActive, bool UsesLevel = false, string? LevelOptions = null);
 
 /// <summary>
 /// Bitta sertifikat — ro'yxat va kartochka uchun.
@@ -51,7 +53,8 @@ public record CertificateDto(
     string? Number, decimal? Score,
     string IssuedOn, string? ExpiresOn, bool IsExpired,
     string? FileUrl, string? Comment,
-    List<string> SubjectIds, List<string> SubjectNames);
+    List<string> SubjectIds, List<string> SubjectNames,
+    string? Level = null, bool TypeUsesLevel = false);
 
 /// <summary>
 /// Sertifikat formasi. <see cref="Score"/> FAQAT turi <c>IsScored</c> bo'lganda
@@ -69,7 +72,8 @@ public record CertificatePayload(
     string StudentId, Guid TypeId, string? SubjectId, string? TeacherId,
     string? Number, decimal? Score, string IssuedOn, string? ExpiresOn,
     string? FileUrl, string? Comment,
-    IReadOnlyList<string>? SubjectIds = null);
+    IReadOnlyList<string>? SubjectIds = null,
+    string? Level = null);
 
 /// <summary>
 /// "Natijalar" tab'ining bitta qatori — bitta o'quvchi, bitta ballik tur.
@@ -80,7 +84,11 @@ public record CertificatePayload(
 /// <param name="Count">Shu turdagi hujjatlar soni.</param>
 public record CertificateResultRowDto(
     string StudentId, string StudentName, string ClassName,
-    decimal? BestScore, decimal? LatestScore, string LatestIssuedOn, int Count);
+    decimal? BestScore, decimal? LatestScore, string LatestIssuedOn, int Count,
+    string? BestLevel = null, string? LatestLevel = null);
+
+/// <summary>How many students hold each level (best per student) — a level type's "average".</summary>
+public record CertificateLevelCountDto(string Level, int Students);
 
 /// <summary>
 /// "Natijalar" tab'i — bitta ballik tur bo'yicha o'quvchilar jadvali (§2.3).
@@ -94,4 +102,13 @@ public record CertificateResultRowDto(
 public record CertificateResultsDto(
     Guid TypeId, string TypeName, int StudentCount, int CertificateCount,
     decimal? AverageScore, decimal? MaxScore, decimal? MinScore,
-    List<CertificateResultRowDto> Rows);
+    List<CertificateResultRowDto> Rows,
+    bool IsScored = true, bool UsesLevel = false, List<CertificateLevelCountDto>? Levels = null);
+
+/// <summary>
+/// A certificate as the student and the parent see it in the cabinet (client, 2026-10-07:
+/// "o'quvchilarni hozircha necha balli borligi shaxsiy kabinetda ko'rinib turishi").
+/// </summary>
+public record PortalCertificateDto(
+    Guid Id, string TypeName, List<string> SubjectNames, decimal? Score, string? Level,
+    string IssuedOn, string? ExpiresOn, bool IsExpired, string? FileUrl);

@@ -1189,6 +1189,11 @@ namespace SchoolLms.Infrastructure.Migrations
                         .HasColumnType("date")
                         .HasColumnName("issued_on");
 
+                    b.Property<string>("Level")
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasColumnName("level");
+
                     b.Property<string>("Number")
                         .HasColumnType("text")
                         .HasColumnName("number");
@@ -1286,10 +1291,21 @@ namespace SchoolLms.Infrastructure.Migrations
                         .HasDefaultValue(false)
                         .HasColumnName("is_scored");
 
+                    b.Property<string>("LevelOptions")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("level_options");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasColumnType("text")
                         .HasColumnName("name");
+
+                    b.Property<bool>("UsesLevel")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("uses_level");
 
                     b.HasKey("Id")
                         .HasName("pk_certificate_types");

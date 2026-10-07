@@ -48,6 +48,19 @@ public class CertificateType
     /// </summary>
     public bool IsScored { get; set; }
 
+    /// <summary>
+    /// true = the result is a LEVEL, not (only) a number — CEFR "B2", Cambridge "A*", "Merit"
+    /// (client, 2026-10-07: "sertifikat faqat raqamli emas harfli holatda"). Can go with
+    /// <see cref="IsScored"/> (a test with both a band and a level).
+    /// </summary>
+    public bool UsesLevel { get; set; }
+
+    /// <summary>
+    /// The allowed levels, lowest first, comma-separated ("A1,A2,B1,B2,C1,C2"). The order ranks
+    /// them in "Natijalar". Null — any short text is accepted and nothing is ranked.
+    /// </summary>
+    public string? LevelOptions { get; set; }
+
     /// <summary>false = yangi sertifikatda tanlanmaydi; eski hujjatlar joyida qoladi.</summary>
     public bool IsActive { get; set; } = true;
 
@@ -84,6 +97,9 @@ public class Certificate
 
     /// <summary>Ball — standart testlarda (IELTS 7.5). Manfiy bo'la olmaydi.</summary>
     public decimal? Score { get; set; }
+
+    /// <summary>Level result ("B2", "A*") — only on a type with <see cref="CertificateType.UsesLevel"/>.</summary>
+    public string? Level { get; set; }
 
     /// <summary>Berilgan sana — MAJBURIY (ro'yxat shu bo'yicha saralanadi).</summary>
     public DateOnly IssuedOn { get; set; }

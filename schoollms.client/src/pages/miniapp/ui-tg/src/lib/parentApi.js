@@ -211,6 +211,9 @@ export const requestPickup = (childId) => api.post('/student/pickup', { studentI
 /** Fan × chorak o'rtacha baholari + chorak bo'yicha davomat jamlamasi. */
 export const getGrades = (childId) => api.get('/student/grades' + forChild(childId))
 
+/** Sertifikatlar (ball / daraja), yangisi tepada — "hozircha necha balli" (mijoz, 2026-10-07). */
+export const getCertificates = (childId) => api.get('/student/certificates' + forChild(childId))
+
 /** Davomat: chorak jamlamasi + har bir qoldirish/kechikish qatori (sababi bilan). */
 export const getAttendance = (childId, quarter) =>
   api.get('/student/attendance' + forChild(childId, quarter ? `quarter=${quarter}` : ''))

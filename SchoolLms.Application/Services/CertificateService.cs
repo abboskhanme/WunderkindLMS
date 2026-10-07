@@ -73,6 +73,36 @@ public static class CertificateService
              + "yangi sertifikatda esa bu tur tanlanmaydi.";
     }
 
+    /// <summary>Longest level text ("Distinction*") — the column is 30.</summary>
+    public const int MaxLevelLength = 30;
+
+    /// <summary>
+    /// A type's allowed levels, lowest first ("A1,A2,B1" → [A1, A2, B1]). Empty — free text.
+    /// </summary>
+    public static List<string> LevelOptionsOf(string? csv) =>
+        [.. (csv ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .DistinctBy(x => x.ToUpperInvariant())];
+
+    /// <summary>
+    /// Cleans the level list typed on the type form; an error text when it cannot be stored.
+    /// </summary>
+    public static (string? Value, string? Error) NormalizeLevelOptions(string? csv)
+    {
+        var options = LevelOptionsOf(csv);
+        if (options.Count == 0) return (null, null);
+        if (options.Any(o => o.Length > MaxLevelLength))
+            return (null, $"Daraja {MaxLevelLength} belgidan uzun bo'lmasin");
+        if (options.Count > 30) return (null, "Darajalar 30 tadan ko'p bo'lmasin");
+        return (string.Join(",", options), null);
+    }
+
+    /// <summary>
+    /// A level's rank in the type's list (higher is better); -1 when the list is empty or the level
+    /// is not in it (such a level is shown, just not ranked).
+    /// </summary>
+    public static int LevelRank(IReadOnlyList<string> options, string? level) =>
+        level is null ? -1 : options.ToList().FindIndex(o => string.Equals(o, level, StringComparison.OrdinalIgnoreCase));
+
     /// <summary>Tur nomini tekshiradi (bo'shmi, takrormi). Xato bo'lsa — matn.</summary>
     public static async Task<string?> ValidateTypeAsync(
         IAppDbContext db, string? name, Guid? exceptId, CancellationToken ct = default)
@@ -121,6 +151,25 @@ public static class CertificateService
             return $"«{type.Name}» turi standart test emas — unga ball qo'yilmaydi. "
                  + "Ball kerak bo'lsa, turni Sozlamalarda «Ball qo'yiladi» deb belgilang.";
         if (score < 0) return "Ball manfiy bo'la olmaydi";
+
+        // ---- DARAJA (client, 2026-10-07): "B2", "A*" — only on a level type ----
+        var level = Clean(p.Level);
+        if (level is not null)
+        {
+            if (!type.UsesLevel)
+                return $"«{type.Name}» turida daraja qo'yilmaydi. Kerak bo'lsa, turni Sozlamalarda "
+                     + "«Daraja qo'yiladi» deb belgilang.";
+            var options = LevelOptionsOf(type.LevelOptions);
+            if (options.Count > 0)
+            {
+                var match = options.FirstOrDefault(o => string.Equals(o, level, StringComparison.OrdinalIgnoreCase));
+                if (match is null)
+                    return $"«{level}» — «{type.Name}» darajalari: {string.Join(", ", options)}";
+                level = match;
+            }
+            else if (level.Length > MaxLevelLength)
+                return $"Daraja {MaxLevelLength} belgidan uzun bo'lmasin";
+        }
 
         // ---- Sanalar ----
         var issued = Parse(p.IssuedOn);
@@ -174,6 +223,7 @@ public static class CertificateService
         row.TeacherId = teacherId;
         row.Number = Clean(p.Number);
         row.Score = score;
+        row.Level = level;
         row.IssuedOn = issued.Value;
         row.ExpiresOn = expires;
         row.FileUrl = fileUrl;
@@ -309,8 +359,21 @@ public static class CertificateService
                 r.Cert.ExpiresOn is { } x && x < today,
                 r.Cert.FileUrl, r.Cert.Comment,
                 subs is null ? [] : [.. subs.Select(s => s.Id)],
-                subs is null ? [] : [.. subs.Select(s => s.Name)]);
+                subs is null ? [] : [.. subs.Select(s => s.Name)],
+                r.Cert.Level, r.Type.UsesLevel);
         })];
+    }
+
+    /// <summary>
+    /// One student's certificates for the student/parent cabinet, newest first. Only what the family
+    /// should see: no creator, no teacher, no internal comment.
+    /// </summary>
+    public static async Task<List<PortalCertificateDto>> PortalListAsync(
+        IAppDbContext db, string studentId, CancellationToken ct = default)
+    {
+        var all = await ListAsync(db, studentId: studentId, ct: ct);
+        return [.. all.Select(c => new PortalCertificateDto(
+            c.Id, c.TypeName, c.SubjectNames, c.Score, c.Level, c.IssuedOn, c.ExpiresOn, c.IsExpired, c.FileUrl))];
     }
 
     // =====================================================================
@@ -340,22 +403,41 @@ public static class CertificateService
             from c in db.Certificates.AsNoTracking().Where(c => c.TypeId == typeId)
             join s in db.Students.AsNoTracking() on c.StudentId equals s.Id
             where cls == null || s.ClassName == cls
-            select new { c.StudentId, s.FullName, s.ClassName, c.Score, c.IssuedOn })
+            select new { c.StudentId, s.FullName, s.ClassName, c.Score, c.Level, c.IssuedOn })
             .ToListAsync(ct);
 
+        var options = LevelOptionsOf(type.LevelOptions);
         var perStudent = rows
             .GroupBy(r => r.StudentId)
             .Select(g =>
             {
                 var latest = g.OrderByDescending(x => x.IssuedOn).First();
+                // Best level by the type's order; without an order — the latest one given.
+                var bestLevel = options.Count > 0
+                    ? g.Where(x => x.Level != null).OrderByDescending(x => LevelRank(options, x.Level))
+                        .ThenByDescending(x => x.IssuedOn).Select(x => x.Level).FirstOrDefault()
+                    : g.Where(x => x.Level != null).OrderByDescending(x => x.IssuedOn).Select(x => x.Level).FirstOrDefault();
                 return new CertificateResultRowDto(
                     g.Key, latest.FullName, latest.ClassName,
-                    g.Max(x => x.Score), latest.Score, Fmt(latest.IssuedOn), g.Count());
+                    g.Max(x => x.Score), latest.Score, Fmt(latest.IssuedOn), g.Count(),
+                    bestLevel, latest.Level);
             })
-            // Ballik jadval — eng yuqori ball tepada. Bali yo'qlar oxirida, ism bo'yicha.
+            // Ballik jadval — eng yuqori ball tepada; darajali tur — eng yuqori daraja tepada.
+            // Natijasi yo'qlar oxirida, ism bo'yicha.
             .OrderByDescending(r => r.BestScore ?? decimal.MinValue)
+            .ThenByDescending(r => LevelRank(options, r.BestLevel))
             .ThenBy(r => r.StudentName, StringComparer.OrdinalIgnoreCase)
             .ToList();
+
+        // A level cannot be averaged: the tab shows how many students hold each (best) level.
+        var levels = type.UsesLevel
+            ? perStudent.Where(r => r.BestLevel != null)
+                .GroupBy(r => r.BestLevel!, StringComparer.OrdinalIgnoreCase)
+                .Select(g => new CertificateLevelCountDto(g.Key, g.Count()))
+                .OrderByDescending(x => LevelRank(options, x.Level))
+                .ThenBy(x => x.Level, StringComparer.OrdinalIgnoreCase)
+                .ToList()
+            : null;
 
         var scores = perStudent.Where(r => r.BestScore is not null)
             .Select(r => r.BestScore!.Value).ToList();
@@ -367,7 +449,10 @@ public static class CertificateService
             AverageScore: scores.Count == 0 ? null : Math.Round(scores.Average(), 2),
             MaxScore: scores.Count == 0 ? null : scores.Max(),
             MinScore: scores.Count == 0 ? null : scores.Min(),
-            Rows: perStudent);
+            Rows: perStudent,
+            IsScored: type.IsScored,
+            UsesLevel: type.UsesLevel,
+            Levels: levels);
     }
 
     // =====================================================================

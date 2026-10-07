@@ -10,7 +10,7 @@ import { Loader } from '@/components/ui/Loader'
 import { formatDate, cn } from '@/lib/utils'
 
 interface Props {
-  /** Faqat BALLIK turlar — "Natijalar" boshqa turlar uchun ma'noga ega emas. */
+  /** Ball YOKI daraja qo'yiladigan turlar — "Natijalar" boshqa turlar uchun ma'noga ega emas. */
   scoredTypes: CertificateType[]
   classNames: string[]
 }
@@ -58,11 +58,10 @@ export function CertificateResultsTab({ scoredTypes, classNames }: Props) {
         <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100">
           <BarChart3 className="h-7 w-7 text-slate-400" />
         </div>
-        <p className="text-sm font-medium text-slate-600">Ballik tur yo'q</p>
+        <p className="text-sm font-medium text-slate-600">Natijali tur yo'q</p>
         <p className="max-w-md text-sm text-slate-400">
-          Natijalar jadvali faqat "ball qo'yiladi" deb belgilangan turlar uchun tuziladi
-          (IELTS, SAT kabi standart testlar). Sertifikat turlarida kamida bittasini shunday
-          belgilang.
+          Natijalar jadvali "ball qo'yiladi" yoki "daraja qo'yiladi" deb belgilangan turlar uchun
+          tuziladi (IELTS, SAT, CEFR kabi). Sertifikat turlarida kamida bittasini shunday belgilang.
         </p>
       </Card>
     )
@@ -103,19 +102,38 @@ export function CertificateResultsTab({ scoredTypes, classNames }: Props) {
           <div className="grid gap-3 sm:grid-cols-4">
             <Stat label="O'quvchilar" value={String(data.studentCount)} />
             <Stat label="Hujjatlar" value={String(data.certificateCount)} />
-            <Stat
-              label="O'rtacha ball"
-              value={data.averageScore != null ? String(data.averageScore) : '—'}
-            />
-            <Stat
-              label="Eng yuqori / eng past"
-              value={
-                data.maxScore != null && data.minScore != null
-                  ? `${data.maxScore} / ${data.minScore}`
-                  : '—'
-              }
-            />
+            {data.isScored && (
+              <>
+                <Stat
+                  label="O'rtacha ball"
+                  value={data.averageScore != null ? String(data.averageScore) : '—'}
+                />
+                <Stat
+                  label="Eng yuqori / eng past"
+                  value={
+                    data.maxScore != null && data.minScore != null
+                      ? `${data.maxScore} / ${data.minScore}`
+                      : '—'
+                  }
+                />
+              </>
+            )}
           </div>
+
+          {/* A level cannot be averaged — how many students hold each (best) level. */}
+          {data.usesLevel && data.levels && data.levels.length > 0 && (
+            <Card className="flex flex-wrap items-center gap-2">
+              <span className="mr-1 text-xs uppercase tracking-wide text-slate-400">Darajalar</span>
+              {data.levels.map((l) => (
+                <span
+                  key={l.level}
+                  className="rounded-full bg-indigo-50 px-2.5 py-1 text-xs font-semibold text-indigo-700"
+                >
+                  {l.level} · {l.students} ta
+                </span>
+              ))}
+            </Card>
+          )}
 
           <Card className="p-0">
             <div className="overflow-x-auto">
@@ -125,8 +143,18 @@ export function CertificateResultsTab({ scoredTypes, classNames }: Props) {
                     <th className="w-10 px-4 py-3">#</th>
                     <th className="px-4 py-3">O'quvchi</th>
                     <th className="px-4 py-3">Sinf</th>
-                    <th className="px-4 py-3 text-right">Eng yaxshi ball</th>
-                    <th className="px-4 py-3 text-right">Oxirgi ball</th>
+                    {data.isScored && (
+                      <>
+                        <th className="px-4 py-3 text-right">Eng yaxshi ball</th>
+                        <th className="px-4 py-3 text-right">Oxirgi ball</th>
+                      </>
+                    )}
+                    {data.usesLevel && (
+                      <>
+                        <th className="px-4 py-3 text-right">Eng yaxshi daraja</th>
+                        <th className="px-4 py-3 text-right">Oxirgi daraja</th>
+                      </>
+                    )}
                     <th className="px-4 py-3">Oxirgi sana</th>
                     <th className="px-4 py-3 text-right">Hujjatlar</th>
                   </tr>
@@ -141,17 +169,34 @@ export function CertificateResultsTab({ scoredTypes, classNames }: Props) {
                       </span>
                     </td>
                       <td className="px-4 py-3 text-slate-500">{r.className || '—'}</td>
-                      <td
-                        className={cn(
-                          'px-4 py-3 text-right font-semibold',
-                          r.bestScore != null ? 'text-slate-800' : 'text-slate-300',
-                        )}
-                      >
-                        {r.bestScore != null ? r.bestScore : '—'}
-                      </td>
-                      <td className="px-4 py-3 text-right text-slate-600">
-                        {r.latestScore != null ? r.latestScore : '—'}
-                      </td>
+                      {data.isScored && (
+                        <>
+                          <td
+                            className={cn(
+                              'px-4 py-3 text-right font-semibold',
+                              r.bestScore != null ? 'text-slate-800' : 'text-slate-300',
+                            )}
+                          >
+                            {r.bestScore != null ? r.bestScore : '—'}
+                          </td>
+                          <td className="px-4 py-3 text-right text-slate-600">
+                            {r.latestScore != null ? r.latestScore : '—'}
+                          </td>
+                        </>
+                      )}
+                      {data.usesLevel && (
+                        <>
+                          <td
+                            className={cn(
+                              'px-4 py-3 text-right font-semibold',
+                              r.bestLevel ? 'text-slate-800' : 'text-slate-300',
+                            )}
+                          >
+                            {r.bestLevel ?? '—'}
+                          </td>
+                          <td className="px-4 py-3 text-right text-slate-600">{r.latestLevel ?? '—'}</td>
+                        </>
+                      )}
                       <td className="px-4 py-3 text-slate-500">{formatDate(r.latestIssuedOn)}</td>
                       <td className="px-4 py-3 text-right text-slate-500">{r.count}</td>
                     </tr>

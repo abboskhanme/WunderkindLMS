@@ -147,7 +147,8 @@ export function CertificatesPage() {
     }
   }
 
-  const scoredTypes = types.filter((t) => t.isScored)
+  // "Natijalar": ball YOKI daraja qo'yiladigan turlar (mijoz, 2026-10-07).
+  const scoredTypes = types.filter((t) => t.isScored || t.usesLevel)
 
   /** Z-2 — joriy filtrlar bilan xlsx eksporti (ro'yxatning o'zi so'ralayotgani bilan bir xil). */
   const doExport = () =>
@@ -319,7 +320,7 @@ export function CertificatesPage() {
                     <th className="px-4 py-3">Fan(lar)</th>
                     <th className="px-4 py-3">O'qituvchi</th>
                     <th className="px-4 py-3">Raqami</th>
-                    <th className="px-4 py-3 text-right">Ball</th>
+                    <th className="px-4 py-3 text-right">Natija</th>
                     <th className="px-4 py-3">Berilgan</th>
                     <th className="px-4 py-3">Muddati</th>
                     <th className="px-4 py-3 text-right">Amallar</th>
@@ -340,8 +341,10 @@ export function CertificatesPage() {
                       </td>
                       <td className="px-4 py-3 text-slate-500">{r.teacherName ?? '—'}</td>
                       <td className="px-4 py-3 text-slate-500">{r.number ?? '—'}</td>
-                      <td className="px-4 py-3 text-right font-semibold text-slate-800">
-                        {r.score != null ? r.score : '—'}
+                      <td className="whitespace-nowrap px-4 py-3 text-right font-semibold text-slate-800">
+                        {r.score == null && !r.level
+                          ? '—'
+                          : [r.score != null ? String(r.score) : null, r.level].filter(Boolean).join(' · ')}
                       </td>
                       <td className="px-4 py-3 text-slate-500">{formatDate(r.issuedOn)}</td>
                       <td className="px-4 py-3">

@@ -40,7 +40,7 @@ public sealed class CommunicationTools(McpToolContext t)
 
     [McpServerTool(Name = "certificates_list", Title = "Sertifikatlar",
         ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
-    [Description("O'quvchilarning sertifikatlari (IELTS, olimpiada va h.k.): turi, fani, ball, berilgan va tugash sanasi, muddati o'tganmi. "
+    [Description("O'quvchilarning sertifikatlari (IELTS, olimpiada va h.k.): turi, fani, ball, daraja (B2, A*), berilgan va tugash sanasi, muddati o'tganmi. "
         + "Filtrlar: sinf, qidiruv, yaqin kunlarda muddati tugaydiganlar. Pupils' certificates.")]
     public async Task<string> CertificatesList(
         [Description("Sinf nomi (ixtiyoriy)")] string? className = null,
@@ -54,7 +54,7 @@ public sealed class CommunicationTools(McpToolContext t)
         var rows = list.Take(McpToolContext.MaxPageSize).Select(c => new
         {
             c.StudentName, c.ClassName, type = c.TypeName, subject = c.SubjectName, teacher = c.TeacherName,
-            c.Number, c.Score, c.IssuedOn, c.ExpiresOn, c.IsExpired,
+            c.Number, c.Score, c.Level, c.IssuedOn, c.ExpiresOn, c.IsExpired,
         }).ToList();
         return t.Json(new { total = list.Count, rows, truncated = list.Count > rows.Count }, rows.Count);
     }

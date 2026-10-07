@@ -126,6 +126,8 @@ internal static class ParityModel
             e.HasIndex(x => x.Name).IsUnique();
 
             e.Property(x => x.IsScored).HasDefaultValue(false);
+            e.Property(x => x.UsesLevel).HasDefaultValue(false);
+            e.Property(x => x.LevelOptions).HasMaxLength(500);
             e.Property(x => x.IsActive).HasDefaultValue(true);
             e.Property(x => x.CreatedAt).HasDefaultValueSql("now()");
 
@@ -141,6 +143,7 @@ internal static class ParityModel
 
             // §2.3: `score numeric(6,2)` — IELTS 7.5 dan SAT 1600 gacha sig'adi.
             e.Property(x => x.Score).HasPrecision(6, 2);
+            e.Property(x => x.Level).HasMaxLength(30);
             e.Property(x => x.CreatedAt).HasDefaultValueSql("now()");
 
             // O'quvchi o'chirilsa hujjatlari ham ketadi (§2.3 dagi `on delete cascade`).

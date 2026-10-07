@@ -63,6 +63,7 @@ export function CertificateFormModal({
   const [teacherId, setTeacherId] = useState(editing?.teacherId ?? '')
   const [number, setNumber] = useState(editing?.number ?? '')
   const [score, setScore] = useState(editing?.score != null ? String(editing.score) : '')
+  const [level, setLevel] = useState(editing?.level ?? '')
   const [issuedOn, setIssuedOn] = useState(editing?.issuedOn ?? '')
   const [expiresOn, setExpiresOn] = useState(editing?.expiresOn ?? '')
   const [fileUrl, setFileUrl] = useState(editing?.fileUrl ?? '')
@@ -88,6 +89,8 @@ export function CertificateFormModal({
 
   const selectedType = types.find((t) => t.id === typeId) ?? null
   const scored = selectedType?.isScored ?? false
+  const leveled = selectedType?.usesLevel ?? false
+  const levelOptions = selectedType?.levelOptions ?? []
 
   const visibleStudents = useMemo(() => {
     const q = studentSearch.trim().toLowerCase()
@@ -135,6 +138,7 @@ export function CertificateFormModal({
         number: number.trim() || null,
         // Ballsiz turda maydon yashirin — qiymat ham yuborilmaydi.
         score: scored && score.trim() !== '' ? Number(score) : null,
+        level: leveled && level.trim() !== '' ? level.trim() : null,
         issuedOn,
         expiresOn: expiresOn || null,
         fileUrl: fileUrl || null,
@@ -208,11 +212,12 @@ export function CertificateFormModal({
                 <option key={t.id} value={t.id}>
                   {t.name}
                   {t.isScored ? ' (ballik)' : ''}
+                  {t.usesLevel ? ' (darajali)' : ''}
                 </option>
               ))}
             </Select>
 
-            {scored ? (
+            {scored && (
               <Input
                 label="Ball"
                 type="number"
@@ -222,9 +227,29 @@ export function CertificateFormModal({
                 value={score}
                 onChange={(e) => setScore(e.target.value)}
               />
-            ) : (
+            )}
+            {leveled &&
+              (levelOptions.length > 0 ? (
+                <Select label="Daraja" value={level} onChange={(e) => setLevel(e.target.value)}>
+                  <option value="">— tanlang —</option>
+                  {levelOptions.map((o) => (
+                    <option key={o} value={o}>
+                      {o}
+                    </option>
+                  ))}
+                </Select>
+              ) : (
+                <Input
+                  label="Daraja"
+                  maxLength={30}
+                  placeholder="masalan: B2, A*, Merit"
+                  value={level}
+                  onChange={(e) => setLevel(e.target.value)}
+                />
+              ))}
+            {!scored && !leveled && (
               <p className="pt-1 text-xs text-slate-400">
-                Ball faqat "ball qo'yiladi" deb belgilangan turlarda kiritiladi.
+                Ball yoki daraja faqat shunday deb belgilangan turlarda kiritiladi.
               </p>
             )}
           </div>

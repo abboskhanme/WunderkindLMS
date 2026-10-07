@@ -17,12 +17,19 @@ export interface CertificateType {
   isActive: boolean
   /** Shu turda nechta hujjat bor — serverda sanaladi. 0 dan katta bo'lsa tur o'chirilmaydi. */
   certificateCount: number
+  /** Natija daraja bilan ham beriladi ("B2", "A*") — mijoz, 2026-10-07. */
+  usesLevel: boolean
+  /** Ruxsat etilgan darajalar, pastdan yuqoriga. Bo'sh — erkin matn. */
+  levelOptions: string[]
 }
 
 export interface CertificateTypePayload {
   name: string
   isScored: boolean
   isActive: boolean
+  usesLevel: boolean
+  /** Vergul bilan, pastdan yuqoriga: "A1, A2, B1, B2, C1, C2". Bo'sh — erkin matn. */
+  levelOptions: string | null
 }
 
 /** Bitta sertifikat — ro'yxat qatori (nomlari bilan). */
@@ -50,6 +57,9 @@ export interface Certificate {
   /** Z-3 — hujjatning HAMMA fani. `subjectId` shu ro'yxatning birinchi elementi. */
   subjectIds: string[]
   subjectNames: string[]
+  /** Daraja ("B2") — faqat `typeUsesLevel` turda. */
+  level: string | null
+  typeUsesLevel: boolean
 }
 
 export interface CertificatePayload {
@@ -65,6 +75,8 @@ export interface CertificatePayload {
   comment: string | null
   /** Z-3 — bir nechta fan; bo'sh massiv = fansiz. */
   subjectIds: string[]
+  /** FAQAT `usesLevel` turda; ro'yxat bo'lsa — ro'yxatdagi qiymat. */
+  level: string | null
 }
 
 /** "Natijalar" tab'ining bitta qatori. */
@@ -76,6 +88,14 @@ export interface CertificateResultRow {
   latestScore: number | null
   latestIssuedOn: string
   count: number
+  bestLevel: string | null
+  latestLevel: string | null
+}
+
+/** Darajali tur: har darajada nechta o'quvchi (eng yaxshi natijasi bo'yicha). */
+export interface CertificateLevelCount {
+  level: string
+  students: number
 }
 
 /** "Natijalar" tab'i — yig'ma raqamlar ham serverdan keladi. */
@@ -88,6 +108,10 @@ export interface CertificateResults {
   maxScore: number | null
   minScore: number | null
   rows: CertificateResultRow[]
+  isScored: boolean
+  usesLevel: boolean
+  /** Darajali turda — o'rtacha o'rniga taqsimot. */
+  levels: CertificateLevelCount[] | null
 }
 
 /** Sertifikat bergan o'qituvchi — filtr tanlovi uchun. */
@@ -133,6 +157,8 @@ function query(params: Record<string, string | number | undefined>): string {
 export async function getCertificateTypes(options?: {
   activeOnly?: boolean
   scoredOnly?: boolean
+  /** "Natijalar": ball YOKI daraja qo'yiladigan turlar. */
+  resultsOnly?: boolean
 }): Promise<CertificateType[]> {
   if (USE_MOCK) {
     await delay()
@@ -142,6 +168,7 @@ export async function getCertificateTypes(options?: {
     `/admin/certificate-types${query({
       activeOnly: options?.activeOnly ? 'true' : undefined,
       scoredOnly: options?.scoredOnly ? 'true' : undefined,
+      resultsOnly: options?.resultsOnly ? 'true' : undefined,
     })}`,
   )
   return data

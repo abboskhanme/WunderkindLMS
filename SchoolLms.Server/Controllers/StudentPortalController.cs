@@ -389,6 +389,21 @@ public class StudentPortalController(
 
     // ---------- Baholar va davomat (o'ziniki) ----------
 
+    /// <summary>
+    /// The student's certificates and their results (client, 2026-10-07: "o'quvchilarni hozircha necha
+    /// balli borligi shaxsiy kabinetda ko'rinib turishi"). Not behind the parent progress switch —
+    /// a certificate is the child's own document, not the quarter's grades.
+    /// </summary>
+    [HttpGet("certificates")]
+    public async Task<ActionResult<IEnumerable<PortalCertificateDto>>> Certificates(
+        [FromQuery] string? studentId, CancellationToken ct)
+    {
+        if (User.IsInRole("admin") && string.IsNullOrWhiteSpace(studentId)) return NeedStudentId();
+        var s = await TargetAsync(studentId);
+        if (s is null) return NotFound();
+        return await CertificateService.PortalListAsync(db, s.Id, ct);
+    }
+
     [HttpGet("grades")]
     public async Task<ActionResult<StudentReportDto>> Grades([FromQuery] string? studentId)
     {

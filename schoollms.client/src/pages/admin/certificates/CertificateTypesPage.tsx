@@ -32,6 +32,8 @@ export function CertificateTypesPage() {
   const [editing, setEditing] = useState<CertificateType | null>(null)
   const [name, setName] = useState('')
   const [isScored, setIsScored] = useState(false)
+  const [usesLevel, setUsesLevel] = useState(false)
+  const [levelOptions, setLevelOptions] = useState('')
   const [isActive, setIsActive] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -46,6 +48,8 @@ export function CertificateTypesPage() {
     setEditing(null)
     setName('')
     setIsScored(false)
+    setUsesLevel(false)
+    setLevelOptions('')
     setIsActive(true)
     setError('')
     setOpen(true)
@@ -55,6 +59,8 @@ export function CertificateTypesPage() {
     setEditing(t)
     setName(t.name)
     setIsScored(t.isScored)
+    setUsesLevel(t.usesLevel)
+    setLevelOptions(t.levelOptions.join(', '))
     setIsActive(t.isActive)
     setError('')
     setOpen(true)
@@ -66,7 +72,13 @@ export function CertificateTypesPage() {
     setSaving(true)
     setError('')
     try {
-      const payload = { name: name.trim(), isScored, isActive }
+      const payload = {
+        name: name.trim(),
+        isScored,
+        isActive,
+        usesLevel,
+        levelOptions: usesLevel && levelOptions.trim() ? levelOptions.trim() : null,
+      }
       if (editing) {
         const saved = await updateCertificateType(editing.id, payload)
         setTypes((p) => p.map((x) => (x.id === saved.id ? saved : x)))
@@ -131,7 +143,7 @@ export function CertificateTypesPage() {
                 <tr>
                   <th className="w-10 px-4 py-3">#</th>
                   <th className="px-4 py-3">Nomi</th>
-                  <th className="px-4 py-3">Ball</th>
+                  <th className="px-4 py-3">Natija</th>
                   <th className="px-4 py-3">Holati</th>
                   <th className="px-4 py-3 text-right">Hujjatlar</th>
                   <th className="px-4 py-3 text-right">Amallar</th>
@@ -147,10 +159,24 @@ export function CertificateTypesPage() {
                       </span>
                     </td>
                     <td className="px-4 py-3">
-                      {t.isScored ? (
-                        <span className="rounded-full bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-700">
-                          Ball qo'yiladi
-                        </span>
+                      {t.isScored || t.usesLevel ? (
+                        <div className="flex flex-wrap items-center gap-1">
+                          {t.isScored && (
+                            <span className="rounded-full bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-700">
+                              Ball
+                            </span>
+                          )}
+                          {t.usesLevel && (
+                            <span
+                              className="rounded-full bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-700"
+                              title={t.levelOptions.length > 0 ? t.levelOptions.join(', ') : 'Erkin daraja'}
+                            >
+                              Daraja
+                              {t.levelOptions.length > 0 &&
+                                `: ${t.levelOptions[0]}–${t.levelOptions[t.levelOptions.length - 1]}`}
+                            </span>
+                          )}
+                        </div>
                       ) : (
                         <span className="text-slate-400">—</span>
                       )}
@@ -239,13 +265,43 @@ export function CertificateTypesPage() {
             <span className="text-sm">
               <span className="font-medium text-slate-700">Ball qo'yiladi (standart test)</span>
               <span className="mt-0.5 block text-slate-400">
-                IELTS 7.5, SAT 1340 kabi. Faqat shunday turlar "Natijalar" tab'ida ko'rinadi.
+                IELTS 7.5, SAT 1340 kabi. Ball yoki daraja qo'yiladigan turlar "Natijalar" tab'ida
+                ko'rinadi.
                 {!!editing && editing.certificateCount > 0 && (
                   <> Bu turda hujjatlar bor — belgini endi o'zgartirib bo'lmaydi.</>
                 )}
               </span>
             </span>
           </label>
+
+          <label className="flex cursor-pointer items-start gap-2.5">
+            <input
+              type="checkbox"
+              checked={usesLevel}
+              onChange={(e) => setUsesLevel(e.target.checked)}
+              className="mt-0.5 h-4 w-4 rounded border-slate-300 accent-brand-600"
+            />
+            <span className="text-sm">
+              <span className="font-medium text-slate-700">Daraja qo'yiladi (harfli natija)</span>
+              <span className="mt-0.5 block text-slate-400">
+                CEFR B2, Cambridge A*, Merit kabi. Ball bilan birga ham ishlatsa bo'ladi.
+              </span>
+            </span>
+          </label>
+
+          {usesLevel && (
+            <div>
+              <Input
+                label="Darajalar (pastdan yuqoriga, vergul bilan)"
+                placeholder="A1, A2, B1, B2, C1, C2"
+                value={levelOptions}
+                onChange={(e) => setLevelOptions(e.target.value)}
+              />
+              <p className="mt-1 text-xs text-slate-400">
+                Bo'sh qoldirilsa — daraja erkin yoziladi. Tartib "Natijalar"da saralash uchun kerak.
+              </p>
+            </div>
+          )}
 
           <label className="flex cursor-pointer items-start gap-2.5">
             <input
