@@ -100,9 +100,9 @@ export function ProfileSheet({ user, panelChildren, activeChildId, onPickChild, 
               <>
                 <IdentityCard me={me} />
 
-                {/* Several accounts on this Telegram — each child's login, a teacher's (2026-10-08):
-                    right under the name, switching is what this sheet is opened for most. */}
-                <AccountsCard onSwitched={onClose} />
+                {/* No "Akkaunt qo'shish" here (client, 2026-10-08): the family is in the switcher at the
+                    top. The list shows only with several accounts — a teacher back to their own. */}
+                <AccountsCard onSwitched={onClose} canAdd={false} />
 
                 <Card title="Ma'lumotlar">
                   {me.login && <InfoRow label="Login" value={me.login} />}

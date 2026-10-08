@@ -29,8 +29,14 @@ function initials(fullName) {
   return parts.slice(0, 2).map((p) => p.charAt(0).toUpperCase()).join('') || '?'
 }
 
-/** Profil varag'idagi "Akkauntlar" bo'limi. `onSwitched` — varaqni yopish uchun. */
-export function AccountsCard({ onSwitched }) {
+/**
+ * "Akkauntlar" bo'limi. `onSwitched` — varaqni yopish uchun.
+ *
+ * `canAdd={false}` — ota-ona / o'quvchi profili (mijoz, 2026-10-08: "endi akkaunt qo'shish degan joyi
+ * kerakmas"): oiladagi farzandlar tepadagi almashtirgichda, qo'shish shart emas. Ro'yxat u yerda faqat
+ * bir nechta akkaunt bo'lsa chiqadi — o'qituvchi farzandi akkauntidan o'z akkauntiga qaytishi uchun.
+ */
+export function AccountsCard({ onSwitched, canAdd = true }) {
   const { user, switchAccount } = useSession()
   const q = useAsync(() => api.get('/tg/accounts'), [user?.id])
   const [adding, setAdding] = useState(false)
@@ -41,6 +47,8 @@ export function AccountsCard({ onSwitched }) {
   if (q.error && /telegram/i.test(q.error)) return null
 
   const accounts = q.data?.accounts ?? []
+  // Without the add row, a single account has nothing to switch to — no section at all.
+  if (!canAdd && accounts.length < 2) return null
 
   const pick = async (account) => {
     if (account.active || busyId) return
@@ -110,6 +118,7 @@ export function AccountsCard({ onSwitched }) {
             )}
           </div>
         ))}
+        {canAdd && (
         <button
           type="button"
           onClick={() => {
@@ -123,9 +132,10 @@ export function AccountsCard({ onSwitched }) {
           </span>
           <span className="min-w-0 flex-1">
             <span className="block text-[15px] font-semibold">Akkaunt qo'shish</span>
-            <span className="block text-[13px] text-slate-500">Boshqa farzand yoki o'qituvchi logini — bir marta</span>
+            <span className="block text-[13px] text-slate-500">Farzandingiz logini — bir marta</span>
           </span>
         </button>
+        )}
         {error && <p className="px-4 pb-3 text-[13px] text-red-600">{error}</p>}
       </Card>
 
