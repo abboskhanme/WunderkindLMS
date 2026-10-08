@@ -62,6 +62,29 @@ public class TelegramAccount
 }
 
 /// <summary>
+/// An account this Telegram can switch to without typing the password again (client, 2026-10-08:
+/// a family with a login per child, a teacher who is also a parent — "har safar login qilish logout
+/// qilish qiyin va ortiqcha ish"). Each is added once with its OWN login and password; the active one
+/// is <see cref="TelegramAccount.UserId"/>. Leaving an account removes it from the list; signing out
+/// of the last one leaves the Telegram unlinked.
+/// </summary>
+public class TelegramSavedAccount
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+
+    /// <summary>Telegram <c>user.id</c> the account was added on.</summary>
+    public long TelegramUserId { get; set; }
+
+    /// <summary>The saved account (<see cref="AppUser.Id"/>).</summary>
+    public string UserId { get; set; } = string.Empty;
+
+    public DateTime AddedAt { get; set; } = AppClock.Now;
+
+    /// <summary>Last switched to or opened — the list shows the most recent first.</summary>
+    public DateTime LastUsedAt { get; set; } = AppClock.Now;
+}
+
+/// <summary>
 /// Bir martalik bog'lanish kodi. Admin chiqaradi, foydalanuvchi Mini App'da
 /// kiritadi. Muddati o'tsa yoki bir marta ishlatilsa — yaroqsiz.
 /// </summary>

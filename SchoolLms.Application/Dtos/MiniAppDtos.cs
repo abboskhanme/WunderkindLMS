@@ -82,6 +82,18 @@ public record TgAuthResponse(
 /// cross-site iframe and may not send the cookie back (2026-10-07).</param>
 public record TgNotLinkedDto(string Code, string Message, TgTelegramUserDto Telegram, string? Ticket = null);
 
+/// <summary>
+/// One account this Telegram can switch to (2026-10-08). <c>Subtitle</c> — "5-A sinf · O'quvchi",
+/// "O'qituvchi" — so a family tells its children apart at a glance.
+/// </summary>
+public record TgSavedAccountDto(string UserId, string FullName, string Role, string Subtitle, bool Active);
+
+/// <summary><c>GET /api/tg/accounts</c> — the active account first, then the most recently used.</summary>
+public record TgAccountsDto(IReadOnlyList<TgSavedAccountDto> Accounts);
+
+/// <summary><c>POST /api/tg/accounts</c> — add an account with its own login and password, then switch to it.</summary>
+public record TgAddAccountRequest(string? Login, string? Password);
+
 /// <summary>Admin panel: bir martalik kod chiqarish so'rovi.</summary>
 public record IssueLinkCodeRequest(string UserId);
 

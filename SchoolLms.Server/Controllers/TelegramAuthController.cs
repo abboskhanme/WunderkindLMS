@@ -104,18 +104,26 @@ public sealed class TelegramAuthController(
             return NotLinked(tgUser);
         }
 
-        // An archived/stopped account: the link goes, so this Telegram can sign in to another
-        // account (2026-10-07) — before, it stayed stuck on "akkaunt arxivlangan" for good.
+        // An archived/stopped account: it leaves this Telegram (2026-10-07). Another saved account
+        // takes over (2026-10-08); none — the link goes and the Telegram signs in to another one.
         if (await SessionFactory.IsBlockedAsync(db, user, ct))
         {
-            db.TelegramAccounts.Remove(account);
-            await db.SaveChangesAsync(ct);
-            return NotLinked(tgUser, BlockedMessage);
+            await TelegramSavedAccounts.ForgetAsync(db, tgUser.Id, user.Id, ct);
+            var next = await NextSavedAsync(tgUser.Id, ct);
+            if (next is null)
+            {
+                db.TelegramAccounts.Remove(account);
+                await db.SaveChangesAsync(ct);
+                return NotLinked(tgUser, BlockedMessage);
+            }
+            account.UserId = next.Id;
+            user = next;
         }
 
         account.LastSeenAt = AppClock.Now;
         account.DisplayName = tgUser.DisplayName;
         account.Username = tgUser.Username;
+        await TelegramSavedAccounts.RememberAsync(db, tgUser.Id, user.Id, ct);
 
         // Bog'landi — endi chipta kerak emas.
         ClearLinkTicket();
@@ -142,14 +150,22 @@ public sealed class TelegramAuthController(
 
         if (await SessionFactory.IsBlockedAsync(db, user, ct))
         {
-            // The same as the initData path: unlink, and a ticket lets this Telegram link another account.
-            var leaving = new TelegramWebAppUser(account.TelegramUserId, account.DisplayName, null, account.Username, null);
-            db.TelegramAccounts.Remove(account);
-            await db.SaveChangesAsync(ct);
-            return NotLinked(leaving, BlockedMessage);
+            // The same as the initData path: another saved account takes over, else unlink with a ticket.
+            await TelegramSavedAccounts.ForgetAsync(db, account.TelegramUserId, user.Id, ct);
+            var next = await NextSavedAsync(account.TelegramUserId, ct);
+            if (next is null)
+            {
+                var leaving = new TelegramWebAppUser(account.TelegramUserId, account.DisplayName, null, account.Username, null);
+                db.TelegramAccounts.Remove(account);
+                await db.SaveChangesAsync(ct);
+                return NotLinked(leaving, BlockedMessage);
+            }
+            account.UserId = next.Id;
+            user = next;
         }
 
         account.LastSeenAt = AppClock.Now;
+        await TelegramSavedAccounts.RememberAsync(db, account.TelegramUserId, user.Id, ct);
         var session = await SessionFactory.IssueAsync(db, jwt, user, ct, account.TelegramUserId);
         return Ok(new TgAuthResponse("ok", session.Token, session.User,
             new TgTelegramUserDto(account.TelegramUserId.ToString(), account.DisplayName, account.Username), null));
@@ -232,6 +248,7 @@ public sealed class TelegramAuthController(
         }
 
         ClearLinkTicket();
+        await TelegramSavedAccounts.RememberAsync(db, tgUser.Id, user.Id, ct);
         var session = await SessionFactory.IssueAsync(db, jwt, user, ct, tgUser.Id);
         var key = await SendPanelKeyboardAsync(tgUser.Id, ct);
         // Linked from a keyboard-launched app (no initData): hand it the new button's key, so it can
@@ -398,6 +415,22 @@ public sealed class TelegramAuthController(
         }
 
         var accounts = await query.ToListAsync(ct);
+        foreach (var gone in accounts)
+            await TelegramSavedAccounts.ForgetAsync(db, gone.TelegramUserId, uid, ct);
+
+        // Several accounts on this Telegram (2026-10-08): leaving one opens the next saved one — the
+        // row (and its panel key) stays, only its account changes. The last one leaves for real.
+        if (leaving is { } staying && accounts.Count > 0 && await NextSavedAsync(staying, ct) is { } next)
+        {
+            var row = accounts[0];
+            row.UserId = next.Id;
+            row.LastSeenAt = AppClock.Now;
+            db.TelegramAccounts.RemoveRange(accounts.Skip(1));
+            await TelegramSavedAccounts.RememberAsync(db, staying, next.Id, ct);
+            var switched = await SessionFactory.IssueAsync(db, jwt, next, ct, staying);
+            return Ok(new { ticket = (string?)null, token = switched.Token, user = switched.User });
+        }
+
         string? ticket = null;
         if (leaving is { } tg)
         {
@@ -412,6 +445,132 @@ public sealed class TelegramAuthController(
         // cookie may not come back with the next request (2026-10-07).
         return ticket is null ? NoContent() : Ok(new { ticket });
     }
+
+    // ------------------------------------------------------------------
+    //  Several accounts on one Telegram (client, 2026-10-08) — TelegramSavedAccounts.cs
+    // ------------------------------------------------------------------
+
+    /// <summary>The accounts this Telegram can switch to — the active one first.</summary>
+    [HttpGet("accounts")]
+    [Authorize]
+    public async Task<ActionResult<TgAccountsDto>> Accounts(CancellationToken ct)
+    {
+        if (SessionTelegram() is not { } tg) return TelegramOnly();
+        var link = await db.TelegramAccounts.AsNoTracking().FirstOrDefaultAsync(a => a.TelegramUserId == tg, ct);
+        var active = link?.UserId ?? CurrentUserId();
+        if (active is not null && !await db.TelegramSavedAccounts.AnyAsync(s => s.TelegramUserId == tg && s.UserId == active, ct))
+            await TelegramSavedAccounts.RememberAsync(db, tg, active, ct);
+
+        var saved = await TelegramSavedAccounts.ListAsync(db, tg, ct);
+        var ids = saved.Select(s => s.UserId).ToList();
+        var users = await db.Users.AsNoTracking().Where(u => ids.Contains(u.Id)).ToListAsync(ct);
+        var usable = new List<AppUser>();
+        foreach (var s in saved)
+        {
+            if (users.FirstOrDefault(u => u.Id == s.UserId) is not { } u) continue;
+            if (await SessionFactory.IsBlockedAsync(db, u, ct))
+            {
+                // Archived since it was added — it drops out of the list for good.
+                await TelegramSavedAccounts.ForgetAsync(db, tg, u.Id, ct);
+                continue;
+            }
+            usable.Add(u);
+        }
+        var subtitles = await TelegramSavedAccounts.SubtitlesAsync(db, usable, ct);
+        return new TgAccountsDto([.. usable
+            .Select(u => new TgSavedAccountDto(u.Id, u.FullName, u.Role, subtitles[u.Id], u.Id == active))
+            .OrderByDescending(a => a.Active)]);
+    }
+
+    /// <summary>
+    /// Adds an account with ITS OWN login and password and switches to it; the current one stays in the
+    /// list. Each account is proven once — switching back and forth needs no password.
+    /// </summary>
+    [HttpPost("accounts")]
+    [Authorize]
+    [EnableRateLimiting("login")]
+    public async Task<ActionResult<TgAuthResponse>> AddAccount(TgAddAccountRequest req, CancellationToken ct)
+    {
+        if (SessionTelegram() is not { } tg) return TelegramOnly();
+        var login = (req?.Login ?? "").Trim();
+        var user = await LoginLookup.FindAsync(db, login, ct);
+        if (user is null || !PasswordHasher.Verify(req?.Password ?? "", user.PasswordHash))
+        {
+            logger.LogWarning("Telegram'ga akkaunt qo'shish rad etildi: login={Login}, tg={TelegramUserId}", login, tg);
+            // 400, not 401: the caller IS signed in — a 401 would read as "session expired" and reload the app.
+            return BadRequest(new { code = "invalid_credentials", message = "Login yoki parol noto'g'ri" });
+        }
+        if (await SessionFactory.IsBlockedAsync(db, user, ct))
+            return Conflict(new { code = "account_blocked", message = "Akkaunt arxivlangan yoki to'xtatilgan" });
+
+        if (CurrentUserId() is { } current) await TelegramSavedAccounts.RememberAsync(db, tg, current, ct);
+        return await SwitchToAsync(tg, user, ct);
+    }
+
+    /// <summary>Switches this Telegram to one of its saved accounts — no password.</summary>
+    [HttpPost("accounts/{userId}/switch")]
+    [Authorize]
+    public async Task<ActionResult<TgAuthResponse>> SwitchAccount(string userId, CancellationToken ct)
+    {
+        if (SessionTelegram() is not { } tg) return TelegramOnly();
+        if (!await db.TelegramSavedAccounts.AnyAsync(s => s.TelegramUserId == tg && s.UserId == userId, ct))
+            return NotFound(new { code = "account_not_saved", message = "Bu akkaunt shu Telegram'da saqlanmagan — login va parol bilan qo'shing." });
+        var user = await db.Users.FirstOrDefaultAsync(u => u.Id == userId, ct);
+        if (user is null || await SessionFactory.IsBlockedAsync(db, user, ct))
+        {
+            await TelegramSavedAccounts.ForgetAsync(db, tg, userId, ct);
+            return Conflict(new { code = "account_blocked", message = "Akkaunt arxivlangan yoki to'xtatilgan — ro'yxatdan olib tashlandi." });
+        }
+        return await SwitchToAsync(tg, user, ct);
+    }
+
+    /// <summary>Drops a saved account from this Telegram's list. The active one leaves through "Chiqish".</summary>
+    [HttpDelete("accounts/{userId}")]
+    [Authorize]
+    public async Task<IActionResult> ForgetAccount(string userId, CancellationToken ct)
+    {
+        if (SessionTelegram() is not { } tg) return TelegramOnly();
+        var link = await db.TelegramAccounts.AsNoTracking().FirstOrDefaultAsync(a => a.TelegramUserId == tg, ct);
+        if ((link?.UserId ?? CurrentUserId()) == userId)
+            return Conflict(new { code = "active_account", message = "Hozirgi akkauntdan «Chiqish» tugmasi orqali chiqiladi." });
+        await TelegramSavedAccounts.ForgetAsync(db, tg, userId, ct);
+        return NoContent();
+    }
+
+    /// <summary>The Telegram's link now opens <paramref name="user"/>; a fresh session for it.</summary>
+    private async Task<ActionResult<TgAuthResponse>> SwitchToAsync(long tg, AppUser user, CancellationToken ct)
+    {
+        var link = await db.TelegramAccounts.FirstOrDefaultAsync(a => a.TelegramUserId == tg, ct);
+        if (link is null)
+            return Unauthorized(new { code = "not_linked", message = "Telegram bog'lanishi topilmadi — ilovani qaytadan oching." });
+        link.UserId = user.Id;
+        link.LastSeenAt = AppClock.Now;
+        await TelegramSavedAccounts.RememberAsync(db, tg, user.Id, ct);
+        var session = await SessionFactory.IssueAsync(db, jwt, user, ct, tg);
+        return Ok(new TgAuthResponse("ok", session.Token, session.User,
+            new TgTelegramUserDto(tg.ToString(CultureInfo.InvariantCulture), link.DisplayName, link.Username), null));
+    }
+
+    /// <summary>The most recently used saved account that can still sign in; archived ones are dropped.</summary>
+    private async Task<AppUser?> NextSavedAsync(long telegramUserId, CancellationToken ct)
+    {
+        foreach (var saved in await TelegramSavedAccounts.ListAsync(db, telegramUserId, ct))
+        {
+            var user = await db.Users.FirstOrDefaultAsync(u => u.Id == saved.UserId, ct);
+            if (user is not null && !await SessionFactory.IsBlockedAsync(db, user, ct)) return user;
+            await TelegramSavedAccounts.ForgetAsync(db, telegramUserId, saved.UserId, ct);
+        }
+        return null;
+    }
+
+    /// <summary>The Telegram a Mini App session was opened from (<see cref="JwtTokenService.TelegramClaim"/>).</summary>
+    private long? SessionTelegram() =>
+        long.TryParse(User.FindFirst(JwtTokenService.TelegramClaim)?.Value, CultureInfo.InvariantCulture, out var tg) ? tg : null;
+
+    private string? CurrentUserId() => User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+
+    private BadRequestObjectResult TelegramOnly() =>
+        BadRequest(new { code = "telegram_only", message = "Akkaunt almashtirish faqat Telegram ilovasida ishlaydi." });
 
     // ------------------------------------------------------------------
     //  Ichki

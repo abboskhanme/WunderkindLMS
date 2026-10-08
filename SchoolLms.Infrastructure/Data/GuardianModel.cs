@@ -28,6 +28,7 @@ internal static class GuardianModel
         ConfigureGuardians(b);
         ConfigureStudentGuardians(b);
         ConfigureTelegramAccounts(b);
+        ConfigureTelegramSavedAccounts(b);
         ConfigureTelegramLinkCodes(b);
         ConfigureChatReads(b);
     }
@@ -93,6 +94,19 @@ internal static class GuardianModel
             e.ToTable(t => t.HasCheckConstraint(
                 "ck_student_guardians_relation",
                 "relation in ('parent','father','mother','grandparent','trustee','other')"));
+        });
+    }
+
+    /// <summary>Accounts a Telegram can switch between (2026-10-08) — one row per (Telegram, account).</summary>
+    private static void ConfigureTelegramSavedAccounts(ModelBuilder b)
+    {
+        b.Entity<TelegramSavedAccount>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => new { x.TelegramUserId, x.UserId }).IsUnique();
+            e.HasIndex(x => x.UserId);
+            // The account goes — so does its place in every Telegram's list.
+            e.HasOne<AppUser>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
         });
     }
 

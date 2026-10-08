@@ -9072,6 +9072,43 @@ namespace SchoolLms.Infrastructure.Migrations
                     b.ToTable("telegram_registrations", (string)null);
                 });
 
+            modelBuilder.Entity("SchoolLms.Domain.TelegramSavedAccount", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTime>("AddedAt")
+                        .HasColumnType("timestamp without time zone")
+                        .HasColumnName("added_at");
+
+                    b.Property<DateTime>("LastUsedAt")
+                        .HasColumnType("timestamp without time zone")
+                        .HasColumnName("last_used_at");
+
+                    b.Property<long>("TelegramUserId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("telegram_user_id");
+
+                    b.Property<string>("UserId")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_telegram_saved_accounts");
+
+                    b.HasIndex("UserId")
+                        .HasDatabaseName("ix_telegram_saved_accounts_user_id");
+
+                    b.HasIndex("TelegramUserId", "UserId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_telegram_saved_accounts_telegram_user_id_user_id");
+
+                    b.ToTable("telegram_saved_accounts", (string)null);
+                });
+
             modelBuilder.Entity("SchoolLms.Domain.TestQuestion", b =>
                 {
                     b.Property<string>("Id")
@@ -10861,6 +10898,16 @@ namespace SchoolLms.Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("fk_telegram_link_codes_users_user_id");
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.TelegramSavedAccount", b =>
+                {
+                    b.HasOne("SchoolLms.Domain.AppUser", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_telegram_saved_accounts_users_user_id");
                 });
 
             modelBuilder.Entity("SchoolLms.Domain.TestQuestion", b =>

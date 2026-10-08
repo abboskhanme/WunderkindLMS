@@ -113,6 +113,12 @@ export function SessionProvider({ children }) {
       const who = inTelegram ? { 'X-Telegram-Init-Data': initData } : { 'X-Telegram-Panel-Key': panelKey }
       try {
         const res = await api.del('/tg/link', who)
+        // Another account is saved on this Telegram (2026-10-08): the server opened it — stay signed in.
+        if (res?.token) {
+          tokenStore.set(res.token)
+          setState({ status: 'ready', user: res.user, error: null })
+          return
+        }
         linkTicket.set(res?.ticket)
       } catch (e) {
         // 404 — bog'lanish allaqachon yo'q: chiqish baribir bajarilgan.
@@ -128,8 +134,30 @@ export function SessionProvider({ children }) {
     setState({ status: fromTelegram ? 'unlinked' : 'outside', user: null, error: null })
   }, [])
 
+  /**
+   * Several accounts on one Telegram (client, 2026-10-08): a family with a login per child, a teacher
+   * who is also a parent. An account is added once with its own login and password; switching to a
+   * saved one needs no password. The server answers with the new account's session.
+   */
+  const applySession = useCallback((res) => {
+    tokenStore.set(res.token)
+    setState({ status: 'ready', user: res.user, error: null })
+  }, [])
+
+  const switchAccount = useCallback(
+    async (userId) => applySession(await api.post(`/tg/accounts/${encodeURIComponent(userId)}/switch`)),
+    [applySession],
+  )
+
+  const addAccount = useCallback(
+    async (login, password) => applySession(await api.post('/tg/accounts', { login, password })),
+    [applySession],
+  )
+
   return (
-    <SessionContext.Provider value={{ ...state, retry: authenticate, adoptSession, logout }}>
+    <SessionContext.Provider
+      value={{ ...state, retry: authenticate, adoptSession, logout, switchAccount, addAccount }}
+    >
       {children}
     </SessionContext.Provider>
   )

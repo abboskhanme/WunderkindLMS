@@ -17,6 +17,7 @@ import { useEffect } from 'react'
 import { ChevronRight, MessageSquareText, X } from 'lucide-react'
 import { Badge, Card, EmptyState, Hero, Row } from '../../components/ui'
 import { LogoutButton } from '../../components/LogoutButton'
+import { AccountsCard } from '../../components/AccountSwitcher'
 import { useAsync } from '../../lib/useAsync'
 import { getProfile } from '../../lib/parentApi'
 import { shortSum } from '../../lib/format'
@@ -98,6 +99,10 @@ export function ProfileSheet({ user, panelChildren, activeChildId, onPickChild, 
             return (
               <>
                 <IdentityCard me={me} />
+
+                {/* Several accounts on this Telegram — each child's login, a teacher's (2026-10-08):
+                    right under the name, switching is what this sheet is opened for most. */}
+                <AccountsCard onSwitched={onClose} />
 
                 <Card title="Ma'lumotlar">
                   {me.login && <InfoRow label="Login" value={me.login} />}

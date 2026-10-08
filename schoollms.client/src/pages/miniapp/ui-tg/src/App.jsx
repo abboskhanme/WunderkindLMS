@@ -34,8 +34,9 @@ function Shell() {
 
   if (status === 'error') return <ErrorState message={error} onRetry={retry} />
 
-  if (TEACHER_ROLES.includes(user.role)) return <TeacherPanel user={user} />
-  if (PARENT_ROLES.includes(user.role)) return <ParentPanel user={user} />
+  // Keyed by the account: switching accounts (2026-10-08) mounts a fresh panel — no data of the previous one.
+  if (TEACHER_ROLES.includes(user.role)) return <TeacherPanel key={user.id} user={user} />
+  if (PARENT_ROLES.includes(user.role)) return <ParentPanel key={user.id} user={user} />
   if (PANEL_ROLES.includes(user.role)) return <StaffPortal user={user} />
 
   // Admin, kassir va xodim uchun Mini App yo'q — ular veb-panelda ishlaydi.

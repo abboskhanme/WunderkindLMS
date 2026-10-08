@@ -66,6 +66,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<Guardian> Guardians => Set<Guardian>();
     public DbSet<StudentGuardian> StudentGuardians => Set<StudentGuardian>();
     public DbSet<TelegramAccount> TelegramAccounts => Set<TelegramAccount>();
+    public DbSet<TelegramSavedAccount> TelegramSavedAccounts => Set<TelegramSavedAccount>();
     public DbSet<TelegramLinkCode> TelegramLinkCodes => Set<TelegramLinkCode>();
     public DbSet<ChatRead> ChatReads => Set<ChatRead>();
 

@@ -68,6 +68,7 @@ public interface IAppDbContext
     DbSet<Guardian> Guardians { get; }
     DbSet<StudentGuardian> StudentGuardians { get; }
     DbSet<TelegramAccount> TelegramAccounts { get; }
+    DbSet<TelegramSavedAccount> TelegramSavedAccounts { get; }
     DbSet<TelegramLinkCode> TelegramLinkCodes { get; }
     DbSet<ChatRead> ChatReads { get; }
 

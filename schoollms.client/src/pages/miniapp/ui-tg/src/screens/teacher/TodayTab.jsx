@@ -12,7 +12,7 @@ import { CalendarOff, ChevronRight, Clock } from 'lucide-react'
 import {
   Badge, Card, DateChip, EmptyState, Hero, HeroProgress, Row, Screen, StatGrid,
 } from '../../components/ui'
-import { LogoutButton } from '../../components/LogoutButton'
+import { AccountsButton } from '../../components/AccountSwitcher'
 import { useAsync } from '../../lib/useAsync'
 import { teacherApi } from '../../lib/teacherApi'
 import { readSeen } from '../../lib/chatSeen'
@@ -103,7 +103,7 @@ export function TodayTab({ profile, meta, onOpenAttendance }) {
 
   return (
     <Screen>
-      <Hero title={profile.fullName} subtitle={subtitle} right={<LogoutButton />}>
+      <Hero title={profile.fullName} subtitle={subtitle} right={<AccountsButton />}>
         <HeroProgress
           value={done}
           max={total}
