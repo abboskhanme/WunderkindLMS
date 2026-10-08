@@ -432,12 +432,15 @@ public record UnreadCountDto(int UnreadCount);
 /// <c>target_grade</c> ko'rsatilgan) o'quvchilar.</param>
 /// <param name="FirstPaymentThisMonthCount">Birinchi (storno bo'lmagan) to'lovi joriy oyga
 /// to'g'ri kelgan o'quvchilar.</param>
+/// <param name="FirstPaymentInPeriodCount">First (non-reversal) payment inside the dashboard's
+/// selected period; null when no period was asked for.</param>
 public record AdminStatsDto(
     int StudentsCount, int TeachersCount, double AverageGrade, double? AttendanceRate,
     int UnassignedCount, int ClassesCount, int ArchivedCount,
     int CreditCount, int DebtorCount, int PaidAtLeastOnceCount,
     int ActiveCount = 0, int LeftFromClassCount = 0, int WaitingCount = 0,
-    int FirstPaymentThisMonthCount = 0, int MaleCount = 0, int FemaleCount = 0);
+    int FirstPaymentThisMonthCount = 0, int MaleCount = 0, int FemaleCount = 0,
+    int? FirstPaymentInPeriodCount = null);
 
 /// <summary>Bitta sinfdagi faol o'quvchilar — bosh sahifadagi "Sinflar kesimi" va
 /// "Kontingent tarkibi" vidjetlari uchun.</summary>

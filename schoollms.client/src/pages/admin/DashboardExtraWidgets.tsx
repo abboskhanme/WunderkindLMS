@@ -6,6 +6,10 @@
  * uchun o'chiq vidjet serverga so'rov ham yubormaydi. Pul raqamlari yangi
  * hisob-kitob emas: har biri moliya bo'limidagi mavjud hisobotdan olinadi,
  * shu sabab bosh sahifa va moliya ekrani hech qachon bir-biriga zid chiqmaydi.
+ *
+ * Davr filtri (2026-10-08): sanaga bog'liq vidjetlar bosh sahifaning davrini oladi
+ * (`DashboardPeriod`). Hozirgi holatni ko'rsatadiganlari — kassa qoldig'i, qarzdorlik
+ * holati, kontingent — davrga qaramaydi.
  */
 import type { ReactNode } from 'react'
 import { ArrowDownCircle, ArrowUpCircle, Landmark } from 'lucide-react'
@@ -37,17 +41,30 @@ import { getLeadFunnel } from '@/api/services/leadFunnel'
 import { getPayrollAdjustments } from '@/api/services/payrollAdjustments'
 import { cn, formatMoney } from '@/lib/utils'
 import { chartColors, formatMonthLabel, shortAmount } from '@/pages/admin/finance/reportLabels'
+import { monthStart, type DashboardPeriod } from './dashboardPeriod'
 
-/* ---------- sana yordamchilari ---------- */
+/* ---------- davr yordamchilari ---------- */
 
-const pad = (n: number) => String(n).padStart(2, '0')
-const iso = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
-const todayIso = () => iso(new Date())
-/** `back` oy oldingi oyning birinchi kuni. */
-const monthStartIso = (back = 0) => {
-  const d = new Date()
-  return iso(new Date(d.getFullYear(), d.getMonth() - back, 1))
+/**
+ * Oylik grafiklar oynasi: davr oxirigacha kamida 6 oy, davr undan erta boshlansa — uning
+ * boshidan. "Bugun" yoki "Bu hafta" uchun bitta ustunli grafik ma'nosiz bo'lardi.
+ */
+function trendWindow(period: DashboardPeriod) {
+  const sixBack = monthStart(period.to, 5)
+  const from = [monthStart(period.from), sixBack].sort()[0]
+  const hint =
+    period.to === period.today && from === sixBack
+      ? 'Oxirgi 6 oy'
+      : `${formatMonthLabel(from)} – ${formatMonthLabel(period.to)}`
+  return { from, to: period.to, hint }
 }
+
+/** Davr oxiri tushgan oy ("YYYY-MM") va uning izohi. */
+function periodMonth(period: DashboardPeriod) {
+  const month = period.to.slice(0, 7)
+  return { month, hint: month === period.today.slice(0, 7) ? 'Joriy oy' : formatMonthLabel(period.to) }
+}
+
 const pct = (part: number, whole: number) => (whole > 0 ? Math.round((part / whole) * 100) : 0)
 
 /* ---------- umumiy qobiq ---------- */
@@ -126,14 +143,23 @@ function Figure({ label, value, tone }: { label: string; value: string; tone?: s
    Moliya — kichik kartalar (yuqoridagi to'rga tushadi)
    ========================================================================= */
 
-/** Bugungi kirim yoki chiqim — "Moliya hisobotlari" panelining bugungi kuni. */
-export function TodayMoneyStat({ kind }: { kind: 'in' | 'out' }) {
-  const { data, error } = useAsync(() => getFinanceDashboard(todayIso(), todayIso()), [])
-  const value = error ? '—' : data ? formatMoney(kind === 'in' ? data.inflow.current : data.outflow.current) : '...'
+/** Davrdagi kirim yoki chiqim — "Moliya hisobotlari" panelining o'sha davri. */
+export function TodayMoneyStat({ kind, period }: { kind: 'in' | 'out'; period: DashboardPeriod }) {
+  const { data, loading, error } = useAsync(
+    () => getFinanceDashboard(period.from, period.to),
+    [period.from, period.to],
+  )
+  const value = error
+    ? '—'
+    : data && !loading
+      ? formatMoney(kind === 'in' ? data.inflow.current : data.outflow.current)
+      : '...'
+  const today = period.kind === 'today'
+  const hint = error ?? (today ? undefined : period.label)
   return kind === 'in' ? (
-    <StatCard to="/admin/finance/reports" label="Bugungi kirim" value={value} icon={ArrowDownCircle} iconBg="bg-emerald-50" iconColor="text-emerald-600" hint={error ?? undefined} />
+    <StatCard to="/admin/finance/reports" label={today ? 'Bugungi kirim' : 'Kirim'} value={value} icon={ArrowDownCircle} iconBg="bg-emerald-50" iconColor="text-emerald-600" hint={hint} />
   ) : (
-    <StatCard to="/admin/finance/reports" label="Bugungi chiqim" value={value} icon={ArrowUpCircle} iconBg="bg-red-50" iconColor="text-red-600" hint={error ?? undefined} />
+    <StatCard to="/admin/finance/reports" label={today ? 'Bugungi chiqim' : 'Chiqim'} value={value} icon={ArrowUpCircle} iconBg="bg-red-50" iconColor="text-red-600" hint={hint} />
   )
 }
 
@@ -159,9 +185,10 @@ export function CashBalanceStat() {
    Moliya — bloklar
    ========================================================================= */
 
-/** Oxirgi 6 oy: hisoblangan va yig'ilgan (hisob-faktura oyi bo'yicha). */
-export function DebtDynamicsCard() {
-  const { data, loading, error } = useAsync(() => getCollectionRate(monthStartIso(5), todayIso()), [])
+/** Davr oxirigacha (kamida 6 oy): hisoblangan va yig'ilgan (hisob-faktura oyi bo'yicha). */
+export function DebtDynamicsCard({ period }: { period: DashboardPeriod }) {
+  const w = trendWindow(period)
+  const { data, loading, error } = useAsync(() => getCollectionRate(w.from, w.to), [w.from, w.to])
   const rows = (data ?? []).map((m) => ({
     name: formatMonthLabel(m.periodMonth),
     "Hisoblangan": m.accrued,
@@ -169,7 +196,7 @@ export function DebtDynamicsCard() {
     Qarz: Math.max(0, m.accrued - m.collected),
   }))
   return (
-    <WidgetCard title="Qarzdorlik dinamikasi" hint="Oxirgi 6 oy — har oyga hisoblangan va shu oy uchun yig'ilgan" loading={loading} error={error}>
+    <WidgetCard title="Qarzdorlik dinamikasi" hint={`${w.hint} — har oyga hisoblangan va shu oy uchun yig'ilgan`} loading={loading} error={error}>
       {rows.length === 0 ? (
         <p className="py-6 text-center text-sm text-slate-400">Ma'lumot yo'q.</p>
       ) : (
@@ -191,9 +218,10 @@ export function DebtDynamicsCard() {
   )
 }
 
-/** Oxirgi 6 oyning pul oqimi — "Pul oqimi" hisobotining o'zi, kassa + bank. */
-export function MonthlyFlowCard() {
-  const { data, loading, error } = useAsync(() => getCashFlow(monthStartIso(5), todayIso()), [])
+/** Davr oxirigacha (kamida 6 oy) pul oqimi — "Pul oqimi" hisobotining o'zi, kassa + bank. */
+export function MonthlyFlowCard({ period }: { period: DashboardPeriod }) {
+  const w = trendWindow(period)
+  const { data, loading, error } = useAsync(() => getCashFlow(w.from, w.to), [w.from, w.to])
   const byMonth = new Map<string, CashFlowMonth>()
   for (const acc of data?.accounts ?? []) {
     for (const m of acc.months) {
@@ -215,7 +243,7 @@ export function MonthlyFlowCard() {
   }
   const months = [...byMonth.values()].sort((a, b) => a.month.localeCompare(b.month))
   return (
-    <WidgetCard title="Oylik kirim-chiqim" hint="Oxirgi 6 oy, kassa va bank birga" loading={loading} error={error}>
+    <WidgetCard title="Oylik kirim-chiqim" hint={`${w.hint}, kassa va bank birga`} loading={loading} error={error}>
       {months.length === 0 ? (
         <p className="py-6 text-center text-sm text-slate-400">Ma'lumot yo'q.</p>
       ) : (
@@ -225,12 +253,13 @@ export function MonthlyFlowCard() {
   )
 }
 
-/** Joriy oy: kutilgan, yig'ilgan, qolgan — P&L 2.0 ning shu oyi. */
-export function FinancialStateCard() {
-  const { data, loading, error } = useAsync(() => getRevenueExpectation(), [])
+/** Davr oxiri tushgan oy: kutilgan, yig'ilgan, qolgan — P&L 2.0 ning shu oyi. */
+export function FinancialStateCard({ period }: { period: DashboardPeriod }) {
+  const m = periodMonth(period)
+  const { data, loading, error } = useAsync(() => getRevenueExpectation(m.month), [m.month])
   const rate = data?.collectionRateForPeriod
   return (
-    <WidgetCard title="Moliyaviy holat" hint="Joriy oy" loading={loading} error={error}>
+    <WidgetCard title="Moliyaviy holat" hint={m.hint} loading={loading} error={error}>
       {data && (
         <>
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
@@ -302,13 +331,14 @@ export function DebtStateCard() {
   )
 }
 
-/** Abonementi bor o'quvchilar ulushi — joriy oy. */
-export function CoverageCard({ stats }: { stats: AdminStats }) {
-  const { data, loading, error } = useAsync(() => getRevenueExpectation(), [])
+/** Abonementi bor o'quvchilar ulushi — davr oxiri tushgan oy. */
+export function CoverageCard({ stats, period }: { stats: AdminStats; period: DashboardPeriod }) {
+  const m = periodMonth(period)
+  const { data, loading, error } = useAsync(() => getRevenueExpectation(m.month), [m.month])
   const covered = data?.studentsActive ?? 0
   const share = pct(covered, stats.studentsCount)
   return (
-    <WidgetCard title="Abonement qamrovi" hint="Joriy oyda faol abonementi bor o'quvchilar" loading={loading} error={error}>
+    <WidgetCard title="Abonement qamrovi" hint={`${m.hint} — faol abonementi bor o'quvchilar`} loading={loading} error={error}>
       {data && (
         <>
           <p className="text-3xl font-semibold tabular-nums text-slate-800">{share}%</p>
@@ -360,19 +390,36 @@ export function LeadFunnelCard() {
   )
 }
 
-/** Joriy oydagi bonus va jarima — storno qilinganlari chiqarilgan. */
-export function BonusPenaltyCard() {
-  const now = new Date()
+/**
+ * Davrga tushgan ish haqi oylaridagi bonus va jarima — storno qilinganlari chiqarilgan.
+ * Ular oyga yoziladi, kunga emas: "Bugun" va "Bu hafta" — joriy oy.
+ */
+export function BonusPenaltyCard({ period }: { period: DashboardPeriod }) {
+  const first = monthStart(period.from)
+  const last = monthStart(period.to)
+  const single = first === last
   const { data, loading, error } = useAsync(
-    () => getPayrollAdjustments({ periodYear: now.getFullYear(), periodMonth: now.getMonth() + 1 }),
-    [],
+    () =>
+      single
+        ? getPayrollAdjustments({ periodYear: Number(last.slice(0, 4)), periodMonth: Number(last.slice(5, 7)) })
+        : getPayrollAdjustments(),
+    [first, last],
   )
-  const live = (data ?? []).filter((a) => !a.reversed && !a.reversalOf)
+  const inPeriod = (a: { periodYear: number; periodMonth: number }) => {
+    const m = `${a.periodYear}-${String(a.periodMonth).padStart(2, '0')}-01`
+    return m >= first && m <= last
+  }
+  const live = (data ?? []).filter((a) => !a.reversed && !a.reversalOf && inPeriod(a))
   const bonus = live.filter((a) => a.kind === 'bonus').reduce((s, a) => s + a.amount, 0)
   const penalty = live.filter((a) => a.kind === 'penalty').reduce((s, a) => s + a.amount, 0)
   const total = bonus + penalty
   return (
-    <WidgetCard title="Bonus / Jarima ulushi" hint="Joriy oy" loading={loading} error={error}>
+    <WidgetCard
+      title="Bonus / Jarima ulushi"
+      hint={single ? periodMonth(period).hint : `${formatMonthLabel(first)} – ${formatMonthLabel(last)}`}
+      loading={loading}
+      error={error}
+    >
       {data && (
         <ul>
           <ShareRow label="Bonus" value={formatMoney(bonus)} share={pct(bonus, total)} barClass="bg-emerald-500" />

@@ -21,12 +21,11 @@ import { formatDate, cn } from '@/lib/utils'
 import { Card } from '@/components/ui/Card'
 import { Loader } from '@/components/ui/Loader'
 
-const todayISO = () => {
-  const d = new Date()
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-}
 // App hafta kuni: 0=Dushanba ... 5=Shanba, 6=Yakshanba (dars yo'q)
-const todayWeekday = () => (new Date().getDay() + 6) % 7
+const weekdayOf = (iso: string) => {
+  const [y, m, d] = iso.split('-').map(Number)
+  return (new Date(Date.UTC(y, m - 1, d)).getUTCDay() + 6) % 7
+}
 
 interface Lesson {
   period: number
@@ -38,9 +37,16 @@ interface Lesson {
   subGroup: number
 }
 
-/** Bosh sahifada bugungi (joriy hafta kuni) barcha sinflar dars jadvali. */
-export function TodaySchedule() {
-  const [loading, setLoading] = useState(true)
+/**
+ * Bosh sahifada bir kunning barcha sinflar dars jadvali. Kun — bosh sahifa davrining oxirgi
+ * kuni (2026-10-08): "Bugun", "Bu hafta", "Bu oy" — bugun; qo'lda tanlangan davr — uning oxiri.
+ *
+ * @param date "YYYY-MM-DD"
+ * @param today Bugun, "YYYY-MM-DD" — sarlavha va bo'sh holat matnlari uchun.
+ */
+export function TodaySchedule({ date, today }: { date: string; today: string }) {
+  /** Qaysi kun uchun ma'lumot yuklangan — boshqasi bo'lsa, hali yuklanmoqda. */
+  const [loadedIso, setLoadedIso] = useState<string | null>(null)
   const [classes, setClasses] = useState<SchoolClass[]>([])
   const [subjects, setSubjects] = useState<Subject[]>([])
   const [teachers, setTeachers] = useState<Teacher[]>([])
@@ -50,8 +56,10 @@ export function TodaySchedule() {
   const [assignmentsByClass, setAssignmentsByClass] = useState<Record<string, WeekAssignment[]>>({})
   const [conductedSet, setConductedSet] = useState<Set<string>>(new Set())
 
-  const iso = todayISO()
-  const weekday = todayWeekday()
+  const iso = date
+  const weekday = weekdayOf(iso)
+  const loading = loadedIso !== iso
+  const isToday = iso === today
 
   useEffect(() => {
     let active = true
@@ -68,6 +76,9 @@ export function TodaySchedule() {
         setSubjects(subs)
         setTeachers(tchs)
         setConductedSet(new Set(conducted.map((c) => `${c.classId}|${c.subjectId}|${c.period}|${c.subGroup ?? 0}`)))
+        // Kun almashganda oldingi kunning choragi/haftasi qolib ketmasin.
+        setQuarter(null)
+        setWeek(null)
 
         const q = settings.quarters.find(
           (x) => x.startDate && x.endDate && x.startDate <= iso && iso <= x.endDate,
@@ -95,7 +106,7 @@ export function TodaySchedule() {
         setAssignmentsByClass(amap)
       })
       .finally(() => {
-        if (active) setLoading(false)
+        if (active) setLoadedIso(iso)
       })
     return () => {
       active = false
@@ -132,7 +143,7 @@ export function TodaySchedule() {
     <Card>
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h2 className="font-semibold text-slate-800">Bugungi dars jadvali</h2>
+          <h2 className="font-semibold text-slate-800">{isToday ? 'Bugungi dars jadvali' : 'Dars jadvali'}</h2>
           <p className="text-sm text-slate-400">
             {dayName}, {formatDate(iso)}
           </p>
@@ -145,10 +156,12 @@ export function TodaySchedule() {
       {loading ? (
         <Loader label="Yuklanmoqda..." />
       ) : weekday > 5 ? (
-        <p className="py-8 text-center text-sm text-slate-400">Bugun dam olish kuni — dars yo'q</p>
+        <p className="py-8 text-center text-sm text-slate-400">
+          {isToday ? 'Bugun' : 'Bu kun'} dam olish kuni — dars yo'q
+        </p>
       ) : quarter == null ? (
         <p className="py-8 text-center text-sm text-slate-400">
-          Bugun uchun o'quv chorak sanasi topilmadi.{' '}
+          {isToday ? 'Bugun' : 'Bu kun'} uchun o'quv chorak sanasi topilmadi.{' '}
           <Link to="/admin/settings/quarters" className="text-brand-600 hover:underline">
             Choraklar sozlamasi
           </Link>
@@ -168,7 +181,7 @@ export function TodaySchedule() {
                 {!assigned ? (
                   <p className="py-2 text-xs text-slate-400">Jadval biriktirilmagan</p>
                 ) : lessons.length === 0 ? (
-                  <p className="py-2 text-xs text-slate-400">Bugun dars yo'q</p>
+                  <p className="py-2 text-xs text-slate-400">{isToday ? "Bugun dars yo'q" : "Dars yo'q"}</p>
                 ) : (
                   <ul className="space-y-1">
                     {lessons.map((l, i) => (

@@ -68,6 +68,8 @@ export interface AdminStats {
   waitingCount: number
   /** Birinchi to'lovi joriy oyga to'g'ri kelganlar */
   firstPaymentThisMonthCount: number
+  /** Birinchi to'lovi tanlangan davrga to'g'ri kelganlar; davr berilmasa null */
+  firstPaymentInPeriodCount?: number | null
   maleCount: number
   femaleCount: number
 }
@@ -125,9 +127,9 @@ export interface AdminDashboard {
   classPerformance: ClassPerformance[]
   /** O'rtacha baho bo'yicha eng yuqori sinflar */
   topClasses: TopClass[]
-  /** Bugungi davomat — dars soatlari kesimida */
+  /** Davomat — dars soatlari kesimida (davr kunlari bo'yicha yig'indi; davrsiz — bugun) */
   attendanceByPeriod: AttendanceByPeriod[]
-  /** Oxirgi 30 kunda eng ko'p sababsiz qoldirganlar */
+  /** Davrda (davrsiz — oxirgi 30 kunda) eng ko'p sababsiz qoldirganlar */
   absentStudents: AbsentStudent[]
   classHeadcounts?: ClassHeadcount[] | null
 }
