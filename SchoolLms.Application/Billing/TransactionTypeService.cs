@@ -24,12 +24,16 @@ namespace SchoolLms.Application.Billing;
 // ===========================================================================
 
 /// <summary>Tur — o'qish uchun.</summary>
+/// <param name="LedgerAccount">P&amp;L hisobi (<c>Accounts.ForTransactionType</c>) — shu turdagi kirim/chiqim
+/// jurnalda qaysi qatorga tushishi, 2026-10-08.</param>
 public record TransactionTypeDto(
-    Guid Id, string Kind, string Name, bool IsActive, bool IsSeeded, int Position);
+    Guid Id, string Kind, string Name, bool IsActive, bool IsSeeded, int Position, string LedgerAccount = "");
 
 /// <summary>Yangi tur. <c>Kind</c> YARATISHDA belgilanadi va keyin O'ZGARMAYDI (pastga qarang).</summary>
+/// <param name="LedgerAccount">P&amp;L hisobi; berilmasa nomidan taxmin qilinadi
+/// (<c>Accounts.GuessForTransactionType</c>).</param>
 public record CreateTransactionTypeRequest(
-    string Kind, string Name, bool IsActive = true, int Position = 0);
+    string Kind, string Name, bool IsActive = true, int Position = 0, string? LedgerAccount = null);
 
 /// <summary>
 /// Turni tahrirlash — QISMAN (har bir maydon ixtiyoriy). <c>Kind</c> shu yerda
@@ -37,8 +41,10 @@ public record CreateTransactionTypeRequest(
 /// turning ESKI kind'iga tayanib yozilgan — uni almashtirish ularning ma'nosini
 /// orqaga qarab buzardi. Kind almashtirish kerak bo'lsa — yangi tur yaratiladi.
 /// </summary>
+/// <param name="LedgerAccount">Yangi P&amp;L hisobi. Faqat KEYINGI kirim/chiqimlarga ta'sir qiladi —
+/// jurnalga yozilgan partiya orqaga qarab o'zgarmaydi.</param>
 public record UpdateTransactionTypeRequest(
-    string? Name = null, bool? IsActive = null, int? Position = null);
+    string? Name = null, bool? IsActive = null, int? Position = null, string? LedgerAccount = null);
 
 public interface ITransactionTypeService
 {
@@ -91,6 +97,9 @@ public sealed class TransactionTypeService(IAppDbContext db, AuditService audit)
             IsActive = request.IsActive,
             IsSeeded = false,
             Position = request.Position,
+            LedgerAccount = request.LedgerAccount is null
+                ? Accounts.GuessForTransactionType(kind, name)
+                : RequireLedgerAccount(kind, request.LedgerAccount),
             CreatedAt = AppClock.NowInstant,
         };
 
@@ -124,6 +133,7 @@ public sealed class TransactionTypeService(IAppDbContext db, AuditService audit)
         }
         if (request.IsActive is not null) type.IsActive = request.IsActive.Value;
         if (request.Position is not null) type.Position = request.Position.Value;
+        if (request.LedgerAccount is not null) type.LedgerAccount = RequireLedgerAccount(type.Kind, request.LedgerAccount);
 
         audit.Record(AuditEntity, type.Id.ToString("D"), "update",
             $"Tranzaksiya turi o'zgardi: {type.Name} ({KindLabel(type.Kind)})",
@@ -166,12 +176,22 @@ public sealed class TransactionTypeService(IAppDbContext db, AuditService audit)
     // -----------------------------------------------------------------
 
     private static TransactionTypeDto ToDto(TransactionType t) =>
-        new(t.Id, t.Kind, t.Name, t.IsActive, t.IsSeeded, t.Position);
+        new(t.Id, t.Kind, t.Name, t.IsActive, t.IsSeeded, t.Position,
+            Accounts.ForTransactionType(t.Kind, t.LedgerAccount));
 
     private static object Snapshot(TransactionType t) => new
     {
-        t.Id, t.Kind, t.Name, t.IsActive, t.IsSeeded, t.Position,
+        t.Id, t.Kind, t.Name, t.IsActive, t.IsSeeded, t.Position, t.LedgerAccount,
     };
+
+    /// <summary>Closed list only: <c>expense:*</c> for a Chiqim type, <c>revenue:*</c> for a Kirim one.</summary>
+    private static string RequireLedgerAccount(string kind, string account) =>
+        Accounts.FitsTransactionType(kind, account)
+            ? account
+            : throw BillingRuleException.Invalid("invalid_ledger_account",
+                $"'{account}' bu turkum uchun hisobot toifasi emas. Ruxsat etilganlar: "
+                + string.Join(", ", kind == TransactionTypeKind.Out
+                    ? Accounts.TransactionTypeExpenseAccounts : Accounts.TransactionTypeRevenueAccounts) + ".");
 
     private static string KindLabel(string kind) => kind == TransactionTypeKind.In ? "Kirim" : "Chiqim";
 

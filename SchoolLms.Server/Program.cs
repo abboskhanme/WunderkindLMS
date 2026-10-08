@@ -485,6 +485,19 @@ using (var scope = app.Services.CreateScope())
     {
         Console.WriteLine($"[db] HR sozlamalari qo'shilmadi: {ex.GetType().Name}");
     }
+
+    // Kassa kirim/chiqimi → jurnal (P&L, 2026-10-08): turlarga hisob, eski qatorlarga partiya.
+    // Idempotent; best-effort like the seeders above — a failure is logged, start-up goes on.
+    try
+    {
+        var (types, batches) = await SchoolLms.Application.Billing.CashBoxLedgerSync.RunAsync(db);
+        if (types > 0 || batches > 0)
+            Console.WriteLine($"[db] Kassa → jurnal: {types} ta turga hisob, {batches} ta kirim/chiqim jurnalga yozildi.");
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"[db] Kassa → jurnal sinxronlanmadi: {ex.GetType().Name}: {ex.Message}");
+    }
 }
 
 // ---------- Pipeline ----------

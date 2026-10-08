@@ -9178,6 +9178,10 @@ namespace SchoolLms.Infrastructure.Migrations
                         .HasColumnType("text")
                         .HasColumnName("kind");
 
+                    b.Property<string>("LedgerAccount")
+                        .HasColumnType("text")
+                        .HasColumnName("ledger_account");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasColumnType("text")

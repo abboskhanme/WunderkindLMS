@@ -36,6 +36,7 @@ import { billingErrorMessage } from '@/api/services/billingError'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { cn } from '@/lib/utils'
+import { accountLabel } from '@/pages/admin/finance/reportLabels'
 import { AsyncBlock, BillingGuard, IconBtn, Notice, StatusPill } from './BillingUi'
 import { useBillingAccess } from './access'
 import { TransactionTypeFormModal } from './TransactionTypeFormModal'
@@ -142,8 +143,8 @@ function TransactionTypesView() {
         <div>
           <h1 className="text-xl font-semibold text-slate-800">Tranzaksiya turi</h1>
           <p className="text-sm text-slate-400">
-            Kassa kirim shaklidagi "Tranzaksiya turi" tanlovi — hisobotga (akkaunt) ta'sir qilmaydi,
-            faqat yorliq. Jami {rows.length} ta · {activeCount} tasi faol.
+            Kassa kirim/chiqim shaklidagi "Tranzaksiya turi" tanlovi. Har tur P&amp;L'da o'z
+            toifasiga tushadi. Jami {rows.length} ta · {activeCount} tasi faol.
           </p>
         </div>
         {canManageTransactionTypes && (
@@ -192,6 +193,7 @@ function TransactionTypesView() {
                 <tr>
                   <th className="px-4 py-3">№</th>
                   <th className="px-4 py-3">Nomi</th>
+                  <th className="px-4 py-3">Hisobotdagi toifa</th>
                   <th className="px-4 py-3">Holat</th>
                   <th className="px-4 py-3 text-right">Amallar</th>
                 </tr>
@@ -203,6 +205,7 @@ function TransactionTypesView() {
                     <td className="px-4 py-3">
                       <span className="font-medium text-slate-800">{row.name}</span>
                     </td>
+                    <td className="px-4 py-3 text-slate-600">{accountLabel(row.ledgerAccount)}</td>
                     <td className="px-4 py-3">
                       {row.isActive ? (
                         <StatusPill tone="success">Faol</StatusPill>

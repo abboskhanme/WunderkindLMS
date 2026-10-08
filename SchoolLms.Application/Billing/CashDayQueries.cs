@@ -670,6 +670,7 @@ public sealed class CashDayQueries(IAppDbContext db, ICashShiftService shifts)
         LedgerRefType.Expense => "Chiqim",
         LedgerRefType.Salary => "Maosh",
         LedgerRefType.Reversal => "Storno",
+        LedgerRefType.CashBoxTransaction => "Kassa amali",
         _ => "Boshqa harakat",
     };
 

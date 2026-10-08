@@ -509,6 +509,10 @@ public sealed class CashBoxService(IAppDbContext db) : ICashBoxService
             + (note is null ? "" : $" — {note}"),
             actorId: actorId, actorName: await actors.OfAsync(actorId, ct), after: Snapshot(row)));
 
+        // Turi bor kirim — jurnalga ham (P&L, 2026-10-08; `CashBoxLedgerSync.cs`).
+        if (transactionType is not null)
+            await CashBoxLedgerSync.PostAsync(db, row, transactionType, actorId, ct);
+
         await db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
 
@@ -580,6 +584,10 @@ public sealed class CashBoxService(IAppDbContext db) : ICashBoxService
             + BackdateNote(createdAt)
             + (note is null ? "" : $" — {note}"),
             actorId: actorId, actorName: await actors.OfAsync(actorId, ct), after: Snapshot(row)));
+
+        // Turi bor chiqim — P&L'da xarajat (EduSchool'dagidek, 2026-10-08; `CashBoxLedgerSync.cs`).
+        if (transactionType is not null)
+            await CashBoxLedgerSync.PostAsync(db, row, transactionType, actorId, ct);
 
         await db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
@@ -764,6 +772,9 @@ public sealed class CashBoxService(IAppDbContext db) : ICashBoxService
             + $"Sabab: {cleanReason}",
             actorId: actorId, actorName: await actors.OfAsync(actorId, ct),
             before: Snapshot(original), after: Snapshot(mirror)));
+
+        // Jurnalga tushgan kirim/chiqim bo'lsa — uning partiyasi ham teskari (`CashBoxLedgerSync.cs`).
+        await CashBoxLedgerSync.ReverseIfPostedAsync(db, original.Id, cleanReason, actorId, ct);
 
         await db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);

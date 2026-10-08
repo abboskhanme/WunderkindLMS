@@ -60,12 +60,39 @@ public static class Accounts
     public const string ExpenseRepair = "expense:repair";
     public const string ExpenseOther = "expense:other";
 
+    // ----- Kassa chiqimi turlari uchun (2026-10-08) -----
+    //
+    //  EduSchool'dan kelgan chiqim turlari (oshxona, avtobus, yotoqxona, marketing,
+    //  soliqlar) P&L'da hammasi "Boshqa chiqim" ichida ~190 mln bo'lib qolardi.
+    //  Ular `expenses.category` EMAS — `ExpenseCategories` o'zgarmaydi, faqat
+    //  tranzaksiya turi (`transaction_types.ledger_account`) ularni tanlay oladi.
+
+    public const string ExpenseFood = "expense:food";
+    public const string ExpenseTransport = "expense:transport";
+    public const string ExpenseDormitory = "expense:dormitory";
+    public const string ExpenseMarketing = "expense:marketing";
+    public const string ExpenseTaxes = "expense:taxes";
+
     /// <summary>Ruxsat etilgan barcha hisob kodlari. P1-22 va hisobotlar shu ro'yxatdan aylanadi.</summary>
     public static readonly IReadOnlyList<string> All =
     [
         Cash, Bank, Receivable,
         RevenueTuition, RevenueBus, RevenueDormitory, RevenueMeals, RevenueOther,
         ExpenseSalary, ExpenseUtilities, ExpenseSupplies, ExpenseRent, ExpenseRepair, ExpenseOther,
+        ExpenseFood, ExpenseTransport, ExpenseDormitory, ExpenseMarketing, ExpenseTaxes,
+    ];
+
+    /// <summary>Accounts a Chiqim transaction type may post to (<see cref="ForTransactionType"/>).</summary>
+    public static readonly IReadOnlyList<string> TransactionTypeExpenseAccounts =
+    [
+        ExpenseSalary, ExpenseRent, ExpenseUtilities, ExpenseSupplies, ExpenseFood, ExpenseTransport,
+        ExpenseDormitory, ExpenseMarketing, ExpenseTaxes, ExpenseRepair, ExpenseOther,
+    ];
+
+    /// <summary>Accounts a Kirim transaction type may post to.</summary>
+    public static readonly IReadOnlyList<string> TransactionTypeRevenueAccounts =
+    [
+        RevenueTuition, RevenueBus, RevenueDormitory, RevenueMeals, RevenueOther,
     ];
 
     private static readonly HashSet<string> Known = new(All, StringComparer.Ordinal);
@@ -160,4 +187,52 @@ public static class Accounts
     /// </summary>
     public static string SettlementFor(string method) =>
         PaymentMethod.CountsAsCash(method) ? Cash : Bank;
+
+    /// <summary>Is <paramref name="account"/> allowed for a transaction type of <paramref name="kind"/>?</summary>
+    public static bool FitsTransactionType(string kind, string? account) =>
+        account is not null && (kind == TransactionTypeKind.Out
+            ? TransactionTypeExpenseAccounts.Contains(account, StringComparer.Ordinal)
+            : TransactionTypeRevenueAccounts.Contains(account, StringComparer.Ordinal));
+
+    /// <summary>
+    /// The account a typed cash-box Kirim/Chiqim posts to: the type's own choice, or the "other"
+    /// account when none (or a stale one) is set — money is never dropped from the report.
+    /// </summary>
+    public static string ForTransactionType(string kind, string? ledgerAccount) =>
+        FitsTransactionType(kind, ledgerAccount)
+            ? ledgerAccount!
+            : kind == TransactionTypeKind.Out ? ExpenseOther : RevenueOther;
+
+    /// <summary>
+    /// First guess of a type's account from its name — EduSchool's names, Latin and Cyrillic
+    /// (prod, 2026-10-08). Only fills a type that has none; an admin's choice is never overwritten.
+    /// </summary>
+    public static string GuessForTransactionType(string kind, string name)
+    {
+        var n = name.ToLowerInvariant().Replace('’', '\'').Replace('ʻ', '\'').Replace('ʼ', '\'');
+        bool Has(params string[] parts) => parts.Any(p => n.Contains(p, StringComparison.Ordinal));
+
+        if (kind == TransactionTypeKind.In)
+            return Has("oylik to'lov", "ойлик тўлов") ? RevenueTuition
+                : Has("avtobus", "автобус", "transport", "транспорт") ? RevenueBus
+                : Has("yotoqxona", "ётоқхона", "ётокхона") ? RevenueDormitory
+                : Has("ovqat", "oshxona", "oshhona", "овқат", "ошхона") ? RevenueMeals
+                : RevenueOther;
+
+        // Loans repaid from salaries mention "иш хаки" — they are not salary, so they go first.
+        if (Has("кредит", "kredit")) return ExpenseOther;
+        if (Has("oylik", "avans", "ish haqi", "maosh", "ойлик", "аванс", "иш хаки", "иш ҳақи", "маош")) return ExpenseSalary;
+        if (Has("ijara", "ижара")) return ExpenseRent;
+        if (Has("soliq", "solik", "solig", "inps", "солиқ", "солик")) return ExpenseTaxes;
+        if (Has("oshxona", "oshhona", "ovqat", "ошхона", "озиқ", "овқат")) return ExpenseFood;
+        if (Has("avtobus", "автобус", "transport", "транспорт")) return ExpenseTransport;
+        if (Has("yotoqxona", "ётоқхона", "ётокхона")) return ExpenseDormitory;
+        if (Has("marketing", "маркетинг", "маркент", "reklama", "реклам")) return ExpenseMarketing;
+        if (Has("elektr", "lektir", "energ", "электр", "энерг", "svet", "internet", "интернет", "telefon",
+                "ichimlik suv", "suv", "gaz", "kommunal", "musir", "чиқинди")) return ExpenseUtilities;
+        if (Has("konstavar", "kanstovar", "kantstovar", "kansel", "канцел", "qog'oz", "maxsulot", "mahsulot", "jihoz"))
+            return ExpenseSupplies;
+        if (Has("ta'mir", "remont", "таъмир")) return ExpenseRepair;
+        return ExpenseOther;
+    }
 }

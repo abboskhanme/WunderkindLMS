@@ -180,6 +180,8 @@ public class LedgerServiceTests(ApiFixture fixture)
                 "revenue:tuition", "revenue:bus", "revenue:dormitory", "revenue:meals", "revenue:other",
                 "expense:salary", "expense:utilities", "expense:supplies",
                 "expense:rent", "expense:repair", "expense:other",
+                // Cash-box Chiqim types (2026-10-08) — not `expenses.category` values.
+                "expense:food", "expense:transport", "expense:dormitory", "expense:marketing", "expense:taxes",
             ],
             Accounts.All);
 

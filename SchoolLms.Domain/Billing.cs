@@ -654,8 +654,14 @@ public static class LedgerRefType
     /// <summary>An <see cref="InvoiceAdjustment"/> — debit revenue, credit receivable (billing-plans.md §10).</summary>
     public const string InvoiceAdjustment = "invoice_adjustment";
 
+    /// <summary>
+    /// A typed cash-box Kirim/Chiqim (<see cref="CashBoxTransaction"/> with a
+    /// <see cref="TransactionType"/>), 2026-10-08: it reaches P&amp;L the way EduSchool's does.
+    /// </summary>
+    public const string CashBoxTransaction = "cash_box_transaction";
+
     public static readonly IReadOnlyList<string> All =
-        [Payment, Invoice, Expense, Salary, Reversal, CashHandover, Refund, InvoiceAdjustment];
+        [Payment, Invoice, Expense, Salary, Reversal, CashHandover, Refund, InvoiceAdjustment, CashBoxTransaction];
 }
 
 /// <summary>

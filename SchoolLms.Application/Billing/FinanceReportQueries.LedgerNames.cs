@@ -175,6 +175,7 @@ public sealed partial class FinanceReportQueries
         LedgerRefType.Expense => "Chiqim",
         LedgerRefType.Salary => "Maosh",
         LedgerRefType.Reversal => "Storno",
+        LedgerRefType.CashBoxTransaction => "Kassa amali",
         _ => "Boshqa harakat",
     };
 

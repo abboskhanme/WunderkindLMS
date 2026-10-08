@@ -9,9 +9,11 @@
  */
 import { useEffect, useState } from 'react'
 import type { TransactionType, TransactionTypeInput, TransactionTypeKind } from '@/api/services/transactionTypes'
+import { expenseLedgerAccounts, revenueLedgerAccounts } from '@/api/services/transactionTypes'
 import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
-import { Input } from '@/components/ui/Input'
+import { Input, Select } from '@/components/ui/Input'
+import { accountLabel } from '@/pages/admin/finance/reportLabels'
 import { Notice } from './BillingUi'
 
 const kindLabels: Record<TransactionTypeKind, string> = { in: 'Kirim', out: 'Chiqim' }
@@ -30,6 +32,9 @@ export function TransactionTypeFormModal({ open, kind, initial, busy, error, onC
   const [name, setName] = useState('')
   const [position, setPosition] = useState('0')
   const [isActive, setIsActive] = useState(true)
+  const accounts = kind === 'out' ? expenseLedgerAccounts : revenueLedgerAccounts
+  const otherAccount = kind === 'out' ? 'expense:other' : 'revenue:other'
+  const [ledgerAccount, setLedgerAccount] = useState<string>(otherAccount)
 
   useEffect(() => {
     if (!open) return
@@ -37,8 +42,9 @@ export function TransactionTypeFormModal({ open, kind, initial, busy, error, onC
     setName(initial?.name ?? '')
     setPosition(String(initial?.position ?? 0))
     setIsActive(initial?.isActive ?? true)
+    setLedgerAccount(initial?.ledgerAccount ?? otherAccount)
     /* eslint-enable react-hooks/set-state-in-effect */
-  }, [open, initial])
+  }, [open, initial, otherAccount])
 
   const editing = initial !== null
   const trimmedName = name.trim()
@@ -49,7 +55,7 @@ export function TransactionTypeFormModal({ open, kind, initial, busy, error, onC
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     if (!valid || busy) return
-    onSubmit({ kind, name: trimmedName, position: positionNumber, isActive })
+    onSubmit({ kind, name: trimmedName, position: positionNumber, isActive, ledgerAccount })
   }
 
   return (
@@ -83,6 +89,25 @@ export function TransactionTypeFormModal({ open, kind, initial, busy, error, onC
           value={name}
           onChange={(e) => setName(e.target.value)}
         />
+
+        <div>
+          <Select
+            label="Hisobotdagi toifa (P&L)"
+            required
+            value={ledgerAccount}
+            onChange={(e) => setLedgerAccount(e.target.value)}
+          >
+            {accounts.map((a) => (
+              <option key={a} value={a}>
+                {accountLabel(a)}
+              </option>
+            ))}
+          </Select>
+          <p className="mt-1 text-xs text-slate-400">
+            Shu turdagi {kind === 'out' ? 'chiqim' : 'kirim'} P&amp;L va moliya hisobotlarida shu qatorga tushadi.
+            O'zgartirish faqat keyingi yozuvlarga ta'sir qiladi.
+          </p>
+        </div>
 
         <div>
           <Input

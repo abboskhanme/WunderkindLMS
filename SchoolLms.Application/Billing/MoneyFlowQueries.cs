@@ -180,6 +180,11 @@ public static class MoneyFlowQueries
         Accounts.ExpenseRent => "Ijara",
         Accounts.ExpenseRepair => "Ta'mirlash",
         Accounts.ExpenseOther => "Boshqa chiqim",
+        Accounts.ExpenseFood => "Oziq-ovqat",
+        Accounts.ExpenseTransport => "Transport",
+        Accounts.ExpenseDormitory => "Yotoqxona",
+        Accounts.ExpenseMarketing => "Marketing",
+        Accounts.ExpenseTaxes => "Soliqlar",
         _ => account,
     };
 }

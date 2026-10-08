@@ -27,6 +27,11 @@ export interface TransactionType {
   isSeeded: boolean
   /** Ro'yxatdagi tartib (kichigi tepada). */
   position: number
+  /**
+   * P&L hisobi (`expense:*` / `revenue:*`) — shu turdagi kirim/chiqim jurnalda qaysi qatorga
+   * tushadi (2026-10-08). Server hech qachon bo'sh qaytarmaydi.
+   */
+  ledgerAccount: string
 }
 
 export interface TransactionTypeInput {
@@ -34,7 +39,32 @@ export interface TransactionTypeInput {
   name: string
   isActive: boolean
   position: number
+  ledgerAccount: string
 }
+
+/** Chiqim turi tanlay oladigan P&L hisoblari — server ro'yxati (`Accounts.TransactionTypeExpenseAccounts`). */
+export const expenseLedgerAccounts = [
+  'expense:salary',
+  'expense:rent',
+  'expense:utilities',
+  'expense:supplies',
+  'expense:food',
+  'expense:transport',
+  'expense:dormitory',
+  'expense:marketing',
+  'expense:taxes',
+  'expense:repair',
+  'expense:other',
+] as const
+
+/** Kirim turi tanlay oladigan P&L hisoblari (`Accounts.TransactionTypeRevenueAccounts`). */
+export const revenueLedgerAccounts = [
+  'revenue:tuition',
+  'revenue:bus',
+  'revenue:dormitory',
+  'revenue:meals',
+  'revenue:other',
+] as const
 
 /** Qisman tahrir — `kind` YO'Q: yaratilgandan keyin o'zgarmaydi (server izohi). */
 export type TransactionTypePatch = Partial<Omit<TransactionTypeInput, 'kind'>>

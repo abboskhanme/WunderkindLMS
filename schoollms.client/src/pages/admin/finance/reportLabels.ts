@@ -36,6 +36,11 @@ const accountNames: Record<string, string> = {
   'expense:supplies': 'Jihoz va materiallar',
   'expense:repair': "Ta'mirlash",
   'expense:other': 'Boshqa chiqim',
+  'expense:food': 'Oziq-ovqat',
+  'expense:transport': 'Transport',
+  'expense:dormitory': 'Yotoqxona',
+  'expense:marketing': 'Marketing',
+  'expense:taxes': 'Soliqlar',
 }
 
 /** Hisob kodini o'qiladigan nomga aylantiradi. Noma'lum kod — o'zi ko'rinadi. */

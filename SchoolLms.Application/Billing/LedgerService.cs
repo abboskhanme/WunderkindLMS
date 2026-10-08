@@ -187,6 +187,22 @@ public sealed class LedgerService(IAppDbContext db) : ILedgerService
         return await ReverseCoreAsync(entryId, reason, approverId, twoPerson: false, ct);
     }
 
+    /// <summary>
+    /// Reverses a cash-box Kirim/Chiqim batch (<see cref="LedgerRefType.CashBoxTransaction"/>) when the
+    /// row is cancelled. No two-person check: <c>CashBoxService.CancelTransactionAsync</c> has none, and
+    /// the journal must follow the cash box, not refuse a cancel the cash box already accepted.
+    /// Any other batch is refused here.
+    /// </summary>
+    public async Task<IReadOnlyList<LedgerEntry>> ReverseCashBoxAsync(
+        long entryId, string reason, string actorId, CancellationToken ct = default)
+    {
+        var refType = await db.LedgerEntries.AsNoTracking().Where(e => e.Id == entryId)
+            .Select(e => e.RefType).FirstOrDefaultAsync(ct);
+        if (refType != LedgerRefType.CashBoxTransaction)
+            throw new InvalidOperationException("Faqat kassa amali partiyasi shu yo'l bilan teskari qilinadi.");
+        return await ReverseCoreAsync(entryId, reason, actorId, twoPerson: false, ct);
+    }
+
     private async Task<IReadOnlyList<LedgerEntry>> ReverseCoreAsync(
         long entryId, string reason, string approverId, bool twoPerson, CancellationToken ct)
     {

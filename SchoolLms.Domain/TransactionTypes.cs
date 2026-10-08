@@ -22,6 +22,17 @@ namespace SchoolLms.Domain;
 //  Kirim/Chiqim — kassa (`cash_box_transactions`) tomoni, hali qamrab
 //  olinmagan yagona qism.
 //
+//  P&L GA YO'L (2026-10-08) — `LedgerAccount`
+//  ------------------------------------------
+//  Mijoz: "eduschool bilan moliya bo'limlari funksionalliklari bir xil ishlashi
+//  kerak". EduSchool'da kassadan turi bilan qilingan chiqim P&L'da xarajat bo'ladi;
+//  bizda u jurnalga umuman yozilmas edi va P&L "Yillik xarajat 0 so'm" ko'rsatardi.
+//  Endi har tur YOPIQ ro'yxatdagi bitta hisobga bog'lanadi (<see cref="TransactionType.LedgerAccount"/>):
+//  turi bor kirim/chiqim shu hisobga jurnal partiyasi bo'lib tushadi
+//  (`CashBoxService`, `CashBoxLedgerSync`). Erkin matn emas — `Accounts.cs` ro'yxatidan
+//  tanlanadi, shuning uchun quyidagi "yopiq ro'yxat" qoidasi buzilmaydi. Quyidagi
+//  "P&L bitta so'm ham farq qilmaydi" jumlasi shu sanagacha to'g'ri edi.
+//
 //  NEGA `Accounts.cs` GA TEGMAYDI — YOPIQ RO'YXAT QOIDASI BUZILMAYDI
 //  --------------------------------------------------------------------
 //  `docs/modules/existing-module-gaps.md` §3.4 (P0 jadvali, "Editable
@@ -89,6 +100,14 @@ public class TransactionType
 
     /// <summary>Ro'yxatdagi tartib (kichigi tepada) — <see cref="AdjustmentReason.Position"/> bilan bir xil naqsh.</summary>
     public int Position { get; set; }
+
+    /// <summary>
+    /// The ledger account this type's Kirim/Chiqim posts to: an <c>expense:*</c> account for
+    /// <see cref="TransactionTypeKind.Out"/>, a <c>revenue:*</c> one for <see cref="TransactionTypeKind.In"/>
+    /// (closed list, <c>Accounts.cs</c>). Null — not chosen yet; <c>CashBoxLedgerSync</c> fills it from
+    /// the name at start-up and posting falls back to the "other" account. File header: "P&amp;L GA YO'L".
+    /// </summary>
+    public string? LedgerAccount { get; set; }
 
     public DateTimeOffset CreatedAt { get; set; }
 }
