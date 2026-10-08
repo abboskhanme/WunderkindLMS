@@ -10,6 +10,7 @@ import { useState } from 'react'
 import { LogOut } from 'lucide-react'
 import { useSession } from '../lib/session'
 import { haptic, inTelegram } from '../lib/telegram'
+import { panelKey } from '../lib/panelKey'
 
 /**
  * `variant="icon"` — hero burchagidagi dumaloq belgi; `variant="block"` —
@@ -72,8 +73,8 @@ export function LogoutButton({ variant = 'icon' }) {
           >
             <p className="text-[18px] font-bold">Hisobdan chiqasizmi?</p>
             <p className="mt-1.5 text-[14px] leading-relaxed text-slate-500">
-              {inTelegram
-                ? "Bu Telegram hisobingiz maktab hisobidan uziladi. Keyingi safar ilovani ochganingizda login va parol so'raladi."
+              {inTelegram || panelKey
+                ? "Shu akkaunt bu Telegram'dan chiqariladi. Boshqa akkaunt ham qo'shilgan bo'lsa, ilova unga o'tadi; bo'lmasa keyingi safar login va parol so'raladi."
                 : 'Qayta kirish uchun login va parol kerak bo\'ladi.'}
             </p>
             {error && <p className="mt-3 text-[13px] text-red-600">{error}</p>}

@@ -23,13 +23,15 @@ import { useAsync } from '../../lib/useAsync'
 import { dateTime } from '../../lib/format'
 import { haptic } from '../../lib/telegram'
 import { getNews } from '../../lib/parentApi'
+import { useSession } from '../../lib/session'
 import { AsyncBlock } from './shared'
 
 /** Items shown before `Barchasi` is tapped (§3.4). */
 const PREVIEW = 3
 
 export function NewsCard() {
-  const state = useAsync(() => getNews(), [])
+  const { user } = useSession()
+  const state = useAsync(() => getNews(undefined, user?.role), [user?.role])
   const [expanded, setExpanded] = useState(false)
   // One open item at a time: two expanded bodies in a narrow webview turn
   // the card into a wall of text you have to scroll past.

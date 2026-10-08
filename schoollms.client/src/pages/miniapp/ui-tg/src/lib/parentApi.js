@@ -192,15 +192,18 @@ function newsRows(body) {
  * parent that something is broken when nothing is. Every other status still
  * throws — a 500 must not be disguised as "no news".
  */
-export async function getNews(take = NEWS_TAKE) {
+export async function getNews(take = NEWS_TAKE, role) {
   const query = `?take=${take}`
 
-  try {
-    return newsRows(await api.get('/tg/parent/news' + query))
-  } catch (e) {
-    const retryAsPupil =
-      e instanceof ApiError && (e.status === 403 || e.status === 404 || e.status === 405)
-    if (!retryAsPupil) throw e
+  // A pupil's login (how families sign in) goes straight to its own reader — no 403 first.
+  if (role !== 'student') {
+    try {
+      return newsRows(await api.get('/tg/parent/news' + query))
+    } catch (e) {
+      const retryAsPupil =
+        e instanceof ApiError && (e.status === 403 || e.status === 404 || e.status === 405)
+      if (!retryAsPupil) throw e
+    }
   }
 
   try {
