@@ -176,7 +176,21 @@ public class StudentProfileTests(ApiFixture fixture)
             Assert.Equal(second, card.RootElement.GetProperty("password").GetString());
         }
 
-        // O'quvchi kirdi — ochiq parol o'chadi (SessionFactory.IssueAsync), kartochka uni bermaydi.
+        // The pupil signs in — the password stays on the card (2026-10-08; it used to be wiped here).
+        using (var anonymous = fixture.Api.AnonymousClient())
+        {
+            var second = (await JsonAsync(client, $"/api/admin/students/{student.Id}/card")).RootElement.GetProperty("password").GetString()!;
+            using var login1 = new HttpRequestMessage(HttpMethod.Post, "/api/auth/login")
+            {
+                Content = System.Net.Http.Json.JsonContent.Create(new { email = login, password = second }),
+            };
+            login1.Headers.Add("X-Forwarded-For", SalesMarketingKit.NextIp());
+            Assert.Equal(HttpStatusCode.OK, (await anonymous.SendAsync(login1)).StatusCode);
+            using var after = await JsonAsync(client, $"/api/admin/students/{student.Id}/card");
+            Assert.Equal(second, after.RootElement.GetProperty("password").GetString());
+        }
+
+        // The pupil set their own password (no plain copy is kept) — the card shows none.
         await fixture.Api.WithDbAsync(async db =>
         {
             var user = await db.Users.SingleAsync(u => u.Email == login);

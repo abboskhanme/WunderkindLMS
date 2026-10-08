@@ -61,7 +61,10 @@ public static class SessionFactory
         var now = AppClock.Now.ToString("yyyy-MM-ddTHH:mm:ss");
         if (string.IsNullOrEmpty(user.FirstLoginAt)) user.FirstLoginAt = now;
         user.LastLoginAt = now;
-        user.InitialPassword = null;
+        // A pupil's password stays visible to the school after sign-in (client, 2026-10-08: "o'quvchi
+        // akkauntida parol yana ko'rinmaydigan bo'lib qolibdi") — families sign in with it and come
+        // back for it. It goes only when the pupil sets their own (`SetOwnPassword`). Staff: as before.
+        if (user.Role != Roles.Student) user.InitialPassword = null;
         await db.SaveChangesAsync(ct);
 
         return new LoginResponse(
