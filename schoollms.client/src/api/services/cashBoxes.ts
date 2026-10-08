@@ -114,6 +114,22 @@ export interface CashBoxOutPayload {
   transactionTypeId?: string
   /** Qaysi kun bilan yozilishi — "YYYY-MM-DD" (`CashBoxInPayload.date` bilan bir xil qoida). */
   date?: string
+  /** Maosh turida: pul berilgan o'qituvchi (ikkalasidan bittasi). */
+  teacherId?: string
+  /** Maosh turida: pul berilgan xodim (`users.id`). */
+  employeeUserId?: string
+}
+
+/** Maosh chiqimida tanlanadigan odam — `GET /admin/cash-boxes/salary-recipients`. */
+export interface SalaryRecipient {
+  kind: 'teacher' | 'employee'
+  id: string
+  name: string
+}
+
+export async function getSalaryRecipients(): Promise<SalaryRecipient[]> {
+  const { data } = await api.get<SalaryRecipient[]>('/admin/cash-boxes/salary-recipients')
+  return data
 }
 
 export interface CashBoxTransferPayload {
@@ -182,6 +198,8 @@ export interface CashBoxTransactionRow {
   cancelReason: string | null
   /** Yozuv lahzasi (ISO) — jadvalda sana yonidagi soat va chek uchun. */
   createdAt: string
+  /** Maosh chiqimida — pul berilgan o'qituvchi yoki xodim. */
+  recipientName?: string | null
 }
 
 export interface CashBoxTransactionsResult {

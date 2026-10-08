@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using SchoolLms.Application.Abstractions;
 using SchoolLms.Application.Billing;
 using SchoolLms.Domain;
@@ -187,6 +188,26 @@ public sealed class CashBoxesController(IAppDbContext db) : ControllerBase
         return Ok(await boxes.ExchangeAsync(id, request, FinanceActor.RequireUserId(User), ct));
     }
 
+    /// <summary>
+    /// Who a salary Chiqim can be paid to: teachers and staff, by name (2026-10-09). Its own endpoint,
+    /// because the cashier may not have the Teachers or Staff sections open, and the form needs only
+    /// an id and a name.
+    /// </summary>
+    [HttpGet("salary-recipients")]
+    [FinanceRole(FinanceAction.OperateCashBox)]
+    public async Task<ActionResult<IEnumerable<SalaryRecipientDto>>> SalaryRecipients(CancellationToken ct)
+    {
+        var teachers = await db.Teachers.AsNoTracking()
+            .Where(t => !t.IsArchived)
+            .Select(t => new SalaryRecipientDto("teacher", t.Id, t.FullName))
+            .ToListAsync(ct);
+        var staff = await db.Users.AsNoTracking()
+            .Where(u => u.Role == Roles.Staff)
+            .Select(u => new SalaryRecipientDto("employee", u.Id, u.FullName))
+            .ToListAsync(ct);
+        return Ok(teachers.Concat(staff).OrderBy(r => r.Name, StringComparer.Ordinal));
+    }
+
     // -----------------------------------------------------------------
     //  Harakatlar jurnali
     // -----------------------------------------------------------------
@@ -250,3 +271,7 @@ public sealed class CashBoxesController(IAppDbContext db) : ControllerBase
         catch (JsonException) { return default; }
     }
 }
+
+/// <summary>A person a salary Chiqim can name.</summary>
+/// <param name="Kind"><c>teacher</c> (teachers.id) or <c>employee</c> (users.id).</param>
+public sealed record SalaryRecipientDto(string Kind, string Id, string Name);

@@ -58,6 +58,8 @@ namespace SchoolLms.Application.Billing;
 //  so'rovlardan olinadi (`SumAsync`) — ya'ni 3-sahifada turgan foydalanuvchi
 //  ham butun filtrning yakunini ko'radi.
 //
+//  UCHINCHI MANBA — KASSA AMALLARI (2026-10-09): `TransactionKind.Cash` izohi.
+//
 //  SAHIFALASH IKKI MANBA USTIDA
 //  ----------------------------
 //  Ikkita jadvalni SQL'da UNION qilish EF Core'da (turlari har xil) ishonchsiz
@@ -79,7 +81,30 @@ public static class TransactionKind
     /// <summary>Chiqim.</summary>
     public const string Expense = "expense";
 
-    public static readonly IReadOnlyList<string> All = [Payment, Reversal, Expense];
+    // ----- Kassa amallari (`cash_box_transactions`), 2026-10-09 -----
+    //
+    //  Mijoz: "eduschool bilan moliya bo'limlari funksionalliklari bir xil ishlashi
+    //  kerak". EduSchool'ning "Tranzaksiyalar" ro'yxatida kassadan qilingan kirim,
+    //  chiqim va kassalararo o'tkazma ham turadi; bizda ular faqat Kassa ekranida
+    //  ko'rinardi va ko'chirilgan 169 ta chiqim bu jurnalda umuman yo'q edi.
+
+    /// <summary>Kassaga kirim (o'quvchi to'lovi emas).</summary>
+    public const string CashIn = "cash_in";
+
+    /// <summary>Kassadan chiqim.</summary>
+    public const string CashOut = "cash_out";
+
+    /// <summary>Kassalararo o'tkazma — pul maktab ichida qoladi.</summary>
+    public const string CashTransfer = "cash_transfer";
+
+    /// <summary>Bitta kassa ichida usulni almashtirish (naqd ⇄ karta …).</summary>
+    public const string CashExchange = "cash_exchange";
+
+    public static readonly IReadOnlyList<string> All =
+        [Payment, Reversal, Expense, CashIn, CashOut, CashTransfer, CashExchange];
+
+    /// <summary>The kinds that come from <c>cash_box_transactions</c>.</summary>
+    public static readonly IReadOnlyList<string> Cash = [CashIn, CashOut, CashTransfer, CashExchange];
 }
 
 /// <summary>Jurnal qatorining holati (<see cref="TransactionRowDto.Status"/>).</summary>
@@ -103,7 +128,11 @@ public static class TransactionDirection
     public const string In = "in";
     public const string Out = "out";
 
-    public static readonly IReadOnlyList<string> All = [In, Out];
+    /// <summary>Money that only moved inside the school — a cash-box transfer or exchange.
+    /// It is listed, but never counted in Σ kirim / Σ chiqim.</summary>
+    public const string Internal = "internal";
+
+    public static readonly IReadOnlyList<string> All = [In, Out, Internal];
 }
 
 /// <summary>Jurnalni saralash ustuni (<see cref="TransactionJournalFilter.Sort"/>).</summary>
@@ -327,6 +356,8 @@ public sealed class TransactionJournalQuery(IAppDbContext db)
         var q = db.Payments.AsNoTracking();
 
         if (f.Kind == TransactionKind.Expense) return q.Where(_ => false);
+        if (f.Kind is not null && TransactionKind.Cash.Contains(f.Kind)) return q.Where(_ => false);
+        if (f.Direction == TransactionDirection.Internal) return q.Where(_ => false);
 
         if (f.From is { } from) { var lo = StartOfSchoolDay(from); q = q.Where(p => p.ReceivedAt >= lo); }
         if (f.To is { } to) { var hi = StartOfSchoolDay(to.AddDays(1)); q = q.Where(p => p.ReceivedAt < hi); }
@@ -395,7 +426,8 @@ public sealed class TransactionJournalQuery(IAppDbContext db)
         // biri qo'yilgan bo'lsa chiqim javobga umuman TUSHMAYDI (bo'sh
         // ustunli qator ko'rsatish o'rniga).
         if (f.Kind is TransactionKind.Payment or TransactionKind.Reversal) return q.Where(_ => false);
-        if (f.Direction == TransactionDirection.In) return q.Where(_ => false);
+        if (f.Kind is not null && TransactionKind.Cash.Contains(f.Kind)) return q.Where(_ => false);
+        if (f.Direction is TransactionDirection.In or TransactionDirection.Internal) return q.Where(_ => false);
         if (!string.IsNullOrWhiteSpace(f.StudentId)) return q.Where(_ => false);
         if (!string.IsNullOrWhiteSpace(f.ClassName)) return q.Where(_ => false);
         if (f.ReceiptNo is not null) return q.Where(_ => false);
@@ -442,12 +474,80 @@ public sealed class TransactionJournalQuery(IAppDbContext db)
         return q;
     }
 
+    /// <summary>
+    /// Filtrga mos kassa amallari (fayl boshidagi <see cref="TransactionKind.Cash"/> izohi).
+    /// Bekor qilish qatori (<c>reversal_of</c>) ham shu jadvalda — to'lov stornosi kabi alohida qator.
+    /// </summary>
+    private IQueryable<CashBoxTransaction> CashFor(TransactionJournalFilter f)
+    {
+        var q = db.CashBoxTransactions.AsNoTracking();
+
+        if (f.Kind is TransactionKind.Payment or TransactionKind.Reversal or TransactionKind.Expense)
+            return q.Where(_ => false);
+        // Chek raqami va "birinchi to'lov" faqat o'quvchi to'loviga tegishli.
+        if (f.ReceiptNo is not null || f.OnlyFirstPayment) return q.Where(_ => false);
+
+        if (f.From is { } from) { var lo = StartOfSchoolDay(from); q = q.Where(t => t.CreatedAt >= lo); }
+        if (f.To is { } to) { var hi = StartOfSchoolDay(to.AddDays(1)); q = q.Where(t => t.CreatedAt < hi); }
+
+        q = f.Kind switch
+        {
+            TransactionKind.CashIn => q.Where(t => t.Kind == CashBoxTransactionKind.PayIn),
+            TransactionKind.CashOut => q.Where(t => t.Kind == CashBoxTransactionKind.PayOut),
+            TransactionKind.CashTransfer => q.Where(t => t.Kind == CashBoxTransactionKind.Transfer),
+            TransactionKind.CashExchange => q.Where(t => t.Kind == CashBoxTransactionKind.Exchange),
+            _ => q,
+        };
+
+        // Bekor qilish pulni teskari tomonga suradi: kirimning bekor qilinishi — chiqim.
+        q = f.Direction switch
+        {
+            TransactionDirection.In => q.Where(t =>
+                (t.Kind == CashBoxTransactionKind.PayIn && t.ReversalOf == null)
+                || (t.Kind == CashBoxTransactionKind.PayOut && t.ReversalOf != null)),
+            TransactionDirection.Out => q.Where(t =>
+                (t.Kind == CashBoxTransactionKind.PayOut && t.ReversalOf == null)
+                || (t.Kind == CashBoxTransactionKind.PayIn && t.ReversalOf != null)),
+            TransactionDirection.Internal => q.Where(t =>
+                t.Kind == CashBoxTransactionKind.Transfer || t.Kind == CashBoxTransactionKind.Exchange),
+            _ => q,
+        };
+
+        q = f.Status switch
+        {
+            TransactionStatus.Active => q.Where(t =>
+                t.ReversalOf != null || !db.CashBoxTransactions.Any(r => r.ReversalOf == t.Id)),
+            TransactionStatus.Reversed => q.Where(t =>
+                t.ReversalOf == null && db.CashBoxTransactions.Any(r => r.ReversalOf == t.Id)),
+            TransactionStatus.Pending => q.Where(_ => false),
+            _ => q,
+        };
+
+        if (!string.IsNullOrWhiteSpace(f.Method)) q = q.Where(t => t.Method == f.Method);
+        if (!string.IsNullOrWhiteSpace(f.ActorId)) q = q.Where(t => t.CreatedBy == f.ActorId);
+        if (!string.IsNullOrWhiteSpace(f.StudentId)) q = q.Where(t => t.StudentId == f.StudentId);
+
+        if (!string.IsNullOrWhiteSpace(f.ClassName))
+            q = q.Where(t => db.Students.Any(s => s.Id == t.StudentId && s.ClassName == f.ClassName));
+
+        // Toifa — turning P&L hisobi (`expense:rent` → "rent"), to'lov va chiqimdagi kodlar bilan bir xil.
+        if (!string.IsNullOrWhiteSpace(f.Category))
+        {
+            var category = f.Category.Trim().ToLowerInvariant();
+            string expense = "expense:" + category, revenue = "revenue:" + category;
+            q = q.Where(t => db.TransactionTypes.Any(tt => tt.Id == t.TransactionTypeId
+                && (tt.LedgerAccount == expense || tt.LedgerAccount == revenue)));
+        }
+
+        return q;
+    }
+
     // =================================================================
     //  Yakun va soni — FILTR bo'yicha, sahifadan mustaqil
     // =================================================================
 
     private async Task<int> CountAsync(TransactionJournalFilter f, CancellationToken ct) =>
-        await PaymentsFor(f).CountAsync(ct) + await ExpensesFor(f).CountAsync(ct);
+        await PaymentsFor(f).CountAsync(ct) + await ExpensesFor(f).CountAsync(ct) + await CashFor(f).CountAsync(ct);
 
     private async Task<TransactionTotalsDto> TotalsAsync(
         TransactionJournalFilter f, CancellationToken ct)
@@ -471,7 +571,20 @@ public sealed class TransactionJournalQuery(IAppDbContext db)
             .Where(e => !db.LedgerEntries.Any(l => l.RefType == LedgerRefType.Expense && l.RefId == e.Id))
             .SumAsync(e => (decimal?)e.Amount, ct) ?? 0m;
 
-        var outTotal = stornoOut + expenseOut;
+        // Kassa amallari: kirim va chiqim sanaladi (bekor qilish — teskari tomonda, to'lov stornosi
+        // kabi), o'tkazma va ayirboshlash esa yakunga KIRMAYDI — pul maktabdan chiqmagan.
+        var cash = CashFor(f);
+        var cashIn = await cash
+            .Where(t => (t.Kind == CashBoxTransactionKind.PayIn && t.ReversalOf == null)
+                        || (t.Kind == CashBoxTransactionKind.PayOut && t.ReversalOf != null))
+            .SumAsync(t => (decimal?)t.Amount, ct) ?? 0m;
+        var cashOut = await cash
+            .Where(t => (t.Kind == CashBoxTransactionKind.PayOut && t.ReversalOf == null)
+                        || (t.Kind == CashBoxTransactionKind.PayIn && t.ReversalOf != null))
+            .SumAsync(t => (decimal?)t.Amount, ct) ?? 0m;
+
+        totalIn += cashIn;
+        var outTotal = stornoOut + expenseOut + cashOut;
         return new TransactionTotalsDto(totalIn, outTotal, totalIn - outTotal, pendingOut);
     }
 
@@ -491,10 +604,12 @@ public sealed class TransactionJournalQuery(IAppDbContext db)
 
         var paymentRows = await TakePaymentsAsync(f, window, byAmount, ct);
         var expenseRows = await TakeExpensesAsync(f, window, byAmount, ct);
+        var cashRows = await TakeCashAsync(f, window, byAmount, ct);
 
-        var all = new List<TransactionRowDto>(paymentRows.Count + expenseRows.Count);
+        var all = new List<TransactionRowDto>(paymentRows.Count + expenseRows.Count + cashRows.Count);
         all.AddRange(paymentRows);
         all.AddRange(expenseRows);
+        all.AddRange(cashRows);
 
         var ordered = byAmount
             ? (f.Desc
@@ -564,6 +679,128 @@ public sealed class TransactionJournalQuery(IAppDbContext db)
         if (raw.Count == 0) return [];
 
         return await EnrichExpensesAsync(raw, ct);
+    }
+
+    private async Task<List<TransactionRowDto>> TakeCashAsync(
+        TransactionJournalFilter f, int window, bool byAmount, CancellationToken ct)
+    {
+        var q = CashFor(f);
+
+        // Ishorali summa — `ToCashRow` dagi bilan AYNAN bir xil: chiqim manfiy, bekor qilish teskari.
+        q = byAmount
+            ? (f.Desc
+                ? q.OrderByDescending(t => (t.Kind == CashBoxTransactionKind.PayOut ? -t.Amount : t.Amount)
+                                           * (t.ReversalOf == null ? 1 : -1))
+                    .ThenByDescending(t => t.CreatedAt).ThenByDescending(t => t.Id)
+                : q.OrderBy(t => (t.Kind == CashBoxTransactionKind.PayOut ? -t.Amount : t.Amount)
+                                 * (t.ReversalOf == null ? 1 : -1))
+                    .ThenBy(t => t.CreatedAt).ThenBy(t => t.Id))
+            : (f.Desc
+                ? q.OrderByDescending(t => t.CreatedAt).ThenByDescending(t => t.Id)
+                : q.OrderBy(t => t.CreatedAt).ThenBy(t => t.Id));
+
+        var raw = await q.Take(window).ToListAsync(ct);
+        return raw.Count == 0 ? [] : await EnrichCashAsync(raw, ct);
+    }
+
+    /// <summary>Kassa amali qatori — kassa, tur, o'quvchi/xodim va yozgan odam nomlari bilan.</summary>
+    private async Task<List<TransactionRowDto>> EnrichCashAsync(List<CashBoxTransaction> raw, CancellationToken ct)
+    {
+        var ids = raw.Select(t => t.Id).ToList();
+
+        var boxIds = raw.Select(t => t.CashBoxId)
+            .Concat(raw.Where(t => t.TransferToBoxId is not null).Select(t => t.TransferToBoxId!.Value))
+            .Distinct().ToList();
+        var boxNames = await db.CashBoxes.AsNoTracking().Where(b => boxIds.Contains(b.Id))
+            .ToDictionaryAsync(b => b.Id, b => b.Name, ct);
+
+        var typeIds = raw.Where(t => t.TransactionTypeId is not null).Select(t => t.TransactionTypeId!.Value)
+            .Distinct().ToList();
+        var types = typeIds.Count == 0
+            ? []
+            : await db.TransactionTypes.AsNoTracking().Where(t => typeIds.Contains(t.Id))
+                .ToDictionaryAsync(t => t.Id, t => t, ct);
+
+        var studentIds = raw.Where(t => t.StudentId is not null).Select(t => t.StudentId!).Distinct().ToList();
+        var students = studentIds.Count == 0
+            ? []
+            : await db.Students.AsNoTracking().Where(s => studentIds.Contains(s.Id))
+                .Select(s => new { s.Id, s.FullName, s.ClassName })
+                .ToDictionaryAsync(s => s.Id, s => s, StringComparer.Ordinal, ct);
+
+        var teacherIds = raw.Where(t => t.TeacherId is not null).Select(t => t.TeacherId!).Distinct().ToList();
+        var teachers = teacherIds.Count == 0
+            ? []
+            : await db.Teachers.AsNoTracking().Where(t => teacherIds.Contains(t.Id))
+                .Select(t => new { t.Id, t.FullName })
+                .ToDictionaryAsync(t => t.Id, t => t.FullName, StringComparer.Ordinal, ct);
+
+        var userIds = raw.Select(t => t.CreatedBy)
+            .Concat(raw.Where(t => t.EmployeeUserId is not null).Select(t => t.EmployeeUserId!))
+            .Distinct().ToList();
+        // Projection, never the whole row: the read-only (MCP) role may not read `users.password_hash`.
+        var users = await db.Users.AsNoTracking().Where(u => userIds.Contains(u.Id))
+            .Select(u => new { u.Id, u.FullName })
+            .ToDictionaryAsync(u => u.Id, u => u.FullName, StringComparer.Ordinal, ct);
+
+        // Bekor qilingan asl qator: qaysi qator bekor qilgan va nima sababdan (uning izohi).
+        var reversals = (await db.CashBoxTransactions.AsNoTracking()
+                .Where(r => r.ReversalOf != null && ids.Contains(r.ReversalOf.Value))
+                .Select(r => new { Original = r.ReversalOf!.Value, r.Id, r.Note })
+                .ToListAsync(ct))
+            .ToDictionary(r => r.Original, r => r);
+
+        return [.. raw.Select(t =>
+        {
+            var isReversal = t.ReversalOf is not null;
+            var isInternal = t.Kind is CashBoxTransactionKind.Transfer or CashBoxTransactionKind.Exchange;
+            var signed = (t.Kind == CashBoxTransactionKind.PayOut ? -t.Amount : t.Amount) * (isReversal ? -1 : 1);
+            var type = t.TransactionTypeId is { } typeId ? types.GetValueOrDefault(typeId) : null;
+            var account = type is null ? null : Accounts.ForTransactionType(type.Kind, type.LedgerAccount);
+            var student = t.StudentId is null ? null : students.GetValueOrDefault(t.StudentId);
+            var reversal = reversals.GetValueOrDefault(t.Id);
+            var box = boxNames.GetValueOrDefault(t.CashBoxId);
+
+            var (personId, personName, personKind) =
+                student is not null ? (t.StudentId, student.FullName, "student")
+                : t.TeacherId is not null ? (t.TeacherId, teachers.GetValueOrDefault(t.TeacherId, "—"), "teacher")
+                : t.EmployeeUserId is not null ? (t.EmployeeUserId, users.GetValueOrDefault(t.EmployeeUserId, "—"), "employee")
+                : ((string?)null, (string?)null, (string?)null);
+
+            return new TransactionRowDto(
+                t.Id,
+                t.Kind switch
+                {
+                    CashBoxTransactionKind.PayIn => TransactionKind.CashIn,
+                    CashBoxTransactionKind.PayOut => TransactionKind.CashOut,
+                    CashBoxTransactionKind.Transfer => TransactionKind.CashTransfer,
+                    _ => TransactionKind.CashExchange,
+                },
+                isInternal ? TransactionDirection.Internal
+                    : signed > 0 ? TransactionDirection.In : TransactionDirection.Out,
+                AppClock.LocalDateOf(t.CreatedAt),
+                t.CreatedAt,
+                null,
+                signed,
+                // O'tkazma va ayirboshlashda pul maktab ichida qoladi — yakunga ta'sir qilmaydi.
+                isInternal ? 0m : signed,
+                personId,
+                personName,
+                personKind,
+                student?.ClassName,
+                account is null ? null : account[(account.IndexOf(':') + 1)..],
+                type?.Name,
+                account,
+                t.Method,
+                t.CreatedBy,
+                users.GetValueOrDefault(t.CreatedBy, "—"),
+                isReversal ? null : t.Note,
+                !isReversal && reversal is not null ? TransactionStatus.Reversed : TransactionStatus.Active,
+                t.ReversalOf,
+                reversal?.Id,
+                t.TransferToBoxId is { } toBox ? $"{box} → {boxNames.GetValueOrDefault(toBox)}" : box,
+                isReversal ? t.Note : reversal?.Note);
+        })];
     }
 
     /// <summary>To'lov qatori — o'quvchi, sinf, toifalar va kassir ismi bitta so'rovda.</summary>

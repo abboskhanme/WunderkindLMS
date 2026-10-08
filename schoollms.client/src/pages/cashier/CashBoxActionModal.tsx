@@ -1,7 +1,13 @@
 import { useEffect, useState } from 'react'
 import type { PaymentMethod } from '@/types'
-import type { CashBox } from '@/api/services/cashBoxes'
-import { cashBoxExchange, cashBoxIn, cashBoxOut, cashBoxTransfer } from '@/api/services/cashBoxes'
+import type { CashBox, SalaryRecipient } from '@/api/services/cashBoxes'
+import {
+  cashBoxExchange,
+  cashBoxIn,
+  cashBoxOut,
+  cashBoxTransfer,
+  getSalaryRecipients,
+} from '@/api/services/cashBoxes'
 import { financeErrorMessage } from '@/api/services/cashier'
 import type { TransactionType } from '@/api/services/transactionTypes'
 import { getTransactionTypes } from '@/api/services/transactionTypes'
@@ -65,6 +71,10 @@ export function CashBoxActionModal({ box, otherBoxes, mode, onClose, onDone }: P
   const [typesError, setTypesError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  /* Maosh turidagi chiqimda pul KIMGA berilgani (EduSchool'dagi "Hodimga oylik / avans" kabi,
+     2026-10-09) — shu bilan "Ish haqi" hisoboti kassadan berilgan maoshni ko'radi. */
+  const [recipients, setRecipients] = useState<SalaryRecipient[]>([])
+  const [recipientKey, setRecipientKey] = useState('')
 
   /* Chiqim turi katalogi — faqat "Chiqim" rejimida kerak (Kirim shu oynada
      ochilmaydi: uni `CashierPage` ning o'z `IncomeForm` i ochadi). */
@@ -93,6 +103,20 @@ export function CashBoxActionModal({ box, otherBoxes, mode, onClose, onDone }: P
   }, [mode])
 
   useEffect(() => {
+    if (mode !== 'out') return
+    let alive = true
+    getSalaryRecipients()
+      .then((rows) => {
+        if (alive) setRecipients(rows)
+      })
+      // Ro'yxat kelmasa forma ishlayveradi — faqat maosh turida xodim tanlab bo'lmaydi (xato o'sha yerda chiqadi).
+      .catch(() => undefined)
+    return () => {
+      alive = false
+    }
+  }, [mode])
+
+  useEffect(() => {
     if (mode === 'transfer' && toBoxId === '' && otherBoxes.length > 0) {
       // eslint-disable-next-line react-hooks/set-state-in-effect -- oyna "Ko'chirish" rejimida ochilganda manzil kassani boshlang'ich tanlash (maqsadli)
       setToBoxId(otherBoxes[0].id)
@@ -106,10 +130,14 @@ export function CashBoxActionModal({ box, otherBoxes, mode, onClose, onDone }: P
   const transferValid = mode !== 'transfer' || toBoxId !== ''
   // Chiqimda tur MAJBURIY — kirim shakli bilan bir xil qoida (mijoz shakli).
   const typeValid = mode !== 'out' || transactionTypeId !== ''
+  const isSalary =
+    mode === 'out' && types.find((t) => t.id === transactionTypeId)?.ledgerAccount === 'expense:salary'
+  const recipient = isSalary ? recipients.find((r) => `${r.kind}:${r.id}` === recipientKey) : undefined
+  const recipientValid = !isSalary || recipient !== undefined
   const today = todayStr()
   const earliest = earliestEntryDate()
   const dateValid = date !== '' && date <= today && date >= earliest
-  const valid = amountValid && exchangeValid && transferValid && typeValid && dateValid
+  const valid = amountValid && exchangeValid && transferValid && typeValid && dateValid && recipientValid
 
   const submit = async () => {
     if (!valid || amount === null || busy) return
@@ -120,7 +148,15 @@ export function CashBoxActionModal({ box, otherBoxes, mode, onClose, onDone }: P
       if (mode === 'in') {
         await cashBoxIn(box.id, { amount, method, note: trimmedNote, date })
       } else if (mode === 'out') {
-        await cashBoxOut(box.id, { amount, method, note: trimmedNote, transactionTypeId, date })
+        await cashBoxOut(box.id, {
+          amount,
+          method,
+          note: trimmedNote,
+          transactionTypeId,
+          date,
+          teacherId: recipient?.kind === 'teacher' ? recipient.id : undefined,
+          employeeUserId: recipient?.kind === 'employee' ? recipient.id : undefined,
+        })
       } else if (mode === 'transfer') {
         await cashBoxTransfer(box.id, { toBoxId, amount, method, note: trimmedNote, date })
       } else {
@@ -177,6 +213,29 @@ export function CashBoxActionModal({ box, otherBoxes, mode, onClose, onDone }: P
                 ]}
             </Select>
             {typesError && <p className="mt-1 text-xs text-red-600">{typesError}</p>}
+          </div>
+        )}
+
+        {isSalary && (
+          <div>
+            <Select
+              label="Xodim"
+              required
+              value={recipientKey}
+              onChange={(e) => setRecipientKey(e.target.value)}
+              disabled={recipients.length === 0}
+            >
+              <option value="" disabled>
+                {recipients.length === 0 ? "Xodimlar ro'yxati yuklanmadi" : 'Tanlang...'}
+              </option>
+              {recipients.map((r) => (
+                <option key={`${r.kind}:${r.id}`} value={`${r.kind}:${r.id}`}>
+                  {r.name}
+                  {r.kind === 'teacher' ? " — o'qituvchi" : ''}
+                </option>
+              ))}
+            </Select>
+            <p className="mt-1 text-xs text-slate-400">Maosh kimga berilgani — «Ish haqi» hisobotida shu xodimga yoziladi.</p>
           </div>
         )}
 

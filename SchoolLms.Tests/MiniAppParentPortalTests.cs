@@ -170,6 +170,11 @@ public class MiniAppParentPortalTests(ApiFixture fixture)
         var child = await AddStudentAsync(admin, "Chekov Bobur Anvarovich", "6-A", phone);
         var stranger = await AddStudentAsync(admin, "Begonov Chek Begonovich", "6-B", NewPhone());
         using var parent = await ParentClientAsync(admin, phone);
+        // `/api/tg/*` is limited to 20 calls a minute per IP, and in TestServer every test shares one
+        // address — in a full run the other Telegram tests used the quota up and this one got 429
+        // instead of the answers it checks. Its own address, like the other rate-limited tests.
+        var ip = SalesMarketingKit.NextIp();
+        parent.DefaultRequestHeaders.Add("X-Forwarded-For", ip);
 
         var own = Guid.NewGuid();
         var foreign = Guid.NewGuid();
@@ -191,9 +196,11 @@ public class MiniAppParentPortalTests(ApiFixture fixture)
 
         // Roles: anonymous 401, teacher 403.
         using var anonymous = fixture.Api.AnonymousClient();
+        anonymous.DefaultRequestHeaders.Add("X-Forwarded-For", ip);
         Assert.Equal(HttpStatusCode.Unauthorized,
             (await anonymous.PostAsync($"/api/tg/receipts/{own}/send", null)).StatusCode);
         using var teacher = await fixture.Api.ClientAsAsync(Roles.Teacher);
+        teacher.DefaultRequestHeaders.Add("X-Forwarded-For", ip);
         Assert.Equal(HttpStatusCode.Forbidden,
             (await teacher.PostAsync($"/api/tg/receipts/{own}/send", null)).StatusCode);
 

@@ -234,6 +234,10 @@ public sealed class TransactionJournalController(AppDbContext db) : ControllerBa
         TransactionKind.Payment => "To'lov",
         TransactionKind.Reversal => "Storno",
         TransactionKind.Expense => "Chiqim",
+        TransactionKind.CashIn => "Kassa kirimi",
+        TransactionKind.CashOut => "Kassa chiqimi",
+        TransactionKind.CashTransfer => "Kassalararo o'tkazma",
+        TransactionKind.CashExchange => "Ayirboshlash",
         _ => kind,
     };
 

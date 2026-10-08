@@ -65,6 +65,24 @@ internal static class TransactionTypeModel
                 .OnDelete(DeleteBehavior.Restrict);
 
             e.HasIndex(x => x.TransactionTypeId);
+
+            // Salary recipient of a Chiqim (migration CashBoxSalaryRecipient, 2026-10-09). RESTRICT for the
+            // reason `expenses.teacher_id` has it: paid salary is financial history.
+            e.HasOne<Teacher>().WithMany().HasForeignKey(x => x.TeacherId)
+                .OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<AppUser>().WithMany().HasForeignKey(x => x.EmployeeUserId)
+                .OnDelete(DeleteBehavior.Restrict)
+                .HasConstraintName("fk_cash_box_transactions_users_employee_user_id");
+            e.HasIndex(x => x.TeacherId);
+            e.HasIndex(x => x.EmployeeUserId);
+
+            e.ToTable(t =>
+            {
+                t.HasCheckConstraint("ck_cash_box_transactions_one_recipient",
+                    "num_nonnulls(teacher_id, employee_user_id) <= 1");
+                t.HasCheckConstraint("ck_cash_box_transactions_recipient_pay_out",
+                    "(teacher_id is null and employee_user_id is null) or kind = 'pay_out'");
+            });
         });
     }
 }

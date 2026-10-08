@@ -24,11 +24,24 @@ import { api, USE_MOCK } from '../client'
 
 const BASE = '/admin/finance/transactions'
 
-/** Qator turi. */
-export type TransactionKind = 'payment' | 'reversal' | 'expense'
+/**
+ * Qator turi. `cash_*` — kassa amallari (`cash_box_transactions`), 2026-10-09: EduSchool'ning
+ * "Tranzaksiyalar" ro'yxatidagidek kassadan qilingan kirim, chiqim va o'tkazma ham shu jurnalda.
+ */
+export type TransactionKind =
+  | 'payment'
+  | 'reversal'
+  | 'expense'
+  | 'cash_in'
+  | 'cash_out'
+  | 'cash_transfer'
+  | 'cash_exchange'
 
-/** Pul yo'nalishi. */
-export type TransactionDirection = 'in' | 'out'
+/**
+ * Pul yo'nalishi. `internal` — kassalararo o'tkazma yoki ayirboshlash: pul maktab ichida qoladi,
+ * yakunga (Σ kirim / Σ chiqim) kirmaydi.
+ */
+export type TransactionDirection = 'in' | 'out' | 'internal'
 
 /** Qator holati. `pending` faqat chiqimda bo'ladi (SPEC §4.5). */
 export type TransactionStatus = 'active' | 'reversed' | 'pending'
@@ -54,7 +67,7 @@ export interface TransactionRow {
   settledAmount: number
   personId: string | null
   personName: string | null
-  personKind: 'student' | 'teacher' | null
+  personKind: 'student' | 'teacher' | 'employee' | null
   className: string | null
   category: string | null
   categoryLabel: string | null
@@ -70,7 +83,7 @@ export interface TransactionRow {
   reversalOf: string | null
   /** Storno qilingan to'lovda — storno qatori id'si. */
   reversedBy: string | null
-  /** Pul qaysi kassaga tushgani (to'lov/storno); chiqimda `null`. */
+  /** Pul qaysi kassaga tushgani (to'lov/storno/kassa amali; o'tkazmada "A → B"); `expenses` chiqimida `null`. */
   cashBoxName: string | null
   /** Bekor qilish sababi — kassa jadvalidagi "Sabab" ustuni bilan bir xil. */
   cancelReason: string | null
@@ -165,6 +178,10 @@ export const transactionKindLabels: Record<TransactionKind, string> = {
   payment: "To'lov",
   reversal: 'Storno',
   expense: 'Chiqim',
+  cash_in: 'Kassa kirimi',
+  cash_out: 'Kassa chiqimi',
+  cash_transfer: "O'tkazma",
+  cash_exchange: 'Ayirboshlash',
 }
 
 export const transactionStatusLabels: Record<TransactionStatus, string> = {
@@ -176,6 +193,7 @@ export const transactionStatusLabels: Record<TransactionStatus, string> = {
 export const transactionDirectionLabels: Record<TransactionDirection, string> = {
   in: 'Kirim',
   out: 'Chiqim',
+  internal: 'Ichki harakat',
 }
 
 /**

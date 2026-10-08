@@ -154,13 +154,23 @@ public class CashBoxTransaction
     public Guid? ReversalOf { get; set; }
 
     /// <summary>
-    /// Tranzaksiya turi (<see cref="TransactionType"/>, faqat <c>kind = 'in'</c> — hozircha
-    /// FAQAT Kirim shaklida so'raladi, `CashierPage.tsx` `PlainIncomeForm`). YORLIQ,
-    /// hech qanday hisobga (<c>Accounts.cs</c>) ta'sir qilmaydi — <c>TransactionTypes.cs</c>
-    /// boshidagi izoh. <c>null</c> = tur ko'rsatilmagan (eski qator yoki chiqim/ko'chirish/
-    /// ayirboshlash — ular hali bu maydonni so'ramaydi).
+    /// Tranzaksiya turi (<see cref="TransactionType"/>) — Kirim va Chiqim shakllarida so'raladi.
+    /// 2026-10-08 dan boshlab turi BOR kirim/chiqim jurnalga ham tushadi va P&amp;L'da turning
+    /// hisobida (<see cref="TransactionType.LedgerAccount"/>) ko'rinadi — <c>CashBoxLedgerSync.cs</c>.
+    /// <c>null</c> = tur ko'rsatilmagan: ko'chirish, ayirboshlash yoki pul joyini o'zgartirgan eski
+    /// qator — jurnalga tushmaydi.
     /// </summary>
     public Guid? TransactionTypeId { get; set; }
+
+    /// <summary>
+    /// Salary Chiqim only (the type's account is <c>expense:salary</c>): the teacher it was paid to
+    /// (teachers.id). With <see cref="EmployeeUserId"/> it lets the salary reports count money paid
+    /// from the cash box, as EduSchool's "Hodimga oylik / avans" does (2026-10-09). At most one of the two.
+    /// </summary>
+    public string? TeacherId { get; set; }
+
+    /// <summary>Salary Chiqim only: the non-teacher employee it was paid to (users.id).</summary>
+    public string? EmployeeUserId { get; set; }
 }
 
 /// <summary>Kassa amali turi (<see cref="CashBoxTransaction.Kind"/>).</summary>

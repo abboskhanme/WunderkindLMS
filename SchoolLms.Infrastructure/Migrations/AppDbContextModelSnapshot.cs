@@ -1072,6 +1072,10 @@ namespace SchoolLms.Infrastructure.Migrations
                         .HasColumnType("text")
                         .HasColumnName("created_by");
 
+                    b.Property<string>("EmployeeUserId")
+                        .HasColumnType("text")
+                        .HasColumnName("employee_user_id");
+
                     b.Property<string>("Kind")
                         .IsRequired()
                         .HasColumnType("text")
@@ -1099,6 +1103,10 @@ namespace SchoolLms.Infrastructure.Migrations
                         .HasColumnType("text")
                         .HasColumnName("student_id");
 
+                    b.Property<string>("TeacherId")
+                        .HasColumnType("text")
+                        .HasColumnName("teacher_id");
+
                     b.Property<string>("ToMethod")
                         .HasColumnType("text")
                         .HasColumnName("to_method");
@@ -1123,12 +1131,18 @@ namespace SchoolLms.Infrastructure.Migrations
                     b.HasIndex("CreatedBy")
                         .HasDatabaseName("ix_cash_box_transactions_created_by");
 
+                    b.HasIndex("EmployeeUserId")
+                        .HasDatabaseName("ix_cash_box_transactions_employee_user_id");
+
                     b.HasIndex("ReversalOf")
                         .IsUnique()
                         .HasDatabaseName("ix_cash_box_transactions_reversal_of");
 
                     b.HasIndex("StudentId")
                         .HasDatabaseName("ix_cash_box_transactions_student_id");
+
+                    b.HasIndex("TeacherId")
+                        .HasDatabaseName("ix_cash_box_transactions_teacher_id");
 
                     b.HasIndex("TransactionTypeId")
                         .HasDatabaseName("ix_cash_box_transactions_transaction_type_id");
@@ -1147,6 +1161,10 @@ namespace SchoolLms.Infrastructure.Migrations
                             t.HasCheckConstraint("ck_cash_box_transactions_kind", "kind in ('pay_in','pay_out','transfer','exchange')");
 
                             t.HasCheckConstraint("ck_cash_box_transactions_method", "method in ('cash','card','transfer','online')");
+
+                            t.HasCheckConstraint("ck_cash_box_transactions_one_recipient", "num_nonnulls(teacher_id, employee_user_id) <= 1");
+
+                            t.HasCheckConstraint("ck_cash_box_transactions_recipient_pay_out", "(teacher_id is null and employee_user_id is null) or kind = 'pay_out'");
 
                             t.HasCheckConstraint("ck_cash_box_transactions_reversal_not_self", "reversal_of is null or reversal_of <> id");
 
@@ -9523,6 +9541,12 @@ namespace SchoolLms.Infrastructure.Migrations
                         .IsRequired()
                         .HasConstraintName("fk_cash_box_transactions_users_created_by");
 
+                    b.HasOne("SchoolLms.Domain.AppUser", null)
+                        .WithMany()
+                        .HasForeignKey("EmployeeUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_cash_box_transactions_users_employee_user_id");
+
                     b.HasOne("SchoolLms.Domain.CashBoxTransaction", null)
                         .WithMany()
                         .HasForeignKey("ReversalOf")
@@ -9534,6 +9558,12 @@ namespace SchoolLms.Infrastructure.Migrations
                         .HasForeignKey("StudentId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .HasConstraintName("fk_cash_box_transactions_students_student_id");
+
+                    b.HasOne("SchoolLms.Domain.Teacher", null)
+                        .WithMany()
+                        .HasForeignKey("TeacherId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_cash_box_transactions_teachers_teacher_id");
 
                     b.HasOne("SchoolLms.Domain.TransactionType", null)
                         .WithMany()

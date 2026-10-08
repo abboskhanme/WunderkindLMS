@@ -35,6 +35,17 @@ namespace SchoolLms.Application.Billing;
 //  keltirib chiqariladi — `ExpenseStatus`), shuning uchun filtr ham jurnal
 //  bo'yicha EXISTS: `ix_ledger_entries_ref_type_ref_id` indeksidan foydalanadi.
 //
+//  KASSADAN BERILGAN MAOSH HAM SHU YERDA (2026-10-09)
+//  -------------------------------------------------
+//  Mijoz: "eduschool bilan moliya bo'limlari funksionalliklari bir xil ishlashi kerak".
+//  EduSchool'da oylik va avans kassadan "Hodimga oylik / Hodimga avans" turi bilan
+//  beriladi; bizga ko'chirilgan sentabr maoshlari (360 mln) ham shunday kassa
+//  chiqimi. Ular `expenses` da yo'q, shuning uchun maosh hisoboti xodimlarni
+//  "to'lanmagan" deb ko'rsatardi. Endi maosh turidagi (`expense:salary`) kassa
+//  chiqimi ham sanaladi — oluvchisi (`cash_box_transactions.teacher_id` /
+//  `employee_user_id`) ko'rsatilgan va bekor qilinmagan bo'lsa. Sanasi — kassa
+//  qatorining maktab mintaqasidagi kuni.
+//
 //  UNUMDORLIK
 //  ----------
 //  Har metod BITTA so'rov yuboradi; o'qituvchilar soniga bog'liq emas.
@@ -121,8 +132,43 @@ public sealed class SalaryPaymentQuery(IAppDbContext db)
             .Select(e => new { e.Id, e.TeacherId, e.EmployeeUserId, e.OnDate, e.Amount, e.Note })
             .ToListAsync(ct);
 
-        return [.. rows.Select(e => new SalaryPaymentRow(
+        var fromExpenses = rows.Select(e => new SalaryPaymentRow(
             e.Id, (employees ? e.EmployeeUserId : e.TeacherId)!, e.OnDate, e.OnDate.ToString("yyyy-MM"),
-            e.Amount, e.Note))];
+            e.Amount, e.Note));
+
+        return [.. fromExpenses.Concat(await FromCashBoxAsync(recipientId, from, to, employees, ct))
+            .OrderByDescending(r => r.OnDate)];
+    }
+
+    /// <summary>
+    /// Salary paid from a cash box: a not-cancelled Chiqim whose type posts to
+    /// <see cref="Accounts.ExpenseSalary"/> and names the recipient (file header).
+    /// </summary>
+    private async Task<List<SalaryPaymentRow>> FromCashBoxAsync(
+        string? recipientId, DateOnly? from, DateOnly? to, bool employees, CancellationToken ct)
+    {
+        var q = db.CashBoxTransactions.AsNoTracking()
+            .Where(t => t.Kind == CashBoxTransactionKind.PayOut && t.ReversalOf == null
+                        && !db.CashBoxTransactions.Any(r => r.ReversalOf == t.Id)
+                        && db.TransactionTypes.Any(tt => tt.Id == t.TransactionTypeId
+                                                         && tt.LedgerAccount == Accounts.ExpenseSalary));
+
+        q = employees ? q.Where(t => t.EmployeeUserId != null) : q.Where(t => t.TeacherId != null);
+        if (recipientId is not null)
+            q = employees ? q.Where(t => t.EmployeeUserId == recipientId) : q.Where(t => t.TeacherId == recipientId);
+        if (from is { } f) { var lo = TransactionJournalQuery.StartOfSchoolDay(f); q = q.Where(t => t.CreatedAt >= lo); }
+        if (to is { } u) { var hi = TransactionJournalQuery.StartOfSchoolDay(u.AddDays(1)); q = q.Where(t => t.CreatedAt < hi); }
+
+        var rows = await q
+            .OrderByDescending(t => t.CreatedAt)
+            .Select(t => new { t.Id, t.TeacherId, t.EmployeeUserId, t.CreatedAt, t.Amount, t.Note })
+            .ToListAsync(ct);
+
+        return [.. rows.Select(t =>
+        {
+            var day = AppClock.LocalDateOf(t.CreatedAt);
+            return new SalaryPaymentRow(
+                t.Id, (employees ? t.EmployeeUserId : t.TeacherId)!, day, day.ToString("yyyy-MM"), t.Amount, t.Note);
+        })];
     }
 }

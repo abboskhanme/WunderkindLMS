@@ -368,7 +368,7 @@ export function TransactionsPage() {
         <div>
           <h1 className="text-xl font-semibold text-slate-800">Tranzaksiyalar</h1>
           <p className="text-sm text-slate-400">
-            To'lovlar, stornolar va chiqimlar — bitta ro'yxatda. Pastdagi yakun butun filtr
+            To'lovlar, stornolar, chiqimlar va kassa amallari — bitta ro'yxatda. Pastdagi yakun butun filtr
             bo'yicha, ko'rinib turgan sahifa bo'yicha emas.
           </p>
         </div>
@@ -496,6 +496,7 @@ export function TransactionsPage() {
               <option value="all">Kirim va chiqim</option>
               <option value="in">Faqat kirim</option>
               <option value="out">Faqat chiqim</option>
+              <option value="internal">Kassalararo harakat</option>
             </select>
             <select
               value={filters.kind}
@@ -506,6 +507,10 @@ export function TransactionsPage() {
               <option value="payment">To'lov</option>
               <option value="reversal">Storno</option>
               <option value="expense">Chiqim</option>
+              <option value="cash_in">Kassa kirimi</option>
+              <option value="cash_out">Kassa chiqimi</option>
+              <option value="cash_transfer">Kassalararo o'tkazma</option>
+              <option value="cash_exchange">Ayirboshlash</option>
             </select>
             <select
               value={filters.method}
@@ -611,10 +616,15 @@ export function TransactionsPage() {
                     <td
                       className={cn(
                         'whitespace-nowrap px-4 py-3 text-right font-semibold',
-                        row.status === 'reversed' ? 'text-slate-400 line-through' : signClass(row.amount),
+                        row.status === 'reversed'
+                          ? 'text-slate-400 line-through'
+                          : row.direction === 'internal'
+                            ? 'text-slate-600'
+                            : signClass(row.amount),
                       )}
                     >
-                      {formatSignedMoney(row.amount)}
+                      {/* O'tkazma va ayirboshlash — kirim ham, chiqim ham emas: ishorasiz. */}
+                      {row.direction === 'internal' ? formatMoney(Math.abs(row.amount)) : formatSignedMoney(row.amount)}
                     </td>
                     <td className="px-4 py-3 text-slate-600">
                       {/* CHIQIMDA `categoryLabel` bo'sh keladi — u yerda xom

@@ -100,9 +100,12 @@ public record CashBoxPayInRequest(
 /// tekshiriladi — kirim turini chiqimga yopishtirib bo'lmaydi.
 /// </param>
 /// <param name="Date">Chiqim qaysi kun bilan yozilishi — <see cref="CashBoxPayInRequest.Date"/> bilan bir xil qoida.</param>
+/// <param name="TeacherId">Salary types only: the teacher paid (at most one of the two recipients).</param>
+/// <param name="EmployeeUserId">Salary types only: the non-teacher employee paid (users.id).</param>
 public record CashBoxPayOutRequest(
     decimal Amount, string Method, string? Note = null,
-    Guid? TransactionTypeId = null, DateOnly? Date = null);
+    Guid? TransactionTypeId = null, DateOnly? Date = null,
+    string? TeacherId = null, string? EmployeeUserId = null);
 
 /// <summary>Ko'chirish (Ko'chirish tugmasi) — bitta kassadan ikkinchisiga.</summary>
 /// <param name="Date">Qaysi kun bilan yozilishi — <see cref="CashBoxPayInRequest.Date"/> bilan bir xil qoida.</param>
@@ -171,7 +174,7 @@ public record CashBoxTransactionRowDto(
     Guid Id, int No, DateOnly Date, string Who, string? ContractNo,
     decimal Amount, string Kind, string Method, string Status,
     string? TransactionTypeName, string? Note = null, string? CancelReason = null,
-    DateTimeOffset CreatedAt = default, long? ReceiptNo = null);
+    DateTimeOffset CreatedAt = default, long? ReceiptNo = null, string? RecipientName = null);
 
 /// <summary>Kassa harakatlari ro'yxati uchun filtr.</summary>
 public record CashBoxTransactionsQuery(
@@ -558,6 +561,7 @@ public sealed class CashBoxService(IAppDbContext db) : ICashBoxService
             : null;
 
         var createdAt = ResolveEntryInstant(request.Date);
+        var (teacherId, employeeUserId) = await RequireSalaryRecipientAsync(request, transactionType, ct);
 
         await using var tx = await db.BeginTransactionAsync(ct);
         await LockBoxAsync(boxId, ct);
@@ -574,6 +578,8 @@ public sealed class CashBoxService(IAppDbContext db) : ICashBoxService
             CreatedBy = actorId,
             CreatedAt = createdAt,
             TransactionTypeId = transactionType?.Id,
+            TeacherId = teacherId,
+            EmployeeUserId = employeeUserId,
         };
         db.CashBoxTransactions.Add(row);
 
@@ -763,6 +769,8 @@ public sealed class CashBoxService(IAppDbContext db) : ICashBoxService
             TransferToBoxId = original.TransferToBoxId,
             ReversalOf = original.Id,
             TransactionTypeId = original.TransactionTypeId,
+            TeacherId = original.TeacherId,
+            EmployeeUserId = original.EmployeeUserId,
         };
         db.CashBoxTransactions.Add(mirror);
 
@@ -780,6 +788,32 @@ public sealed class CashBoxService(IAppDbContext db) : ICashBoxService
         await tx.CommitAsync(ct);
 
         return (await ToRowDtosAsync([mirror], ct))[0];
+    }
+
+    /// <summary>
+    /// The salary recipient of a Chiqim: at most one of teacher / employee, both must exist, and only
+    /// a type that posts to <see cref="Accounts.ExpenseSalary"/> may carry one — otherwise the salary
+    /// reports would count rent or supplies as someone's pay.
+    /// </summary>
+    private async Task<(string? TeacherId, string? EmployeeUserId)> RequireSalaryRecipientAsync(
+        CashBoxPayOutRequest request, TransactionType? type, CancellationToken ct)
+    {
+        var teacherId = Trim(request.TeacherId);
+        var employeeUserId = Trim(request.EmployeeUserId);
+        if (teacherId is null && employeeUserId is null) return (null, null);
+
+        if (teacherId is not null && employeeUserId is not null)
+            throw BillingRuleException.Invalid("one_salary_recipient",
+                "Maosh bitta odamga beriladi: o'qituvchi yoki xodim, ikkalasi emas.");
+        if (type is null || Accounts.ForTransactionType(type.Kind, type.LedgerAccount) != Accounts.ExpenseSalary)
+            throw BillingRuleException.Invalid("recipient_needs_salary_type",
+                "Xodim faqat maosh turidagi chiqimda ko'rsatiladi.");
+        if (teacherId is not null && !await db.Teachers.AsNoTracking().AnyAsync(t => t.Id == teacherId, ct))
+            throw BillingRuleException.NotFound("teacher_not_found", "O'qituvchi topilmadi.");
+        if (employeeUserId is not null && !await db.Users.AsNoTracking().AnyAsync(u => u.Id == employeeUserId, ct))
+            throw BillingRuleException.NotFound("user_not_found", "Xodim topilmadi.");
+
+        return (teacherId, employeeUserId);
     }
 
     private async Task RequireActiveBoxAsync(Guid boxId, CancellationToken ct)
@@ -1100,6 +1134,20 @@ public sealed class CashBoxService(IAppDbContext db) : ICashBoxService
                 .Where(t => typeIds.Contains(t.Id))
                 .ToDictionaryAsync(t => t.Id, t => t.Name, ct);
 
+        // Maosh oluvchi (o'qituvchi yoki xodim) — id emas, ism.
+        var teacherIds = rows.Select(r => r.TeacherId).Where(x => x is not null).Select(x => x!).Distinct().ToList();
+        var teacherNames = teacherIds.Count == 0
+            ? new Dictionary<string, string>(StringComparer.Ordinal)
+            : await db.Teachers.AsNoTracking().Where(t => teacherIds.Contains(t.Id))
+                .Select(t => new { t.Id, t.FullName })
+                .ToDictionaryAsync(t => t.Id, t => t.FullName, StringComparer.Ordinal, ct);
+        var employeeIds = rows.Select(r => r.EmployeeUserId).Where(x => x is not null).Select(x => x!).Distinct().ToList();
+        var employeeNames = employeeIds.Count == 0
+            ? new Dictionary<string, string>(StringComparer.Ordinal)
+            : await db.Users.AsNoTracking().Where(u => employeeIds.Contains(u.Id))
+                .Select(u => new { u.Id, u.FullName })
+                .ToDictionaryAsync(u => u.Id, u => u.FullName, StringComparer.Ordinal, ct);
+
         // "Bekor qilindi" — shu qatorlardan qay biri boshqasining stornosi
         // (`reversal_of`) ekanligi. Storno qatorining IZOHI — bekor qilish
         // sababi (`CancelTransactionAsync` uni shu yerga yozadi), shuning
@@ -1132,7 +1180,10 @@ public sealed class CashBoxService(IAppDbContext db) : ICashBoxService
             r.Status == CashBoxTransactionStatus.Reversal
                 ? r.Note
                 : cancelReasons.GetValueOrDefault(r.Id),
-            r.CreatedAt))];
+            r.CreatedAt,
+            RecipientName: r.TeacherId is not null ? teacherNames.GetValueOrDefault(r.TeacherId)
+                : r.EmployeeUserId is not null ? employeeNames.GetValueOrDefault(r.EmployeeUserId)
+                : null))];
     }
 
     /// <summary>
@@ -1199,6 +1250,7 @@ public sealed class CashBoxService(IAppDbContext db) : ICashBoxService
     {
         t.Id, t.CashBoxId, t.Kind, t.Amount, t.Method, t.ToMethod, t.StudentId,
         t.Note, t.Status, t.CreatedBy, t.TransferToBoxId, t.ReversalOf, t.TransactionTypeId,
+        t.TeacherId, t.EmployeeUserId,
     };
 
     private static string RequireName(string? name)
