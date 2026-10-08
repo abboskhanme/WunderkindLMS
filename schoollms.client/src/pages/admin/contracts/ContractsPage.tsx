@@ -357,8 +357,8 @@ function SendPanel({ target }: { target: Target }) {
           </table>
         </div>
         <p className="border-t border-slate-100 px-4 py-3 text-xs text-slate-400">
-          Faqat Telegramda ro'yxatdan o'tganlarga yuborish mumkin. Ro'yxatdan o'tish: bot orqali
-          telefon raqamini ulashish ({target === 'staff' ? 'xodim telefoni' : 'ota-ona telefoni'} bilan moslashadi).
+          Faqat Telegramga ulanganlarga yuborish mumkin. Ulanish: botda "Start" va panelga
+          {target === 'staff' ? " xodimning o'z" : ' farzandning'} login-paroli bilan kirish.
         </p>
       </Card>
     </div>

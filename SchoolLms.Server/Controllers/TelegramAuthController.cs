@@ -124,6 +124,7 @@ public sealed class TelegramAuthController(
         account.DisplayName = tgUser.DisplayName;
         account.Username = tgUser.Username;
         await TelegramSavedAccounts.RememberAsync(db, tgUser.Id, user.Id, ct);
+        await SyncNotificationsAsync(tgUser.Id, ct);
 
         // Bog'landi — endi chipta kerak emas.
         ClearLinkTicket();
@@ -166,6 +167,7 @@ public sealed class TelegramAuthController(
 
         account.LastSeenAt = AppClock.Now;
         await TelegramSavedAccounts.RememberAsync(db, account.TelegramUserId, user.Id, ct);
+        await SyncNotificationsAsync(account.TelegramUserId, ct);
         var session = await SessionFactory.IssueAsync(db, jwt, user, ct, account.TelegramUserId);
         return Ok(new TgAuthResponse("ok", session.Token, session.User,
             new TgTelegramUserDto(account.TelegramUserId.ToString(), account.DisplayName, account.Username), null));
@@ -249,6 +251,7 @@ public sealed class TelegramAuthController(
 
         ClearLinkTicket();
         await TelegramSavedAccounts.RememberAsync(db, tgUser.Id, user.Id, ct);
+        await SyncNotificationsAsync(tgUser.Id, ct);
         var session = await SessionFactory.IssueAsync(db, jwt, user, ct, tgUser.Id);
         var key = await SendPanelKeyboardAsync(tgUser.Id, ct);
         // Linked from a keyboard-launched app (no initData): hand it the new button's key, so it can
@@ -427,6 +430,7 @@ public sealed class TelegramAuthController(
             row.LastSeenAt = AppClock.Now;
             db.TelegramAccounts.RemoveRange(accounts.Skip(1));
             await TelegramSavedAccounts.RememberAsync(db, staying, next.Id, ct);
+            await SyncNotificationsAsync(staying, ct);
             var switched = await SessionFactory.IssueAsync(db, jwt, next, ct, staying);
             return Ok(new { ticket = (string?)null, token = switched.Token, user = switched.User });
         }
@@ -441,6 +445,8 @@ public sealed class TelegramAuthController(
 
         db.TelegramAccounts.RemoveRange(accounts);
         await db.SaveChangesAsync(ct);
+        foreach (var chat in accounts.Select(a => a.TelegramUserId).Distinct())
+            await SyncNotificationsAsync(chat, ct);
         // The ticket is in the body too: inside Telegram Web the app is a cross-site iframe and the
         // cookie may not come back with the next request (2026-10-07).
         return ticket is null ? NoContent() : Ok(new { ticket });
@@ -534,6 +540,7 @@ public sealed class TelegramAuthController(
         if ((link?.UserId ?? CurrentUserId()) == userId)
             return Conflict(new { code = "active_account", message = "Hozirgi akkauntdan «Chiqish» tugmasi orqali chiqiladi." });
         await TelegramSavedAccounts.ForgetAsync(db, tg, userId, ct);
+        await SyncNotificationsAsync(tg, ct);
         return NoContent();
     }
 
@@ -546,6 +553,7 @@ public sealed class TelegramAuthController(
         link.UserId = user.Id;
         link.LastSeenAt = AppClock.Now;
         await TelegramSavedAccounts.RememberAsync(db, tg, user.Id, ct);
+        await SyncNotificationsAsync(tg, ct);
         var session = await SessionFactory.IssueAsync(db, jwt, user, ct, tg);
         return Ok(new TgAuthResponse("ok", session.Token, session.User,
             new TgTelegramUserDto(tg.ToString(CultureInfo.InvariantCulture), link.DisplayName, link.Username), null));
@@ -561,6 +569,26 @@ public sealed class TelegramAuthController(
             await TelegramSavedAccounts.ForgetAsync(db, telegramUserId, saved.UserId, ct);
         }
         return null;
+    }
+
+    /// <summary>
+    /// The chat's school notifications follow its accounts (2026-10-08 — no phone sharing any more).
+    /// Never fails a sign-in: an error is only logged; the next open syncs again.
+    /// </summary>
+    private async Task SyncNotificationsAsync(long telegramUserId, CancellationToken ct)
+    {
+        try
+        {
+            await TelegramSavedAccounts.SyncRegistrationsAsync(db, telegramUserId, ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // Drop what the failed sync left pending, so the session's own save does not retry it.
+            foreach (var entry in db.ChangeTracker.Entries<TelegramRegistration>()
+                         .Where(e => e.State is EntityState.Added or EntityState.Deleted).ToList())
+                entry.State = EntityState.Detached;
+            logger.LogWarning(ex, "Telegram bildirishnoma ro'yxati yangilanmadi: tg={TelegramUserId}", telegramUserId);
+        }
     }
 
     /// <summary>The Telegram a Mini App session was opened from (<see cref="JwtTokenService.TelegramClaim"/>).</summary>

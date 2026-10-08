@@ -103,6 +103,8 @@ public class TelegramBotService(
                 logger.LogWarning("Telegram: menyu tugmasini almashtirib bo'lmadi");
             var sent = await SendMissingPanelKeyboardsAsync(ct);
             if (sent > 0) logger.LogInformation("Telegram: {Count} ta akkauntga panel tugmasi yuborildi", sent);
+            var synced = await SyncAllRegistrationsAsync(ct);
+            logger.LogInformation("Telegram: {Count} ta chat bildirishnoma ro'yxati akkauntlar bo'yicha yangilandi", synced);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -131,6 +133,39 @@ public class TelegramBotService(
         return sent;
     }
 
+    /// <summary>
+    /// Every linked chat's school notifications follow its accounts (2026-10-08 — phone sharing gone):
+    /// on start, so chats linked before the change (most never shared a phone) receive them too.
+    /// Returns chats synced; one chat's error never stops the others.
+    /// </summary>
+    public async Task<int> SyncAllRegistrationsAsync(CancellationToken ct = default)
+    {
+        List<long> chats;
+        using (var scope = sp.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<IAppDbContext>();
+            chats = await db.TelegramAccounts.AsNoTracking().Select(a => a.TelegramUserId)
+                .Union(db.TelegramSavedAccounts.AsNoTracking().Select(s => s.TelegramUserId))
+                .ToListAsync(ct);
+        }
+        var synced = 0;
+        foreach (var chat in chats)
+        {
+            // A context per chat: a failed one leaves nothing pending for the next.
+            using var scope = sp.CreateScope();
+            try
+            {
+                await TelegramSavedAccounts.SyncRegistrationsAsync(scope.ServiceProvider.GetRequiredService<IAppDbContext>(), chat, ct);
+                synced++;
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                logger.LogWarning(ex, "Telegram: bildirishnoma ro'yxati yangilanmadi, tg={Chat}", chat);
+            }
+        }
+        return synced;
+    }
+
     /// <summary>Bitta update. Testlar to'g'ridan-to'g'ri chaqiradi (polling'siz).</summary>
     public async Task HandleUpdateAsync(JsonElement upd, CancellationToken ct)
     {
@@ -138,159 +173,41 @@ public class TelegramBotService(
         if (!msg.TryGetProperty("chat", out var chat) || !chat.TryGetProperty("id", out var chatIdEl)) return;
         var chatId = chatIdEl.GetInt64();
 
-        // Kontakt ulashildi — ro'yxatdan o'tkazamiz.
-        if (msg.TryGetProperty("contact", out var contact))
-        {
-            // Faqat O'Z raqami: boshqa odamning kontakt kartasini yuborib, o'sha ota-onaning
-            // kvitansiya, intizom va shartnoma xabarlarini olib bo'lmasin.
-            if (!IsOwnContact(msg, contact))
-            {
-                await telegram.SendMessageAsync(chatId,
-                    "Faqat o'zingizning raqamingizni pastdagi tugma orqali ulashing.", ContactKeyboard, ct);
-                return;
-            }
-            var phone = contact.TryGetProperty("phone_number", out var p) ? p.GetString() : null;
-            await RegisterByPhoneAsync(chatId, phone, SenderName(msg), ct);
-            return;
-        }
+        // No phone sharing any more (client, 2026-10-08: "telefon raqam ulashish ... kerakmas, botdan buni
+        // butunlay olib tashla"). An old keyboard may still offer it — the contact is not stored; the
+        // panel keyboard (or none) replaces that keyboard, and the sign-in way is explained.
+        var sharedContact = msg.TryGetProperty("contact", out _);
 
         var text = msg.TryGetProperty("text", out var t) ? t.GetString() ?? "" : "";
         var start = text.StartsWith("/start");
 
-        // Linked account → the panel keyboard (a fresh key every time).
+        // Linked account → the panel keyboard (a fresh key every time; it also replaces an old keyboard
+        // that still had the phone row).
         using (var scope = sp.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<IAppDbContext>();
             var account = await db.TelegramAccounts.FirstOrDefaultAsync(a => a.TelegramUserId == chatId, ct);
-            if (account is not null
-                && await TelegramPanelKeys.SendKeyboardAsync(db, telegram, MiniAppUrl, account,
-                    start ? "Assalomu alaykum! " + PanelHint : PanelHint, ct))
+            var hint = sharedContact ? NoPhoneHint + " " + PanelHint : start ? "Assalomu alaykum! " + PanelHint : PanelHint;
+            if (account is not null && await TelegramPanelKeys.SendKeyboardAsync(db, telegram, MiniAppUrl, account, hint, ct))
                 return;
         }
 
-        if (start)
-        {
-            await telegram.SendMessageAsync(chatId,
-                "Assalomu alaykum! Maktab e'lonlari va shartnomalarini olish uchun telefon raqamingizni " +
-                "ulashing. Raqamingiz ota-ona yoki xodim ma'lumotidagi raqam bilan solishtiriladi.",
-                ContactKeyboard, ct);
-        }
-        else
-        {
-            await telegram.SendMessageAsync(chatId,
-                "Iltimos, pastdagi tugma orqali telefon raqamingizni ulashing.", ContactKeyboard, ct);
-        }
-        // Not linked yet: an inline web_app button carries `initData`, so the Mini App can link the
-        // account; the keyboard then arrives by itself (TelegramAuthController).
+        // Not linked yet: the old phone keyboard goes, and an inline web_app button (it carries
+        // `initData`) lets the Mini App link the account with the login and password; the panel
+        // keyboard then arrives by itself (TelegramAuthController).
+        await telegram.SendMessageAsync(chatId,
+            sharedContact ? NoPhoneHint : "Assalomu alaykum! Wunderkind maktab paneli shu bot orqali ochiladi.",
+            RemoveKeyboard, ct);
         if (MiniAppUrl is { } url)
             await telegram.SendMessageAsync(chatId,
-                "Panelga kirish uchun shu tugmani bosing va login-parolingizni bir marta kiriting. " +
-                "Keyin panel pastdagi «🏫 Panelni ochish» tugmasidan ochiladi.",
+                "Panelga kirish uchun shu tugmani bosing va maktab bergan login-parolni bir marta kiriting. " +
+                "Shundan keyin maktab xabarlari ham shu chatga keladi.",
                 TelegramPanelKeys.SignInButton(url), ct);
     }
 
-    private async Task RegisterByPhoneAsync(long chatId, string? phone, string senderName, CancellationToken ct)
-    {
-        var key = PhoneUtil.Key(phone);
-        if (key.Length < 7)
-        {
-            await telegram.SendMessageAsync(chatId, "Telefon raqami noto'g'ri. Qaytadan urinib ko'ring.", ct: ct);
-            return;
-        }
+    /// <summary>The answer to a phone shared through an old keyboard.</summary>
+    private const string NoPhoneHint = "Telefon raqam endi kerak emas — panelga login va parol bilan kiriladi.";
 
-        var digits = PhoneUtil.DigitsOnly(phone);
-        var linked = new List<string>();
-
-        using var scope = sp.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<IAppDbContext>();
-        {
-            // Arxivdagi o'quvchi (ketgan yoki test yozuvi) ota-onani ro'yxatga olmaydi.
-            var matchedStudents = (await db.Students.Where(s => !s.IsArchived).ToListAsync(ct))
-                .Where(s => PhoneUtil.Key(s.ParentPhone) == key).ToList();
-            var matchedTeachers = (await db.Teachers.Where(t => !t.IsArchived).ToListAsync(ct))
-                .Where(t => PhoneUtil.Key(t.Phone) == key).ToList();
-
-            foreach (var s in matchedStudents)
-            {
-                var exists = await db.TelegramRegistrations.AnyAsync(
-                    r => r.StudentId == s.Id && r.ChatId == chatId, ct);
-                if (!exists)
-                    db.TelegramRegistrations.Add(new TelegramRegistration
-                    {
-                        StudentId = s.Id,
-                        ChatId = chatId,
-                        ParentName = senderName,
-                        Phone = digits,
-                        CreatedAt = AppClock.Now,
-                    });
-                linked.Add($"{s.FullName} ({s.ClassName})");
-            }
-
-            foreach (var t in matchedTeachers)
-            {
-                var exists = await db.TelegramRegistrations.AnyAsync(
-                    r => r.TeacherId == t.Id && r.ChatId == chatId, ct);
-                if (!exists)
-                    db.TelegramRegistrations.Add(new TelegramRegistration
-                    {
-                        TeacherId = t.Id,
-                        StudentId = "",
-                        ChatId = chatId,
-                        ParentName = senderName,
-                        Phone = digits,
-                        CreatedAt = AppClock.Now,
-                    });
-                linked.Add($"{t.FullName} (xodim)");
-            }
-
-            await db.SaveChangesAsync(ct);
-        }
-
-        if (linked.Count == 0)
-        {
-            await telegram.SendMessageAsync(chatId,
-                $"Bu raqam ({phone}) hech bir ota-ona yoki xodim raqami bilan mos kelmadi. " +
-                "Iltimos, maktab ma'muriyatiga murojaat qiling.", ct: ct);
-            return;
-        }
-
-        var registered = "✅ Ro'yxatdan o'tdingiz. Endi quyidagilar bo'yicha e'lon va shartnomalarni olasiz:\n• " +
-                         string.Join("\n• ", linked);
-        // A linked account keeps its panel button (the phone row is gone now); otherwise the
-        // phone keyboard simply closes.
-        var account = await db.TelegramAccounts.FirstOrDefaultAsync(a => a.TelegramUserId == chatId, ct);
-        if (account is not null
-            && await TelegramPanelKeys.SendKeyboardAsync(db, telegram, MiniAppUrl, account, registered, ct))
-            return;
-        await telegram.SendMessageAsync(chatId, registered, RemoveKeyboard, ct);
-    }
-
-    /// <summary>
-    /// Kontakt yuboruvchining o'ziniki: <c>contact.user_id == from.id</c>. Telefon kitobidan
-    /// yuborilgan kartada <c>user_id</c> bo'lmasligi yoki boshqa odamniki bo'lishi mumkin.
-    /// </summary>
-    private static bool IsOwnContact(JsonElement msg, JsonElement contact) =>
-        msg.TryGetProperty("from", out var from)
-        && from.TryGetProperty("id", out var fromId) && fromId.ValueKind == JsonValueKind.Number
-        && contact.TryGetProperty("user_id", out var owner) && owner.ValueKind == JsonValueKind.Number
-        && owner.GetInt64() == fromId.GetInt64();
-
-    private static string SenderName(JsonElement msg)
-    {
-        if (!msg.TryGetProperty("from", out var from)) return "";
-        var fn = from.TryGetProperty("first_name", out var f) ? f.GetString() : null;
-        var ln = from.TryGetProperty("last_name", out var l) ? l.GetString() : null;
-        return string.Join(" ", new[] { fn, ln }.Where(x => !string.IsNullOrWhiteSpace(x)));
-    }
-
-    /// <summary>Ro'yxatdan o'tgach "Telefon raqamni ulashish" tugmasi yopiladi.</summary>
+    /// <summary>Closes an old reply keyboard (the phone-sharing one) in a chat without a linked account.</summary>
     private static object RemoveKeyboard => new { remove_keyboard = true };
-
-    /// <summary>Telefon raqamini so'rovchi klaviatura (request_contact tugmasi).</summary>
-    private static object ContactKeyboard => new
-    {
-        keyboard = new[] { new[] { new { text = "📱 Telefon raqamni ulashish", request_contact = true } } },
-        resize_keyboard = true,
-        one_time_keyboard = true,
-    };
 }

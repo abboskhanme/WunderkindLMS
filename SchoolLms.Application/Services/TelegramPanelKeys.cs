@@ -79,23 +79,22 @@ public static class TelegramPanelKeys
         miniAppUrl + (miniAppUrl.Contains('?') ? "&" : "?") + "k=" + Uri.EscapeDataString(key);
 
     /// <summary>
-    /// The persistent reply keyboard: the panel button, plus the phone-sharing button while the
-    /// chat is not yet registered for school notifications (both can live in one keyboard).
+    /// The persistent reply keyboard: the panel button only. No phone-sharing button (client,
+    /// 2026-10-08: "telefon raqam ulashish ... kerakmas, botdan buni butunlay olib tashla") — the
+    /// school's notifications follow the signed-in accounts (<see cref="TelegramSavedAccounts.SyncRegistrationsAsync"/>).
+    /// Sending it also replaces an older keyboard that still had the phone row.
     /// </summary>
-    public static object Keyboard(string panelUrl, bool askContact = false)
+    public static object Keyboard(string panelUrl) => new
     {
-        var panelRow = new object[] { new { text = ButtonText, web_app = new { url = panelUrl } } };
-        var rows = askContact
-            ? new[] { panelRow, new object[] { new { text = "📱 Telefon raqamni ulashish", request_contact = true } } }
-            : new[] { panelRow };
-        return new { keyboard = rows, resize_keyboard = true, is_persistent = true };
-    }
+        keyboard = new[] { new object[] { new { text = ButtonText, web_app = new { url = panelUrl } } } },
+        resize_keyboard = true,
+        is_persistent = true,
+    };
 
     /// <summary>
     /// Sends <paramref name="text"/> with a FRESH panel keyboard to the account's chat and saves
     /// the new key only if Telegram accepted the message (otherwise the old key stays valid and
-    /// nothing is recorded — e.g. the person has not started the bot yet). A parent or teacher
-    /// whose chat is not registered for school notifications also gets the phone button.
+    /// nothing is recorded — e.g. the person has not started the bot yet).
     /// </summary>
     public static async Task<bool> SendKeyboardAsync(
         IAppDbContext db, TelegramService telegram, string? miniAppUrl, TelegramAccount account, string text,
@@ -109,13 +108,10 @@ public static class TelegramPanelKeys
     {
         if (string.IsNullOrWhiteSpace(miniAppUrl) || !telegram.IsConfigured) return null;
         var chat = account.TelegramUserId;
-        var role = await db.Users.Where(u => u.Id == account.UserId).Select(u => u.Role).FirstOrDefaultAsync(ct);
-        var askContact = (role is "parent" or Roles.Teacher)
-                         && !await db.TelegramRegistrations.AnyAsync(r => r.ChatId == chat, ct);
 
         var (oldHash, oldIssued) = (account.PanelKeyHash, account.PanelKeyIssuedAt);
         var key = Issue(account);
-        if (!await telegram.SendMessageAsync(chat, text, Keyboard(PanelUrl(miniAppUrl, key), askContact), ct))
+        if (!await telegram.SendMessageAsync(chat, text, Keyboard(PanelUrl(miniAppUrl, key)), ct))
         {
             (account.PanelKeyHash, account.PanelKeyIssuedAt) = (oldHash, oldIssued);
             return null;

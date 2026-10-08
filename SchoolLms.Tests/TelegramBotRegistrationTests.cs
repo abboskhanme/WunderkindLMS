@@ -10,18 +10,14 @@ using SchoolLms.Tests.Fixtures;
 namespace SchoolLms.Tests;
 
 /// <summary>
-/// Botga telefon ulashish → <c>TelegramRegistrations</c> (ota-onaning yagona Telegram kanali:
-/// kvitansiya, intizom, shartnoma, e'lon).
-///
+/// Phone sharing is gone from the bot (client, 2026-10-08: "telefon raqam ulashish ... kerakmas, botdan
+/// buni butunlay olib tashla, bu tushunmovchiliklarga xatolarga olib keladi"). The school's notifications
+/// follow the accounts signed in on a chat (<c>TelegramSavedAccounts.SyncRegistrationsAsync</c>, tested in
+/// <c>TelegramNotificationSyncTests</c>); a contact sent through an old keyboard is not stored.
+/// Nothing goes to the network — replies stay in a fake <see cref="HttpMessageHandler"/>.
 /// <para>
-/// <b>Eng muhim tekshiruv — begona kontakt.</b> Boshqa odamning kontakt kartasini yuborgan
-/// kishi o'sha ota-onaning xabarlarini olib qolmasligi kerak: faqat <c>contact.user_id ==
-/// from.id</c> qabul qilinadi. Hech narsa tarmoqqa chiqmaydi — javoblar soxta
-/// <see cref="HttpMessageHandler"/> da qoladi (<c>DisciplineParentNotifyTests</c> naqshi).
-/// </para>
-/// <para>
-/// Yaratilgan o'quvchilar test oxirida O'CHIRILADI: baza butun to'plam uchun umumiy va
-/// ba'zi hisobotlar o'quvchi soniga chegara qo'yadi (<c>MaxArrearsStudents</c>).
+/// Pupils made here are DELETED at the end: the database is shared by the whole suite and some
+/// reports cap the number of pupils (<c>MaxArrearsStudents</c>).
 /// </para>
 /// </summary>
 [Collection(SchoolLmsCollection.Name)]
@@ -42,7 +38,7 @@ public class TelegramBotRegistrationTests(ApiFixture fixture) : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Oz_raqamini_ulashgan_ota_ona_royxatdan_otadi_va_tugma_yopiladi()
+    public async Task Kontakt_saqlanmaydi_telefon_kerakmasligi_aytiladi_va_eski_klaviatura_yopiladi()
     {
         var phone = UniquePhone();
         var student = await SeedStudentAsync("Bot Ota-ona", phone);
@@ -51,54 +47,25 @@ public class TelegramBotRegistrationTests(ApiFixture fixture) : IAsyncLifetime
 
         await Bot(handler).HandleUpdateAsync(ContactUpdate(chat, owner: chat, phone), default);
 
-        Assert.True(await RegisteredAsync(student, chat));
-        var reply = Assert.Single(handler.Requests);
-        Assert.Contains("Ro'yxatdan o'tdingiz", reply.GetProperty("text").GetString());
-        Assert.Contains("Bot Ota-ona", reply.GetProperty("text").GetString());
-        Assert.True(reply.GetProperty("reply_markup").GetProperty("remove_keyboard").GetBoolean());
+        // The phone matched a pupil — still nothing is stored: notifications come with the login now.
+        Assert.False(await RegisteredAsync(student, chat));
+        var first = handler.Requests[0];
+        Assert.Contains("Telefon raqam endi kerak emas", first.GetProperty("text").GetString());
+        Assert.True(first.GetProperty("reply_markup").GetProperty("remove_keyboard").GetBoolean());
+        Assert.DoesNotContain(handler.Requests, r => r.ToString().Contains("request_contact"));
     }
 
     [Fact]
-    public async Task Begona_kontakt_kartasi_royxatga_olinmaydi()
+    public async Task Start_telefon_soramaydi()
     {
-        var phone = UniquePhone();
-        var student = await SeedStudentAsync("Bot Begona", phone);
         var handler = new RecordingHandler();
         const long chat = 7_100_002;
 
-        await Bot(handler).HandleUpdateAsync(ContactUpdate(chat, owner: 7_100_999, phone), default);
+        await Bot(handler).HandleUpdateAsync(TextUpdate(chat, "/start"), default);
 
-        Assert.False(await RegisteredAsync(student, chat));
-        var reply = Assert.Single(handler.Requests);
-        Assert.Contains("o'zingizning raqamingizni", reply.GetProperty("text").GetString());
-    }
-
-    [Fact]
-    public async Task Telefon_kitobidagi_kartada_user_id_yoq_qabul_qilinmaydi()
-    {
-        var phone = UniquePhone();
-        var student = await SeedStudentAsync("Bot Kitob", phone);
-        var handler = new RecordingHandler();
-        const long chat = 7_100_003;
-
-        await Bot(handler).HandleUpdateAsync(ContactUpdate(chat, owner: null, phone), default);
-
-        Assert.False(await RegisteredAsync(student, chat));
-    }
-
-    [Fact]
-    public async Task Arxivdagi_oquvchi_ota_onani_royxatga_olmaydi()
-    {
-        var phone = UniquePhone();
-        var student = await SeedStudentAsync("Bot Arxiv", phone, archived: true);
-        var handler = new RecordingHandler();
-        const long chat = 7_100_004;
-
-        await Bot(handler).HandleUpdateAsync(ContactUpdate(chat, owner: chat, phone), default);
-
-        Assert.False(await RegisteredAsync(student, chat));
-        var reply = Assert.Single(handler.Requests);
-        Assert.Contains("mos kelmadi", reply.GetProperty("text").GetString());
+        Assert.NotEmpty(handler.Requests);
+        Assert.DoesNotContain(handler.Requests, r => r.ToString().Contains("request_contact"));
+        Assert.DoesNotContain(handler.Requests, r => r.GetProperty("text").GetString()!.Contains("telefon raqamingiz", StringComparison.OrdinalIgnoreCase));
     }
 
     // ---------------------------------------------------------------- yordamchilar
@@ -124,6 +91,23 @@ public class TelegramBotRegistrationTests(ApiFixture fixture) : IAsyncLifetime
         await fixture.Api.WithDbAsync(async db =>
             found = await db.TelegramRegistrations.AnyAsync(r => r.StudentId == studentId && r.ChatId == chat));
         return found;
+    }
+
+    private static JsonElement TextUpdate(long chat, string text)
+    {
+        var json = JsonSerializer.Serialize(new
+        {
+            update_id = 1,
+            message = new
+            {
+                message_id = 1,
+                chat = new { id = chat, type = "private" },
+                from = new { id = chat, first_name = "Ota" },
+                text,
+            },
+        });
+        using var doc = JsonDocument.Parse(json);
+        return doc.RootElement.Clone();
     }
 
     private static JsonElement ContactUpdate(long chat, long? owner, string phone)

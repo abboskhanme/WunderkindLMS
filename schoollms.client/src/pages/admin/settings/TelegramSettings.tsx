@@ -91,8 +91,8 @@ export function TelegramSettings() {
 
         <div className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-500">
           Ota-ona botni ochib (masalan {username ? `@${username}` : '@BotUsername'}) "Start" bossin va
-          telefon raqamini ulashsin — raqami o'quvchining ota-ona raqami bilan solishtirilib, e'lon
-          oluvchilar ro'yxatiga qo'shiladi.
+          panelga maktab bergan login-parol bilan kirsin — shu Telegram e'lon oluvchilar ro'yxatiga
+          o'zi qo'shiladi (farzand va uning aka-ukalari bo'yicha). Telefon raqam so'ralmaydi.
         </div>
 
         <div className="flex items-center gap-3">

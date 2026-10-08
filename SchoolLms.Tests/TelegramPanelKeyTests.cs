@@ -244,16 +244,17 @@ public class TelegramPanelKeyTests(ApiFixture fixture)
     }
 
     [Fact]
-    public async Task Boglanmagan_chatga_telefon_va_panelga_kirish_tugmasi()
+    public async Task Boglanmagan_chatga_faqat_panelga_kirish_tugmasi_telefon_yoq()
     {
         var handler = new RecordingHandler();
         var chat = Interlocked.Increment(ref _telegram);
 
         await Bot(handler).HandleUpdateAsync(TextUpdate(chat, "/start"), default);
 
+        // No phone button (client, 2026-10-08): the old keyboard is closed, the sign-in button follows.
         Assert.Equal(2, handler.Requests.Count);
-        Assert.True(handler.Requests[0].GetProperty("reply_markup").GetProperty("keyboard")[0][0]
-            .GetProperty("request_contact").GetBoolean());
+        Assert.True(handler.Requests[0].GetProperty("reply_markup").GetProperty("remove_keyboard").GetBoolean());
+        Assert.DoesNotContain(handler.Requests, r => r.ToString().Contains("request_contact"));
         var inline = handler.Requests[1].GetProperty("reply_markup").GetProperty("inline_keyboard")[0][0];
         // inline web_app DOES carry initData — no key in this URL
         Assert.Equal(MiniAppUrl, inline.GetProperty("web_app").GetProperty("url").GetString());
