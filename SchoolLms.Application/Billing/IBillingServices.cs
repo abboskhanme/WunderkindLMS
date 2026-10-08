@@ -142,6 +142,9 @@ public interface IInvoiceService
     /// </summary>
     Task<IReadOnlyList<InvoiceDto>> ExportRowsAsync(InvoicePageQuery query, CancellationToken ct = default);
 
+    /// <summary>The register grouped by abonement (client, 2026-10-08) — the same filter as the list.</summary>
+    Task<InvoicesByPlanDto> ByPlanAsync(InvoicePageQuery query, CancellationToken ct = default);
+
     /// <summary>O'quvchining to'liq moliyaviy kartochkasi (qarz, obunalar, oylar, to'lovlar).</summary>
     Task<StudentBillingDto?> ForStudentAsync(string studentId, CancellationToken ct = default);
 

@@ -73,12 +73,26 @@ public record InvoicePageQuery(
     string? ClassName = null,
     bool OnlyDebtors = false,
     int Page = 1,
-    int PageSize = InvoiceService.DefaultPageSize)
+    int PageSize = InvoiceService.DefaultPageSize,
+    Guid? PlanId = null)
 {
     /// <summary>Muzlatilgan filtr qismiga o'girish — ta'rif ikki joyda yozilmasin.</summary>
     public InvoiceQuery ToQuery() =>
         new(StudentId, CategoryId, FromMonth, ToMonth, Status, OnlyOverdue, ClassName);
 }
+
+/// <summary>One abonement's line of the "Abonementlar bo'yicha" view (client, 2026-10-08).</summary>
+/// <param name="PlanId">Null — months no abonement covers ("Abonementsiz": imported balances, months
+/// billed after the abonement was closed).</param>
+/// <param name="Students">Distinct pupils billed under it in the period.</param>
+/// <param name="Debtors">Pupils with something left to pay on it.</param>
+public record InvoicePlanRowDto(
+    Guid? PlanId, string PlanName, string CategoryName, decimal? MonthlyAmount, bool PlanActive,
+    int Students, int Invoices, decimal Amount, decimal Discount, decimal Payable, decimal Paid, decimal Remaining,
+    int Debtors);
+
+/// <summary>The register grouped by abonement — the same filter as the list.</summary>
+public record InvoicesByPlanDto(IReadOnlyList<InvoicePlanRowDto> Rows, InvoicePlanRowDto Total);
 
 /// <summary>
 /// Registr yakuni — BUTUN FILTR bo'yicha (sahifa bo'yicha emas).
@@ -535,7 +549,7 @@ public sealed class InvoiceService(IAppDbContext db, ILedgerService ledger) : II
         var page = Math.Max(1, query.Page);
         var size = Math.Clamp(query.PageSize, 1, MaxPageSize);
 
-        var q = Filtered(query.ToQuery(), query.OnlyDebtors, settings);
+        var q = OfPlan(Filtered(query.ToQuery(), query.OnlyDebtors, settings), query.PlanId);
 
         var total = await q.CountAsync(ct);
 
@@ -595,7 +609,7 @@ public sealed class InvoiceService(IAppDbContext db, ILedgerService ledger) : II
         ArgumentNullException.ThrowIfNull(query);
 
         var settings = await SettingsAsync(ct);
-        var q = Filtered(query.ToQuery(), query.OnlyDebtors, settings);
+        var q = OfPlan(Filtered(query.ToQuery(), query.OnlyDebtors, settings), query.PlanId);
 
         var rows = await q
             .OrderByDescending(i => i.PeriodMonth)
@@ -605,6 +619,111 @@ public sealed class InvoiceService(IAppDbContext db, ILedgerService ledger) : II
             .ToListAsync(ct);
 
         return await ToDtosAsync(rows, settings, ct);
+    }
+
+    // =====================================================================
+    //  ABONEMENT BO'YICHA (client, 2026-10-08: "qaysi abonement bo'yicha nechta student bor, qancha
+    //  to'lovlar bo'lgan"). An invoice carries only its category; its abonement is the one of the
+    //  pupil's subscription of that category that covers the month (started by the month, not ended
+    //  before it). None covers it — "Abonementsiz" (imported balances, months billed after a close).
+    // =====================================================================
+
+    /// <summary>"Abonementsiz" in the filter: months no abonement covers.</summary>
+    public static readonly Guid NoPlan = Guid.Empty;
+
+    /// <summary>The list narrowed to one abonement (or to <see cref="NoPlan"/>); null — unchanged.</summary>
+    private IQueryable<Invoice> OfPlan(IQueryable<Invoice> q, Guid? planId)
+    {
+        if (planId is not { } plan) return q;
+        if (plan == NoPlan)
+            return q.Where(i => !db.StudentSubscriptions.Any(s =>
+                s.PlanId != null && s.StudentId == i.StudentId && s.CategoryId == i.CategoryId
+                && s.StartsOn.Year * 12 + s.StartsOn.Month <= i.PeriodMonth.Year * 12 + i.PeriodMonth.Month
+                && (s.EndsOn == null || s.EndsOn >= i.PeriodMonth)));
+        return q.Where(i => db.StudentSubscriptions.Any(s =>
+            s.PlanId == plan && s.StudentId == i.StudentId && s.CategoryId == i.CategoryId
+            && s.StartsOn.Year * 12 + s.StartsOn.Month <= i.PeriodMonth.Year * 12 + i.PeriodMonth.Month
+            && (s.EndsOn == null || s.EndsOn >= i.PeriodMonth)));
+    }
+
+    /// <summary>
+    /// The register grouped by abonement: pupils, billed, discount, paid, left, debtors — the same
+    /// filter as <see cref="ListPageAsync"/>. Voided months stay out unless the "void" status is asked for.
+    /// </summary>
+    public async Task<InvoicesByPlanDto> ByPlanAsync(InvoicePageQuery query, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(query);
+        var settings = await SettingsAsync(ct);
+        var q = OfPlan(Filtered(query.ToQuery(), query.OnlyDebtors, settings), query.PlanId);
+        if (string.IsNullOrWhiteSpace(query.Status)) q = q.Where(i => i.Status != InvoiceStatus.Void);
+
+        var rows = await q
+            .Select(i => new
+            {
+                i.Id, i.StudentId, i.CategoryId, i.Amount, i.Discount,
+                PlanId = db.StudentSubscriptions
+                    .Where(s => s.PlanId != null && s.StudentId == i.StudentId && s.CategoryId == i.CategoryId
+                                && s.StartsOn.Year * 12 + s.StartsOn.Month <= i.PeriodMonth.Year * 12 + i.PeriodMonth.Month
+                                && (s.EndsOn == null || s.EndsOn >= i.PeriodMonth))
+                    .OrderByDescending(s => s.StartsOn)
+                    .Select(s => s.PlanId)
+                    .FirstOrDefault(),
+            })
+            .ToListAsync(ct);
+
+        var ids = rows.Select(r => r.Id).ToList();
+        var paidBy = ids.Count == 0
+            ? new Dictionary<Guid, decimal>()
+            : await EffectiveAllocations()
+                .Where(a => q.Select(i => i.Id).Contains(a.InvoiceId))
+                .GroupBy(a => a.InvoiceId)
+                .Select(g => new { g.Key, Paid = g.Sum(a => a.Amount) })
+                .ToDictionaryAsync(x => x.Key, x => x.Paid, ct);
+
+        var planIds = rows.Where(r => r.PlanId != null).Select(r => r.PlanId!.Value).Distinct().ToList();
+        var plans = await (
+                from p in db.SubscriptionPlans.AsNoTracking()
+                join c in db.FeeCategories.AsNoTracking() on p.CategoryId equals c.Id
+                where planIds.Contains(p.Id)
+                select new { p.Id, p.Name, p.MonthlyAmount, p.IsActive, CategoryName = c.Name })
+            .ToDictionaryAsync(p => p.Id, ct);
+        var categoryIds = rows.Where(r => r.PlanId == null).Select(r => r.CategoryId).Distinct().ToList();
+        var categoryNames = await db.FeeCategories.AsNoTracking()
+            .Where(c => categoryIds.Contains(c.Id))
+            .ToDictionaryAsync(c => c.Id, c => c.Name, ct);
+
+        InvoicePlanRowDto Line(Guid? planId, string name, string category, decimal? monthly, bool active,
+            IReadOnlyCollection<(string StudentId, decimal Amount, decimal Discount, decimal Paid)> items)
+        {
+            var amount = decimal.Round(items.Sum(x => x.Amount), MoneyScale);
+            var discount = decimal.Round(items.Sum(x => x.Discount), MoneyScale);
+            var paid = decimal.Round(items.Sum(x => x.Paid), MoneyScale);
+            var payable = decimal.Round(amount - discount, MoneyScale);
+            return new InvoicePlanRowDto(planId, name, category, monthly, active,
+                items.Select(x => x.StudentId).Distinct(StringComparer.Ordinal).Count(), items.Count,
+                amount, discount, payable, paid, decimal.Round(payable - paid, MoneyScale),
+                items.Where(x => x.Amount - x.Discount - x.Paid > 0m).Select(x => x.StudentId)
+                    .Distinct(StringComparer.Ordinal).Count());
+        }
+
+        var items = rows.Select(r => (r.PlanId, r.CategoryId,
+            Item: (r.StudentId, r.Amount, r.Discount, Paid: paidBy.GetValueOrDefault(r.Id)))).ToList();
+        var lines = items
+            .GroupBy(x => x.PlanId is null ? (Key: (Guid?)null, Category: x.CategoryId) : (Key: x.PlanId, Category: Guid.Empty))
+            .Select(g =>
+            {
+                var list = g.Select(x => x.Item).ToList();
+                if (g.Key.Key is { } id && plans.TryGetValue(id, out var plan))
+                    return Line(id, plan.Name, plan.CategoryName, plan.MonthlyAmount, plan.IsActive, list);
+                return Line(null, "Abonementsiz", categoryNames.GetValueOrDefault(g.Key.Category, ""), null, true, list);
+            })
+            .OrderByDescending(l => l.PlanId != null)
+            .ThenBy(l => l.CategoryName, StringComparer.Ordinal)
+            .ThenByDescending(l => l.Students)
+            .ToList();
+
+        return new InvoicesByPlanDto(lines,
+            Line(null, "Jami", "", null, true, [.. items.Select(x => x.Item)]));
     }
 
     /// <summary>

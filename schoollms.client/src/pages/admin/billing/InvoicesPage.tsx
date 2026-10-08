@@ -27,7 +27,7 @@ import {
   RotateCcw,
   Wallet,
 } from 'lucide-react'
-import type { FeeCategory, Invoice, InvoiceStatus, SchoolClass } from '@/types'
+import type { FeeCategory, Invoice, InvoiceStatus, SchoolClass, SubscriptionPlan } from '@/types'
 import type { InvoicePage } from '@/api/services/invoices'
 import {
   canVoid,
@@ -35,11 +35,12 @@ import {
   invoiceStatusLabels,
   invoiceStatusTone,
   listInvoices,
+  NO_PLAN,
   runAccrual,
   voidInvoice,
 } from '@/api/services/invoices'
 import { billingErrorCode, billingErrorMessage } from '@/api/services/billingError'
-import { getFeeCategories } from '@/api/services/billingCatalog'
+import { getFeeCategories, getSubscriptionPlans } from '@/api/services/billingCatalog'
 import { getClasses } from '@/api/services/classes'
 import { formatMonth } from '@/config/constants'
 import { cn, formatDate, formatMoney } from '@/lib/utils'
@@ -49,6 +50,8 @@ import { StatCard } from '@/components/ui/StatCard'
 import { BillingGuard, Notice, StatusPill } from './BillingUi'
 import { useBillingAccess } from './access'
 import { VoidInvoiceModal } from './VoidInvoiceModal'
+import { InvoicesByPlanTable } from './InvoicesByPlanTable'
+import { groupPlansByType } from './planUtils'
 import { MonthPicker } from '@/components/ui/DatePicker'
 
 const control =
@@ -77,6 +80,7 @@ interface Filters {
   status: string
   className: string
   categoryId: string
+  planId: string
   onlyOverdue: boolean
   onlyDebtors: boolean
 }
@@ -87,6 +91,7 @@ const INITIAL: Filters = {
   status: 'all',
   className: 'all',
   categoryId: 'all',
+  planId: 'all',
   onlyOverdue: false,
   onlyDebtors: false,
 }
@@ -111,6 +116,9 @@ function InvoicesView() {
 
   const [classes, setClasses] = useState<SchoolClass[]>([])
   const [categories, setCategories] = useState<FeeCategory[]>([])
+  const [plans, setPlans] = useState<SubscriptionPlan[]>([])
+  // "Abonementlar bo'yicha" — the same filter grouped by abonement (client, 2026-10-08).
+  const [view, setView] = useState<'list' | 'plans'>('list')
 
   const [voiding, setVoiding] = useState<Invoice | null>(null)
   const [busy, setBusy] = useState(false)
@@ -123,7 +131,10 @@ function InvoicesView() {
   useEffect(() => {
     getClasses().then(setClasses).catch(() => setClasses([]))
     getFeeCategories().then(setCategories).catch(() => setCategories([]))
+    getSubscriptionPlans().then(setPlans).catch(() => setPlans([]))
   }, [])
+
+  const planGroups = useMemo(() => groupPlansByType(plans), [plans])
 
   const query = useMemo(
     () => ({
@@ -133,6 +144,7 @@ function InvoicesView() {
       status: filters.status === 'all' ? undefined : (filters.status as InvoiceStatus),
       className: filters.className === 'all' ? undefined : filters.className,
       categoryId: filters.categoryId === 'all' ? undefined : filters.categoryId,
+      planId: filters.planId === 'all' ? undefined : filters.planId,
       onlyOverdue: filters.onlyOverdue || undefined,
       onlyDebtors: filters.onlyDebtors || undefined,
     }),
@@ -295,6 +307,21 @@ function InvoicesView() {
 
       <Card className="p-0">
         <div className="flex flex-wrap items-center gap-3 border-b border-slate-100 p-4">
+          <div className="flex w-fit gap-1 rounded-lg bg-slate-100 p-1">
+            {(['list', 'plans'] as const).map((v) => (
+              <button
+                key={v}
+                type="button"
+                onClick={() => setView(v)}
+                className={cn(
+                  'rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
+                  v === view ? 'bg-white text-brand-700 shadow-sm' : 'text-slate-500 hover:text-slate-700',
+                )}
+              >
+                {v === 'list' ? "Ro'yxat" : "Abonementlar bo'yicha"}
+              </button>
+            ))}
+          </div>
           <MonthPicker
             value={filters.fromMonth}
             onChange={(value: string) => set({ fromMonth: value })}
@@ -329,6 +356,24 @@ function InvoicesView() {
                 {c.name}
               </option>
             ))}
+          </select>
+          <select
+            value={filters.planId}
+            onChange={(e) => set({ planId: e.target.value })}
+            className={control}
+            aria-label="Abonement"
+          >
+            <option value="all">Barcha abonementlar</option>
+            {planGroups.map((group) => (
+              <optgroup key={group.categoryId} label={group.categoryName}>
+                {group.plans.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.isActive ? p.name : `${p.name} (arxivda)`}
+                  </option>
+                ))}
+              </optgroup>
+            ))}
+            <option value={NO_PLAN}>Abonementsiz</option>
           </select>
           <select
             value={filters.status}
@@ -370,6 +415,16 @@ function InvoicesView() {
           </button>
         </div>
 
+        {view === 'plans' ? (
+          <InvoicesByPlanTable
+            query={query}
+            onPick={(planId) => {
+              set({ planId })
+              setView('list')
+            }}
+          />
+        ) : (
+        <>
         {loading ? (
           <Loader label="Yuklanmoqda..." />
         ) : (
@@ -551,6 +606,8 @@ function InvoicesView() {
             </button>
           </div>
         </div>
+        </>
+        )}
       </Card>
 
       <VoidInvoiceModal

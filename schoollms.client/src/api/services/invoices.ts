@@ -62,8 +62,44 @@ export interface InvoiceRegisterFilters {
   /** Qoldig'i borlargina. */
   onlyDebtors?: boolean
   className?: string
+  /** Abonement; `NO_PLAN` — months no abonement covers ("Abonementsiz"). */
+  planId?: string
   page?: number
   pageSize?: number
+}
+
+/** "Abonementsiz" in the abonement filter (server: `InvoiceService.NoPlan`). */
+export const NO_PLAN = '00000000-0000-0000-0000-000000000000'
+
+/** One abonement's line of the "Abonementlar bo'yicha" view (client, 2026-10-08). */
+export interface InvoicePlanRow {
+  /** null — "Abonementsiz" (imported balances, months billed after an abonement was closed). */
+  planId: string | null
+  planName: string
+  categoryName: string
+  monthlyAmount: number | null
+  planActive: boolean
+  students: number
+  invoices: number
+  amount: number
+  discount: number
+  payable: number
+  paid: number
+  remaining: number
+  debtors: number
+}
+
+export interface InvoicesByPlan {
+  rows: InvoicePlanRow[]
+  total: InvoicePlanRow
+}
+
+/** The register grouped by abonement — the same filter as the list, no paging. */
+export async function getInvoicesByPlan(filters: InvoiceRegisterFilters = {}): Promise<InvoicesByPlan> {
+  const { data } = await api.get<InvoicesByPlan>(`${BASE}/by-plan`, {
+    params: clean({ ...filters, page: undefined, pageSize: undefined }),
+  })
+  return data
 }
 
 function clean(filters: InvoiceRegisterFilters): Record<string, string | number | boolean> {

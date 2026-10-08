@@ -72,6 +72,7 @@ public sealed class InvoicesController(IInvoiceService invoices) : ControllerBas
         [FromQuery] string? className = null,
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = InvoiceService.DefaultPageSize,
+        [FromQuery] Guid? planId = null,
         CancellationToken ct = default)
     {
         var clean = Clean(status);
@@ -86,13 +87,50 @@ public sealed class InvoicesController(IInvoiceService invoices) : ControllerBas
             Clean(studentId), categoryId,
             fromMonth ?? thisMonth, toMonth ?? thisMonth,
             clean, onlyOverdue, Clean(className), onlyDebtors,
-            page, pageSize);
+            page, pageSize, planId);
 
         if (query.ToMonth < query.FromMonth)
             throw BillingRuleException.Invalid("invalid_period",
                 $"Davr teskari: {query.FromMonth:yyyy-MM} dan {query.ToMonth:yyyy-MM} gacha.");
 
         return Ok(await invoices.ListPageAsync(query, ct));
+    }
+
+    /// <summary>
+    /// <c>GET /api/admin/billing/invoices/by-plan</c> — the register grouped by abonement: pupils,
+    /// billed, discount, paid, left, debtors (client, 2026-10-08). Filters as in <see cref="List"/>;
+    /// <paramref name="planId"/> = <see cref="Guid.Empty"/> — "Abonementsiz".
+    /// </summary>
+    [HttpGet("by-plan")]
+    [FinanceRole(FinanceAction.ViewBillingReports)]
+    public async Task<ActionResult<InvoicesByPlanDto>> ByPlan(
+        [FromQuery] string? studentId,
+        [FromQuery] Guid? categoryId,
+        [FromQuery] DateOnly? fromMonth,
+        [FromQuery] DateOnly? toMonth,
+        [FromQuery] string? status,
+        [FromQuery] bool onlyOverdue = false,
+        [FromQuery] bool onlyDebtors = false,
+        [FromQuery] string? className = null,
+        [FromQuery] Guid? planId = null,
+        CancellationToken ct = default)
+    {
+        var clean = Clean(status);
+        if (clean is not null && !InvoiceStatus.All.Contains(clean, StringComparer.Ordinal))
+            throw BillingRuleException.Invalid("invalid_status",
+                $"Noma'lum holat: '{status}'. Ruxsat etilganlar: {string.Join(", ", InvoiceStatus.All)}.");
+
+        var today = AppClock.Today;
+        var thisMonth = new DateOnly(today.Year, today.Month, 1);
+        var query = new InvoicePageQuery(
+            Clean(studentId), categoryId,
+            fromMonth ?? thisMonth, toMonth ?? thisMonth,
+            clean, onlyOverdue, Clean(className), onlyDebtors, PlanId: planId);
+        if (query.ToMonth < query.FromMonth)
+            throw BillingRuleException.Invalid("invalid_period",
+                $"Davr teskari: {query.FromMonth:yyyy-MM} dan {query.ToMonth:yyyy-MM} gacha.");
+
+        return Ok(await invoices.ByPlanAsync(query, ct));
     }
 
     /// <summary>
@@ -110,6 +148,7 @@ public sealed class InvoicesController(IInvoiceService invoices) : ControllerBas
         [FromQuery] bool onlyOverdue = false,
         [FromQuery] bool onlyDebtors = false,
         [FromQuery] string? className = null,
+        [FromQuery] Guid? planId = null,
         CancellationToken ct = default)
     {
         var clean = Clean(status);
@@ -124,7 +163,7 @@ public sealed class InvoicesController(IInvoiceService invoices) : ControllerBas
             Clean(studentId), categoryId,
             fromMonth ?? thisMonth, toMonth ?? thisMonth,
             clean, onlyOverdue, Clean(className), onlyDebtors,
-            Page: 1, PageSize: InvoiceService.MaxPageSize);
+            Page: 1, PageSize: InvoiceService.MaxPageSize, PlanId: planId);
 
         if (query.ToMonth < query.FromMonth)
             throw BillingRuleException.Invalid("invalid_period",
