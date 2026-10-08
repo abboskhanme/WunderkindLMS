@@ -304,7 +304,8 @@ public sealed class PortalFinanceController(
 
     /// <summary>
     /// SPEC §4.4 ruhida: MA'LUMOT EGASINI SERVER ANIQLAYDI. O'quvchi uchun
-    /// <c>?studentId=</c> butunlay E'TIBORGA OLINMAYDI; ota-ona uchun esa u faqat
+    /// <c>?studentId=</c> faqat o'zi yoki aka-ukasi/opa-singlisini nomlasa hurmat qilinadi
+    /// (2026-10-08, <c>GuardianAccess.StudentTargetAsync</c>); ota-ona uchun esa u faqat
     /// O'Z farzandini nomlasa hurmat qilinadi, begona id jimgina e'tiborsiz
     /// qoladi — aks holda ota-ona begona bola id'sini yozib, uning qarzini ko'rardi.
     ///
@@ -342,8 +343,8 @@ public sealed class PortalFinanceController(
                 : new Target(child.Id, null);
         }
 
-        var own = await db.Students.AsNoTracking()
-            .Where(s => s.UserId == uid).Select(s => s.Id).FirstOrDefaultAsync(ct);
+        // A pupil's login: the pupil, or a brother/sister named by `?studentId=` (2026-10-08).
+        var own = (await new GuardianAccess(db).StudentTargetAsync(uid, studentId, ct))?.Id;
         return own is null
             ? new Target(null, NotFound(new { message = "O'quvchi topilmadi" }))
             : new Target(own, null);

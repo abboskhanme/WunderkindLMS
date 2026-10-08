@@ -65,6 +65,19 @@ export async function listChildren(role) {
     }
   }
 
+  // A pupil's login: the pupil and their brothers and sisters (2026-10-08 — the switcher at the top,
+  // no second login). An older server without the endpoint → the pupil alone, as before.
+  if (role === 'student') {
+    try {
+      const family = await api.get('/student/family')
+      if (Array.isArray(family) && family.length > 0) {
+        return family.map((c) => ({ id: c.id, fullName: c.fullName, className: c.className ?? '' }))
+      }
+    } catch (e) {
+      if (!(e instanceof ApiError && [403, 404, 405].includes(e.status))) throw e
+    }
+  }
+
   try {
     const me = await api.get('/student/me')
     return me ? [{ id: me.id, fullName: me.fullName, className: me.className ?? '' }] : []

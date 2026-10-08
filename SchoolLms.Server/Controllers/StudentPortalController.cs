@@ -54,7 +54,9 @@ public class StudentPortalController(
         if (User.IsInRole("parent"))
             return await new GuardianAccess(db).ParentTargetAsync(uid, studentId);
 
-        return await db.Students.FirstOrDefaultAsync(s => s.UserId == uid);
+        // A pupil's login: the pupil, or a brother/sister named by `?studentId=` (2026-10-08) —
+        // parents sign in with one child's login and switch to the others at the top.
+        return await new GuardianAccess(db).StudentTargetAsync(uid, studentId);
     }
 
     // =====================================================================
@@ -91,6 +93,24 @@ public class StudentPortalController(
 
     private ObjectResult ProgressHidden() =>
         StatusCode(StatusCodes.Status403Forbidden, new { message = ProgressHiddenMessage });
+
+    /// <summary>
+    /// The family a pupil's login can switch between (client, 2026-10-08): the pupil and their brothers
+    /// and sisters — shared guardian or the same parents' phone (<see cref="GuardianAccess.FamilyOfAsync"/>).
+    /// The Mini App shows a switcher at the top when there is more than one.
+    /// </summary>
+    [HttpGet("family")]
+    [Authorize(Roles = "student")]
+    public async Task<ActionResult<IEnumerable<object>>> Family(CancellationToken ct)
+    {
+        var me = await MeAsync();
+        if (me is null) return NotFound();
+        var family = await new GuardianAccess(db).FamilyOfAsync(me.Id, ct);
+        return family
+            .OrderByDescending(s => s.Id == me.Id)
+            .Select(s => (object)new { id = s.Id, fullName = s.FullName, className = s.ClassName })
+            .ToList();
+    }
 
     /// <summary>
     /// Mutatsiya (yozish) amallari uchun — FAQAT student rolida; admin impersonate qila olmaydi.
@@ -155,7 +175,7 @@ public class StudentPortalController(
         [FromForm] string? departmentId = null, [FromForm] string? studentId = null)
     {
         // Student o'zi, parent farzandi nomidan yuboradi (bir nechta farzand — `studentId`).
-        var s = User.IsInRole("parent") ? await TargetAsync(studentId) : await MeAsync();
+        var s = await TargetAsync(studentId);
         if (s is null) return Unauthorized();
         var body = (text ?? "").Trim();
         if (body.Length == 0) return BadRequest(new { message = "Matn bo'sh" });
@@ -212,7 +232,7 @@ public class StudentPortalController(
     [Authorize(Roles = "student,parent")]
     public async Task<ActionResult<IEnumerable<PortalPollDto>>> Polls([FromQuery] string? studentId, CancellationToken ct)
     {
-        var s = User.IsInRole("parent") ? await TargetAsync(studentId) : await MeAsync();
+        var s = await TargetAsync(studentId);
         if (s is null) return NotFound();
         var teachers = await PollService.TeachersOfAsync(db, s, ct);
         return await PollService.OpenForAsync(db, PollRespondentOf(s), teachers, [], ct);
@@ -222,7 +242,7 @@ public class StudentPortalController(
     [Authorize(Roles = "student,parent")]
     public async Task<IActionResult> AnswerPoll(Guid id, [FromQuery] string? studentId, PollSubmitRequest req, CancellationToken ct)
     {
-        var s = User.IsInRole("parent") ? await TargetAsync(studentId) : await MeAsync();
+        var s = await TargetAsync(studentId);
         if (s is null) return NotFound();
         var teachers = (await PollService.TeachersOfAsync(db, s, ct)).Select(t => t.Id).ToList();
         var (status, error) = await PollService.SubmitAsync(db, id, PollRespondentOf(s), req, teachers, [], ct);
@@ -368,7 +388,10 @@ public class StudentPortalController(
         if (string.IsNullOrWhiteSpace(studentId)) return await TargetAsync(null);
         var s = await db.Students.FindAsync(studentId);
         if (s is null) return null;
-        if (User.IsInRole("student")) return s.UserId == uid ? s : null;
+        if (User.IsInRole("student"))
+            return s.UserId == uid
+                   || (uid is not null && (await new GuardianAccess(db).StudentTargetAsync(uid, s.Id))?.Id == s.Id)
+                ? s : null;
         if (User.IsInRole("parent"))
             return uid is not null && await new GuardianAccess(db).ParentOwnsAsync(uid, s.Id) ? s : null;
         return s;

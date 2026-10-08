@@ -110,6 +110,67 @@ public sealed class GuardianAccess(IAppDbContext db)
         return pick is null ? null : await db.Students.FindAsync([pick], ct);
     }
 
+    // ---------------------------------------------------------------------
+    //  A FAMILY seen from a pupil's own login (client, 2026-10-08: "bittasiniki bilan kirsa tepada
+    //  o'ngga chapga boshqa farzandiga ham o'tib ketishi mumkin edi"). Parents sign in with a child's
+    //  login, so the brothers and sisters come from the school's own records: a shared guardian
+    //  (`student_guardians`), or the same parents' phone. A phone met on more than
+    //  <see cref="MaxFamily"/> pupils is a placeholder, not a family — never a reason to show a stranger.
+    // ---------------------------------------------------------------------
+
+    /// <summary>More children on one phone than this — not a family (a placeholder number).</summary>
+    public const int MaxFamily = 6;
+
+    /// <summary>The pupil and their brothers and sisters (not archived), by name; empty — unknown pupil.</summary>
+    public async Task<List<Student>> FamilyOfAsync(string studentId, CancellationToken ct = default)
+    {
+        var me = await db.Students.AsNoTracking().FirstOrDefaultAsync(s => s.Id == studentId && !s.IsArchived, ct);
+        if (me is null) return [];
+
+        var ids = new HashSet<string>(StringComparer.Ordinal) { me.Id };
+        var guardians = db.StudentGuardians.AsNoTracking().Where(l => l.StudentId == me.Id).Select(l => l.GuardianId);
+        ids.UnionWith(await db.StudentGuardians.AsNoTracking()
+            .Where(l => guardians.Contains(l.GuardianId)).Select(l => l.StudentId).ToListAsync(ct));
+
+        var phone = LastNine(me.ParentPhone);
+        if (phone.Length == 9)
+        {
+            var samePhone = (await db.Students.AsNoTracking()
+                    .Where(s => !s.IsArchived && s.ParentPhone != "")
+                    .Select(s => new { s.Id, s.ParentPhone })
+                    .ToListAsync(ct))
+                .Where(s => LastNine(s.ParentPhone) == phone)
+                .Select(s => s.Id)
+                .ToList();
+            if (samePhone.Count <= MaxFamily) ids.UnionWith(samePhone);
+        }
+
+        var family = ids.ToList();
+        return await db.Students.AsNoTracking()
+            .Where(s => family.Contains(s.Id) && !s.IsArchived)
+            .OrderBy(s => s.FullName)
+            .ToListAsync(ct);
+    }
+
+    /// <summary>
+    /// Which pupil a STUDENT login is looking at: <paramref name="studentId"/> when it is the pupil or a
+    /// brother/sister (<see cref="FamilyOfAsync"/>), otherwise the pupil's own record. A foreign id is
+    /// ignored, never an error — the same contract as <see cref="ParentTargetAsync"/>. Tracked entity.
+    /// </summary>
+    public async Task<Student?> StudentTargetAsync(string userId, string? studentId, CancellationToken ct = default)
+    {
+        var own = await db.Students.FirstOrDefaultAsync(s => s.UserId == userId, ct);
+        if (own is null || string.IsNullOrWhiteSpace(studentId) || studentId == own.Id) return own;
+        var family = await FamilyOfAsync(own.Id, ct);
+        return family.Any(s => s.Id == studentId) ? await db.Students.FindAsync([studentId], ct) : own;
+    }
+
+    private static string LastNine(string? phone)
+    {
+        var digits = PhoneUtil.DigitsOnly(phone);
+        return digits.Length >= 9 ? digits[^9..] : "";
+    }
+
     /// <summary>
     /// Can this parent account act for this child — guardianship first, the
     /// legacy phone match second. For writes (pickup): unlike
