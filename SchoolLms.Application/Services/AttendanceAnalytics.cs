@@ -53,6 +53,12 @@ public static class AttendanceAnalytics
     /// <summary>Sukut bo'yicha davr uzunligi (kun) — bugundan orqaga.</summary>
     private const int DefaultRangeDays = 13;
 
+    /// <summary>
+    /// Ceiling on <see cref="AttendanceAnalyticsDto.Events"/>: a whole school over a long period
+    /// unchecked by nobody would otherwise send tens of thousands of rows. Newest first, then cut.
+    /// </summary>
+    public const int MaxEvents = 5000;
+
     /// <summary>Yig'ib borish uchun o'zgaruvchan hisoblagich (DTO — faqat chiqishda).</summary>
     private sealed class Tally
     {
@@ -150,7 +156,7 @@ public static class AttendanceAnalytics
 
         var students = (await db.Students.AsNoTracking()
                 .Where(s => !s.IsArchived && classNames.Contains(s.ClassName))
-                .Select(s => new { s.Id, s.ClassName, s.SubGroup })
+                .Select(s => new { s.Id, s.ClassName, s.SubGroup, s.FullName })
                 .ToListAsync())
             .Where(s => !wantTrack || trackOfStudent.GetValueOrDefault(s.Id) == wantClass)
             .ToList();
@@ -264,7 +270,7 @@ public static class AttendanceAnalytics
                 // Totals, classes and the trend count PEOPLE: the lesson goes into the student's day.
                 if (!days.TryGetValue((studentId, n.Date), out var slot))
                     days[(studentId, n.Date)] = slot = (new StudentDay(), homeroomId);
-                slot.Day.Add(has, n.Marked, reasonId, lateIds);
+                slot.Day.Add(has, n.Marked, reasonId, lateIds, n.Period);
                 // The period cut is one lesson — one row per student there.
                 if (periodTally is not null) Add(periodTally);
 
@@ -281,8 +287,22 @@ public static class AttendanceAnalytics
             }
         }
 
-        foreach (var ((_, date), (studentDay, row)) in days)
+        var byStudent = new Dictionary<string, Tally>(StringComparer.Ordinal);
+        var datesOf = new Dictionary<string, SortedSet<string>>(StringComparer.Ordinal);
+        var events = new List<(string Date, string StudentId, string Row, StudentDay Day, string Status)>();
+        foreach (var ((studentId, date), (studentDay, row)) in days)
         {
+            Get(byStudent, studentId).AddDay(studentDay, unexcusedIds);
+            if (wantClass is not null)
+            {
+                if (!datesOf.TryGetValue(studentId, out var set))
+                    datesOf[studentId] = set = new SortedSet<string>(StringComparer.Ordinal);
+                set.Add(date);
+            }
+            var status = studentDay.Status;
+            if (status != StudentDay.Present) events.Add((date, studentId, row, studentDay, status));
+            else if (studentDay.IsLate) events.Add((date, studentId, row, studentDay, "late"));
+
             total.AddDay(studentDay, unexcusedIds);
             Get(byDate, date).AddDay(studentDay, unexcusedIds);
             if (byClass.TryGetValue(row, out var classTally)) classTally.AddDay(studentDay, unexcusedIds);
@@ -317,10 +337,51 @@ public static class AttendanceAnalytics
             .Select(kv => new AttendanceTrendPointDto(kv.Key, kv.Value.ToDto()))
             .ToList();
 
+        // Who, which day, why (2026-10-09). Names come from the rows above, no second query.
+        var nameOf = students.ToDictionary(s => s.Id, s => s.FullName, StringComparer.Ordinal);
+        var rowName = rowDefs.ToDictionary(r => r.Id, r => r.Name, StringComparer.Ordinal);
+        var studentRows = byStudent
+            .Where(kv => nameOf.ContainsKey(kv.Key))
+            .Select(kv =>
+            {
+                var row = rowOfStudent.GetValueOrDefault(kv.Key, "");
+                return new AttendanceStudentRowDto(
+                    kv.Key, nameOf[kv.Key], row, rowName.GetValueOrDefault(row, ""), kv.Value.ToDto(),
+                    datesOf.TryGetValue(kv.Key, out var dates) ? [.. dates] : null);
+            })
+            .OrderBy(r => r.RowName, StringComparer.Ordinal)
+            .ThenBy(r => r.FullName, StringComparer.Ordinal)
+            .ToList();
+        var eventRows = events
+            .Where(e => nameOf.ContainsKey(e.StudentId))
+            .OrderByDescending(e => e.Date, StringComparer.Ordinal)
+            .ThenBy(e => rowName.GetValueOrDefault(e.Row, ""), StringComparer.Ordinal)
+            .ThenBy(e => nameOf[e.StudentId], StringComparer.Ordinal)
+            .Take(MaxEvents + 1)
+            .Select(e =>
+            {
+                var day = e.Day;
+                var isLate = e.Status == "late";
+                var reasons = isLate
+                    ? [.. day.AllReasons.Where(lateIds.Contains)]
+                    : day.Reasons.OrderByDescending(kv => kv.Value).ThenBy(kv => kv.Key, StringComparer.Ordinal)
+                        .Select(kv => kv.Key).ToList();
+                return new AttendanceEventDto(
+                    e.Date, e.StudentId, nameOf[e.StudentId], e.Row, rowName.GetValueOrDefault(e.Row, ""),
+                    e.Status, reasons,
+                    day.MainReason is { } main && unexcusedIds.Contains(main),
+                    [.. isLate ? day.LatePeriods : day.AbsentPeriods],
+                    day.Held);
+            })
+            .ToList();
+        var truncated = eventRows.Count > MaxEvents;
+        if (truncated) eventRows.RemoveAt(eventRows.Count - 1);
+
         return new AttendanceAnalyticsDto(
             fromDate, toDate, wantClass, dayIso, students.Count, total.ToDto(),
             classRows, periodRows, trend,
-            ReasonRows(reasonRows, unexcusedIds, reasonCounts));
+            ReasonRows(reasonRows, unexcusedIds, reasonCounts),
+            studentRows, eventRows, truncated);
     }
 
     // ------------------------------------------------------------------

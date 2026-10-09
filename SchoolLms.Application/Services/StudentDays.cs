@@ -35,9 +35,17 @@ public sealed class StudentDay
     /// <summary>Every reason used that day, late ones too — for "how many days had reason X".</summary>
     public HashSet<string> AllReasons { get; } = new(StringComparer.Ordinal);
 
+    /// <summary>The lesson numbers the student missed that day (2026-10-09: "qaysi darslarda").
+    /// Filled only when the caller passes the period.</summary>
+    public SortedSet<int> AbsentPeriods { get; } = [];
+
+    /// <summary>The lesson numbers the student was late to.</summary>
+    public SortedSet<int> LatePeriods { get; } = [];
+
     /// <param name="hasRow">The student has a journal row for this lesson.</param>
     /// <param name="marked">The lesson was marked on the daily-marking screen (no row = present).</param>
-    public void Add(bool hasRow, bool marked, string? reasonId, ISet<string> lateIds)
+    /// <param name="period">The lesson number, for <see cref="AbsentPeriods"/>; 0 — not tracked.</param>
+    public void Add(bool hasRow, bool marked, string? reasonId, ISet<string> lateIds, int period = 0)
     {
         Held++;
         if (!hasRow && !marked) return;
@@ -47,9 +55,11 @@ public sealed class StudentDay
         if (lateIds.Contains(reasonId))
         {
             LateLessons++;
+            if (period > 0) LatePeriods.Add(period);
             return;
         }
         AbsentLessons++;
+        if (period > 0) AbsentPeriods.Add(period);
         Reasons[reasonId] = Reasons.GetValueOrDefault(reasonId) + 1;
     }
 

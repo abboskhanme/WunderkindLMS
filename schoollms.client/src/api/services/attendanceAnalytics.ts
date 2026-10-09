@@ -80,6 +80,45 @@ export interface AttendanceAnalytics {
   periods: AttendancePeriodRow[]
   trend: AttendanceTrendPoint[]
   reasons: AttendanceReasonRow[]
+  /** Har bir o'quvchi davr bo'yicha (o'quvchi-kun birligida), 2026-10-09. */
+  students?: AttendanceStudentRow[]
+  /** "Kim, qaysi kuni, nima sababdan" — oddiy "keldi" bo'lmagan har bir o'quvchi-kun. */
+  events?: AttendanceEvent[]
+  /** Ro'yxat 5000 qatorda kesilgan (butun maktab, uzun davr) — davrni toraytirish kerak. */
+  eventsTruncated?: boolean
+}
+
+export interface AttendanceStudentRow {
+  studentId: string
+  fullName: string
+  rowId: string
+  /** Sinf (yoki yo'nalish guruhi) nomi */
+  rowName: string
+  /** `opportunities` — o'quvchining maktab kunlari */
+  tally: AttendanceTally
+  /** Darsi bo'lgan kunlar ("YYYY-MM-DD") — faqat bitta sinf tanlanganda (oylik jadval uchun). */
+  dates?: string[] | null
+}
+
+/** `absent` — kun bo'yi kelmadi, `partial` — ayrim darslarga, `late` — kech keldi, `unchecked` — belgilanmagan. */
+export type AttendanceEventStatus = 'absent' | 'partial' | 'late' | 'unchecked'
+
+export interface AttendanceEvent {
+  /** "YYYY-MM-DD" */
+  date: string
+  studentId: string
+  fullName: string
+  rowId: string
+  rowName: string
+  status: AttendanceEventStatus
+  /** Sabablar (asosiysi birinchi) — `reasons` ro'yxatidagi id'lar */
+  reasonIds: string[]
+  /** Asosiy sabab sababsiz deb hisoblanadimi */
+  unexcused: boolean
+  /** Qoldirilgan (kech kelganda — kechikkan) dars raqamlari */
+  periods: number[]
+  /** O'sha kuni o'tilgan darslar soni */
+  heldLessons: number
 }
 
 const emptyTally: AttendanceTally = {

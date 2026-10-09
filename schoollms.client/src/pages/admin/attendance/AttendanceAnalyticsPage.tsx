@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   Bar,
   BarChart,
@@ -21,6 +21,9 @@ import { Card } from '@/components/ui/Card'
 import { StatCard } from '@/components/ui/StatCard'
 import { Loader } from '@/components/ui/Loader'
 import { DatePicker } from '@/components/ui/DatePicker'
+import { EventsList, StudentsTable } from './AttendanceDetails'
+import { AttendanceMonthGrid } from './AttendanceMonthGrid'
+import { allEvents, type EventFilter, type EventSelection } from './eventSelection'
 
 const control =
   'rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 outline-none focus:border-brand-400'
@@ -36,6 +39,8 @@ const ranges = [
   { key: 'today', label: 'Bugun', days: 0 },
   { key: 'week', label: '7 kun', days: 6 },
   { key: 'month', label: '30 kun', days: 29 },
+  // Joriy oyning 1-kunidan — oylik jadval uchun (2026-10-09).
+  { key: 'thisMonth', label: 'Shu oy', days: -1 },
 ] as const
 
 /** Foizni ko'rsatish: server null bersa — ma'lumot yo'q, nol emas. */
@@ -64,6 +69,19 @@ export function AttendanceAnalyticsPage() {
   const [day, setDay] = useState(todayISO())
   const [data, setData] = useState<AttendanceAnalytics | null>(null)
   const [loading, setLoading] = useState(true)
+  // "Kim, qaysi kuni, nima sababdan" ro'yxatining filtri — kartalar, sabablar va o'quvchi qatori uni
+  // o'rnatib, shu bo'limga olib keladi (mijoz, 2026-10-09).
+  const [selection, setSelection] = useState<EventSelection>(allEvents)
+  const studentsRef = useRef<HTMLDivElement>(null)
+  const gridRef = useRef<HTMLDivElement>(null)
+  const eventsRef = useRef<HTMLDivElement>(null)
+  const classesRef = useRef<HTMLDivElement>(null)
+  const go = (ref: React.RefObject<HTMLDivElement | null>) =>
+    ref.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  const showEvents = (next: Partial<EventSelection> & { filter: EventFilter }) => {
+    setSelection({ ...allEvents, ...next })
+    go(eventsRef)
+  }
 
   useEffect(() => {
     getLessonOwners()
@@ -90,7 +108,7 @@ export function AttendanceAnalyticsPage() {
 
   const applyRange = (days: number) => {
     const t = todayISO()
-    setFrom(addDaysISO(t, -days))
+    setFrom(days < 0 ? `${t.slice(0, 8)}01` : addDaysISO(t, -days))
     setTo(t)
     setDay(t)
   }
@@ -114,7 +132,14 @@ export function AttendanceAnalyticsPage() {
 
       {/* Tanlovlar */}
       <div className="flex flex-wrap items-center gap-3">
-        <select value={classId} onChange={(e) => setClassId(e.target.value)} className={control}>
+        <select
+          value={classId}
+          onChange={(e) => {
+            setClassId(e.target.value)
+            setSelection(allEvents)
+          }}
+          className={control}
+        >
           <option value="">Barcha sinflar</option>
           {classes.map((c) => (
             <option key={c.id} value={c.id}>
@@ -154,8 +179,14 @@ export function AttendanceAnalyticsPage() {
         <>
           {/* Ko'rsatkichlar */}
           <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
-            <StatCard label="O'quvchilar" value={data.studentsTotal} icon={Users} />
             <StatCard
+              label="O'quvchilar"
+              value={data.studentsTotal}
+              icon={Users}
+              onClick={() => go(classId ? gridRef : studentsRef)}
+            />
+            <StatCard
+              onClick={() => go(classId ? gridRef : studentsRef)}
               label="Keldi"
               value={pct(total?.presentPct ?? null)}
               icon={UserCheck}
@@ -168,6 +199,7 @@ export function AttendanceAnalyticsPage() {
               }
             />
             <StatCard
+              onClick={() => showEvents({ filter: 'absent' })}
               label="Kelmadi"
               value={pct(total?.absentPct ?? null)}
               icon={UserX}
@@ -176,6 +208,7 @@ export function AttendanceAnalyticsPage() {
               hint={`Kun bo'yi: sababli ${total?.excused ?? 0} · sababsiz ${total?.unexcused ?? 0}`}
             />
             <StatCard
+              onClick={() => showEvents({ filter: 'unchecked' })}
               label="Tekshirilmagan"
               value={pct(total?.uncheckedPct ?? null)}
               icon={HelpCircle}
@@ -184,6 +217,7 @@ export function AttendanceAnalyticsPage() {
               hint={`${total?.unchecked ?? 0} o'quvchi-kun belgilanmagan`}
             />
             <StatCard
+              onClick={() => showEvents({ filter: 'late' })}
               label="Kech keldi"
               value={total?.late ?? 0}
               icon={Clock}
@@ -231,7 +265,8 @@ export function AttendanceAnalyticsPage() {
             )}
           </Card>
 
-          {/* Sinflar kesimi */}
+          {/* Sinflar kesimi — qator bosilsa shu sinf tanlanadi (o'quvchilari va kunlari ochiladi). */}
+          <div ref={classesRef} className="scroll-mt-4">
           <Card className="p-0">
             <div className="flex items-center justify-between px-5 pt-5">
               <h2 className="font-semibold text-slate-800">Sinflar kesimi</h2>
@@ -258,7 +293,16 @@ export function AttendanceAnalyticsPage() {
                   </thead>
                   <tbody className="divide-y divide-slate-100 tabular-nums">
                     {data.classes.map((row) => (
-                      <tr key={row.classId} className="hover:bg-slate-50/60">
+                      <tr
+                        key={row.classId}
+                        onClick={() => {
+                          if (row.classId === classId) return
+                          setClassId(row.classId)
+                          setSelection(allEvents)
+                        }}
+                        title="Shu sinfning o'quvchilari va kelmagan kunlari"
+                        className={cn('hover:bg-slate-50/60', row.classId !== classId && 'cursor-pointer')}
+                      >
                         <td className="px-4 py-3 font-medium text-slate-800">{row.className}</td>
                         <td className="px-4 py-3 text-center text-slate-600">{row.students}</td>
                         <td className="px-4 py-3 text-center text-slate-600">
@@ -292,6 +336,37 @@ export function AttendanceAnalyticsPage() {
               </div>
             )}
           </Card>
+          </div>
+
+          {/* Bitta sinf tanlanganda — butun davr o'quvchi × kun jadvalida. */}
+          {classId && (
+            <div ref={gridRef} className="scroll-mt-4">
+              <AttendanceMonthGrid
+                students={data.students ?? []}
+                events={data.events ?? []}
+                reasons={data.reasons}
+                days={data.trend.map((p) => p.date)}
+                onPickStudent={(studentId) => showEvents({ filter: 'all', studentId })}
+              />
+            </div>
+          )}
+
+          <div ref={studentsRef} className="scroll-mt-4">
+            <StudentsTable
+              rows={data.students ?? []}
+              onPick={(studentId) => showEvents({ filter: 'all', studentId })}
+            />
+          </div>
+
+          <div ref={eventsRef} className="scroll-mt-4">
+            <EventsList
+              events={data.events ?? []}
+              reasons={data.reasons}
+              truncated={data.eventsTruncated ?? false}
+              selection={selection}
+              onSelect={setSelection}
+            />
+          </div>
 
           {/* Bir kunning dars soatlari kesimi */}
           <Card className="p-0">
@@ -299,20 +374,22 @@ export function AttendanceAnalyticsPage() {
               <h2 className="font-semibold text-slate-800">Dars soatlari kesimi</h2>
               <div className="flex items-center gap-1">
                 <button
-                  onClick={() => setDay(addDaysISO(day, -1))}
+                  onClick={() => setDay(addDaysISO(data.day, -1))}
                   className="rounded-lg border border-slate-200 px-2 py-1.5 text-sm text-slate-500 hover:bg-slate-50"
                 >
                   ‹
                 </button>
+                {/* Server kunni davr ichiga qisadi — maydon ham o'sha kunni ko'rsatsin (davr qo'lda
+                    o'zgartirilganda eski kun davrdan tashqarida qolib ketardi). */}
                 <DatePicker
-                  value={day}
+                  value={data.day}
                   min={from}
                   max={to}
                   onChange={(value: string) => setDay(value)}
                   className="w-40"
                 />
                 <button
-                  onClick={() => setDay(addDaysISO(day, 1))}
+                  onClick={() => setDay(addDaysISO(data.day, 1))}
                   className="rounded-lg border border-slate-200 px-2 py-1.5 text-sm text-slate-500 hover:bg-slate-50"
                 >
                   ›
@@ -380,10 +457,13 @@ export function AttendanceAnalyticsPage() {
                 {data.reasons
                   .filter((r) => r.count > 0)
                   .map((r) => (
-                    <span
+                    <button
+                      type="button"
                       key={r.reasonId}
+                      onClick={() => showEvents({ filter: 'all', reasonId: r.reasonId })}
+                      title="Shu sabab bilan kelmaganlar ro'yxati"
                       className={cn(
-                        'rounded-lg px-3 py-1.5 text-sm font-medium',
+                        'rounded-lg px-3 py-1.5 text-sm font-medium transition hover:ring-2 hover:ring-brand-200',
                         r.isLate
                           ? 'bg-sky-50 text-sky-700'
                           : r.unexcused
@@ -392,7 +472,7 @@ export function AttendanceAnalyticsPage() {
                       )}
                     >
                       {r.name}: {r.count}
-                    </span>
+                    </button>
                   ))}
               </div>
             )}

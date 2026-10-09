@@ -17,6 +17,11 @@ interface StatCardProps {
    * "aktiv o'quvchilar cardiga bossa aktiv o'quvchilar ro'yxatiga olib o'tsin").
    */
   to?: string
+  /**
+   * Bosilganda SHU sahifadagi tegishli bo'limga o'tish (2026-10-09, davomat analitikasi: "cardlarni
+   * bosganda card o'zining hisoboti bo'yicha kerakli joyga olib o'tsin"). `to` bilan birga berilmaydi.
+   */
+  onClick?: () => void
 }
 
 /**
@@ -35,12 +40,14 @@ export function StatCard({
   iconColor = 'text-brand-600',
   hint,
   to,
+  onClick,
 }: StatCardProps) {
+  const clickable = Boolean(to || onClick)
   const card = (
     <Card
       className={cn(
         'flex items-center gap-3 p-4',
-        to && 'h-full transition group-hover:-translate-y-0.5 group-hover:border-brand-300 group-hover:shadow-md',
+        clickable && 'h-full transition group-hover:-translate-y-0.5 group-hover:border-brand-300 group-hover:shadow-md',
       )}
     >
       <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${iconBg}`}>
@@ -62,6 +69,17 @@ export function StatCard({
       </div>
     </Card>
   )
+  if (onClick && !to)
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        title={`${label} — batafsil`}
+        className="group block w-full rounded-2xl text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"
+      >
+        {card}
+      </button>
+    )
   if (!to) return card
   return (
     <Link

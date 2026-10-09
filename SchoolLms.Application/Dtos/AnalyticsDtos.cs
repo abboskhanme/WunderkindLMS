@@ -90,7 +90,32 @@ public record AttendanceAnalyticsDto(
     List<AttendanceClassRowDto> Classes,
     List<AttendancePeriodRowDto> Periods,
     List<AttendanceTrendPointDto> Trend,
-    List<AttendanceReasonRowDto> Reasons);
+    List<AttendanceReasonRowDto> Reasons,
+    List<AttendanceStudentRowDto>? Students = null,
+    List<AttendanceEventDto>? Events = null,
+    bool EventsTruncated = false);
+
+/// <summary>
+/// One student over the period (2026-10-09: "qaysi o'quvchilar ... kelmagan"), counted in
+/// student-days like the totals. <c>Tally.Opportunities</c> = the student's school days.
+/// </summary>
+/// <param name="Dates">The days the student had lessons, oldest first — only when one class is asked
+/// for, so the page can draw the month grid (a day without an event there is a "came").</param>
+public record AttendanceStudentRowDto(
+    string StudentId, string FullName, string RowId, string RowName, AttendanceTallyDto Tally,
+    List<string>? Dates = null);
+
+/// <summary>
+/// One student-day that was not a plain "came": who, which day, what happened, why, which lessons.
+/// </summary>
+/// <param name="Status"><c>absent</c> (did not come), <c>partial</c> (missed some lessons),
+/// <c>late</c>, or <c>unchecked</c> (nobody took attendance for the student that day).</param>
+/// <param name="ReasonIds">The day's absence reasons, the main one first (late: the late reason).</param>
+/// <param name="Unexcused">The main reason counts as unexcused.</param>
+/// <param name="Periods">Missed lessons (late: the lessons the student was late to).</param>
+public record AttendanceEventDto(
+    string Date, string StudentId, string FullName, string RowId, string RowName,
+    string Status, List<string> ReasonIds, bool Unexcused, List<int> Periods, int HeldLessons);
 
 /* ================= O'zlashtirish (fanlar bo'yicha) ================= */
 
