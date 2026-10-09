@@ -138,6 +138,8 @@ import { Loader } from '@/components/ui/Loader'
 // P1-26 — Pul aylanmasi (3D halqa). LAZY: sahifa Three.js'ga tayanadi, statik
 // import qilinsa u butun ilovaning asosiy bundle'iga tushardi.
 const MoneyFlowPage = lazy(() => import('@/pages/admin/finance/MoneyFlowPage'))
+const SubscriptionAnalyticsPage = lazy(() => import('@/pages/admin/finance/subscriptions/SubscriptionAnalyticsPage'))
+const SubscriptionClassPage = lazy(() => import('@/pages/admin/finance/subscriptions/SubscriptionClassPage'))
 
 export default function App() {
   return (
@@ -238,6 +240,9 @@ export default function App() {
           <Route path="finance" element={<RequirePerm perm="finance"><FinancePage key="finance" /></RequirePerm>} />
           {/* Rol tekshiruvi sahifaning ichida (SPEC §4.3: faqat admin/direktor) */}
           <Route path="finance/money-flow" element={<Suspense fallback={<Loader label="Yuklanmoqda…" />}><MoneyFlowPage /></Suspense>} />
+          {/* Abonementlar analitikasi (mijoz, 2026-10-09). Rol tekshiruvi sahifaning ichida. */}
+          <Route path="finance/subscription-analytics" element={<Suspense fallback={<Loader label="Yuklanmoqda…" />}><SubscriptionAnalyticsPage /></Suspense>} />
+          <Route path="finance/subscription-analytics/:classId" element={<Suspense fallback={<Loader label="Yuklanmoqda…" />}><SubscriptionClassPage /></Suspense>} />
           {/* Rol tekshiruvi sahifaning ichida (SPEC §4.3: faqat admin/direktor) */}
           <Route path="finance/arrears" element={<ArrearsPage />} />
           <Route path="finance/debtor-statuses" element={<DebtorStatusesPage />} />

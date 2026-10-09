@@ -221,6 +221,40 @@ public class ClassesParityP2Tests(ApiFixture fixture)
             (await teacher.GetAsync($"{Classes}/{cls.Id}/homeroom-teachers")).StatusCode);
     }
 
+    /// <summary>
+    /// Sinflar jadvalidagi "Sinf rahbari" ustuni (mijoz, 2026-10-09) — barcha sinflar bitta
+    /// so'rovda; arxivdagi o'qituvchi va arxivdagi sinf chiqmaydi; o'qish ruxsati yakka sinfnikidek.
+    /// </summary>
+    [Fact]
+    public async Task Barcha_sinflarning_rahbarlari_bitta_sorovda()
+    {
+        var tag = Tag();
+        var classA = new SchoolClass { Name = $"HA{tag}-A", Grade = 3 };
+        var classB = new SchoolClass { Name = $"HA{tag}-B", Grade = 3 };
+        var gone = new SchoolClass { Name = $"HA{tag}-X", Grade = 3, IsArchived = true };
+        var first = new Teacher { FullName = $"Avval {tag}", HomeroomClass = classA.Name };
+        var second = new Teacher { FullName = $"Bkeyin {tag}", HomeroomClass = classA.Name };
+        var archived = new Teacher { FullName = $"Ketgan {tag}", HomeroomClass = classB.Name, IsArchived = true };
+        var ofGone = new Teacher { FullName = $"Arxivsinf {tag}", HomeroomClass = gone.Name };
+        await fixture.Api.WithDbAsync(async db =>
+        {
+            db.Classes.AddRange(classA, classB, gone);
+            db.Teachers.AddRange(first, second, archived, ofGone);
+            await db.SaveChangesAsync();
+        });
+
+        using var admin = await fixture.Api.ClientAsAsync(Roles.Admin);
+        var rows = await admin.GetFromJsonAsync<List<JsonElement>>($"{Classes}/homeroom-teachers");
+        var mine = rows!.Where(r => r.GetProperty("fullName").GetString()!.EndsWith(tag)).ToList();
+        Assert.Equal([(classA.Id, first.FullName), (classA.Id, second.FullName)],
+            mine.Select(r => (r.GetProperty("classId").GetString(), r.GetProperty("fullName").GetString())));
+
+        using var staff = await fixture.Api.ClientAsAsync(Roles.Staff);
+        Assert.Equal(HttpStatusCode.OK, (await staff.GetAsync($"{Classes}/homeroom-teachers")).StatusCode);
+        using var teacher = await fixture.Api.ClientAsAsync(Roles.Teacher);
+        Assert.Equal(HttpStatusCode.Forbidden, (await teacher.GetAsync($"{Classes}/homeroom-teachers")).StatusCode);
+    }
+
     /* =====================================================================
      *  C-6 — sinfga ball qo'yish
      * ================================================================== */

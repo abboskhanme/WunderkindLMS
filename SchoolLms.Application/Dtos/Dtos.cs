@@ -246,6 +246,9 @@ public record ClassPayload(
 /// </summary>
 public record HomeroomTeacherDto(string Id, string FullName);
 
+/// <summary>A homeroom teacher of one class, for the class list (one request for all classes).</summary>
+public record ClassHomeroomTeacherDto(string ClassId, string TeacherId, string FullName);
+
 /// <summary>
 /// Sinf rahbari(lari)ni belgilash. Ro'yxatda YO'Q, lekin hozir shu sinfga biriktirilgan
 /// o'qituvchilar — bo'shatiladi (<c>HomeroomClass = ""</c>). Ro'yxatda bor, lekin BOSHQA

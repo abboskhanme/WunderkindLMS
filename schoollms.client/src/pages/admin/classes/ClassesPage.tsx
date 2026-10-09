@@ -24,11 +24,12 @@ import {
   unarchiveClass,
   downloadClasses,
   setHomeroomTeachers,
+  getAllHomeroomTeachers,
 } from '@/api/services/classes'
 import { getClassesStats, type ClassStats } from '@/api/services/classPerformance'
 import { getGroups, type StudyGroupListItem } from '@/api/services/groups'
 import { languageLabels } from '@/config/constants'
-import { formatMoney, cn } from '@/lib/utils'
+import { cn } from '@/lib/utils'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
@@ -60,6 +61,16 @@ export function ClassesPage() {
    * hujjat, moliya va shartnomalar ularga bog'liq.
    */
   const [tracks, setTracks] = useState<StudyGroupListItem[]>([])
+  /** Sinf id'si → sinf rahbarlari (mijoz, 2026-10-09: "sinf rahbari degan ustun ham qo'sh"). */
+  const [homeroom, setHomeroom] = useState<Record<string, string[]>>({})
+
+  const loadHomeroom = useCallback(
+    () =>
+      getAllHomeroomTeachers()
+        .then(setHomeroom)
+        .catch(() => setHomeroom({})),
+    [],
+  )
 
   useEffect(() => {
     Promise.all([getClassesStats(), getArchivedClasses()]).then(([st, ar]) => {
@@ -69,7 +80,8 @@ export function ClassesPage() {
     getGroups()
       .then((gs) => setTracks(gs.filter((g) => g.isTrack && !g.isArchived)))
       .catch(() => setTracks([]))
-  }, [])
+    loadHomeroom()
+  }, [loadHomeroom])
 
   const loadClasses = useCallback(() => {
     setLoading(true)
@@ -101,9 +113,9 @@ export function ClassesPage() {
   // `ClassGroupsModal` guruhlarni qanday boshqarsa, shu ham xuddi shunday).
   const handleSubmit = (values: ClassPayload, homeroomTeacherIds: string[]) => {
     const saveHomeroom = (classId: string) =>
-      setHomeroomTeachers(classId, homeroomTeacherIds).catch(() =>
-        alert("Sinf saqlandi, lekin sinf rahbarini belgilab bo'lmadi — qayta urinib ko'ring."),
-      )
+      setHomeroomTeachers(classId, homeroomTeacherIds)
+        .then(loadHomeroom)
+        .catch(() => alert("Sinf saqlandi, lekin sinf rahbarini belgilab bo'lmadi — qayta urinib ko'ring."))
     if (editing) {
       applyUpdate(editing.id, values).then(() => saveHomeroom(editing.id))
     } else {
@@ -220,11 +232,11 @@ export function ClassesPage() {
                 <tr>
                   <th className="w-10 px-4 py-3">#</th>
                   <th className="px-4 py-3">Sinf nomi</th>
+                  <th className="px-4 py-3">Sinf rahbari</th>
                   <th className="px-4 py-3">Til</th>
                   <th className="px-4 py-3">Xona</th>
                   <th className="px-4 py-3">O'rtacha baho</th>
                   <th className="px-4 py-3">Davomat</th>
-                  <th className="px-4 py-3">Oylik to'lov</th>
                   <th className="px-4 py-3 text-right">Amallar</th>
                 </tr>
               </thead>
@@ -240,6 +252,15 @@ export function ClassesPage() {
                       <span className="block max-w-[14rem] truncate" title={c.name}>
                         {c.name}
                       </span>
+                    </td>
+                    <td className="px-4 py-3 text-slate-700">
+                      {homeroom[c.id]?.length ? (
+                        <span className="block max-w-[16rem] truncate" title={homeroom[c.id].join(', ')}>
+                          {homeroom[c.id].join(', ')}
+                        </span>
+                      ) : (
+                        <span className="text-slate-400">—</span>
+                      )}
                     </td>
                     <td className="px-4 py-3">
                       <span
@@ -272,7 +293,6 @@ export function ClassesPage() {
                         <span className="text-slate-400">—</span>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-slate-600">{formatMoney(c.monthlyFee)}</td>
                     <td className="px-4 py-3">
                       <div
                         className="flex items-center justify-end gap-0.5"
@@ -319,7 +339,7 @@ export function ClassesPage() {
                   </tr>
                 ))}
                 {/* Yo'nalish guruhlari — sinflardan keyin, o'sha ustunlar bilan. Qidiruv ularga ham
-                    qo'llanadi. Til, xona va oylik to'lov sinfniki — yo'nalishda "—". */}
+                    qo'llanadi. Sinf rahbari, til va xona sinfniki — yo'nalishda "—". */}
                 {tracks
                   .filter((g) => !search.trim() || g.name.toLowerCase().includes(search.trim().toLowerCase()))
                   .map((g, j) => (
@@ -342,6 +362,7 @@ export function ClassesPage() {
                       </td>
                       <td className="px-4 py-3 text-slate-400">—</td>
                       <td className="px-4 py-3 text-slate-400">—</td>
+                      <td className="px-4 py-3 text-slate-400">—</td>
                       <td className="px-4 py-3">
                         {stats[g.id] && stats[g.id].averageGrade > 0 ? (
                           <span className={cn('font-semibold', gradeColor(stats[g.id].averageGrade))}>
@@ -360,7 +381,6 @@ export function ClassesPage() {
                           <span className="text-slate-400">—</span>
                         )}
                       </td>
-                      <td className="px-4 py-3 text-slate-400">—</td>
                       <td className="px-4 py-3">
                         <div
                           className="flex items-center justify-end gap-0.5"

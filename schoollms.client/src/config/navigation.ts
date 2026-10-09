@@ -98,6 +98,9 @@ export const navByRole: Record<Role, NavItem[]> = {
         // menyuda alohida yozuv qilmaydi.
         //
         // YANGI YOZUV QO'SHMANG. Bu ro'yxat EduSchool ekranidan nusxa.
+        // Yagona istisno — "Abonementlar analitikasi": mijoz 2026-10-09 da uni aynan shu yerga,
+        // birinchi ustunning boshiga so'radi ("Moliya bo'limi ichida birinchi ustuniga").
+        { label: 'Abonementlar analitikasi', to: '/admin/finance/subscription-analytics', roles: ['admin', 'superadmin', 'staff'], group: 'AMALLAR' },
         { label: 'Kassa', to: '/cashier', roles: ['admin', 'superadmin', 'staff'], group: 'AMALLAR' },
         { label: 'Qarzdorlar bilan ishlash', to: '/admin/finance/debtors', roles: ['admin', 'superadmin', 'staff'], group: 'AMALLAR' },
         { label: 'Tranzaksiyalar', to: '/admin/finance/transactions', roles: ['admin', 'superadmin', 'staff'], group: 'AMALLAR' },

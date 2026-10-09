@@ -157,6 +157,20 @@ export async function getHomeroomTeachers(classId: string): Promise<HomeroomTeac
   return data
 }
 
+/** Barcha faol sinflarning sinf rahbarlari bitta so'rovda: sinf id'si → F.I.SH lar. */
+export async function getAllHomeroomTeachers(): Promise<Record<string, string[]>> {
+  if (USE_MOCK) {
+    await delay()
+    return {}
+  }
+  const { data } = await api.get<{ classId: string; teacherId: string; fullName: string }[]>(
+    '/admin/classes/homeroom-teachers',
+  )
+  const byClass: Record<string, string[]> = {}
+  for (const row of data) (byClass[row.classId] ??= []).push(row.fullName)
+  return byClass
+}
+
 /**
  * Sinf rahbari(lar)ini belgilaydi — ro'yxatda yo'q o'qituvchi bo'shatiladi, bor o'qituvchi
  * shu sinfga biriktiriladi (bitta o'qituvchi faqat bitta sinf rahbari bo'ladi).

@@ -389,6 +389,27 @@ public class ClassesController(AppDbContext db, AuditService audit) : Controller
     /* ---------- Sinf rahbari(lari) — C-5 ---------- */
 
     /// <summary>
+    /// Barcha faol sinflarning sinf rahbarlari bitta so'rovda — sinflar jadvalidagi "Sinf rahbari"
+    /// ustuni uchun (mijoz, 2026-10-09). Manba o'sha <c>teachers.homeroom_class</c>.
+    /// </summary>
+    [HttpGet("homeroom-teachers")]
+    public async Task<ActionResult<IEnumerable<ClassHomeroomTeacherDto>>> GetAllHomeroomTeachers()
+    {
+        var classes = await db.Classes.AsNoTracking().Where(c => !c.IsArchived)
+            .Select(c => new { c.Id, c.Name }).ToListAsync();
+        var idByName = classes.GroupBy(c => c.Name).ToDictionary(g => g.Key, g => g.First().Id);
+        var teachers = await db.Teachers.AsNoTracking()
+            .Where(t => !t.IsArchived && t.HomeroomClass != "")
+            .OrderBy(t => t.FullName)
+            .Select(t => new { t.Id, t.FullName, t.HomeroomClass })
+            .ToListAsync();
+        return teachers
+            .Where(t => idByName.ContainsKey(t.HomeroomClass))
+            .Select(t => new ClassHomeroomTeacherDto(idByName[t.HomeroomClass], t.Id, t.FullName))
+            .ToList();
+    }
+
+    /// <summary>
     /// Shu sinfga biriktirilgan sinf rahbari(lar)i. Haqiqat manbai
     /// <c>teachers.homeroom_class</c> (nom bo'yicha, sinf nomi o'zgarsa
     /// <see cref="CascadeRenameAsync"/> uni ham ko'chiradi) — bu yerda faqat O'QILADI.

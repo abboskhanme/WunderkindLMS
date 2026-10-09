@@ -538,6 +538,42 @@ public class FinanceReportsController(AppDbContext db) : ControllerBase
 
 
     /// <summary>
+    /// Abonementlar analitikasi: sinflar × abonement turlari — davrda kim qaysi abonementda, shu davr
+    /// oylari uchun qancha hisoblangan va to'langan. Qoidalar <see cref="SubscriptionAnalyticsQuery"/> da.
+    /// </summary>
+    /// <param name="from">Davr boshi (sukut: <paramref name="to"/> oyining 1-kuni).</param>
+    /// <param name="to">Davr oxiri (sukut: bugun).</param>
+    [HttpGet("subscription-analytics")]
+    public async Task<ActionResult<SubscriptionAnalyticsDto>> SubscriptionAnalytics(
+        [FromQuery] DateOnly? from,
+        [FromQuery] DateOnly? to,
+        CancellationToken ct = default)
+    {
+        var (start, end) = SubscriptionAnalyticsQuery.Period(from, to);
+        if (SubscriptionAnalyticsQuery.PeriodError(start, end) is { } error)
+            return BadRequest(new { message = error });
+        return Ok(await new SubscriptionAnalyticsQuery(db).ClassesAsync(start, end, ct));
+    }
+
+    /// <summary>
+    /// Bitta sinf: har o'quvchining davrdagi abonementlari va pul holati.
+    /// <paramref name="classId"/> — sinf id'si, <c>none</c> (sinfsiz) yoki <c>archived</c>.
+    /// </summary>
+    [HttpGet("subscription-analytics/class/{classId}")]
+    public async Task<ActionResult<SubscriptionClassDetailDto>> SubscriptionAnalyticsClass(
+        string classId,
+        [FromQuery] DateOnly? from,
+        [FromQuery] DateOnly? to,
+        CancellationToken ct = default)
+    {
+        var (start, end) = SubscriptionAnalyticsQuery.Period(from, to);
+        if (SubscriptionAnalyticsQuery.PeriodError(start, end) is { } error)
+            return BadRequest(new { message = error });
+        var detail = await new SubscriptionAnalyticsQuery(db).ClassAsync(classId, start, end, ct);
+        return detail is null ? NotFound(new { message = "Sinf topilmadi." }) : Ok(detail);
+    }
+
+    /// <summary>
     /// Davrni to'ldiradi: <paramref name="to"/> berilmasa — bugun,
     /// <paramref name="from"/> berilmasa — shuncha oy oldingi oyning 1-kuni.
     /// Sukut qiymatlar ataylab kichik: hisobot ochilishi bilan butun tarixni
