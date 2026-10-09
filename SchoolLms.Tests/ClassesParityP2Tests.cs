@@ -154,18 +154,23 @@ public class ClassesParityP2Tests(ApiFixture fixture)
      *  C-5 — sinf rahbari(lari)
      * ================================================================== */
 
+    /// <summary>
+    /// 2026-10-09 dan bitta o'qituvchi bir nechta sinf rahbari bo'la oladi: B ga biriktirish
+    /// A dagi rahbarlikni OLIB QO'YMAYDI (ilgari "o'g'irlardi"). Bo'sh ro'yxat — faqat shu sinfdan bo'shatadi.
+    /// </summary>
     [Fact]
-    public async Task Sinf_rahbarini_belgilash_boshqasidan_ogirlaydi_va_boshatiladi()
+    public async Task Sinf_rahbari_bir_nechta_sinfga_biriktiriladi_va_bittasidan_boshatiladi()
     {
         var tag = Tag();
         var classA = new SchoolClass { Name = $"HR{tag}-A", Grade = 2 };
         var classB = new SchoolClass { Name = $"HR{tag}-B", Grade = 2 };
-        var teacher = new Teacher { FullName = $"Rahbar {tag}", HomeroomClass = classA.Name };
+        var teacher = new Teacher { FullName = $"Rahbar {tag}" };
 
         await fixture.Api.WithDbAsync(async db =>
         {
             db.Classes.AddRange(classA, classB);
             db.Teachers.Add(teacher);
+            db.ClassHomeroomTeachers.Add(new ClassHomeroomTeacher { ClassId = classA.Id, TeacherId = teacher.Id });
             await db.SaveChangesAsync();
         });
 
@@ -174,29 +179,95 @@ public class ClassesParityP2Tests(ApiFixture fixture)
         var before = await admin.GetFromJsonAsync<List<JsonElement>>($"{Classes}/{classA.Id}/homeroom-teachers");
         Assert.Contains(before!, t => t.GetProperty("id").GetString() == teacher.Id);
 
-        // B ga tayinlaymiz — HomeroomClass BITTA qiymat, shuning uchun A dan "o'g'irlanadi".
         var res = await admin.PutAsJsonAsync($"{Classes}/{classB.Id}/homeroom-teachers",
             new { teacherIds = new[] { teacher.Id } });
         Assert.Equal(HttpStatusCode.NoContent, res.StatusCode);
 
-        await fixture.Api.WithDbAsync(async db =>
+        // Ikkala sinfda ham rahbar.
+        foreach (var cls in new[] { classA, classB })
         {
-            var row = await db.Teachers.AsNoTracking().SingleAsync(t => t.Id == teacher.Id);
-            Assert.Equal(classB.Name, row.HomeroomClass);
-        });
+            var rows = await admin.GetFromJsonAsync<List<JsonElement>>($"{Classes}/{cls.Id}/homeroom-teachers");
+            Assert.Equal([teacher.Id], rows!.Select(r => r.GetProperty("id").GetString()));
+        }
 
-        var afterA = await admin.GetFromJsonAsync<List<JsonElement>>($"{Classes}/{classA.Id}/homeroom-teachers");
-        Assert.Empty(afterA!);
+        // O'qituvchilar ro'yxatida — ikkala sinf bitta matnda.
+        var teachers = await admin.GetFromJsonAsync<List<JsonElement>>("/api/admin/teachers");
+        Assert.Equal($"{classA.Name}, {classB.Name}",
+            teachers!.Single(t => t.GetProperty("id").GetString() == teacher.Id).GetProperty("homeroomClass").GetString());
 
-        // Bo'shatish — ro'yxat bo'sh yuborilsa hozirgi rahbar chiqariladi.
+        // B dan bo'shatish A ga tegmaydi.
         var clear = await admin.PutAsJsonAsync($"{Classes}/{classB.Id}/homeroom-teachers",
             new { teacherIds = Array.Empty<string>() });
         Assert.Equal(HttpStatusCode.NoContent, clear.StatusCode);
         await fixture.Api.WithDbAsync(async db =>
         {
-            var row = await db.Teachers.AsNoTracking().SingleAsync(t => t.Id == teacher.Id);
-            Assert.Equal("", row.HomeroomClass);
+            var links = await db.ClassHomeroomTeachers.AsNoTracking()
+                .Where(h => h.TeacherId == teacher.Id).Select(h => h.ClassId).ToListAsync();
+            Assert.Equal([classA.Id], links);
         });
+    }
+
+    /// <summary>O'qituvchi formasi rahbarlik sinflari ro'yxatini butunlay almashtiradi; boshqa o'qituvchilarga tegmaydi.</summary>
+    [Fact]
+    public async Task Oqituvchi_formasidan_bir_nechta_sinf_rahbarligi()
+    {
+        var tag = Tag();
+        var classA = new SchoolClass { Name = $"TF{tag}-A", Grade = 4 };
+        var classB = new SchoolClass { Name = $"TF{tag}-B", Grade = 4 };
+        var classC = new SchoolClass { Name = $"TF{tag}-C", Grade = 4 };
+        var other = new Teacher { FullName = $"Boshqa {tag}" };
+        await fixture.Api.WithDbAsync(async db =>
+        {
+            db.Classes.AddRange(classA, classB, classC);
+            db.Teachers.Add(other);
+            db.ClassHomeroomTeachers.Add(new ClassHomeroomTeacher { ClassId = classA.Id, TeacherId = other.Id });
+            await db.SaveChangesAsync();
+        });
+
+        using var admin = await fixture.Api.ClientAsAsync(Roles.Admin);
+        var created = await admin.PostAsJsonAsync("/api/admin/teachers", new
+        {
+            fullName = $"Yangi {tag}", birthDate = "1990-01-01", address = "", gender = "female",
+            homeroomClass = "", subjectIds = Array.Empty<string>(), salary = 0,
+            homeroomClassIds = new[] { classA.Id, classB.Id },
+        });
+        Assert.Equal(HttpStatusCode.OK, created.StatusCode);
+        var body = await created.Content.ReadFromJsonAsync<JsonElement>();
+        var id = body.GetProperty("id").GetString()!;
+        Assert.Equal($"{classA.Name}, {classB.Name}", body.GetProperty("homeroomClass").GetString());
+
+        var updated = await admin.PutAsJsonAsync($"/api/admin/teachers/{id}", new
+        {
+            fullName = $"Yangi {tag}", birthDate = "1990-01-01", address = "", gender = "female",
+            homeroomClass = "", subjectIds = Array.Empty<string>(), salary = 0,
+            homeroomClassIds = new[] { classC.Id },
+        });
+        Assert.Equal(HttpStatusCode.OK, updated.StatusCode);
+
+        // Ro'yxatsiz saqlash rahbarlikka tegmaydi.
+        var untouched = await admin.PutAsJsonAsync($"/api/admin/teachers/{id}", new
+        {
+            fullName = $"Yangi {tag}", birthDate = "1990-01-01", address = "", gender = "female",
+            homeroomClass = "", subjectIds = Array.Empty<string>(), salary = 0,
+        });
+        Assert.Equal(HttpStatusCode.OK, untouched.StatusCode);
+
+        await fixture.Api.WithDbAsync(async db =>
+        {
+            var mine = await db.ClassHomeroomTeachers.AsNoTracking().Where(h => h.TeacherId == id)
+                .Select(h => h.ClassId).ToListAsync();
+            Assert.Equal([classC.Id], mine);
+            // A dagi boshqa o'qituvchi joyida.
+            Assert.True(await db.ClassHomeroomTeachers.AnyAsync(h => h.ClassId == classA.Id && h.TeacherId == other.Id));
+        });
+
+        var bad = await admin.PutAsJsonAsync($"/api/admin/teachers/{id}", new
+        {
+            fullName = $"Yangi {tag}", birthDate = "1990-01-01", address = "", gender = "female",
+            homeroomClass = "", subjectIds = Array.Empty<string>(), salary = 0,
+            homeroomClassIds = new[] { "no-such-class" },
+        });
+        Assert.Equal(HttpStatusCode.BadRequest, bad.StatusCode);
     }
 
     [Fact]
@@ -223,7 +294,8 @@ public class ClassesParityP2Tests(ApiFixture fixture)
 
     /// <summary>
     /// Sinflar jadvalidagi "Sinf rahbari" ustuni (mijoz, 2026-10-09) — barcha sinflar bitta
-    /// so'rovda; arxivdagi o'qituvchi va arxivdagi sinf chiqmaydi; o'qish ruxsati yakka sinfnikidek.
+    /// so'rovda; bitta sinfda ikki rahbar; arxivdagi o'qituvchi va arxivdagi sinf chiqmaydi;
+    /// o'qish ruxsati yakka sinfnikidek.
     /// </summary>
     [Fact]
     public async Task Barcha_sinflarning_rahbarlari_bitta_sorovda()
@@ -232,14 +304,19 @@ public class ClassesParityP2Tests(ApiFixture fixture)
         var classA = new SchoolClass { Name = $"HA{tag}-A", Grade = 3 };
         var classB = new SchoolClass { Name = $"HA{tag}-B", Grade = 3 };
         var gone = new SchoolClass { Name = $"HA{tag}-X", Grade = 3, IsArchived = true };
-        var first = new Teacher { FullName = $"Avval {tag}", HomeroomClass = classA.Name };
-        var second = new Teacher { FullName = $"Bkeyin {tag}", HomeroomClass = classA.Name };
-        var archived = new Teacher { FullName = $"Ketgan {tag}", HomeroomClass = classB.Name, IsArchived = true };
-        var ofGone = new Teacher { FullName = $"Arxivsinf {tag}", HomeroomClass = gone.Name };
+        var first = new Teacher { FullName = $"Avval {tag}" };
+        var second = new Teacher { FullName = $"Bkeyin {tag}" };
+        var archived = new Teacher { FullName = $"Ketgan {tag}", IsArchived = true };
+        var ofGone = new Teacher { FullName = $"Arxivsinf {tag}" };
         await fixture.Api.WithDbAsync(async db =>
         {
             db.Classes.AddRange(classA, classB, gone);
             db.Teachers.AddRange(first, second, archived, ofGone);
+            db.ClassHomeroomTeachers.AddRange(
+                new ClassHomeroomTeacher { ClassId = classA.Id, TeacherId = first.Id },
+                new ClassHomeroomTeacher { ClassId = classA.Id, TeacherId = second.Id },
+                new ClassHomeroomTeacher { ClassId = classB.Id, TeacherId = archived.Id },
+                new ClassHomeroomTeacher { ClassId = gone.Id, TeacherId = ofGone.Id });
             await db.SaveChangesAsync();
         });
 

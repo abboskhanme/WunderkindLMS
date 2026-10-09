@@ -137,6 +137,9 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<StudyGroupMember> StudyGroupMembers => Set<StudyGroupMember>();
     public DbSet<ClassMembership> ClassMemberships => Set<ClassMembership>();
 
+    // Sinf rahbarlari, ko'p-ko'pga (2026-10-09). Konfiguratsiya: HomeroomModel.cs.
+    public DbSet<ClassHomeroomTeacher> ClassHomeroomTeachers => Set<ClassHomeroomTeacher>();
+
     // O'quvchi kartochkasining qo'shimcha qismlari (students-parity.md §3.2).
     // Sxema oldin, ekranlar keyin — hozircha ilovadan hech kim o'qimaydi.
     public DbSet<StudentStatus> StudentStatuses => Set<StudentStatus>();
@@ -433,6 +436,9 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
         // Beshinchi alohida fayl. `owner_kind` (beshta dars jadvali),
         // `subjects.is_groupable` va `school_meta.group_lessons_enabled` ham shu yerda.
         StudyGroupModel.Apply(b);
+
+        // ----- Sinf rahbarlari, ko'p-ko'pga (2026-10-09) -----
+        HomeroomModel.Apply(b);
 
         // ----- O'quvchi kartochkasi: status, izoh, shartnoma, xonalar (§3.2) -----
         StudentsParityModel.Apply(b);

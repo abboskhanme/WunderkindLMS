@@ -227,10 +227,23 @@ export function ClassesPage() {
           <ArchivedTable items={archived} onUnarchive={handleUnarchive} onDelete={handleDelete} />
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
+            {/* Kengliklar qat'iy (mijoz, 2026-10-09: "ustunlar sig'may qolyapti, kengligi bo'yicha
+                tekislang"): sinf rahbari qolgan joyni oladi, matn qatorga sinmaydi — sig'masa "…"
+                va to'lig'i hoverda; tor ekranda jadval yonga suriladi. */}
+            <table className="w-full min-w-[60rem] table-fixed text-left text-sm">
+              <colgroup>
+                <col className="w-14" />
+                <col className="w-36" />
+                <col />
+                <col className="w-24" />
+                <col className="w-32" />
+                <col className="w-32" />
+                <col className="w-24" />
+                <col className="w-56" />
+              </colgroup>
               <thead className="whitespace-nowrap bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
                 <tr>
-                  <th className="w-10 px-4 py-3">#</th>
+                  <th className="px-4 py-3">#</th>
                   <th className="px-4 py-3">Sinf nomi</th>
                   <th className="px-4 py-3">Sinf rahbari</th>
                   <th className="px-4 py-3">Til</th>
@@ -249,18 +262,12 @@ export function ClassesPage() {
                   >
                     <td className="px-4 py-3 text-slate-400">{i + 1}</td>
                     <td className="px-4 py-3 font-medium text-slate-800">
-                      <span className="block max-w-[14rem] truncate" title={c.name}>
+                      <span className="block truncate" title={c.name}>
                         {c.name}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-slate-700">
-                      {homeroom[c.id]?.length ? (
-                        <span className="block max-w-[16rem] truncate" title={homeroom[c.id].join(', ')}>
-                          {homeroom[c.id].join(', ')}
-                        </span>
-                      ) : (
-                        <span className="text-slate-400">—</span>
-                      )}
+                    <td className="px-4 py-3">
+                      <HomeroomNames names={homeroom[c.id] ?? []} />
                     </td>
                     <td className="px-4 py-3">
                       <span
@@ -274,7 +281,11 @@ export function ClassesPage() {
                         {languageLabels[c.language]}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-slate-600">{c.room || '—'}</td>
+                    <td className="px-4 py-3 text-slate-600">
+                      <span className="block truncate" title={c.room || undefined}>
+                        {c.room || '—'}
+                      </span>
+                    </td>
                     <td className="px-4 py-3">
                       {stats[c.id] ? (
                         <span className={cn('font-semibold', gradeColor(stats[c.id].averageGrade))}>
@@ -339,7 +350,7 @@ export function ClassesPage() {
                   </tr>
                 ))}
                 {/* Yo'nalish guruhlari — sinflardan keyin, o'sha ustunlar bilan. Qidiruv ularga ham
-                    qo'llanadi. Sinf rahbari, til va xona sinfniki — yo'nalishda "—". */}
+                    qo'llanadi. Til va xona sinfniki — yo'nalishda "—". */}
                 {tracks
                   .filter((g) => !search.trim() || g.name.toLowerCase().includes(search.trim().toLowerCase()))
                   .map((g, j) => (
@@ -351,16 +362,20 @@ export function ClassesPage() {
                       <td className="px-4 py-3 text-slate-400">{classes.length + j + 1}</td>
                       <td className="px-4 py-3 font-medium text-slate-800">
                         <span
-                          className="flex max-w-[16rem] items-center gap-2"
+                          className="block min-w-0"
                           title={`${g.name} · ${g.classes.map((c) => c.name).join(', ')} · ${g.memberCount} ta o'quvchi`}
                         >
-                          <span className="truncate">{g.name}</span>
-                          <span className="shrink-0 rounded-md bg-violet-100 px-1.5 py-0.5 text-[11px] font-medium text-violet-700">
+                          <span className="block truncate">{g.name}</span>
+                          <span className="mt-0.5 inline-block rounded-md bg-violet-100 px-1.5 py-0.5 text-[11px] font-medium text-violet-700">
                             yo'nalish
                           </span>
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-slate-400">—</td>
+                      <td className="px-4 py-3">
+                        {/* Yo'nalish guruhining sinf rahbari — guruh o'qituvchisi (guruh formasida
+                            "Sinf rahbari", 2026-09-29). */}
+                        <HomeroomNames names={g.teachers.map((t) => t.fullName)} />
+                      </td>
                       <td className="px-4 py-3 text-slate-400">—</td>
                       <td className="px-4 py-3 text-slate-400">—</td>
                       <td className="px-4 py-3">
@@ -527,6 +542,22 @@ interface IconBtnProps {
   title: string
   onClick: () => void
   danger?: boolean
+}
+
+/** Sinf rahbarlari — har biri o'z qatorida; ko'p bo'lsa ikkitasi va "+N". */
+function HomeroomNames({ names }: { names: string[] }) {
+  if (names.length === 0) return <span className="text-slate-400">—</span>
+  const shown = names.length > 2 ? names.slice(0, 2) : names
+  return (
+    <div className="min-w-0 text-slate-700" title={names.join('\n')}>
+      {shown.map((n) => (
+        <div key={n} className="truncate">
+          {n}
+        </div>
+      ))}
+      {names.length > shown.length && <div className="text-xs text-slate-400">+{names.length - shown.length} ta</div>}
+    </div>
+  )
 }
 
 function IconBtn({ icon: Icon, title, onClick, danger }: IconBtnProps) {

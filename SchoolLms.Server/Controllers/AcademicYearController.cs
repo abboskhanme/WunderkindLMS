@@ -277,6 +277,9 @@ public class AcademicYearController(AppDbContext db, AuditService audit) : Contr
             Expenses = await db.Expenses.AsNoTracking().ToListAsync(),
             DerivedBalances = await new StudentBalanceQuery(db).ForManyAsync(),
         };
+        // "Sinf rahbarligi" — rahbarlik sinflari va yo'nalish guruhlari matni (2026-10-09);
+        // `teachers.homeroom_class` ustunini ilova endi o'qimaydi.
+        await HomeroomDirectory.FillLabelsAsync(db, snapshot.Teachers);
         db.SchoolYearArchives.Add(new SchoolYearArchive
         {
             Year = string.IsNullOrEmpty(oldYear) ? "—" : oldYear,

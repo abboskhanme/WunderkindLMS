@@ -125,10 +125,8 @@ public class StudentProfileController(AppDbContext db, AuditService audit) : Con
                 .Select(u => new { u.Email, u.InitialPassword }).FirstOrDefaultAsync(ct);
         var login = account?.Email;
 
-        var homeroom = string.IsNullOrEmpty(st.ClassName)
-            ? ""
-            : await db.Teachers.AsNoTracking().Where(t => t.HomeroomClass == st.ClassName)
-                .Select(t => t.FullName).FirstOrDefaultAsync(ct) ?? "";
+        // Sinfda bir nechta rahbar bo'lishi mumkin — hammasi (2026-10-09).
+        var homeroom = await HomeroomDirectory.NamesOfClassNameAsync(db, st.ClassName ?? "", ct);
 
         return new StudentCardDto(
             // `Balance = null` — ataylab: pul kartochkaning moliya tab'ida.

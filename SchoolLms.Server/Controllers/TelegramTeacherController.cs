@@ -78,10 +78,12 @@ public sealed class TelegramTeacherController(
                 .Where(l => l.Day == day).ToList()
             : [];
 
-        var pickups = string.IsNullOrEmpty(t.HomeroomClass)
+        // Rahbarlik sinflari — bir nechta bo'lishi mumkin (2026-10-09).
+        var homeroomClasses = await HomeroomDirectory.ClassNamesOfAsync(db, t.Id, ct);
+        var pickups = homeroomClasses.Count == 0
             ? []
             : (await db.PickupRequests.AsNoTracking()
-                    .Where(p => p.ClassName == t.HomeroomClass && p.CreatedAt.StartsWith(today))
+                    .Where(p => homeroomClasses.Contains(p.ClassName) && p.CreatedAt.StartsWith(today))
                     .OrderByDescending(p => p.CreatedAt).Take(50).ToListAsync(ct))
                 .Select(PickupService.ToDto).ToList();
 

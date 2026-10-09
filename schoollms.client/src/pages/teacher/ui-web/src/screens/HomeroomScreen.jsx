@@ -50,13 +50,15 @@ export default function HomeroomScreen({ onBack }) {
 
   const rank = (s) => (s.status === 'accepted' ? 2 : s.hasPendingPickup ? 0 : 1)
   const sorted = [...students].sort((a, b) => rank(a) - rank(b) || a.fullName.localeCompare(b.fullName))
+  // Bir nechta sinf rahbari (2026-10-09) — har o'quvchining sinfi ko'rsatiladi.
+  const manyClasses = new Set(students.map((s) => s.className).filter(Boolean)).size > 1
   const pending = sorted.filter((s) => s.hasPendingPickup && s.status !== 'accepted').length
 
   return (
     <div className="h-full flex flex-col bg-bg">
       <ScreenHeader
         title="Sinf rahbarligi"
-        subtitle={data ? `${data.className || ''} sinfi · ${sorted.length} o'quvchi` : undefined}
+        subtitle={data ? `${data.className || ''} ${manyClasses ? 'sinflari' : 'sinfi'} · ${sorted.length} o'quvchi` : undefined}
         onBack={onBack}
       />
 
@@ -97,7 +99,12 @@ export default function HomeroomScreen({ onBack }) {
                   >
                     <Avatar name={s.fullName} size={44} />
                     <div className="flex-1 min-w-0">
-                      <p className="text-[15px] font-bold text-text truncate">{s.fullName}</p>
+                      <p className="text-[15px] font-bold text-text truncate">
+                        {s.fullName}
+                        {manyClasses && s.className && (
+                          <span className="ml-1.5 text-[12px] font-semibold text-muted">{s.className}</span>
+                        )}
+                      </p>
                       {isPending ? (
                         <div className="flex items-center gap-1.5 mt-0.5">
                           <span className="w-[7px] h-[7px] rounded-full bg-warning" />

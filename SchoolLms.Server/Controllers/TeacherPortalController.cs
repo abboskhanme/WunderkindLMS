@@ -57,7 +57,8 @@ public class TeacherPortalController(
         var names = (await db.Subjects.Where(s => t.SubjectIds.Contains(s.Id)).ToListAsync())
             .Select(s => new SubjectDto(s.Id, s.Name))
             .OrderBy(s => s.Name, StringComparer.OrdinalIgnoreCase).ToList();
-        return new TeacherProfileDto(t.Id, t.FullName, user?.Email ?? "", t.HomeroomClass, names, t.Permissions, t.PhotoUrl);
+        return new TeacherProfileDto(t.Id, t.FullName, user?.Email ?? "", await HomeroomDirectory.LabelAsync(db, t.Id),
+            names, t.Permissions, t.PhotoUrl);
     }
 
     [HttpGet("meta")]
@@ -103,11 +104,13 @@ public class TeacherPortalController(
     {
         var t = await Me();
         if (t is null) return NotFound();
-        if (string.IsNullOrEmpty(t.HomeroomClass)) return new List<PickupRequestDto>();
+        // Rahbarlik sinflari — bir nechta bo'lishi mumkin (2026-10-09).
+        var classNames = await HomeroomDirectory.ClassNamesOfAsync(db, t.Id);
+        if (classNames.Count == 0) return new List<PickupRequestDto>();
         // Faqat bugungi so'rovlar — har o'qish kuni mustaqil.
         var today = AppClock.Now.ToString("yyyy-MM-dd");
         var list = await db.PickupRequests
-            .Where(p => p.ClassName == t.HomeroomClass && p.CreatedAt.StartsWith(today))
+            .Where(p => classNames.Contains(p.ClassName) && p.CreatedAt.StartsWith(today))
             .OrderByDescending(p => p.CreatedAt).Take(50).ToListAsync();
         return list.Select(PickupDto).ToList();
     }
@@ -121,12 +124,16 @@ public class TeacherPortalController(
     {
         var t = await Me();
         if (t is null) return NotFound();
-        var cls = t.HomeroomClass ?? "";
-        if (string.IsNullOrEmpty(cls))
+        // Bir nechta sinf bo'lsa — hammasining o'quvchilari, sinf tartibida (2026-10-09).
+        var classes = await HomeroomDirectory.ClassesOfAsync(db, t.Id);
+        if (classes.Count == 0)
             return Ok(new { className = "", students = new List<HomeroomStudentDto>() });
+        var order = classes.Select((c, i) => (c.Name, i)).ToDictionary(x => x.Name, x => x.i, StringComparer.Ordinal);
+        var classNames = order.Keys.ToList();
 
-        var students = await db.Students.Where(s => !s.IsArchived && s.ClassName == cls)
-            .OrderBy(s => s.FullName).ToListAsync();
+        var students = (await db.Students.Where(s => !s.IsArchived && classNames.Contains(s.ClassName))
+                .ToListAsync())
+            .OrderBy(s => order[s.ClassName]).ThenBy(s => s.FullName, StringComparer.Ordinal).ToList();
         var ids = students.Select(s => s.Id).ToList();
         // Pickup holati KUNLIK — faqat bugungi (o'qish kuni) so'rovlari; har kuni o'zi yangilanadi.
         var today = AppClock.Now.ToString("yyyy-MM-dd");
@@ -138,9 +145,9 @@ public class TeacherPortalController(
         var rows = students.Select(s =>
         {
             latest.TryGetValue(s.Id, out var pr);
-            return new HomeroomStudentDto(s.Id, s.FullName, pr?.Status == "pending", pr?.Status, pr?.CreatedAt);
+            return new HomeroomStudentDto(s.Id, s.FullName, pr?.Status == "pending", pr?.Status, pr?.CreatedAt, s.ClassName);
         }).ToList();
-        return Ok(new { className = cls, students = rows });
+        return Ok(new { className = string.Join(", ", classNames), students = rows });
     }
 
     /// <summary>"Topshirish" — farzandni ota-onasiga topshiradi (sana qoldiradi) va ota-onaga push yuboradi.</summary>
@@ -150,7 +157,7 @@ public class TeacherPortalController(
         var t = await Me();
         if (t is null) return NotFound();
         var s = await db.Students.FindAsync(req.StudentId);
-        if (s is null || s.ClassName != t.HomeroomClass) return Forbid();
+        if (s is null || !(await HomeroomDirectory.ClassNamesOfAsync(db, t.Id)).Contains(s.ClassName)) return Forbid();
 
         var now = AppClock.Now.ToString("o");
         var today = AppClock.Now.ToString("yyyy-MM-dd");
@@ -202,7 +209,7 @@ public class TeacherPortalController(
         if (t is null) return NotFound();
         var pr = await db.PickupRequests.FindAsync(id);
         if (pr is null) return NotFound();
-        if (pr.ClassName != t.HomeroomClass) return Forbid();
+        if (!(await HomeroomDirectory.ClassNamesOfAsync(db, t.Id)).Contains(pr.ClassName)) return Forbid();
 
         if (pr.Status != "accepted")
         {
@@ -1093,11 +1100,8 @@ public class TeacherPortalController(
         foreach (var tpl in templates)
             if (tpl.Lessons.Any(l => l.TeacherId == t.Id))
                 ids.Add(tpl.ClassId);
-        if (!string.IsNullOrEmpty(t.HomeroomClass))
-        {
-            var hc = await db.Classes.FirstOrDefaultAsync(c => c.Name == t.HomeroomClass);
-            if (hc is not null) ids.Add(hc.Id);
-        }
+        foreach (var (id, _) in await HomeroomDirectory.ClassesOfAsync(db, t.Id))
+            ids.Add(id);
         return ids;
     }
 

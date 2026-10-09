@@ -68,7 +68,11 @@ public record TeacherPayload(
     string FullName, string BirthDate, string Address, string Gender,
     string HomeroomClass, List<string> SubjectIds, decimal Salary, string? SalaryStartMonth,
     string? NewPassword = null, List<string>? Permissions = null, string? Phone = null,
-    string? PhotoUrl = null, string? Category = null, string? SalaryStartDate = null);
+    string? PhotoUrl = null, string? Category = null, string? SalaryStartDate = null,
+    // Rahbarlik sinflari (2026-10-09: bitta o'qituvchi bir nechta sinfga). Berilsa — ro'yxat
+    // shu bilan almashtiriladi; null — rahbarlikka tegilmaydi (eski `HomeroomClass` nomi
+    // faqat yangi o'qituvchida, ro'yxat berilmaganda ishlatiladi).
+    List<string>? HomeroomClassIds = null);
 /// <summary>Maosh berish so'rovi.</summary>
 /// <param name="Method">
 /// Pul qaysi hisobdan chiqdi: <c>cash</c> kassadan, qolgani bankdan
@@ -251,9 +255,8 @@ public record ClassHomeroomTeacherDto(string ClassId, string TeacherId, string F
 
 /// <summary>
 /// Sinf rahbari(lari)ni belgilash. Ro'yxatda YO'Q, lekin hozir shu sinfga biriktirilgan
-/// o'qituvchilar — bo'shatiladi (<c>HomeroomClass = ""</c>). Ro'yxatda bor, lekin BOSHQA
-/// sinfga biriktirilgan o'qituvchi — shu sinfga "o'g'irlanadi" (bugungi teacher-tarafdagi
-/// forma ham xuddi shunday ishlaydi: bitta o'qituvchi faqat bitta sinfning rahbari bo'la oladi).
+/// o'qituvchilar — bo'shatiladi. O'qituvchining boshqa sinflardagi rahbarligiga tegilmaydi:
+/// 2026-10-09 dan bitta o'qituvchi bir nechta sinf rahbari bo'la oladi.
 /// </summary>
 public record SetHomeroomTeachersRequest(List<string>? TeacherIds);
 
@@ -1003,8 +1006,10 @@ public record PickupRequestDto(
     string Id, string StudentId, string StudentName, string ClassName, string Status,
     string CreatedAt, string? AcceptedAt, string? AcceptedByName);
 /// <summary>Sinf rahbarligi ro'yxatidagi bitta o'quvchi — ota-onasi kelgan (pending) bo'lsa belgilanadi.</summary>
+/// <param name="ClassName">O'quvchining sinfi — rahbar bir nechta sinfga biriktirilgan bo'lishi mumkin (2026-10-09).</param>
 public record HomeroomStudentDto(
-    string StudentId, string FullName, bool HasPendingPickup, string? Status, string? RequestedAt);
+    string StudentId, string FullName, bool HasPendingPickup, string? Status, string? RequestedAt,
+    string? ClassName = null);
 /// <summary>Sinf rahbari farzandni ota-onasiga topshirish so'rovi.</summary>
 public record HandoverRequest(string StudentId);
 /// <summary>Sozlamani yangilash so'rovi. Berilgan maydonlar yangilanadi, qolganlari saqlanadi.</summary>

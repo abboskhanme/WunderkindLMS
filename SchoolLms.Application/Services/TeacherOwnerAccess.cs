@@ -105,8 +105,10 @@ public static class TeacherOwnerAccess
             if (!await LessonRoster.LessonsLiveAsync(db, owner, ct)) return false;
             if (await IsGroupTeacherAsync(db, teacher.Id, owner, ct)) return true;
         }
-        else if (!string.IsNullOrEmpty(teacher.HomeroomClass) && teacher.HomeroomClass == owner.Name)
+        else if (await db.ClassHomeroomTeachers.AsNoTracking()
+                     .AnyAsync(h => h.ClassId == owner.Id && h.TeacherId == teacher.Id, ct))
         {
+            // Sinf rahbari — bir nechta sinfda bo'lishi mumkin (HomeroomDirectory, 2026-10-09).
             return true;
         }
 
@@ -141,9 +143,12 @@ public static class TeacherOwnerAccess
 
         var classes = await db.Classes.AsNoTracking()
             .OrderBy(c => c.Grade).ThenBy(c => c.Name).ToListAsync(ct);
+        var homeroomIds = (await db.ClassHomeroomTeachers.AsNoTracking()
+            .Where(h => h.TeacherId == teacher.Id).Select(h => h.ClassId).ToListAsync(ct))
+            .ToHashSet(StringComparer.Ordinal);
         foreach (var cls in classes)
         {
-            var isHomeroom = !string.IsNullOrEmpty(teacher.HomeroomClass) && teacher.HomeroomClass == cls.Name;
+            var isHomeroom = homeroomIds.Contains(cls.Id);
             taught.TryGetValue(OwnerKey(cls.Id, LessonOwnerKind.Class), out var subjIds);
             if (!isHomeroom && (subjIds is null || subjIds.Count == 0)) continue;
             result.Add(new TeacherOwner(

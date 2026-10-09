@@ -4,27 +4,34 @@
  * aboniment kimda qanaqa borligi jadvali chiqadigan bo'lsin".
  *
  * Ikki jadval: abonement turlari (butun maktab) va sinflar × abonementlar. Sinf qatori shu sinf
- * sahifasiga olib boradi, davr bilan birga. Hamma raqam serverdan tayyor keladi.
+ * sahifasiga olib boradi, davr bilan birga; katak — o'sha abonement filtri bilan. Kartalar va
+ * abonement qatorlari filtr: bosilsa o'sha o'quvchilar ro'yxati ochiladi (`?list=`). Excel — to'liq
+ * hisobot. Hamma raqam serverdan tayyor keladi.
  */
-import { useMemo, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
-import { AlertTriangle, ChevronRight, Layers, Users, Wallet } from 'lucide-react'
+import { useCallback, useMemo, useState, type ReactNode } from 'react'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { AlertTriangle, ChevronRight, FileSpreadsheet, Layers, Users, Wallet } from 'lucide-react'
 import { useAsync } from '@/hooks/useAsync'
 import { useAuth } from '@/context/auth-context'
 import { hasFinanceAccess } from '@/pages/admin/billing/access'
 import {
   ARCHIVED,
   NO_CLASS,
+  NO_PLAN,
+  downloadSubscriptionAnalytics,
   getSubscriptionAnalytics,
   type SubscriptionAnalytics,
+  type SubscriptionFilter,
   type SubscriptionPlanCell,
   type SubscriptionPlanColumn,
 } from '@/api/services/subscriptionAnalytics'
+import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { StatCard } from '@/components/ui/StatCard'
 import { cn, formatMoney } from '@/lib/utils'
 import { ReportState } from '../ReportState'
 import { SubscriptionPeriodBar } from './SubscriptionPeriodBar'
+import { SubscriptionStudentsPanel } from './SubscriptionStudentsPanel'
 import { useSubscriptionPeriod } from './subscriptionPeriod'
 import { classPath, compactMoney, groupByCategory } from './subscriptionFormat'
 
@@ -43,6 +50,25 @@ export default function SubscriptionAnalyticsPage() {
   const { period, search } = periodState
   const navigate = useNavigate()
   const [metric, setMetric] = useState<Metric>('students')
+  const [exporting, setExporting] = useState(false)
+  const [exportError, setExportError] = useState<string | null>(null)
+
+  // Ochiq ro'yxat URL'da (`?list=no-tuition`) — yangilansa ham, havola yuborilsa ham saqlanadi.
+  const [params, setParams] = useSearchParams()
+  const list = params.get('list') as SubscriptionFilter | null
+  const setList = useCallback(
+    (next: SubscriptionFilter | null) =>
+      setParams(
+        (prev) => {
+          const p = new URLSearchParams(prev)
+          if (next && next !== prev.get('list')) p.set('list', next)
+          else p.delete('list')
+          return p
+        },
+        { replace: true },
+      ),
+    [setParams],
+  )
 
   const { data, loading, error, refetch } = useAsync<SubscriptionAnalytics | null>(
     () => (allowed ? getSubscriptionAnalytics(period.from, period.to) : Promise.resolve(null)),
@@ -67,6 +93,7 @@ export default function SubscriptionAnalyticsPage() {
   }
 
   const open = (classId: string) => navigate(classPath(classId, search))
+  const listMeta = describe(list, data?.plans ?? [])
 
   return (
     <div className="space-y-5">
@@ -78,8 +105,25 @@ export default function SubscriptionAnalyticsPage() {
             ro'yxati.
           </p>
         </div>
-        <SubscriptionPeriodBar state={periodState} />
+        <div className="flex flex-wrap items-center gap-2">
+          <SubscriptionPeriodBar state={periodState} />
+          <Button
+            variant="secondary"
+            disabled={exporting || !data}
+            onClick={() => {
+              setExporting(true)
+              setExportError(null)
+              downloadSubscriptionAnalytics({ from: period.from, to: period.to })
+                .catch((e: unknown) => setExportError(e instanceof Error ? e.message : 'Xatolik'))
+                .finally(() => setExporting(false))
+            }}
+            title="Sinflar, abonement turlari va barcha o'quvchilar — bitta faylda"
+          >
+            <FileSpreadsheet className="h-4 w-4" /> {exporting ? 'Tayyorlanmoqda…' : 'Excel'}
+          </Button>
+        </div>
       </div>
+      {exportError && <p className="text-sm text-red-600">{exportError}</p>}
 
       <ReportState
         loading={loading}
@@ -92,45 +136,77 @@ export default function SubscriptionAnalyticsPage() {
         {data && (
           <>
             <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
-              <StatCard label="O'quvchilar" value={data.students} icon={Users} hint="maktabda, hozir" />
-              <StatCard
-                label="Abonementi bor"
-                value={data.withSubscription}
-                icon={Layers}
-                iconBg="bg-sky-50"
-                iconColor="text-sky-600"
-                hint={period.label}
-              />
-              <StatCard
-                label="O'qish abonementisiz"
-                value={data.withoutTuition}
-                icon={AlertTriangle}
-                iconBg={data.withoutTuition > 0 ? 'bg-amber-50' : 'bg-slate-50'}
-                iconColor={data.withoutTuition > 0 ? 'text-amber-600' : 'text-slate-400'}
-                hint="davrda o'qish toifasi yo'q"
-              />
-              <StatCard
-                label="Hisoblangan"
-                value={formatMoney(data.billed)}
-                icon={Wallet}
-                iconBg="bg-emerald-50"
-                iconColor="text-emerald-600"
-                hint={`to'langan ${formatMoney(data.paid)}`}
-              />
-              <StatCard
-                label="Qarz"
-                value={formatMoney(data.debt)}
-                icon={Wallet}
-                iconBg={data.debt > 0 ? 'bg-red-50' : 'bg-slate-50'}
-                iconColor={data.debt > 0 ? 'text-red-600' : 'text-slate-400'}
-                hint="davr oylari bo'yicha"
-              />
+              <Pick active={list === 'all'}>
+                <StatCard
+                  label="O'quvchilar"
+                  value={data.students}
+                  icon={Users}
+                  hint="maktabda, hozir"
+                  onClick={() => setList('all')}
+                />
+              </Pick>
+              <Pick active={list === 'subscribed'}>
+                <StatCard
+                  label="Abonementi bor"
+                  value={data.withSubscription}
+                  icon={Layers}
+                  iconBg="bg-sky-50"
+                  iconColor="text-sky-600"
+                  hint={period.label}
+                  onClick={() => setList('subscribed')}
+                />
+              </Pick>
+              <Pick active={list === 'no-tuition'}>
+                <StatCard
+                  label="O'qish abonementisiz"
+                  value={data.withoutTuition}
+                  icon={AlertTriangle}
+                  iconBg={data.withoutTuition > 0 ? 'bg-amber-50' : 'bg-slate-50'}
+                  iconColor={data.withoutTuition > 0 ? 'text-amber-600' : 'text-slate-400'}
+                  hint="bosing — kimlar ekani"
+                  onClick={() => setList('no-tuition')}
+                />
+              </Pick>
+              <Pick active={list === 'billed'}>
+                <StatCard
+                  label="Hisoblangan"
+                  value={formatMoney(data.billed)}
+                  icon={Wallet}
+                  iconBg="bg-emerald-50"
+                  iconColor="text-emerald-600"
+                  hint={`to'langan ${formatMoney(data.paid)}`}
+                  onClick={() => setList('billed')}
+                />
+              </Pick>
+              <Pick active={list === 'debt'}>
+                <StatCard
+                  label="Qarz"
+                  value={formatMoney(data.debt)}
+                  icon={Wallet}
+                  iconBg={data.debt > 0 ? 'bg-red-50' : 'bg-slate-50'}
+                  iconColor={data.debt > 0 ? 'text-red-600' : 'text-slate-400'}
+                  hint="bosing — qarzdorlar"
+                  onClick={() => setList('debt')}
+                />
+              </Pick>
             </div>
+
+            {list && listMeta && (
+              <SubscriptionStudentsPanel
+                filter={list}
+                title={listMeta.title}
+                hint={listMeta.hint}
+                from={period.from}
+                to={period.to}
+                search={search}
+                onClose={() => setList(null)}
+              />
+            )}
 
             <Card className="p-0">
               <div className="px-5 pt-5">
                 <h2 className="font-semibold text-slate-800">Abonement turlari</h2>
-                <p className="text-xs text-slate-400">Butun maktab bo'yicha, {period.label}</p>
+                <p className="text-xs text-slate-400">Butun maktab bo'yicha, {period.label}. Qatorni bosing — shu abonementdagi o'quvchilar.</p>
               </div>
               <div className="mt-3 overflow-x-auto">
                 <table className="w-full min-w-[44rem] text-sm tabular-nums">
@@ -157,10 +233,20 @@ export default function SubscriptionAnalyticsPage() {
                           const t = totalByPlan.get(p.planId)
                           const students = t?.students ?? 0
                           return (
-                            <tr key={p.planId} className="hover:bg-slate-50/60">
+                            <tr
+                              key={p.planId}
+                              onClick={() => setList(`plan:${p.planId}`)}
+                              className={cn(
+                                'cursor-pointer hover:bg-brand-50/40',
+                                list === `plan:${p.planId}` && 'bg-brand-50/70',
+                              )}
+                            >
                               <td className="px-5 py-2 text-slate-800">
                                 {p.name}
                                 {!p.isActive && <span className="ml-2 text-xs text-slate-400">(yopilgan)</span>}
+                                {p.planId === NO_PLAN && (
+                                  <div className="text-xs text-slate-400">faktura bor, lekin o'sha oyni qamragan abonement yo'q</div>
+                                )}
                               </td>
                               <td className="px-3 py-2 text-right text-slate-500">
                                 {p.monthlyAmount ? formatMoney(p.monthlyAmount) : '—'}
@@ -277,11 +363,27 @@ export default function SubscriptionAnalyticsPage() {
                           </td>
                           <td className="border-b border-slate-50 px-3 py-2 text-right text-slate-700">{row.students}</td>
                           {groups.flatMap((g) =>
-                            g.plans.map((p, i) => (
-                              <td key={p.planId} className={cn('border-b border-slate-50 px-3 py-2 text-right', i === 0 && 'border-l border-l-slate-100')}>
-                                <MetricCell cell={cells.get(p.planId)} metric={metric} />
-                              </td>
-                            )),
+                            g.plans.map((p, i) => {
+                              const cell = cells.get(p.planId)
+                              return (
+                                <td
+                                  key={p.planId}
+                                  onClick={(e) => {
+                                    if (!cell?.students) return
+                                    e.stopPropagation()
+                                    navigate(classPath(row.classId, search, p.planId))
+                                  }}
+                                  title={cell?.students ? `${row.className} — ${p.name}: o'quvchilarni ko'rish` : undefined}
+                                  className={cn(
+                                    'border-b border-slate-50 px-3 py-2 text-right',
+                                    i === 0 && 'border-l border-l-slate-100',
+                                    !!cell?.students && 'hover:bg-brand-100/60',
+                                  )}
+                                >
+                                  <MetricCell cell={cell} metric={metric} />
+                                </td>
+                              )
+                            }),
                           )}
                           <td
                             className={cn(
@@ -352,4 +454,37 @@ function MetricCell({ cell, metric }: { cell: SubscriptionPlanCell | undefined; 
       {compactMoney(value)}
     </span>
   )
+}
+
+/** Tanlangan karta — atrofida halqa. */
+function Pick({ active, children }: { active: boolean; children: ReactNode }) {
+  return <div className={cn('rounded-2xl', active && 'ring-2 ring-brand-400 ring-offset-2')}>{children}</div>
+}
+
+/** Ochiq ro'yxatning sarlavhasi va izohi. */
+function describe(list: string | null, plans: SubscriptionPlanColumn[]): { title: string; hint?: string } | null {
+  if (!list) return null
+  switch (list) {
+    case 'all':
+      return { title: "Maktabdagi o'quvchilar", hint: 'Sinflar tartibida' }
+    case 'subscribed':
+      return { title: "Abonementi bor o'quvchilar", hint: 'Davrda kamida bitta abonementi bor' }
+    case 'no-tuition':
+      return {
+        title: "O'qish abonementi biriktirilmagan o'quvchilar",
+        hint: "Davrda o'qish toifasidagi abonementi yo'q — biriktirish kerak bo'lishi mumkin",
+      }
+    case 'billed':
+      return { title: "Hisoblangan o'quvchilar", hint: 'Davr oylariga hisob-faktura chiqqanlar' }
+    case 'debt':
+      return { title: 'Qarzdorlar', hint: "Davr oylari bo'yicha, qarzi kattasidan boshlab" }
+  }
+  if (list.startsWith('plan:')) {
+    const plan = plans.find((p) => p.planId === list.slice(5))
+    if (!plan) return null
+    return plan.planId === NO_PLAN
+      ? { title: 'Abonement ko\'rsatilmagan hisoblar', hint: "Shu oylarga faktura bor, lekin uni qamragan abonement yo'q" }
+      : { title: `${plan.categoryName}: ${plan.name}`, hint: "Davrda shu abonementda bo'lgan o'quvchilar" }
+  }
+  return null
 }

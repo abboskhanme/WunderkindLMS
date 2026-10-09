@@ -574,6 +574,77 @@ public class FinanceReportsController(AppDbContext db) : ControllerBase
     }
 
     /// <summary>
+    /// Abonementlar analitikasi kartasi yoki abonement qatori ortidagi o'quvchilar — butun maktab
+    /// bo'yicha (mijoz, 2026-10-09: "cardlar ham filter vazifasini bajarsin").
+    /// <paramref name="filter"/>: <c>all</c>, <c>subscribed</c>, <c>no-tuition</c>, <c>billed</c>,
+    /// <c>debt</c>, <c>plan:{id}</c> (<see cref="SubscriptionAnalyticsQuery.Filters"/>).
+    /// </summary>
+    [HttpGet("subscription-analytics/students")]
+    public async Task<ActionResult<SubscriptionStudentsDto>> SubscriptionAnalyticsStudents(
+        [FromQuery] string? filter,
+        [FromQuery] DateOnly? from,
+        [FromQuery] DateOnly? to,
+        CancellationToken ct = default)
+    {
+        var (start, end) = SubscriptionAnalyticsQuery.Period(from, to);
+        if (SubscriptionAnalyticsQuery.PeriodError(start, end) is { } error)
+            return BadRequest(new { message = error });
+        if (!SubscriptionAnalyticsQuery.IsFilter(filter))
+            return BadRequest(new { message = $"Noma'lum filtr: {filter}" });
+        return Ok(await new SubscriptionAnalyticsQuery(db).StudentsAsync(start, end, filter!, ct));
+    }
+
+    /// <summary>
+    /// Abonementlar analitikasi Excel'da. <paramref name="classId"/> berilsa — o'sha sinf o'quvchilari;
+    /// <paramref name="filter"/> berilsa — o'sha karta/abonement ro'yxati; hech biri — to'liq
+    /// hisobot (sinflar, abonement turlari, barcha o'quvchilar).
+    /// </summary>
+    [HttpGet("subscription-analytics/export")]
+    public async Task<IActionResult> SubscriptionAnalyticsExcel(
+        [FromQuery] string? classId,
+        [FromQuery] string? filter,
+        [FromQuery] DateOnly? from,
+        [FromQuery] DateOnly? to,
+        CancellationToken ct = default)
+    {
+        var (start, end) = SubscriptionAnalyticsQuery.Period(from, to);
+        if (SubscriptionAnalyticsQuery.PeriodError(start, end) is { } error)
+            return BadRequest(new { message = error });
+        if (filter is not null && !SubscriptionAnalyticsQuery.IsFilter(filter))
+            return BadRequest(new { message = $"Noma'lum filtr: {filter}" });
+
+        var query = new SubscriptionAnalyticsQuery(db);
+        byte[] bytes;
+        string name;
+        if (!string.IsNullOrEmpty(classId))
+        {
+            var detail = await query.ClassAsync(classId, start, end, ct);
+            if (detail is null) return NotFound(new { message = "Sinf topilmadi." });
+            bytes = SubscriptionAnalyticsExport.Pupils(detail.ClassName, detail.Plans, detail.Students, start, end);
+            name = $"abonementlar_{detail.ClassName}";
+        }
+        else if (filter is not null)
+        {
+            var list = await query.StudentsAsync(start, end, filter, ct);
+            bytes = SubscriptionAnalyticsExport.Pupils("Abonementlar analitikasi", list.Plans, list.Students, start, end);
+            name = $"abonementlar_{(filter.StartsWith("plan:", StringComparison.Ordinal) ? "abonement" : filter)}";
+        }
+        else
+        {
+            var overview = await query.ClassesAsync(start, end, ct);
+            // "O'quvchilar" varag'i: maktabdagilar + davrda biror narsasi bor ketganlar.
+            var everyone = await query.StudentsAsync(start, end, "everyone", ct);
+            bytes = SubscriptionAnalyticsExport.Workbook(overview, everyone);
+            name = "abonementlar_analitikasi";
+        }
+
+        var safe = string.Concat(name.Select(ch => char.IsLetterOrDigit(ch) || ch is '-' or '_' ? ch : '_'));
+        return File(bytes,
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            $"{safe}_{start:yyyy-MM-dd}_{end:yyyy-MM-dd}.xlsx");
+    }
+
+    /// <summary>
     /// Davrni to'ldiradi: <paramref name="to"/> berilmasa — bugun,
     /// <paramref name="from"/> berilmasa — shuncha oy oldingi oyning 1-kuni.
     /// Sukut qiymatlar ataylab kichik: hisobot ochilishi bilan butun tarixni

@@ -85,15 +85,18 @@ public static class PickupService
         return created;
     }
 
-    /// <summary>Sinf rahbariga "ota-ona keldi" push'i. Rahbar yo'q bo'lsa hech narsa qilmaydi.</summary>
+    /// <summary>
+    /// Sinf rahbar(lar)iga "ota-ona keldi" push'i — sinfda bir nechta rahbar bo'lsa hammasiga
+    /// (2026-10-09). Rahbar yo'q bo'lsa hech narsa qilmaydi.
+    /// </summary>
     public static async Task NotifyHomeroomAsync(
         IAppDbContext db, FcmService fcm, Student student, CancellationToken ct = default)
     {
-        var teacher = await db.Teachers.FirstOrDefaultAsync(
-            t => !t.IsArchived && t.HomeroomClass == student.ClassName, ct);
-        if (teacher?.UserId is null) return;
-
-        await AppPush.ToUserAsync(db, fcm, teacher.UserId, "Farzandni olib ketish",
-            $"{student.FullName} ({student.ClassName}) — ota-ona olib ketishga keldi. Qabul qiling.", ct);
+        foreach (var teacher in await HomeroomDirectory.TeachersOfClassNameAsync(db, student.ClassName, ct))
+        {
+            if (teacher.UserId is null) continue;
+            await AppPush.ToUserAsync(db, fcm, teacher.UserId, "Farzandni olib ketish",
+                $"{student.FullName} ({student.ClassName}) — ota-ona olib ketishga keldi. Qabul qiling.", ct);
+        }
     }
 }

@@ -86,15 +86,17 @@ public static class GlobalSearchQuery
         if (canSee("teachers"))
         {
             var teachers = await db.Teachers.AsNoTracking()
-                .Select(t => new { t.Id, t.FullName, t.Phone, t.HomeroomClass, t.IsArchived })
+                .Select(t => new { t.Id, t.FullName, t.Phone, t.IsArchived })
                 .ToListAsync(ct);
+            // "5-A, 6-B sinf rahbari" — rahbarlik bir nechta sinfda bo'lishi mumkin (2026-10-09).
+            var homeroom = await HomeroomDirectory.LabelsAsync(db, ct: ct);
             hits.AddRange(teachers
                 .Where(t => NameMatch(t.FullName) || PhoneMatch(t.Phone))
                 .OrderBy(t => t.IsArchived).ThenBy(t => Rank(t.FullName)).ThenBy(t => t.FullName, StringComparer.Ordinal)
                 .Take(PerKind)
                 .Select(t => new GlobalSearchHitDto(
                     "teacher", t.Id, t.FullName,
-                    Join(string.IsNullOrWhiteSpace(t.HomeroomClass) ? null : $"{t.HomeroomClass} sinf rahbari", t.Phone),
+                    Join(homeroom.TryGetValue(t.Id, out var label) ? $"{label} sinf rahbari" : null, t.Phone),
                     $"/admin/teachers?q={Uri.EscapeDataString(t.FullName)}{(t.IsArchived ? "&tab=archived" : "")}",
                     t.IsArchived)));
         }

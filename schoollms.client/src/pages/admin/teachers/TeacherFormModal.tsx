@@ -9,6 +9,7 @@ import { PhotoUpload } from '@/components/ui/PhotoUpload'
 import { genderOptions, teacherPermissions, teacherCategories } from '@/config/constants'
 import { cn, randomPassword } from '@/lib/utils'
 import { DatePicker } from '@/components/ui/DatePicker'
+import { getHomeroomAssignments } from '@/api/services/classes'
 
 interface Props {
   open: boolean
@@ -38,6 +39,11 @@ const empty: TeacherPayload = {
 
 export function TeacherFormModal({ open, onClose, onSubmit, initial, subjects, classes }: Props) {
   const [form, setForm] = useState<TeacherPayload>(empty)
+  /**
+   * Rahbarlik sinflari — bir nechta (mijoz, 2026-10-09). null = hali yuklanmadi: shu holatda
+   * saqlansa server rahbarlikka tegmaydi (ro'yxat yuborilmaydi).
+   */
+  const [homeroomIds, setHomeroomIds] = useState<string[] | null>(null)
 
   useEffect(() => {
     if (!open) return
@@ -61,7 +67,24 @@ export function TeacherFormModal({ open, onClose, onSubmit, initial, subjects, c
           }
         : empty,
     )
+    if (!initial) {
+      setHomeroomIds([])
+      return
+    }
+    setHomeroomIds(null)
+    let active = true
+    getHomeroomAssignments()
+      .then((rows) => active && setHomeroomIds(rows.filter((r) => r.teacherId === initial.id).map((r) => r.classId)))
+      .catch(() => active && setHomeroomIds(null))
+    return () => {
+      active = false
+    }
   }, [open, initial])
+
+  const toggleHomeroom = (classId: string) =>
+    setHomeroomIds((prev) =>
+      prev === null ? prev : prev.includes(classId) ? prev.filter((x) => x !== classId) : [...prev, classId],
+    )
 
   const update = <K extends keyof TeacherPayload>(key: K, value: TeacherPayload[K]) =>
     setForm((f) => ({ ...f, [key]: value }))
@@ -85,7 +108,7 @@ export function TeacherFormModal({ open, onClose, onSubmit, initial, subjects, c
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     if (!form.fullName.trim()) return
-    onSubmit(form)
+    onSubmit(homeroomIds === null ? form : { ...form, homeroomClassIds: homeroomIds })
   }
 
   return (
@@ -146,19 +169,38 @@ export function TeacherFormModal({ open, onClose, onSubmit, initial, subjects, c
             onChange={(v) => update('phone', v)}
           />
         </div>
+        <div>
+          <span className="mb-1 block text-sm font-medium text-slate-600">
+            Sinf rahbarligi <span className="font-normal text-slate-400">— bir nechta sinf tanlash mumkin</span>
+          </span>
+          {homeroomIds === null ? (
+            <p className="text-sm text-slate-400">Yuklanmoqda…</p>
+          ) : (
+            <div className="flex flex-wrap gap-1.5">
+              {classes.map((c) => {
+                const on = homeroomIds.includes(c.id)
+                return (
+                  <button
+                    key={c.id}
+                    type="button"
+                    aria-pressed={on}
+                    onClick={() => toggleHomeroom(c.id)}
+                    className={cn(
+                      'rounded-lg border px-2.5 py-1 text-sm transition-colors',
+                      on
+                        ? 'border-brand-500 bg-brand-50 font-medium text-brand-700'
+                        : 'border-slate-200 text-slate-600 hover:border-slate-300',
+                    )}
+                  >
+                    {c.name}
+                  </button>
+                )
+              })}
+              {classes.length === 0 && <span className="text-sm text-slate-400">Sinflar yo'q</span>}
+            </div>
+          )}
+        </div>
         <div className="grid grid-cols-2 gap-4">
-          <Select
-            label="Sinf rahbarligi"
-            value={form.homeroomClass}
-            onChange={(e) => update('homeroomClass', e.target.value)}
-          >
-            <option value="">Yo'q</option>
-            {classes.map((c) => (
-              <option key={c.id} value={c.name}>
-                {c.name}
-              </option>
-            ))}
-          </Select>
           <Select
             label="Toifa"
             value={form.category ?? ''}

@@ -25,15 +25,15 @@ public sealed class ClassTools(McpToolContext t)
         var counts = await db.Students.Where(s => !s.IsArchived)
             .GroupBy(s => new { s.ClassName, s.Gender })
             .Select(g => new { g.Key.ClassName, g.Key.Gender, Count = g.Count() }).ToListAsync(ct);
-        var homeroom = await db.Teachers.Where(x => !x.IsArchived && x.HomeroomClass != "")
-            .Select(x => new { x.HomeroomClass, x.FullName }).ToListAsync(ct);
+        // Sinf id'si → rahbarlar; bitta sinfda bir nechta bo'lishi mumkin (2026-10-09).
+        var homeroom = await HomeroomDirectory.TeachersByClassIdAsync(db, ct);
 
         var rows = classes.Select(c => new
         {
             c.Id, c.Name, c.Grade, c.Language, c.Room, c.Capacity, c.IsArchived,
             pupils = counts.Where(x => x.ClassName == c.Name).Sum(x => x.Count),
             girls = counts.Where(x => x.ClassName == c.Name && x.Gender == "female").Sum(x => x.Count),
-            homeroomTeacher = homeroom.FirstOrDefault(h => h.HomeroomClass == c.Name)?.FullName,
+            homeroomTeacher = homeroom.TryGetValue(c.Id, out var hr) ? string.Join(", ", hr.Select(h => h.FullName)) : null,
         }).ToList();
         return t.Json(new { total = rows.Count, classes = rows }, rows.Count);
     }

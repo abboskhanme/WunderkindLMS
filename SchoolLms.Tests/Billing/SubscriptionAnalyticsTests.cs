@@ -57,7 +57,9 @@ public class SubscriptionAnalyticsTests(ApiFixture fixture) : IAsyncLifetime
         Assert.Equal((2, 2_900_000m, 1_000_000m), (full.Students, full.Billed, full.Paid));   // Ali 1.9M, Bek's Oct 1M
         Assert.Equal((1, 800_000m, 0m), (Cell(fiveA, w.Half).Students, Cell(fiveA, w.Half).Billed, Cell(fiveA, w.Half).Paid));
         Assert.Equal((1, 200_000m), (Cell(fiveA, w.Bus).Students, Cell(fiveA, w.Bus).Billed));
-        Assert.Equal(500_000m, Cell(fiveA, SubscriptionAnalyticsQuery.NoPlan).Billed);
+        // Billed with no abonement — and the pupil it was billed to is counted there too.
+        Assert.Equal((1, 500_000m), (Cell(fiveA, SubscriptionAnalyticsQuery.NoPlan).Students,
+            Cell(fiveA, SubscriptionAnalyticsQuery.NoPlan).Billed));
         Assert.Equal((4_400_000m, 1_000_000m, 3_400_000m), (fiveA.Billed, fiveA.Paid, fiveA.Debt));
 
         var archived = two.Classes.Single(c => c.ClassId == SubscriptionAnalyticsQuery.Archived);
@@ -126,6 +128,44 @@ public class SubscriptionAnalyticsTests(ApiFixture fixture) : IAsyncLifetime
         Assert.Null(await query.ClassAsync("no-such-class", Sep, OctEnd));
     }
 
+    /// <summary>A card opens exactly the pupils it counts (client: "cardlar ham filter vazifasini bajarsin").</summary>
+    [Fact]
+    public async Task Karta_bosilganda_aynan_sanalgan_oquvchilar_chiqadi()
+    {
+        await using var db = PostgresFixture.NewContext(_database.OwnerConnectionString);
+        var w = await SeedAsync(db);
+        var query = new SubscriptionAnalyticsQuery(db);
+        var overview = await query.ClassesAsync(Sep, OctEnd);
+
+        async Task<List<string>> Names(string filter) =>
+            [.. (await query.StudentsAsync(Sep, OctEnd, filter)).Students.Select(s => s.FullName)];
+
+        Assert.Equal(overview.Students, (await Names("all")).Count);
+        Assert.Equal(overview.WithSubscription, (await Names("subscribed")).Count);
+        Assert.Equal(["Comilov Can"], await Names("no-tuition"));
+        Assert.Equal(overview.WithoutTuition, (await Names("no-tuition")).Count);
+
+        // Abonement rows open their pupils — the ones who left included.
+        Assert.Equal(["Aliyev Ali", "Berdiyev Bek", "Dilova Dil", "Eshonova Eva"], await Names($"plan:{w.Full}"));
+        Assert.Equal(["Comilov Can"], await Names($"plan:{SubscriptionAnalyticsQuery.NoPlan}"));
+        foreach (var total in overview.PlanTotals)
+            Assert.Equal(total.Students, (await Names($"plan:{total.PlanId}")).Count);
+
+        // Debt: largest first; the billed list adds up to the card.
+        var debt = await query.StudentsAsync(Sep, OctEnd, "debt");
+        Assert.Equal("Berdiyev Bek", debt.Students[0].FullName);   // 1.8M, nothing paid
+        Assert.True(debt.Students.Zip(debt.Students.Skip(1)).All(x => x.First.Debt >= x.Second.Debt));
+        var billed = await query.StudentsAsync(Sep, OctEnd, "billed");
+        Assert.Equal(overview.Billed, billed.Billed);
+
+        var can = (await query.StudentsAsync(Sep, OctEnd, "no-tuition")).Students.Single();
+        Assert.Equal(("5-A", true, 500_000m), (can.ClassName, can.InSchool, can.NoPlanBilled));
+        var eva = billed.Students.Single(r => r.FullName == "Eshonova Eva");
+        Assert.Equal((SubscriptionAnalyticsQuery.Archived, false), (eva.ClassId, eva.InSchool));
+
+        await Assert.ThrowsAsync<BillingRuleException>(() => query.StudentsAsync(Sep, OctEnd, "nonsense"));
+    }
+
     [Fact]
     public void Davr_tekshiruvi()
     {
@@ -148,6 +188,10 @@ public class SubscriptionAnalyticsTests(ApiFixture fixture) : IAsyncLifetime
             (await client.GetAsync("/api/admin/finance/subscription-analytics")).StatusCode);
         Assert.Equal(HttpStatusCode.Forbidden,
             (await client.GetAsync("/api/admin/finance/subscription-analytics/class/none")).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden,
+            (await client.GetAsync("/api/admin/finance/subscription-analytics/students?filter=all")).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden,
+            (await client.GetAsync("/api/admin/finance/subscription-analytics/export")).StatusCode);
     }
 
     [Fact]
@@ -165,6 +209,46 @@ public class SubscriptionAnalyticsTests(ApiFixture fixture) : IAsyncLifetime
             (await client.GetAsync("/api/admin/finance/subscription-analytics?from=2025-01-01&to=2026-10-31")).StatusCode);
         Assert.Equal(HttpStatusCode.NotFound,
             (await client.GetAsync("/api/admin/finance/subscription-analytics/class/no-such-class")).StatusCode);
+
+        var students = await client.GetAsync("/api/admin/finance/subscription-analytics/students?filter=no-tuition&from=2026-09-01&to=2026-10-31");
+        Assert.True(students.IsSuccessStatusCode, await students.Content.ReadAsStringAsync());
+        Assert.Equal(HttpStatusCode.BadRequest,
+            (await client.GetAsync("/api/admin/finance/subscription-analytics/students?filter=nonsense")).StatusCode);
+
+        // Excel: the whole report, one class, one card.
+        foreach (var url in new[]
+                 {
+                     "/api/admin/finance/subscription-analytics/export?from=2026-09-01&to=2026-10-31",
+                     "/api/admin/finance/subscription-analytics/export?classId=none&from=2026-09-01&to=2026-10-31",
+                     "/api/admin/finance/subscription-analytics/export?filter=debt&from=2026-09-01&to=2026-10-31",
+                 })
+        {
+            var xlsx = await client.GetAsync(url);
+            Assert.True(xlsx.IsSuccessStatusCode, url + " " + await xlsx.Content.ReadAsStringAsync());
+            Assert.Equal("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                xlsx.Content.Headers.ContentType?.MediaType);
+            var bytes = await xlsx.Content.ReadAsByteArrayAsync();
+            Assert.True(bytes.Length > 100 && bytes[0] == (byte)'P' && bytes[1] == (byte)'K', url);   // a zip
+        }
+        Assert.Equal(HttpStatusCode.BadRequest,
+            (await client.GetAsync("/api/admin/finance/subscription-analytics/export?filter=nonsense")).StatusCode);
+    }
+
+    [Fact]
+    public async Task Excel_hisobot_ekrandagi_raqamlar_bilan()
+    {
+        await using var db = PostgresFixture.NewContext(_database.OwnerConnectionString);
+        await SeedAsync(db);
+        var query = new SubscriptionAnalyticsQuery(db);
+        var overview = await query.ClassesAsync(Sep, OctEnd);
+        var everyone = await query.StudentsAsync(Sep, OctEnd, "everyone");
+        Assert.Equal(6, everyone.Students.Count);   // five in school + Eva, who left
+
+        var bytes = SubscriptionAnalyticsExport.Workbook(overview, everyone);
+        using var doc = DocumentFormat.OpenXml.Packaging.SpreadsheetDocument.Open(new MemoryStream(bytes), false);
+        var sheets = doc.WorkbookPart!.Workbook.Sheets!.Elements<DocumentFormat.OpenXml.Spreadsheet.Sheet>()
+            .Select(x => x.Name!.Value).ToList();
+        Assert.Equal(["Sinflar", "Abonement turlari", "O'quvchilar"], sheets);
     }
 
     // =====================================================================================

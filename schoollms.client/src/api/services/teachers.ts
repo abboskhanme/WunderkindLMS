@@ -12,7 +12,14 @@ import { teachersMock } from '../mock/teachers'
 import type { ExpenseRecord } from './expenses'
 
 /** newPassword — ixtiyoriy: tahrirda kiritilsa o'qituvchi akkaunti paroli almashtiriladi. */
-export type TeacherPayload = Omit<Teacher, 'id'> & { newPassword?: string }
+export type TeacherPayload = Omit<Teacher, 'id'> & {
+  newPassword?: string
+  /**
+   * Rahbarlik sinflari (2026-10-09: bitta o'qituvchi bir nechta sinfga). Berilsa — ro'yxat shu
+   * bilan almashtiriladi; berilmasa server rahbarlikka tegmaydi.
+   */
+  homeroomClassIds?: string[]
+}
 
 /**
  * Barcha o'qituvchilarni login/parol bilan Excel (.xlsx) ga yuklab oladi (faqat superadmin).

@@ -23,7 +23,7 @@ public class JournalNavigationTests(ApiFixture fixture)
         var cls = new SchoolClass { Name = $"9-{tag}", Grade = 9, Language = "ru" };
         var math = new Subject { Name = $"Matematika {tag}" };
         var art = new Subject { Name = $"Tasviriy {tag}" };
-        var t1 = new Teacher { FullName = $"Aliyeva {tag}", Category = "oliy", HomeroomClass = cls.Name };
+        var t1 = new Teacher { FullName = $"Aliyeva {tag}", Category = "oliy" };
         var t2 = new Teacher { FullName = $"Boboyev {tag}", Category = "oliy" };
         Student Pupil(string name, string className, bool archived = false) => new()
         {
@@ -50,6 +50,7 @@ public class JournalNavigationTests(ApiFixture fixture)
             db.Classes.Add(cls);
             db.Subjects.AddRange(math, art);
             db.Teachers.AddRange(t1, t2);
+            db.ClassHomeroomTeachers.Add(new ClassHomeroomTeacher { ClassId = cls.Id, TeacherId = t1.Id });
             db.Students.AddRange(active, archived, moved);
             db.ScheduleTemplates.Add(tpl);
             db.JournalEntries.AddRange(Entry(active), Entry(archived), Entry(moved));

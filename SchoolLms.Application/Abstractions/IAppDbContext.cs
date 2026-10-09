@@ -173,6 +173,9 @@ public interface IAppDbContext
     DbSet<StudyGroupMember> StudyGroupMembers { get; }
     DbSet<ClassMembership> ClassMemberships { get; }
 
+    /// <summary>Sinf rahbarlari, ko'p-ko'pga — <c>teachers.homeroom_class</c> o'rnida (2026-10-09).</summary>
+    DbSet<ClassHomeroomTeacher> ClassHomeroomTeachers { get; }
+
     // ---------- O'quvchi kartochkasi (students-parity.md §3.2) ----------
     DbSet<StudentStatus> StudentStatuses { get; }
     DbSet<StudentComment> StudentComments { get; }

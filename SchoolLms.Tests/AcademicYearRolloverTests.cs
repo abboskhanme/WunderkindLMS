@@ -198,6 +198,8 @@ public class AcademicYearRolloverTests(ApiFixture fixture) : IAsyncLifetime
         Assert.Equal(6, cls.Grade);
         Assert.Equal("6-A", (await db.Students.AsNoTracking().SingleAsync(s => s.Id == w.Fifth)).ClassName);
         Assert.Equal("6-A", (await db.Teachers.AsNoTracking().SingleAsync(t => t.Id == w.TeacherId)).HomeroomClass);
+        // The homeroom link is by class id, so it follows the promoted class (2026-10-09).
+        Assert.Equal(cls.Id, (await db.ClassHomeroomTeachers.AsNoTracking().SingleAsync(h => h.TeacherId == w.TeacherId)).ClassId);
 
         var membership = await db.ClassMemberships.AsNoTracking()
             .SingleAsync(m => m.StudentId == w.Fifth);
@@ -328,6 +330,7 @@ public class AcademicYearRolloverTests(ApiFixture fixture) : IAsyncLifetime
 
         var teacher = new Teacher { FullName = "Sinf rahbari", Category = "oliy", HomeroomClass = "5-A" };
         db.Teachers.Add(teacher);
+        db.ClassHomeroomTeachers.Add(new ClassHomeroomTeacher { ClassId = fifth.Id, TeacherId = teacher.Id });
 
         var pupil = NewStudent("Anvar Anvarov", "5-A");
         var graduate = NewStudent("Gulnora Gulnorova", "11-A");

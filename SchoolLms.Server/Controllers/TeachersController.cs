@@ -49,16 +49,23 @@ public class TeachersController(AppDbContext db, AuditService audit, IExpenseSer
     [HttpGet]
     public async Task<ActionResult<IEnumerable<Teacher>>> GetAll([FromQuery] bool includeArchived = false)
     {
-        var q = db.Teachers.AsQueryable();
+        var q = db.Teachers.AsNoTracking();
         if (!includeArchived) q = q.Where(t => !t.IsArchived);
-        return await q.OrderBy(t => t.FullName).ToListAsync();
+        var list = await q.OrderBy(t => t.FullName).ToListAsync();
+        // "Sinf rahbarligi" — barcha rahbarlik sinflari va yo'nalish guruhlari (2026-10-09).
+        await HomeroomDirectory.FillLabelsAsync(db, list);
+        return list;
     }
 
     /// <summary>Faqat arxivlangan o'qituvchilar.</summary>
     [HttpGet("archived")]
-    public async Task<ActionResult<IEnumerable<Teacher>>> GetArchived() =>
-        await db.Teachers.Where(t => t.IsArchived)
+    public async Task<ActionResult<IEnumerable<Teacher>>> GetArchived()
+    {
+        var list = await db.Teachers.AsNoTracking().Where(t => t.IsArchived)
             .OrderByDescending(t => t.ArchivedAt).ThenBy(t => t.FullName).ToListAsync();
+        await HomeroomDirectory.FillLabelsAsync(db, list);
+        return list;
+    }
 
     [HttpPost]
     public async Task<ActionResult<Teacher>> Create(TeacherPayload p)
@@ -71,7 +78,6 @@ public class TeachersController(AppDbContext db, AuditService audit, IExpenseSer
             Gender = p.Gender,
             Phone = p.Phone ?? "",
             PhotoUrl = p.PhotoUrl,
-            HomeroomClass = p.HomeroomClass,
             SubjectIds = p.SubjectIds ?? new(),
             // Oylik endi avtomatik (jadval + toifa narxi) — qo'lda summa kiritilmaydi; toifa tanlanadi.
             Category = p.Category ?? "",
@@ -92,8 +98,26 @@ public class TeachersController(AppDbContext db, AuditService audit, IExpenseSer
             audit.Record(AuditService.EntityTeacherSalary, teacher.Id, "create",
                 $"Toifa belgilandi: {teacher.Category}", teacherId: teacher.Id);
 
+        // Rahbarlik: ro'yxat berilsa — shu; berilmasa eski yagona sinf NOMI (Excel/eski mijoz).
+        var homeroomIds = p.HomeroomClassIds
+            ?? (string.IsNullOrWhiteSpace(p.HomeroomClass)
+                ? []
+                : await db.Classes.Where(c => c.Name == p.HomeroomClass && !c.IsArchived).Select(c => c.Id).ToListAsync());
+        if (await UnknownClassAsync(homeroomIds) is { } bad) return bad;
+        await HomeroomDirectory.SetForTeacherAsync(db, teacher.Id, homeroomIds);
+
         await db.SaveChangesAsync();
+        teacher.HomeroomClass = await HomeroomDirectory.LabelAsync(db, teacher.Id);
         return teacher;
+    }
+
+    /// <summary>Rahbarlik ro'yxatidagi sinflardan biri topilmasa yoki arxivda bo'lsa — 400.</summary>
+    private async Task<ActionResult?> UnknownClassAsync(List<string> classIds)
+    {
+        var ids = classIds.Distinct(StringComparer.Ordinal).ToList();
+        if (ids.Count == 0) return null;
+        var found = await db.Classes.CountAsync(c => ids.Contains(c.Id) && !c.IsArchived);
+        return found == ids.Count ? null : BadRequest(new { message = "Rahbarlik sinflaridan biri topilmadi yoki arxivda" });
     }
 
     [HttpPut("{id}")]
@@ -110,7 +134,12 @@ public class TeachersController(AppDbContext db, AuditService audit, IExpenseSer
         teacher.Gender = p.Gender;
         teacher.Phone = p.Phone ?? "";
         teacher.PhotoUrl = p.PhotoUrl;
-        teacher.HomeroomClass = p.HomeroomClass;
+        // Rahbarlik — ro'yxat berilganda almashtiriladi (2026-10-09); `HomeroomClass` endi yozilmaydi.
+        if (p.HomeroomClassIds is not null)
+        {
+            if (await UnknownClassAsync(p.HomeroomClassIds) is { } bad) return bad;
+            await HomeroomDirectory.SetForTeacherAsync(db, teacher.Id, p.HomeroomClassIds);
+        }
         teacher.SubjectIds = p.SubjectIds ?? new();
         // Toifa — berilsa yangilaymiz (oylik avtomatik shu toifa narxidan hisoblanadi).
         if (p.Category is not null) teacher.Category = p.Category;
@@ -150,6 +179,7 @@ public class TeachersController(AppDbContext db, AuditService audit, IExpenseSer
         }
 
         await db.SaveChangesAsync();
+        teacher.HomeroomClass = await HomeroomDirectory.LabelAsync(db, teacher.Id);
         return teacher;
     }
 
@@ -286,8 +316,9 @@ public class TeachersController(AppDbContext db, AuditService audit, IExpenseSer
     [Authorize(Roles = Roles.SuperAdmin)]
     public async Task<IActionResult> Export()
     {
-        var teachers = await db.Teachers.Where(t => !t.IsArchived)
+        var teachers = await db.Teachers.AsNoTracking().Where(t => !t.IsArchived)
             .OrderBy(t => t.FullName).ToListAsync();
+        await HomeroomDirectory.FillLabelsAsync(db, teachers);
         var userIds = teachers.Where(t => t.UserId != null).Select(t => t.UserId!).ToList();
         var byId = (await db.Users.Where(u => userIds.Contains(u.Id)).ToListAsync())
             .ToDictionary(u => u.Id);

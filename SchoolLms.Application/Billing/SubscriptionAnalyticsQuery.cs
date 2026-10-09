@@ -11,21 +11,26 @@ namespace SchoolLms.Application.Billing;
 //  Mijoz: "sinflarda o'quvchilar bo'yicha aboniment turlari bo'yicha ko'rish mumkin bo'lsin ...
 //  umumiy sinflar ro'yxati abonimetlar turlari bo'yicha analitika hisoboti tursin, va sinfni bosib
 //  kirganda o'quvchilar bo'yicha qaysi aboniment kimda qanaqa borligi jadvali chiqadigan bo'lsin";
-//  "bunda vaqt filterlari ham muammosiz ishlasin".
+//  "bunda vaqt filterlari ham muammosiz ishlasin"; "cardlar ham filter vazifasini bajarsin";
+//  "excelga kerakli malumotlarni tortib olish ham mumkin bo'lsin".
 //
 //  DAVR QANDAY QO'LLANADI
 //  ----------------------
-//  · Abonement davrda BOR, agar uning muddati davr bilan kesishsa:
-//    `starts_on <= to` va (`ends_on` yo'q yoki `ends_on >= from`). Davr ichida abonementini
-//    almashtirgan o'quvchi ikkala abonementda ham sanaladi — ikkalasi ham shu davrda bo'lgan.
 //  · Pul — davrga TUSHGAN OYLARNING hisob-fakturalari (`period_month` from oyidan to oyigacha):
 //    hisoblangan = summa − chegirma (registrdagi `Payable`), to'langan = shu fakturalarga kuchdagi
 //    taqsimotlar (`InvoiceService.EffectiveAllocations` bilan bir xil ta'rif), qarz = farqi.
 //    Faktura abonementga bog'lanmagan (`invoices` da plan yo'q) — u o'sha o'quvchining o'sha
-//    toifadagi, o'sha oyni qamragan abonementiga yoziladi; topilmasa "Abonement ko'rsatilmagan".
+//    toifadagi, o'sha oyni qamragan abonementiga yoziladi; topilmasa "Abonement ko'rsatilmagan"
+//    ustuniga (abonementi yo'q oyga faktura — o'quvchisi ham shu ustunda sanaladi).
+//  · O'quvchining davrdagi abonementlari — muddati davr bilan kesishganlari
+//    (`starts_on <= to` va `ends_on` yo'q yoki `>= from`) VA davr fakturasini qamragan abonement.
+//    Davr ichida abonementini almashtirgan o'quvchi ikkalasida ham sanaladi.
 //
 //  QATORLAR — sinflar (arxivlanmagan), keyin "Sinfsiz" va "Arxiv" (o'quvchi maktabdan ketgan, lekin
 //  davrda abonementi yoki fakturasi bor) — jami summa hech qayerda yo'qolmasin.
+//
+//  KARTALAR VA FILTRLAR — bitta ta'rif: kartadagi son va o'sha karta ochadigan ro'yxat (`StudentsAsync`)
+//  bir xil qoidadan chiqadi (`Matches`), ya'ni "5" deb yozilgan kartani bossangiz 5 ta o'quvchi chiqadi.
 // ===========================================================================
 
 /// <summary>One abonement column of the report.</summary>
@@ -60,14 +65,24 @@ public sealed record SubscriptionStudentPlanDto(
     decimal MonthlyAmount, DateOnly StartsOn, DateOnly? EndsOn, string? Detail,
     decimal Billed, decimal Paid);
 
-/// <summary>One pupil of the class page.</summary>
+/// <summary>One pupil with their abonements and money for the period.</summary>
+/// <param name="ClassId">Class id, <c>none</c> or <c>archived</c>.</param>
+/// <param name="InSchool">false — the pupil left the school (archived) but the period has something of theirs.</param>
+/// <param name="NoPlanBilled">Billed on invoices no abonement covers.</param>
 public sealed record SubscriptionStudentRowDto(
     string StudentId, string FullName, List<SubscriptionStudentPlanDto> Subscriptions,
-    decimal Billed, decimal Paid, decimal Debt);
+    decimal Billed, decimal Paid, decimal Debt,
+    string ClassId = "", string ClassName = "", bool InSchool = true, decimal NoPlanBilled = 0m);
 
 /// <summary>The class page: who is on which abonement.</summary>
 public sealed record SubscriptionClassDetailDto(
     DateOnly From, DateOnly To, string ClassId, string ClassName,
+    List<SubscriptionPlanColumnDto> Plans, List<SubscriptionStudentRowDto> Students,
+    decimal Billed, decimal Paid, decimal Debt);
+
+/// <summary>The pupils a card or an abonement row stands for (<see cref="SubscriptionAnalyticsQuery.Filters"/>).</summary>
+public sealed record SubscriptionStudentsDto(
+    DateOnly From, DateOnly To, string Filter,
     List<SubscriptionPlanColumnDto> Plans, List<SubscriptionStudentRowDto> Students,
     decimal Billed, decimal Paid, decimal Debt);
 
@@ -76,6 +91,8 @@ public sealed class SubscriptionAnalyticsQuery(IAppDbContext db)
 {
     public const string NoClass = "none";
     public const string Archived = "archived";
+    public const string NoClassName = "Sinfsiz";
+    public const string ArchivedName = "Arxiv (maktabdan ketgan)";
 
     /// <summary>The pseudo column for an invoice no abonement covers.</summary>
     public static readonly Guid NoPlan = Guid.Empty;
@@ -83,13 +100,34 @@ public sealed class SubscriptionAnalyticsQuery(IAppDbContext db)
     /// <summary>Longest period one request may cover — a school year and a bit.</summary>
     public const int MaxDays = 400;
 
-    private sealed record Pupil(string Id, string FullName, string RowId);
+    /// <summary>
+    /// Card filters: <c>all</c> — pupils in school; <c>subscribed</c> — in school with an abonement;
+    /// <c>no-tuition</c> — in school without a tuition abonement; <c>billed</c> — anyone billed;
+    /// <c>debt</c> — anyone owing (largest first); <c>plan:{id}</c> — on that abonement
+    /// (<c>plan:00000000-…</c> — billed with no abonement); <c>everyone</c> — all of the above's
+    /// universe: pupils in school plus those who left but have something in the period (Excel).
+    /// </summary>
+    public static readonly string[] Filters = ["all", "subscribed", "no-tuition", "billed", "debt", "plan:{id}", "everyone"];
+
+    private sealed record Pupil(string Id, string FullName, string RowId, string ClassName, bool InSchool, int Order);
 
     private sealed record Sub(
         Guid Id, string StudentId, Guid CategoryId, Guid PlanId, decimal MonthlyAmount,
         DateOnly StartsOn, DateOnly? EndsOn, string? Detail);
 
     private sealed record Money(string StudentId, Guid PlanId, Guid? SubscriptionId, decimal Billed, decimal Paid);
+
+    /// <summary>Everything the period needs, read once.</summary>
+    private sealed class Data
+    {
+        public required List<SchoolClass> Classes { get; init; }
+        public required Dictionary<string, Pupil> Pupils { get; init; }
+        public required Dictionary<Guid, FeeCategory> Categories { get; init; }
+        public required List<SubscriptionPlanColumnDto> Columns { get; init; }
+        public required HashSet<Guid> Tuition { get; init; }
+        public required ILookup<string, Sub> SubsOf { get; init; }
+        public required ILookup<string, Money> MoneyOf { get; init; }
+    }
 
     /// <summary>Default period: from the first of <paramref name="to"/>'s month (today's when not given).</summary>
     public static (DateOnly From, DateOnly To) Period(DateOnly? from, DateOnly? to)
@@ -104,75 +142,51 @@ public sealed class SubscriptionAnalyticsQuery(IAppDbContext db)
         : to.DayNumber - from.DayNumber > MaxDays ? $"Davr juda uzun: {MaxDays} kundan oshmasin."
         : null;
 
+    /// <summary>Is <paramref name="filter"/> one of <see cref="Filters"/>?</summary>
+    public static bool IsFilter(string? filter) =>
+        filter is "all" or "subscribed" or "no-tuition" or "billed" or "debt" or "everyone"
+        || (filter is not null && filter.StartsWith("plan:", StringComparison.Ordinal)
+            && Guid.TryParse(filter["plan:".Length..], out _));
+
     /// <summary>Class list × abonements for the period.</summary>
     public async Task<SubscriptionAnalyticsDto> ClassesAsync(DateOnly from, DateOnly to, CancellationToken ct = default)
     {
-        RequireRange(from, to);
-        var (classes, pupils) = await PupilsAsync(ct);
-        var categories = await db.FeeCategories.AsNoTracking().ToDictionaryAsync(c => c.Id, ct);
-        var subs = await SubsAsync(from, to, null, ct);
-        var money = await MoneyAsync(from, to, null, subs, ct);
-        var columns = await ColumnsAsync(categories, money.Any(m => m.PlanId == NoPlan), ct);
-        var tuition = categories.Values.Where(c => c.Code == FeeCategoryCode.Tuition).Select(c => c.Id).ToHashSet();
+        var d = await LoadAsync(from, to, ct);
 
-        // Pupils who left the school only appear when the period has something of theirs.
-        var known = pupils.ToDictionary(p => p.Id, StringComparer.Ordinal);
-        var missing = subs.Select(s => s.StudentId).Concat(money.Select(m => m.StudentId))
-            .Where(id => !known.ContainsKey(id)).Distinct(StringComparer.Ordinal).ToList();
-        if (missing.Count > 0)
-            foreach (var s in await db.Students.AsNoTracking().Where(s => missing.Contains(s.Id))
-                         .Select(s => new { s.Id, s.FullName }).ToListAsync(ct))
-                known[s.Id] = new Pupil(s.Id, s.FullName, Archived);
-
-        var rowDefs = classes.Select(c => (c.Id, c.Name, c.Grade)).ToList();
-        rowDefs.Add((NoClass, "Sinfsiz", 99));
-        rowDefs.Add((Archived, "Arxiv (maktabdan ketgan)", 100));
+        var rowDefs = d.Classes.Select(c => (c.Id, c.Name, c.Grade)).ToList();
+        rowDefs.Add((NoClass, NoClassName, 99));
+        rowDefs.Add((Archived, ArchivedName, 100));
 
         var rows = new List<SubscriptionClassRowDto>();
         foreach (var (rowId, rowName, grade) in rowDefs)
         {
-            var mine = known.Values.Where(p => p.RowId == rowId).Select(p => p.Id).ToHashSet(StringComparer.Ordinal);
+            var mine = d.Pupils.Values.Where(p => p.RowId == rowId).ToList();
             if (mine.Count == 0) continue;
-            var rowSubs = subs.Where(s => mine.Contains(s.StudentId)).ToList();
-            var rowMoney = money.Where(m => mine.Contains(m.StudentId)).ToList();
-            if (rowId == Archived && rowSubs.Count == 0 && rowMoney.Count == 0) continue;
-
-            var cells = columns.Select(c => new SubscriptionPlanCellDto(
-                    c.PlanId,
-                    rowSubs.Where(s => s.PlanId == c.PlanId).Select(s => s.StudentId).Distinct(StringComparer.Ordinal).Count(),
-                    rowMoney.Where(m => m.PlanId == c.PlanId).Sum(m => m.Billed),
-                    rowMoney.Where(m => m.PlanId == c.PlanId).Sum(m => m.Paid)))
-                .ToList();
-            var withTuition = rowSubs.Where(s => tuition.Contains(s.CategoryId)).Select(s => s.StudentId)
-                .ToHashSet(StringComparer.Ordinal);
-            var billed = rowMoney.Sum(m => m.Billed);
-            var paid = rowMoney.Sum(m => m.Paid);
+            var cells = d.Columns.Select(c => Cell(d, mine, c.PlanId)).ToList();
+            var money = mine.SelectMany(p => d.MoneyOf[p.Id]).ToList();
+            var billed = money.Sum(m => m.Billed);
+            var paid = money.Sum(m => m.Paid);
             rows.Add(new SubscriptionClassRowDto(
-                rowId, rowName, grade, rowId == Archived ? rowSubs.Select(s => s.StudentId).Concat(rowMoney.Select(m => m.StudentId))
-                    .Distinct(StringComparer.Ordinal).Count() : mine.Count,
-                rowId == Archived ? 0 : mine.Count(id => !withTuition.Contains(id)),
+                rowId, rowName, grade, mine.Count,
+                rowId == Archived ? 0 : mine.Count(p => Matches(d, p, "no-tuition")),
                 cells, billed, paid, billed - paid));
         }
 
-        var planTotals = columns.Select(c =>
+        var everyone = d.Pupils.Values.ToList();
+        var planTotals = d.Columns.Select(c =>
         {
-            var b = money.Where(m => m.PlanId == c.PlanId).Sum(m => m.Billed);
-            var p = money.Where(m => m.PlanId == c.PlanId).Sum(m => m.Paid);
-            return new SubscriptionPlanTotalDto(
-                c.PlanId, subs.Where(s => s.PlanId == c.PlanId).Select(s => s.StudentId).Distinct(StringComparer.Ordinal).Count(),
-                b, p, b - p);
+            var cell = Cell(d, everyone, c.PlanId);
+            return new SubscriptionPlanTotalDto(c.PlanId, cell.Students, cell.Billed, cell.Paid, cell.Billed - cell.Paid);
         }).ToList();
 
-        var inSchool = pupils.Select(p => p.Id).ToHashSet(StringComparer.Ordinal);
-        var subscribed = subs.Where(s => inSchool.Contains(s.StudentId)).Select(s => s.StudentId).ToHashSet(StringComparer.Ordinal);
-        var tuitioned = subs.Where(s => inSchool.Contains(s.StudentId) && tuition.Contains(s.CategoryId))
-            .Select(s => s.StudentId).ToHashSet(StringComparer.Ordinal);
-        var totalBilled = money.Sum(m => m.Billed);
-        var totalPaid = money.Sum(m => m.Paid);
-
+        var all = everyone.SelectMany(p => d.MoneyOf[p.Id]).ToList();
+        var totalBilled = all.Sum(m => m.Billed);
+        var totalPaid = all.Sum(m => m.Paid);
         return new SubscriptionAnalyticsDto(
-            from, to, columns, planTotals, rows,
-            inSchool.Count, subscribed.Count, inSchool.Count - tuitioned.Count,
+            from, to, d.Columns, planTotals, rows,
+            everyone.Count(p => Matches(d, p, "all")),
+            everyone.Count(p => Matches(d, p, "subscribed")),
+            everyone.Count(p => Matches(d, p, "no-tuition")),
             totalBilled, totalPaid, totalBilled - totalPaid);
     }
 
@@ -180,117 +194,157 @@ public sealed class SubscriptionAnalyticsQuery(IAppDbContext db)
     public async Task<SubscriptionClassDetailDto?> ClassAsync(
         string classId, DateOnly from, DateOnly to, CancellationToken ct = default)
     {
-        RequireRange(from, to);
-        var (classes, pupils) = await PupilsAsync(ct);
-        string className;
-        List<Pupil> mine;
-        if (classId == Archived)
-        {
-            className = "Arxiv (maktabdan ketgan)";
-            mine = await db.Students.AsNoTracking().Where(s => s.IsArchived)
-                .Select(s => new Pupil(s.Id, s.FullName, Archived)).ToListAsync(ct);
-        }
-        else
-        {
-            var cls = classes.FirstOrDefault(c => c.Id == classId);
-            if (cls is null && classId != NoClass) return null;
-            className = cls?.Name ?? "Sinfsiz";
-            mine = [.. pupils.Where(p => p.RowId == classId)];
-        }
+        var d = await LoadAsync(from, to, ct);
+        var cls = d.Classes.FirstOrDefault(c => c.Id == classId);
+        if (cls is null && classId != NoClass && classId != Archived) return null;
+        var className = cls?.Name ?? (classId == NoClass ? NoClassName : ArchivedName);
 
-        var ids = mine.Select(p => p.Id).ToList();
-        var categories = await db.FeeCategories.AsNoTracking().ToDictionaryAsync(c => c.Id, ct);
-        var subs = await SubsAsync(from, to, ids, ct);
-        var money = await MoneyAsync(from, to, ids, subs, ct);
-        var columns = await ColumnsAsync(categories, money.Any(m => m.PlanId == NoPlan), ct);
-        var planById = columns.ToDictionary(c => c.PlanId);
-
-        // An archived pupil is listed only when the period has something of theirs.
-        if (classId == Archived)
-        {
-            var active = subs.Select(s => s.StudentId).Concat(money.Select(m => m.StudentId)).ToHashSet(StringComparer.Ordinal);
-            mine = [.. mine.Where(p => active.Contains(p.Id))];
-        }
-
-        var students = mine
+        var rows = d.Pupils.Values.Where(p => p.RowId == classId)
             .OrderBy(p => p.FullName, StringComparer.Ordinal)
-            .Select(p =>
+            .Select(p => Row(d, p)).ToList();
+        var (billed, paid) = (rows.Sum(r => r.Billed), rows.Sum(r => r.Paid));
+        return new SubscriptionClassDetailDto(from, to, classId, className, d.Columns, rows, billed, paid, billed - paid);
+    }
+
+    /// <summary>The whole school's pupils a card or an abonement row stands for (<see cref="Filters"/>).</summary>
+    public async Task<SubscriptionStudentsDto> StudentsAsync(
+        DateOnly from, DateOnly to, string filter, CancellationToken ct = default)
+    {
+        if (!IsFilter(filter))
+            throw BillingRuleException.Invalid("invalid_filter", $"Noma'lum filtr: {filter}");
+        var d = await LoadAsync(from, to, ct);
+
+        var picked = d.Pupils.Values.Where(p => Matches(d, p, filter));
+        var rows = (filter == "debt"
+                ? picked.Select(p => Row(d, p)).OrderByDescending(r => r.Debt).ThenBy(r => r.FullName, StringComparer.Ordinal)
+                : picked.OrderBy(p => p.Order).ThenBy(p => p.FullName, StringComparer.Ordinal).Select(p => Row(d, p)))
+            .ToList();
+        var (billed, paid) = (rows.Sum(r => r.Billed), rows.Sum(r => r.Paid));
+        return new SubscriptionStudentsDto(from, to, filter, d.Columns, rows, billed, paid, billed - paid);
+    }
+
+    // =================================================================
+    //  Bitta ta'rif: kartalar, ustunlar va ro'yxatlar
+    // =================================================================
+
+    private static bool Matches(Data d, Pupil p, string filter)
+    {
+        var subs = d.SubsOf[p.Id];
+        return filter switch
+        {
+            "everyone" => true,
+            "all" => p.InSchool,
+            "subscribed" => p.InSchool && subs.Any(),
+            "no-tuition" => p.InSchool && !subs.Any(s => d.Tuition.Contains(s.CategoryId)),
+            "billed" => d.MoneyOf[p.Id].Sum(m => m.Billed) != 0m,
+            "debt" => d.MoneyOf[p.Id].Sum(m => m.Billed - m.Paid) > 0m,
+            _ when filter.StartsWith("plan:", StringComparison.Ordinal)
+                   && Guid.TryParse(filter["plan:".Length..], out var planId) => OnPlan(d, p, planId),
+            _ => false,
+        };
+    }
+
+    /// <summary>On the abonement in the period — by a subscription, or (no abonement) by an uncovered invoice.</summary>
+    private static bool OnPlan(Data d, Pupil p, Guid planId) =>
+        d.SubsOf[p.Id].Any(s => s.PlanId == planId) || d.MoneyOf[p.Id].Any(m => m.PlanId == planId);
+
+    private static SubscriptionPlanCellDto Cell(Data d, IReadOnlyCollection<Pupil> pupils, Guid planId)
+    {
+        var money = pupils.SelectMany(p => d.MoneyOf[p.Id]).Where(m => m.PlanId == planId).ToList();
+        return new SubscriptionPlanCellDto(planId, pupils.Count(p => OnPlan(d, p, planId)),
+            money.Sum(m => m.Billed), money.Sum(m => m.Paid));
+    }
+
+    private static SubscriptionStudentRowDto Row(Data d, Pupil p)
+    {
+        var categoryOrder = d.Columns.Select(c => c.CategoryCode).Distinct().ToList();
+        var planName = d.Columns.ToDictionary(c => c.PlanId, c => c.Name);
+        var money = d.MoneyOf[p.Id].ToList();
+        var plans = d.SubsOf[p.Id]
+            .Select(s => (s, cat: d.Categories.GetValueOrDefault(s.CategoryId)))
+            .OrderBy(x => categoryOrder.IndexOf(x.cat?.Code ?? "") is var i && i >= 0 ? i : int.MaxValue)
+            .ThenBy(x => x.s.StartsOn)
+            .Select(x =>
             {
-                var own = subs.Where(s => s.StudentId == p.Id)
-                    .OrderBy(s => categories.TryGetValue(s.CategoryId, out var c) ? c.Code : "")
-                    .ThenBy(s => s.StartsOn)
-                    .Select(s =>
-                    {
-                        var col = planById.GetValueOrDefault(s.PlanId);
-                        var cat = categories.GetValueOrDefault(s.CategoryId);
-                        var sm = money.Where(m => m.SubscriptionId == s.Id).ToList();
-                        return new SubscriptionStudentPlanDto(
-                            s.Id, s.PlanId, col?.Name ?? "—", cat?.Code ?? "", cat?.Name ?? "",
-                            s.MonthlyAmount, s.StartsOn, s.EndsOn, s.Detail,
-                            sm.Sum(m => m.Billed), sm.Sum(m => m.Paid));
-                    })
-                    .ToList();
-                var mm = money.Where(m => m.StudentId == p.Id).ToList();
-                var b = mm.Sum(m => m.Billed);
-                var pd = mm.Sum(m => m.Paid);
-                return new SubscriptionStudentRowDto(p.Id, p.FullName, own, b, pd, b - pd);
+                var sm = money.Where(m => m.SubscriptionId == x.s.Id).ToList();
+                return new SubscriptionStudentPlanDto(
+                    x.s.Id, x.s.PlanId, planName.GetValueOrDefault(x.s.PlanId, "—"),
+                    x.cat?.Code ?? "", x.cat?.Name ?? "",
+                    x.s.MonthlyAmount, x.s.StartsOn, x.s.EndsOn, x.s.Detail,
+                    sm.Sum(m => m.Billed), sm.Sum(m => m.Paid));
             })
             .ToList();
-
         var billed = money.Sum(m => m.Billed);
         var paid = money.Sum(m => m.Paid);
-        return new SubscriptionClassDetailDto(from, to, classId, className, columns, students, billed, paid, billed - paid);
+        return new SubscriptionStudentRowDto(
+            p.Id, p.FullName, plans, billed, paid, billed - paid,
+            p.RowId, p.ClassName, p.InSchool, money.Where(m => m.PlanId == NoPlan).Sum(m => m.Billed));
     }
 
     // =================================================================
     //  Manbalar
     // =================================================================
 
-    /// <summary>Active classes and the pupils in school, each with the row they belong to.</summary>
-    private async Task<(List<SchoolClass> Classes, List<Pupil> Pupils)> PupilsAsync(CancellationToken ct)
+    private async Task<Data> LoadAsync(DateOnly from, DateOnly to, CancellationToken ct)
     {
+        RequireRange(from, to);
+
         var classes = await db.Classes.AsNoTracking().Where(c => !c.IsArchived)
             .OrderBy(c => c.Grade).ThenBy(c => c.Name).ToListAsync(ct);
-        var idByName = classes.GroupBy(c => c.Name, StringComparer.Ordinal)
-            .ToDictionary(g => g.Key, g => g.First().Id, StringComparer.Ordinal);
+        var classByName = classes.Select((c, i) => (c, i)).GroupBy(x => x.c.Name, StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
         var pupils = (await db.Students.AsNoTracking().Where(s => !s.IsArchived)
                 .Select(s => new { s.Id, s.FullName, s.ClassName }).ToListAsync(ct))
-            .Select(s => new Pupil(s.Id, s.FullName,
-                s.ClassName is not null && idByName.TryGetValue(s.ClassName, out var id) ? id : NoClass))
-            .ToList();
-        return (classes, pupils);
-    }
+            .Select(s => classByName.TryGetValue(s.ClassName ?? "", out var c)
+                ? new Pupil(s.Id, s.FullName, c.c.Id, c.c.Name, true, c.i)
+                : new Pupil(s.Id, s.FullName, NoClass, NoClassName, true, classes.Count))
+            .ToDictionary(p => p.Id, StringComparer.Ordinal);
 
-    /// <summary>Abonements whose term meets the period (file header).</summary>
-    private async Task<List<Sub>> SubsAsync(DateOnly from, DateOnly to, List<string>? studentIds, CancellationToken ct)
-    {
-        var q = db.StudentSubscriptions.AsNoTracking()
-            .Where(s => s.StartsOn <= to && (s.EndsOn == null || s.EndsOn >= from));
-        if (studentIds is not null) q = q.Where(s => studentIds.Contains(s.StudentId));
-        return await q
+        var categories = await db.FeeCategories.AsNoTracking().ToDictionaryAsync(c => c.Id, ct);
+        var periodSubs = await db.StudentSubscriptions.AsNoTracking()
+            .Where(s => s.StartsOn <= to && (s.EndsOn == null || s.EndsOn >= from))
             .Select(s => new Sub(s.Id, s.StudentId, s.CategoryId, s.PlanId ?? NoPlan, s.MonthlyAmount,
                 s.StartsOn, s.EndsOn, s.Detail))
             .ToListAsync(ct);
+        var (money, covering) = await MoneyAsync(from, to, ct);
+
+        // An abonement that covers an invoice month of the period belongs to the period too.
+        var subs = periodSubs.Concat(covering.Where(c => periodSubs.All(s => s.Id != c.Id))).ToList();
+
+        // Pupils who left the school only appear when the period has something of theirs.
+        var missing = subs.Select(s => s.StudentId).Concat(money.Select(m => m.StudentId))
+            .Where(id => !pupils.ContainsKey(id)).Distinct(StringComparer.Ordinal).ToList();
+        if (missing.Count > 0)
+            foreach (var s in await db.Students.AsNoTracking().Where(s => missing.Contains(s.Id))
+                         .Select(s => new { s.Id, s.FullName }).ToListAsync(ct))
+                pupils[s.Id] = new Pupil(s.Id, s.FullName, Archived, ArchivedName, false, classes.Count + 1);
+
+        return new Data
+        {
+            Classes = classes,
+            Pupils = pupils,
+            Categories = categories,
+            Columns = await ColumnsAsync(categories, money.Any(m => m.PlanId == NoPlan), ct),
+            Tuition = [.. categories.Values.Where(c => c.Code == FeeCategoryCode.Tuition).Select(c => c.Id)],
+            SubsOf = subs.ToLookup(s => s.StudentId, StringComparer.Ordinal),
+            MoneyOf = money.ToLookup(m => m.StudentId, StringComparer.Ordinal),
+        };
     }
 
     /// <summary>
     /// Invoices of the period's months with what is paid on them, each tied to the abonement that
-    /// covers its month. Abonements that ended before the period still name the plan of an older
-    /// invoice, so they are read here without the period cut.
+    /// covers its month — and those covering abonements (one may have ended before a custom period).
     /// </summary>
-    private async Task<List<Money>> MoneyAsync(
-        DateOnly from, DateOnly to, List<string>? studentIds, List<Sub> periodSubs, CancellationToken ct)
+    private async Task<(List<Money> Money, List<Sub> Covering)> MoneyAsync(DateOnly from, DateOnly to, CancellationToken ct)
     {
         var firstMonth = new DateOnly(from.Year, from.Month, 1);
         var lastMonth = new DateOnly(to.Year, to.Month, 1);
-        var invoices = db.Invoices.AsNoTracking()
+        var rows = await db.Invoices.AsNoTracking()
             .Where(i => i.PeriodMonth >= firstMonth && i.PeriodMonth <= lastMonth
-                        && i.RemovedAt == null && i.VoidedAt == null && i.Status != InvoiceStatus.Void);
-        if (studentIds is not null) invoices = invoices.Where(i => studentIds.Contains(i.StudentId));
-        var rows = await invoices
+                        && i.RemovedAt == null && i.VoidedAt == null && i.Status != InvoiceStatus.Void)
             .Select(i => new { i.Id, i.StudentId, i.CategoryId, i.PeriodMonth, Payable = i.Amount - i.Discount })
             .ToListAsync(ct);
-        if (rows.Count == 0) return [];
+        if (rows.Count == 0) return ([], []);
 
         var invoiceIds = rows.Select(r => r.Id).ToList();
         var paid = await EffectiveAllocations()
@@ -307,7 +361,8 @@ public sealed class SubscriptionAnalyticsQuery(IAppDbContext db)
             .ToListAsync(ct);
         var byOwner = allSubs.GroupBy(s => (s.StudentId, s.CategoryId)).ToDictionary(g => g.Key, g => g.ToList());
 
-        return [.. rows.Select(r =>
+        var covering = new Dictionary<Guid, Sub>();
+        var money = rows.Select(r =>
         {
             var monthEnd = r.PeriodMonth.AddMonths(1).AddDays(-1);
             // The abonement that covers the month; with two (a change mid-month) — the later one.
@@ -315,8 +370,10 @@ public sealed class SubscriptionAnalyticsQuery(IAppDbContext db)
                 .Where(s => s.StartsOn <= monthEnd && (s.EndsOn == null || s.EndsOn >= r.PeriodMonth))
                 .OrderByDescending(s => s.StartsOn)
                 .FirstOrDefault();
+            if (sub is not null) covering[sub.Id] = sub;
             return new Money(r.StudentId, sub?.PlanId ?? NoPlan, sub?.Id, r.Payable, paid.GetValueOrDefault(r.Id));
-        })];
+        }).ToList();
+        return (money, [.. covering.Values]);
     }
 
     /// <summary>

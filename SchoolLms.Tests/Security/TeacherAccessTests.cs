@@ -175,7 +175,7 @@ public class TeacherAccessTests(ApiFixture fixture)
         await fixture.Api.WithDbAsync(async db =>
         {
             var t = await db.Teachers.SingleAsync(x => x.Id == homeroomId);
-            t.HomeroomClass = w.ClassName;
+            db.ClassHomeroomTeachers.Add(new ClassHomeroomTeacher { ClassId = w.ClassId, TeacherId = t.Id });
             await db.SaveChangesAsync();
         });
 

@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using Microsoft.EntityFrameworkCore;
 using ModelContextProtocol.Server;
+using SchoolLms.Application.Services;
 using SchoolLms.Domain;
 
 namespace SchoolLms.Server.Mcp.Tools;
@@ -32,9 +33,10 @@ public sealed class StaffTools(McpToolContext t)
             var list = await db.Teachers.Where(x => includeArchived || !x.IsArchived)
                 .Where(x => needle == null || x.FullName.ToLower().Contains(needle))
                 .OrderBy(x => x.FullName).ToListAsync(ct);
+            var homeroom = await HomeroomDirectory.LabelsAsync(db, ct: ct);
             teachers = list.Select(x => new
             {
-                x.Id, x.FullName, x.Phone, x.Gender, homeroomClass = x.HomeroomClass == "" ? null : x.HomeroomClass,
+                x.Id, x.FullName, x.Phone, x.Gender, homeroomClass = homeroom.GetValueOrDefault(x.Id),
                 subjects = x.SubjectIds.Select(id => subjects.GetValueOrDefault(id, id)).ToList(),
                 category = x.Category == "" ? null : x.Category, x.IsArchived,
                 salary = finance ? x.Salary : (decimal?)null, bonusPercent = finance ? x.BonusPct : (decimal?)null,

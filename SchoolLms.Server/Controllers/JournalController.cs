@@ -47,12 +47,8 @@ public class JournalController(AppDbContext db, FcmService fcm) : ControllerBase
         var picker = await LessonRoster.PickerOwnersAsync(db, ct: ct);
         var classInfo = await db.Classes.AsNoTracking()
             .Select(c => new { c.Id, c.Language }).ToDictionaryAsync(c => c.Id, c => c.Language, ct);
-        // Sinf rahbari — o'qituvchi kartasidagi "sinf rahbari" maydoni (sinf NOMI bo'yicha).
-        var homeroom = (await db.Teachers.AsNoTracking()
-                .Where(t => !t.IsArchived && t.HomeroomClass != "")
-                .Select(t => new { t.HomeroomClass, t.FullName }).ToListAsync(ct))
-            .GroupBy(t => t.HomeroomClass, StringComparer.Ordinal)
-            .ToDictionary(g => g.Key, g => string.Join(", ", g.Select(x => x.FullName)), StringComparer.Ordinal);
+        // Sinf rahbarlari — sinf NOMI bo'yicha matn; bitta sinfda bir nechta bo'lishi mumkin (2026-10-09).
+        var homeroom = await HomeroomDirectory.NamesByClassNameAsync(db, ct);
 
         var subjectNames = await db.Subjects.AsNoTracking().ToDictionaryAsync(s => s.Id, s => s.Name, ct);
         var activeIds = students.Select(s => s.Id).ToHashSet(StringComparer.Ordinal);

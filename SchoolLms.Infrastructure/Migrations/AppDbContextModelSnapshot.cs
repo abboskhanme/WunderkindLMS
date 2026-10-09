@@ -1547,6 +1547,29 @@ namespace SchoolLms.Infrastructure.Migrations
                     b.ToTable("chat_reads", (string)null);
                 });
 
+            modelBuilder.Entity("SchoolLms.Domain.ClassHomeroomTeacher", b =>
+                {
+                    b.Property<string>("ClassId")
+                        .HasColumnType("text")
+                        .HasColumnName("class_id");
+
+                    b.Property<string>("TeacherId")
+                        .HasColumnType("text")
+                        .HasColumnName("teacher_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.HasKey("ClassId", "TeacherId")
+                        .HasName("pk_class_homeroom_teachers");
+
+                    b.HasIndex("TeacherId")
+                        .HasDatabaseName("ix_class_homeroom_teachers_teacher");
+
+                    b.ToTable("class_homeroom_teachers", (string)null);
+                });
+
             modelBuilder.Entity("SchoolLms.Domain.ClassMembership", b =>
                 {
                     b.Property<Guid>("Id")
@@ -9678,6 +9701,23 @@ namespace SchoolLms.Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("fk_chat_reads_users_user_id");
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.ClassHomeroomTeacher", b =>
+                {
+                    b.HasOne("SchoolLms.Domain.SchoolClass", null)
+                        .WithMany()
+                        .HasForeignKey("ClassId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_class_homeroom_teachers_classes_class_id");
+
+                    b.HasOne("SchoolLms.Domain.Teacher", null)
+                        .WithMany()
+                        .HasForeignKey("TeacherId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_class_homeroom_teachers_teachers_teacher_id");
                 });
 
             modelBuilder.Entity("SchoolLms.Domain.ClassMembership", b =>

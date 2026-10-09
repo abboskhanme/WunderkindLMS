@@ -144,7 +144,7 @@ export function ClassFormModal({ open, onClose, onSubmit, initial }: Props) {
           />
         </div>
 
-        {/* C-5: sinf rahbari(lari) — bugun faqat o'qituvchi kartochkasidan sozlanardi. */}
+        {/* C-5: sinf rahbari(lari). Bir o'qituvchi bir nechta sinfga biriktirilishi mumkin (2026-10-09). */}
         <div>
           <span className="mb-1 block text-sm font-medium text-slate-600">Sinf rahbari(lari)</span>
           {teachers.length === 0 ? (
@@ -163,11 +163,16 @@ export function ClassFormModal({ open, onClose, onSubmit, initial }: Props) {
                     onChange={() => toggleHomeroom(t.id)}
                   />
                   <span className="truncate">{t.fullName}</span>
-                  {t.homeroomClass && t.homeroomClass !== initial?.name && (
-                    <span className="ml-auto shrink-0 text-xs text-amber-600">
-                      hozir: {t.homeroomClass}
-                    </span>
-                  )}
+                  {/* Bitta o'qituvchi bir nechta sinf rahbari bo'la oladi (2026-10-09) — boshqa
+                      sinflari faqat ma'lumot uchun, tanlash ulardan olib qo'ymaydi. */}
+                  {(() => {
+                    const others = (t.homeroomClass ?? '')
+                      .split(', ')
+                      .filter((n) => n && n !== initial?.name)
+                    return others.length > 0 ? (
+                      <span className="ml-auto shrink-0 text-xs text-slate-400">yana: {others.join(', ')}</span>
+                    ) : null
+                  })()}
                 </label>
               ))}
             </div>

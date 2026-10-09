@@ -126,7 +126,8 @@ public class ChatService(IAppDbContext db, IHubContext<ChatHub> hub)
                     var t = await db.Teachers.FirstOrDefaultAsync(x => x.UserId == userId);
                     if (t is null) return [];
                     var names = new HashSet<string>(StringComparer.Ordinal);
-                    if (!string.IsNullOrEmpty(t.HomeroomClass)) names.Add(t.HomeroomClass);
+                    // Rahbarlik sinflari — bir nechta bo'lishi mumkin (2026-10-09).
+                    names.UnionWith(await HomeroomDirectory.ClassNamesOfAsync(db, t.Id));
 
                     // Dars beradigan sinflar — jadval template'laridan.
                     var taughtClassIds = (await db.ScheduleTemplates.Include(x => x.Lessons).ToListAsync())

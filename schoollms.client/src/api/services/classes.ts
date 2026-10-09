@@ -157,17 +157,22 @@ export async function getHomeroomTeachers(classId: string): Promise<HomeroomTeac
   return data
 }
 
-/** Barcha faol sinflarning sinf rahbarlari bitta so'rovda: sinf id'si → F.I.SH lar. */
-export async function getAllHomeroomTeachers(): Promise<Record<string, string[]>> {
+/** Rahbarlik bog'lanishlari — faol sinflar va faol o'qituvchilar (bitta o'qituvchi bir nechta sinfda bo'lishi mumkin). */
+export async function getHomeroomAssignments(): Promise<{ classId: string; teacherId: string; fullName: string }[]> {
   if (USE_MOCK) {
     await delay()
-    return {}
+    return []
   }
   const { data } = await api.get<{ classId: string; teacherId: string; fullName: string }[]>(
     '/admin/classes/homeroom-teachers',
   )
+  return data
+}
+
+/** Barcha faol sinflarning sinf rahbarlari bitta so'rovda: sinf id'si → F.I.SH lar. */
+export async function getAllHomeroomTeachers(): Promise<Record<string, string[]>> {
   const byClass: Record<string, string[]> = {}
-  for (const row of data) (byClass[row.classId] ??= []).push(row.fullName)
+  for (const row of await getHomeroomAssignments()) (byClass[row.classId] ??= []).push(row.fullName)
   return byClass
 }
 

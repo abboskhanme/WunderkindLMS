@@ -202,7 +202,8 @@ public class ClassAnalyticsController(AppDbContext db) : ControllerBase
             .OrderBy(s => s.Name, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
-        var homeroom = (await db.Teachers.FirstOrDefaultAsync(t => t.HomeroomClass == cls.Name))?.FullName ?? "";
+        // Sinfda bir nechta rahbar bo'lishi mumkin — hammasi (2026-10-09).
+        var homeroom = string.Join(", ", (await HomeroomDirectory.TeachersOfClassAsync(db, cls.Id)).Select(h => h.FullName));
 
         var studentDtos = students.Select(s =>
         {

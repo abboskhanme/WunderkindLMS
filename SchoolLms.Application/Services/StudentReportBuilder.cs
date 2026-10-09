@@ -92,9 +92,8 @@ public static class StudentReportBuilder
             PerQDays(e => !IsLate(e)), PerQDays(IsIll),
             PerQ(e => !IsLate(e)), PerQ(IsIll), PerQ(IsLate));
 
-        var homeroom = cls is null
-            ? ""
-            : (await db.Teachers.FirstOrDefaultAsync(t => t.HomeroomClass == cls.Name))?.FullName ?? "";
+        // Sinfda bir nechta rahbar bo'lishi mumkin — hammasi (2026-10-09).
+        var homeroom = cls is null ? "" : await HomeroomDirectory.NamesOfClassNameAsync(db, cls.Name);
 
         return new StudentReportDto(
             st.Id, st.FullName, st.ClassName, homeroom, st.ParentFullName, subjects, grades, attendance);

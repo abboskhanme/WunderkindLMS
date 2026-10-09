@@ -343,7 +343,8 @@ public sealed class TelegramAuthController(
                     .Select(s => new SubjectDto(s.Id, s.Name))
                     .OrderBy(s => s.Name, StringComparer.OrdinalIgnoreCase).ToList();
                 teacher = new TeacherProfileDto(
-                    t.Id, t.FullName, user.Email, t.HomeroomClass, subjects, t.Permissions, t.PhotoUrl);
+                    t.Id, t.FullName, user.Email, await HomeroomDirectory.LabelAsync(db, t.Id, ct), subjects,
+                    t.Permissions, t.PhotoUrl);
             }
         }
 

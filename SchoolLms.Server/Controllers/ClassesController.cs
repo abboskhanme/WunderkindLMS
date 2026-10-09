@@ -390,50 +390,30 @@ public class ClassesController(AppDbContext db, AuditService audit) : Controller
 
     /// <summary>
     /// Barcha faol sinflarning sinf rahbarlari bitta so'rovda — sinflar jadvalidagi "Sinf rahbari"
-    /// ustuni uchun (mijoz, 2026-10-09). Manba o'sha <c>teachers.homeroom_class</c>.
+    /// ustuni uchun (mijoz, 2026-10-09). Manba — <c>class_homeroom_teachers</c>.
     /// </summary>
     [HttpGet("homeroom-teachers")]
-    public async Task<ActionResult<IEnumerable<ClassHomeroomTeacherDto>>> GetAllHomeroomTeachers()
-    {
-        var classes = await db.Classes.AsNoTracking().Where(c => !c.IsArchived)
-            .Select(c => new { c.Id, c.Name }).ToListAsync();
-        var idByName = classes.GroupBy(c => c.Name).ToDictionary(g => g.Key, g => g.First().Id);
-        var teachers = await db.Teachers.AsNoTracking()
-            .Where(t => !t.IsArchived && t.HomeroomClass != "")
-            .OrderBy(t => t.FullName)
-            .Select(t => new { t.Id, t.FullName, t.HomeroomClass })
-            .ToListAsync();
-        return teachers
-            .Where(t => idByName.ContainsKey(t.HomeroomClass))
-            .Select(t => new ClassHomeroomTeacherDto(idByName[t.HomeroomClass], t.Id, t.FullName))
+    public async Task<ActionResult<IEnumerable<ClassHomeroomTeacherDto>>> GetAllHomeroomTeachers() =>
+        (await HomeroomDirectory.TeachersByClassIdAsync(db))
+            .SelectMany(kv => kv.Value.Select(t => new ClassHomeroomTeacherDto(kv.Key, t.Id, t.FullName)))
             .ToList();
-    }
 
     /// <summary>
-    /// Shu sinfga biriktirilgan sinf rahbari(lar)i. Haqiqat manbai
-    /// <c>teachers.homeroom_class</c> (nom bo'yicha, sinf nomi o'zgarsa
-    /// <see cref="CascadeRenameAsync"/> uni ham ko'chiradi) — bu yerda faqat O'QILADI.
+    /// Shu sinfga biriktirilgan sinf rahbari(lar)i. Haqiqat manbai <c>class_homeroom_teachers</c>
+    /// (sinf id'si bo'yicha — nom o'zgarsa ham bog'lanish joyida).
     /// </summary>
     [HttpGet("{id}/homeroom-teachers")]
     public async Task<ActionResult<IEnumerable<HomeroomTeacherDto>>> GetHomeroomTeachers(string id)
     {
-        var cls = await db.Classes.AsNoTracking().FirstOrDefaultAsync(c => c.Id == id);
-        if (cls is null) return NotFound();
-
-        return await db.Teachers.AsNoTracking()
-            .Where(t => !t.IsArchived && t.HomeroomClass == cls.Name)
-            .OrderBy(t => t.FullName)
-            .Select(t => new HomeroomTeacherDto(t.Id, t.FullName))
-            .ToListAsync();
+        if (!await db.Classes.AsNoTracking().AnyAsync(c => c.Id == id)) return NotFound();
+        return await HomeroomDirectory.TeachersOfClassAsync(db, id);
     }
 
     /// <summary>
-    /// Sinf rahbari(lar)ini sinf formasidan belgilaydi (C-5: "bugun faqat o'qituvchi
-    /// tarafidan sozlanadi" gapi). Ro'yxatda YO'Q, lekin hozir shu sinfga biriktirilgan
-    /// o'qituvchi bo'shatiladi; ro'yxatda bor, lekin BOSHQA sinfga biriktirilgani —
-    /// <c>HomeroomClass</c> BITTA qiymat bo'lgani uchun shu sinfga o'tkaziladi (teacher
-    /// kartochkasidan tahrirlashda ham xuddi shunday — bir o'qituvchi faqat bitta sinf
-    /// rahbari bo'la oladi).
+    /// Sinf rahbari(lar)ini sinf formasidan belgilaydi (C-5). Ro'yxatda YO'Q, lekin hozir shu
+    /// sinfga biriktirilgan o'qituvchi bo'shatiladi. O'qituvchining BOSHQA sinflardagi
+    /// rahbarligiga tegilmaydi — 2026-10-09 dan bitta o'qituvchi bir nechta sinf rahbari
+    /// bo'la oladi (ilgari ikkinchi sinfga biriktirish birinchisidan "o'g'irlardi").
     /// </summary>
     [HttpPut("{id}/homeroom-teachers")]
     public async Task<IActionResult> SetHomeroomTeachers(string id, SetHomeroomTeachersRequest req)
@@ -446,13 +426,12 @@ public class ClassesController(AppDbContext db, AuditService audit) : Controller
         if (wantIds.Count > 0 && await db.Teachers.CountAsync(t => wantIds.Contains(t.Id)) != wantIds.Count)
             return BadRequest(new { message = "Ro'yxatdagi o'qituvchilardan biri topilmadi" });
 
-        var toClear = await db.Teachers
-            .Where(t => t.HomeroomClass == cls.Name && !wantIds.Contains(t.Id)).ToListAsync();
-        foreach (var t in toClear) t.HomeroomClass = "";
-
-        var toAssign = await db.Teachers
-            .Where(t => wantIds.Contains(t.Id) && t.HomeroomClass != cls.Name).ToListAsync();
-        foreach (var t in toAssign) t.HomeroomClass = cls.Name;
+        var (added, removed) = await HomeroomDirectory.SetForClassAsync(db, cls.Id, wantIds);
+        var changed = added.Concat(removed).ToList();
+        var nameById = await db.Teachers.Where(t => changed.Contains(t.Id))
+            .ToDictionaryAsync(t => t.Id, t => t.FullName);
+        var toAssign = added.Select(id => new { FullName = nameById.GetValueOrDefault(id, id) }).ToList();
+        var toClear = removed.Select(id => new { FullName = nameById.GetValueOrDefault(id, id) }).ToList();
 
         if (toClear.Count > 0 || toAssign.Count > 0)
             audit.Record(AuditService.EntityStudentClass, cls.Id, "update",

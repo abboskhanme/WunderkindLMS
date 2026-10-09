@@ -3,9 +3,10 @@ import type { SubscriptionPlanColumn } from '@/api/services/subscriptionAnalytic
 /** Abonementlar analitikasining manzili. */
 export const SUBSCRIPTION_ANALYTICS_PATH = '/admin/finance/subscription-analytics'
 
-/** Sinf sahifasi — davr query'si bilan. */
-export function classPath(classId: string, search: string): string {
-  return `${SUBSCRIPTION_ANALYTICS_PATH}/${encodeURIComponent(classId)}${search}`
+/** Sinf sahifasi — davr query'si bilan; `planId` berilsa o'sha abonement filtri bilan ochiladi. */
+export function classPath(classId: string, search: string, planId?: string): string {
+  const base = `${SUBSCRIPTION_ANALYTICS_PATH}/${encodeURIComponent(classId)}${search}`
+  return planId ? `${base}${search ? '&' : '?'}plan=${encodeURIComponent(planId)}` : base
 }
 
 /** Jadval katagi uchun qisqa summa: "12,4 mln", "850 ming". To'lig'i — `title` da. */

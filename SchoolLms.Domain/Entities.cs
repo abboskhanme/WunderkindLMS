@@ -243,7 +243,12 @@ public class Teacher
     /// <summary>Turniket/FaceID qurilmasidagi xodim ID'si (personId/employeeNo). Davomat hodisalari shu
     /// ID orqali o'qituvchiga bog'lanadi. Bo'sh = qurilmada moslashtirilmagan.</summary>
     public string DeviceUserId { get; set; } = string.Empty;
-    /// <summary>Sinf rahbari bo'lsa biriktirilgan sinf nomi; aks holda bo'sh.</summary>
+    /// <summary>
+    /// ESKI: sinf rahbari bo'lgan BITTA sinf nomi. 2026-10-09 dan haqiqat manbai
+    /// <see cref="ClassHomeroomTeacher"/> (ko'p-ko'pga); ilova bu ustunni o'qimaydi. API javoblarida
+    /// esa shu xususiyatga o'qituvchining barcha rahbarlik sinflari va yo'nalish guruhlari matni
+    /// (<c>HomeroomDirectory.LabelsAsync</c>) qo'yiladi — ekranlar o'zgarishsiz ishlaydi.
+    /// </summary>
     public string HomeroomClass { get; set; } = string.Empty;
     /// <summary>Dars beradigan fanlar (Subject id'lari). EF Core 8 primitive collection.</summary>
     public List<string> SubjectIds { get; set; } = new();
