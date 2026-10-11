@@ -5,10 +5,8 @@ namespace SchoolLms.Domain;
 /// u jurnalda (dars-ma-dars) qoladi, bu esa kuniga BIR marta, ikki xil sessiya uchun
 /// ikki xil odam oladi.
 ///
-/// <para>Kimdan olinadi — shu kuni FAOL <b>yotoqxona</b> abonementi bor o'quvchilardan
-/// (<c>fee_categories.code = 'dormitory'</c>). Abonementi yo'q o'quvchi ro'yxatda kulrang
-/// ko'rinadi, belgilanmaydi va hech bir hisobga kirmaydi — bu jadvalda uning qatori ham
-/// bo'lmaydi.</para>
+/// <para>Kimdan olinadi — shu kuni sessiya RO'YXATIDA turgan o'quvchilardan
+/// (<see cref="BoardingRosterEntry"/>, 2026-10-11 dan; ilgari yotoqxona abonementidan olinardi).</para>
 /// </summary>
 public class BoardingAttendance
 {
@@ -65,4 +63,34 @@ public static class BoardingStatus
     public const string Excused = "excused";
 
     public static readonly IReadOnlyList<string> All = [Present, Absent, Excused];
+}
+
+/// <summary>
+/// Kechki dars yoki yotoqxona ro'yxatidagi o'quvchi — SANALI a'zolik (mijoz, 2026-10-11: "kechki
+/// dars va yotoqxona yo'qlamasini o'quvchilarni qo'lda qo'shadigan qilish, abonomentga qaralmasin").
+/// Ikki sessiyaning ro'yxati alohida. Chiqarilgan o'quvchining o'tgan kunlardagi davomati joyida
+/// qoladi: o'sha kunlarda u ro'yxatda bo'lgan.
+/// </summary>
+public class BoardingRosterEntry
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+
+    /// <summary><see cref="BoardingSession"/>: evening | dorm.</summary>
+    public string Session { get; set; } = BoardingSession.Evening;
+
+    public string StudentId { get; set; } = string.Empty;
+
+    /// <summary>Shu kundan boshlab ro'yxatda.</summary>
+    public DateOnly AddedOn { get; set; }
+
+    /// <summary>Shu kundan boshlab ro'yxatda EMAS; null — hozir ham ro'yxatda.</summary>
+    public DateOnly? RemovedOn { get; set; }
+
+    /// <summary>Kim qo'shgan (users.id).</summary>
+    public string AddedBy { get; set; } = string.Empty;
+
+    /// <summary>Kim chiqargan (users.id).</summary>
+    public string? RemovedBy { get; set; }
+
+    public DateTimeOffset CreatedAt { get; set; }
 }

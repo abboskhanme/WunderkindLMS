@@ -9,11 +9,12 @@
  * Saqlashda holat: keldi → `present`; kelmadi + Sababsiz → `absent` (ota-onaga Telegram xabar,
  * bir holat — bir marta); kelmadi + boshqa sabab → `excused`. Aniq sabab `reasonId` da.
  *
- * Yotoqxona abonementi yo'q o'quvchi KULRANG: belgilanmaydi, hisobga kirmaydi, xabar ketmaydi.
+ * Kimdan olinadi — sessiya RO'YXATIDAN (2026-10-11: "o'quvchilarni qo'lda qo'shadigan qilish,
+ * abonomentga qaralmasin"): "Ro'yxat" tugmasi orqali qo'shiladi va chiqariladi.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { BedDouble, Moon, Search } from 'lucide-react'
+import { BedDouble, Moon, Search, Users } from 'lucide-react'
 import type { AbsenceReason } from '@/types'
 import {
   getBoardingDay,
@@ -32,6 +33,7 @@ import { Loader } from '@/components/ui/Loader'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { Toast } from '@/components/ui/Toast'
 import { cn } from '@/lib/utils'
+import { BoardingRosterModal } from './BoardingRosterModal'
 
 const pad = (n: number) => String(n).padStart(2, '0')
 const todayISO = () => {
@@ -87,7 +89,7 @@ export function BoardingAttendancePage() {
   const [draft, setDraft] = useState<Record<string, Record<string, Pick>>>({})
   const [saving, setSaving] = useState<string | null>(null)
   const [search, setSearch] = useState('')
-  const [hideIneligible, setHideIneligible] = useState(false)
+  const [rosterOpen, setRosterOpen] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
   const closeToast = useCallback(() => setToast(null), [])
 
@@ -192,11 +194,9 @@ export function BoardingAttendancePage() {
     () =>
       (day?.sections ?? []).map((sec) => ({
         ...sec,
-        students: sec.students.filter(
-          (s) => (!hideIneligible || s.eligible) && (!needle || s.fullName.toLocaleLowerCase('uz').includes(needle)),
-        ),
+        students: sec.students.filter((s) => !needle || s.fullName.toLocaleLowerCase('uz').includes(needle)),
       })),
-    [day, hideIneligible, needle],
+    [day, needle],
   )
 
   if (allowed.length === 0) {
@@ -204,6 +204,9 @@ export function BoardingAttendancePage() {
   }
 
   const L = LABELS[session]
+  const sessionInfo = SESSIONS.find((x) => x.key === session)!
+  // Ro'yxatni o'zgartirish — sessiyaning to'liq (":view" emas) ruxsati bilan.
+  const canEditRoster = !user?.permissions || user.permissions.includes(sessionInfo.perm)
 
   return (
     <div className="space-y-6">
@@ -211,7 +214,7 @@ export function BoardingAttendancePage() {
         <div>
           <h1 className="text-xl font-semibold text-slate-800">Kechki va yotoqxona davomati</h1>
           <p className="text-sm text-slate-400">
-            Faqat yotoqxona abonementi bor o'quvchilar belgilanadi · {L.present.letter} — {L.present.title.toLowerCase()}
+            Ro'yxatdagi o'quvchilar belgilanadi · {L.present.letter} — {L.present.title.toLowerCase()}
             {lateChoices.length > 0 && ' (ostidan: kech keldi)'} · {L.absent.letter} — {L.absent.title.toLowerCase()}
             {unexcused && `, sukut: ${unexcused.name}`}
           </p>
@@ -252,15 +255,11 @@ export function BoardingAttendancePage() {
             className="min-w-0 flex-1 bg-transparent text-sm outline-none"
           />
         </label>
-        <label className="flex items-center gap-2 text-sm text-slate-600">
-          <input
-            type="checkbox"
-            checked={hideIneligible}
-            onChange={(e) => setHideIneligible(e.target.checked)}
-            className="h-4 w-4 accent-brand-600"
-          />
-          Abonementsizlarni yashirish
-        </label>
+        {canEditRoster && (
+          <Button variant="secondary" onClick={() => setRosterOpen(true)} title="O'quvchi qo'shish yoki chiqarish">
+            <Users className="h-4 w-4" /> Ro'yxat
+          </Button>
+        )}
       </Card>
 
       {error && <p className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>}
@@ -270,8 +269,14 @@ export function BoardingAttendancePage() {
       ) : sections.length === 0 ? (
         <Card>
           <p className="py-10 text-center text-sm text-slate-400">
-            Ro'yxat bo'sh. Yo'nalish guruhlarini "O'quv bo'limi → Guruhlar"da belgilang, yotoqxona abonementini esa
-            o'quvchi kartasida qo'shing.
+            {sessionInfo.label} ro'yxati bo'sh.{' '}
+            {canEditRoster ? (
+              <button type="button" onClick={() => setRosterOpen(true)} className="font-medium text-brand-600 hover:underline">
+                O'quvchilarni qo'shing
+              </button>
+            ) : (
+              "Ro'yxatni mas'ul xodim to'ldiradi."
+            )}
           </p>
         </Card>
       ) : (
@@ -286,7 +291,7 @@ export function BoardingAttendancePage() {
                   <div className="min-w-0 flex-1">
                     <p className="truncate font-semibold text-slate-800">{sec.title}</p>
                     <p className="truncate text-xs text-slate-400">
-                      {sec.eligible} ta yotoqxonada · {sec.marked} belgilangan
+                      {sec.eligible} ta ro'yxatda · {sec.marked} belgilangan
                       {sec.absent > 0 && (
                         <span className="text-red-600">
                           {' '}
@@ -323,7 +328,7 @@ export function BoardingAttendancePage() {
                           !s.eligible && 'bg-slate-50/60',
                           s.eligible && !cur && flagged.has(sec.key) && 'bg-amber-50/70',
                         )}
-                        title={s.eligible ? undefined : "Shu kuni yotoqxona abonementi yo'q — davomat olinmaydi"}
+                        title={s.eligible ? undefined : "Shu kuni ro'yxatda yo'q — davomat olinmaydi"}
                       >
                         <div className="flex items-center justify-between gap-3">
                           <span className="flex min-w-0 flex-1 items-center gap-3">
@@ -334,7 +339,7 @@ export function BoardingAttendancePage() {
                               </span>
                               <span className="block truncate text-[11px] text-slate-400">
                                 {s.className || '—'}
-                                {!s.eligible && " · abonement yo'q"}
+                                {!s.eligible && " · ro'yxatda yo'q"}
                               </span>
                             </span>
                           </span>
@@ -409,7 +414,7 @@ export function BoardingAttendancePage() {
                         ) : sec.eligible > 0 ? (
                           'Hammasi belgilandi'
                         ) : (
-                          "Yotoqxona abonementi bor o'quvchi yo'q"
+                          "Ro'yxatda o'quvchi yo'q"
                         )}
                       </span>
                       <Button onClick={() => void saveSection(sec)} disabled={saving === sec.key || sec.eligible === 0}>
@@ -424,6 +429,13 @@ export function BoardingAttendancePage() {
         </div>
       )}
 
+      <BoardingRosterModal
+        open={rosterOpen}
+        session={session}
+        title={sessionInfo.label}
+        onClose={() => setRosterOpen(false)}
+        onChanged={load}
+      />
       <Toast message={toast} onClose={closeToast} />
     </div>
   )

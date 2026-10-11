@@ -180,6 +180,8 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<LeadConversion> LeadConversions => Set<LeadConversion>();
     public DbSet<NotificationState> NotificationStates => Set<NotificationState>();
     public DbSet<BoardingAttendance> BoardingAttendance => Set<BoardingAttendance>();
+    // Kechki dars va yotoqxona ro'yxatlari — qo'lda, sanali (2026-10-11).
+    public DbSet<BoardingRosterEntry> BoardingRosters => Set<BoardingRosterEntry>();
 
     // Admission, block test and seasonal assessment (admission-and-testing.md §5).
     // Configuration: ExamModel.cs — `leads.admission_status` and

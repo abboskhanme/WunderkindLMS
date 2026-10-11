@@ -29,6 +29,8 @@ DECLARE
     -- Adding a table here needs a NEW migration that re-creates this function.
     allowed text[] := ARRAY[
         'absence_reasons', 'access_roles', 'assignment_materials', 'assignment_submissions',
+        -- boarding_rosters: the boarding_attendance tool builds its list from it (2026-10-11)
+        'boarding_rosters',
         'assignment_types', 'assignments', 'billing_settings', 'boarding_attendance', 'broadcasts',
         'cash_box_transactions', 'cash_boxes', 'cash_handovers', 'cash_shifts',
         'certificate_subjects', 'certificate_types', 'certificates', 'class_homeroom_teachers',

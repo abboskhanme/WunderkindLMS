@@ -26,5 +26,22 @@ internal static class BoardingAttendanceModel
             // O'quvchi o'chirilsa — uning kechki/yotoqxona qatorlari ham (tarix — arxiv orqali saqlanadi).
             e.HasOne<Student>().WithMany().HasForeignKey(x => x.StudentId).OnDelete(DeleteBehavior.Cascade);
         });
+
+        // Ro'yxat — sanali a'zolik (2026-10-11). Bitta sessiyada o'quvchi bir vaqtda bitta faol qatorda.
+        b.Entity<BoardingRosterEntry>(e =>
+        {
+            e.ToTable("boarding_rosters", t =>
+            {
+                t.HasCheckConstraint("ck_boarding_rosters_session", "session in ('evening','dorm')");
+                t.HasCheckConstraint("ck_boarding_rosters_dates", "removed_on is null or removed_on >= added_on");
+            });
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasDefaultValueSql("gen_random_uuid()");
+            e.Property(x => x.Session).HasMaxLength(16);
+            e.HasIndex(x => new { x.Session, x.StudentId }).IsUnique().HasFilter("removed_on is null")
+                .HasDatabaseName("ux_boarding_rosters_active");
+            e.HasIndex(x => x.StudentId).HasDatabaseName("ix_boarding_rosters_student");
+            e.HasOne<Student>().WithMany().HasForeignKey(x => x.StudentId).OnDelete(DeleteBehavior.Cascade);
+        });
     }
 }

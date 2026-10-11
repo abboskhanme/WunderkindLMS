@@ -40,6 +40,55 @@ public class BoardingAttendanceController(BoardingAttendanceService service) : C
         return result!;
     }
 
+    // ---------- Ro'yxat — qo'lda (mijoz, 2026-10-11: "o'quvchilarni qo'lda qo'shadigan qilish") ----------
+
+    /// <summary>Sessiyaning hozirgi ro'yxati.</summary>
+    [HttpGet("roster")]
+    public async Task<ActionResult<List<BoardingRosterRowDto>>> Roster([FromQuery] string session, CancellationToken ct = default)
+    {
+        if (CheckSession(session, write: false) is { } bad) return bad;
+        return await service.RosterAsync(session, ct);
+    }
+
+    /// <summary>Ro'yxatga qo'shish uchun nomzodlar (ro'yxatda yo'q faol o'quvchilar, qidiruv bilan).</summary>
+    [HttpGet("roster/candidates")]
+    public async Task<ActionResult<List<BoardingCandidateDto>>> Candidates(
+        [FromQuery] string session, [FromQuery] string? q, CancellationToken ct = default)
+    {
+        if (CheckSession(session, write: true) is { } bad) return bad;
+        return await service.CandidatesAsync(session, q, ct);
+    }
+
+    /// <summary>Ro'yxatga qo'shish — bugundan.</summary>
+    [HttpPost("roster")]
+    public async Task<ActionResult<object>> AddToRoster(AddBoardingRosterRequest req, CancellationToken ct = default)
+    {
+        if (CheckSession(req.Session, write: true) is { } bad) return bad;
+        var (added, error) = await service.AddAsync(req.Session, req.StudentIds ?? [], Uid, ct);
+        if (error is not null) return BadRequest(new { message = error });
+        return Ok(new { added });
+    }
+
+    /// <summary>Ro'yxatdan chiqarish — bugundan; o'tgan kunlardagi davomati saqlanadi.</summary>
+    [HttpPost("roster/remove")]
+    public async Task<IActionResult> RemoveFromRoster(RemoveBoardingRosterRequest req, CancellationToken ct = default)
+    {
+        if (CheckSession(req.Session, write: true) is { } bad) return bad;
+        return await service.RemoveAsync(req.Session, req.StudentId, Uid, ct)
+            ? NoContent()
+            : NotFound(new { message = "O'quvchi bu ro'yxatda yo'q" });
+    }
+
+    private string Uid => User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "";
+
+    private ActionResult? CheckSession(string session, bool write)
+    {
+        if (!BoardingSession.All.Contains(session))
+            return BadRequest(new { message = "Sessiya noto'g'ri (evening yoki dorm)" });
+        var perm = BoardingSession.PermissionOf(session);
+        return (write ? User.HasPerm(perm) : User.HasReadPerm(perm)) ? null : Forbid();
+    }
+
     private ActionResult? Check(string date, string session, out DateOnly day)
     {
         day = default;

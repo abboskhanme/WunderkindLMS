@@ -13,12 +13,14 @@ namespace SchoolLms.Application.Services;
 //  Kunduzgi davomat (jurnal, dars-ma-dars) TEGILMAYDI. Bu ikki sessiya kuniga bir marta,
 //  ikki xil odam (ruxsatlar: attendanceEvening, attendanceDorm) tomonidan olinadi.
 //
-//  KIMDAN OLINADI — shu kuni FAOL yotoqxona abonementi borlardan
-//  (`fee_categories.code = 'dormitory'`, starts_on <= kun <= ends_on). Kechki darsga ham faqat
-//  yotoqxonadagilar keladi (mijoz). Abonementsizlar ro'yxatda kulrang, saqlashda RAD ETILADI.
+//  KIMDAN OLINADI — shu kuni sessiya RO'YXATIDA turganlardan (`boarding_rosters`, sanali).
+//  Mijoz, 2026-10-11: "o'quvchilarni qo'lda qo'shadigan qilish, abonomentga qaralmasin" — ro'yxat
+//  qo'lda yuritiladi (qo'shish / chiqarish), kechki dars va yotoqxona ro'yxati ALOHIDA. Ilgari
+//  yotoqxona abonementidan olinardi; migratsiya o'shalarni ikkala ro'yxatga ko'chirgan.
+//  Ro'yxatda yo'q o'quvchini belgilab bo'lmaydi.
 //
-//  RO'YXAT — yo'nalish guruhlari bo'yicha (`study_groups.is_track`). Hech qaysi yo'nalish
-//  guruhida bo'lmagan yotoqxona o'quvchisi "Guruhsiz" — o'z sinfi bo'limida.
+//  BO'LIMLAR — yo'nalish guruhlari bo'yicha (`study_groups.is_track`). Hech qaysi yo'nalish
+//  guruhida bo'lmagan ro'yxat a'zosi "Guruhsiz" — o'z sinfi bo'limida.
 //
 //  OTA-ONAGA XABAR — "kelmadi" (kechki) yoki "yo'q" (yotoqxona) belgilanganda, Telegram orqali,
 //  bir holat uchun BIR marta (`notified_at`). Sababli/ruxsat bilan — xabarsiz.
@@ -27,25 +29,21 @@ namespace SchoolLms.Application.Services;
 public sealed class BoardingAttendanceService(
     IAppDbContext db, TelegramService telegram, ILogger<BoardingAttendanceService> logger)
 {
-    public const string DormitoryCategoryCode = "dormitory";
-
-    /// <summary>Shu kuni faol yotoqxona abonementi bor (arxivlanmagan) o'quvchilar.</summary>
-    public async Task<HashSet<string>> EligibleAsync(DateOnly date, CancellationToken ct = default)
+    /// <summary>Shu kuni sessiya ro'yxatida turgan (arxivlanmagan) o'quvchilar.</summary>
+    public async Task<HashSet<string>> EligibleAsync(DateOnly date, string session, CancellationToken ct = default)
     {
         var ids = await (
-            from s in db.StudentSubscriptions.AsNoTracking()
-            join c in db.FeeCategories.AsNoTracking() on s.CategoryId equals c.Id
-            join st in db.Students.AsNoTracking() on s.StudentId equals st.Id
-            where c.Code == DormitoryCategoryCode
-                  && s.StartsOn <= date && (s.EndsOn == null || s.EndsOn >= date)
+            from r in db.BoardingRosters.AsNoTracking()
+            join st in db.Students.AsNoTracking() on r.StudentId equals st.Id
+            where r.Session == session && r.AddedOn <= date && (r.RemovedOn == null || r.RemovedOn > date)
                   && !st.IsArchived
-            select s.StudentId).Distinct().ToListAsync(ct);
+            select r.StudentId).Distinct().ToListAsync(ct);
         return ids.ToHashSet(StringComparer.Ordinal);
     }
 
     public async Task<BoardingDayDto> DayAsync(DateOnly date, string session, CancellationToken ct = default)
     {
-        var eligible = await EligibleAsync(date, ct);
+        var eligible = await EligibleAsync(date, session, ct);
         var marks = await db.BoardingAttendance.AsNoTracking()
             .Where(a => a.Date == date && a.Session == session)
             .ToDictionaryAsync(a => a.StudentId, a => (a.Status, a.ReasonId), ct);
@@ -72,14 +70,15 @@ public sealed class BoardingAttendanceService(
         var inTrack = new HashSet<string>(StringComparer.Ordinal);
         foreach (var t in tracks)
         {
-            var rows = members.Where(m => m.GroupId == t.Id)
+            // Faqat ro'yxat a'zolari (2026-10-11) — guruhning qolgan o'quvchilari bu davomatda yo'q.
+            var rows = members.Where(m => m.GroupId == t.Id && eligible.Contains(m.Id))
                 .OrderBy(m => m.FullName, StringComparer.Ordinal)
                 .Select(m => Row(m.Id, m.FullName, m.ClassName)).ToList();
             rows.ForEach(r => inTrack.Add(r.StudentId));
-            sections.Add(Section(t.Id.ToString(), t.Name, "group", rows));
+            if (rows.Count > 0) sections.Add(Section(t.Id.ToString(), t.Name, "group", rows));
         }
 
-        // Guruhsiz yotoqxona o'quvchilari — sinf bo'yicha (faqat abonementi borlar).
+        // Yo'nalish guruhida bo'lmagan ro'yxat a'zolari — sinf bo'yicha.
         var loose = eligible.Where(id => !inTrack.Contains(id)).ToList();
         if (loose.Count > 0)
         {
@@ -132,10 +131,10 @@ public sealed class BoardingAttendanceService(
                 return (null, "Sabab holatga mos emas: \"keldi\" — faqat kechikish, \"kelmadi\" — faqat yo'qlik sababi");
         }
 
-        var eligible = await EligibleAsync(date, ct);
+        var eligible = await EligibleAsync(date, session, ct);
         var foreign = marks.Where(m => !eligible.Contains(m.StudentId)).ToList();
         if (foreign.Count > 0)
-            return (null, $"{foreign.Count} ta o'quvchida shu kuni yotoqxona abonementi yo'q — ularni belgilab bo'lmaydi");
+            return (null, $"{foreign.Count} ta o'quvchi shu kuni ro'yxatda yo'q — avval ro'yxatga qo'shing");
 
         var ids = marks.Select(m => m.StudentId).ToList();
         var existing = await db.BoardingAttendance
@@ -164,6 +163,115 @@ public sealed class BoardingAttendanceService(
         var notified = await NotifyAsync(toNotify, date, session, ct);
         return (new SaveBoardingResult(marks.Count, notified), null);
     }
+
+    // =================================================================
+    //  Ro'yxat — qo'lda (2026-10-11)
+    // =================================================================
+
+    /// <summary>Sessiyaning hozirgi ro'yxati — yo'nalish guruhi va kim qo'shgani bilan.</summary>
+    public async Task<List<BoardingRosterRowDto>> RosterAsync(string session, CancellationToken ct = default)
+    {
+        var today = AppClock.Today;
+        var rows = await (
+            from r in db.BoardingRosters.AsNoTracking()
+            join st in db.Students.AsNoTracking() on r.StudentId equals st.Id
+            where r.Session == session && r.AddedOn <= today && (r.RemovedOn == null || r.RemovedOn > today)
+                  && !st.IsArchived
+            select new { st.Id, st.FullName, st.ClassName, r.AddedOn, r.AddedBy }).ToListAsync(ct);
+        var tracks = await TrackOfAsync([.. rows.Select(r => r.Id)], ct);
+        var userIds = rows.Select(r => r.AddedBy).Distinct().ToList();
+        var names = await db.Users.AsNoTracking().Where(u => userIds.Contains(u.Id))
+            .ToDictionaryAsync(u => u.Id, u => u.FullName, ct);
+        return [.. rows
+            .OrderBy(r => tracks.GetValueOrDefault(r.Id) ?? "\uffff", StringComparer.Ordinal)
+            .ThenBy(r => r.ClassName, StringComparer.Ordinal).ThenBy(r => r.FullName, StringComparer.Ordinal)
+            .Select(r => new BoardingRosterRowDto(
+                r.Id, r.FullName, r.ClassName ?? "", tracks.GetValueOrDefault(r.Id),
+                r.AddedOn.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), names.GetValueOrDefault(r.AddedBy)))];
+    }
+
+    /// <summary>Ro'yxatda bo'lmagan faol o'quvchilar (qidiruv bo'yicha, ko'pi bilan 100 ta).</summary>
+    public async Task<List<BoardingCandidateDto>> CandidatesAsync(string session, string? query, CancellationToken ct = default)
+    {
+        var today = AppClock.Today;
+        var inRoster = db.BoardingRosters.Where(r => r.Session == session && r.AddedOn <= today
+                                                     && (r.RemovedOn == null || r.RemovedOn > today))
+            .Select(r => r.StudentId);
+        var q = db.Students.AsNoTracking().Where(s => !s.IsArchived && !inRoster.Contains(s.Id));
+        var needle = query?.Trim();
+        if (!string.IsNullOrEmpty(needle))
+        {
+            var lower = needle.ToLower();
+            q = q.Where(s => s.FullName.ToLower().Contains(lower) || s.ClassName.ToLower().Contains(lower));
+        }
+        var list = await q.OrderBy(s => s.ClassName).ThenBy(s => s.FullName).Take(100)
+            .Select(s => new { s.Id, s.FullName, s.ClassName }).ToListAsync(ct);
+        var tracks = await TrackOfAsync([.. list.Select(s => s.Id)], ct);
+        return [.. list.Select(s => new BoardingCandidateDto(s.Id, s.FullName, s.ClassName ?? "", tracks.GetValueOrDefault(s.Id)))];
+    }
+
+    /// <summary>Ro'yxatga qo'shadi (bugundan). Allaqachon ro'yxatdagilar o'tkazib yuboriladi.</summary>
+    /// <returns>Nechtasi qo'shildi; xato bo'lsa — matn.</returns>
+    public async Task<(int Added, string? Error)> AddAsync(
+        string session, IReadOnlyCollection<string> studentIds, string userId, CancellationToken ct = default)
+    {
+        var ids = studentIds.Where(id => !string.IsNullOrWhiteSpace(id)).Distinct(StringComparer.Ordinal).ToList();
+        if (ids.Count == 0) return (0, "Hech kim tanlanmadi");
+        var found = await db.Students.Where(s => ids.Contains(s.Id) && !s.IsArchived).Select(s => s.Id).ToListAsync(ct);
+        if (found.Count != ids.Count) return (0, "Tanlanganlardan biri topilmadi yoki arxivda");
+
+        var today = AppClock.Today;
+        var active = (await db.BoardingRosters
+                .Where(r => r.Session == session && ids.Contains(r.StudentId) && r.RemovedOn == null)
+                .ToListAsync(ct))
+            .ToDictionary(r => r.StudentId, StringComparer.Ordinal);
+        var added = 0;
+        foreach (var id in ids)
+        {
+            if (active.TryGetValue(id, out var row))
+            {
+                // Kelajakdan boshlanadigan qator bo'lsa (bo'lmasligi kerak) — bugunga suriladi.
+                if (row.AddedOn > today) row.AddedOn = today;
+                continue;
+            }
+            db.BoardingRosters.Add(new BoardingRosterEntry
+            {
+                Session = session, StudentId = id, AddedOn = today, AddedBy = userId, CreatedAt = AppClock.NowInstant,
+            });
+            added++;
+        }
+        await db.SaveChangesAsync(ct);
+        return (added, null);
+    }
+
+    /// <summary>
+    /// Ro'yxatdan chiqaradi — bugundan boshlab. Bugun qo'shilgan bo'lsa qator butunlay o'chiriladi
+    /// (xato qo'shilgan), o'tgan kunlardagi davomati esa joyida qoladi.
+    /// </summary>
+    public async Task<bool> RemoveAsync(string session, string studentId, string userId, CancellationToken ct = default)
+    {
+        var row = await db.BoardingRosters
+            .FirstOrDefaultAsync(r => r.Session == session && r.StudentId == studentId && r.RemovedOn == null, ct);
+        if (row is null) return false;
+        var today = AppClock.Today;
+        if (row.AddedOn >= today) db.BoardingRosters.Remove(row);
+        else
+        {
+            row.RemovedOn = today;
+            row.RemovedBy = userId;
+        }
+        await db.SaveChangesAsync(ct);
+        return true;
+    }
+
+    /// <summary>O'quvchi → faol yo'nalish guruhi nomi.</summary>
+    private async Task<Dictionary<string, string>> TrackOfAsync(List<string> studentIds, CancellationToken ct) =>
+        (await (from m in db.StudyGroupMembers.AsNoTracking()
+                join g in db.StudyGroups.AsNoTracking() on m.GroupId equals g.Id
+                where g.IsTrack && !g.IsArchived && m.LeftOn == null && studentIds.Contains(m.StudentId)
+                select new { m.StudentId, g.Name }).ToListAsync(ct))
+            .GroupBy(x => x.StudentId, StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => g.First().Name, StringComparer.Ordinal);
 
     /// <summary>Ota-onaga Telegram: bot sozlanmagan yoki ota-ona ulanmagan bo'lsa — jim o'tadi.</summary>
     private async Task<int> NotifyAsync(

@@ -10,16 +10,14 @@ using SchoolLms.Tests.Fixtures;
 namespace SchoolLms.Tests;
 
 /// <summary>
-/// Kechki dars va yotoqxona davomati (mijoz, 2026-09-23):
-/// kimdan olinadi (faqat faol yotoqxona abonementi borlar), ro'yxat yo'nalish guruhlari
-/// bo'yicha, abonementsizni belgilab bo'lmaydi, ruxsat sessiya bo'yicha, ota-ona xabari.
+/// Kechki dars va yotoqxona davomati (mijoz, 2026-09-23): kimdan olinadi — 2026-10-11 dan qo'lda
+/// yuritiladigan sessiya RO'YXATIDAN ("abonomentga qaralmasin"), bo'limlar yo'nalish guruhlari
+/// bo'yicha, ro'yxatda yo'qni belgilab bo'lmaydi, ruxsat sessiya bo'yicha, ota-ona xabari.
 /// </summary>
 [Collection(SchoolLmsCollection.Name)]
 public class BoardingAttendanceTests(ApiFixture fixture)
 {
     private const string Url = "/api/admin/boarding-attendance";
-    private static readonly Guid Dormitory = Guid.Parse("00000000-0000-0000-0000-0000000000c3");
-    private static readonly Guid Tuition = Guid.Parse("00000000-0000-0000-0000-0000000000c1");
 
     private sealed record World(string Tag, Guid TrackId, string Boarder, string DayOnly, string Expired, string Loose, string Date);
 
@@ -49,22 +47,22 @@ public class BoardingAttendanceTests(ApiFixture fixture)
             GroupId = track.Id, SubjectId = null, StudentId = s.Id, JoinedOn = today.AddDays(-30),
             CreatedBy = admin.Id, CreatedAt = AppClock.NowInstant,
         };
-        StudentSubscription Sub(Student s, Guid cat, DateOnly from, DateOnly? to) => new()
-        {
-            StudentId = s.Id, CategoryId = cat, MonthlyAmount = 1_000_000m, StartsOn = from, EndsOn = to,
-            CreatedBy = admin.Id, CreatedAt = AppClock.NowInstant,
-        };
+        IEnumerable<BoardingRosterEntry> Roster(Student s, DateOnly from, DateOnly? to = null) =>
+            BoardingSession.All.Select(session => new BoardingRosterEntry
+            {
+                Session = session, StudentId = s.Id, AddedOn = from, RemovedOn = to,
+                AddedBy = admin.Id, CreatedAt = AppClock.NowInstant,
+            });
         await fixture.Api.WithDbAsync(async db =>
         {
             db.Subjects.Add(subject);
             db.Students.AddRange(boarder, dayOnly, expired, loose);
             db.StudyGroups.Add(track);
             db.StudyGroupMembers.AddRange(Member(boarder), Member(dayOnly), Member(expired));
-            db.StudentSubscriptions.AddRange(
-                Sub(boarder, Dormitory, today.AddDays(-10), null),
-                Sub(dayOnly, Tuition, today.AddDays(-10), null),           // o'qish — yotoqxona emas
-                Sub(expired, Dormitory, today.AddDays(-60), today.AddDays(-1)), // tugagan
-                Sub(loose, Dormitory, today.AddDays(-5), null));           // guruhsiz yotoqxonachi
+            db.BoardingRosters.AddRange(Roster(boarder, today.AddDays(-10)));
+            // dayOnly — ro'yxatda yo'q (guruhda bo'lsa ham)
+            db.BoardingRosters.AddRange(Roster(expired, today.AddDays(-60), today));  // bugundan chiqarilgan
+            db.BoardingRosters.AddRange(Roster(loose, today.AddDays(-5)));            // guruhsiz
             await db.SaveChangesAsync();
         });
         return new World(tag, track.Id, boarder.Id, dayOnly.Id, expired.Id, loose.Id,
@@ -75,7 +73,7 @@ public class BoardingAttendanceTests(ApiFixture fixture)
         c.GetFromJsonAsync<BoardingDayDto>($"{Url}?date={date}&session={session}");
 
     [Fact]
-    public async Task Faqat_faol_yotoqxona_abonementi_borlar_belgilanadi()
+    public async Task Faqat_royxatdagilar_belgilanadi()
     {
         var w = await SeedAsync();
         using var admin = await fixture.Api.ClientAsAsync(Roles.Admin);
@@ -83,10 +81,14 @@ public class BoardingAttendanceTests(ApiFixture fixture)
         var day = (await DayAsync(admin, w.Date, BoardingSession.Evening))!;
         var track = Assert.Single(day.Sections, s => s.Key == w.TrackId.ToString());
         Assert.Equal("group", track.Kind);
-        Assert.True(Assert.Single(track.Students, s => s.StudentId == w.Boarder).Eligible);
-        Assert.False(Assert.Single(track.Students, s => s.StudentId == w.DayOnly).Eligible);   // kulrang
-        Assert.False(Assert.Single(track.Students, s => s.StudentId == w.Expired).Eligible);   // muddati o'tgan
+        // Only the roster: the group's other pupil and the one taken off today are not listed.
+        Assert.Equal([w.Boarder], track.Students.Select(s => s.StudentId));
+        Assert.True(track.Students[0].Eligible);
         Assert.Equal(1, track.Eligible);
+        // Yesterday the removed pupil was still on it.
+        var yesterday = AppClock.Today.AddDays(-1).ToString("yyyy-MM-dd");
+        Assert.Contains((await DayAsync(admin, yesterday, BoardingSession.Evening))!.Sections.SelectMany(s => s.Students),
+            s => s.StudentId == w.Expired);
 
         // Guruhsiz yotoqxonachi — o'z sinfi bo'limida.
         var loose = Assert.Single(day.Sections, s => s.Students.Any(x => x.StudentId == w.Loose));
@@ -166,6 +168,63 @@ public class BoardingAttendanceTests(ApiFixture fixture)
             marks = new[] { new { studentId = w.Boarder, status = "present", reasonId = absentId } },
         });
         Assert.Equal(HttpStatusCode.BadRequest, mismatch.StatusCode);
+    }
+
+    /// <summary>
+    /// Ro'yxat qo'lda (2026-10-11): qo'shish, nomzodlar, chiqarish; har sessiyaning o'z ro'yxati va
+    /// o'z ruxsati.
+    /// </summary>
+    [Fact]
+    public async Task Royxat_qolda_yuritiladi()
+    {
+        var w = await SeedAsync();
+        using var evening = await fixture.Api.ClientAsAsync(Roles.Staff, "attendanceEvening");
+
+        var candidates = await evening.GetFromJsonAsync<List<BoardingCandidateDto>>(
+            $"{Url}/roster/candidates?session=evening&q={w.Tag}");
+        // Not on today's list: the group pupil never added and the one taken off today (can come back).
+        Assert.Equal(new[] { w.DayOnly, w.Expired }.Order(StringComparer.Ordinal),
+            candidates!.Select(c => c.StudentId).Order(StringComparer.Ordinal));
+        Assert.NotNull(candidates.Single(c => c.StudentId == w.DayOnly).TrackName);
+
+        var add = await evening.PostAsJsonAsync($"{Url}/roster", new { session = "evening", studentIds = new[] { w.DayOnly } });
+        Assert.Equal(HttpStatusCode.OK, add.StatusCode);
+        var roster = await evening.GetFromJsonAsync<List<BoardingRosterRowDto>>($"{Url}/roster?session=evening");
+        Assert.Contains(roster!, r => r.StudentId == w.DayOnly);
+
+        // Now the pupil can be marked in the evening — but the dorm list did not change.
+        Assert.Equal(HttpStatusCode.OK, (await evening.PutAsJsonAsync(Url, new
+        {
+            date = w.Date, session = "evening", marks = new[] { new { studentId = w.DayOnly, status = "present" } },
+        })).StatusCode);
+        using var admin = await fixture.Api.ClientAsAsync(Roles.Admin);
+        Assert.DoesNotContain((await DayAsync(admin, w.Date, BoardingSession.Dorm))!.Sections.SelectMany(s => s.Students),
+            s => s.StudentId == w.DayOnly);
+
+        // Added today and removed today — the row goes; the mark already saved stays.
+        Assert.Equal(HttpStatusCode.NoContent,
+            (await evening.PostAsJsonAsync($"{Url}/roster/remove", new { session = "evening", studentId = w.DayOnly })).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound,
+            (await evening.PostAsJsonAsync($"{Url}/roster/remove", new { session = "evening", studentId = w.DayOnly })).StatusCode);
+        await fixture.Api.WithDbAsync(async db =>
+        {
+            Assert.False(await db.BoardingRosters.AnyAsync(r => r.StudentId == w.DayOnly));
+            Assert.True(await db.BoardingAttendance.AnyAsync(a => a.StudentId == w.DayOnly));
+        });
+
+        // An older member is taken off from today, not deleted.
+        Assert.Equal(HttpStatusCode.NoContent,
+            (await evening.PostAsJsonAsync($"{Url}/roster/remove", new { session = "evening", studentId = w.Boarder })).StatusCode);
+        await fixture.Api.WithDbAsync(async db =>
+        {
+            var row = await db.BoardingRosters.SingleAsync(r => r.StudentId == w.Boarder && r.Session == "evening");
+            Assert.Equal(AppClock.Today, row.RemovedOn);
+        });
+
+        // The evening keeper cannot touch the dorm list.
+        Assert.Equal(HttpStatusCode.Forbidden,
+            (await evening.PostAsJsonAsync($"{Url}/roster", new { session = "dorm", studentIds = new[] { w.DayOnly } })).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await evening.GetAsync($"{Url}/roster?session=dorm")).StatusCode);
     }
 
     [Fact]

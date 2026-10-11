@@ -816,6 +816,65 @@ namespace SchoolLms.Infrastructure.Migrations
                         });
                 });
 
+            modelBuilder.Entity("SchoolLms.Domain.BoardingRosterEntry", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<string>("AddedBy")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("added_by");
+
+                    b.Property<DateOnly>("AddedOn")
+                        .HasColumnType("date")
+                        .HasColumnName("added_on");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("RemovedBy")
+                        .HasColumnType("text")
+                        .HasColumnName("removed_by");
+
+                    b.Property<DateOnly?>("RemovedOn")
+                        .HasColumnType("date")
+                        .HasColumnName("removed_on");
+
+                    b.Property<string>("Session")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("session");
+
+                    b.Property<string>("StudentId")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("student_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_boarding_rosters");
+
+                    b.HasIndex("StudentId")
+                        .HasDatabaseName("ix_boarding_rosters_student");
+
+                    b.HasIndex("Session", "StudentId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_boarding_rosters_active")
+                        .HasFilter("removed_on is null");
+
+                    b.ToTable("boarding_rosters", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_boarding_rosters_dates", "removed_on is null or removed_on >= added_on");
+
+                            t.HasCheckConstraint("ck_boarding_rosters_session", "session in ('evening','dorm')");
+                        });
+                });
+
             modelBuilder.Entity("SchoolLms.Domain.Branch", b =>
                 {
                     b.Property<string>("Id")
@@ -9522,6 +9581,16 @@ namespace SchoolLms.Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("fk_boarding_attendance_students_student_id");
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.BoardingRosterEntry", b =>
+                {
+                    b.HasOne("SchoolLms.Domain.Student", null)
+                        .WithMany()
+                        .HasForeignKey("StudentId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_boarding_rosters_students_student_id");
                 });
 
             modelBuilder.Entity("SchoolLms.Domain.BroadcastRecipient", b =>

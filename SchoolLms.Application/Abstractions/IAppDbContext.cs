@@ -253,6 +253,8 @@ public interface IAppDbContext
     DbSet<LeadConversion> LeadConversions { get; }
     DbSet<NotificationState> NotificationStates { get; }
     DbSet<BoardingAttendance> BoardingAttendance { get; }
+    /// <summary>Kechki dars va yotoqxona ro'yxatlari — qo'lda, sanali (2026-10-11).</summary>
+    DbSet<BoardingRosterEntry> BoardingRosters { get; }
 
     /// <summary>
     /// Admission, block test and seasonal assessment
