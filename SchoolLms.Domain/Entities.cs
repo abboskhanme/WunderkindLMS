@@ -861,23 +861,6 @@ public class SchoolMeta
     public string TelegramBotUsername { get; set; } = string.Empty;
     /// <summary>Telegram bot ko'rsatiladigan nomi (masalan "Maktab LMS Bot") — UI/ilovada ko'rsatish uchun.</summary>
     public string TelegramBotName { get; set; } = string.Empty;
-    /// <summary>
-    /// Firebase service account (JSON, to'liq) — ilovaga push (FCM) yuborish uchun. Bo'sh bo'lsa
-    /// push yuborilmaydi. Admin "Sozlamalar → Push (Firebase)" bo'limidan kiritadi.
-    /// </summary>
-    public string FcmServiceAccountJson { get; set; } = string.Empty;
-    /// <summary>
-    /// Firebase WEB app konfiguratsiyasi (JSON: apiKey, authDomain, projectId, messagingSenderId,
-    /// appId). Web (PWA) push uchun — brauzer FCM token olishi uchun zarur. Firebase Console →
-    /// Project Settings → General → Your apps → Web app config. Ommaviy (maxfiy emas).
-    /// </summary>
-    public string FcmWebConfigJson { get; set; } = string.Empty;
-    /// <summary>
-    /// Web Push (VAPID) ochiq kaliti — Firebase Console → Cloud Messaging → Web configuration →
-    /// "Web Push certificates" (Key pair). Web (PWA) push uchun zarur.
-    /// </summary>
-    public string FcmVapidKey { get; set; } = string.Empty;
-
     /// <summary>O'qituvchi maoshi hisoblashda toifa bo'yicha BIR SOAT dars narxi (so'm).
     /// Oylik maosh = haftalik darslar soni × 4 × shu narx. Admin "Dars jadvali → Oylik hisoblash"da kiritadi.</summary>
     public decimal SalaryRateOliy { get; set; }
@@ -1123,26 +1106,10 @@ public class Broadcast
     public int SentCount { get; set; }
 }
 
-/// <summary>Ilovaga (FCM push) yuborilgan bildirishnoma — tarix uchun.</summary>
-public class PushMessage
-{
-    public string Id { get; set; } = Guid.NewGuid().ToString();
-    /// <summary>Qabul qiluvchi toifa yorlig'i (masalan "Ota-onalar — 9-A", "O'qituvchilar").</summary>
-    public string Audience { get; set; } = string.Empty;
-    public string Title { get; set; } = string.Empty;
-    public string Body { get; set; } = string.Empty;
-    public string SenderUserId { get; set; } = string.Empty;
-    public string SenderName { get; set; } = string.Empty;
-    public DateTime CreatedAt { get; set; } = AppClock.Now;
-    /// <summary>Maqsadli qurilma tokenlari soni.</summary>
-    public int RecipientCount { get; set; }
-    /// <summary>Muvaffaqiyatli yuborilgan push soni.</summary>
-    public int SentCount { get; set; }
-}
-
 /// <summary>
 /// Farzandni olib ketish so'rovi. Ota-ona ilovada "Farzandimni olishga keldim" bossa yaratiladi;
-/// sinf rahbari ilovada "Qabul qildim" bossa Accepted bo'ladi. Har ikki tomonga push boradi.
+/// sinf rahbari ilovada "Qabul qildim" bossa Accepted bo'ladi. Har ikki tomonga Telegram xabari boradi
+/// (2026-10-11 gacha push edi).
 /// </summary>
 public class PickupRequest
 {
@@ -1319,26 +1286,6 @@ public class UserSettings
     public DateTime? NotificationsReadAt { get; set; }
     /// <summary>Oxirgi yangilanish vaqti (UTC, ISO).</summary>
     public DateTime UpdatedAt { get; set; } = AppClock.Now;
-}
-
-/// <summary>
-/// Mobil/desktop ilovaning push bildirishnoma uchun ro'yxatdan o'tgan qurilma tokeni
-/// (FCM/APNs/WebPush). Bir foydalanuvchining bir nechta qurilmasi bo'lishi mumkin.
-/// </summary>
-public class DeviceToken
-{
-    public string Id { get; set; } = Guid.NewGuid().ToString();
-    public string UserId { get; set; } = string.Empty;
-    /// <summary>Push provayder tokeni (unique).</summary>
-    public string Token { get; set; } = string.Empty;
-    /// <summary>android | ios | web</summary>
-    public string Platform { get; set; } = "android";
-    /// <summary>Qurilma nomi (masalan "Samsung A52", "iPhone 13") — ilova yuboradi.</summary>
-    public string DeviceName { get; set; } = string.Empty;
-    /// <summary>Push provayder ilova identifikatori (app_id) — ilova yuboradi.</summary>
-    public string AppId { get; set; } = string.Empty;
-    public DateTime CreatedAt { get; set; } = AppClock.Now;
-    public DateTime LastSeenAt { get; set; } = AppClock.Now;
 }
 
 /// <summary>

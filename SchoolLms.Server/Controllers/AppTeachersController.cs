@@ -23,19 +23,22 @@ public class AppTeachersController(AppDbContext db) : ControllerBase
         var teachers = await db.Teachers.Where(t => !t.IsArchived).ToListAsync();
         var userIds = teachers.Where(t => t.UserId != null).Select(t => t.UserId!).Distinct().ToList();
         var users = await db.Users.Where(u => userIds.Contains(u.Id)).ToDictionaryAsync(u => u.Id, u => u);
-        var latestDevice = (await db.DeviceTokens.Where(d => userIds.Contains(d.UserId)).ToListAsync())
-            .GroupBy(d => d.UserId)
-            .ToDictionary(g => g.Key, g => g.OrderByDescending(x => x.LastSeenAt).First());
+        // Qurilma (push) o'rniga — Telegram'ga ulanganmi (2026-10-11: push olib tashlandi).
+        var teacherIds = teachers.Select(t => t.Id).ToList();
+        var telegramLinked = (await db.TelegramAccounts.Where(a => userIds.Contains(a.UserId)).Select(a => a.UserId).ToListAsync())
+            .ToHashSet(StringComparer.Ordinal);
+        var registered = (await db.TelegramRegistrations
+                .Where(r => r.TeacherId != null && teacherIds.Contains(r.TeacherId)).Select(r => r.TeacherId!).ToListAsync())
+            .ToHashSet(StringComparer.Ordinal);
 
         return teachers.Select(t =>
         {
             string? first = null, last = null;
             if (t.UserId is not null && users.TryGetValue(t.UserId, out var u)) { first = u.FirstLoginAt; last = u.LastLoginAt; }
-            DeviceToken? dev = t.UserId is not null && latestDevice.TryGetValue(t.UserId, out var d) ? d : null;
             return new TeacherAppRowDto(
                 t.Id, t.FullName, t.Phone ?? "",
                 first is not null, first, last,
-                dev?.DeviceName ?? "", dev?.Platform ?? "", dev?.AppId ?? "");
+                registered.Contains(t.Id) || (t.UserId is not null && telegramLinked.Contains(t.UserId)));
         })
         .OrderByDescending(r => r.LastSeenAt, StringComparer.Ordinal)
         .ThenBy(r => r.FullName, StringComparer.OrdinalIgnoreCase)

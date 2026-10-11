@@ -171,56 +171,6 @@ public class SettingsController(AppDbContext db, TelegramService telegram, Contr
         return new TelegramSettingsDto(m.TelegramBotToken, m.TelegramBotUsername, m.TelegramBotName, telegram.IsConfigured);
     }
 
-    // ---------- Push (Firebase / FCM) ----------
-
-    // Web (PWA) push to'liq sozlanganmi: service account + web config (apiKey) + VAPID kalit.
-    private static bool WebPushReady(string serviceAccount, string webConfig, string vapid)
-    {
-        if (!FcmService.IsConfigured(serviceAccount) || vapid.Trim().Length == 0) return false;
-        try
-        {
-            using var doc = System.Text.Json.JsonDocument.Parse(webConfig);
-            return doc.RootElement.TryGetProperty("apiKey", out var a)
-                && !string.IsNullOrWhiteSpace(a.GetString());
-        }
-        catch { return false; }
-    }
-
-    [HttpGet("firebase")]
-    public async Task<ActionResult<FirebaseSettingsDto>> GetFirebase()
-    {
-        var m = await db.SchoolMeta.FirstOrDefaultAsync();
-        var json = m?.FcmServiceAccountJson ?? "";
-        var web = m?.FcmWebConfigJson ?? "";
-        var vapid = m?.FcmVapidKey ?? "";
-        return new FirebaseSettingsDto(
-            json, FcmService.IsConfigured(json), web, vapid, WebPushReady(json, web, vapid));
-    }
-
-    [HttpPut("firebase")]
-    public async Task<ActionResult<FirebaseSettingsDto>> SaveFirebase(SaveFirebaseSettingsRequest req)
-    {
-        var json = (req.ServiceAccountJson ?? "").Trim();
-        if (json.Length > 0 && !FcmService.IsConfigured(json))
-            return BadRequest(new { message = "Service account JSON noto'g'ri (client_email/private_key/project_id kerak)" });
-        var web = (req.WebConfigJson ?? "").Trim();
-        if (web.Length > 0)
-        {
-            try { using var _ = System.Text.Json.JsonDocument.Parse(web); }
-            catch { return BadRequest(new { message = "Web config JSON noto'g'ri (apiKey, projectId, messagingSenderId, appId bo'lishi kerak)" }); }
-        }
-        var vapid = (req.VapidKey ?? "").Trim();
-
-        var m = await db.SchoolMeta.FirstOrDefaultAsync();
-        if (m is null) { m = new SchoolMeta(); db.SchoolMeta.Add(m); }
-        m.FcmServiceAccountJson = json;
-        m.FcmWebConfigJson = web;
-        m.FcmVapidKey = vapid;
-        await db.SaveChangesAsync();
-        return new FirebaseSettingsDto(
-            json, FcmService.IsConfigured(json), web, vapid, WebPushReady(json, web, vapid));
-    }
-
     // ---------- Turniket / FaceID integratsiyasi ----------
 
     [HttpGet("turnstile")]

@@ -51,7 +51,7 @@ public sealed class TelegramParentController(
     ReferenceCache refCache,
     IInvoiceService invoices,
     IReceiptService receipts,
-    FcmService fcm) : ControllerBase
+    TelegramService telegram) : ControllerBase
 {
     /// <summary>E'lonlar "yaqinda" deb sanaladigan oyna (bosh sahifadagi hisoblagich uchun).</summary>
     private const int AnnouncementWindowDays = 14;
@@ -322,7 +322,7 @@ public sealed class TelegramParentController(
         if (child is null) return NotFound(new { message = "Farzand topilmadi" });
 
         var pr = await PickupService.EnsureTodayAsync(db, child, uid, ct);
-        await PickupService.NotifyHomeroomAsync(db, fcm, child, ct);
+        await PickupService.NotifyHomeroomAsync(db, telegram, child, ct);
         return PickupService.ToDto(pr);
     }
 

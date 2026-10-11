@@ -46,7 +46,6 @@ public interface IAppDbContext
     DbSet<SchoolYearArchive> SchoolYearArchives { get; }
     DbSet<ChatMessage> ChatMessages { get; }
     DbSet<Broadcast> Broadcasts { get; }
-    DbSet<PushMessage> PushMessages { get; }
     DbSet<PickupRequest> PickupRequests { get; }
     DbSet<TelegramRegistration> TelegramRegistrations { get; }
     DbSet<Assignment> Assignments { get; }
@@ -55,7 +54,6 @@ public interface IAppDbContext
     DbSet<TestQuestion> TestQuestions { get; }
     DbSet<AssignmentSubmission> AssignmentSubmissions { get; }
     DbSet<UserSettings> UserSettings { get; }
-    DbSet<DeviceToken> DeviceTokens { get; }
     DbSet<ContractTemplate> ContractTemplates { get; }
     DbSet<Contract> Contracts { get; }
     DbSet<Branch> Branches { get; }
@@ -175,6 +173,9 @@ public interface IAppDbContext
 
     /// <summary>Sinf rahbarlari, ko'p-ko'pga — <c>teachers.homeroom_class</c> o'rnida (2026-10-09).</summary>
     DbSet<ClassHomeroomTeacher> ClassHomeroomTeachers { get; }
+
+    /// <summary>Kelmaganlik haqida ota-onaga yuborilgan Telegram xabarlari (2026-10-11).</summary>
+    DbSet<AbsenceNotice> AbsenceNotices { get; }
 
     // ---------- O'quvchi kartochkasi (students-parity.md §3.2) ----------
     DbSet<StudentStatus> StudentStatuses { get; }

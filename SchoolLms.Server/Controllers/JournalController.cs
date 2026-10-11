@@ -17,7 +17,7 @@ namespace SchoolLms.Server.Controllers;
 [Authorize]
 [AdminPerm("journal")]
 [Route("api/admin/journal")]
-public class JournalController(AppDbContext db, FcmService fcm) : ControllerBase
+public class JournalController(AppDbContext db) : ControllerBase
 {
     /// <summary>
     /// Jurnal tanlagichi uchun egalar ro'yxati: sinflar (har doim) va o'quv
@@ -222,7 +222,7 @@ public class JournalController(AppDbContext db, FcmService fcm) : ControllerBase
     [HttpPut]
     public async Task<IActionResult> SetEntry(SetJournalEntryRequest req)
     {
-        var error = await JournalService.SetEntryAsync(db, req, fcm);
+        var error = await JournalService.SetEntryAsync(db, req);
         if (error is not null) return BadRequest(new { message = error });
         return NoContent();
     }

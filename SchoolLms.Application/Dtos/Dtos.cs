@@ -693,8 +693,7 @@ public record StudentLocationPinDto(
 /// <summary>Ota-ona bo'limidagi bitta farzand (qisqacha) + qurilma ma'lumoti.</summary>
 public record ParentChildDto(
     string StudentId, string FullName, string ClassName,
-    string? FirstLoginAt, string? LastLoginAt,
-    string DeviceName = "", string Platform = "", string AppId = "");
+    string? FirstLoginAt, string? LastLoginAt);
 
 /// <summary>
 /// Admin "Ota-onalar" bo'limidagi bir ota-ona qatori — telefon bo'yicha guruhlangan.
@@ -705,13 +704,13 @@ public record ParentChildDto(
 public record ParentRowDto(
     string FullName, string Phone, int ChildrenCount,
     bool IsActivated, string? ActivatedAt, string? LastSeenAt,
-    List<ParentChildDto> Children, string DeviceName = "", string Platform = "");
+    List<ParentChildDto> Children);
 
-/// <summary>Admin "Ilova → O'qituvchilar" bo'limidagi bir o'qituvchi qatori (ilova faolligi + qurilma).</summary>
+/// <summary>Admin "Ilova → O'qituvchilar" bo'limidagi bir o'qituvchi qatori (ilova faolligi + Telegram).</summary>
 public record TeacherAppRowDto(
     string TeacherId, string FullName, string Phone,
     bool IsActivated, string? ActivatedAt, string? LastSeenAt,
-    string DeviceName, string Platform, string AppId);
+    bool TelegramLinked);
 /// <summary>Sinf hisobotidagi bitta o'quvchi qatori. Studentga SubGroup ham kiradi (StudentDto orqali).</summary>
 public record ClassStudentRowDto(StudentDto Student, Dictionary<string, double> Grades, double Average, double? Attendance);
 public record ClassPerformanceDataDto(List<SubjectDto> Subjects, List<ClassStudentRowDto> Rows);
@@ -821,14 +820,6 @@ public record SchoolNameDto(string Name);
 public record TelegramSettingsDto(string BotToken, string BotUsername, string BotName, bool Configured);
 /// <summary>Telegram bot sozlamasini saqlash so'rovi.</summary>
 public record SaveTelegramSettingsRequest(string? BotToken, string? BotUsername, string? BotName);
-/// <summary>Firebase (FCM push) sozlamasi. Configured = service account JSON to'g'ri kiritilgan.</summary>
-public record FirebaseSettingsDto(
-    string ServiceAccountJson, bool Configured,
-    string WebConfigJson, string VapidKey, bool WebConfigured);
-public record SaveFirebaseSettingsRequest(
-    string? ServiceAccountJson, string? WebConfigJson, string? VapidKey);
-/// <summary>Web (PWA) push uchun klient konfiguratsiyasi — brauzer FCM token olishi uchun.</summary>
-public record PushClientConfigDto(bool Enabled, string WebConfigJson, string VapidKey);
 
 /// <summary>Turniket/FaceID integratsiya sozlamasi (o'qituvchilar davomati avtomatik).
 /// Parol javobda BO'SH qaytadi (xavfsizlik); HasPassword saqlanganini bildiradi.</summary>
@@ -1015,8 +1006,6 @@ public record HandoverRequest(string StudentId);
 /// <summary>Sozlamani yangilash so'rovi. Berilgan maydonlar yangilanadi, qolganlari saqlanadi.</summary>
 public record SaveUserSettingsRequest(string? Language, string? Theme, bool? NotificationsEnabled);
 
-/// <summary>Push qurilma tokenini ro'yxatdan o'tkazish so'rovi.</summary>
-public record RegisterDeviceRequest(string Token, string? Platform, string? DeviceName, string? AppId);
 
 /// <summary>Portal umumiy konteksti: choraklar, dars vaqtlari, davomat sabablari + joriy chorak/hafta.</summary>
 public record PortalMetaDto(
@@ -1130,17 +1119,6 @@ public record TelegramParentDto(
     string StudentId, string StudentName, string ClassName, decimal? Balance,
     string ParentName, string Phone, string ChatId, string CreatedAt);
 
-/// <summary>
-/// Ilovaga push yuborish so'rovi. Audience: "parents" (ClassName ixtiyoriy) | "teachers" |
-/// "selected" (UserIds tanlangan foydalanuvchilar).
-/// </summary>
-public record SendPushRequest(string Audience, string? ClassName, List<string>? UserIds, string Title, string Body);
-/// <summary>Push uchun tanlanadigan oluvchi. UserId — akkaunt id; HasDevice = qurilma ulangan (push yetadi).</summary>
-public record PushRecipientDto(string UserId, string Name, string Group, string Detail, bool HasDevice);
-/// <summary>Yuborilgan push (tarix). CreatedAt — ISO.</summary>
-public record PushMessageDto(
-    string Id, string Audience, string Title, string Body, string SenderName, string CreatedAt,
-    int RecipientCount, int SentCount);
 
 /* ---------- Assignments (qo'shimcha topshiriqlar) ---------- */
 

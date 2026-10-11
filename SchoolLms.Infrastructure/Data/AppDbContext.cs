@@ -46,7 +46,6 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<SchoolYearArchive> SchoolYearArchives => Set<SchoolYearArchive>();
     public DbSet<ChatMessage> ChatMessages => Set<ChatMessage>();
     public DbSet<Broadcast> Broadcasts => Set<Broadcast>();
-    public DbSet<PushMessage> PushMessages => Set<PushMessage>();
     public DbSet<PickupRequest> PickupRequests => Set<PickupRequest>();
     public DbSet<TelegramRegistration> TelegramRegistrations => Set<TelegramRegistration>();
     public DbSet<Assignment> Assignments => Set<Assignment>();
@@ -55,7 +54,6 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<TestQuestion> TestQuestions => Set<TestQuestion>();
     public DbSet<AssignmentSubmission> AssignmentSubmissions => Set<AssignmentSubmission>();
     public DbSet<UserSettings> UserSettings => Set<UserSettings>();
-    public DbSet<DeviceToken> DeviceTokens => Set<DeviceToken>();
     public DbSet<ContractTemplate> ContractTemplates => Set<ContractTemplate>();
     public DbSet<Contract> Contracts => Set<Contract>();
     public DbSet<Branch> Branches => Set<Branch>();
@@ -139,6 +137,9 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
 
     // Sinf rahbarlari, ko'p-ko'pga (2026-10-09). Konfiguratsiya: HomeroomModel.cs.
     public DbSet<ClassHomeroomTeacher> ClassHomeroomTeachers => Set<ClassHomeroomTeacher>();
+
+    // Kelmaganlik haqida ota-onaga Telegram xabarlari (2026-10-11). Konfiguratsiya: AbsenceNoticeModel.cs.
+    public DbSet<AbsenceNotice> AbsenceNotices => Set<AbsenceNotice>();
 
     // O'quvchi kartochkasining qo'shimcha qismlari (students-parity.md §3.2).
     // Sxema oldin, ekranlar keyin — hozircha ilovadan hech kim o'qimaydi.
@@ -378,8 +379,6 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
 
         // Foydalanuvchi sozlamalari va qurilma tokenlari
         b.Entity<UserSettings>().HasKey(s => s.UserId);
-        b.Entity<DeviceToken>().HasIndex(d => d.Token).IsUnique();
-        b.Entity<DeviceToken>().HasIndex(d => d.UserId);
 
         // Shartnomalar
         b.Entity<ContractTemplate>().HasIndex(t => t.Target);
@@ -439,6 +438,9 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
 
         // ----- Sinf rahbarlari, ko'p-ko'pga (2026-10-09) -----
         HomeroomModel.Apply(b);
+
+        // ----- Kelmaganlik haqida ota-onaga xabar (2026-10-11) -----
+        AbsenceNoticeModel.Apply(b);
 
         // ----- O'quvchi kartochkasi: status, izoh, shartnoma, xonalar (§3.2) -----
         StudentsParityModel.Apply(b);

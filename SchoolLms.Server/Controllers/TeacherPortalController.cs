@@ -22,7 +22,7 @@ namespace SchoolLms.Server.Controllers;
 [Route("api/teacher")]
 public class TeacherPortalController(
     AppDbContext db, ChatService chat, IWebHostEnvironment env, ReferenceCache refCache,
-    FcmService fcm) : ControllerBase
+    TelegramService telegram) : ControllerBase
 {
     /// <summary>Tokendagi foydalanuvchi id'si bo'yicha joriy o'qituvchini topadi.</summary>
     private async Task<Teacher?> Me()
@@ -76,22 +76,6 @@ public class TeacherPortalController(
     [HttpGet("holidays")]
     public async Task<ActionResult<IEnumerable<HolidayDto>>> Holidays() =>
         await db.Holidays.OrderBy(h => h.Date).Select(h => new HolidayDto(h.Date, h.Name)).ToListAsync();
-
-    /// <summary>
-    /// Web (PWA) push uchun Firebase web konfiguratsiyasi + VAPID ochiq kaliti. Brauzer shu config
-    /// bilan FCM web token oladi va uni /notifications/register orqali yuboradi. Qiymatlar ommaviy
-    /// (maxfiy emas). Sozlanmagan bo'lsa <c>enabled=false</c> — ilova push so'ramaydi.
-    /// </summary>
-    [HttpGet("push-config")]
-    public async Task<ActionResult<PushClientConfigDto>> PushConfig()
-    {
-        var m = await db.SchoolMeta.FirstOrDefaultAsync();
-        var sa = m?.FcmServiceAccountJson ?? "";
-        var web = (m?.FcmWebConfigJson ?? "").Trim();
-        var vapid = (m?.FcmVapidKey ?? "").Trim();
-        var enabled = FcmService.IsConfigured(sa) && web.Length > 0 && vapid.Length > 0;
-        return new PushClientConfigDto(enabled, web, vapid);
-    }
 
     // ---------- Farzandni olib ketish (pickup) — sinf rahbari ----------
 
@@ -185,23 +169,13 @@ public class TeacherPortalController(
         pr.AcceptedByName = t.FullName;
         await db.SaveChangesAsync();
 
-        if (s.UserId is not null)
-        {
-            var meta = await db.SchoolMeta.FirstOrDefaultAsync();
-            var json = meta?.FcmServiceAccountJson ?? "";
-            if (FcmService.IsConfigured(json))
-            {
-                var tokens = await db.DeviceTokens.Where(d => d.UserId == s.UserId)
-                    .Select(d => d.Token).Distinct().ToListAsync();
-                if (tokens.Count > 0)
-                    _ = fcm.SendAsync(json, tokens, "Farzandingiz topshirildi",
-                        $"Farzandingiz {s.FullName}ni olib ketishingiz mumkin — {t.FullName} topshirdi.");
-            }
-        }
+        // Ota-onaga Telegram (push olib tashlandi, 2026-10-11).
+        await PickupService.NotifyParentAsync(db, telegram, s.Id,
+            $"✅ Farzandingiz topshirildi\n\n{s.FullName}ni olib ketishingiz mumkin — {t.FullName} topshirdi.");
         return PickupDto(pr);
     }
 
-    /// <summary>"Qabul qildim" — so'rovni tasdiqlaydi va ota-onaga ruxsat push'i yuboradi.</summary>
+    /// <summary>"Qabul qildim" — so'rovni tasdiqlaydi va ota-onaga Telegram orqali ruxsat xabarini yuboradi.</summary>
     [HttpPost("pickups/{id}/accept")]
     public async Task<ActionResult<PickupRequestDto>> AcceptPickup(string id)
     {
@@ -219,72 +193,11 @@ public class TeacherPortalController(
             pr.AcceptedByName = t.FullName;
             await db.SaveChangesAsync();
 
-            // Ota-onaga (oila akkaunti — o'quvchi UserId) ruxsat push'i.
-            var student = await db.Students.FindAsync(pr.StudentId);
-            if (student?.UserId is not null)
-            {
-                var meta = await db.SchoolMeta.FirstOrDefaultAsync();
-                var json = meta?.FcmServiceAccountJson ?? "";
-                if (FcmService.IsConfigured(json))
-                {
-                    var tokens = await db.DeviceTokens.Where(d => d.UserId == student.UserId)
-                        .Select(d => d.Token).Distinct().ToListAsync();
-                    if (tokens.Count > 0)
-                        _ = fcm.SendAsync(json, tokens, "Ruxsat berildi",
-                            $"Farzandingiz {pr.StudentName}ni olib ketishingiz mumkin — {t.FullName} qabul qildi.");
-                }
-            }
+            // Ota-onaga Telegram (push olib tashlandi, 2026-10-11).
+            await PickupService.NotifyParentAsync(db, telegram, pr.StudentId,
+                $"✅ Ruxsat berildi\n\n{pr.StudentName}ni olib ketishingiz mumkin — {t.FullName} qabul qildi.");
         }
         return PickupDto(pr);
-    }
-
-    // ---------- Push qurilma (bildirishnoma) ----------
-
-    /// <summary>Qurilma push tokenini ro'yxatdan o'tkazadi (token, platform, qurilma nomi, app_id).</summary>
-    [HttpPost("notifications/register")]
-    public async Task<ActionResult> RegisterDevice(RegisterDeviceRequest req)
-    {
-        var uid = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        if (uid is null) return Unauthorized();
-        var token = req.Token?.Trim();
-        if (string.IsNullOrWhiteSpace(token)) return BadRequest(new { message = "Token bo'sh" });
-        var platform = string.IsNullOrWhiteSpace(req.Platform) ? "android" : req.Platform!.Trim().ToLowerInvariant();
-        var deviceName = (req.DeviceName ?? "").Trim();
-        var appId = (req.AppId ?? "").Trim();
-
-        var existing = await db.DeviceTokens.FirstOrDefaultAsync(d => d.Token == token);
-        if (existing is null)
-        {
-            db.DeviceTokens.Add(new DeviceToken
-            {
-                UserId = uid,
-                Token = token,
-                Platform = platform,
-                DeviceName = deviceName,
-                AppId = appId,
-            });
-        }
-        else
-        {
-            existing.UserId = uid;
-            existing.Platform = platform;
-            if (deviceName.Length > 0) existing.DeviceName = deviceName;
-            if (appId.Length > 0) existing.AppId = appId;
-            existing.LastSeenAt = AppClock.Now;
-        }
-        await db.SaveChangesAsync();
-        return Ok(new { ok = true });
-    }
-
-    /// <summary>Qurilma tokenini o'chiradi (logout). Topilmasa ham 200.</summary>
-    [HttpDelete("notifications/register")]
-    public async Task<ActionResult> UnregisterDevice([FromQuery] string token)
-    {
-        if (string.IsNullOrWhiteSpace(token)) return BadRequest(new { message = "Token bo'sh" });
-        var uid = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        var d = await db.DeviceTokens.FirstOrDefaultAsync(x => x.Token == token && x.UserId == uid);
-        if (d is not null) { db.DeviceTokens.Remove(d); await db.SaveChangesAsync(); }
-        return Ok(new { ok = true });
     }
 
     // ---------- Dars beradigan sinflar va o'quv guruhlari ----------
@@ -595,7 +508,7 @@ public class TeacherPortalController(
         // Hali o'tilmagan (sanasi kelmagan) darsga baho/jurnal kiritib bo'lmaydi.
         if (string.CompareOrdinal(req.Date, AppClock.Now.ToString("yyyy-MM-dd")) > 0)
             return BadRequest(new { message = "Dars hali o'tilmagan — kelajakdagi sanaga baho qo'yib bo'lmaydi" });
-        var error = await JournalService.SetEntryAsync(db, req, fcm);
+        var error = await JournalService.SetEntryAsync(db, req);
         if (error is not null) return BadRequest(new { message = error });
         return NoContent();
     }

@@ -478,9 +478,10 @@ public class McpToolsHardeningTests(ApiFixture fixture)
                  {
                      "select password_hash from users limit 1", "select initial_password from users limit 1",
                      "select email from users limit 1", "select * from users limit 1",
-                     "select telegram_bot_token from school_meta", "select fcm_service_account_json from school_meta",
+                     // fcm_service_account_json and device_tokens were dropped with push (2026-10-11).
+                     "select telegram_bot_token from school_meta",
                      "select turnstile_password from school_meta", "select gps_ingest_token from school_meta",
-                     "select passport_url from guardians", "select count(*) from device_tokens",
+                     "select passport_url from guardians",
                      "select count(*) from telegram_link_codes", "select count(*) from exam_invitations",
                      "select count(*) from questions", "select count(*) from question_options",
                      "select count(*) from audit_logs", "select count(*) from chat_messages",

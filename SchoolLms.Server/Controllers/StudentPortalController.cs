@@ -24,11 +24,8 @@ namespace SchoolLms.Server.Controllers;
 [Route("api/student")]
 public class StudentPortalController(
     AppDbContext db, ChatService chat, IWebHostEnvironment env, ReferenceCache refCache,
-    TelegramService telegram, FcmService fcm) : ControllerBase
+    TelegramService telegram) : ControllerBase
 {
-    /// <summary>Berilgan foydalanuvchining qurilmalariga push yuboradi (fire-and-forget).</summary>
-    private Task PushToUserAsync(string userId, string title, string body) =>
-        AppPush.ToUserAsync(db, fcm, userId, title, body);
 
     private static PickupRequestDto PickupDto(PickupRequest p) => PickupService.ToDto(p);
 
@@ -337,23 +334,10 @@ public class StudentPortalController(
     public async Task<ActionResult<IEnumerable<HolidayDto>>> Holidays() =>
         await db.Holidays.OrderBy(h => h.Date).Select(h => new HolidayDto(h.Date, h.Name)).ToListAsync();
 
-    /// <summary>Web (PWA) push uchun Firebase web config + VAPID — brauzer FCM token olishi uchun.
-    /// Bitta Firebase loyiha barcha ilovalar uchun (teacher/student) ishlaydi.</summary>
-    [HttpGet("push-config")]
-    public async Task<ActionResult<PushClientConfigDto>> PushConfig()
-    {
-        var m = await db.SchoolMeta.FirstOrDefaultAsync();
-        var sa = m?.FcmServiceAccountJson ?? "";
-        var web = (m?.FcmWebConfigJson ?? "").Trim();
-        var vapid = (m?.FcmVapidKey ?? "").Trim();
-        var enabled = FcmService.IsConfigured(sa) && web.Length > 0 && vapid.Length > 0;
-        return new PushClientConfigDto(enabled, web, vapid);
-    }
-
     // ---------- Farzandni olib ketish (pickup) ----------
 
     /// <summary>
-    /// "Farzandimni olishga keldim" — pickup so'rovi yaratadi va sinf rahbariga push yuboradi.
+    /// "Farzandimni olishga keldim" — pickup so'rovi yaratadi va sinf rahbariga Telegram yuboradi.
     /// Allaqachon kutilayotgan (pending) so'rov bo'lsa — o'shani qaytaradi (takror yaratmaydi).
     /// </summary>
     [HttpPost("pickup")]
@@ -367,7 +351,7 @@ public class StudentPortalController(
         // Pickup KUNLIK va takror bosishga chidamli — mantiq `PickupService` da,
         // chunki Telegram Mini App (`/api/tg/parent/...`) ham aynan shu yerdan yuradi.
         var pr = await PickupService.EnsureTodayAsync(db, s, uid ?? s.UserId ?? "");
-        await PickupService.NotifyHomeroomAsync(db, fcm, s);
+        await PickupService.NotifyHomeroomAsync(db, telegram, s);
         return PickupDto(pr);
     }
 
@@ -1007,64 +991,6 @@ public class StudentPortalController(
             .Where(l => l.BusId == id && l.RecordedAt.StartsWith(d))
             .ToListAsync();
         return GpsService.Analyze(d, points, meta?.GpsStopRadiusM ?? 60, meta?.GpsStopMinMinutes ?? 3);
-    }
-
-    // ---------- Push bildirishnoma (qurilma tokeni) ----------
-
-    /// <summary>Push (FCM/APNs/Web) qurilma tokenini ro'yxatdan o'tkazadi (yangi bo'lsa qo'shadi,
-    /// mavjud bo'lsa LastSeenAt yangilanadi). Token boshqa foydalanuvchiga bog'langan bo'lsa
-    /// joriy foydalanuvchiga ko'chiriladi (qurilma boshqa akkauntga kirgan deb hisoblanadi).
-    /// Faqat student rolida — token tokendagi foydalanuvchiga bog'lanadi.</summary>
-    [HttpPost("notifications/register")]
-    [Authorize(Roles = "student")]
-    public async Task<ActionResult> RegisterDevice(RegisterDeviceRequest req)
-    {
-        var uid = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        if (uid is null) return Unauthorized();
-        var token = req.Token?.Trim();
-        if (string.IsNullOrWhiteSpace(token)) return BadRequest(new { message = "Token bo'sh" });
-        var platform = string.IsNullOrWhiteSpace(req.Platform) ? "android" : req.Platform!.Trim().ToLowerInvariant();
-        var deviceName = (req.DeviceName ?? "").Trim();
-        var appId = (req.AppId ?? "").Trim();
-
-        var existing = await db.DeviceTokens.FirstOrDefaultAsync(d => d.Token == token);
-        if (existing is null)
-        {
-            db.DeviceTokens.Add(new DeviceToken
-            {
-                UserId = uid,
-                Token = token,
-                Platform = platform,
-                DeviceName = deviceName,
-                AppId = appId,
-            });
-        }
-        else
-        {
-            existing.UserId = uid;
-            existing.Platform = platform;
-            if (deviceName.Length > 0) existing.DeviceName = deviceName;
-            if (appId.Length > 0) existing.AppId = appId;
-            existing.LastSeenAt = AppClock.Now;
-        }
-        await db.SaveChangesAsync();
-        return Ok(new { ok = true });
-    }
-
-    /// <summary>Qurilma tokenini o'chiradi (logout/disable). Topilmasa ham 200 qaytaradi.</summary>
-    [HttpDelete("notifications/register")]
-    [Authorize(Roles = "student")]
-    public async Task<ActionResult> UnregisterDevice([FromQuery] string token)
-    {
-        if (string.IsNullOrWhiteSpace(token)) return BadRequest(new { message = "Token bo'sh" });
-        var uid = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        var d = await db.DeviceTokens.FirstOrDefaultAsync(x => x.Token == token && x.UserId == uid);
-        if (d is not null)
-        {
-            db.DeviceTokens.Remove(d);
-            await db.SaveChangesAsync();
-        }
-        return Ok(new { ok = true });
     }
 
     // ---------- To'lovlar (o'ziniki) ----------

@@ -64,3 +64,30 @@ public class DailyAttendanceMark
     /// </summary>
     public int LateCount { get; set; }
 }
+
+/// <summary>
+/// Kelmagan o'quvchining ota-onasiga yuborilgan Telegram xabari (mijoz, 2026-10-11: "hamshira davomat
+/// qilib bo'lgandan so'ng bir tugmani bosish orqali kelmagan o'quvchini ota onasiga ... avtomatik
+/// habar yuborish"). Bitta o'quvchiga bir kunda BITTA xabar — tugma qayta bosilsa takrorlanmaydi.
+/// </summary>
+public class AbsenceNotice
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+
+    /// <summary>students.id</summary>
+    public string StudentId { get; set; } = string.Empty;
+
+    /// <summary>Qaysi kun uchun.</summary>
+    public DateOnly Date { get; set; }
+
+    /// <summary>Xabardagi sabab (absence_reasons.id); sababi qo'yilmagan bo'lsa null.</summary>
+    public string? ReasonId { get; set; }
+
+    /// <summary>Nechta Telegram chatiga yetkazildi.</summary>
+    public int Chats { get; set; }
+
+    /// <summary>Kim yubordi (users.id) — JWT'dan.</summary>
+    public string SentBy { get; set; } = string.Empty;
+
+    public DateTimeOffset SentAt { get; set; }
+}

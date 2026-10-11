@@ -39,7 +39,7 @@ DECLARE
         'expense_attachments', 'expenses', 'fee_categories', 'holidays', 'invoices',
         'journal_entries', 'lead_conversions', 'lead_stages', 'leads', 'ledger_entries',
         'lesson_notes', 'lesson_times', 'payment_allocations', 'payments', 'payroll_adjustments',
-        'push_messages', 'quarter_grades', 'quarters', 'rooms', 'schedule_lesson',
+        'quarter_grades', 'quarters', 'rooms', 'schedule_lesson',
         'schedule_templates', 'seasonal_marks', 'student_archive_reasons', 'student_contracts',
         'student_guardians', 'student_refunds', 'student_statuses', 'student_subscriptions',
         'students', 'study_group_classes', 'study_group_members', 'study_group_teachers',

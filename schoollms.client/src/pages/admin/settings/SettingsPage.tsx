@@ -1,7 +1,6 @@
 import { useParams } from 'react-router-dom'
 import { SchoolSettings } from './SchoolSettings'
 import { TelegramSettings } from './TelegramSettings'
-import { FirebaseSettings } from './FirebaseSettings'
 import { TurnstileSettings } from './TurnstileSettings'
 import { GpsSettings } from './GpsSettings'
 import { CameraSettings } from './CameraSettings'
@@ -17,7 +16,6 @@ const sectionTitles: Record<string, string> = {
   school: "Maktab ma'lumotlari",
   'archive-reasons': 'Arxivlash sabablari',
   telegram: 'Telegram bot',
-  firebase: 'Push (Firebase)',
   turnstile: 'Turniket integratsiya',
   gps: 'GPS integratsiya',
   cameras: 'Kamera integratsiya',
@@ -55,9 +53,6 @@ export function SettingsPage() {
 
         {/* Telegram bot */}
         {section === 'telegram' && <TelegramSettings />}
-
-        {/* Push (Firebase) */}
-        {section === 'firebase' && <FirebaseSettings />}
 
         {/* Turniket / FaceID integratsiya */}
         {section === 'turnstile' && <TurnstileSettings />}

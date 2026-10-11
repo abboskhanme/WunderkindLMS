@@ -30,11 +30,8 @@ public sealed class CommunicationTools(McpToolContext t)
             .OrderByDescending(b => b.CreatedAt).Take(take)
             .Select(b => new { b.CreatedAt, channel = "telegram", audience = b.ClassName, title = (string?)null, text = b.Text, sender = b.SenderName, b.RecipientCount, b.SentCount })
             .ToListAsync(ct);
-        var pushes = await db.PushMessages.Where(b => b.CreatedAt >= start && b.CreatedAt < end)
-            .OrderByDescending(b => b.CreatedAt).Take(take)
-            .Select(b => new { b.CreatedAt, channel = "push", audience = b.Audience, title = (string?)b.Title, text = b.Body, sender = b.SenderName, b.RecipientCount, b.SentCount })
-            .ToListAsync(ct);
-        var rows = broadcasts.Concat(pushes).OrderByDescending(r => r.CreatedAt).Take(take).ToList();
+        // Push olib tashlandi (2026-10-11) — tarix faqat Telegram e'lonlari.
+        var rows = broadcasts;
         return t.Json(new { from = f, to = tt, rows }, rows.Count);
     }
 

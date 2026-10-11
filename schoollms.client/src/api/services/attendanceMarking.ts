@@ -136,3 +136,46 @@ export async function saveDailyAttendance(
   })
   return data
 }
+
+/* ---------- Kelmaganlarning ota-onalariga Telegram xabari (2026-10-11) ---------- */
+
+export interface AbsenceNoticeRow {
+  studentId: string
+  fullName: string
+  /** Sinf yoki yo'nalish guruhi */
+  rowName: string
+  reasonName: string | null
+  unexcused: boolean
+  /** Ota-onasi Telegramga ulangan (xabar yetadi) */
+  telegram: boolean
+  /** Shu kun uchun xabar allaqachon yuborilgan bo'lsa — qachon */
+  sentAt: string | null
+}
+
+export interface AbsenceNoticePreview {
+  date: string
+  botConfigured: boolean
+  /** Kun bo'yi kelmaganlar */
+  rows: AbsenceNoticeRow[]
+  /** Hozir xabar ketadiganlar */
+  ready: number
+  alreadySent: number
+  noTelegram: number
+}
+
+export interface AbsenceNoticeResult {
+  sent: number
+  alreadySent: number
+  noTelegram: number
+  failed: number
+}
+
+export async function getAbsenceNotices(date: string): Promise<AbsenceNoticePreview> {
+  const { data } = await api.get<AbsenceNoticePreview>('/admin/attendance/daily/absence-notices', { params: { date } })
+  return data
+}
+
+export async function sendAbsenceNotices(date: string): Promise<AbsenceNoticeResult> {
+  const { data } = await api.post<AbsenceNoticeResult>('/admin/attendance/daily/absence-notices', { date })
+  return data
+}

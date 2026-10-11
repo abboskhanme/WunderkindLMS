@@ -123,7 +123,7 @@ export function TeacherAppPage() {
                   <th className="px-4 py-3">F.I.SH</th>
                   <th className="px-4 py-3">Telefon</th>
                   <th className="px-4 py-3">Holat</th>
-                  <th className="px-4 py-3">Qurilma</th>
+                  <th className="px-4 py-3">Telegram</th>
                   <th className="px-4 py-3">Aktivlashtirilgan</th>
                   <th className="px-4 py-3">Oxirgi kirish</th>
                 </tr>
@@ -148,15 +148,12 @@ export function TeacherAppPage() {
                         </span>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-slate-600">
-                      {r.deviceName ? (
-                        <span className="inline-flex items-center gap-1">
-                          <Smartphone className="h-3.5 w-3.5 text-slate-400" />
-                          {r.deviceName}
-                          {r.platform && <span className="text-[11px] text-slate-400">({r.platform})</span>}
-                        </span>
+                    <td className="px-4 py-3">
+                      {/* Push (qurilma) o'rniga — xabarlar Telegram orqali boradi (2026-10-11). */}
+                      {r.telegramLinked ? (
+                        <span className="rounded-md bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">Ulangan</span>
                       ) : (
-                        '—'
+                        <span className="rounded-md bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700">Ulanmagan</span>
                       )}
                     </td>
                     <td className="px-4 py-3 text-slate-600">{formatDateTime(r.activatedAt)}</td>

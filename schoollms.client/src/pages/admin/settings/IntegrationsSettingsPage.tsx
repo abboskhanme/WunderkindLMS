@@ -3,14 +3,11 @@ import { TelegramSettings } from './TelegramSettings'
 import { TurnstileSettings } from './TurnstileSettings'
 import { GpsSettings } from './GpsSettings'
 import { CameraSettings } from './CameraSettings'
-import { FirebaseSettings } from './FirebaseSettings'
 import { cn } from '@/lib/utils'
 
 interface IntegrationSection {
   key: string
   label: string
-  /** Mahsulot yo'l xaritasida endi yo'q — kamroq ko'zga tashlanadigan holatda ko'rsatiladi. */
-  legacy?: boolean
 }
 
 const sections: IntegrationSection[] = [
@@ -18,11 +15,8 @@ const sections: IntegrationSection[] = [
   { key: 'turnstile', label: 'Turniket integratsiya' },
   { key: 'gps', label: 'GPS integratsiya' },
   { key: 'cameras', label: 'Kamera integratsiya' },
-  // CLAUDE.md: mobil push (Firebase/FCM) mahsulot yo'l xaritasida yo'q — faqat
-  // Telegram orqali xabar yuboriladi. Ekran o'chirilmagan (buyurtma qilinmagan
-  // tozalash — alohida vazifa), shuning uchun ro'yxat oxirida "eskirgan" belgisi
-  // bilan qoldirilgan: hali ham ochish mumkin, lekin yangi ish shu ustida qurilmaydi.
-  { key: 'firebase', label: 'Push (Firebase)', legacy: true },
+  // Push (Firebase) olib tashlandi (mijoz, 2026-10-11: "bizda app yo'q hammasi telegram mini app
+  // bilan ishlaydi") — barcha xabar Telegram orqali.
 ]
 
 /**
@@ -59,11 +53,6 @@ export function IntegrationsSettingsPage() {
               )}
             >
               {s.label}
-              {s.legacy && (
-                <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-400">
-                  eskirgan
-                </span>
-              )}
             </button>
           ))}
         </nav>
@@ -73,16 +62,6 @@ export function IntegrationsSettingsPage() {
           {active === 'turnstile' && <TurnstileSettings />}
           {active === 'gps' && <GpsSettings />}
           {active === 'cameras' && <CameraSettings />}
-          {active === 'firebase' && (
-            <div className="space-y-3">
-              <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
-                Bu integratsiya eskirgan: mahsulotda mobil push endi yo'q, barcha xabar Telegram
-                orqali yuboriladi. Ekran o'chirilmagan — mavjud sozlama yo'qolmasin — lekin yangi
-                ish uning ustiga qurilmaydi.
-              </div>
-              <FirebaseSettings />
-            </div>
-          )}
         </div>
       </div>
     </div>

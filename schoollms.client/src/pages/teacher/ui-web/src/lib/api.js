@@ -201,8 +201,4 @@ export const api = {
     return request('POST', '/teacher/feedback', { form: fd })
   },
 
-  // ---- Push qurilma / web push ----
-  pushConfig: () => GET('/teacher/push-config'),
-  registerDevice: (body) => POST('/teacher/notifications/register', body),
-  unregisterDevice: (token) => DEL('/teacher/notifications/register', { token }),
 }

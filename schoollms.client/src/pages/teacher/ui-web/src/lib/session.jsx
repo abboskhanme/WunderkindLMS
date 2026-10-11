@@ -1,6 +1,5 @@
 import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react'
 import { api, tokenStore, userStore, setUnauthorizedHandler } from './api'
-import { autoInitPush, disablePush } from './push'
 
 const SessionContext = createContext(null)
 
@@ -25,20 +24,13 @@ export function SessionProvider({ children }) {
     userStore.set(res.user)
     setToken(res.token)
     setUser(res.user)
-    autoInitPush() // ruxsat oldindan berilgan bo'lsa tokenni yangilaydi (so'ramaydi)
     return res.user
   }, [])
 
   const logout = useCallback(async () => {
-    try { await disablePush() } catch { /* ignore */ }
     tokenStore.clear()
     setToken(null)
     setUser(null)
-  }, [])
-
-  // Sahifa ochilganda allaqachon kirilgan bo'lsa (token saqlangan) — push tokenni jimgina yangilaymiz.
-  useEffect(() => {
-    if (tokenStore.get()) autoInitPush()
   }, [])
 
   // Profilni yangilab, user'ni boyitamiz (fanlar, sinf rahbarligi, ruxsatlar, rasm).

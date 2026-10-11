@@ -112,7 +112,7 @@ public static class JournalService
     /// <c>null</c> — yozildi. Aks holda foydalanuvchiga ko'rsatiladigan xato matni
     /// (§5.5 <c>make_attendance_reason_required</c>) — chaqiruvchi uni 400 bilan qaytaradi.
     /// </returns>
-    public static async Task<string?> SetEntryAsync(IAppDbContext db, SetJournalEntryRequest req, FcmService? fcm = null)
+    public static async Task<string?> SetEntryAsync(IAppDbContext db, SetJournalEntryRequest req)
     {
         // An archived pupil's journal is closed (client, 2026-10-08).
         var archived = await ArchivedStudents.NamesAsync(db, [req.StudentId]);
@@ -135,10 +135,6 @@ public static class JournalService
             e.ClassId == req.ClassId && e.SubjectId == req.SubjectId && e.Quarter == req.Quarter &&
             e.StudentId == req.StudentId && e.Date == req.Date && e.Period == req.Period &&
             e.OwnerKind == ownerKind);
-        // Push uchun — yangi/o'zgargan baho yoki sababnigina xabar qilamiz.
-        var oldGrade = entry?.Grade;
-        var oldReason = entry?.ReasonId;
-
         // O'quvchining guruhi — yozuvga ham, mos LessonNote'ga ham SubGroup sifatida yoziladi.
         // GURUH darsida bo'linish yo'q: qator har doim 0 bilan yoziladi (§2.1.3).
         var student = await db.Students.FindAsync(req.StudentId);
@@ -207,44 +203,9 @@ public static class JournalService
             }
         }
 
-        // Avtomatik push: farzandi baho olsa yoki davomatda belgilansa, oila ilovasiga xabar.
-        await NotifyEntryAsync(db, fcm, req, student, oldGrade, oldReason);
+        // Push olib tashlandi (2026-10-11): kelmaganlik haqida ota-onaga Telegram — hamshira
+        // "Davomat belgilash" ekranidagi tugma bilan yuboradi (DailyAbsenceNotifier).
         return null;
-    }
-
-    /// <summary>Baho/davomat yozuvi o'zgarganda oila ilovasiga push yuboradi (fire-and-forget).</summary>
-    private static async Task NotifyEntryAsync(
-        IAppDbContext db, FcmService? fcm, SetJournalEntryRequest req, Student? student,
-        int? oldGrade, string? oldReason)
-    {
-        if (fcm is null || student?.UserId is null) return;
-        var notifyGrade = req.Grade.HasValue && req.Grade != oldGrade;
-        var notifyAbsence = !notifyGrade && req.ReasonId is not null && req.ReasonId != oldReason;
-        if (!notifyGrade && !notifyAbsence) return;
-
-        var meta = await db.SchoolMeta.FirstOrDefaultAsync();
-        var json = meta?.FcmServiceAccountJson ?? "";
-        if (!FcmService.IsConfigured(json)) return;
-
-        var tokens = await db.DeviceTokens.Where(d => d.UserId == student.UserId)
-            .Select(d => d.Token).Distinct().ToListAsync();
-        if (tokens.Count == 0) return;
-
-        var subject = (await db.Subjects.FindAsync(req.SubjectId))?.Name ?? "";
-        string title, body;
-        if (notifyGrade)
-        {
-            title = "Yangi baho";
-            body = $"{student.FullName}: {subject} fanidan {req.Grade} baho ({req.Date})";
-        }
-        else
-        {
-            var reason = (await db.AbsenceReasons.FindAsync(req.ReasonId!))?.Name ?? "Davomat";
-            title = "Davomat";
-            body = $"{student.FullName}: {subject} darsida — {reason} ({req.Date})";
-        }
-        // FCM faqat HTTP (db'ga tegmaydi) — jurnal javobini bloklamaslik uchun kutmaymiz.
-        _ = fcm.SendAsync(json, tokens, title, body);
     }
 
     public static async Task ClearEntryAsync(

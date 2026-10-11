@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import {
   GraduationCap, BookOpen, Badge, LineChart, Users2,
-  MessageSquareWarning, Moon, Lock, LogOut, ChevronRight, Download, Bell, ListChecks,
+  MessageSquareWarning, Moon, Lock, LogOut, ChevronRight, Download, ListChecks,
 } from 'lucide-react'
 import Avatar from '../components/Avatar'
 import AppButton from '../components/AppButton'
@@ -11,16 +11,6 @@ import { Loading, ErrorState } from '../components/State'
 import { useFetch, useSession } from '../lib/session'
 import { api } from '../lib/api'
 import { canInstall, promptInstall, onInstallChange, isStandalone } from '../lib/pwa'
-import { enablePush, disablePush, pushSupported, notifPermission, hasPushToken } from '../lib/push'
-
-const PUSH_MSG = {
-  unsupported: "Bu brauzer bildirishnomani qo'llab-quvvatlamaydi.",
-  disabled: 'Bildirishnoma administrator tomonidan sozlanmagan.',
-  config: "Bildirishnoma sozlamasida xatolik.",
-  denied: 'Brauzer ruxsati rad etilgan — brauzer sozlamalaridan yoqing.',
-  permission: 'Ruxsat berilmadi.',
-  token: "Bildirishnomaga ulanib bo'lmadi — qayta urinib ko'ring.",
-}
 
 // Profile — gradient header card, info rows, "Bo'limlar" + "Hisob" lists.
 export default function ProfileScreen({ onNavigate, dark, onToggleTheme }) {
@@ -36,28 +26,6 @@ export default function ProfileScreen({ onNavigate, dark, onToggleTheme }) {
 
   // Parolni o'zgartirish sheet.
   const [pwOpen, setPwOpen] = useState(false)
-
-  // Bildirishnoma (web push) holati.
-  const [pushOn, setPushOn] = useState(hasPushToken() && notifPermission() === 'granted')
-  const [pushBusy, setPushBusy] = useState(false)
-  const [pushMsg, setPushMsg] = useState(null)
-  const togglePush = async () => {
-    if (pushBusy) return
-    setPushBusy(true)
-    setPushMsg(null)
-    try {
-      if (pushOn) {
-        await disablePush()
-        setPushOn(false)
-      } else {
-        const res = await enablePush({ silent: false })
-        if (res.ok) setPushOn(true)
-        else setPushMsg(PUSH_MSG[res.reason] || PUSH_MSG.token)
-      }
-    } finally {
-      setPushBusy(false)
-    }
-  }
 
   if (q.loading && !q.data) {
     return (
@@ -131,13 +99,9 @@ export default function ProfileScreen({ onNavigate, dark, onToggleTheme }) {
         <div className="mt-4">
           <SectionLabel className="pl-1 pb-2 block">Hisob</SectionLabel>
           <Card>
-            {pushSupported() && (
-              <ToggleItem icon={<Bell size={16} />} title="Bildirishnomalar" on={pushOn} onToggle={togglePush} />
-            )}
             <ToggleItem icon={<Moon size={16} />} title="Tungi rejim" on={!!dark} onToggle={onToggleTheme} />
             <Item icon={<Lock size={16} />} title="Parolni o'zgartirish" last onClick={() => setPwOpen(true)} />
           </Card>
-          {pushMsg && <p className="mt-2 px-1 text-[12px] text-muted">{pushMsg}</p>}
         </div>
 
         <div className="mt-4">

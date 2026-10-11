@@ -6,33 +6,6 @@ using SchoolLms.Domain;
 namespace SchoolLms.Application.Services;
 
 /// <summary>
-/// Foydalanuvchining qurilmalariga push yuborish (fire-and-forget).
-///
-/// <para>
-/// Bir xil oltita qator uchta controllerda takrorlangan edi. Yangi kod shu
-/// yerdan chaqiradi; FCM sozlanmagan bo'lsa metod jimgina qaytadi — push
-/// yo'qligi hech qachon asosiy amalni (to'lov, pickup, baho) to'xtatmasligi kerak.
-/// </para>
-/// </summary>
-public static class AppPush
-{
-    public static async Task ToUserAsync(
-        IAppDbContext db, FcmService fcm, string? userId, string title, string body,
-        CancellationToken ct = default)
-    {
-        if (string.IsNullOrEmpty(userId)) return;
-
-        var meta = await db.SchoolMeta.FirstOrDefaultAsync(ct);
-        var json = meta?.FcmServiceAccountJson ?? "";
-        if (!FcmService.IsConfigured(json)) return;
-
-        var tokens = await db.DeviceTokens.Where(d => d.UserId == userId)
-            .Select(d => d.Token).Distinct().ToListAsync(ct);
-        if (tokens.Count > 0) _ = fcm.SendAsync(json, tokens, title, body);
-    }
-}
-
-/// <summary>
 /// "Farzandimni olishga keldim" so'rovining umumiy mantig'i.
 ///
 /// <para>
@@ -86,17 +59,36 @@ public static class PickupService
     }
 
     /// <summary>
-    /// Sinf rahbar(lar)iga "ota-ona keldi" push'i — sinfda bir nechta rahbar bo'lsa hammasiga
-    /// (2026-10-09). Rahbar yo'q bo'lsa hech narsa qilmaydi.
+    /// Sinf rahbar(lar)iga Telegram: "ota-ona keldi" — sinfda bir nechta rahbar bo'lsa hammasiga.
+    /// Push olib tashlandi (mijoz, 2026-10-11: "bizda hamma narsa telegram mini app bilan").
+    /// Bot sozlanmagan yoki rahbar Telegramga ulanmagan bo'lsa — jim o'tadi; so'rov baribir
+    /// yaratiladi va rahbar uni ilovadagi ro'yxatda ko'radi.
     /// </summary>
     public static async Task NotifyHomeroomAsync(
-        IAppDbContext db, FcmService fcm, Student student, CancellationToken ct = default)
+        IAppDbContext db, TelegramService telegram, Student student, CancellationToken ct = default)
     {
-        foreach (var teacher in await HomeroomDirectory.TeachersOfClassNameAsync(db, student.ClassName, ct))
-        {
-            if (teacher.UserId is null) continue;
-            await AppPush.ToUserAsync(db, fcm, teacher.UserId, "Farzandni olib ketish",
-                $"{student.FullName} ({student.ClassName}) — ota-ona olib ketishga keldi. Qabul qiling.", ct);
-        }
+        if (!telegram.IsConfigured) return;
+        var teacherIds = (await HomeroomDirectory.TeachersOfClassNameAsync(db, student.ClassName, ct))
+            .Select(t => t.Id).ToList();
+        if (teacherIds.Count == 0) return;
+        var chats = await db.TelegramRegistrations.AsNoTracking()
+            .Where(r => r.TeacherId != null && teacherIds.Contains(r.TeacherId))
+            .Select(r => r.ChatId).Distinct().ToListAsync(ct);
+        var text = $"🚸 Farzandni olib ketish\n\n{student.FullName} ({student.ClassName}) — ota-onasi olib ketishga keldi. "
+                   + "Ilovadagi \"Sinf rahbarligi\" bo'limida qabul qiling.";
+        foreach (var chat in chats)
+            await telegram.SendMessageAsync(chat, text, ct: ct);
+    }
+
+    /// <summary>Ota-onaga Telegram (topshirildi / ruxsat berildi). Ulanmagan bo'lsa — jim o'tadi.</summary>
+    public static async Task NotifyParentAsync(
+        IAppDbContext db, TelegramService telegram, string studentId, string text, CancellationToken ct = default)
+    {
+        if (!telegram.IsConfigured) return;
+        var chats = await db.TelegramRegistrations.AsNoTracking()
+            .Where(r => r.StudentId == studentId && r.TeacherId == null)
+            .Select(r => r.ChatId).Distinct().ToListAsync(ct);
+        foreach (var chat in chats)
+            await telegram.SendMessageAsync(chat, text, ct: ct);
     }
 }

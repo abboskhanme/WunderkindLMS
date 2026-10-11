@@ -288,8 +288,6 @@ builder.Services.AddHostedService<SchoolLms.Application.Services.TurnstileLiveSe
 builder.Services.AddHttpClient();
 builder.Services.AddSingleton<TelegramService>();
 builder.Services.AddHostedService<TelegramBotService>();
-// FCM (Firebase push) — service account SchoolMeta'da; token keshi uchun singleton.
-builder.Services.AddSingleton<FcmService>();
 
 // O'zgarishlar tarixi (audit) — joriy foydalanuvchini aniqlash uchun HttpContext kerak
 builder.Services.AddHttpContextAccessor();
@@ -320,6 +318,7 @@ builder.Services.AddScoped<SchoolLms.Application.Services.TurnstileService>();
 builder.Services.AddScoped<SchoolLms.Application.Services.SurveySubmissionService>();
 // Kechki dars va yotoqxona davomati (2026-09-23).
 builder.Services.AddScoped<SchoolLms.Application.Services.BoardingAttendanceService>();
+builder.Services.AddScoped<SchoolLms.Application.Services.DailyAbsenceNotifier>();
 // Yangilik e'lon qilinganda Telegram tarqatmasi (§3.3 N4, N6).
 builder.Services.AddScoped<SchoolLms.Application.Services.INewsTelegramNotifier,
                            SchoolLms.Application.Services.NewsTelegramNotifier>();
@@ -548,13 +547,12 @@ app.Use(async (context, next) =>
             "default-src 'self'; " +
             "img-src 'self' data: blob: https:; " +
             "style-src 'self' 'unsafe-inline'; " +
-            // gstatic — FCM web SW (firebase-messaging-sw.js) importScripts qiladi.
             // telegram.org — Mini App SDK (telegram-web-app.js). Usiz Mini App Telegram imzosini ololmaydi va
             // o'zini "brauzerda" deb o'ylaydi: bog'lanish saqlanmaydi, har safar parol so'raladi (2026-09-25).
-            "script-src 'self' https://www.gstatic.com https://telegram.org; " +
+            "script-src 'self' https://telegram.org; " +
             "worker-src 'self'; " +
-            // googleapis/gstatic — FCM web token olish (getToken) so'rovlari.
-            "connect-src 'self' ws: wss: https://*.googleapis.com https://*.gstatic.com https://fcm.googleapis.com; " +
+            // Push (FCM) olib tashlandi (2026-10-11) — googleapis/gstatic ulanishlari endi kerak emas.
+            "connect-src 'self' ws: wss:; " +
             "font-src 'self' data:; " +
             // Faqat Telegram (web.telegram.org Mini App'ni iframe'da ochadi) — boshqa saytlar freymga ololmaydi.
             "frame-ancestors 'self' https://web.telegram.org https://*.telegram.org; object-src 'none'; base-uri 'self'";

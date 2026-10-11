@@ -18,6 +18,7 @@ import { Toast } from '@/components/ui/Toast'
 import { Select } from '@/components/ui/Input'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { cn } from '@/lib/utils'
+import { AbsenceNoticeButton } from './AbsenceNoticeButton'
 
 /* ==========================================================================
    DAVOMAT — sinf va dars TANLANADI (dropdown), keyin uchta belgi
@@ -422,6 +423,7 @@ export function DailyMarkingPage() {
             emas — bitta sinfda 5 ta soat bo'ladi va "0/10 sinf" ishning qay
             darajada bitganini ko'rsatmaydi (mijoz, 2026-09-19). */}
         {overview && (
+          <div className="flex flex-wrap items-center gap-3">
           <div className="mb-0.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
             <span className="font-medium text-slate-700">
               {overview.markedLessons} / {overview.totalLessons} dars belgilandi
@@ -436,6 +438,9 @@ export function DailyMarkingPage() {
             {(overview.partialTotal ?? 0) > 0 && (
               <span className="text-amber-600">{overview.partialTotal} nafari ayrim darslarga kelmadi</span>
             )}
+          </div>
+          {/* Hamshira kunni belgilab bo'lgach — kelmaganlarning ota-onalariga Telegram (2026-10-11). */}
+          <AbsenceNoticeButton date={date} absentTotal={overview.absentTotal} onDone={setToast} />
           </div>
         )}
       </header>

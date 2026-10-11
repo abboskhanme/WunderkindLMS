@@ -23,6 +23,53 @@ namespace SchoolLms.Infrastructure.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("SchoolLms.Domain.AbsenceNotice", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<int>("Chats")
+                        .HasColumnType("integer")
+                        .HasColumnName("chats");
+
+                    b.Property<DateOnly>("Date")
+                        .HasColumnType("date")
+                        .HasColumnName("date");
+
+                    b.Property<string>("ReasonId")
+                        .HasColumnType("text")
+                        .HasColumnName("reason_id");
+
+                    b.Property<DateTimeOffset>("SentAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("sent_at");
+
+                    b.Property<string>("SentBy")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("sent_by");
+
+                    b.Property<string>("StudentId")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("student_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_absence_notices");
+
+                    b.HasIndex("Date")
+                        .HasDatabaseName("ix_absence_notices_date");
+
+                    b.HasIndex("StudentId", "Date")
+                        .IsUnique()
+                        .HasDatabaseName("ux_absence_notices_student_date");
+
+                    b.ToTable("absence_notices", (string)null);
+                });
+
             modelBuilder.Entity("SchoolLms.Domain.AbsenceReason", b =>
                 {
                     b.Property<string>("Id")
@@ -1882,58 +1929,6 @@ namespace SchoolLms.Infrastructure.Migrations
 
                             t.HasCheckConstraint("ck_debtor_statuses_position", "position >= 0");
                         });
-                });
-
-            modelBuilder.Entity("SchoolLms.Domain.DeviceToken", b =>
-                {
-                    b.Property<string>("Id")
-                        .HasColumnType("text")
-                        .HasColumnName("id");
-
-                    b.Property<string>("AppId")
-                        .IsRequired()
-                        .HasColumnType("text")
-                        .HasColumnName("app_id");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp without time zone")
-                        .HasColumnName("created_at");
-
-                    b.Property<string>("DeviceName")
-                        .IsRequired()
-                        .HasColumnType("text")
-                        .HasColumnName("device_name");
-
-                    b.Property<DateTime>("LastSeenAt")
-                        .HasColumnType("timestamp without time zone")
-                        .HasColumnName("last_seen_at");
-
-                    b.Property<string>("Platform")
-                        .IsRequired()
-                        .HasColumnType("text")
-                        .HasColumnName("platform");
-
-                    b.Property<string>("Token")
-                        .IsRequired()
-                        .HasColumnType("text")
-                        .HasColumnName("token");
-
-                    b.Property<string>("UserId")
-                        .IsRequired()
-                        .HasColumnType("text")
-                        .HasColumnName("user_id");
-
-                    b.HasKey("Id")
-                        .HasName("pk_device_tokens");
-
-                    b.HasIndex("Token")
-                        .IsUnique()
-                        .HasDatabaseName("ix_device_tokens_token");
-
-                    b.HasIndex("UserId")
-                        .HasDatabaseName("ix_device_tokens_user_id");
-
-                    b.ToTable("device_tokens", (string)null);
                 });
 
             modelBuilder.Entity("SchoolLms.Domain.DisciplinePoint", b =>
@@ -6727,55 +6722,6 @@ namespace SchoolLms.Infrastructure.Migrations
                     b.ToTable("poll_responses", (string)null);
                 });
 
-            modelBuilder.Entity("SchoolLms.Domain.PushMessage", b =>
-                {
-                    b.Property<string>("Id")
-                        .HasColumnType("text")
-                        .HasColumnName("id");
-
-                    b.Property<string>("Audience")
-                        .IsRequired()
-                        .HasColumnType("text")
-                        .HasColumnName("audience");
-
-                    b.Property<string>("Body")
-                        .IsRequired()
-                        .HasColumnType("text")
-                        .HasColumnName("body");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp without time zone")
-                        .HasColumnName("created_at");
-
-                    b.Property<int>("RecipientCount")
-                        .HasColumnType("integer")
-                        .HasColumnName("recipient_count");
-
-                    b.Property<string>("SenderName")
-                        .IsRequired()
-                        .HasColumnType("text")
-                        .HasColumnName("sender_name");
-
-                    b.Property<string>("SenderUserId")
-                        .IsRequired()
-                        .HasColumnType("text")
-                        .HasColumnName("sender_user_id");
-
-                    b.Property<int>("SentCount")
-                        .HasColumnType("integer")
-                        .HasColumnName("sent_count");
-
-                    b.Property<string>("Title")
-                        .IsRequired()
-                        .HasColumnType("text")
-                        .HasColumnName("title");
-
-                    b.HasKey("Id")
-                        .HasName("pk_push_messages");
-
-                    b.ToTable("push_messages", (string)null);
-                });
-
             modelBuilder.Entity("SchoolLms.Domain.QuarterGrade", b =>
                 {
                     b.Property<string>("Id")
@@ -7243,21 +7189,6 @@ namespace SchoolLms.Infrastructure.Migrations
                         .IsRequired()
                         .HasColumnType("text")
                         .HasColumnName("email");
-
-                    b.Property<string>("FcmServiceAccountJson")
-                        .IsRequired()
-                        .HasColumnType("text")
-                        .HasColumnName("fcm_service_account_json");
-
-                    b.Property<string>("FcmVapidKey")
-                        .IsRequired()
-                        .HasColumnType("text")
-                        .HasColumnName("fcm_vapid_key");
-
-                    b.Property<string>("FcmWebConfigJson")
-                        .IsRequired()
-                        .HasColumnType("text")
-                        .HasColumnName("fcm_web_config_json");
 
                     b.Property<bool>("GpsEnabled")
                         .HasColumnType("boolean")
@@ -9469,6 +9400,16 @@ namespace SchoolLms.Infrastructure.Migrations
                         {
                             t.HasCheckConstraint("ck_week_assignments_owner_kind", "owner_kind in ('class','group')");
                         });
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.AbsenceNotice", b =>
+                {
+                    b.HasOne("SchoolLms.Domain.Student", null)
+                        .WithMany()
+                        .HasForeignKey("StudentId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_absence_notices_students_student_id");
                 });
 
             modelBuilder.Entity("SchoolLms.Domain.AppUser", b =>

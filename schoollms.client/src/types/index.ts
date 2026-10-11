@@ -1087,31 +1087,6 @@ export interface TelegramStatus {
   botUsername: string
 }
 
-/** Push uchun tanlanadigan oluvchi */
-export interface PushRecipient {
-  /** Akkaunt id (UserId) */
-  userId: string
-  name: string
-  /** "Ota-ona" yoki "O'qituvchi" */
-  group: string
-  /** Qo'shimcha (ota-ona uchun sinf) */
-  detail: string
-  /** Qurilma ulanganmi (push haqiqatan yetadimi) */
-  hasDevice: boolean
-}
-
-/** Yuborilgan push bildirishnoma (tarix) */
-export interface PushMessage {
-  id: string
-  audience: string
-  title: string
-  body: string
-  senderName: string
-  createdAt: string
-  recipientCount: number
-  sentCount: number
-}
-
 /* ---------- Topshiriqlar (qo'shimcha) ---------- */
 
 /** Topshiriq formati */
@@ -1237,11 +1212,6 @@ export interface ParentChild {
   className: string
   firstLoginAt: string | null
   lastLoginAt: string | null
-  /** Oxirgi faol qurilma nomi */
-  deviceName?: string
-  platform?: string
-  /** Push provayder app_id */
-  appId?: string
 }
 
 /* ---------- Vasiylar (students-parity.md §2.3 S-8, §2.9) ---------- */
@@ -1323,12 +1293,9 @@ export interface ParentRow {
   activatedAt: string | null
   lastSeenAt: string | null
   children: ParentChild[]
-  /** Oxirgi faol qurilma (farzandlar bo'yicha) */
-  deviceName?: string
-  platform?: string
 }
 
-/** Ilova → O'qituvchilar qatori (o'qituvchi ilova faolligi + qurilma) */
+/** Ilova → O'qituvchilar qatori (o'qituvchi ilova faolligi + Telegram) */
 export interface TeacherAppRow {
   teacherId: string
   fullName: string
@@ -1336,9 +1303,8 @@ export interface TeacherAppRow {
   isActivated: boolean
   activatedAt: string | null
   lastSeenAt: string | null
-  deviceName: string
-  platform: string
-  appId: string
+  /** Telegram'ga ulanganmi (push o'rniga, 2026-10-11) */
+  telegramLinked: boolean
 }
 
 /** O'quvchi joylashuvi turi (§2.8, L-2) — uy / maktab / olib ketish nuqtasi. */

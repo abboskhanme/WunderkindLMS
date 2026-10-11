@@ -228,6 +228,33 @@ public class AttendanceController(AppDbContext db) : ControllerBase
         return Ok(day);
     }
 
+    /// <summary>
+    /// Kun bo'yi kelmaganlar va ularning ota-onasiga xabar holati — tugma bosilishidan oldingi ro'yxat
+    /// (mijoz, 2026-10-11: hamshira davomatdan keyin bitta tugma bilan xabar yuboradi).
+    /// </summary>
+    [HttpGet("daily/absence-notices")]
+    public async Task<ActionResult<AbsenceNoticePreviewDto>> AbsenceNotices(
+        [FromQuery] string? date, [FromServices] DailyAbsenceNotifier notifier, CancellationToken ct)
+        => await notifier.PreviewAsync(Today(date), ct);
+
+    /// <summary>
+    /// Kelmaganlarning ota-onalariga Telegram — har o'quvchiga bir kunda bir marta. Yozish amali:
+    /// `attendance` ruxsati kerak (AdminPerm).
+    /// </summary>
+    [HttpPost("daily/absence-notices")]
+    public async Task<ActionResult<AbsenceNoticeResultDto>> SendAbsenceNotices(
+        SendAbsenceNoticesRequest req, [FromServices] DailyAbsenceNotifier notifier, CancellationToken ct)
+    {
+        try
+        {
+            return await notifier.SendAsync(Today(req.Date), CurrentUserId(), ct);
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or ArgumentException)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+    }
+
     /// <summary>Sana berilmasa — bugun (maktab mintaqasi bo'yicha).</summary>
     private static string Today(string? date) =>
         string.IsNullOrWhiteSpace(date) ? AppClock.Today.ToString("yyyy-MM-dd") : date;
@@ -237,3 +264,6 @@ public class AttendanceController(AppDbContext db) : ControllerBase
         ?? User.FindFirst("sub")?.Value
         ?? "";
 }
+
+/// <summary>Kelmaganlarga xabar yuborish so'rovi; sana berilmasa — bugun.</summary>
+public sealed record SendAbsenceNoticesRequest(string? Date);
