@@ -139,6 +139,9 @@ function filterFromUrl(params: URLSearchParams): StudentListFilter {
   if (balance === 'debt' || balance === 'paid' || balance === 'credit') f.balanceState = balance
   const firstPayment = params.get('firstPayment')
   if (firstPayment === 'ever' || firstPayment === 'thisMonth') f.firstPayment = firstPayment
+  // `?telegram=no` — Telegramga ulanmaganlar (masalan chek yetib bormaydiganlar).
+  const telegram = params.get('telegram')
+  if (telegram === 'yes' || telegram === 'no') f.hasTelegram = telegram === 'yes'
   return f
 }
 

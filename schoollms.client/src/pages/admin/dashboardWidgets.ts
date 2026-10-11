@@ -98,8 +98,8 @@ export const WIDGETS: WidgetDef[] = [
   { id: 'classBreakdown', label: 'Sinflar kesimi', group: 'contingent', defaultOn: false },
 
   // Bizning bosh sahifada ilgaridan bor bloklar — standart holatda o'z joyida.
-  { id: 'attendanceByPeriod', label: 'Davomat analitikasi', group: 'ours', defaultOn: true },
-  { id: 'absentStudents', label: "Dars qoldirayotgan o'quvchilar", group: 'ours', defaultOn: true },
+  // "Davomat analitikasi" va "Dars qoldirayotgan o'quvchilar" Davomat → Davomat analitikasiga
+  // ko'chdi (mijoz, 2026-10-11) — u yerda davr, sinf filtri, batafsil ro'yxat va Excel bor.
   { id: 'teachers', label: "O'qituvchilar", group: 'ours', defaultOn: true },
   { id: 'averageGrade', label: "O'rtacha baho", group: 'ours', defaultOn: true },
   { id: 'attendanceRate', label: 'Umumiy davomat', group: 'ours', defaultOn: true },

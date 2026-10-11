@@ -91,7 +91,7 @@ export function Sidebar({ open, onNavigate }: SidebarProps) {
             >
               <item.icon className="h-5 w-5" />
               {item.label}
-              {item.to.endsWith('/messages') && totalUnread > 0 && (
+              {CHAT_PATHS.includes(item.to) && totalUnread > 0 && (
                 <span className="ml-auto flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white">
                   {totalUnread > 9 ? '9+' : totalUnread}
                 </span>
@@ -101,6 +101,21 @@ export function Sidebar({ open, onNavigate }: SidebarProps) {
         )}
       </nav>
     </aside>
+  )
+}
+
+/**
+ * Ichki chat sahifalari — o'qilmagan xabarlar soni shu yozuvlarda ko'rinadi. Admin chati
+ * 2026-10-11 dan Future → "Guruh chati" (/admin/chat); "Xabarlar" endi faqat e'lon.
+ */
+const CHAT_PATHS = ['/teacher/messages', '/admin/chat']
+
+function UnreadBadge({ count }: { count: number }) {
+  if (count <= 0) return null
+  return (
+    <span className="ml-auto flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white">
+      {count > 9 ? '9+' : count}
+    </span>
   )
 }
 
@@ -132,6 +147,8 @@ function byGroup(children: NavChild[]): { name: string | null; items: NavChild[]
  */
 function NavGroup({ item, onNavigate }: { item: NavItem; onNavigate: () => void }) {
   const location = useLocation()
+  const { unreadChannels } = useUnread()
+  const unread = item.children?.some((c) => CHAT_PATHS.includes(c.to)) ? unreadChannels.size : 0
   // Guruh — o'z manzili ostida YOKI bolalaridan biri faol bo'lsa belgilanadi/ochiladi
   // (bolalar boshqa yo'l ostida bo'lishi mumkin, masalan Fanlar yoki Sozlamalar).
   const isUnder =
@@ -209,7 +226,8 @@ function NavGroup({ item, onNavigate }: { item: NavItem; onNavigate: () => void 
       >
         <item.icon className="h-5 w-5" />
         {item.label}
-        <ChevronRight className="ml-auto hidden h-4 w-4 lg:block" />
+        {unread > 0 && <span className="ml-auto h-2 w-2 shrink-0 rounded-full bg-red-500" title="O'qilmagan xabarlar" />}
+        <ChevronRight className={cn('hidden h-4 w-4 lg:block', unread > 0 ? 'ml-1' : 'ml-auto')} />
         <ChevronDown
           className={cn('ml-auto h-4 w-4 transition-transform lg:hidden', openGroup && 'rotate-180')}
         />
@@ -248,6 +266,7 @@ function NavGroup({ item, onNavigate }: { item: NavItem; onNavigate: () => void 
                   >
                     <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-slate-300" />
                     <span className="whitespace-nowrap">{child.label}</span>
+                    {CHAT_PATHS.includes(child.to) && <UnreadBadge count={unreadChannels.size} />}
                   </NavLink>
                 ))}
               </div>
@@ -275,6 +294,7 @@ function NavGroup({ item, onNavigate }: { item: NavItem; onNavigate: () => void 
                   className={childClass}
                 >
                   <span className="truncate">{child.label}</span>
+                  {CHAT_PATHS.includes(child.to) && <UnreadBadge count={unreadChannels.size} />}
                 </NavLink>
               ))}
             </div>

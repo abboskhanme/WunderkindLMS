@@ -48,6 +48,12 @@ public sealed class StudentListFilter
     /// <summary>K-4 — shartnomasi bor / yo'q.</summary>
     public bool? HasContract { get; set; }
 
+    /// <summary>
+    /// Telegramga ulangan / ulanmagan (mijoz, 2026-10-11) — "Telegram" ustuni bilan BIR XIL ta'rif:
+    /// o'quvchining yoki vasiyining akkaunti Mini App'ga bog'langan, yoki botda ro'yxatdan o'tgan.
+    /// </summary>
+    public bool? HasTelegram { get; set; }
+
     /// <summary>Faol obunasi bor / yo'q.</summary>
     public bool? HasSubscription { get; set; }
 

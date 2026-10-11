@@ -107,8 +107,9 @@ public static class AttendanceAnalytics
     /// <param name="from">Davr boshi "yyyy-MM-dd" (noto'g'ri bo'lsa — sukut davri).</param>
     /// <param name="to">Davr oxiri "yyyy-MM-dd".</param>
     /// <param name="day">Dars soatlari kesimi uchun kun; berilmasa — davrning oxirgi kuni.</param>
+    /// <param name="maxEvents">"Kim, qaysi kuni" ro'yxatining chegarasi; Excel eksporti kattaroq oladi.</param>
     public static async Task<AttendanceAnalyticsDto> BuildAsync(
-        IAppDbContext db, string? classId, string? from, string? to, string? day)
+        IAppDbContext db, string? classId, string? from, string? to, string? day, int maxEvents = MaxEvents)
     {
         var (fromDate, toDate) = NormalizeRange(from, to);
         var dayIso = IsIso(day) && string.CompareOrdinal(day!, fromDate) >= 0
@@ -217,6 +218,7 @@ public static class AttendanceAnalytics
             .ToList();
         var byClass = rowDefs.ToDictionary(r => r.Id, _ => new Tally(), StringComparer.Ordinal);
         var byPeriod = new Dictionary<int, Tally>();
+        var byPeriodRange = new Dictionary<int, Tally>();
         var byDate = new Dictionary<string, Tally>(StringComparer.Ordinal);
         var reasonCounts = new Dictionary<string, int>(StringComparer.Ordinal);
         // (student, date) → that student's day and the row (class) it is counted under.
@@ -248,6 +250,8 @@ public static class AttendanceAnalytics
             // Dars soatlari kesimi FAQAT tanlangan kun uchun — boshqa kunlarni aralashtirish
             // "3-darsda 40 ta yo'q" degan ma'nosiz raqam berardi.
             var periodTally = n.Date == dayIso ? Get(byPeriod, n.Period) : null;
+            // ...va butun davr bo'yicha alohida (bosh sahifadan ko'chgan jadval, 2026-10-11).
+            var rangeTally = Get(byPeriodRange, n.Period);
 
             // `Lessons` counts conducted lessons only — a timetable lesson nobody held is not one.
             if (!n.Scheduled)
@@ -255,6 +259,7 @@ public static class AttendanceAnalytics
                 total.Lessons++;
                 dateTally.Lessons++;
                 if (periodTally is not null) periodTally.Lessons++;
+                rangeTally.Lessons++;
                 // Sinf darsi — o'sha sinfning bitta darsi. Guruh darsi esa har bir BOQUVCHI
                 // sinf uchun ham bitta dars (o'sha sinfning bolalari o'sha kuni yana bir
                 // darsda bo'lgan), lekin jami (`total`) bo'yicha — BITTA.
@@ -273,6 +278,7 @@ public static class AttendanceAnalytics
                 slot.Day.Add(has, n.Marked, reasonId, lateIds, n.Period);
                 // The period cut is one lesson — one row per student there.
                 if (periodTally is not null) Add(periodTally);
+                Add(rangeTally);
 
                 void Add(Tally t)
                 {
@@ -288,6 +294,7 @@ public static class AttendanceAnalytics
         }
 
         var byStudent = new Dictionary<string, Tally>(StringComparer.Ordinal);
+        var lastPresent = new Dictionary<string, string>(StringComparer.Ordinal);
         var datesOf = new Dictionary<string, SortedSet<string>>(StringComparer.Ordinal);
         var events = new List<(string Date, string StudentId, string Row, StudentDay Day, string Status)>();
         foreach (var ((studentId, date), (studentDay, row)) in days)
@@ -300,6 +307,9 @@ public static class AttendanceAnalytics
                 set.Add(date);
             }
             var status = studentDay.Status;
+            if ((status == StudentDay.Present || status == StudentDay.Partial)
+                && (!lastPresent.TryGetValue(studentId, out var seen) || string.CompareOrdinal(date, seen) > 0))
+                lastPresent[studentId] = date;
             if (status != StudentDay.Present) events.Add((date, studentId, row, studentDay, status));
             else if (studentDay.IsLate) events.Add((date, studentId, row, studentDay, "late"));
 
@@ -325,13 +335,13 @@ public static class AttendanceAnalytics
                 byClass[r.Id].ToDto(), r.Kind))
             .ToList();
 
-        var periodRows = byPeriod.OrderBy(kv => kv.Key)
+        List<AttendancePeriodRowDto> PeriodRows(Dictionary<int, Tally> map) => [.. map.OrderBy(kv => kv.Key)
             .Select(kv => new AttendancePeriodRowDto(
                 kv.Key,
                 timeByPeriod.TryGetValue(kv.Key, out var lt) ? lt.StartTime : null,
                 timeByPeriod.TryGetValue(kv.Key, out var lt2) ? lt2.EndTime : null,
-                kv.Value.ToDto()))
-            .ToList();
+                kv.Value.ToDto()))];
+        var periodRows = PeriodRows(byPeriod);
 
         var trend = byDate.OrderBy(kv => kv.Key, StringComparer.Ordinal)
             .Select(kv => new AttendanceTrendPointDto(kv.Key, kv.Value.ToDto()))
@@ -347,7 +357,8 @@ public static class AttendanceAnalytics
                 var row = rowOfStudent.GetValueOrDefault(kv.Key, "");
                 return new AttendanceStudentRowDto(
                     kv.Key, nameOf[kv.Key], row, rowName.GetValueOrDefault(row, ""), kv.Value.ToDto(),
-                    datesOf.TryGetValue(kv.Key, out var dates) ? [.. dates] : null);
+                    datesOf.TryGetValue(kv.Key, out var dates) ? [.. dates] : null,
+                    lastPresent.GetValueOrDefault(kv.Key));
             })
             .OrderBy(r => r.RowName, StringComparer.Ordinal)
             .ThenBy(r => r.FullName, StringComparer.Ordinal)
@@ -357,7 +368,7 @@ public static class AttendanceAnalytics
             .OrderByDescending(e => e.Date, StringComparer.Ordinal)
             .ThenBy(e => rowName.GetValueOrDefault(e.Row, ""), StringComparer.Ordinal)
             .ThenBy(e => nameOf[e.StudentId], StringComparer.Ordinal)
-            .Take(MaxEvents + 1)
+            .Take(maxEvents + 1)
             .Select(e =>
             {
                 var day = e.Day;
@@ -374,14 +385,14 @@ public static class AttendanceAnalytics
                     day.Held);
             })
             .ToList();
-        var truncated = eventRows.Count > MaxEvents;
+        var truncated = eventRows.Count > maxEvents;
         if (truncated) eventRows.RemoveAt(eventRows.Count - 1);
 
         return new AttendanceAnalyticsDto(
             fromDate, toDate, wantClass, dayIso, students.Count, total.ToDto(),
             classRows, periodRows, trend,
             ReasonRows(reasonRows, unexcusedIds, reasonCounts),
-            studentRows, eventRows, truncated);
+            studentRows, eventRows, truncated, PeriodRows(byPeriodRange));
     }
 
     // ------------------------------------------------------------------

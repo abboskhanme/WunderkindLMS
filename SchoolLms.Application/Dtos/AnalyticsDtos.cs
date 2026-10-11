@@ -93,7 +93,10 @@ public record AttendanceAnalyticsDto(
     List<AttendanceReasonRowDto> Reasons,
     List<AttendanceStudentRowDto>? Students = null,
     List<AttendanceEventDto>? Events = null,
-    bool EventsTruncated = false);
+    bool EventsTruncated = false,
+    // Dars soatlari kesimi BUTUN DAVR bo'yicha — bosh sahifadagi "Davomat analitikasi" jadvali shu
+    // yerga ko'chdi (mijoz, 2026-10-11). Bir o'quvchi bir darsda bitta qator, kunlar qo'shiladi.
+    List<AttendancePeriodRowDto>? PeriodsRange = null);
 
 /// <summary>
 /// One student over the period (2026-10-09: "qaysi o'quvchilar ... kelmagan"), counted in
@@ -101,9 +104,11 @@ public record AttendanceAnalyticsDto(
 /// </summary>
 /// <param name="Dates">The days the student had lessons, oldest first — only when one class is asked
 /// for, so the page can draw the month grid (a day without an event there is a "came").</param>
+/// <param name="LastPresent">Davrdagi oxirgi kelgan kuni (kech kelgan yoki ayrim darslarga kelgan ham
+/// keldi); davrda bir marta ham kelmagan bo'lsa — null.</param>
 public record AttendanceStudentRowDto(
     string StudentId, string FullName, string RowId, string RowName, AttendanceTallyDto Tally,
-    List<string>? Dates = null);
+    List<string>? Dates = null, string? LastPresent = null);
 
 /// <summary>
 /// One student-day that was not a plain "came": who, which day, what happened, why, which lessons.

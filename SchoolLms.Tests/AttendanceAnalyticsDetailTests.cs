@@ -124,6 +124,33 @@ public class AttendanceAnalyticsDetailTests(ApiFixture fixture) : IAsyncLifetime
         Assert.All(only5A.Students!, s => Assert.Equal([Monday], s.Dates!));
         Assert.Null(r.Students!.First().Dates);   // the whole school does not
         Assert.DoesNotContain(only5A.Events!, e => e.FullName == "Fayzullayev Fozil");
+
+        // Moved from the dashboard (2026-10-11): the period cut over the whole range, and when each
+        // student last came — Ali never did.
+        Assert.Equal([1, 2, 3], r.PeriodsRange!.Select(p => p.Period));
+        Assert.Equal(2, r.PeriodsRange!.Single(p => p.Period == 2).Tally.Absent);   // Ali and Bek missed lesson 2
+        Assert.Null(students["Aliyev Ali"].LastPresent);
+        Assert.Equal(Monday, students["Dilova Dil"].LastPresent);
+        Assert.Equal(Monday, students["Berdiyev Bek"].LastPresent);   // came, missed one lesson
+
+        // Excel: the four sheets, the absentees first.
+        var bytes = AttendanceAnalyticsExport.Build(r);
+        using var doc = DocumentFormat.OpenXml.Packaging.SpreadsheetDocument.Open(new MemoryStream(bytes), false);
+        Assert.Equal(["Dars qoldirganlar", "Kunlar va sabablar", "Sabablar", "Dars soatlari"],
+            doc.WorkbookPart!.Workbook.Sheets!.Elements<DocumentFormat.OpenXml.Spreadsheet.Sheet>().Select(x => x.Name!.Value));
+    }
+
+    [Fact]
+    public async Task Excel_eksport_ruxsat_bilan()
+    {
+        using var admin = await fixture.Api.ClientAsAsync(Roles.Admin);
+        var ok = await admin.GetAsync("/api/admin/attendance/analytics/export?from=2026-01-12&to=2026-01-12");
+        Assert.True(ok.IsSuccessStatusCode, await ok.Content.ReadAsStringAsync());
+        Assert.Equal("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", ok.Content.Headers.ContentType?.MediaType);
+
+        using var teacher = await fixture.Api.ClientAsAsync(Roles.Teacher);
+        Assert.Equal(System.Net.HttpStatusCode.Forbidden,
+            (await teacher.GetAsync("/api/admin/attendance/analytics/export")).StatusCode);
     }
 
     private static Student Pupil(string fullName, string className) => new()

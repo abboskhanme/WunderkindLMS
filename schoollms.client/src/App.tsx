@@ -60,6 +60,7 @@ import { CoverageReportPage } from '@/pages/admin/seasonal-marks/CoverageReportP
 import { JournalClassesPage } from '@/pages/admin/journal/JournalClassesPage'
 import { JournalSubjectsPage } from '@/pages/admin/journal/JournalSubjectsPage'
 import { MessagesPage } from '@/pages/admin/messages/MessagesPage'
+import { GroupChatPage } from '@/pages/admin/messages/GroupChatPage'
 import { AssignmentsPage } from '@/pages/admin/assignments/AssignmentsPage'
 import { AssignmentScoresPage } from '@/pages/admin/assignment-scores/AssignmentScoresPage'
 import { LmsClassesPage } from '@/pages/admin/lms/LmsClassesPage'
@@ -222,6 +223,8 @@ export default function App() {
           <Route path="lms/:classId/:subjectId" element={<RequirePerm perm="app"><LmsModulesPage /></RequirePerm>} />
           <Route path="lms/:classId/:subjectId/:moduleId" element={<RequirePerm perm="app"><LmsTopicsPage /></RequirePerm>} />
           <Route path="messages" element={<RequirePerm perm="messages"><MessagesPage /></RequirePerm>} />
+          {/* Guruh chati — Xabarlar'dan ajratildi, menyuda Future → Aloqa (2026-10-11). */}
+          <Route path="chat" element={<RequirePerm perm="messages"><GroupChatPage /></RequirePerm>} />
           <Route path="grades-report" element={<Navigate to="/admin/grades-report/school" replace />} />
           <Route path="grades-report/:section" element={<RequirePerm perm="gradesReport"><GradesReportPage /></RequirePerm>} />
           <Route path="teacher-reports" element={<RequirePerm perm="teacherReports"><TeacherReportsPage /></RequirePerm>} />

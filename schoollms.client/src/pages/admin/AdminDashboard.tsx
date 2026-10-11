@@ -15,7 +15,6 @@ import {
   UserCheck,
   Hourglass,
 } from 'lucide-react'
-import type { AbsentStudent, AttendanceByPeriod } from '@/types'
 import { getAdminDashboard } from '@/api/services/dashboard'
 import { useAsync } from '@/hooks/useAsync'
 import { Card } from '@/components/ui/Card'
@@ -27,8 +26,6 @@ import {
 } from '@/components/charts/ClassPerformanceChart'
 import { cn } from '@/lib/utils'
 import { TodaySchedule } from './TodaySchedule'
-import { Pager } from '@/components/ui/Pager'
-import { PAGE_SIZES } from '@/lib/pagination'
 import { useAuth } from '@/context/auth-context'
 import { useDashboardWidgets } from './dashboardWidgets'
 import { useBillingAccess } from './billing/access'
@@ -48,7 +45,7 @@ import {
 } from './DashboardExtraWidgets'
 import { WidgetPickerDrawer } from './WidgetPickerDrawer'
 import { DashboardPeriodBar } from './DashboardPeriodBar'
-import { displayDate, useDashboardPeriod, type DashboardPeriod } from './dashboardPeriod'
+import { displayDate, useDashboardPeriod } from './dashboardPeriod'
 
 export function AdminDashboard() {
   const { user } = useAuth()
@@ -104,7 +101,7 @@ export function AdminDashboard() {
     )
   }
 
-  const { stats, classPerformance, topClasses, attendanceByPeriod, absentStudents } = data
+  const { stats, classPerformance, topClasses } = data
   const on = widgets.isOn
   // Server eski bo'lsa (deploy oralig'ida) yangi maydonlar kelmaydi — "undefined"
   // yoki bo'sh karta o'rniga "—".
@@ -331,8 +328,6 @@ export function AdminDashboard() {
         </div>
       )}
 
-      {on('attendanceByPeriod') && <AttendanceByPeriodCard rows={attendanceByPeriod} period={period} />}
-      {on('absentStudents') && <AbsentStudentsCard rows={absentStudents} period={period} />}
 
 
       {/* Davr oxirgi kunining dars jadvali (barcha sinflar) — "Bugun/Bu hafta/Bu oy" da bugungisi */}
@@ -413,191 +408,5 @@ function toggleBtn(active: boolean): string {
   return cn(
     'rounded-md px-3 py-1 font-medium transition-colors',
     active ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700',
-  )
-}
-
-/* ==========================================================================
-   Bugungi davomat — dars soatlari kesimida
-   ========================================================================== */
-
-/**
- * "Tekshirilmagan" ALOHIDA ustun va u "kelgan" ga QO'SHILMAYDI.
- *
- * Eng oson xato shu bo'lardi: davomati belgilanmagan o'quvchini kelgan deb
- * hisoblash. Unda direktor 100% ko'rib, aslida o'sha soatda hech kim davomat
- * qo'ymaganini bilmay qolardi — ya'ni ekran muammoni ko'rsatish o'rniga
- * yashirardi.
- */
-function AttendanceByPeriodCard({ rows, period }: { rows: AttendanceByPeriod[]; period: DashboardPeriod }) {
-  // EduSchool kabi: 10 ta dars soati DOIM ko'rinadi, darsi yo'q soat — 0 va 0%.
-  // Server har doim 1..10 ni qaytaradi; bo'sh kelsa ham jadval bo'sh qolmaydi.
-  const byPeriod = new Map(rows.map((r) => [r.period, r]))
-  const all = Array.from({ length: 10 }, (_, i) => {
-    const period = i + 1
-    return byPeriod.get(period) ?? { period, expected: 0, present: 0, absent: 0, unchecked: 0 }
-  })
-
-  return (
-    <Card>
-      <h2 className="font-semibold text-slate-800">Davomat analitikasi</h2>
-      <p className="mb-3 text-xs text-slate-400">
-        {period.singleDay
-          ? period.from === period.today
-            ? 'Bugun'
-            : displayDate(period.from)
-          : `${period.label[0].toUpperCase()}${period.label.slice(1)} — kunlar bo'yicha yig'indi`}
-      </p>
-      <div className="overflow-x-auto">
-        {/* table-fixed: 8 ta ustun teng kenglikda — raqamlar bir-birining ostida turadi. */}
-        <table className="w-full min-w-[760px] table-fixed text-sm">
-          <thead className="whitespace-nowrap">
-            <tr className="border-b border-slate-100 text-left text-xs uppercase tracking-wide text-slate-400">
-              <th className="truncate pb-2 pr-3 font-medium" title="Dars vaqti">Dars vaqti</th>
-              <th className="truncate pb-2 pr-3 font-medium" title="O'quvchilar soni">O'quvchilar soni</th>
-              <th className="truncate pb-2 pr-3 font-medium" title="Kelganlar soni">Kelganlar soni</th>
-              <th className="truncate pb-2 pr-3 font-medium" title="Kelganlar foizi">Kelganlar foizi</th>
-              <th className="truncate pb-2 pr-3 font-medium" title="Kelmaganlar soni">Kelmaganlar soni</th>
-              <th className="truncate pb-2 pr-3 font-medium" title="Kelmaganlar foizi">Kelmaganlar foizi</th>
-              <th className="truncate pb-2 pr-3 font-medium" title="Tekshirilmaganlar soni">Tekshirilmaganlar soni</th>
-              <th className="truncate pb-2 font-medium" title="Tekshirilmaganlar foizi">Tekshirilmaganlar foizi</th>
-            </tr>
-          </thead>
-          <tbody className="tabular-nums">
-            {all.map((r) => {
-              const pct = (n: number) => `${r.expected > 0 ? Math.round((n / r.expected) * 100) : 0}%`
-              const idle = r.expected === 0
-              return (
-                <tr
-                  key={r.period}
-                  className={cn('border-b border-slate-50 last:border-0', idle && 'text-slate-400')}
-                >
-                  <td className="py-2 pr-3 font-medium text-slate-700">{r.period}</td>
-                  <td className="py-2 pr-3">{r.expected}</td>
-                  <td className={cn('py-2 pr-3', !idle && 'text-emerald-700')}>{r.present}</td>
-                  <td className="py-2 pr-3">{pct(r.present)}</td>
-                  <td className={cn('py-2 pr-3', !idle && r.absent > 0 && 'text-red-600')}>{r.absent}</td>
-                  <td className="py-2 pr-3">{pct(r.absent)}</td>
-                  <td className={cn('py-2 pr-3', r.unchecked > 0 && 'text-amber-600')}>{r.unchecked}</td>
-                  <td className="py-2">{pct(r.unchecked)}</td>
-                </tr>
-              )
-            })}
-          </tbody>
-        </table>
-      </div>
-    </Card>
-  )
-}
-
-/* ==========================================================================
-   Dars qoldirayotgan o'quvchilar
-   ========================================================================== */
-
-const MISS_FILTERS = [
-  { key: 'all', label: 'Barchasi', min: 1 },
-  { key: '3', label: '3+ sababsiz', min: 3 },
-  { key: '5', label: '5+ sababsiz', min: 5 },
-] as const
-
-/**
- * Faqat SABABSIZ qoldirilgan kunlar. Kasal bo'lgan yoki ruxsat olgan bola bu
- * ro'yxatga tushmaydi — aks holda ekran intizom muammosi bo'lmagan joyda
- * muammo ko'rsatardi.
- */
-function AbsentStudentsCard({ rows, period }: { rows: AbsentStudent[]; period: DashboardPeriod }) {
-  const [filter, setFilter] = useState<(typeof MISS_FILTERS)[number]['key']>('all')
-  // "5+ sababsiz" 3 kunlik davrda bo'sh chiqardi — davrga sig'maydigan chegara ko'rsatilmaydi.
-  const filters = MISS_FILTERS.filter((f) => f.min <= period.days)
-  const min = (filters.find((f) => f.key === filter) ?? MISS_FILTERS[0]).min
-  const shown = rows.filter((r) => r.missedDays >= min)
-  const [pageSize, setPageSize] = useState<number>(PAGE_SIZES[0])
-  const [page, setPage] = useState(1)
-  const lastPage = Math.max(1, Math.ceil(shown.length / pageSize))
-  const current = Math.min(page, lastPage)
-  const pageRows = shown.slice((current - 1) * pageSize, current * pageSize)
-
-  return (
-    <Card>
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-        <h2 className="font-semibold text-slate-800">Dars qoldirayotgan o'quvchilar</h2>
-        {filters.length > 1 && (
-          <div className="flex gap-1 rounded-xl bg-slate-100 p-1">
-            {filters.map((f) => (
-              <button
-                key={f.key}
-                type="button"
-                onClick={() => {
-                  setFilter(f.key)
-                  setPage(1)
-                }}
-                className={cn(
-                  'rounded-lg px-3 py-1.5 text-xs font-medium transition-colors',
-                  min === f.min ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500',
-                )}
-              >
-                {f.label}
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {shown.length === 0 ? (
-        <p className="py-6 text-center text-sm text-slate-400">
-          {rows.length === 0
-            ? `Tanlangan davrda (${period.label}) sababsiz qoldirish qayd etilmagan.`
-            : 'Bu chegaradan oshgan o‘quvchi yo‘q.'}
-        </p>
-      ) : (
-        <div className="overflow-x-auto">
-          {/* table-fixed: ism ustuni qolganlarini o'ngga surib yubormasin. */}
-          <table className="w-full min-w-[560px] table-fixed text-sm">
-            <colgroup>
-              <col className="w-[40%]" />
-              <col className="w-[20%]" />
-              <col className="w-[20%]" />
-              <col className="w-[20%]" />
-            </colgroup>
-            <thead className="whitespace-nowrap">
-              <tr className="border-b border-slate-100 text-left text-xs uppercase tracking-wide text-slate-400">
-                <th className="pb-2 pr-3 font-medium">O'quvchi</th>
-                <th className="pb-2 pr-3 font-medium">Sinf</th>
-                <th className="pb-2 pr-3 font-medium">Qoldirgan kun</th>
-                <th className="pb-2 font-medium">Oxirgi kelgan</th>
-              </tr>
-            </thead>
-            <tbody>
-              {pageRows.map((r) => (
-                <tr key={r.studentId} className="border-b border-slate-50 last:border-0">
-                  <td className="py-2 pr-3 text-slate-700">
-                      <span className="block truncate" title={r.fullName}>
-                        {r.fullName}
-                      </span>
-                    </td>
-                  <td className="py-2 pr-3 text-slate-500">{r.className || '—'}</td>
-                  <td className="py-2 pr-3 font-medium tabular-nums text-red-600">
-                    {r.missedDays} kun
-                  </td>
-                  <td className="py-2 tabular-nums text-slate-500">{r.lastSeen ?? '—'}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          <div className="mt-2 -mx-5 -mb-5">
-            <Pager
-              total={shown.length}
-              page={current}
-              lastPage={lastPage}
-              pageSize={pageSize}
-              onPage={setPage}
-              onPageSize={(n) => {
-                setPageSize(n)
-                setPage(1)
-              }}
-            />
-          </div>
-        </div>
-      )}
-    </Card>
   )
 }

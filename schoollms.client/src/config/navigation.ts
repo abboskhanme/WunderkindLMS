@@ -381,6 +381,8 @@ export const navByRole: Record<Role, NavItem[]> = {
         // Sahifalar va manzillar o'zgarmagan.
         { label: 'Nomzodlar', to: '/admin/admission/candidates', end: true, perm: 'admission', group: 'QABUL' },
         { label: 'Test bazasi', to: '/admin/admission/banks', perm: 'admission', group: 'QABUL' },
+        // Guruh chati "Xabarlar"dan shu yerga ko'chdi (mijoz, 2026-10-11) — Xabarlar endi faqat e'lon.
+        { label: 'Guruh chati', to: '/admin/chat', perm: 'messages', group: 'ALOQA' },
       ],
     },
   ],

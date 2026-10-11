@@ -74,6 +74,8 @@ export interface StudentListFilter {
   hasStatus?: boolean
   groupId?: string
   hasContract?: boolean
+  /** Telegramga ulangan / ulanmagan — "Telegram" ustuni bilan bir xil ta'rif. */
+  hasTelegram?: boolean
   hasSubscription?: boolean
   categoryId?: string
   hasDiscount?: boolean
@@ -160,6 +162,7 @@ export function studentFilterParams(filter: StudentListFilter): URLSearchParams 
   put('hasStatus', filter.hasStatus)
   put('groupId', filter.groupId)
   put('hasContract', filter.hasContract)
+  put('hasTelegram', filter.hasTelegram)
   put('hasSubscription', filter.hasSubscription)
   put('categoryId', filter.categoryId)
   put('hasDiscount', filter.hasDiscount)

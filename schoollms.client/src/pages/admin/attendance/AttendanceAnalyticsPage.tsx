@@ -8,13 +8,15 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
-import { Users, UserCheck, UserX, HelpCircle, Clock } from 'lucide-react'
+import { Users, UserCheck, UserX, HelpCircle, Clock, FileSpreadsheet } from 'lucide-react'
 import { getLessonOwners, type LessonOwnerItem } from '@/api/services/lessonOwners'
 import {
+  downloadAttendanceAnalytics,
   getAttendanceAnalytics,
   type AttendanceAnalytics,
   type AttendanceTally,
 } from '@/api/services/attendanceAnalytics'
+import { Button } from '@/components/ui/Button'
 import { cn, formatDate } from '@/lib/utils'
 import { addDaysISO } from '@/lib/weeks'
 import { Card } from '@/components/ui/Card'
@@ -22,6 +24,7 @@ import { StatCard } from '@/components/ui/StatCard'
 import { Loader } from '@/components/ui/Loader'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { EventsList, StudentsTable } from './AttendanceDetails'
+import { AbsenteesCard } from './AbsenteesCard'
 import { AttendanceMonthGrid } from './AttendanceMonthGrid'
 import { allEvents, type EventFilter, type EventSelection } from './eventSelection'
 
@@ -69,6 +72,10 @@ export function AttendanceAnalyticsPage() {
   const [day, setDay] = useState(todayISO())
   const [data, setData] = useState<AttendanceAnalytics | null>(null)
   const [loading, setLoading] = useState(true)
+  // Dars soatlari kesimi: bitta kun yoki butun davr (bosh sahifadagi jadval shu yerga ko'chdi, 2026-10-11).
+  const [periodsMode, setPeriodsMode] = useState<'range' | 'day'>('range')
+  const [exporting, setExporting] = useState(false)
+  const [exportError, setExportError] = useState<string | null>(null)
   // "Kim, qaysi kuni, nima sababdan" ro'yxatining filtri — kartalar, sabablar va o'quvchi qatori uni
   // o'rnatib, shu bo'limga olib keladi (mijoz, 2026-10-09).
   const [selection, setSelection] = useState<EventSelection>(allEvents)
@@ -123,11 +130,30 @@ export function AttendanceAnalyticsPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-xl font-semibold text-slate-800">Davomat analitikasi</h1>
-        <p className="text-sm text-slate-400">
-          Sinf va davr kesimida keldi / kelmadi / tekshirilmagan
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-semibold text-slate-800">Davomat analitikasi</h1>
+          <p className="text-sm text-slate-400">
+            Sinf va davr kesimida keldi / kelmadi / tekshirilmagan
+          </p>
+        </div>
+        <div className="flex flex-col items-end gap-1">
+          <Button
+            variant="secondary"
+            disabled={exporting}
+            title="Dars qoldirganlar, har bir kun sababi bilan, sabablar va dars soatlari"
+            onClick={() => {
+              setExporting(true)
+              setExportError(null)
+              downloadAttendanceAnalytics({ classId, from, to })
+                .catch(() => setExportError("Excel faylni tayyorlab bo'lmadi"))
+                .finally(() => setExporting(false))
+            }}
+          >
+            <FileSpreadsheet className="h-4 w-4" /> {exporting ? 'Tayyorlanmoqda…' : 'Excel'}
+          </Button>
+          {exportError && <span className="text-xs text-red-600">{exportError}</span>}
+        </div>
       </div>
 
       {/* Tanlovlar */}
@@ -226,6 +252,12 @@ export function AttendanceAnalyticsPage() {
               hint="Kelganlar ichida"
             />
           </div>
+
+          <AbsenteesCard
+            rows={data.students ?? []}
+            days={daysIn(data.from, data.to)}
+            onPick={(studentId) => showEvents({ filter: 'all', studentId })}
+          />
 
           {/* Trend */}
           <Card>
@@ -368,11 +400,31 @@ export function AttendanceAnalyticsPage() {
             />
           </div>
 
-          {/* Bir kunning dars soatlari kesimi */}
+          {/* Dars soatlari kesimi — butun davr yoki bitta kun */}
           <Card className="p-0">
             <div className="flex flex-wrap items-center justify-between gap-3 px-5 pt-5">
-              <h2 className="font-semibold text-slate-800">Dars soatlari kesimi</h2>
-              <div className="flex items-center gap-1">
+              <div className="flex flex-wrap items-center gap-3">
+                <h2 className="font-semibold text-slate-800">Dars soatlari kesimi</h2>
+                <div className="flex gap-1 rounded-xl bg-slate-100 p-1">
+                  {([
+                    ['range', 'Butun davr'],
+                    ['day', 'Bitta kun'],
+                  ] as const).map(([key, label]) => (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => setPeriodsMode(key)}
+                      className={cn(
+                        'rounded-lg px-3 py-1 text-xs font-medium transition-colors',
+                        periodsMode === key ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500',
+                      )}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              {periodsMode === 'day' && <div className="flex items-center gap-1">
                 <button
                   onClick={() => setDay(addDaysISO(data.day, -1))}
                   className="rounded-lg border border-slate-200 px-2 py-1.5 text-sm text-slate-500 hover:bg-slate-50"
@@ -394,10 +446,15 @@ export function AttendanceAnalyticsPage() {
                 >
                   ›
                 </button>
-              </div>
+              </div>}
             </div>
-            {data.periods.length === 0 ? (
-              <EmptyNote text="Bu kuni o'tilgan dars yo'q." />
+            {periodsMode === 'range' && (
+              <p className="px-5 pt-1 text-xs text-slate-400">
+                Davrdagi kunlar bo'yicha yig'indi: har bir darsda har bir o'quvchi bitta qator.
+              </p>
+            )}
+            {(periodsMode === 'day' ? data.periods : (data.periodsRange ?? [])).length === 0 ? (
+              <EmptyNote text={periodsMode === 'day' ? "Bu kuni o'tilgan dars yo'q." : "Bu davrda o'tilgan dars yo'q."} />
             ) : (
               <div className="mt-3 overflow-x-auto">
                 <table className="w-full min-w-[720px] text-left text-sm">
@@ -412,7 +469,7 @@ export function AttendanceAnalyticsPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 tabular-nums">
-                    {data.periods.map((p) => (
+                    {(periodsMode === 'day' ? data.periods : (data.periodsRange ?? [])).map((p) => (
                       <tr key={p.period} className="hover:bg-slate-50/60">
                         <td className="px-4 py-3 font-medium text-slate-800">{p.period}-dars</td>
                         <td className="px-4 py-3 text-slate-400">
@@ -425,7 +482,13 @@ export function AttendanceAnalyticsPage() {
                           {p.tally.present} <span className="text-slate-400">· {pct(p.tally.presentPct)}</span>
                         </td>
                         <td className="px-4 py-3 text-center font-semibold text-red-600">
-                          {p.tally.absent || '—'}
+                          {p.tally.absent ? (
+                            <>
+                              {p.tally.absent} <span className="font-normal text-slate-400">· {pct(p.tally.absentPct)}</span>
+                            </>
+                          ) : (
+                            '—'
+                          )}
                         </td>
                         <td
                           className={cn(
@@ -497,6 +560,12 @@ function TotalRow({ tally, students }: { tally: AttendanceTally; students: numbe
       <td className="px-4 py-3 text-center text-amber-700">{tally.unchecked || '—'}</td>
     </tr>
   )
+}
+
+/** Davrdagi kunlar soni, ikkala chekka bilan. */
+function daysIn(from: string, to: string): number {
+  const ms = Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)
+  return Number.isFinite(ms) ? Math.round(ms / 86_400_000) + 1 : 1
 }
 
 function EmptyNote({ text }: { text: string }) {

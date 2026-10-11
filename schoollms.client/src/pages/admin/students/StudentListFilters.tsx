@@ -371,6 +371,20 @@ export function StudentListFilters({
             </select>
           </Field>
 
+          {/* Mijoz, 2026-10-11: "telegramga ulangan yoki ulanmaganligiga filtr". Ulanmagan ota-onaga
+              e'lon, chek va davomat xabarlari bormaydi. */}
+          <Field label="Telegram">
+            <select
+              value={fromYesNo(filter.hasTelegram)}
+              onChange={(e) => onChange({ hasTelegram: yesNo(e.target.value) })}
+              className={cn(control, 'w-full')}
+            >
+              <option value="">Farqi yo'q</option>
+              <option value="yes">Ulangan</option>
+              <option value="no">Ulanmagan</option>
+            </select>
+          </Field>
+
           <Field label="Obuna">
             <select
               value={fromYesNo(filter.hasSubscription)}

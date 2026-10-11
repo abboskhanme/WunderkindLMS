@@ -573,6 +573,44 @@ public class StudentListTests(ApiFixture fixture)
         return (five, nine);
     }
 
+    /// <summary>
+    /// "Telegram" filtri (mijoz, 2026-10-11) — ustundagi "Bog'langan" bilan bir xil ta'rif: botda
+    /// ro'yxatdan o'tgan yoki vasiyining akkaunti Mini App'ga bog'langan; qolgani — ulanmagan.
+    /// </summary>
+    [Fact]
+    public async Task Telegram_filtri_ustun_bilan_bir_xil()
+    {
+        using var client = await fixture.Api.ClientAsAsync(Roles.Admin);
+        var tag = Tag();
+        var viaBot = await SeedAsync(tag, "Botda");
+        var viaGuardian = await SeedAsync(tag, "Vasiyda");
+        var none = await SeedAsync(tag, "Ulanmagan");
+
+        await fixture.Api.WithDbAsync(async db =>
+        {
+            db.TelegramRegistrations.Add(new TelegramRegistration { StudentId = viaBot, ChatId = Random.Shared.NextInt64(1_000_000, long.MaxValue) });
+            var user = new AppUser { FullName = $"Ota {tag}", Role = Roles.Student, Email = $"ota.{tag}", PasswordHash = "x" };
+            db.Users.Add(user);
+            var guardian = new Guardian { FullName = $"Ota {tag}", UserId = user.Id, Phone = $"+99891{tag}", PhoneKey = $"91{tag}" };
+            db.Guardians.Add(guardian);
+            db.StudentGuardians.Add(new StudentGuardian { StudentId = viaGuardian, GuardianId = guardian.Id });
+            db.TelegramAccounts.Add(new TelegramAccount
+            {
+                TelegramUserId = Random.Shared.NextInt64(1_000_000, long.MaxValue), UserId = user.Id, DisplayName = "ota",
+            });
+            await db.SaveChangesAsync();
+        });
+
+        await AssertIdsAsync(client, $"{Search}?search={tag}&hasTelegram=true", viaBot, viaGuardian);
+        await AssertIdsAsync(client, $"{Search}?search={tag}&hasTelegram=false", none);
+
+        // The column says the same thing as the filter.
+        var page = await PageAsync(client, $"{Search}?search={tag}&pageSize=1000");
+        var linked = page.Items.Where(i => i.GetProperty("telegramLinked").GetBoolean())
+            .Select(i => i.GetProperty("id").GetString()!).Order(StringComparer.Ordinal).ToList();
+        Assert.Equal(new[] { viaBot, viaGuardian }.Order(StringComparer.Ordinal).ToList(), linked);
+    }
+
     /// <summary>billing_seed.sql dagi barqaror "O'qish" toifasi.</summary>
     private static readonly Guid TuitionCategory = new("00000000-0000-0000-0000-0000000000c1");
 

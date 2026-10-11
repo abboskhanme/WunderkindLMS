@@ -86,6 +86,8 @@ export interface AttendanceAnalytics {
   events?: AttendanceEvent[]
   /** Ro'yxat 5000 qatorda kesilgan (butun maktab, uzun davr) — davrni toraytirish kerak. */
   eventsTruncated?: boolean
+  /** Dars soatlari kesimi butun davr bo'yicha (bosh sahifadan ko'chgan jadval, 2026-10-11). */
+  periodsRange?: AttendancePeriodRow[]
 }
 
 export interface AttendanceStudentRow {
@@ -98,6 +100,8 @@ export interface AttendanceStudentRow {
   tally: AttendanceTally
   /** Darsi bo'lgan kunlar ("YYYY-MM-DD") — faqat bitta sinf tanlanganda (oylik jadval uchun). */
   dates?: string[] | null
+  /** Davrdagi oxirgi kelgan kuni; davrda kelmagan bo'lsa — null. */
+  lastPresent?: string | null
 }
 
 /** `absent` — kun bo'yi kelmadi, `partial` — ayrim darslarga, `late` — kech keldi, `unchecked` — belgilanmagan. */
@@ -171,4 +175,25 @@ export async function getAttendanceAnalytics(
     },
   })
   return data
+}
+
+/**
+ * Davomat analitikasi Excel'da: dars qoldirganlar, har bir kun sababi bilan, sabablar va dars
+ * soatlari (2026-10-11). Filtrlar ekrandagining o'zi.
+ */
+export async function downloadAttendanceAnalytics(params: { classId?: string; from: string; to: string }): Promise<void> {
+  const res = await api.get('/admin/attendance/analytics/export', {
+    params: { classId: params.classId || undefined, from: params.from, to: params.to },
+    responseType: 'blob',
+  })
+  const url = URL.createObjectURL(res.data as Blob)
+  const a = document.createElement('a')
+  a.href = url
+  const cd = (res.headers['content-disposition'] as string | undefined) ?? ''
+  const m = cd.match(/filename="?([^";]+)"?/)
+  a.download = m?.[1] ?? `davomat_${params.from}_${params.to}.xlsx`
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  URL.revokeObjectURL(url)
 }

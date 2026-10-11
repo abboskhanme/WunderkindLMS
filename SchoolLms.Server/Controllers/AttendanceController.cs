@@ -134,6 +134,20 @@ public class AttendanceController(AppDbContext db) : ControllerBase
         [FromQuery] string? to, [FromQuery] string? day)
         => await AttendanceAnalytics.BuildAsync(db, classId, from, to, day);
 
+    /// <summary>
+    /// Davomat analitikasi Excel'da — dars qoldirganlar, har bir kun sababi bilan, sabablar va dars
+    /// soatlari (mijoz, 2026-10-11). Filtrlar ekrandagining o'zi.
+    /// </summary>
+    [HttpGet("analytics/export")]
+    public async Task<IActionResult> AnalyticsExport(
+        [FromQuery] string? classId, [FromQuery] string? from, [FromQuery] string? to)
+    {
+        var d = await AttendanceAnalytics.BuildAsync(db, classId, from, to, null, AttendanceAnalyticsExport.MaxEvents);
+        return File(AttendanceAnalyticsExport.Build(d),
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            $"davomat_{d.From}_{d.To}.xlsx");
+    }
+
     /// <summary>Bitta fan/kun bo'yicha har bir o'quvchining holati (ega — sinf yoki guruh).</summary>
     /// <param name="period">Dars raqami — fan kunda ikki marta bo'lsa aynan shu soat
     /// (berilmasa — eski xulq: shu fanning kun bo'yi yozuvlari).</param>

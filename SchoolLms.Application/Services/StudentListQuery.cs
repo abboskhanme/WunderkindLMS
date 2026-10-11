@@ -176,6 +176,22 @@ public sealed class StudentListQuery(IAppDbContext db)
                 : q.Where(s => !db.StudentContracts.Any(c => c.StudentId == s.Id));
         }
 
+        if (f.HasTelegram is { } hasTelegram)
+        {
+            // TelegramLinkedAsync bilan bir xil uchta yo'l — ustundagi "Bog'langan" va filtr farq qilmasin.
+            q = hasTelegram
+                ? q.Where(s => db.TelegramRegistrations.Any(r => r.StudentId == s.Id)
+                    || (s.UserId != null && db.TelegramAccounts.Any(a => a.UserId == s.UserId))
+                    || db.StudentGuardians.Any(l => l.StudentId == s.Id
+                        && db.Guardians.Any(g => g.Id == l.GuardianId && g.UserId != null
+                            && db.TelegramAccounts.Any(a => a.UserId == g.UserId))))
+                : q.Where(s => !db.TelegramRegistrations.Any(r => r.StudentId == s.Id)
+                    && !(s.UserId != null && db.TelegramAccounts.Any(a => a.UserId == s.UserId))
+                    && !db.StudentGuardians.Any(l => l.StudentId == s.Id
+                        && db.Guardians.Any(g => g.Id == l.GuardianId && g.UserId != null
+                            && db.TelegramAccounts.Any(a => a.UserId == g.UserId))));
+        }
+
         if (f.HasSubscription is { } hasSubscription)
         {
             q = hasSubscription
