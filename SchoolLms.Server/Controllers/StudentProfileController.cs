@@ -184,11 +184,11 @@ public class StudentProfileController(AppDbContext db, AuditService audit) : Con
 
         var subjects = await db.Subjects.AsNoTracking().ToDictionaryAsync(x => x.Id, x => x.Name, ct);
         var teachers = await db.Teachers.AsNoTracking().ToDictionaryAsync(x => x.Id, x => x.FullName, ct);
-        var times = await db.LessonTimes.AsNoTracking().ToDictionaryAsync(x => x.Period, ct);
+        var bells = await BellTimes.LoadAsync(db, ct);
 
         var rows = lessons.Select(l =>
         {
-            times.TryGetValue(l.Period, out var lt);
+            var lt = bells.Time(l.Owner.Id, l.Period);
             return new StudentLessonDto(
                 l.Day, l.Period, lt?.StartTime, lt?.EndTime,
                 l.SubjectId, subjects.GetValueOrDefault(l.SubjectId, ""),

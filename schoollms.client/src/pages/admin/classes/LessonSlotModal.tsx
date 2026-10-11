@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/Button'
 import { Select } from '@/components/ui/Input'
 import { weekDays } from '@/config/constants'
 import { cn } from '@/lib/utils'
+import { timesOverlap, type PeriodTime } from '@/components/schedule/periodTimes'
 
 /* ==========================================================================
    KATAK OYNASI — jadvalga dars qo'yish
@@ -39,6 +40,9 @@ export type OccupiedSlots = Record<
     templateName: string
     /** Egasi sinfmi yoki guruhmi (eski javobda yo'q → 'class') */
     ownerKind?: LessonOwnerKind
+    /** O'sha egadagi dars vaqti (uning qo'ng'iroq jadvalidan) — bo'lmasa raqam bo'yicha solishtiriladi. */
+    startTime?: string | null
+    endTime?: string | null
   }[]
 >
 
@@ -50,6 +54,12 @@ interface Props {
   occupiedSlots: OccupiedSlots
   /** Shu soatning qo'ng'iroq vaqti, sozlamalarda bo'lsa ("08:30–09:15"). */
   timeLabel?: string | null
+  /**
+   * Shu katakning vaqti (egasining qo'ng'iroq jadvalidan, 2026-10-11). Berilsa, o'qituvchi bandligi
+   * vaqt KESISHUVI bo'yicha tekshiriladi: sinflarning qo'ng'iroqlari har xil bo'lsa, bir xil raqamli
+   * dars bir vaqtda emas, har xil raqamli dars esa bir vaqtda bo'lishi mumkin.
+   */
+  slotTime?: PeriodTime | null
   /**
    * Tahrirlanayotgan jadval kimniki — sinfnikimi yoki o'quv guruhinikimi.
    * Guruhda sinf ichidagi 1/2-guruhga bo'linish YO'Q (guruhning o'zi
@@ -76,6 +86,7 @@ export function LessonSlotModal({
   teachers,
   occupiedSlots,
   timeLabel,
+  slotTime,
   ownerKind = 'class',
   onClose,
   onSave,
@@ -118,7 +129,13 @@ export function LessonSlotModal({
   const conflictOf = (teacherId: string) => {
     if (!teacherId || !slot) return null
     return (
-      occupiedSlots[teacherId]?.find((s) => s.day === slot.day && s.period === slot.period) ?? null
+      occupiedSlots[teacherId]?.find(
+        (s) =>
+          s.day === slot.day &&
+          (slotTime && s.startTime && s.endTime
+            ? timesOverlap(slotTime, { start: s.startTime, end: s.endTime })
+            : s.period === slot.period),
+      ) ?? null
     )
   }
 
@@ -284,6 +301,9 @@ interface ConflictInfo {
   className: string
   templateName: string
   ownerKind?: LessonOwnerKind
+  period?: number
+  startTime?: string | null
+  endTime?: string | null
 }
 
 function RowFields({
@@ -342,7 +362,8 @@ function RowFields({
                   ? `"${conflict.className}" guruhi`
                   : `${conflict.className}-sinf`}
               </span>
-              {' '}da shu soatda allaqachon dars bor{' '}
+              {' '}da shu soatda allaqachon dars bor
+              {conflict.startTime && ` (${conflict.period}-dars, ${conflict.startTime}–${conflict.endTime})`}{' '}
               <span className="text-red-500">({conflict.templateName})</span>.
             </p>
             <p className="mt-1 font-medium">Boshqa o'qituvchi tanlang.</p>

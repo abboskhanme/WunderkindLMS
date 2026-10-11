@@ -486,17 +486,14 @@ public class TurnstileAnalyticsQueries(IAppDbContext db)
     /// <param name="ClassEnd">Sinf nomi → hafta kuni bo'yicha oxirgi dars tugashi.</param>
     /// <param name="GroupBounds">
     /// G-14: o'quvchi id'si → uning GURUH darslarining hafta kuni chegaralari
-    /// (birinchi/oxirgi dars RAQAMI). O'chirgich o'chiq bo'lsa — bo'sh lug'at,
-    /// ya'ni kutilgan vaqt bugungidek faqat sinfdan kelib chiqadi.
+    /// (birinchi boshlanish / oxirgi tugash "HH:mm", har guruh o'z qo'ng'iroq jadvali bo'yicha).
+    /// O'chirgich o'chiq bo'lsa — bo'sh lug'at, ya'ni kutilgan vaqt faqat sinfdan kelib chiqadi.
     /// </param>
-    /// <param name="StartClock">Dars raqami → boshlanish vaqti "HH:mm".</param>
-    /// <param name="EndClock">Dars raqami → tugash vaqti "HH:mm".</param>
     private sealed record Snapshot(
         SchoolMeta? Meta, int Grace, List<Student> Students, List<string> SchoolDays,
         Dictionary<string, string[]> ClassStart, Dictionary<string, string[]> ClassEnd,
         Dictionary<string, List<string>> Passes, List<LessonTime> Periods, string Today,
-        Dictionary<string, (int[] First, int[] Last)> GroupBounds,
-        Dictionary<int, string> StartClock, Dictionary<int, string> EndClock);
+        Dictionary<string, (bool[] Days, string[] In, string[] Out)> GroupBounds);
 
     private async Task<Snapshot> LoadAsync(DateOnly from, DateOnly to, string? className, CancellationToken ct)
     {
@@ -553,27 +550,24 @@ public class TurnstileAnalyticsQueries(IAppDbContext db)
 
         var periods = await db.LessonTimes.AsNoTracking()
             .Where(t => t.StartTime != "").OrderBy(t => t.Period).ToListAsync(ct);
-        var (start, end) = await ClassBoundsAsync(periods, ct);
-
-        var startClock = periods.GroupBy(t => t.Period)
-            .ToDictionary(g => g.Key, g => Clock(g.First().StartTime));
-        var endClock = periods.GroupBy(t => t.Period)
-            .ToDictionary(g => g.Key, g => Clock(g.First().EndTime));
+        // Har sinf va guruh — o'z qo'ng'iroq jadvali bo'yicha (2026-10-11).
+        var bells = await BellTimes.LoadAsync(db, ct);
+        var (start, end) = await ClassBoundsAsync(bells, ct);
         // G-14: guruh darslari USTIGA qo'shiladi. O'chirgich o'chiq bo'lsa bo'sh.
-        var groupBounds = await PupilTimetable.GroupBoundsByStudentAsync(db, ct);
+        var groupBounds = await PupilTimetable.GroupClockBoundsByStudentAsync(db, bells, ct);
 
         return new Snapshot(
             meta, meta?.LateGraceMinutes ?? 0, students, schoolDays,
             start, end, passes, periods, Iso(AppClock.Today),
-            groupBounds, startClock, endClock);
+            groupBounds);
     }
 
     /// <summary>
     /// Sinf nomi → har hafta kunidagi BIRINCHI dars boshlanishi va OXIRGI dars tugashi.
-    /// Manba: sinfning asosiy dars jadvali varianti (eng ko'p darsli) + qo'ng'iroqlar jadvali.
+    /// Manba: sinfning asosiy dars jadvali varianti (eng ko'p darsli) + sinfning qo'ng'iroq jadvali.
     /// </summary>
     private async Task<(Dictionary<string, string[]> Start, Dictionary<string, string[]> End)>
-        ClassBoundsAsync(List<LessonTime> periods, CancellationToken ct)
+        ClassBoundsAsync(BellBook bells, CancellationToken ct)
     {
         var classNames = await db.Classes.AsNoTracking()
             .Where(c => !c.IsArchived)
@@ -583,11 +577,6 @@ public class TurnstileAnalyticsQueries(IAppDbContext db)
             .Where(t => classNames.ContainsKey(t.ClassId))
             .GroupBy(t => t.ClassId)
             .Select(g => g.OrderByDescending(t => t.Lessons.Count).ThenBy(t => t.Id).First());
-
-        var startTime = periods.GroupBy(t => t.Period)
-            .ToDictionary(g => g.Key, g => Clock(g.First().StartTime));
-        var endTime = periods.GroupBy(t => t.Period)
-            .ToDictionary(g => g.Key, g => Clock(g.First().EndTime));
 
         var start = new Dictionary<string, string[]>(StringComparer.Ordinal);
         var end = new Dictionary<string, string[]>(StringComparer.Ordinal);
@@ -601,8 +590,8 @@ public class TurnstileAnalyticsQueries(IAppDbContext db)
                 if (first[l.Day] == 0 || l.Period < first[l.Day]) first[l.Day] = l.Period;
                 if (l.Period > last[l.Day]) last[l.Day] = l.Period;
             }
-            start[name] = [.. first.Select(p => p > 0 ? startTime.GetValueOrDefault(p, "") : "")];
-            end[name] = [.. last.Select(p => p > 0 ? endTime.GetValueOrDefault(p, "") : "")];
+            start[name] = [.. first.Select(p => p > 0 && bells.Time(tpl.ClassId, p) is { } t ? Clock(t.StartTime) : "")];
+            end[name] = [.. last.Select(p => p > 0 && bells.Time(tpl.ClassId, p) is { } t ? Clock(t.EndTime) : "")];
         }
         return (start, end);
     }
@@ -662,12 +651,8 @@ public class TurnstileAnalyticsQueries(IAppDbContext db)
         Snapshot snap, Student student, int weekday)
     {
         if (!snap.GroupBounds.TryGetValue(student.Id, out var bounds)) return (false, "", "");
-        var first = bounds.First[weekday];
-        if (first <= 0) return (false, "", "");
-        var last = bounds.Last[weekday];
-        return (true,
-            snap.StartClock.GetValueOrDefault(first, ""),
-            last > 0 ? snap.EndClock.GetValueOrDefault(last, "") : "");
+        if (!bounds.Days[weekday]) return (false, "", "");
+        return (true, bounds.In[weekday], bounds.Out[weekday]);
     }
 
     /// <summary>Ikkitasidan ERTAsi ("HH:mm"); bo'shi e'tiborga olinmaydi.</summary>

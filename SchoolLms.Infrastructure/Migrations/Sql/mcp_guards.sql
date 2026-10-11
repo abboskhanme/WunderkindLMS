@@ -31,6 +31,8 @@ DECLARE
         'absence_reasons', 'access_roles', 'assignment_materials', 'assignment_submissions',
         -- boarding_rosters: the boarding_attendance tool builds its list from it (2026-10-11)
         'boarding_rosters',
+        -- bell_*: the timetable tool reads each owner's lesson times through BellTimes (2026-10-11)
+        'bell_schedule_owners', 'bell_schedule_periods', 'bell_schedules',
         'assignment_types', 'assignments', 'billing_settings', 'boarding_attendance', 'broadcasts',
         'cash_box_transactions', 'cash_boxes', 'cash_handovers', 'cash_shifts',
         'certificate_subjects', 'certificate_types', 'certificates', 'class_homeroom_teachers',

@@ -30,8 +30,7 @@ public class TurnstileService
         var entries = (await db.TeacherAttendances.Where(a => a.Date == date).ToListAsync())
             .ToDictionary(a => a.TeacherId);
 
-        var firstPeriod = await FirstPeriodByWeekdayAsync(db);
-        var lessonStart = await LessonStartByPeriodAsync(db);
+        var firstStart = await FirstStartByWeekdayAsync(db);
 
         var rows = new List<TeacherDashboardRowDto>();
         int present = 0, late = 0, absent = 0, notArrived = 0;
@@ -39,7 +38,7 @@ public class TurnstileService
         {
             var start = TeacherSalaryCalc.StartDateOf(t);
             var notYet = start is not null && string.CompareOrdinal(date, start) < 0;
-            var expected = ExpectedArrival(t, date, meta?.WorkStartTime ?? "", firstPeriod, lessonStart);
+            var expected = ExpectedArrival(t, date, meta?.WorkStartTime ?? "", firstStart);
 
             entries.TryGetValue(t.Id, out var e);
             var status = e?.Status ?? "";
@@ -185,8 +184,7 @@ public class TurnstileService
     {
         var meta = await db.SchoolMeta.FirstOrDefaultAsync();
         var quarters = await TeacherSalaryCalc.QuarterRangesAsync(db);
-        var firstPeriod = await FirstPeriodByWeekdayAsync(db);
-        var lessonStart = await LessonStartByPeriodAsync(db);
+        var firstStart = await FirstStartByWeekdayAsync(db);
         var today = AppClock.Today.ToString("yyyy-MM-dd");
 
         var teachers = (await db.Teachers.Where(t => !t.IsArchived && t.DeviceUserId != "").ToListAsync());
@@ -230,7 +228,7 @@ public class TurnstileService
                 {
                     checkIn = times[0];
                     checkOut = times.Count > 1 ? times[^1] : "";
-                    var expected = ExpectedArrival(t, date, meta?.WorkStartTime ?? "", firstPeriod, lessonStart);
+                    var expected = ExpectedArrival(t, date, meta?.WorkStartTime ?? "", firstStart);
                     var grace = meta?.LateGraceMinutes ?? 0;
                     status = expected.Length == 5 && MinutesBetween(expected, checkIn) > grace ? "late" : "present";
                 }
@@ -259,22 +257,22 @@ public class TurnstileService
     // ---------- Kutilgan kelish vaqti (ish boshlanishi + birinchi dars, qaysi erta) ----------
 
     private static string ExpectedArrival(Teacher t, string date, string workStart,
-        Dictionary<string, int[]> firstPeriod, Dictionary<int, string> lessonStart)
+        Dictionary<string, string[]> firstStart)
     {
         var candidates = new List<string>();
         if (workStart.Length == 5) candidates.Add(workStart);
         if (DateOnly.TryParse(date, out var d))
         {
             var wd = ((int)d.DayOfWeek + 6) % 7; // Dushanba=0..Shanba=5
-            if (wd < 6 && firstPeriod.TryGetValue(t.Id, out var arr) && arr[wd] > 0
-                && lessonStart.TryGetValue(arr[wd], out var st) && st.Length == 5)
-                candidates.Add(st);
+            if (wd < 6 && firstStart.TryGetValue(t.Id, out var arr) && arr[wd].Length == 5)
+                candidates.Add(arr[wd]);
         }
         return candidates.Count == 0 ? "" : candidates.Min()!;
     }
 
     /// <summary>
-    /// teacherId → int[6]: har hafta kunidagi ENG ERTA (eng kichik) dars raqami (0 = dars yo'q).
+    /// teacherId → string[6]: har hafta kunidagi ENG ERTA dars boshlanishi ("" = dars yo'q).
+    /// 2026-10-11: dars raqami emas, vaqt — sinflarning qo'ng'iroq jadvallari har xil bo'lishi mumkin.
     ///
     /// <para>
     /// G-14: manba endi <see cref="TeacherLessons.FirstPeriodByWeekdayAsync"/> —
@@ -284,12 +282,8 @@ public class TurnstileService
     /// bo'lsa natija bugungining aynan o'zi (guruh egalari ro'yxatga kirmaydi).
     /// </para>
     /// </summary>
-    private static Task<Dictionary<string, int[]>> FirstPeriodByWeekdayAsync(IAppDbContext db) =>
-        TeacherLessons.FirstPeriodByWeekdayAsync(db);
-
-    private static async Task<Dictionary<int, string>> LessonStartByPeriodAsync(IAppDbContext db) =>
-        (await db.LessonTimes.Where(t => t.StartTime != "").ToListAsync())
-        .GroupBy(t => t.Period).ToDictionary(g => g.Key, g => g.First().StartTime.Length >= 5 ? g.First().StartTime[..5] : g.First().StartTime);
+    private static async Task<Dictionary<string, string[]>> FirstStartByWeekdayAsync(IAppDbContext db) =>
+        await TeacherLessons.FirstStartByWeekdayAsync(db, await BellTimes.LoadAsync(db));
 
     private static int MinutesBetween(string fromHhmm, string toHhmm)
     {

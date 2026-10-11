@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { Clock } from 'lucide-react'
 import type {
   LessonOwnerKind,
   ScheduleLesson,
@@ -21,7 +22,12 @@ import { getQuarterWeeks, getCurrentQuarterAndWeek, mondayOfISO, addDaysISO } fr
 import { formatDate, cn } from '@/lib/utils'
 import { Card } from '@/components/ui/Card'
 import { Loader } from '@/components/ui/Loader'
-import { periodTimeMap, visiblePeriods, type PeriodTime } from '@/components/schedule/periodTimes'
+import {
+  bellScheduleOf,
+  periodTimeMapFor,
+  visiblePeriods,
+  type PeriodTime,
+} from '@/components/schedule/periodTimes'
 import { PeriodCell, PeriodHead } from '@/components/schedule/PeriodCell'
 
 const control =
@@ -160,8 +166,15 @@ export function ClassScheduleViewPage() {
   const subjectName = (sid: string) => subjects.find((s) => s.id === sid)?.name ?? ''
   const teacherName = (tid: string) => teachers.find((t) => t.id === tid)?.fullName ?? ''
 
-  /** Dars raqami -> soati ("Sozlamalar → Dars vaqtlari"). */
-  const periodTimes = useMemo(() => periodTimeMap(settings), [settings])
+  /** Ega -> dars raqami -> soati: alohida qo'ng'iroq jadvali yoki asosiy (2026-10-11). */
+  const timesByOwner = useMemo(
+    () => new Map(owners.map((o) => [o.id, periodTimeMapFor(settings, o.id)])),
+    [owners, settings],
+  )
+  const periodTimesOf = useCallback(
+    (ownerId: string) => timesByOwner.get(ownerId) ?? periodTimeMapFor(settings, ownerId),
+    [timesByOwner, settings],
+  )
 
   /** Tanlangan haftaning kuni: sana, chorakdan tashqarimi, bayrammi. */
   const monday = selected ? mondayOfISO(selected.startISO) : null
@@ -228,11 +241,20 @@ export function ClassScheduleViewPage() {
 
           {owners.map((owner) => {
             const template = templateFor(owner.id)
+            const bell = bellScheduleOf(settings, owner.id)
             return (
               <Card key={owner.id} className="p-0">
                 <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 p-4">
-                  <h2 className="font-semibold text-slate-800">
+                  <h2 className="flex flex-wrap items-center gap-2 font-semibold text-slate-800">
                     {owner.kind === 'group' ? `Guruh: ${owner.name}` : owner.name}
+                    {bell && (
+                      <span
+                        title="Alohida qo'ng'iroq jadvali (Sozlamalar → Dars vaqtlari)"
+                        className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-1.5 py-0.5 text-[11px] font-medium text-slate-600"
+                      >
+                        <Clock className="h-3 w-3" /> {bell.name}
+                      </span>
+                    )}
                   </h2>
                   {template ? (
                     <span className="rounded-md bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-700">
@@ -261,7 +283,7 @@ export function ClassScheduleViewPage() {
                     dayMeta={dayMeta}
                     subjectName={subjectName}
                     teacherName={teacherName}
-                    periodTimes={periodTimes}
+                    periodTimes={periodTimesOf(owner.id)}
                   />
                 )}
               </Card>

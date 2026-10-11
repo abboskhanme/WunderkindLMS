@@ -705,6 +705,84 @@ namespace SchoolLms.Infrastructure.Migrations
                     b.ToTable("audit_logs", (string)null);
                 });
 
+            modelBuilder.Entity("SchoolLms.Domain.BellSchedule", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)")
+                        .HasColumnName("name");
+
+                    b.HasKey("Id")
+                        .HasName("pk_bell_schedules");
+
+                    b.HasIndex("Name")
+                        .IsUnique()
+                        .HasDatabaseName("ux_bell_schedules_name");
+
+                    b.ToTable("bell_schedules", (string)null);
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.BellScheduleOwner", b =>
+                {
+                    b.Property<string>("OwnerId")
+                        .HasColumnType("text")
+                        .HasColumnName("owner_id");
+
+                    b.Property<Guid>("ScheduleId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("schedule_id");
+
+                    b.HasKey("OwnerId")
+                        .HasName("pk_bell_schedule_owners");
+
+                    b.HasIndex("ScheduleId")
+                        .HasDatabaseName("ix_bell_schedule_owners_schedule");
+
+                    b.ToTable("bell_schedule_owners", (string)null);
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.BellSchedulePeriod", b =>
+                {
+                    b.Property<Guid>("ScheduleId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("schedule_id");
+
+                    b.Property<int>("Period")
+                        .HasColumnType("integer")
+                        .HasColumnName("period");
+
+                    b.Property<string>("EndTime")
+                        .IsRequired()
+                        .HasMaxLength(5)
+                        .HasColumnType("character varying(5)")
+                        .HasColumnName("end_time");
+
+                    b.Property<string>("StartTime")
+                        .IsRequired()
+                        .HasMaxLength(5)
+                        .HasColumnType("character varying(5)")
+                        .HasColumnName("start_time");
+
+                    b.HasKey("ScheduleId", "Period")
+                        .HasName("pk_bell_schedule_periods");
+
+                    b.ToTable("bell_schedule_periods", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_bell_schedule_periods_period", "period between 1 and 20");
+                        });
+                });
+
             modelBuilder.Entity("SchoolLms.Domain.BillingSettings", b =>
                 {
                     b.Property<Guid>("Id")
@@ -9562,6 +9640,26 @@ namespace SchoolLms.Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("fk_assignment_materials_assignments_assignment_id");
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.BellScheduleOwner", b =>
+                {
+                    b.HasOne("SchoolLms.Domain.BellSchedule", null)
+                        .WithMany()
+                        .HasForeignKey("ScheduleId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_bell_schedule_owners_bell_schedules_schedule_id");
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.BellSchedulePeriod", b =>
+                {
+                    b.HasOne("SchoolLms.Domain.BellSchedule", null)
+                        .WithMany()
+                        .HasForeignKey("ScheduleId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_bell_schedule_periods_bell_schedules_schedule_id");
                 });
 
             modelBuilder.Entity("SchoolLms.Domain.BillingSettings", b =>

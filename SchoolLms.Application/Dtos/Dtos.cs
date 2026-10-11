@@ -346,8 +346,11 @@ public record SetQuarterGradeRequest(string ClassId, string SubjectId, int Quart
 public record QuarterPeriodDto(int Quarter, string StartDate, string EndDate, bool GradesOpen);
 public record LessonTimeDto(int Period, string StartTime, string EndTime);
 public record AbsenceReasonDto(string Id, string Name, string Short, bool IsLate);
+/// <param name="BellSchedules">Qo'shimcha qo'ng'iroq jadvallari — sinf/guruh shu ro'yxatdagi jadvalga
+/// biriktirilgan bo'lsa, uning vaqtlari <paramref name="LessonTimes"/> o'rniga shundan (2026-10-11).</param>
 public record SchoolSettingsDto(
-    List<QuarterPeriodDto> Quarters, List<LessonTimeDto> LessonTimes, List<AbsenceReasonDto> AbsenceReasons);
+    List<QuarterPeriodDto> Quarters, List<LessonTimeDto> LessonTimes, List<AbsenceReasonDto> AbsenceReasons,
+    List<BellScheduleDto>? BellSchedules = null);
 public record SaveQuartersRequest(List<QuarterPeriodDto> Quarters);
 public record SaveLessonTimesRequest(List<LessonTimeDto> LessonTimes);
 public record SaveAbsenceReasonsRequest(List<AbsenceReasonDto> AbsenceReasons);
@@ -1335,8 +1338,11 @@ public record ReorderLmsTopicsRequest(List<string> TopicIds);
 /// O'qituvchining bitta band qilingan soati (boshqa template/sinf ichida).
 /// Jadval yaratishda ziddiyat (conflict) tekshiruvi uchun ishlatiladi.
 /// </summary>
+/// <param name="StartTime">Shu egadagi dars vaqti (uning qo'ng'iroq jadvalidan, 2026-10-11) — jadvallar har
+/// xil bo'lsa band-bo'shlik raqam bo'yicha emas, vaqt kesishuvi bo'yicha tekshiriladi.</param>
 public record OccupiedSlotDto(
-    int Day, int Period, string ClassName, string TemplateName, string OwnerKind = "class");
+    int Day, int Period, string ClassName, string TemplateName, string OwnerKind = "class",
+    string? StartTime = null, string? EndTime = null);
 
 /// <summary>O'quvchi uchun LMS mavzu (ochilganmi, tugallanganmi). Endi modulga tegishli (ModuleId).</summary>
 public record StudentLmsTopicDto(

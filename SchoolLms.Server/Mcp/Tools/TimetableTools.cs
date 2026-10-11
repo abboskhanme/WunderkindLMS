@@ -33,7 +33,7 @@ public sealed class TimetableTools(McpToolContext t)
         var lessons = await TeacherLessons.MainLessonsAsync(db, ct);
         var teachers = await db.Teachers.ToDictionaryAsync(x => x.Id, x => x.FullName, ct);
         var subjects = await db.Subjects.ToDictionaryAsync(s => s.Id, s => s.Name, ct);
-        var times = (await db.LessonTimes.ToListAsync(ct)).GroupBy(x => x.Period).ToDictionary(g => g.Key, g => g.First());
+        var bells = await BellTimes.LoadAsync(db, ct);
 
         IEnumerable<OwnedLesson> q = lessons;
         if (!string.IsNullOrWhiteSpace(className))
@@ -54,8 +54,8 @@ public sealed class TimetableTools(McpToolContext t)
                 weekday = l.Day + 1,
                 day = l.Day is >= 0 and < 7 ? DayNames[l.Day] : l.Day.ToString(),
                 period = l.Period,
-                start = times.GetValueOrDefault(l.Period)?.StartTime,
-                end = times.GetValueOrDefault(l.Period)?.EndTime,
+                start = bells.Time(l.Owner.Id, l.Period)?.StartTime,
+                end = bells.Time(l.Owner.Id, l.Period)?.EndTime,
                 subject = subjects.GetValueOrDefault(l.SubjectId, l.SubjectId),
                 teacher = teachers.GetValueOrDefault(l.TeacherId),
                 owner = l.Owner.Name,

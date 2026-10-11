@@ -54,6 +54,7 @@ public class ScheduleUtilsController(AppDbContext db) : ControllerBase
             .ToListAsync();
 
         var owners = await LessonRoster.LiveOwnersAsync(db);
+        var bells = await BellTimes.LoadAsync(db);
 
         var result = new Dictionary<string, List<OccupiedSlotDto>>(StringComparer.Ordinal);
 
@@ -75,7 +76,8 @@ public class ScheduleUtilsController(AppDbContext db) : ControllerBase
                 if (!result.TryGetValue(teacherId, out var list))
                     result[teacherId] = list = new();
 
-                list.Add(new OccupiedSlotDto(day, period, className, tpl.Name, owner.Kind));
+                var time = bells.Time(owner.Id, period);
+                list.Add(new OccupiedSlotDto(day, period, className, tpl.Name, owner.Kind, time?.StartTime, time?.EndTime));
             }
         }
 

@@ -464,6 +464,39 @@ export interface SchoolSettings {
   quarters: QuarterPeriod[]
   lessonTimes: LessonTime[]
   absenceReasons: AbsenceReason[]
+  /** Alohida qo'ng'iroq jadvallari: biriktirilgan sinf/guruh vaqtlari `lessonTimes` o'rniga shundan. */
+  bellSchedules?: BellSchedule[]
+}
+
+/** Alohida qo'ng'iroq jadvali (masalan "Boshlang'ich sinflar") — 2026-10-11. */
+export interface BellSchedule {
+  id: string
+  name: string
+  periods: LessonTime[]
+  /** Biriktirilgan egalar — sinf yoki o'quv guruhi id'lari. */
+  ownerIds: string[]
+}
+
+/** Jadvalga biriktiriladigan sinf yoki guruh; `scheduleId` — hozir qaysi jadvalda (null = asosiy). */
+export interface BellOwnerOption {
+  id: string
+  name: string
+  kind: LessonOwnerKind
+  isTrack: boolean
+  grade: number
+  scheduleId: string | null
+}
+
+export interface BellSchedulesOverview {
+  default: LessonTime[]
+  schedules: BellSchedule[]
+  owners: BellOwnerOption[]
+}
+
+export interface SaveBellScheduleInput {
+  name: string
+  periods: LessonTime[]
+  ownerIds: string[]
 }
 
 /* ---------- Moliya ---------- */

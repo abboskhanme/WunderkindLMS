@@ -21,7 +21,12 @@ import { getQuarterWeeks, getCurrentQuarterAndWeek, mondayOfISO, addDaysISO } fr
 import { formatDate, cn } from '@/lib/utils'
 import { Card } from '@/components/ui/Card'
 import { Loader } from '@/components/ui/Loader'
-import { periodTimeMap, visiblePeriods, type PeriodTime } from '@/components/schedule/periodTimes'
+import {
+  periodTimeMap,
+  periodTimeMapFor,
+  visiblePeriods,
+  type PeriodTime,
+} from '@/components/schedule/periodTimes'
 import { PeriodCell, PeriodHead } from '@/components/schedule/PeriodCell'
 
 const control =
@@ -53,6 +58,8 @@ interface CellLesson {
   subjectName: string
   subGroup: number
   ownerKind: LessonOwnerKind
+  /** Egasining alohida qo'ng'iroq jadvalidagi vaqt — chap ustundagidan farq qilsagina (2026-10-11). */
+  ownTime?: string
 }
 
 /** Jadval EGASI — sinf yoki o'quv guruhi (§2.1.4). */
@@ -201,6 +208,7 @@ export function TeacherSchedulePage() {
     for (const o of owners) {
       const mine = data.get(o.id)
       if (!mine) continue
+      const ownTimes = periodTimeMapFor(settings, o.id)
       const tid = mine.assignments.find((a) => a.week === selected.week)?.templateId
       if (!tid) continue
       const tpl = mine.templates.find((t) => t.id === tid)
@@ -209,18 +217,21 @@ export function TeacherSchedulePage() {
       for (const l of tpl.lessons ?? []) {
         if (!l.teacherId) continue
         const g = result.get(l.teacherId) ?? {}
+        const own = ownTimes.get(l.period)
+        const base = periodTimes.get(l.period)
         ;(g[l.period] ??= {})
         ;(g[l.period][l.day] ??= []).push({
           className: o.name,
           subjectName: subjectName(l.subjectId),
           subGroup: l.subGroup ?? 0,
           ownerKind: o.kind,
+          ownTime: own && (own.start !== base?.start || own.end !== base?.end) ? `${own.start}–${own.end}` : undefined,
         })
         result.set(l.teacherId, g)
       }
     }
     return result
-  }, [owners, data, selected, subjects])
+  }, [owners, data, selected, subjects, settings, periodTimes])
 
   const countOf = (grid: Grid | undefined) =>
     grid
@@ -408,6 +419,11 @@ function TeacherWeekGrid({ grid, dayMeta, periodTimes }: TeacherWeekGridProps) {
                           >
                             {s.ownerKind === 'group' ? `Guruh: ${s.className}` : s.className}
                           </p>
+                          {s.ownTime && (
+                            <p className="text-[10px] tabular-nums text-slate-500" title="Sinfning o'z qo'ng'iroq jadvali bo'yicha">
+                              {s.ownTime}
+                            </p>
+                          )}
                         </div>
                       ))}
                     </div>

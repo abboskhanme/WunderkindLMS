@@ -286,12 +286,11 @@ public class DashboardController(AppDbContext db) : ControllerBase
         // shows as "tekshirilmagan" instead of dropping out of the widget. Today only the started ones.
         var todayIso = today.ToString("yyyy-MM-dd");
         var now = TimeOnly.FromDateTime(AppClock.Now);
-        var startOf = (await db.LessonTimes.AsNoTracking().ToListAsync())
-            .GroupBy(t => t.Period)
-            .ToDictionary(g => g.Key, g => TimeOnly.TryParse(g.First().StartTime, out var t) ? t : (TimeOnly?)null);
+        var bells = await BellTimes.LoadAsync(db);
+        bool Started(HeldLesson l) =>
+            bells.Time(l.ClassId, l.Period) is not { } t || !TimeOnly.TryParse(t.StartTime, out var start) || start <= now;
         List<HeldLesson> scheduled = days.Count == 0 ? [] : (await HeldLessons.ScheduledAsync(db, null, days[0], days[^1]))
-            .Where(l => scope.Allows(l.OwnerKind, l.ClassId)
-                        && (l.Date != todayIso || startOf.GetValueOrDefault(l.Period) is not { } start || start <= now))
+            .Where(l => scope.Allows(l.OwnerKind, l.ClassId) && (l.Date != todayIso || Started(l)))
             .ToList();
 
         var reasonRows = await db.AbsenceReasons.AsNoTracking().ToListAsync();

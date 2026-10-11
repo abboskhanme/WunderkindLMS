@@ -439,12 +439,12 @@ public class StudentPortalController(
 
         var subjects = await db.Subjects.ToDictionaryAsync(x => x.Id, x => x.Name);
         var teachers = await db.Teachers.ToDictionaryAsync(x => x.Id, x => x.FullName);
-        var times = await db.LessonTimes.ToDictionaryAsync(x => x.Period);
+        var bells = await BellTimes.LoadAsync(db);
 
         return lessons
             .Select(l =>
             {
-                times.TryGetValue(l.Period, out var lt);
+                var lt = bells.Time(l.Owner.Id, l.Period);
                 return new StudentLessonDto(
                     l.Day, l.Period, lt?.StartTime, lt?.EndTime,
                     l.SubjectId, subjects.GetValueOrDefault(l.SubjectId, ""),
@@ -615,7 +615,7 @@ public class StudentPortalController(
         var lessons = await PupilTimetable.ForWeekAsync(db, s, q, w);
         var subjects = await db.Subjects.ToDictionaryAsync(x => x.Id, x => x.Name);
         var teachers = await db.Teachers.ToDictionaryAsync(x => x.Id, x => x.FullName);
-        var times = await db.LessonTimes.ToDictionaryAsync(x => x.Period);
+        var bells = await BellTimes.LoadAsync(db);
 
         // Izoh va yozuv kaliti EGA bilan birga: guruh darsi o'z izohini oladi.
         var notes = await db.LessonNotes
@@ -649,7 +649,7 @@ public class StudentPortalController(
             entryMap.TryGetValue((l.Owner.Id, date, l.Period, l.SubjectId), out var en);
             AbsenceReason? r = null;
             if (en?.ReasonId is not null) reasons.TryGetValue(en.ReasonId, out r);
-            times.TryGetValue(l.Period, out var lt);
+            var lt = bells.Time(l.Owner.Id, l.Period);
 
             rows.Add(new StudentJournalRowDto(
                 date, l.Period, q, w,
@@ -742,14 +742,14 @@ public class StudentPortalController(
             var lessons = await PupilTimetable.ForWeekAsync(db, s, meta.CurrentQuarter, meta.CurrentWeek);
             var subjects = await db.Subjects.ToDictionaryAsync(x => x.Id, x => x.Name);
             var teachers = await db.Teachers.ToDictionaryAsync(x => x.Id, x => x.FullName);
-            var times = await db.LessonTimes.ToDictionaryAsync(x => x.Period);
+            var bells = await BellTimes.LoadAsync(db);
 
             todayLessons = lessons
                 .Where(l => l.Day == apiDay)
                 .OrderBy(l => l.Period)
                 .Select(l =>
                 {
-                    times.TryGetValue(l.Period, out var lt);
+                    var lt = bells.Time(l.Owner.Id, l.Period);
                     return new StudentLessonDto(
                         l.Day, l.Period, lt?.StartTime, lt?.EndTime,
                         l.SubjectId, subjects.GetValueOrDefault(l.SubjectId, ""),

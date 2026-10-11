@@ -33,6 +33,7 @@ namespace SchoolLms.Tests.Migrations;
 [Collection(SchoolLmsCollection.Name)]
 public class StudentsParityP2MigrationTests(ApiFixture fixture) : IAsyncLifetime
 {
+    private const string ThisMigration = "20260917143939_StudentsParityP2";
     private const string PreviousMigration = "20260917100831_FinanceParityBatchA";
 
     /// <summary>§3.3 ning uchta yangi jadvali.</summary>
@@ -439,7 +440,9 @@ public class StudentsParityP2MigrationTests(ApiFixture fixture) : IAsyncLifetime
 
         Assert.Contains("certificates.subject_id", before);
 
-        await MigrateToAsync(null);
+        // Faqat SHU migratsiya oynasi: keyingi migratsiyalar ataylab olib tashlashi mumkin
+        // (masalan 20261011053158_RemovePush — mijoz qarori bilan push jadvallari).
+        await MigrateToAsync(ThisMigration);
         await using (var conn = await OpenOwnerAsync())
         {
             var after = await AllColumnsAsync(conn);

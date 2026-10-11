@@ -76,7 +76,7 @@ public static class LessonSubstitutionService
         var standing = await db.LessonSubstitutions.AsNoTracking()
             .Where(s => s.Date == date && s.CancelledAt == null).ToListAsync(ct);
         var subjects = await db.Subjects.AsNoTracking().ToDictionaryAsync(s => s.Id, s => s.Name, ct);
-        var times = await db.LessonTimes.AsNoTracking().ToDictionaryAsync(t => t.Period, ct);
+        var bells = await BellTimes.LoadAsync(db, ct);
         var teachers = await db.Teachers.AsNoTracking().Where(t => !t.IsArchived).OrderBy(t => t.FullName)
             .Select(t => new { t.Id, t.FullName }).ToListAsync(ct);
         var names = teachers.ToDictionary(t => t.Id, t => t.FullName);
@@ -84,7 +84,7 @@ public static class LessonSubstitutionService
         var lessons = own.Select(l =>
         {
             var sub = standing.FirstOrDefault(s => s.Period == l.Period && s.OwnerId == l.Owner.Id && s.SubjectId == l.SubjectId && s.SubGroup == l.SubGroup);
-            times.TryGetValue(l.Period, out var lt);
+            var lt = bells.Time(l.Owner.Id, l.Period);
             return new SubstitutionLessonDto(
                 l.Period, lt?.StartTime, lt?.EndTime, l.Owner.Kind, l.Owner.Id, l.Owner.Name,
                 l.SubjectId, subjects.GetValueOrDefault(l.SubjectId, ""), l.SubGroup,
@@ -274,15 +274,15 @@ public sealed class SubstitutionNotifier(IAppDbContext db, TelegramService teleg
         var sent = 0;
         try
         {
-            var times = await db.LessonTimes.AsNoTracking().ToDictionaryAsync(t => t.Period, ct);
+            var bells = await BellTimes.LoadAsync(db, ct);
             foreach (var group in rows.GroupBy(r => r.SubstituteTeacherId))
             {
                 var lines = new List<string> { title, "" };
                 foreach (var r in group.OrderBy(r => r.Date).ThenBy(r => r.Period))
                 {
                     var d = DateOnly.ParseExact(r.Date, "yyyy-MM-dd", CultureInfo.InvariantCulture);
-                    times.TryGetValue(r.Period, out var lt);
-                    var time = lt is null ? "" : $" ({lt.StartTime}–{lt.EndTime})";
+                    var lt = bells.Time(r.OwnerId, r.Period);
+                    var time = lt is not { } t ? "" : $" ({t.StartTime}–{t.EndTime})";
                     lines.Add($"• {d:dd.MM.yyyy} ({Days[((int)d.DayOfWeek + 6) % 7]}), {r.Period}-dars{time}: {r.OwnerName} · {r.SubjectName}");
                     lines.Add($"  Asosiy ustoz: {r.AbsentTeacherName}");
                 }

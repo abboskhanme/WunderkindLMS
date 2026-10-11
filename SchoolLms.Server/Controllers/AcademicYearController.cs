@@ -216,6 +216,10 @@ public class AcademicYearController(AppDbContext db, AuditService audit) : Contr
         public List<QuarterPeriod> Quarters { get; set; } = new();
         public List<AbsenceReason> AbsenceReasons { get; set; } = new();
         public List<LessonTime> LessonTimes { get; set; } = new();
+        /// <summary>Qo'shimcha qo'ng'iroq jadvallari va ularga biriktirilgan sinf/guruhlar (2026-10-11).</summary>
+        public List<BellSchedule> BellSchedules { get; set; } = new();
+        public List<BellSchedulePeriod> BellSchedulePeriods { get; set; } = new();
+        public List<BellScheduleOwner> BellScheduleOwners { get; set; } = new();
         // Moliya — P1-21 dan keyingi model (SPEC §3.7).
         public List<FeeCategory> FeeCategories { get; set; } = new();
         public List<StudentSubscription> Subscriptions { get; set; } = new();
@@ -266,6 +270,9 @@ public class AcademicYearController(AppDbContext db, AuditService audit) : Contr
             Quarters = await db.Quarters.AsNoTracking().ToListAsync(),
             AbsenceReasons = await db.AbsenceReasons.AsNoTracking().ToListAsync(),
             LessonTimes = await db.LessonTimes.AsNoTracking().ToListAsync(),
+            BellSchedules = await db.BellSchedules.AsNoTracking().ToListAsync(),
+            BellSchedulePeriods = await db.BellSchedulePeriods.AsNoTracking().ToListAsync(),
+            BellScheduleOwners = await db.BellScheduleOwners.AsNoTracking().ToListAsync(),
             // Moliya — P1-21 dan keyingi model. Jurnal (`ledger_entries`) arxivga
             // KIRMAYDI: u bir yil bilan chegaralanmaydigan, o'zgarmas buxgalteriya
             // tarixi va bazada abadiy qoladi (SPEC §4.1) — uni JSON'ga nusxalash

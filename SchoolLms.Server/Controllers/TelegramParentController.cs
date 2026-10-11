@@ -341,12 +341,12 @@ public sealed class TelegramParentController(
 
         var subjects = await db.Subjects.ToDictionaryAsync(x => x.Id, x => x.Name);
         var teachers = await db.Teachers.ToDictionaryAsync(x => x.Id, x => x.FullName);
-        var times = await db.LessonTimes.ToDictionaryAsync(x => x.Period);
+        var bells = await BellTimes.LoadAsync(db);
 
         return [.. lessons
             .Select(l =>
             {
-                times.TryGetValue(l.Period, out var lt);
+                var lt = bells.Time(l.Owner.Id, l.Period);
                 return new StudentLessonDto(
                     l.Day, l.Period, lt?.StartTime, lt?.EndTime,
                     l.SubjectId, subjects.GetValueOrDefault(l.SubjectId, ""),

@@ -211,6 +211,12 @@ export function TeacherSchedulePage() {
                                         {l.subjectName || '—'}
                                       </p>
                                       <p className="mt-0.5 text-xs text-brand-700">{l.className}</p>
+                                      {/* Sinfning alohida qo'ng'iroq jadvali bo'lsa vaqti chap ustundagidan farq qiladi (2026-10-11). */}
+                                      {l.startTime && l.endTime && (l.startTime !== t?.startTime || l.endTime !== t?.endTime) && (
+                                        <p className="text-[10px] tabular-nums text-slate-500">
+                                          {l.startTime}–{l.endTime}
+                                        </p>
+                                      )}
                                     </div>
                                   ))}
                                 </div>

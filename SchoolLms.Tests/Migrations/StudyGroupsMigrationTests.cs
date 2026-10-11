@@ -311,7 +311,9 @@ public class StudyGroupsMigrationTests(ApiFixture fixture) : IAsyncLifetime
         HashSet<string> before;
         await using (var conn = await OpenOwnerAsync()) before = await AllColumnsAsync(conn);
 
-        await MigrateToAsync(null);
+        // Faqat SHU migratsiya oynasi: keyingi migratsiyalar ataylab olib tashlashi mumkin
+        // (masalan 20261011053158_RemovePush — mijoz qarori bilan push jadvallari).
+        await MigrateToAsync(ThisMigration);
         await using (var conn = await OpenOwnerAsync())
         {
             var after = await AllColumnsAsync(conn);

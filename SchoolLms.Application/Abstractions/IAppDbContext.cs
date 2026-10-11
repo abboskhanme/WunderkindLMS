@@ -180,6 +180,11 @@ public interface IAppDbContext
     /// <summary>E'lonning har bir oluvchisi va yetkazilish holati (2026-10-11).</summary>
     DbSet<BroadcastRecipient> BroadcastRecipients { get; }
 
+    /// <summary>Qo'shimcha qo'ng'iroq jadvallari, ularning darslari va egalari (2026-10-11).</summary>
+    DbSet<BellSchedule> BellSchedules { get; }
+    DbSet<BellSchedulePeriod> BellSchedulePeriods { get; }
+    DbSet<BellScheduleOwner> BellScheduleOwners { get; }
+
     // ---------- O'quvchi kartochkasi (students-parity.md §3.2) ----------
     DbSet<StudentStatus> StudentStatuses { get; }
     DbSet<StudentComment> StudentComments { get; }

@@ -128,6 +128,26 @@ public static class TeacherLessons
     }
 
     /// <summary>
+    /// teacherId → string[6]: har hafta kunidagi ENG ERTA dars boshlanishi ("HH:mm", "" = dars yo'q).
+    /// Vaqt har darsning EGASI jadvalidan olinadi (<see cref="BellTimes"/>, 2026-10-11) — sinflarning
+    /// qo'ng'iroqlari har xil bo'lsa, eng kichik dars raqami eng erta vaqt degani emas.
+    /// </summary>
+    public static async Task<Dictionary<string, string[]>> FirstStartByWeekdayAsync(
+        IAppDbContext db, BellBook bells, CancellationToken ct = default)
+    {
+        var result = new Dictionary<string, string[]>(StringComparer.Ordinal);
+        foreach (var l in await MainLessonsAsync(db, ct))
+        {
+            if (string.IsNullOrEmpty(l.TeacherId) || l.Day is < 0 or >= 6 || l.Period <= 0) continue;
+            if (bells.Time(l.Owner.Id, l.Period) is not { } t || t.StartTime.Length < 5) continue;
+            var start = t.StartTime[..5];
+            if (!result.TryGetValue(l.TeacherId, out var arr)) result[l.TeacherId] = arr = ["", "", "", "", "", ""];
+            if (arr[l.Day] == "" || string.CompareOrdinal(start, arr[l.Day]) < 0) arr[l.Day] = start;
+        }
+        return result;
+    }
+
+    /// <summary>
     /// HAFTAGA BIRIKTIRILGAN darslar (chorak, hafta) — sinf va guruh birga.
     /// Portal jadvali (<see cref="PortalSchedule.TeacherWeekAsync"/>) shundan
     /// oziqlanadi.

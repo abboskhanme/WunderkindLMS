@@ -256,8 +256,8 @@ public sealed class DailyAttendanceService(IAppDbContext db)
                 .Where(s => subjectIds.Contains(s.Id))
                 .ToDictionaryAsync(s => s.Id, s => s.Name, StringComparer.Ordinal, ct);
 
-        var times = await db.LessonTimes.AsNoTracking()
-            .ToDictionaryAsync(t => t.Period, t => t, ct);
+        // Vaqt — shu eganing qo'ng'iroq jadvalidan (2026-10-11).
+        var bells = await BellTimes.LoadAsync(db, ct);
 
         var entries = await db.JournalEntries.AsNoTracking()
             .Where(e => e.ClassId == classId && e.Date == date && e.ReasonId != null
@@ -285,7 +285,7 @@ public sealed class DailyAttendanceService(IAppDbContext db)
                 .Where(e => e.SubjectId == l.SubjectId && e.Period == l.Period)
                 .ToDictionary(e => e.StudentId, e => e.ReasonId!, StringComparer.Ordinal);
             var mark = marks.FirstOrDefault(m => m.SubjectId == l.SubjectId && m.Period == l.Period);
-            times.TryGetValue(l.Period, out var time);
+            var time = bells.Time(classId, l.Period);
 
             // Bo'linish: 0 — butun sinf, 1/2 — faqat o'sha guruh
             // (`LessonRoster.ForLessonAsync` dagi qoida bilan bir xil). Guruhda bo'linish yo'q.

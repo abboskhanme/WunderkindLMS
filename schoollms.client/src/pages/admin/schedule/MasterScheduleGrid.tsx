@@ -25,7 +25,7 @@
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { AlertTriangle, CalendarRange, Plus } from 'lucide-react'
+import { AlertTriangle, CalendarRange, Clock, Plus } from 'lucide-react'
 import type { LessonOwnerKind, ScheduleLesson, ScheduleTemplate, SchoolSettings, Subject, Teacher } from '@/types'
 import { getLessonOwners } from '@/api/services/lessonOwners'
 import { getSubjects } from '@/api/services/subjects'
@@ -41,7 +41,13 @@ import {
 import { getWeekAssignments, saveWeekAssignments } from '@/api/services/weekAssignments'
 import { weekDays, schedulePeriods } from '@/config/constants'
 import { getCurrentQuarterAndWeek, getQuarterWeeks } from '@/lib/weeks'
-import { periodTimeMap } from '@/components/schedule/periodTimes'
+import {
+  bellScheduleOf,
+  periodTimeMap,
+  periodTimeMapFor,
+  timesOverlap,
+  type PeriodTime,
+} from '@/components/schedule/periodTimes'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Loader } from '@/components/ui/Loader'
@@ -145,12 +151,30 @@ export function MasterScheduleGrid() {
       0,
       ...Object.values(templates).flatMap((l) => l.flatMap((t) => t.lessons.map((x) => x.period))),
     )
-    const configured = Math.max(0, ...periodTimes.keys())
+    // Alohida qo'ng'iroq jadvalida darslar ko'proq bo'lishi mumkin — ularning ustunlari ham ko'rinsin.
+    const configured = Math.max(
+      0,
+      ...periodTimes.keys(),
+      ...(settings?.bellSchedules ?? []).flatMap((b) => b.periods.map((x) => x.period)),
+    )
     const n = Math.min(schedulePeriods.length, Math.max(configured || 8, used))
     return schedulePeriods.slice(0, n)
-  }, [templates, periodTimes])
+  }, [templates, periodTimes, settings])
   const timeLabel = (p: number) => {
     const t = periodTimes.get(p)
+    return t ? `${t.start}–${t.end}` : null
+  }
+  /** Shu sinf/guruhning o'z dars vaqtlari — alohida qo'ng'iroq jadvali bo'lsa (2026-10-11). */
+  const timesByOwner = useMemo(
+    () => new Map(classes.map((o) => [o.id, periodTimeMapFor(settings, o.id)])),
+    [classes, settings],
+  )
+  const periodTimesOf = useCallback(
+    (ownerId: string) => timesByOwner.get(ownerId) ?? periodTimeMapFor(settings, ownerId),
+    [timesByOwner, settings],
+  )
+  const ownerTimeLabel = (ownerId: string, p: number) => {
+    const t = periodTimesOf(ownerId).get(p)
     return t ? `${t.start}–${t.end}` : null
   }
 
@@ -161,14 +185,33 @@ export function MasterScheduleGrid() {
     return first ? `${last} ${first[0]}.` : last ?? ''
   }
 
-  /** (soat → o'qituvchi → nechta sinf) — shu kun, shu jadval bo'yicha to'qnashuvlar. */
+  /**
+   * To'qnashgan kataklar ("sinf|soat|o'qituvchi") — shu kun, shu jadval bo'yicha. Ikkala darsning
+   * vaqti ma'lum bo'lsa vaqt KESISHUVI, aks holda soat raqami solishtiriladi: sinflarning
+   * qo'ng'iroq jadvallari har xil bo'lishi mumkin (2026-10-11).
+   */
   const clashes = useMemo(() => {
-    const m = new Map<string, number>()
+    const byTeacher = new Map<string, { key: string; period: number; time: PeriodTime | undefined }[]>()
     for (const c of classes)
-      for (const l of templates[c.id]?.find((t) => t.name === name)?.lessons ?? [])
-        if (l.day === day && l.teacherId) m.set(`${l.period}|${l.teacherId}`, (m.get(`${l.period}|${l.teacherId}`) ?? 0) + 1)
-    return m
-  }, [classes, templates, name, day])
+      for (const l of templates[c.id]?.find((t) => t.name === name)?.lessons ?? []) {
+        if (l.day !== day || !l.teacherId) continue
+        const list = byTeacher.get(l.teacherId) ?? []
+        list.push({ key: `${c.id}|${l.period}|${l.teacherId}`, period: l.period, time: periodTimesOf(c.id).get(l.period) })
+        byTeacher.set(l.teacherId, list)
+      }
+    const out = new Set<string>()
+    for (const list of byTeacher.values())
+      for (let i = 0; i < list.length; i++)
+        for (let j = i + 1; j < list.length; j++) {
+          const a = list[i]
+          const b = list[j]
+          if (a.time && b.time ? timesOverlap(a.time, b.time) : a.period === b.period) {
+            out.add(a.key)
+            out.add(b.key)
+          }
+        }
+    return out
+  }, [classes, templates, name, day, periodTimesOf])
 
   /**
    * Katak oynasi uchun band soatlar — FAQAT shu jadvalning boshqa sinflaridagi darslar.
@@ -444,17 +487,30 @@ export function MasterScheduleGrid() {
                         {c.isTrack ? "yo'nalish" : 'guruh'}
                       </span>
                     )}
+                    {bellScheduleOf(settings, c.id) && (
+                      <span
+                        title="Alohida qo'ng'iroq jadvali — dars vaqtlari ustun sarlavhasidagidan farq qiladi"
+                        className="mt-0.5 flex items-center gap-1 text-[10px] font-medium text-slate-500"
+                      >
+                        <Clock className="h-3 w-3" /> {bellScheduleOf(settings, c.id)?.name}
+                      </span>
+                    )}
                   </td>
                   {periods.map((p) => {
                     const lessons = lessonsAt(c.id, p)
-                    const clash = lessons.some((l) => l.teacherId && (clashes.get(`${p}|${l.teacherId}`) ?? 0) > 1)
+                    const clash = lessons.some((l) => l.teacherId && clashes.has(`${c.id}|${p}|${l.teacherId}`))
+                    const ownTime = ownerTimeLabel(c.id, p)
                     return (
                       <td key={p} className="border-b border-l border-slate-100 p-1">
                         <button
                           type="button"
                           disabled={locked}
                           onClick={() => setEditing({ cls: c, slot: { day, period: p, lessons } })}
-                          title={clash ? "O'qituvchi shu soatda boshqa sinfda ham bor" : `${c.name} · ${p}-soat`}
+                          title={
+                            clash
+                              ? "O'qituvchi shu vaqtda boshqa sinfda ham bor"
+                              : `${c.name} · ${p}-soat${ownTime ? ` · ${ownTime}` : ''}`
+                          }
                           className={cn(
                             'flex h-14 w-full flex-col items-stretch justify-center gap-0.5 rounded-lg px-2 text-left transition-colors',
                             locked
@@ -512,7 +568,8 @@ export function MasterScheduleGrid() {
         subjects={pickable}
         teachers={teachers}
         occupiedSlots={editing ? occupiedFor(editing.cls) : {}}
-        timeLabel={editing ? timeLabel(editing.slot.period) : null}
+        timeLabel={editing ? ownerTimeLabel(editing.cls.id, editing.slot.period) : null}
+        slotTime={editing ? periodTimesOf(editing.cls.id).get(editing.slot.period) : null}
         ownerKind={editing?.cls.kind ?? 'class'}
         onClose={() => setEditing(null)}
         onSave={(d, p, lessons) => void handleSave(d, p, lessons)}

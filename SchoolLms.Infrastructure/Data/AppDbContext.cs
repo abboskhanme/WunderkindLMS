@@ -142,6 +142,11 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<AbsenceNotice> AbsenceNotices => Set<AbsenceNotice>();
     public DbSet<BroadcastRecipient> BroadcastRecipients => Set<BroadcastRecipient>();
 
+    // Qo'shimcha qo'ng'iroq jadvallari (2026-10-11). Konfiguratsiya: BellScheduleModel.cs.
+    public DbSet<BellSchedule> BellSchedules => Set<BellSchedule>();
+    public DbSet<BellSchedulePeriod> BellSchedulePeriods => Set<BellSchedulePeriod>();
+    public DbSet<BellScheduleOwner> BellScheduleOwners => Set<BellScheduleOwner>();
+
     // O'quvchi kartochkasining qo'shimcha qismlari (students-parity.md §3.2).
     // Sxema oldin, ekranlar keyin — hozircha ilovadan hech kim o'qimaydi.
     public DbSet<StudentStatus> StudentStatuses => Set<StudentStatus>();
@@ -444,6 +449,9 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
 
         // ----- Kelmaganlik haqida ota-onaga xabar (2026-10-11) -----
         AbsenceNoticeModel.Apply(b);
+
+        // ----- Qo'shimcha qo'ng'iroq jadvallari (2026-10-11) -----
+        BellScheduleModel.Apply(b);
 
         // ----- O'quvchi kartochkasi: status, izoh, shartnoma, xonalar (§3.2) -----
         StudentsParityModel.Apply(b);

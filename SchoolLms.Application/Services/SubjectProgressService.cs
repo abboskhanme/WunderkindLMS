@@ -188,12 +188,12 @@ public static class SubjectProgressService
         if (slots.Count == 0) return null;
 
         var name = (await db.Subjects.FindAsync(subjectId))?.Name ?? "";
-        var times = await db.LessonTimes.ToDictionaryAsync(x => x.Period);
+        var bells = await BellTimes.LoadAsync(db);
         var today = Today;
 
         var lessons = slots.Select(s =>
         {
-            times.TryGetValue(s.Period, out var lt);
+            var lt = bells.Time(s.OwnerId, s.Period);
             return new SubjectLessonDto(
                 s.Date, s.Period, lt?.StartTime, lt?.EndTime,
                 s.Topic, s.Homework, s.Conducted,

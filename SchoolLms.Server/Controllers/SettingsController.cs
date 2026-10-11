@@ -23,7 +23,7 @@ public class SettingsController(AppDbContext db, TelegramService telegram, Contr
             .Select(t => new LessonTimeDto(t.Period, t.StartTime, t.EndTime)).ToListAsync();
         var reasons = await db.AbsenceReasons
             .Select(r => new AbsenceReasonDto(r.Id, r.Name, r.Short, r.IsLate)).ToListAsync();
-        return new SchoolSettingsDto(quarters, lessonTimes, reasons);
+        return new SchoolSettingsDto(quarters, lessonTimes, reasons, await BellScheduleService.ListAsync(db));
     }
 
     [HttpPut("quarters")]
@@ -53,6 +53,30 @@ public class SettingsController(AppDbContext db, TelegramService telegram, Contr
         }));
         await db.SaveChangesAsync();
         return NoContent();
+    }
+
+    // ---------- Qo'shimcha qo'ng'iroq jadvallari (2026-10-11) ----------
+
+    [HttpGet("bell-schedules")]
+    public Task<BellSchedulesDto> BellSchedules(CancellationToken ct) => BellScheduleService.OverviewAsync(db, ct);
+
+    [HttpPost("bell-schedules")]
+    public Task<IActionResult> CreateBellSchedule(SaveBellScheduleRequest req, CancellationToken ct) =>
+        SaveBellSchedule(null, req, ct);
+
+    [HttpPut("bell-schedules/{id:guid}")]
+    public Task<IActionResult> UpdateBellSchedule(Guid id, SaveBellScheduleRequest req, CancellationToken ct) =>
+        SaveBellSchedule(id, req, ct);
+
+    [HttpDelete("bell-schedules/{id:guid}")]
+    public async Task<IActionResult> DeleteBellSchedule(Guid id, CancellationToken ct) =>
+        await BellScheduleService.DeleteAsync(db, id, ct) ? NoContent() : NotFound();
+
+    private async Task<IActionResult> SaveBellSchedule(Guid? id, SaveBellScheduleRequest req, CancellationToken ct)
+    {
+        var (schedule, error) = await BellScheduleService.SaveAsync(db, id, req, ct);
+        if (error is not null) return BadRequest(new { message = error });
+        return schedule is null ? NotFound() : Ok(schedule);
     }
 
     [HttpGet("school")]

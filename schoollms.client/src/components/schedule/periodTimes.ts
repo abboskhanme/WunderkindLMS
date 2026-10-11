@@ -33,6 +33,30 @@ export function periodTimeMap(settings: SchoolSettings | null): Map<number, Peri
 }
 
 /**
+ * Bitta sinf yoki guruhning dars vaqtlari (2026-10-11): u alohida qo'ng'iroq jadvaliga
+ * biriktirilgan bo'lsa — o'sha jadval, aks holda asosiy (`periodTimeMap`).
+ */
+export function periodTimeMapFor(settings: SchoolSettings | null, ownerId: string | null | undefined): Map<number, PeriodTime> {
+  const schedule = ownerId ? bellScheduleOf(settings, ownerId) : undefined
+  if (!schedule) return periodTimeMap(settings)
+  const map = new Map<number, PeriodTime>()
+  for (const t of schedule.periods) {
+    if (t.startTime && t.endTime) map.set(t.period, { start: t.startTime, end: t.endTime })
+  }
+  return map
+}
+
+/** Ikki dars vaqti kesishadimi ("HH:mm" satrlari — leksik solishtirish to'g'ri ishlaydi). */
+export function timesOverlap(a: PeriodTime, b: PeriodTime): boolean {
+  return a.start < b.end && b.start < a.end
+}
+
+/** Ega biriktirilgan alohida jadval (yo'q bo'lsa — asosiy jadvalda). */
+export function bellScheduleOf(settings: SchoolSettings | null, ownerId: string) {
+  return settings?.bellSchedules?.find((b) => b.ownerIds.includes(ownerId))
+}
+
+/**
  * Ko'rsatiladigan dars raqamlari.
  *
  * Kuniga 10 tagacha dars bo'lishi mumkin, lekin maktab 6 ta dars vaqtini

@@ -17,7 +17,7 @@ import { Card } from '@/components/ui/Card'
 import { Loader } from '@/components/ui/Loader'
 import { Toast } from '@/components/ui/Toast'
 import { PeriodCell, PeriodHead } from '@/components/schedule/PeriodCell'
-import { periodTimeMap } from '@/components/schedule/periodTimes'
+import { periodTimeMapFor } from '@/components/schedule/periodTimes'
 import { cn } from '@/lib/utils'
 import { LessonSlotModal, type SlotTarget } from './LessonSlotModal'
 
@@ -102,8 +102,8 @@ export function ScheduleBoard({ classId, template }: Props) {
     setSelected(null)
   }, [template.id, template.lessons])
 
-  /** Dars raqami -> qo'ng'iroq vaqti ("Sozlamalar → Dars vaqtlari"). */
-  const periodTimes = useMemo(() => periodTimeMap(settings), [settings])
+  /** Dars raqami -> qo'ng'iroq vaqti: shu eganing alohida jadvali yoki asosiy (2026-10-11). */
+  const periodTimes = useMemo(() => periodTimeMapFor(settings, classId), [settings, classId])
 
   const subjectName = (sid: string) => subjects.find((s) => s.id === sid)?.name ?? ''
   /** F-3: jadval katakchasini bo'yaydigan rang — fanda ko'rsatilmagan bo'lsa null. */
@@ -311,6 +311,7 @@ export function ScheduleBoard({ classId, template }: Props) {
         teachers={teachers}
         occupiedSlots={occupiedSlots}
         timeLabel={selected ? timeLabel(selected.period) : null}
+        slotTime={selected ? periodTimes.get(selected.period) : null}
         ownerKind={ownerKind}
         onClose={() => setSelected(null)}
         onSave={handleSave}

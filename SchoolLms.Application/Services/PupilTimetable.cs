@@ -158,4 +158,49 @@ public static class PupilTimetable
         }
         return result;
     }
+
+    /// <summary>
+    /// <see cref="GroupBoundsByStudentAsync"/> ning VAQT ko'rinishi: o'quvchi id'si → hafta kuni
+    /// bo'yicha guruh darsi bormi (<c>Days</c>), eng erta boshlanishi va eng kech tugashi ("HH:mm",
+    /// vaqti kiritilmagan bo'lsa "").
+    /// Har guruhning darsi o'z qo'ng'iroq jadvalidan o'qiladi (<see cref="BellTimes"/>, 2026-10-11):
+    /// guruhlarning jadvallari har xil bo'lsa, dars raqamlarini solishtirib bo'lmaydi.
+    /// </summary>
+    public static async Task<Dictionary<string, (bool[] Days, string[] In, string[] Out)>> GroupClockBoundsByStudentAsync(
+        IAppDbContext db, BellBook bells, CancellationToken ct = default)
+    {
+        var result = new Dictionary<string, (bool[] Days, string[] In, string[] Out)>(StringComparer.Ordinal);
+        var byStudent = await LessonRoster.GroupOwnersByStudentAsync(db, ct);
+        if (byStudent.Count == 0) return result;
+
+        var mains = (await TeacherLessons.MainTemplatesAsync(db, ct))
+            .Where(x => x.Owner.IsGroup)
+            .ToDictionary(x => x.Owner.Id, x => x.Template, StringComparer.Ordinal);
+        if (mains.Count == 0) return result;
+
+        foreach (var (studentId, owners) in byStudent)
+        {
+            string[] first = ["", "", "", "", "", ""], last = ["", "", "", "", "", ""];
+            var days = new bool[6];
+            var any = false;
+            foreach (var owner in owners)
+            {
+                if (!mains.TryGetValue(owner.Id, out var tpl)) continue;
+                foreach (var l in tpl.Lessons)
+                {
+                    if (l.Day is < 0 or >= 6 || l.Period <= 0) continue;
+                    any = days[l.Day] = true;
+                    if (bells.Time(owner.Id, l.Period) is not { } t) continue;
+                    var start = Hhmm(t.StartTime);
+                    var end = Hhmm(t.EndTime);
+                    if (start != "" && (first[l.Day] == "" || string.CompareOrdinal(start, first[l.Day]) < 0)) first[l.Day] = start;
+                    if (end != "" && string.CompareOrdinal(end, last[l.Day]) > 0) last[l.Day] = end;
+                }
+            }
+            if (any) result[studentId] = (days, first, last);
+        }
+        return result;
+    }
+
+    private static string Hhmm(string time) => time.Length >= 5 ? time[..5] : "";
 }

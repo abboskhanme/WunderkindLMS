@@ -100,7 +100,8 @@ public static class PortalSchedule
         if (lessons.Count == 0 && subs.Count == 0) return [];
 
         var subjects = await db.Subjects.ToDictionaryAsync(s => s.Id, s => s.Name);
-        var times = await db.LessonTimes.ToDictionaryAsync(x => x.Period);
+        // Vaqt — darsning EGASI jadvalidan (qo'shimcha qo'ng'iroq jadvallari, 2026-10-11).
+        var bells = await BellTimes.LoadAsync(db);
         var otherIds = subs.SelectMany(s => new[] { s.AbsentTeacherId, s.SubstituteTeacherId }).Distinct().ToList();
         var teacherNames = await db.Teachers.AsNoTracking().Where(t => otherIds.Contains(t.Id)).ToDictionaryAsync(t => t.Id, t => t.FullName);
         int DayOf(DateOnly d) => ((int)d.DayOfWeek + 6) % 7;
@@ -108,7 +109,7 @@ public static class PortalSchedule
         var result = new List<TeacherLessonDto>();
         foreach (var l in lessons)
         {
-            times.TryGetValue(l.Period, out var lt);
+            var lt = bells.Time(l.Owner.Id, l.Period);
             var coveredBy = subs.FirstOrDefault(s => s.AbsentTeacherId == teacherId && DayOf(s.Date) == l.Day
                 && s.Period == l.Period && s.OwnerId == l.Owner.Id && s.SubjectId == l.SubjectId && s.SubGroup == l.SubGroup);
             result.Add(new TeacherLessonDto(
@@ -123,7 +124,7 @@ public static class PortalSchedule
             var owners = await LessonRoster.AllOwnersAsync(db);
             foreach (var s in subs.Where(s => s.SubstituteTeacherId == teacherId))
             {
-                times.TryGetValue(s.Period, out var lt);
+                var lt = bells.Time(s.OwnerId, s.Period);
                 result.Add(new TeacherLessonDto(
                     DayOf(s.Date), s.Period, lt?.StartTime, lt?.EndTime,
                     s.OwnerId, owners.TryGetValue(s.OwnerId, out var o) ? o.Name : "",

@@ -1,4 +1,12 @@
-import type { AbsenceReason, LessonTime, QuarterPeriod, SchoolSettings } from '@/types'
+import type {
+  AbsenceReason,
+  BellSchedule,
+  BellSchedulesOverview,
+  LessonTime,
+  QuarterPeriod,
+  SaveBellScheduleInput,
+  SchoolSettings,
+} from '@/types'
 import { delay } from '@/lib/utils'
 import { api, USE_MOCK } from '../client'
 import { settingsMock } from '../mock/settings'
@@ -26,6 +34,37 @@ export async function saveLessonTimes(lessonTimes: LessonTime[]): Promise<void> 
     return
   }
   await api.put('/admin/settings/lesson-times', { lessonTimes })
+}
+
+/* ---------- Alohida qo'ng'iroq jadvallari (2026-10-11) ---------- */
+
+export async function getBellSchedules(): Promise<BellSchedulesOverview> {
+  if (USE_MOCK) {
+    await delay()
+    return { default: settingsMock.lessonTimes, schedules: [], owners: [] }
+  }
+  const { data } = await api.get<BellSchedulesOverview>('/admin/settings/bell-schedules')
+  return data
+}
+
+/** `id` bo'lmasa — yangi jadval. */
+export async function saveBellSchedule(id: string | null, input: SaveBellScheduleInput): Promise<BellSchedule> {
+  if (USE_MOCK) {
+    await delay(250)
+    return { id: id ?? crypto.randomUUID(), ...input }
+  }
+  const { data } = id
+    ? await api.put<BellSchedule>(`/admin/settings/bell-schedules/${id}`, input)
+    : await api.post<BellSchedule>('/admin/settings/bell-schedules', input)
+  return data
+}
+
+export async function deleteBellSchedule(id: string): Promise<void> {
+  if (USE_MOCK) {
+    await delay(250)
+    return
+  }
+  await api.delete(`/admin/settings/bell-schedules/${id}`)
 }
 
 export async function saveAbsenceReasons(absenceReasons: AbsenceReason[]): Promise<void> {

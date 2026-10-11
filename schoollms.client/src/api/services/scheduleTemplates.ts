@@ -107,6 +107,9 @@ export interface OccupiedSlot {
   className: string
   templateName: string
   ownerKind?: LessonOwnerKind
+  /** O'sha egadagi dars vaqti (uning qo'ng'iroq jadvalidan, 2026-10-11). */
+  startTime?: string | null
+  endTime?: string | null
 }
 
 /** O'qituvchining hozir tahrirlayotgan template'dan boshqa joylardagi band soatlari.

@@ -563,7 +563,9 @@ public class ParityWave2MigrationTests(ApiFixture fixture) : IAsyncLifetime
         await MigrateToAsync(PreviousMigration);
         var before = await AllColumnsAsync();
 
-        await MigrateToAsync(null);
+        // Faqat SHU migratsiya oynasi: keyingi migratsiyalar ataylab olib tashlashi mumkin
+        // (masalan 20261011053158_RemovePush — mijoz qarori bilan push jadvallari).
+        await MigrateToAsync(ThisMigration);
         var after = await AllColumnsAsync();
 
         var lost = before.Except(after).OrderBy(x => x, StringComparer.Ordinal).ToList();
