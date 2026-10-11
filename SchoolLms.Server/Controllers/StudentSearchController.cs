@@ -78,6 +78,7 @@ public class StudentSearchController(AppDbContext db, AuditService audit) : Cont
     public async Task<IActionResult> Export(
         [FromQuery] StudentListFilter filter, CancellationToken ct = default)
     {
+        filter.IncludeTelegram = true; // "Telegram" ustuni — ro'yxatdagi bilan bir xil
         var rows = await new StudentListQuery(db).AllAsync(filter, ct);
 
         var headers = StudentImportSheet.Headers
@@ -121,6 +122,7 @@ public class StudentSearchController(AppDbContext db, AuditService audit) : Cont
             r.ContractNumber ?? "",
             r.ArchivedAt ?? "",
             r.ArchiveReason ?? "",
+            r.TelegramLinked ? "ulangan" : "ulanmagan",
         });
 
         var groupLabels = await db.StudyGroups.AsNoTracking().Where(g => !g.IsArchived)

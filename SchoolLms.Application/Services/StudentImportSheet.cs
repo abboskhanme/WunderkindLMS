@@ -72,6 +72,8 @@ public static class StudentImportSheet
     public static readonly string[] ExportExtraHeaders =
     {
         "Balans", "Shartnoma raqami", "Arxiv sanasi", "Arxiv sababi",
+        // 2026-10-11: ota-ona (yoki o'quvchi) Telegram botga ulanganmi — ro'yxatdagi ustun va filtr bilan bir xil.
+        "Telegram",
     };
 
     public const string SheetName = "O'quvchilar";

@@ -609,6 +609,19 @@ public class StudentListTests(ApiFixture fixture)
         var linked = page.Items.Where(i => i.GetProperty("telegramLinked").GetBoolean())
             .Select(i => i.GetProperty("id").GetString()!).Order(StringComparer.Ordinal).ToList();
         Assert.Equal(new[] { viaBot, viaGuardian }.Order(StringComparer.Ordinal).ToList(), linked);
+
+        // Excel eksporti ham: oxirgi ustun "Telegram", filtr bilan birga ishlaydi.
+        var columns = SchoolLms.Application.Services.StudentImportSheet.Headers.Length
+            + SchoolLms.Application.Services.StudentImportSheet.ExportExtraHeaders.Length;
+        var all = XlsxRows(await (await client.GetAsync($"{Export}?search={tag}")).Content.ReadAsByteArrayAsync(), columns);
+        Assert.Equal("Telegram", all[0][^1]);
+        var byName = all.Skip(1).ToDictionary(r => r[0], r => r[^1]);
+        Assert.Equal("ulangan", byName.Single(kv => kv.Key.Contains("Botda")).Value);
+        Assert.Equal("ulangan", byName.Single(kv => kv.Key.Contains("Vasiyda")).Value);
+        Assert.Equal("ulanmagan", byName.Single(kv => kv.Key.Contains("Ulanmagan")).Value);
+        var onlyMissing = XlsxRows(
+            await (await client.GetAsync($"{Export}?search={tag}&hasTelegram=false")).Content.ReadAsByteArrayAsync(), columns);
+        Assert.Equal(["ulanmagan"], onlyMissing.Skip(1).Select(r => r[^1]));
     }
 
     /// <summary>billing_seed.sql dagi barqaror "O'qish" toifasi.</summary>
