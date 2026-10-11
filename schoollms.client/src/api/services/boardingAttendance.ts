@@ -96,3 +96,60 @@ export async function addToBoardingRoster(session: BoardingSession, studentIds: 
 export async function removeFromBoardingRoster(session: BoardingSession, studentId: string): Promise<void> {
   await api.post('/admin/boarding-attendance/roster/remove', { session, studentId })
 }
+
+/* ---------- Statistika — "Davomat analitikasi 2.0" (2026-10-11) ---------- */
+
+export interface BoardingTally {
+  studentDays: number
+  present: number
+  absent: number
+  excused: number
+  late: number
+  unchecked: number
+  presentPct: number | null
+  absentPct: number | null
+}
+
+export interface BoardingAnalytics {
+  session: BoardingSession
+  from: string
+  to: string
+  /** Yo'qlama olingan kunlar */
+  heldDays: number
+  /** Bugun ro'yxatda */
+  rosterNow: number
+  total: BoardingTally
+  trend: { date: string; tally: BoardingTally }[]
+  groups: { key: string; name: string; students: number; tally: BoardingTally }[]
+  reasons: { reasonId: string; name: string; isLate: boolean; count: number }[]
+  students: {
+    studentId: string
+    fullName: string
+    className: string
+    groupName: string
+    tally: BoardingTally
+    lastAbsent: string | null
+  }[]
+  /** absent | excused | late | unchecked */
+  events: { date: string; studentId: string; fullName: string; groupName: string; status: string; reasonId: string | null }[]
+  eventsTruncated: boolean
+}
+
+export async function getBoardingAnalytics(session: BoardingSession, from: string, to: string): Promise<BoardingAnalytics> {
+  const { data } = await api.get<BoardingAnalytics>('/admin/boarding-attendance/analytics', { params: { session, from, to } })
+  return data
+}
+
+export async function downloadBoardingAnalytics(session: BoardingSession, from: string, to: string): Promise<void> {
+  const res = await api.get('/admin/boarding-attendance/analytics/export', { params: { session, from, to }, responseType: 'blob' })
+  const url = URL.createObjectURL(res.data as Blob)
+  const a = document.createElement('a')
+  a.href = url
+  const cd = (res.headers['content-disposition'] as string | undefined) ?? ''
+  const m = cd.match(/filename="?([^";]+)"?/)
+  a.download = m?.[1] ?? `${session}_${from}_${to}.xlsx`
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  URL.revokeObjectURL(url)
+}

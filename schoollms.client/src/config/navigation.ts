@@ -207,6 +207,8 @@ export const navByRole: Record<Role, NavItem[]> = {
         { label: 'Davomat belgilash', to: '/admin/attendance/mark', perm: 'attendanceMark', group: 'DAVOMAT' },
         { label: 'Kunlik davomat', to: '/admin/attendance', end: true, perm: 'attendance', group: 'DAVOMAT' },
         { label: 'Davomat analitikasi', to: '/admin/attendance/analytics', perm: 'attendance', group: 'DAVOMAT' },
+        // Kechki dars va yotoqxona statistikasi bilan (mijoz, 2026-10-11).
+        { label: 'Davomat analitikasi 2.0', to: '/admin/attendance/analytics-2', perm: 'attendance', group: 'DAVOMAT' },
         { label: 'Kechki dars', to: '/admin/attendance/boarding?session=evening', perm: 'attendanceEvening', group: 'KECHKI' },
         { label: 'Yotoqxona', to: '/admin/attendance/boarding?session=dorm', perm: 'attendanceDorm', group: 'KECHKI' },
       ],

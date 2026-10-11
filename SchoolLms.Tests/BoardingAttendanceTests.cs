@@ -227,6 +227,41 @@ public class BoardingAttendanceTests(ApiFixture fixture)
         Assert.Equal(HttpStatusCode.Forbidden, (await evening.GetAsync($"{Url}/roster?session=dorm")).StatusCode);
     }
 
+    /// <summary>"Davomat analitikasi 2.0" (2026-10-11): kechki dars / yotoqxona statistikasi.</summary>
+    [Fact]
+    public async Task Statistika_royxat_va_belgilardan()
+    {
+        var w = await SeedAsync();
+        using var admin = await fixture.Api.ClientAsAsync(Roles.Admin);
+        Assert.Equal(HttpStatusCode.OK, (await admin.PutAsJsonAsync(Url, new
+        {
+            date = w.Date, session = "evening",
+            marks = new[] { new { studentId = w.Boarder, status = "absent" }, new { studentId = w.Loose, status = "present" } },
+        })).StatusCode);
+
+        var from = AppClock.Today.AddDays(-3).ToString("yyyy-MM-dd");
+        var d = (await admin.GetFromJsonAsync<BoardingAnalyticsDto>($"{Url}/analytics?session=evening&from={from}&to={w.Date}"))!;
+        var mine = d.Students.Where(s => s.StudentId == w.Boarder || s.StudentId == w.Loose).ToDictionary(s => s.StudentId);
+        Assert.Equal((1, 1, 0), (mine[w.Boarder].Tally.StudentDays, mine[w.Boarder].Tally.Absent, mine[w.Boarder].Tally.Present));
+        Assert.Equal(w.Date, mine[w.Boarder].LastAbsent);
+        Assert.Equal(100.0, mine[w.Loose].Tally.PresentPct);
+        Assert.StartsWith("Guruhsiz", mine[w.Loose].GroupName);
+        Assert.Contains(d.Events, e => e.StudentId == w.Boarder && e.Status == "absent" && e.Date == w.Date);
+        Assert.Contains(d.Groups, g => g.Key == w.TrackId.ToString());
+        Assert.DoesNotContain(d.Students, s => s.StudentId == w.Expired);   // off the list today, no mark
+        Assert.Contains(d.Trend, p => p.Date == w.Date);
+
+        var xlsx = await admin.GetAsync($"{Url}/analytics/export?session=evening&from={from}&to={w.Date}");
+        Assert.Equal(HttpStatusCode.OK, xlsx.StatusCode);
+        Assert.Equal("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", xlsx.Content.Headers.ContentType?.MediaType);
+
+        using var dormOnly = await fixture.Api.ClientAsAsync(Roles.Staff, "attendanceDorm");
+        Assert.Equal(HttpStatusCode.Forbidden,
+            (await dormOnly.GetAsync($"{Url}/analytics?session=evening&from={from}&to={w.Date}")).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest,
+            (await admin.GetAsync($"{Url}/analytics?session=evening&from={w.Date}&to={from}")).StatusCode);
+    }
+
     [Fact]
     public async Task Qayta_saqlash_qatorni_yangilaydi_takrorlamaydi()
     {

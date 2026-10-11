@@ -4,7 +4,9 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using SchoolLms.Application.Dtos;
 using SchoolLms.Application.Services;
+using Microsoft.EntityFrameworkCore;
 using SchoolLms.Domain;
+using SchoolLms.Infrastructure.Data;
 
 namespace SchoolLms.Server.Controllers;
 
@@ -19,7 +21,7 @@ namespace SchoolLms.Server.Controllers;
 [ApiController]
 [Authorize(Roles = "admin,superadmin,staff")]
 [Route("api/admin/boarding-attendance")]
-public class BoardingAttendanceController(BoardingAttendanceService service) : ControllerBase
+public class BoardingAttendanceController(BoardingAttendanceService service, AppDbContext db) : ControllerBase
 {
     [HttpGet]
     public async Task<ActionResult<BoardingDayDto>> Get(
@@ -38,6 +40,40 @@ public class BoardingAttendanceController(BoardingAttendanceService service) : C
         var (result, error) = await service.SaveAsync(day, req.Session, req.Marks ?? [], uid, ct);
         if (error is not null) return BadRequest(new { message = error });
         return result!;
+    }
+
+    // ---------- Statistika — "Davomat analitikasi 2.0" (2026-10-11) ----------
+
+    /// <summary>Kechki dars yoki yotoqxona statistikasi davr bo'yicha (o'qish ruxsati — sessiyaniki).</summary>
+    [HttpGet("analytics")]
+    public async Task<ActionResult<BoardingAnalyticsDto>> Analytics(
+        [FromQuery] string session, [FromQuery] string from, [FromQuery] string to, CancellationToken ct = default)
+    {
+        if (CheckRange(session, from, to, out var f, out var t) is { } bad) return bad;
+        return await BoardingAnalytics.BuildAsync(db, session, f, t, ct: ct);
+    }
+
+    /// <summary>Statistika Excel'da: kunlar, guruhlar, o'quvchilar, kunlar va sabablar.</summary>
+    [HttpGet("analytics/export")]
+    public async Task<IActionResult> AnalyticsExport(
+        [FromQuery] string session, [FromQuery] string from, [FromQuery] string to, CancellationToken ct = default)
+    {
+        if (CheckRange(session, from, to, out var f, out var t) is { } bad) return bad;
+        var d = await BoardingAnalytics.BuildAsync(db, session, f, t, maxEvents: 50_000, ct: ct);
+        var reasons = await db.AbsenceReasons.AsNoTracking().ToDictionaryAsync(r => r.Id, r => r.Name, ct);
+        return File(BoardingAnalyticsExport.Build(d, reasons),
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            $"{(session == BoardingSession.Dorm ? "yotoqxona" : "kechki_dars")}_{d.From}_{d.To}.xlsx");
+    }
+
+    private ActionResult? CheckRange(string session, string from, string to, out DateOnly f, out DateOnly t)
+    {
+        f = t = default;
+        if (CheckSession(session, write: false) is { } bad) return bad;
+        if (!DateOnly.TryParseExact(from, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out f)
+            || !DateOnly.TryParseExact(to, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out t))
+            return BadRequest(new { message = "Sana formati YYYY-MM-DD bo'lishi kerak" });
+        return BoardingAnalytics.RangeError(f, t) is { } error ? BadRequest(new { message = error }) : null;
     }
 
     // ---------- Ro'yxat — qo'lda (mijoz, 2026-10-11: "o'quvchilarni qo'lda qo'shadigan qilish") ----------
