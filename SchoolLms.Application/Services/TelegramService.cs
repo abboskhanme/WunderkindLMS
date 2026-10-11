@@ -144,6 +144,39 @@ public class TelegramService(
     }
 
     /// <summary>
+    /// Formatlangan matn (<see cref="TelegramHtml"/>) — <c>parse_mode=HTML</c>. Telegram formatlashni
+    /// o'qiy olmasa ("can't parse entities") — xuddi shu matn teglarsiz yana bir marta yuboriladi,
+    /// xabar yo'qolmasin. Boshqa rad etish (bot bloklangan, chat yo'q, tarmoq) qayta urinilmaydi.
+    /// </summary>
+    public async Task<bool> SendRichAsync(long chatId, string html, CancellationToken ct = default)
+    {
+        if (!IsConfigured) return false;
+        try
+        {
+            var payload = new Dictionary<string, object?>
+            {
+                ["chat_id"] = chatId,
+                ["text"] = html,
+                ["parse_mode"] = "HTML",
+                ["disable_web_page_preview"] = true,
+            };
+            using var content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
+            using var resp = await Client().PostAsync($"{ApiBase}/sendMessage", content, ct);
+            if (resp.IsSuccessStatusCode) return true;
+            if (resp.StatusCode != System.Net.HttpStatusCode.BadRequest) return false;
+            var body = await resp.Content.ReadAsStringAsync(ct);
+            if (!body.Contains("parse entities", StringComparison.OrdinalIgnoreCase)) return false;
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Telegram sendMessage (formatlangan) xatosi");
+            return false;
+        }
+        logger.LogWarning("Telegram formatlangan matnni o'qiy olmadi — oddiy matn bilan qayta yuborilmoqda");
+        return await SendMessageAsync(chatId, TelegramHtml.ToPlain(html), ct: ct);
+    }
+
+    /// <summary>
     /// <c>sendVoice</c> (multipart) — a manager's voice note on an HR task. Telegram accepts
     /// OGG/OPUS, MP3 and M4A here; anything else is refused by Telegram and we return false.
     /// </summary>

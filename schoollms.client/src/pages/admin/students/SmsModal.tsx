@@ -3,7 +3,7 @@ import { Send } from 'lucide-react'
 import type { Student } from '@/types'
 import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
-import { Textarea } from '@/components/ui/Input'
+import { RichTextField } from '@/components/ui/RichTextField'
 import { sendBroadcast } from '@/api/services/messages'
 import type { StudentListFilter } from '@/api/services/studentSearch'
 
@@ -132,12 +132,12 @@ export function SmsModal({ open, onClose, recipients, filterScope }: Props) {
               Telegram bot orqali boradi — botga ro'yxatdan o'tganlar oladi.
             </div>
           )}
-          <Textarea
+          <RichTextField
             label="Xabar matni"
             rows={5}
             placeholder="Hurmatli ota-onalar, ..."
             value={message}
-            onChange={(e) => setMessage(e.target.value)}
+            onChange={setMessage}
           />
           {filterScope && (
             <label className="flex items-start gap-2 text-sm text-slate-700">

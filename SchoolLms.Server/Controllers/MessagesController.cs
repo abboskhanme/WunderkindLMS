@@ -121,9 +121,51 @@ public class MessagesController(AppDbContext db, ChatService chat, TelegramServi
         var q = db.Broadcasts.AsQueryable();
         if (!string.IsNullOrEmpty(className)) q = q.Where(b => b.ClassName == className);
         var list = await q.OrderByDescending(b => b.CreatedAt).Take(100).ToListAsync();
+        var ids = list.Select(b => b.Id).ToList();
+        var stats = (await db.BroadcastRecipients.AsNoTracking()
+                .Where(r => ids.Contains(r.BroadcastId))
+                .Select(r => new { r.BroadcastId, r.StudentId, r.Status }).ToListAsync())
+            .GroupBy(r => r.BroadcastId)
+            .ToDictionary(g => g.Key, g => (
+                Students: g.Select(r => r.StudentId).Distinct().Count(),
+                NoTelegram: g.Count(r => r.Status == BroadcastDelivery.NoTelegram)));
         return list.Select(b => new BroadcastDto(
             b.Id, b.ClassName, b.Text, b.SenderName, b.CreatedAt.ToString("o"),
-            b.RecipientCount, b.SentCount)).ToList();
+            b.RecipientCount, b.SentCount,
+            stats.TryGetValue(b.Id, out var st) ? st.Students : null,
+            stats.TryGetValue(b.Id, out var st2) ? st2.NoTelegram : null)).ToList();
+    }
+
+    /// <summary>
+    /// Bitta e'lon batafsil: kimga yuborilgan — har o'quvchi, ota-ona chati va holati (yetkazildi /
+    /// yetmadi / Telegramga ulanmagan). Mijoz, 2026-10-11: "yuborilgan elonlar haqida batafsil
+    /// malumot ... masalan kimga". 2026-10-11 dan oldingi e'lonlarda ro'yxat saqlanmagan.
+    /// </summary>
+    [HttpGet("broadcasts/{id}")]
+    public async Task<ActionResult<BroadcastDetailDto>> BroadcastDetail(string id)
+    {
+        var b = await db.Broadcasts.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id);
+        if (b is null) return NotFound();
+        var rows = await db.BroadcastRecipients.AsNoTracking().Where(r => r.BroadcastId == id).ToListAsync();
+        var studentIds = rows.Select(r => r.StudentId).Distinct().ToList();
+        var students = await db.Students.AsNoTracking().Where(s => studentIds.Contains(s.Id))
+            .Select(s => new { s.Id, s.FullName, s.ClassName }).ToDictionaryAsync(s => s.Id);
+        var recipients = rows
+            .Select(r =>
+            {
+                students.TryGetValue(r.StudentId, out var st);
+                return new BroadcastRecipientDto(
+                    r.StudentId, st?.FullName ?? "O'chirilgan o'quvchi", st?.ClassName ?? "",
+                    r.ParentName, r.ChatId?.ToString(), r.Status);
+            })
+            .OrderBy(r => r.Status == BroadcastDelivery.Sent ? 1 : 0)   // problems first
+            .ThenBy(r => r.ClassName, StringComparer.Ordinal).ThenBy(r => r.FullName, StringComparer.Ordinal)
+            .ToList();
+        return new BroadcastDetailDto(
+            new BroadcastDto(b.Id, b.ClassName, b.Text, b.SenderName, b.CreatedAt.ToString("o"),
+                b.RecipientCount, b.SentCount, rows.Count > 0 ? studentIds.Count : null,
+                rows.Count > 0 ? rows.Count(r => r.Status == BroadcastDelivery.NoTelegram) : null),
+            TelegramHtml.FromMarkup(b.Text), recipients, rows.Count > 0);
     }
 
     /// <summary>
@@ -146,8 +188,11 @@ public class MessagesController(AppDbContext db, ChatService chat, TelegramServi
     [HttpPost("broadcast")]
     public async Task<ActionResult<BroadcastDto>> SendBroadcast(SendBroadcastRequest req)
     {
+        // Formatlangan matn (**qalin**, __kursiv__ …, 2026-10-11): yozilgani saqlanadi, Telegramga
+        // esa HTML qismi bo'lib ketadi (TelegramHtml.FromMarkup — avval hammasi ekranlanadi).
         var text = req.Text?.Trim() ?? "";
-        if (text.Length == 0) return BadRequest(new { message = "Xabar matni kerak" });
+        if (TelegramHtml.MarkupToPlain(text).Trim().Length == 0) return BadRequest(new { message = "Xabar matni kerak" });
+        var html = TelegramHtml.FromMarkup(text);
         var scope = (req.Scope ?? "class").Trim().ToLowerInvariant();
 
         // Qamrov bo'yicha maqsadli o'quvchilar to'plami.
@@ -231,12 +276,23 @@ public class MessagesController(AppDbContext db, ChatService chat, TelegramServi
             .ToListAsync();
 
         var sent = 0;
+        var delivery = new List<BroadcastRecipient>();
         foreach (var r in regs)
         {
             if (!byId.TryGetValue(r.StudentId, out var s)) continue;
-            var message = $"📢 Maktab e'loni\n\n{Personalize(text, s, r, balances.GetValueOrDefault(s.Id))}";
-            if (await telegram.SendMessageAsync(r.ChatId, message)) sent++;
+            var message = $"📢 <b>Maktab e'loni</b>\n\n{Personalize(html, s, r, balances.GetValueOrDefault(s.Id))}";
+            var ok = await telegram.SendRichAsync(r.ChatId, message);
+            if (ok) sent++;
+            delivery.Add(new BroadcastRecipient
+            {
+                StudentId = s.Id, ChatId = r.ChatId, ParentName = r.ParentName,
+                Status = ok ? BroadcastDelivery.Sent : BroadcastDelivery.Failed,
+            });
         }
+        // Telegramga ulanmagan maqsadli o'quvchilar ham yoziladi — "kimga yetmadi" ko'rinsin.
+        var withChat = regs.Select(r => r.StudentId).ToHashSet(StringComparer.Ordinal);
+        delivery.AddRange(students.Where(s => !withChat.Contains(s.Id))
+            .Select(s => new BroadcastRecipient { StudentId = s.Id, Status = BroadcastDelivery.NoTelegram }));
 
         var user = await db.Users.FindAsync(Uid);
         var bc = new Broadcast
@@ -250,10 +306,13 @@ public class MessagesController(AppDbContext db, ChatService chat, TelegramServi
             SentCount = sent,
         };
         db.Broadcasts.Add(bc);
+        foreach (var d in delivery) d.BroadcastId = bc.Id;
+        db.BroadcastRecipients.AddRange(delivery);
         await db.SaveChangesAsync();
 
         return new BroadcastDto(bc.Id, bc.ClassName, bc.Text, bc.SenderName,
-            bc.CreatedAt.ToString("o"), bc.RecipientCount, bc.SentCount);
+            bc.CreatedAt.ToString("o"), bc.RecipientCount, bc.SentCount,
+            students.Count, delivery.Count(d => d.Status == BroadcastDelivery.NoTelegram));
     }
 
     /// <summary>
@@ -264,14 +323,15 @@ public class MessagesController(AppDbContext db, ChatService chat, TelegramServi
     {
         var debt = balance < 0 ? -balance : 0m;
         var parent = string.IsNullOrWhiteSpace(reg.ParentName) ? "Ota-ona" : reg.ParentName;
+        // Shablon — Telegram HTML; qiymatlar ekranlanadi (ismdagi "<" teg bo'lib qolmasin).
         var result = template;
-        result = ReplaceToken(result, "{fish}", s.FullName);
-        result = ReplaceToken(result, "{sinf}", s.ClassName);
+        result = ReplaceToken(result, "{fish}", TelegramHtml.Escape(s.FullName));
+        result = ReplaceToken(result, "{sinf}", TelegramHtml.Escape(s.ClassName));
         result = ReplaceToken(result, "{qarzdorlik}", Money(debt));
         result = ReplaceToken(result, "{balans}", Money(balance));
-        result = ReplaceToken(result, "{ota-ona}", parent);
-        result = ReplaceToken(result, "{ota_ona}", parent);
-        result = ReplaceToken(result, "{telefon}", reg.Phone);
+        result = ReplaceToken(result, "{ota-ona}", TelegramHtml.Escape(parent));
+        result = ReplaceToken(result, "{ota_ona}", TelegramHtml.Escape(parent));
+        result = ReplaceToken(result, "{telefon}", TelegramHtml.Escape(reg.Phone));
         return result;
     }
 

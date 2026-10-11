@@ -19,8 +19,11 @@ namespace SchoolLms.Application.Services;
 // ===========================================================================
 
 /// <summary>Lenta yozuvi — admin DTO'sidan ataylab kichikroq (§5.5).</summary>
+/// <param name="BodyHtml">Matnning tozalangan formatlangan ko'rinishi (Telegram HTML qismi, 2026-10-11) —
+/// lentalar shuni chizadi; <c>Body</c> esa saqlangan asl matn.</param>
 public record NewsFeedDto(
-    Guid Id, string Title, string Body, string? ImageUrl, DateTimeOffset PublishedAt, string AuthorName);
+    Guid Id, string Title, string Body, string? ImageUrl, DateTimeOffset PublishedAt, string AuthorName,
+    string BodyHtml = "");
 
 /// <summary>Qaysi auditoriya lentasi o'qilyapti.</summary>
 public enum NewsFeedAudience { Employee, Parent, Student }
@@ -47,11 +50,12 @@ public static class NewsFeedQuery
             _ => q.Where(x => x.ForStudent),
         };
 
-        return await q
-            .OrderByDescending(x => x.PublishedAt).ThenByDescending(x => x.Id)
-            .Take(n)
+        return [.. (await q
+                .OrderByDescending(x => x.PublishedAt).ThenByDescending(x => x.Id)
+                .Take(n)
+                .Select(x => new { x.Id, x.Title, x.Body, x.ImageUrl, PublishedAt = x.PublishedAt!.Value, x.AuthorName })
+                .ToListAsync(ct))
             .Select(x => new NewsFeedDto(
-                x.Id, x.Title, x.Body, x.ImageUrl, x.PublishedAt!.Value, x.AuthorName))
-            .ToListAsync(ct);
+                x.Id, x.Title, x.Body, x.ImageUrl, x.PublishedAt, x.AuthorName, TelegramHtml.FromMarkup(x.Body)))];
     }
 }

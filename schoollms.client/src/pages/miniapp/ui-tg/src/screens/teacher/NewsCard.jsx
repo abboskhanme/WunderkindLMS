@@ -19,6 +19,7 @@
  * shared card would have to reach across both, and §3.4 lists one file per
  * panel.
  */
+import { RichBody } from '../../components/RichBody'
 import { useState } from 'react'
 import { ChevronDown, Newspaper } from 'lucide-react'
 import { Card, EmptyState } from '../../components/ui'
@@ -135,10 +136,8 @@ function NewsItem({ item, open, onToggle }) {
               className="mb-3 max-h-60 w-full rounded-2xl object-cover"
             />
           )}
-          {/* §3.3 N2 — plain text; only the line breaks are preserved. */}
-          <p className="whitespace-pre-line break-words text-[14px] leading-relaxed text-slate-600">
-            {item.body}
-          </p>
+          {/* Formatted text (2026-10-11) — sanitized by the server; plain body for old items. */}
+          <RichBody html={item.bodyHtml} text={item.body} className="text-[14px] leading-relaxed text-slate-600" />
         </div>
       )}
     </div>

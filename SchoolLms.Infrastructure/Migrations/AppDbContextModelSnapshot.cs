@@ -901,6 +901,50 @@ namespace SchoolLms.Infrastructure.Migrations
                     b.ToTable("broadcasts", (string)null);
                 });
 
+            modelBuilder.Entity("SchoolLms.Domain.BroadcastRecipient", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<string>("BroadcastId")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("broadcast_id");
+
+                    b.Property<long?>("ChatId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("chat_id");
+
+                    b.Property<string>("ParentName")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("parent_name");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("status");
+
+                    b.Property<string>("StudentId")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("student_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_broadcast_recipients");
+
+                    b.HasIndex("BroadcastId")
+                        .HasDatabaseName("ix_broadcast_recipients_broadcast");
+
+                    b.ToTable("broadcast_recipients", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_broadcast_recipients_status", "status in ('sent','failed','no_telegram')");
+                        });
+                });
+
             modelBuilder.Entity("SchoolLms.Domain.Bus", b =>
                 {
                     b.Property<string>("Id")
@@ -9478,6 +9522,16 @@ namespace SchoolLms.Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("fk_boarding_attendance_students_student_id");
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.BroadcastRecipient", b =>
+                {
+                    b.HasOne("SchoolLms.Domain.Broadcast", null)
+                        .WithMany()
+                        .HasForeignKey("BroadcastId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_broadcast_recipients_broadcasts_broadcast_id");
                 });
 
             modelBuilder.Entity("SchoolLms.Domain.CashBox", b =>

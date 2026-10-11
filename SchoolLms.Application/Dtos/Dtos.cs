@@ -1083,9 +1083,19 @@ public record ChatClassDto(
 public record ChatChannelDto(string Key, string Label, string Kind);
 
 /// <summary>Yuborilgan e'lon (Telegram). CreatedAt — ISO 8601.</summary>
+/// <param name="Students">Maqsadli o'quvchilar soni (2026-10-11 dan; oldingilarda null).</param>
+/// <param name="NoTelegram">Ulardan Telegramga ulanmaganlari (null — ro'yxat saqlanmagan).</param>
 public record BroadcastDto(
     string Id, string ClassName, string Text, string SenderName, string CreatedAt,
-    int RecipientCount, int SentCount);
+    int RecipientCount, int SentCount, int? Students = null, int? NoTelegram = null);
+
+/// <summary>E'lonning bitta oluvchisi: o'quvchi, ota-ona chati va holati (sent / failed / no_telegram).</summary>
+public record BroadcastRecipientDto(
+    string StudentId, string FullName, string ClassName, string ParentName, string? ChatId, string Status);
+
+/// <summary>E'lon batafsil. <c>Html</c> — tozalangan formatlangan matn; <c>HasDetails</c> false — ro'yxat saqlanmagan.</summary>
+public record BroadcastDetailDto(
+    BroadcastDto Broadcast, string Html, List<BroadcastRecipientDto> Recipients, bool HasDetails);
 
 /// <summary>
 /// E'lon yuborish so'rovi. <c>Scope</c>: "class" (ClassName sinfi), "group" (GroupId o'quv

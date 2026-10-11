@@ -3,7 +3,7 @@ import { Send } from 'lucide-react'
 import { sendBroadcast } from '@/api/services/messages'
 import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
-import { Textarea } from '@/components/ui/Input'
+import { RichTextField } from '@/components/ui/RichTextField'
 
 interface Props {
   open: boolean
@@ -93,12 +93,12 @@ export function RosterMessageModal({ open, onClose, studentIds }: Props) {
             Qabul qiluvchilar: <b>{studentIds.length} ta</b> o'quvchining ota-onasi. Xabar
             Telegram bot orqali boradi.
           </div>
-          <Textarea
+          <RichTextField
             label="Xabar matni"
             rows={5}
             placeholder="Hurmatli ota-onalar, ..."
             value={message}
-            onChange={(e) => setMessage(e.target.value)}
+            onChange={setMessage}
           />
           {error && <p className="text-sm text-red-600">{error}</p>}
         </div>

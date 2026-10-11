@@ -45,3 +45,12 @@ body {
 /* Telegram o'zining temasini o'zgaruvchilar orqali beradi, lekin biz ATAYLAB
    brend ranglarida qolamiz: maktab sarig'i tanilishi kerak, foydalanuvchining
    Telegram temasi bunga aralashmaydi. */
+
+/* Formatted news text (2026-10-11) — Telegram's HTML subset, sanitized by the server. */
+.rich-body b, .rich-body strong { font-weight: 600; }
+.rich-body a { color: #2563eb; text-decoration: underline; }
+.rich-body code { border-radius: 4px; background: #f1f5f9; padding: 0 4px; font-family: ui-monospace, monospace; font-size: 0.9em; }
+.rich-body pre { margin: 4px 0; overflow-x: auto; border-radius: 8px; background: #f1f5f9; padding: 8px; font-family: ui-monospace, monospace; font-size: 0.9em; }
+.rich-body blockquote { margin: 4px 0; border-left: 4px solid #e2e8f0; padding-left: 12px; color: #64748b; }
+.rich-body tg-spoiler { border-radius: 4px; background: #cbd5e1; color: transparent; }
+.rich-body tg-spoiler:active, .rich-body tg-spoiler:hover { background: transparent; color: inherit; }

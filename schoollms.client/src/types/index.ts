@@ -909,6 +909,28 @@ export interface Broadcast {
   recipientCount: number
   /** Muvaffaqiyatli yetkazilganlar soni */
   sentCount: number
+  /** Maqsadli o'quvchilar soni (2026-10-11 dan; oldingilarda null) */
+  students?: number | null
+  /** Ulardan Telegramga ulanmaganlari */
+  noTelegram?: number | null
+}
+
+/** E'lonning bitta oluvchisi. `status`: sent — yetkazildi, failed — yetmadi, no_telegram — ulanmagan. */
+export interface BroadcastRecipient {
+  studentId: string
+  fullName: string
+  className: string
+  parentName: string
+  chatId: string | null
+  status: 'sent' | 'failed' | 'no_telegram'
+}
+
+/** E'lon batafsil. `html` — server tozalagan formatlangan matn; `hasDetails` false — ro'yxat saqlanmagan. */
+export interface BroadcastDetail {
+  broadcast: Broadcast
+  html: string
+  recipients: BroadcastRecipient[]
+  hasDetails: boolean
 }
 
 /** Telegramda ro'yxatdan o'tgan ota-ona */

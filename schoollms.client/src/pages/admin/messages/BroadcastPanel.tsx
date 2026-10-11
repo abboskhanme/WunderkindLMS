@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Send, Megaphone, Users, AlertTriangle, Search, Check } from 'lucide-react'
+import { Send, Megaphone, Users, AlertTriangle, Search, Check, ChevronRight } from 'lucide-react'
 import type { Broadcast, MessageClass, TelegramParent, TelegramStatus } from '@/types'
 import {
   getBroadcasts,
@@ -21,22 +21,30 @@ import { useAuth } from '@/context/auth-context'
 import { cn, formatDate, formatMoney } from '@/lib/utils'
 import { messageTemplates as TEMPLATES, messageTokens as TOKENS } from '@/config/messageTemplates'
 import { formatPhone } from '@/lib/phone'
+import { escapeHtml, markupToHtml } from '@/lib/telegramMarkup'
+import { FormatToolbar } from '@/components/ui/FormatToolbar'
+import { RichText } from '@/components/ui/RichText'
+import { BroadcastDetailModal } from './BroadcastDetailModal'
 
 type Scope = 'class' | 'group' | 'all' | 'selected'
 
-/** Preview uchun klient tomonida o'rinbosarlarni to'ldiradi (backend bilan bir xil mantiq). */
+/**
+ * Preview uchun klient tomonida o'rinbosarlarni to'ldiradi (backend bilan bir xil mantiq): matn
+ * avval formatlangan HTML'ga aylanadi, qiymatlar esa ekranlanib qo'yiladi — server ham shunday.
+ */
 function fill(text: string, p: TelegramParent): string {
   // Balans faqat moliya ruxsati bilan keladi. Ruxsat yo'q bo'lsa preview PUL
   // o'rniga chiziqcha ko'rsatadi — xabarning o'ziga esa haqiqiy summani server
   // qo'yadi, ya'ni yuborish buzilmaydi, faqat ko'rsatilmaydi.
   const debt = p.balance === null ? '—' : p.balance < 0 ? formatMoney(-p.balance) : "0 so'm"
-  return text
-    .replace(/\{fish\}/gi, p.studentName)
-    .replace(/\{sinf\}/gi, p.className)
-    .replace(/\{qarzdorlik\}/gi, debt)
-    .replace(/\{balans\}/gi, p.balance === null ? '—' : formatMoney(p.balance))
-    .replace(/\{ota[-_]ona\}/gi, p.parentName || 'Ota-ona')
-    .replace(/\{telefon\}/gi, formatPhone(p.phone))
+  const v = (s: string) => escapeHtml(s).replace(/\$/g, '$$$$')
+  return markupToHtml(text)
+    .replace(/\{fish\}/gi, v(p.studentName))
+    .replace(/\{sinf\}/gi, v(p.className))
+    .replace(/\{qarzdorlik\}/gi, v(debt))
+    .replace(/\{balans\}/gi, v(p.balance === null ? '—' : formatMoney(p.balance)))
+    .replace(/\{ota[-_]ona\}/gi, v(p.parentName || 'Ota-ona'))
+    .replace(/\{telefon\}/gi, v(formatPhone(p.phone)))
 }
 
 /** Ota-onalarga Telegram bot orqali e'lon yuborish: qamrov + andoza + o'rinbosarlar + tarix. */
@@ -66,6 +74,8 @@ export function BroadcastPanel({ classes }: { classes: MessageClass[] }) {
   const [loading, setLoading] = useState(true)
   const [sending, setSending] = useState(false)
   const [result, setResult] = useState<string | null>(null)
+  /** Batafsil ochilgan e'lon (2026-10-11: "kimga"). */
+  const [detailId, setDetailId] = useState<string | null>(null)
 
   const textRef = useRef<HTMLTextAreaElement>(null)
 
@@ -160,7 +170,8 @@ export function BroadcastPanel({ classes }: { classes: MessageClass[] }) {
       setResult(
         b.recipientCount === 0
           ? "Mos keluvchi ro'yxatdagi ota-ona topilmadi — e'lon saqlandi, lekin hech kimga yuborilmadi."
-          : `E'lon yuborildi: ${b.sentCount}/${b.recipientCount} ota-onaga yetkazildi.`,
+          : `E'lon yuborildi: ${b.sentCount}/${b.recipientCount} ota-onaga yetkazildi` +
+              (b.noTelegram ? ` · ${b.noTelegram} o'quvchining ota-onasi Telegramga ulanmagan.` : '.'),
       )
     } finally {
       setSending(false)
@@ -291,10 +302,12 @@ export function BroadcastPanel({ classes }: { classes: MessageClass[] }) {
             )}
           </div>
 
+          {/* Formatlash: **qalin**, __kursiv__ … — Telegram ilovasidagi belgilar (2026-10-11). */}
+          <FormatToolbar textareaRef={textRef} value={text} onChange={setText} className="mb-1.5" />
           <textarea
             ref={textRef}
             className="h-36 w-full resize-none rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100"
-            placeholder="E'lon matni — o'rinbosarlar har o'quvchiga moslab to'ldiriladi"
+            placeholder="E'lon matni — o'rinbosarlar har o'quvchiga moslab to'ldiriladi. Matnni belgilab, yuqoridagi tugmalar bilan formatlang."
             value={text}
             onChange={(e) => setText(e.target.value)}
           />
@@ -323,10 +336,7 @@ export function BroadcastPanel({ classes }: { classes: MessageClass[] }) {
               <p className="mb-1 text-xs font-medium text-slate-400">
                 Namuna ({recipients[0].studentName}):
               </p>
-              <p className="whitespace-pre-wrap break-words text-sm text-slate-700">
-                📢 Maktab e'loni{'\n\n'}
-                {preview}
-              </p>
+              <RichText html={`📢 <b>Maktab e'loni</b>\n\n${preview}`} className="text-sm text-slate-700" />
             </div>
           )}
 
@@ -423,26 +433,39 @@ export function BroadcastPanel({ classes }: { classes: MessageClass[] }) {
                   <p className="py-6 text-center text-sm text-slate-400">Hali e'lon yuborilmagan</p>
                 )}
                 {broadcasts.map((b) => (
-                  <div key={b.id} className="rounded-lg border border-slate-100 p-3">
+                  <button
+                    key={b.id}
+                    type="button"
+                    onClick={() => setDetailId(b.id)}
+                    className="group block w-full rounded-lg border border-slate-100 p-3 text-left transition-colors hover:border-brand-200 hover:bg-brand-50/30"
+                    title="Batafsil: kimga yetdi, kimga yetmadi"
+                  >
                     <div className="mb-1 flex items-center gap-2">
                       <span className="rounded-md bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
                         {b.className}
                       </span>
-                    </div>
-                    <p className="whitespace-pre-wrap break-words text-sm text-slate-700">{b.text}</p>
-                    <div className="mt-1.5 flex items-center justify-between text-xs text-slate-400">
-                      <span>{formatDate(b.createdAt)}</span>
-                      <span>
-                        {b.sentCount}/{b.recipientCount} yetkazildi
+                      <span className="ml-auto flex items-center gap-0.5 text-xs text-slate-400 group-hover:text-brand-600">
+                        Batafsil <ChevronRight className="h-3.5 w-3.5" />
                       </span>
                     </div>
-                  </div>
+                    <RichText markup={b.text} className="line-clamp-4 text-sm text-slate-700" />
+                    <div className="mt-1.5 flex items-center justify-between gap-2 text-xs text-slate-400">
+                      <span>
+                        {formatDate(b.createdAt)} · {b.senderName}
+                      </span>
+                      <span>
+                        {b.sentCount}/{b.recipientCount} yetkazildi
+                        {b.noTelegram ? <span className="text-amber-600"> · {b.noTelegram} Telegramsiz</span> : null}
+                      </span>
+                    </div>
+                  </button>
                 ))}
               </div>
             )}
           </Card>
         </div>
       </div>
+      <BroadcastDetailModal id={detailId} onClose={() => setDetailId(null)} />
     </div>
   )
 }

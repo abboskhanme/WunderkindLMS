@@ -16,6 +16,7 @@
  * decision is what keeps a school announcement from becoming a stored-XSS
  * vector in three different clients.
  */
+import { RichBody } from '../../components/RichBody'
 import { useState } from 'react'
 import { ChevronDown, Newspaper } from 'lucide-react'
 import { Card, EmptyState } from '../../components/ui'
@@ -133,10 +134,8 @@ function NewsItem({ item, open, onToggle }) {
               className="mb-3 max-h-60 w-full rounded-2xl object-cover"
             />
           )}
-          {/* §3.3 N2 — plain text; only the line breaks are preserved. */}
-          <p className="whitespace-pre-line break-words text-[14px] leading-relaxed text-slate-600">
-            {item.body}
-          </p>
+          {/* Formatted text (2026-10-11) — sanitized by the server; plain body for old items. */}
+          <RichBody html={item.bodyHtml} text={item.body} className="text-[14px] leading-relaxed text-slate-600" />
         </div>
       )}
     </div>

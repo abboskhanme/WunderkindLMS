@@ -24,6 +24,7 @@ namespace SchoolLms.Application.Services;
 //
 //  MATN — ODDIY MATN (N2)
 //  ----------------------
+//  (2026-10-11 dan matn formatlangan bo'lishi mumkin — `TelegramHtml`, parse_mode=HTML.)
 //  `parse_mode` berilmaydi, ya'ni Telegram matnni formatlamaydi va hech narsani
 //  ekranlash (escape) shart emas. Telegram bitta xabarni 4096 belgi bilan
 //  cheklaydi; undan uzun yangilik qisqartiriladi va oxiriga "to'liq matn
@@ -69,7 +70,7 @@ public sealed class NewsTelegramNotifier(
             var text = BuildMessage(news);
             var sent = 0;
             foreach (var chatId in chatIds)
-                if (await telegram.SendMessageAsync(chatId, text, ct: ct)) sent++;
+                if (await telegram.SendRichAsync(chatId, text, ct)) sent++;
 
             logger.LogInformation(
                 "Yangilik Telegram'ga yuborildi: news={NewsId}, chats={Total}, sent={Sent}",
@@ -131,13 +132,15 @@ public sealed class NewsTelegramNotifier(
     /// </summary>
     public static string BuildMessage(NewsItem news)
     {
-        // Shakl — sales-marketing.md §5.4: "📰 {sarlavha}", bo'sh qator, matn.
-        var text = $"📰 {news.Title.Trim()}\n\n{news.Body.Trim()}";
+        // Shakl — sales-marketing.md §5.4: "📰 {sarlavha}", bo'sh qator, matn. Matn formatlangan
+        // bo'lishi mumkin (qalin, kursiv …, 2026-10-11) — Telegram HTML qismi, sarlavha ekranlanadi.
+        var text = $"📰 {TelegramHtml.Escape(news.Title.Trim())}\n\n{TelegramHtml.FromMarkup(news.Body.Trim())}";
         if (text.Length <= TelegramMaxLength) return text;
 
         var cut = TelegramMaxLength - TruncatedSuffix.Length;
         // Surrogat juftini (emoji) o'rtasidan kesmaymiz.
         if (char.IsHighSurrogate(text[cut - 1])) cut--;
-        return text[..cut].TrimEnd() + TruncatedSuffix;
+        // Kesilgan joyda ochiq qolgan teg yopiladi — Telegram muvozanatsiz HTML'ni rad etadi.
+        return TelegramHtml.Sanitize(text[..cut].TrimEnd()) + TruncatedSuffix;
     }
 }

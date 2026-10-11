@@ -1107,6 +1107,34 @@ public class Broadcast
 }
 
 /// <summary>
+/// E'lonning bitta oluvchisi (mijoz, 2026-10-11: "yuborilgan elonlar haqida batafsil malumot chiqib
+/// turishi, masalan kimga"). Har bir maqsadli o'quvchi yoziladi: ota-onasining har bir chati uchun
+/// bitta qator, Telegramga ulanmagan o'quvchi uchun esa <see cref="BroadcastDelivery.NoTelegram"/>.
+/// </summary>
+public class BroadcastRecipient
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    /// <summary>broadcasts.id</summary>
+    public string BroadcastId { get; set; } = string.Empty;
+    /// <summary>students.id</summary>
+    public string StudentId { get; set; } = string.Empty;
+    /// <summary>Telegram chat; ulanmagan bo'lsa null.</summary>
+    public long? ChatId { get; set; }
+    /// <summary>Chat egasi (ota-ona) — telegram_registrations dagi ism.</summary>
+    public string ParentName { get; set; } = string.Empty;
+    /// <summary><see cref="BroadcastDelivery"/> qiymatlaridan biri.</summary>
+    public string Status { get; set; } = BroadcastDelivery.Sent;
+}
+
+/// <summary>E'lon oluvchisining holati.</summary>
+public static class BroadcastDelivery
+{
+    public const string Sent = "sent";
+    public const string Failed = "failed";
+    public const string NoTelegram = "no_telegram";
+}
+
+/// <summary>
 /// Farzandni olib ketish so'rovi. Ota-ona ilovada "Farzandimni olishga keldim" bossa yaratiladi;
 /// sinf rahbari ilovada "Qabul qildim" bossa Accepted bo'ladi. Har ikki tomonga Telegram xabari boradi
 /// (2026-10-11 gacha push edi).

@@ -112,7 +112,8 @@ public class NewsTests(ApiFixture fixture) : IAsyncLifetime
         using var doc = JsonDocument.Parse(await parent.GetStringAsync("/api/tg/parent/news?take=50"));
         var item = Assert.Single(doc.RootElement.EnumerateArray().ToList(), e => e.GetProperty("id").GetGuid() == id);
         Assert.Equal(
-            ["authorName", "body", "id", "imageUrl", "publishedAt", "title"],
+            // bodyHtml — the sanitized formatted body the feeds draw (2026-10-11).
+            ["authorName", "body", "bodyHtml", "id", "imageUrl", "publishedAt", "title"],
             item.EnumerateObject().Select(p => p.Name).OrderBy(n => n, StringComparer.Ordinal).ToArray());
         // Matn ODDIY matn, qator uzilishi bilan AYNAN saqlanadi (N2).
         Assert.Equal("25-sentabr\nsoat 15:00", item.GetProperty("body").GetString());
@@ -408,7 +409,8 @@ public class NewsTests(ApiFixture fixture) : IAsyncLifetime
         Assert.NotEmpty(sent);
         Assert.Equal(1, sent.Count(s => s.ChatId == chatId));
         Assert.Equal(sent.Count, sent.Select(s => s.ChatId).Distinct().Count());
-        Assert.All(sent, s => Assert.False(s.HasParseMode, "parse_mode yuborilmasligi kerak (N2, §5.4)"));
+        // 2026-10-11: the client asked for formatted text (bold, italic …) — news goes as Telegram HTML.
+        Assert.All(sent, s => Assert.True(s.HasParseMode, "parse_mode=HTML (formatlangan matn, 2026-10-11)"));
         Assert.All(sent, s => Assert.Equal("/bottest-token/sendMessage", s.Path));
 
         Assert.NotEqual(JsonValueKind.Null, dto.GetProperty("telegramSentAt").ValueKind);

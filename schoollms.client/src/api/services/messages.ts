@@ -1,6 +1,7 @@
 import * as signalR from '@microsoft/signalr'
 import type {
   Broadcast,
+  BroadcastDetail,
   ChatMessage,
   MessageClass,
   TelegramParent,
@@ -65,6 +66,12 @@ export async function getBroadcasts(className?: string): Promise<Broadcast[]> {
   const { data } = await api.get<Broadcast[]>('/admin/messages/broadcasts', {
     params: className ? { className } : undefined,
   })
+  return data
+}
+
+/** Bitta e'lon batafsil — kimga yetdi, kimga yetmadi (2026-10-11). */
+export async function getBroadcastDetail(id: string): Promise<BroadcastDetail> {
+  const { data } = await api.get<BroadcastDetail>(`/admin/messages/broadcasts/${encodeURIComponent(id)}`)
   return data
 }
 

@@ -127,7 +127,7 @@ public sealed class TelegramParentController(
         var pickup = await PickupService.TodayAsync(db, child.Id, ct);
 
         var since = AppClock.Now.AddDays(-AnnouncementWindowDays);
-        var recentAnnouncements = await AnnouncementsFor(child.ClassName)
+        var recentAnnouncements = await AnnouncementsFor(child.Id, child.ClassName)
             .CountAsync(x => x.CreatedAt >= since, ct);
 
         var q = meta.CurrentQuarter;
@@ -271,11 +271,9 @@ public sealed class TelegramParentController(
     // =====================================================================
 
     /// <summary>
-    /// Farzand sinfiga tegishli e'lonlar (butun maktabga yuborilganlari ham).
-    /// "Tanlangan o'quvchilar" qamrovi bu yerda KO'RINMAYDI: `broadcasts`
-    /// qatorida qabul qiluvchilar ro'yxati saqlanmaydi, faqat "Tanlangan (N)"
-    /// degan yorliq bor — ya'ni u e'lon shu bolaga tegishlimi degan savolga
-    /// javob berib bo'lmaydi.
+    /// Farzandga tegishli e'lonlar. 2026-10-11 dan har e'lonning oluvchilari saqlanadi
+    /// (<c>broadcast_recipients</c>) — tanlangan, filtr va guruh e'lonlari ham aniq shu bolaga
+    /// tegishlisi ko'rinadi. Undan oldingilari eski qoida bilan: sinf yorlig'i yoki "Barcha sinflar".
     /// </summary>
     [HttpGet("children/{studentId}/announcements")]
     public async Task<ActionResult<IEnumerable<BroadcastDto>>> Announcements(
@@ -286,13 +284,14 @@ public sealed class TelegramParentController(
         var child = await Access.ChildAsync(uid, studentId, ct);
         if (child is null) return NotFound(new { message = "Farzand topilmadi" });
 
-        var list = await AnnouncementsFor(child.ClassName)
+        var list = await AnnouncementsFor(child.Id, child.ClassName)
             .OrderByDescending(b => b.CreatedAt)
             .Take(AnnouncementLimit)
             .ToListAsync(ct);
 
+        // Mini App qatorida oddiy matn — formatlash teglari (qalin, kursiv …) ko'rinib qolmasin.
         return list.Select(b => new BroadcastDto(
-            b.Id, b.ClassName, b.Text, b.SenderName, b.CreatedAt.ToString("o"),
+            b.Id, b.ClassName, TelegramHtml.MarkupToPlain(b.Text), b.SenderName, b.CreatedAt.ToString("o"),
             b.RecipientCount, b.SentCount)).ToList();
     }
 
@@ -421,11 +420,13 @@ public sealed class TelegramParentController(
     /// turadi: sinf nomi, "&lt;sinf&gt; — qarzdorlar" yoki "Barcha sinflar[ — qarzdorlar]"
     /// (<c>MessagesController.SendBroadcast</c>).
     /// </summary>
-    private IQueryable<Broadcast> AnnouncementsFor(string className) =>
+    private IQueryable<Broadcast> AnnouncementsFor(string studentId, string className) =>
         db.Broadcasts.AsNoTracking().Where(b =>
-            b.ClassName == className
-            || b.ClassName.StartsWith(className + " —")
-            || b.ClassName.StartsWith("Barcha sinflar"));
+            db.BroadcastRecipients.Any(r => r.BroadcastId == b.Id && r.StudentId == studentId)
+            || (!db.BroadcastRecipients.Any(r => r.BroadcastId == b.Id)
+                && (b.ClassName == className
+                    || b.ClassName.StartsWith(className + " —")
+                    || b.ClassName.StartsWith("Barcha sinflar"))));
 
     /// <summary>Maktab yangiliklari — ota-ona auditoriyasi (sales-marketing.md §5.5).</summary>
     [HttpGet("news")]

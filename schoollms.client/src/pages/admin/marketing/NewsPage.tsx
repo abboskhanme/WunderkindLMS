@@ -51,7 +51,9 @@ import { useAuth } from '@/context/auth-context'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Loader } from '@/components/ui/Loader'
-import { Input, Textarea } from '@/components/ui/Input'
+import { Input } from '@/components/ui/Input'
+import { RichText } from '@/components/ui/RichText'
+import { RichTextField } from '@/components/ui/RichTextField'
 import { PhotoUpload } from '@/components/ui/PhotoUpload'
 import { Toast } from '@/components/ui/Toast'
 import { cn } from '@/lib/utils'
@@ -488,18 +490,19 @@ export function NewsPage() {
             />
 
             <div>
-              <Textarea
+              <RichTextField
                 label="Matn"
                 required
+                rows={8}
                 value={form.body}
                 disabled={isArchived}
-                className="h-48"
+                preview={false}
                 placeholder="25-sentabr, soat 15:00 da maktab yig'ilish zalida..."
-                onChange={(e) => setForm((p) => ({ ...p, body: e.target.value }))}
+                onChange={(body) => setForm((p) => ({ ...p, body }))}
               />
               <p className="mt-1 text-xs text-slate-400">
-                Oddiy matn: qalin harf, rang va havola yo'q. Qator tashlaganingiz
-                saqlanadi va o'quvchiga xuddi shunday ko'rinadi.
+                Matnni belgilab, tugmalar bilan formatlang: qalin, kursiv, havola va boshqalar. Qator
+                tashlaganingiz saqlanadi; o'ngdagi namunada Telegram va ilovada qanday ko'rinishi bor.
               </p>
             </div>
 
@@ -749,9 +752,7 @@ function NewsRow({ row, active, archived, busy, onEdit, onPublish, onUnpublish, 
         <StatusPill item={row} archived={archived} />
       </div>
 
-      <p className="line-clamp-2 whitespace-pre-line break-words text-sm text-slate-500">
-        {row.body}
-      </p>
+      <RichText markup={row.body} className="line-clamp-2 text-sm text-slate-500" />
 
       <div className="flex flex-wrap items-center gap-1.5">
         {sortAudience(row.audience).map((a) => (
@@ -843,7 +844,7 @@ function NewsPreview({ title, body, imageUrl, audience, when, authorName }: Prev
               {authorName ? ` · ${authorName}` : ''}
             </p>
             {body.trim() ? (
-              <p className="whitespace-pre-line break-words text-sm text-slate-700">{body}</p>
+              <RichText markup={body} className="text-sm text-slate-700" />
             ) : (
               <p className="text-sm text-slate-300">Matn yozilmagan</p>
             )}

@@ -22,6 +22,7 @@
  * wiring pass (SM-12, §7.1) — until it lands this page is unreachable, which
  * is what `MENU-PARITY.md` asks for: no half-wired menu entry.
  */
+import { RichText } from '@/components/ui/RichText'
 import { AlertTriangle, Newspaper, RefreshCw, UserRound } from 'lucide-react'
 import { api } from '@/api/client'
 import { useAsync } from '@/hooks/useAsync'
@@ -39,6 +40,8 @@ export interface PortalNewsItem {
   id: string
   title: string
   body: string
+  /** Server tozalagan formatlangan matn (Telegram HTML qismi, 2026-10-11). */
+  bodyHtml?: string
   imageUrl: string | null
   /** ISO 8601. Never null here — the feed only returns published items. */
   publishedAt: string
@@ -155,10 +158,12 @@ function NewsArticle({ item }: { item: PortalNewsItem }) {
           </span>
         )}
       </p>
-      {/* §3.3 N2 — plain text; only the line breaks are preserved. */}
-      <p className="mt-3 text-sm leading-relaxed break-words whitespace-pre-line text-slate-600">
-        {item.body}
-      </p>
+      {/* Formatted text (2026-10-11): the server's sanitized HTML; line breaks are preserved. */}
+      <RichText
+        html={item.bodyHtml}
+        markup={item.bodyHtml ? undefined : item.body}
+        className="mt-3 text-sm leading-relaxed text-slate-600"
+      />
     </Card>
   )
 }
