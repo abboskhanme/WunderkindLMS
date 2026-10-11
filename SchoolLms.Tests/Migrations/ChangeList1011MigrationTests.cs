@@ -20,6 +20,7 @@ public class ChangeList1011MigrationTests(ApiFixture fixture) : IAsyncLifetime
     private const string BeforePermission = "20261011061520_BoardingRosters";
     private const string Permission = "20261011062425_AttendanceMarkPermission";
     private const string Bells = "20261011064801_BellSchedules";
+    private const string PageGrants = "20261011130714_AttendancePageGrants";
 
     private TestDatabase _database = default!;
 
@@ -95,6 +96,33 @@ public class ChangeList1011MigrationTests(ApiFixture fixture) : IAsyncLifetime
         await MigrateToAsync(Permission);
         await using (var conn = await OpenOwnerAsync())
             Assert.True(before.SetEquals(await AllColumnsAsync(conn)), "Down() sxemani qaytarmadi");
+        await MigrateToAsync(null);
+    }
+
+    [Fact]
+    public async Task Sahifa_ruxsatlari_rol_bilan_bir_xil_bo_ladi()
+    {
+        await MigrateToAsync(Bells);
+        await using (var conn = await OpenOwnerAsync())
+        {
+            await ExecAsync(conn, "delete from access_roles where name in ('Hamshira', 'Direktor')");
+            await ExecAsync(conn, "insert into access_roles (id, name, description, permissions, created_at) values "
+                + "(gen_random_uuid(), 'Hamshira', '', array['/admin/attendance/mark|edit','/admin/attendance|edit',"
+                + "'/admin/attendance/boarding?session=evening|edit','/admin/attendance/boarding?session=dorm|edit','attendance','attendanceMark'], now()), "
+                + "(gen_random_uuid(), 'Direktor', '', array['/admin/attendance/mark|edit','/admin/attendance/boarding?session=evening|edit',"
+                + "'attendance','attendanceEvening'], now())");
+        }
+
+        await MigrateToAsync(PageGrants);
+        await using (var conn = await OpenOwnerAsync())
+        {
+            // Hamshira: belgilaydi, kechki/yotoqxona sahifalari yo'q; tartib saqlanadi.
+            Assert.Equal("/admin/attendance/mark|edit,/admin/attendance|edit,attendance,attendanceMark",
+                await PermsAsync(conn, "Hamshira"));
+            // Rahbar: kechki dars qoladi, belgilash sahifasi olinadi (attendanceMark yo'q).
+            Assert.Equal("/admin/attendance/boarding?session=evening|edit,attendance,attendanceEvening",
+                await PermsAsync(conn, "Direktor"));
+        }
         await MigrateToAsync(null);
     }
 
