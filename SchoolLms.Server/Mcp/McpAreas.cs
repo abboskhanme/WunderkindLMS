@@ -31,7 +31,7 @@ public static class McpAreas
         ["/admin/schedule", "/admin/schedule/teachers"], ["schedule"]);
 
     public static readonly McpArea AttendanceDaily = new("Kunlik davomat",
-        ["/admin/attendance", "/admin/attendance/mark"], ["attendance"]);
+        ["/admin/attendance", "/admin/attendance/mark"], ["attendance", "attendanceMark"]);
 
     public static readonly McpArea AttendanceAnalytics = new("Davomat analitikasi",
         ["/admin/attendance/analytics"], ["attendance"]);

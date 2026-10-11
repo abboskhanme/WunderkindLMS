@@ -116,7 +116,7 @@ public class DailyAbsenceNotifierTests(ApiFixture fixture) : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Yuborish_attendance_ruxsatini_talab_qiladi()
+    public async Task Yuborish_attendanceMark_ruxsatini_talab_qiladi()
     {
         using var noPerm = await fixture.Api.ClientAsAsync(Roles.Staff);
         Assert.Equal(HttpStatusCode.OK,
@@ -128,8 +128,15 @@ public class DailyAbsenceNotifierTests(ApiFixture fixture) : IAsyncLifetime
         Assert.Equal(HttpStatusCode.Forbidden,
             (await teacher.PostAsJsonAsync("/api/admin/attendance/daily/absence-notices", new { date = Monday })).StatusCode);
 
+        // Viewing attendance is not marking it (2026-10-11: "kunduzgi davomat faqat hamshirada").
+        using var director = await fixture.Api.ClientAsAsync(Roles.Staff, "attendance", "attendanceEvening", "attendanceDorm");
+        Assert.Equal(HttpStatusCode.Forbidden,
+            (await director.PostAsJsonAsync("/api/admin/attendance/daily/absence-notices", new { date = Monday })).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden,
+            (await director.PostAsJsonAsync("/api/admin/attendance/daily", new { classId = "x", date = Monday, subjectId = "x", period = 1, marks = Array.Empty<object>() })).StatusCode);
+
         // The test API has no bot token: the nurse is told so instead of a silent "0 sent".
-        using var nurse = await fixture.Api.ClientAsAsync(Roles.Staff, "attendance");
+        using var nurse = await fixture.Api.ClientAsAsync(Roles.Staff, "attendanceMark");
         var response = await nurse.PostAsJsonAsync("/api/admin/attendance/daily/absence-notices", new { date = Monday });
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         Assert.Contains("Telegram bot sozlanmagan", await response.Content.ReadAsStringAsync());
