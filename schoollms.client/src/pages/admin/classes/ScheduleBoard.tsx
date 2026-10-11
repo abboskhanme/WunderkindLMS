@@ -1,14 +1,14 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { AlertTriangle, Plus } from 'lucide-react'
 import type { ScheduleLesson, ScheduleTemplate, SchoolSettings, Subject, Teacher } from '@/types'
 import { getSubjects } from '@/api/services/subjects'
 import { getTeachers } from '@/api/services/teachers'
 import { getSettings } from '@/api/services/settings'
 import {
-  setTemplateCell,
-  clearTemplateSlot,
   getOccupiedSlots,
   getPupilOverlay,
+  setLiveTemplateCells,
+  type CellChange,
   type OccupiedSlot,
   type PupilOverlaySlot,
 } from '@/api/services/scheduleTemplates'
@@ -25,6 +25,11 @@ interface Props {
   /** Eganing id'si — sinf id'si yoki o'quv guruhi id'si (§2.1.4) */
   classId: string
   template: ScheduleTemplate
+  /**
+   * Faol jadval tahrirlanganda server shablonning NUSXASINI olgan bo'lsa (o'tgan haftalar eski
+   * versiyada qoldi, 2026-10-11) — keyingi saqlashlar shu nusxaga boradi.
+   */
+  onTemplateReplaced?: (template: ScheduleTemplate) => void
 }
 
 /** O'qituvchi → band soatlar xaritasi. teacherId → [{day, period, className, templateName, ownerKind}] */
@@ -54,7 +59,7 @@ function tint(hex: string, alpha: number): string | undefined {
    esa YO'Q — bo'sh katak aynan "yangi dars qo'shish" tugmasi. Sozlamada 6
    ta dars vaqti turgan bo'lsa ham, 7-darsni shu yerdan qo'yib bo'ladi.
    ========================================================================== */
-export function ScheduleBoard({ classId, template }: Props) {
+export function ScheduleBoard({ classId, template, onTemplateReplaced }: Props) {
   const ownerKind = template.ownerKind ?? 'class'
   const [subjects, setSubjects] = useState<Subject[]>([])
   const [teachers, setTeachers] = useState<Teacher[]>([])
@@ -96,11 +101,42 @@ export function ScheduleBoard({ classId, template }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- template.id mount vaqtida qat'iy
   }, [])
 
+  /**
+   * Saqlashlar navbat bilan ketadi va har biri shablonning ENG SO'NGGI id'sini oladi: faol jadvalda
+   * birinchi saqlash nusxa yaratishi mumkin, keyingisi eski (endi o'tgan haftalardagi) id'ga
+   * borsa rad etilardi.
+   */
+  const templateId = useRef(template.id)
+  const queue = useRef<Promise<void>>(Promise.resolve())
+  /** O'zimiz yaratgan nusxa kelganda ekrandagi (optimistik) darslar qayta yozilmaydi. */
+  const ownCopy = useRef<string | null>(null)
+
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- shablon o'zgarganda darslar nusxasini state'ga olamiz (maqsadli)
+    templateId.current = template.id
+    if (ownCopy.current === template.id) return
     setLessons(template.lessons)
     setSelected(null)
   }, [template.id, template.lessons])
+
+  const persist = (cells: CellChange[], revert: () => void, fallback: string) => {
+    queue.current = queue.current.then(async () => {
+      try {
+        const r = await setLiveTemplateCells(classId, templateId.current, cells)
+        if (r.template.id !== templateId.current) {
+          templateId.current = r.template.id
+          ownCopy.current = r.template.id
+          onTemplateReplaced?.(r.template)
+          setToast(`Saqlandi — o'tgan haftalar "${r.archivedName ?? 'eski versiya'}" bo'yicha qoldi`)
+        }
+      } catch (e) {
+        // Rad etildi — ekrandagi optimistik holatni QAYTARAMIZ, aks holda
+        // foydalanuvchi saqlanmagan darsni saqlangan deb o'ylardi.
+        revert()
+        setToast(null)
+        setSaveError(message(e, fallback))
+      }
+    })
+  }
 
   /** Dars raqami -> qo'ng'iroq vaqti: shu eganing alohida jadvali yoki asosiy (2026-10-11). */
   const periodTimes = useMemo(() => periodTimeMapFor(settings, classId), [settings, classId])
@@ -137,13 +173,7 @@ export function ScheduleBoard({ classId, template }: Props) {
     // Oyna yopiladi — mijoz aynan shuni so'radi: tanlandi, qo'yildi, ketdi.
     setSelected(null)
     setToast(`${weekDays[day]} · ${period}-dars saqlandi`)
-    setTemplateCell(classId, template.id, day, period, next).catch((e) => {
-      // Rad etildi — ekrandagi optimistik holatni QAYTARAMIZ, aks holda
-      // foydalanuvchi saqlanmagan darsni saqlangan deb o'ylardi.
-      setLessons(before)
-      setToast(null)
-      setSaveError(message(e, "Darsni saqlab bo'lmadi"))
-    })
+    persist([{ day, period, lessons: next }], () => setLessons(before), "Darsni saqlab bo'lmadi")
   }
 
   const handleClear = (day: number, period: number) => {
@@ -152,11 +182,7 @@ export function ScheduleBoard({ classId, template }: Props) {
     setLessons((prev) => prev.filter((l) => !(l.day === day && l.period === period)))
     setSelected(null)
     setToast(`${weekDays[day]} · ${period}-dars tozalandi`)
-    clearTemplateSlot(classId, template.id, day, period).catch((e) => {
-      setLessons(before)
-      setToast(null)
-      setSaveError(message(e, "Darsni o'chirib bo'lmadi"))
-    })
+    persist([{ day, period, lessons: [] }], () => setLessons(before), "Darsni o'chirib bo'lmadi")
   }
 
   const timeLabel = (period: number) => {

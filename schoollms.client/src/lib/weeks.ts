@@ -40,7 +40,10 @@ export function getCurrentQuarterAndWeek(
   )
   if (active?.startDate && active.endDate) {
     const wks = getQuarterWeeks(active.startDate, active.endDate)
-    const w = wks.find((x) => x.startISO <= today && today <= x.endISO)
+    // Haftalar Du–Sha: YAKSHANBA hech qaysi oraliqqa kirmaydi va o'zidan oldingi dushanbadan
+    // boshlangan haftaga tegishli (server `PortalSchedule.WeekOf` bilan bir xil, 2026-10-11).
+    // Ilgari bu holatda 1-hafta qaytardi — yakshanba kuni "Nashr qilish" butun chorakni qayta yozardi.
+    const w = [...wks].reverse().find((x) => x.startISO <= today)
     return { quarter: active.quarter, week: w?.week ?? wks[0]?.week ?? 1 }
   }
 

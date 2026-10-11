@@ -49,7 +49,16 @@ export function TemplateEditorPage() {
       {loading ? (
         <Loader label="Yuklanmoqda..." />
       ) : template ? (
-        <ScheduleBoard classId={id} template={template} />
+        <ScheduleBoard
+          classId={id}
+          template={template}
+          onTemplateReplaced={(t) => {
+            // Faol jadvalning nusxasi olindi: sarlavha va manzil yangi versiyaga o'tadi. Sahifa qayta
+            // yuklanmaydi (useParams o'zgarmaydi) — ekrandagi darslar saqlanib qoladi.
+            setTemplate((prev) => (prev ? { ...prev, id: t.id, name: t.name } : t))
+            window.history.replaceState(window.history.state, '', `/admin/schedule/manage/${id}/template/${t.id}`)
+          }}
+        />
       ) : (
         <p className="py-12 text-center text-slate-400">Jadval topilmadi</p>
       )}

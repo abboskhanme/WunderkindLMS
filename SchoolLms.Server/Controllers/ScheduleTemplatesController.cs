@@ -170,21 +170,7 @@ public class ScheduleTemplatesController(AppDbContext db) : ControllerBase
         if (tpl is null) return NotFound();
 
         var lessons = req.Lessons ?? new();
-        if (lessons.Any(l => l.Day != req.Day || l.Period != req.Period))
-            return BadRequest(new { message = "Day/Period darslarda mos kelmaydi" });
-        if (lessons.Any(l => l.SubGroup is < 0 or > 2))
-            return BadRequest(new { message = "SubGroup 0, 1 yoki 2 bo'lishi kerak" });
-        if (lessons.Count > 1 && lessons.Any(l => l.SubGroup == 0))
-            return BadRequest(new { message = "SubGroup=0 (butun sinf) bilan boshqa guruh birga bo'lmaydi" });
-        if (lessons.GroupBy(l => l.SubGroup).Any(g => g.Count() > 1))
-            return BadRequest(new { message = "Bitta guruhda bir nechta dars bo'lishi mumkin emas" });
-        // Guruh darsida sinf ichidagi bo'linish yo'q — guruhning o'zi tanlangan bolalar to'plami.
-        if (owner.IsGroup && lessons.Any(l => l.SubGroup != 0))
-            return BadRequest(new
-            {
-                message = "Guruh darsida sinf ichidagi 1/2-guruhga bo'linish bo'lmaydi — "
-                          + "guruhning o'zi allaqachon tanlangan o'quvchilar ro'yxati.",
-            });
+        if (CellError(owner, req) is { } invalid) return BadRequest(new { message = invalid });
 
         if (lessons.Count > 0)
         {
@@ -209,6 +195,83 @@ public class ScheduleTemplatesController(AppDbContext db) : ControllerBase
         }
         await db.SaveChangesAsync(ct);
         return NoContent();
+    }
+
+    /// <summary>
+    /// FAOL jadval katagi (umumiy jadval muharriri, 2026-10-11): <see cref="SetCell"/> bilan bir xil
+    /// tekshiruvlar, lekin o'tgan haftalar tarixi saqlanadi — shablon o'tgan haftalarda ham ishlatilgan
+    /// bo'lsa, o'zgarish joriy haftadan boshlanadigan NUSXAga yoziladi (<see cref="LiveScheduleEdit"/>).
+    /// Qoralama (haftaga biriktirilmagan shablon) oddiygina joyida o'zgaradi.
+    /// </summary>
+    [HttpPut("{templateId}/live-cell")]
+    public Task<ActionResult<LiveCellResultDto>> SetLiveCell(
+        string classId, string templateId, SetCellRequest req, CancellationToken ct = default) =>
+        SetLiveCells(classId, templateId, new LiveCellsRequest([req]), ct);
+
+    /// <summary>
+    /// Bir nechta faol katak bitta tranzaksiyada (umumiy jadvalda darsni sudrab boshqa soatga
+    /// o'tkazish yoki ikki darsning o'rnini almashtirish): hammasi saqlanadi yoki hech biri.
+    /// </summary>
+    [HttpPut("{templateId}/live-cells")]
+    public async Task<ActionResult<LiveCellResultDto>> SetLiveCells(
+        string classId, string templateId, LiveCellsRequest req, CancellationToken ct = default)
+    {
+        var owner = await OwnerAsync(classId, ct);
+        if (owner is null) return NotFound();
+        var tpl = await FindAsync(classId, templateId, ct);
+        if (tpl is null) return NotFound();
+        var cells = req.Cells ?? [];
+        if (cells.Count == 0) return BadRequest(new { message = "Katak berilmadi" });
+        if (cells.GroupBy(c => (c.Day, c.Period)).Any(g => g.Count() > 1))
+            return BadRequest(new { message = "Bitta katak ikki marta berildi" });
+        foreach (var cell in cells)
+            if (CellError(owner, cell) is { } invalid) return BadRequest(new { message = invalid });
+
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        var target = await LiveScheduleEdit.PrepareAsync(db, tpl, ct);
+        if (target.Error is not null) return Conflict(new { message = target.Error });
+        var edited = target.Template!;
+        await db.SaveChangesAsync(ct);
+
+        var all = cells.SelectMany(c => c.Lessons ?? []).Select(l => (l.Day, l.Period, l.SubGroup)).ToList();
+        if (all.Count > 0)
+        {
+            var clash = await ScheduleConflicts.ForTemplateAsync(db, owner, edited.Id, all, ct);
+            if (clash.Count > 0) return Conflict(new { message = ScheduleConflicts.Message(clash) });
+        }
+
+        foreach (var cell in cells)
+        {
+            db.RemoveRange(edited.Lessons.Where(l => l.Day == cell.Day && l.Period == cell.Period).ToList());
+            foreach (var l in cell.Lessons ?? [])
+                edited.Lessons.Add(new ScheduleLesson
+                {
+                    TemplateId = edited.Id, Day = l.Day, Period = l.Period,
+                    SubjectId = l.SubjectId, TeacherId = l.TeacherId, SubGroup = l.SubGroup,
+                });
+        }
+        await db.SaveChangesAsync(ct);
+        await tx.CommitAsync(ct);
+        return new LiveCellResultDto(ToDto(edited), target.Archived?.Id, target.Archived?.Name);
+    }
+
+    /// <summary>Katak so'rovining tuzilish xatosi (yoki null) — <see cref="SetCell"/> va <see cref="SetLiveCell"/> uchun.</summary>
+    private static string? CellError(LessonOwner owner, SetCellRequest req)
+    {
+        var lessons = req.Lessons ?? new();
+        if (lessons.Any(l => l.Day != req.Day || l.Period != req.Period))
+            return "Day/Period darslarda mos kelmaydi";
+        if (lessons.Any(l => l.SubGroup is < 0 or > 2))
+            return "SubGroup 0, 1 yoki 2 bo'lishi kerak";
+        if (lessons.Count > 1 && lessons.Any(l => l.SubGroup == 0))
+            return "SubGroup=0 (butun sinf) bilan boshqa guruh birga bo'lmaydi";
+        if (lessons.GroupBy(l => l.SubGroup).Any(g => g.Count() > 1))
+            return "Bitta guruhda bir nechta dars bo'lishi mumkin emas";
+        // Guruh darsida sinf ichidagi bo'linish yo'q — guruhning o'zi tanlangan bolalar to'plami.
+        if (owner.IsGroup && lessons.Any(l => l.SubGroup != 0))
+            return "Guruh darsida sinf ichidagi 1/2-guruhga bo'linish bo'lmaydi — "
+                   + "guruhning o'zi allaqachon tanlangan o'quvchilar ro'yxati.";
+        return null;
     }
 
     private Task<ScheduleTemplate?> FindAsync(string classId, string templateId, CancellationToken ct) =>

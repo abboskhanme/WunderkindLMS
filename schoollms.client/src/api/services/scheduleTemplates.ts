@@ -174,3 +174,49 @@ export async function setTemplateCell(
     { day, period, lessons },
   )
 }
+
+/* ---------- Faol jadvalga o'zgartirish (2026-10-11) ---------- */
+
+/** Bitta katakning yangi holati: bo'sh ro'yxat — katak tozalanadi. */
+export interface CellChange {
+  day: number
+  period: number
+  lessons: ScheduleLesson[]
+}
+
+/**
+ * Faol jadval kataklarini saqlash natijasi: o'zgarish yozilgan shablon (o'zi yoki yangi nusxasi) va,
+ * nusxa olingan bo'lsa, o'tgan haftalarda qolgan eski shablon ("… · dd.MM.yyyy gacha").
+ */
+export interface LiveCellResult {
+  template: ScheduleTemplate
+  archivedId: string | null
+  archivedName: string | null
+}
+
+/**
+ * Kataklarni (bir yoki bir nechtasini birga) FAOL jadvalda saqlaydi — o'tgan haftalar eski jadval
+ * bo'yicha qoladi, o'zgarish joriy haftadan kuchga kiradi. Qoralamada oddiy saqlash bilan bir xil.
+ */
+export async function setLiveTemplateCells(
+  classId: string,
+  templateId: string,
+  cells: CellChange[],
+): Promise<LiveCellResult> {
+  if (USE_MOCK) {
+    await delay(120)
+    const tpl = templatesMock[classId]?.find((t) => t.id === templateId)
+    if (!tpl) throw new Error('Shablon topilmadi')
+    for (const c of cells)
+      tpl.lessons = [...tpl.lessons.filter((l) => !(l.day === c.day && l.period === c.period)), ...c.lessons]
+    return { template: { ...tpl, lessons: [...tpl.lessons] }, archivedId: null, archivedName: null }
+  }
+  const { data } = await api.put<LiveCellResult>(
+    `/admin/classes/${classId}/schedule-templates/${templateId}/live-cells`,
+    { cells },
+  )
+  return data
+}
+
+/** Avtomatik saqlangan eski versiya nomi ("Asosiy · 10.10.2026 gacha") — ro'yxatda alohida turadi. */
+export const isArchivedTemplateName = (name: string) => /· \d{2}\.\d{2}\.\d{4} gacha$/.test(name)

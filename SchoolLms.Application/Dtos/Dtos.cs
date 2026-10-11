@@ -373,6 +373,13 @@ public record RenameTemplateRequest(string Name);
 /// butun sinf (1 ta lesson, SubGroup=0) yoki bo'lingan (2 ta lesson, SubGroup=1/2).
 /// </summary>
 public record SetCellRequest(int Day, int Period, List<ScheduleLessonDto> Lessons);
+/// <summary>
+/// Faol jadval katagi saqlangandan keyin (<c>LiveScheduleEdit</c>, 2026-10-11): o'zgarish yozilgan
+/// shablon; nusxa olingan bo'lsa — o'tgan haftalarda qolgan eski shablonning id'si va yangi nomi.
+/// </summary>
+public record LiveCellResultDto(ScheduleTemplateDto Template, string? ArchivedId, string? ArchivedName);
+/// <summary>Bir nechta katak birga (masalan ikki darsning o'rnini almashtirish) — hammasi yoki hech biri.</summary>
+public record LiveCellsRequest(List<SetCellRequest> Cells);
 
 /* ---------- Sinf guruhlari ---------- */
 public record GroupAssignmentDto(string StudentId, int SubGroup);

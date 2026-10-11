@@ -55,6 +55,8 @@ public class ScheduleUtilsController(AppDbContext db) : ControllerBase
 
         var owners = await LessonRoster.LiveOwnersAsync(db);
         var bells = await BellTimes.LoadAsync(db);
+        // Eski versiyalar (faqat o'tgan haftalarda, 2026-10-11) o'qituvchini hozir band qilmaydi.
+        var pastOnly = await LiveScheduleEdit.PastOnlyTemplateIdsAsync(db);
 
         var result = new Dictionary<string, List<OccupiedSlotDto>>(StringComparer.Ordinal);
 
@@ -63,6 +65,7 @@ public class ScheduleUtilsController(AppDbContext db) : ControllerBase
             // Egasi mavjud bo'lmagan (eski o'quv yilidan/o'chirilgan sinf yoki
             // arxivlangan guruh) "yetim" shablon — ziddiyat tekshiruviga qo'shilmaydi.
             if (!owners.TryGetValue(tpl.ClassId, out var owner) || owner.Kind != tpl.OwnerKind) continue;
+            if (pastOnly.Contains(tpl.Id)) continue;
             var className = owner.Name;
 
             // (teacherId, day, period) bo'yicha guruhlash — bir soatda ikkala guruh bo'lsa bitta yozuv.

@@ -13,7 +13,12 @@
  *
  * QORALAMA → NASHR (mijoz, 2026-09-23: "yangi jadval yaratiladi, lekin sinflarga qo'shilmaydi;
  * bitta tugma — nashr qilish; tasdiqlangandan keyin jadval doimiy/faol bo'ladi"):
- *  - FAOL jadval (joriy haftada amal qilayotgani) bu yerda faqat ko'rinadi, tahrirlanmaydi;
+ *  - FAOL jadval (joriy haftada amal qilayotgani) ham shu yerda tahrirlanadi (2026-10-11, mijoz:
+ *    "muharrir noqulay" — ilgari bitta darsni almashtirish uchun butun jadvalni nusxalab qayta nashr
+ *    qilish kerak edi). O'zgarish joriy haftadan kuchga kiradi; shablon o'tgan haftalarda ham
+ *    ishlatilgan bo'lsa server uning nusxasini oladi va o'tgan haftalar eski versiyada qoladi
+ *    (`LiveScheduleEdit`). Darsni sudrab shu qatordagi boshqa soatga o'tkazish yoki ikki darsning
+ *    o'rnini almashtirish mumkin;
  *  - "Yangi jadval" — qoralama (bo'sh yoki faolning nusxasi). Sinflarga ta'sir qilmaydi, chunki
  *    haftaga biriktirilmagan shablon hech qayerda ishlatilmaydi;
  *  - "Nashr qilish" — qoralama JORIY haftadan o'quv yili oxirigacha hamma sinfda qo'yiladi.
@@ -32,11 +37,13 @@ import { getSubjects } from '@/api/services/subjects'
 import { getTeachers } from '@/api/services/teachers'
 import { getSettings } from '@/api/services/settings'
 import {
-  clearTemplateSlot,
   createTemplate,
   getOccupiedSlots,
   getTemplates,
-  setTemplateCell,
+  isArchivedTemplateName,
+  setLiveTemplateCells,
+  type CellChange,
+  type LiveCellResult,
 } from '@/api/services/scheduleTemplates'
 import { getWeekAssignments, saveWeekAssignments } from '@/api/services/weekAssignments'
 import { weekDays, schedulePeriods } from '@/config/constants'
@@ -83,6 +90,10 @@ export function MasterScheduleGrid() {
   const [name, setName] = useState('')
   const [day, setDay] = useState(0)
   const [editing, setEditing] = useState<{ cls: OwnerRow; slot: SlotTarget } | null>(null)
+  /** Sudralayotgan dars katagi va ustidan o'tilayotgan katak (faqat shu sinf qatorida). */
+  const [drag, setDrag] = useState<{ classId: string; period: number } | null>(null)
+  const [dropAt, setDropAt] = useState<number | null>(null)
+  const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [toast, setToast] = useState<string | null>(null)
   const closeToast = useCallback(() => setToast(null), [])
@@ -132,13 +143,15 @@ export function MasterScheduleGrid() {
       .finally(() => setLoading(false))
   }, [])
 
-  /** Hamma sinflardagi shablon nomlari (+ hozir yaratilayotgani). */
+  /** Hamma sinflardagi shablon nomlari (+ hozir yaratilayotgani); eski versiyalar alohida. */
   const names = useMemo(() => {
     const set = new Set<string>()
     Object.values(templates).forEach((l) => l.forEach((t) => set.add(t.name)))
     if (name) set.add(name)
     return [...set].sort((a, b) => a.localeCompare(b, 'uz'))
   }, [templates, name])
+  const currentNames = names.filter((n) => !isArchivedTemplateName(n))
+  const archivedNames = names.filter(isArchivedTemplateName)
 
   const templateOf = (classId: string) => templates[classId]?.find((t) => t.name === name) ?? null
   const lessonsAt = (classId: string, period: number) =>
@@ -233,42 +246,73 @@ export function MasterScheduleGrid() {
 
   const refreshOccupied = () => getOccupiedSlots('').then(setOccupied).catch(() => undefined)
 
+  /**
+   * Server javobini joyiga qo'yadi: o'zgargan shablon (yoki uning yangi nusxasi) va, nusxa olingan
+   * bo'lsa, o'tgan haftalarda qolgan eski shablonning yangi nomi. Faol belgisi nusxaga o'tadi.
+   */
+  const applyLive = (classId: string, r: LiveCellResult) => {
+    setTemplates((prev) => {
+      const rest = (prev[classId] ?? [])
+        .filter((t) => t.id !== r.template.id)
+        .map((t) => (t.id === r.archivedId && r.archivedName ? { ...t, name: r.archivedName } : t))
+      return { ...prev, [classId]: [...rest, r.template] }
+    })
+    if (r.archivedId)
+      setActiveNow((prev) => (prev[classId] === r.archivedId ? { ...prev, [classId]: r.template.id } : prev))
+  }
+
+  /** Kataklarni saqlash — faol jadvalda ham, qoralamada ham bitta yo'l (server farqlaydi). */
+  const saveCells = async (cls: OwnerRow, cells: CellChange[], done: string) => {
+    setError(null)
+    setSaving(true)
+    try {
+      // Sinfda shu nomdagi shablon yo'q bo'lsa — birinchi katakda yaratiladi.
+      const tpl = templateOf(cls.id) ?? (await createTemplate(cls.id, name))
+      const r = await setLiveTemplateCells(cls.id, tpl.id, cells)
+      applyLive(cls.id, r)
+      setToast(r.archivedId ? `${done} — o'tgan haftalar avvalgi jadval bo'yicha qoldi` : done)
+      void refreshOccupied()
+    } catch (e) {
+      setError(errText(e, "Darsni saqlab bo'lmadi"))
+    } finally {
+      setSaving(false)
+    }
+  }
+
   const handleSave = async (d: number, period: number, next: ScheduleLesson[]) => {
     if (!editing) return
     const cls = editing.cls
     setEditing(null)
-    setError(null)
-    try {
-      // Sinfda shu nomdagi shablon yo'q bo'lsa — birinchi katakda yaratiladi.
-      let tpl = templateOf(cls.id)
-      if (!tpl) tpl = await createTemplate(cls.id, name)
-      await setTemplateCell(cls.id, tpl.id, d, period, next)
-      replaceLocal(cls.id, {
-        ...tpl,
-        lessons: [...tpl.lessons.filter((l) => !(l.day === d && l.period === period)), ...next],
-      })
-      setToast(`${cls.name} · ${weekDays[d]} · ${period}-soat saqlandi`)
-      void refreshOccupied()
-    } catch (e) {
-      setError(errText(e, "Darsni saqlab bo'lmadi"))
-    }
+    await saveCells(cls, [{ day: d, period, lessons: next }], `${cls.name} · ${weekDays[d]} · ${period}-soat saqlandi`)
   }
 
   const handleClear = async (d: number, period: number) => {
     if (!editing) return
     const cls = editing.cls
-    const tpl = templateOf(cls.id)
     setEditing(null)
-    if (!tpl) return
-    setError(null)
-    try {
-      await clearTemplateSlot(cls.id, tpl.id, d, period)
-      replaceLocal(cls.id, { ...tpl, lessons: tpl.lessons.filter((l) => !(l.day === d && l.period === period)) })
-      setToast(`${cls.name} · ${weekDays[d]} · ${period}-soat tozalandi`)
-      void refreshOccupied()
-    } catch (e) {
-      setError(errText(e, "Darsni o'chirib bo'lmadi"))
-    }
+    if (!templateOf(cls.id)) return
+    await saveCells(cls, [{ day: d, period, lessons: [] }], `${cls.name} · ${weekDays[d]} · ${period}-soat tozalandi`)
+  }
+
+  /**
+   * Sudrab tashlash: dars shu qatordagi boshqa soatga o'tadi; u yerda dars bo'lsa — o'rinlari
+   * almashadi. Ikkala katak bitta so'rovda saqlanadi (hammasi yoki hech biri).
+   */
+  const handleDrop = async (cls: OwnerRow, from: number, to: number) => {
+    setDrag(null)
+    setDropAt(null)
+    if (from === to) return
+    const at = (p: number, target: number) => lessonsAt(cls.id, p).map((l) => ({ ...l, day, period: target }))
+    await saveCells(
+      cls,
+      [
+        { day, period: to, lessons: at(from, to) },
+        { day, period: from, lessons: at(to, from) },
+      ],
+      lessonsAt(cls.id, to).length > 0
+        ? `${cls.name} · ${weekDays[day]}: ${from}- va ${to}-soat o'rin almashdi`
+        : `${cls.name} · ${weekDays[day]}: ${from}-soatdagi dars ${to}-soatga o'tdi`,
+    )
   }
 
   /**
@@ -292,11 +336,16 @@ export function MasterScheduleGrid() {
               const k = `${l.day}|${l.period}`
               cells.set(k, [...(cells.get(k) ?? []), { ...l }])
             }
-            for (const [k, lessons] of cells) {
-              const [d, p] = k.split('|').map(Number)
-              await setTemplateCell(c.id, tpl.id, d, p, lessons)
-            }
-            replaceLocal(c.id, { ...tpl, lessons: [...cells.values()].flat() })
+            // Sinfning hamma kataklari bitta so'rovda (ilgari har katakka alohida so'rov ketardi).
+            const r = await setLiveTemplateCells(
+              c.id,
+              tpl.id,
+              [...cells.entries()].map(([k, lessons]) => {
+                const [d, p] = k.split('|').map(Number)
+                return { day: d, period: p, lessons }
+              }),
+            )
+            replaceLocal(c.id, r.template)
           }),
         )
       }
@@ -367,8 +416,10 @@ export function MasterScheduleGrid() {
     return t && activeNow[c.id] === t.id
   }).length
   const isActive = withTemplate > 0 && activeCount === withTemplate
-  /** Faol jadval (qisman bo'lsa ham) bu yerda tahrirlanmaydi — o'zgarish darhol darslarga tushardi. */
-  const locked = activeCount > 0
+  /** Faol jadval (qisman bo'lsa ham): o'zgarish joriy haftadan darhol kuchga kiradi. */
+  const live = activeCount > 0
+  /** Eski versiya ("… gacha") faqat o'tgan haftalarda — tarix, o'zgartirilmaydi. */
+  const readOnly = isArchivedTemplateName(name)
   const pickable = subjects.filter((s) => s.isActive !== false)
 
   return (
@@ -379,14 +430,23 @@ export function MasterScheduleGrid() {
           <select
             value={name}
             onChange={(e) => setName(e.target.value)}
-            className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 outline-none focus:border-brand-400"
+            className="h-10 max-w-[18rem] truncate rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 outline-none focus:border-brand-400"
             aria-label="Jadval"
           >
-            {names.map((n) => (
+            {currentNames.map((n) => (
               <option key={n} value={n}>
                 {n}
               </option>
             ))}
+            {archivedNames.length > 0 && (
+              <optgroup label="Eski versiyalar (o'tgan haftalar)">
+                {archivedNames.map((n) => (
+                  <option key={n} value={n}>
+                    {n}
+                  </option>
+                ))}
+              </optgroup>
+            )}
           </select>
           <Button variant="secondary" onClick={() => { setNewName(''); setNewOpen(true) }}>
             <Plus className="h-4 w-4" /> Yangi jadval
@@ -401,7 +461,7 @@ export function MasterScheduleGrid() {
                     ? 'bg-amber-50 text-amber-700'
                     : 'bg-slate-100 text-slate-500',
               )}
-              title={locked ? "Hozir amal qilayotgan jadval" : "Nashr qilinmagan — sinflarga ta'sir qilmaydi"}
+              title={live ? "Hozir amal qilayotgan jadval" : "Nashr qilinmagan — sinflarga ta'sir qilmaydi"}
             >
               {isActive ? 'Faol' : activeCount > 0 ? `Qisman faol · ${activeCount}/${withTemplate}` : 'Qoralama'}
             </span>
@@ -410,7 +470,7 @@ export function MasterScheduleGrid() {
             {withTemplate} / {classes.length} sinfda bor
           </span>
         </div>
-        {!locked && (
+        {!live && !readOnly && (
           <Button onClick={() => setAssignOpen(true)} disabled={withTemplate === 0}>
             <CalendarRange className="h-4 w-4" /> Nashr qilish
           </Button>
@@ -440,11 +500,17 @@ export function MasterScheduleGrid() {
         </div>
       )}
 
-      {locked ? (
+      {readOnly ? (
+        <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+          <b>Eski versiya.</b> Bu jadval faqat o'tgan haftalarda amal qilgan — jurnal, davomat va maosh
+          tarixi shunga tayanadi, shuning uchun u o'zgartirilmaydi.
+        </div>
+      ) : live ? (
         <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
-          Bu — <b>faol jadval</b>, hozir sinflarda amal qilyapti va bu yerda o'zgartirilmaydi.
-          O'zgartirish uchun <b>"Yangi jadval"</b> yarating (faol jadvaldan nusxa olish mumkin),
-          tahrirlang va tayyor bo'lgach <b>"Nashr qilish"</b>ni bosing.
+          Bu — <b>faol jadval</b>. Katakni bosib darsni o'zgartiring yoki darsni sudrab boshqa soatga
+          o'tkazing — o'zgarish <b>joriy haftadan</b> kuchga kiradi, o'tgan haftalar (jurnal, davomat,
+          maosh) avvalgi jadval bo'yicha qoladi. Katta o'zgarishni oldindan tayyorlash uchun{' '}
+          <b>"Yangi jadval"</b> (qoralama) yarating.
         </div>
       ) : (
         withTemplate > 0 || name ? (
@@ -500,29 +566,59 @@ export function MasterScheduleGrid() {
                     const lessons = lessonsAt(c.id, p)
                     const clash = lessons.some((l) => l.teacherId && clashes.has(`${c.id}|${p}|${l.teacherId}`))
                     const ownTime = ownerTimeLabel(c.id, p)
+                    const dropTarget = drag?.classId === c.id && dropAt === p && drag.period !== p
                     return (
-                      <td key={p} className="border-b border-l border-slate-100 p-1">
+                      <td
+                        key={p}
+                        className="border-b border-l border-slate-100 p-1"
+                        onDragOver={(e) => {
+                          if (drag?.classId !== c.id) return
+                          e.preventDefault()
+                          e.dataTransfer.dropEffect = 'move'
+                          if (dropAt !== p) setDropAt(p)
+                        }}
+                        onDrop={(e) => {
+                          if (drag?.classId !== c.id) return
+                          e.preventDefault()
+                          void handleDrop(c, drag.period, p)
+                        }}
+                      >
                         <button
                           type="button"
-                          disabled={locked}
+                          disabled={readOnly || saving}
+                          draggable={!readOnly && !saving && lessons.length > 0}
+                          onDragStart={(e) => {
+                            e.dataTransfer.effectAllowed = 'move'
+                            e.dataTransfer.setData('text/plain', `${c.id}|${p}`)
+                            setDrag({ classId: c.id, period: p })
+                          }}
+                          onDragEnd={() => {
+                            setDrag(null)
+                            setDropAt(null)
+                          }}
                           onClick={() => setEditing({ cls: c, slot: { day, period: p, lessons } })}
                           title={
                             clash
                               ? "O'qituvchi shu vaqtda boshqa sinfda ham bor"
-                              : `${c.name} · ${p}-soat${ownTime ? ` · ${ownTime}` : ''}`
+                              : `${c.name} · ${p}-soat${ownTime ? ` · ${ownTime}` : ''}${
+                                  lessons.length > 0 && !readOnly ? ' — bosing yoki sudrab boshqa soatga o\u2018tkazing' : ''
+                                }`
                           }
                           className={cn(
                             'flex h-14 w-full flex-col items-stretch justify-center gap-0.5 rounded-lg px-2 text-left transition-colors',
-                            locked
-                              ? 'cursor-default text-slate-200'
+                            readOnly
+                              ? 'cursor-default'
                               : lessons.length === 0
                                 ? 'text-slate-300 hover:bg-brand-50/60'
-                                : 'hover:brightness-95',
+                                : 'cursor-grab hover:brightness-95 active:cursor-grabbing',
+                            readOnly && lessons.length === 0 && 'text-slate-200',
                             clash && 'ring-2 ring-red-400',
+                            drag?.classId === c.id && drag.period === p && 'opacity-40',
+                            dropTarget && 'bg-brand-50 ring-2 ring-brand-400',
                           )}
                         >
                           {lessons.length === 0 ? (
-                            <span className="text-center text-lg leading-none">{locked ? '' : '+'}</span>
+                            <span className="text-center text-lg leading-none">{readOnly ? '' : '+'}</span>
                           ) : (
                             [...lessons]
                               .sort((a, b) => (a.subGroup ?? 0) - (b.subGroup ?? 0))
