@@ -27,10 +27,8 @@ namespace SchoolLms.Server.Controllers;
 //    · bosh sahifa jamlamasi (bitta chaqiruv — telefon tarmog'ida muhim);
 //    · YO'QLAMA RO'YXATI: o'quvchilar + shu darsning joriy jurnal holati +
 //      sabablar ro'yxati BITTA javobda (ilgari uchta chaqiruv edi);
-//    · so'nggi jurnal yozuvlari (hech qayerda yo'q edi);
-//    · o'qilmagan chat xabarlari SONI — buning uchun `chat_reads` jadvali
-//      qo'shildi: ilgari faqat "oxirgi xabar vaqti" bor edi va sonini
-//      frontend taxmin qilardi.
+//    · so'nggi jurnal yozuvlari (hech qayerda yo'q edi).
+//  (O'qilmagan chat xabarlari soni 2026-10-11 da olib tashlandi — guruh chati faqat admin panelida.)
 // ===========================================================================
 
 /// <summary>Telegram Mini App'ning o'qituvchi yuzasi (`/api/tg/teacher`).</summary>
@@ -38,7 +36,7 @@ namespace SchoolLms.Server.Controllers;
 [Authorize(Roles = Roles.Teacher)]
 [Route("api/tg/teacher")]
 public sealed class TelegramTeacherController(
-    AppDbContext db, ChatService chat) : ControllerBase
+    AppDbContext db) : ControllerBase
 {
     /// <summary>So'nggi jurnal yozuvlari ro'yxatining sukut bo'yicha uzunligi.</summary>
     private const int RecentDefault = 30;
@@ -87,11 +85,8 @@ public sealed class TelegramTeacherController(
                     .OrderByDescending(p => p.CreatedAt).Take(50).ToListAsync(ct))
                 .Select(PickupService.ToDto).ToList();
 
-        var unread = t.Permissions.Contains(TeacherPermissions.Messages)
-            ? (await UnreadAsync(ct)).Sum(x => x.Unread)
-            : 0;
-
-        return new TgTeacherTodayDto(today, quarter, week, lessons, pickups, unread);
+        // Guruh chati o'qituvchidan olib tashlandi (2026-10-11) — maydon eski ilova versiyalari uchun 0.
+        return new TgTeacherTodayDto(today, quarter, week, lessons, pickups, 0);
     }
 
     // =====================================================================
@@ -248,77 +243,9 @@ public sealed class TelegramTeacherController(
     }
 
     // =====================================================================
-    //  Chat: o'qilmaganlar
-    // =====================================================================
-
-    /// <summary>Har kanal bo'yicha o'qilmagan xabarlar soni (o'zi yozgani sanalmaydi).</summary>
-    [HttpGet("chat/unread")]
-    public async Task<ActionResult<IEnumerable<TgChatUnreadDto>>> ChatUnread(CancellationToken ct)
-    {
-        var t = await MeAsync(ct);
-        if (t is null) return NotFound(new { message = "O'qituvchi topilmadi" });
-        if (!t.Permissions.Contains(TeacherPermissions.Messages)) return Forbid();
-
-        return await UnreadAsync(ct);
-    }
-
-    /// <summary>Kanalni o'qilgan deb belgilaydi (hozirgi vaqt yoziladi).</summary>
-    [HttpPost("chat/{channel}/read")]
-    public async Task<IActionResult> MarkRead(string channel, CancellationToken ct)
-    {
-        var t = await MeAsync(ct);
-        if (t is null) return NotFound(new { message = "O'qituvchi topilmadi" });
-        if (!t.Permissions.Contains(TeacherPermissions.Messages)) return Forbid();
-
-        var uid = Uid!;
-        // Begona sinfning kanalini "o'qilgan" deb belgilab bo'lmaydi — belgi
-        // o'z-o'zicha zararsiz, lekin u a'zolik ro'yxatini jimgina kengaytirardi.
-        if (!await chat.CanAccessAsync(uid, "teacher", channel)) return Forbid();
-
-        var row = await db.ChatReads.FirstOrDefaultAsync(x => x.UserId == uid && x.Channel == channel, ct);
-        if (row is null)
-        {
-            row = new ChatRead { UserId = uid, Channel = channel };
-            db.ChatReads.Add(row);
-        }
-        row.ReadAt = AppClock.Now;
-        await db.SaveChangesAsync(ct);
-        return NoContent();
-    }
-
-    // =====================================================================
     //  Ichki
     // =====================================================================
 
-    /// <summary>
-    /// Kanal bo'yicha o'qilmaganlar. Uchta so'rov (kanallar, o'qish belgilari,
-    /// xabarlar), kanal soniga bog'liq emas.
-    /// </summary>
-    private async Task<List<TgChatUnreadDto>> UnreadAsync(CancellationToken ct)
-    {
-        var uid = Uid!;
-        var channels = await chat.ClassNamesForUserAsync(uid, "teacher");
-        if (channels.Count == 0) return [];
-
-        var readAt = await db.ChatReads.AsNoTracking()
-            .Where(x => x.UserId == uid && channels.Contains(x.Channel))
-            .ToDictionaryAsync(x => x.Channel, x => x.ReadAt, ct);
-
-        // O'z xabari o'qilmagan bo'la olmaydi — shuning uchun jo'natuvchi bo'yicha filtr.
-        var messages = await db.ChatMessages.AsNoTracking()
-            .Where(m => channels.Contains(m.ClassName))
-            .Select(m => new { m.ClassName, m.CreatedAt, m.SenderUserId, m.SenderName })
-            .ToListAsync(ct);
-
-        return [.. channels.Select(c =>
-        {
-            var mine = messages.Where(m => m.ClassName == c).ToList();
-            var since = readAt.GetValueOrDefault(c);
-            var unread = mine.Count(m => m.SenderUserId != uid && m.CreatedAt > since);
-            var last = mine.OrderByDescending(m => m.CreatedAt).FirstOrDefault();
-            return new TgChatUnreadDto(c, unread, last?.CreatedAt.ToString("o"), last?.SenderName);
-        })];
-    }
 
     /// <summary>
     /// O'qituvchining shu egadagi, shu fandan, shu hafta kuni va dars raqamidagi darsi qaysi

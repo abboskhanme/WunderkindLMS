@@ -398,7 +398,7 @@ export const navByRole: Record<Role, NavItem[]> = {
     { label: 'Topshiriqlar', to: '/teacher/assignments', icon: ClipboardCheck, perm: 'assignments' },
     { label: "Ta'lim (LMS)", to: '/teacher/lms', icon: BookOpen },
     { label: 'Dars jadvali', to: '/teacher/schedule', icon: CalendarRange, perm: 'schedule' },
-    { label: 'Xabarlar', to: '/teacher/messages', icon: MessageSquare, perm: 'messages' },
+    // "Xabarlar" (guruh chati) olib tashlandi (mijoz, 2026-10-11): chat faqat admin panelida.
     // No 'Maosh' (client, 2026-09-28): teachers do not see their salary; /api/teacher/salary is 403.
   ],
   student: [

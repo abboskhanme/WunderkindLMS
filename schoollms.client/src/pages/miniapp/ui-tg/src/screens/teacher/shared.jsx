@@ -7,7 +7,6 @@
  */
 import { ErrorState, Loader } from '../../components/ui'
 import { teacherApi } from '../../lib/teacherApi'
-import { hasUnread } from '../../lib/chatSeen'
 
 /**
  * Bitta so'rovning to'rt holati. `useAsync` natijasini bering:
@@ -121,46 +120,3 @@ export function lessonKey(lesson) {
   return `${lesson.classId}|${lesson.subjectId}|${lesson.period}|${lesson.subGroup ?? 0}`
 }
 
-/**
- * Har kanal uchun: o'qilmaganlar soni va oxirgi xabar.
- *
- * So'rov FAQAT yangi xabari bor kanalga yuboriladi (`?since=` bilan), ya'ni
- * odatdagi kunda bu bir-ikkita yengil so'rov. Bitta so'rov ham sonini, ham
- * matnini beradi — shuning uchun "Bugun" dagi hisob va "Xabarlar" dagi ro'yxat
- * bir xil manbadan chiqadi va hech qachon bir-biriga zid bo'lmaydi.
- *
- * Server `readAt` ni saqlay boshlaganda bu funksiya bitta endpoint chaqiruviga
- * qisqaradi.
- */
-export function channelSummaries(channels, lastMessages, seen) {
-  // `channels` — `{ key, label, kind }` yoki (eski chaqiruvlar uchun) oddiy kalit satri.
-  return Promise.all(
-    (channels || []).map(async (channel) => {
-      const name = typeof channel === 'string' ? channel : channel.key
-      const label = typeof channel === 'string' ? null : channel.label
-      const lastAt = lastMessages?.[name] || null
-      const mark = seen?.[name] || null
-      if (!lastAt) return { name, label, lastAt: null, unread: 0, preview: null, author: null }
-      if (!hasUnread(name, lastAt, seen)) {
-        return {
-          name,
-          label,
-          lastAt,
-          unread: 0,
-          preview: mark?.preview ?? null,
-          author: mark?.author ?? null,
-        }
-      }
-      const fresh = await teacherApi.chatMessages(name, mark?.at)
-      const last = fresh.length ? fresh[fresh.length - 1] : null
-      return {
-        name,
-        label,
-        lastAt,
-        unread: fresh.length,
-        preview: last?.text ?? null,
-        author: last?.senderName ?? null,
-      }
-    }),
-  )
-}

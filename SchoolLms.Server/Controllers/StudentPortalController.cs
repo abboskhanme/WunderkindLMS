@@ -23,7 +23,7 @@ namespace SchoolLms.Server.Controllers;
 [Authorize(Roles = "student,parent,admin")]
 [Route("api/student")]
 public class StudentPortalController(
-    AppDbContext db, ChatService chat, IWebHostEnvironment env, ReferenceCache refCache,
+    AppDbContext db, IWebHostEnvironment env, ReferenceCache refCache,
     TelegramService telegram) : ControllerBase
 {
 
@@ -1004,62 +1004,30 @@ public class StudentPortalController(
         return await StudentLedger.BuildAsync(db, s);
     }
 
-    // ---------- Guruh chati (o'z sinfi va o'quv guruhlari) ----------
+    // ---------- Maktab e'lonlari ----------
+    //
+    // Guruh chati o'quvchi va ota-onadan butunlay olib tashlandi (mijoz, 2026-10-11: "umumiy chat
+    // ota-onalar, o'qituvchilar akkauntlarida ham ko'rinmasligi kerak") — chat faqat admin panelida.
+    // Mini App'ning "Maktab e'lonlari" kartasi ilgari sinf chatini o'qirdi; endi haqiqiy e'lonlar.
+
+    private const int AnnouncementLimit = 50;
 
     /// <summary>
-    /// O'quvchi ocha oladigan chat kanallari: o'z sinfi + o'quv guruhlari (G-17).
-    ///
-    /// <para>
-    /// Guruh kanalining kaliti — <c>grp:&lt;id&gt;</c>, uni ekranda ko'rsatib
-    /// bo'lmaydi, shuning uchun nomni server beradi (o'qituvchi portalidagi
-    /// <c>chat/channels</c> bilan bir xil naqsh). Guruhlar FAQAT cut-over
-    /// o'chirgichi yoqilganda paydo bo'ladi.
-    /// </para>
+    /// O'quvchiga (ota-onasiga) yuborilgan e'lonlar — yangisidan eskisiga
+    /// (<see cref="BroadcastFeed"/>). Matn oddiy ko'rinishda: Mini App qatorida formatlash
+    /// belgilari ko'rinib qolmasin.
     /// </summary>
-    [HttpGet("chat/channels")]
-    public async Task<ActionResult<IEnumerable<ChatChannelDto>>> ChatChannels(
-        [FromQuery] string? studentId)
+    [HttpGet("announcements")]
+    public async Task<ActionResult<IEnumerable<BroadcastDto>>> Announcements([FromQuery] string? studentId)
     {
         if (User.IsInRole("admin") && string.IsNullOrWhiteSpace(studentId)) return NeedStudentId();
         var s = await TargetAsync(studentId);
         if (s is null) return NotFound();
-        return await chat.ChannelsForStudentAsync(s);
-    }
-
-    /// <summary>
-    /// Kanal xabarlari. <paramref name="channel"/> berilmasa — o'z sinfi
-    /// (bugungi xulq); berilsa — o'sha kanal, lekin FAQAT o'quvchining O'Z
-    /// kanallaridan biri bo'lsa (G-17).
-    /// </summary>
-    [HttpGet("chat")]
-    public async Task<ActionResult<IEnumerable<ChatMessageDto>>> Chat(
-        [FromQuery] string? since, [FromQuery] string? studentId, [FromQuery] string? channel)
-    {
-        if (User.IsInRole("admin") && string.IsNullOrWhiteSpace(studentId)) return NeedStudentId();
-        var s = await TargetAsync(studentId);
-        if (s is null) return NotFound();
-        var key = (channel ?? "").Trim();
-        if (key.Length == 0) key = s.ClassName;
-        if (string.IsNullOrEmpty(key)) return new List<ChatMessageDto>();
-        if (!await chat.CanStudentAccessAsync(s, key)) return Forbid();
-        return await chat.GetMessagesAsync(key, ChatService.ParseSince(since));
-    }
-
-    /// <summary>Chatga xabar yuborish — faqat student rolida (admin o'zining /api/admin/messages
-    /// orqali yozadi; bu yerda admin impersonate qila olmaydi).</summary>
-    [HttpPost("chat")]
-    [Authorize(Roles = "student")]
-    public async Task<ActionResult<ChatMessageDto>> SendChat(SendChatRequest req, [FromQuery] string? channel)
-    {
-        var s = await MeAsync();
-        if (s is null) return NotFound();
-        var key = (channel ?? "").Trim();
-        if (key.Length == 0) key = s.ClassName;
-        if (string.IsNullOrEmpty(key)) return BadRequest(new { message = "Sinf biriktirilmagan" });
-        if (!await chat.CanStudentAccessAsync(s, key)) return Forbid();
-        var uid = User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "";
-        var dto = await chat.PostAsync(key, uid, req.Text);
-        return dto is null ? BadRequest(new { message = "Xabar bo'sh" }) : dto;
+        var list = await BroadcastFeed.For(db, s.Id, s.ClassName ?? "")
+            .OrderByDescending(b => b.CreatedAt).Take(AnnouncementLimit).ToListAsync();
+        return list.Select(b => new BroadcastDto(
+            b.Id, b.ClassName, TelegramHtml.MarkupToPlain(b.Text), b.SenderName, b.CreatedAt.ToString("o"),
+            b.RecipientCount, b.SentCount)).ToList();
     }
 
     // ---------- Topshiriqlar / testlar (o'z sinfi) ----------

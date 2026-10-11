@@ -243,7 +243,8 @@ public class NotificationsController(AppDbContext db) : ControllerBase
             Title: $"{m.ClassName} — yangi xabar",
             Text: Short($"{m.SenderName}: {m.Text}"),
             CreatedAt: m.CreatedAt,
-            Link: "/admin/messages")));
+            // Guruh chati Future'ga ko'chdi (2026-10-11).
+            Link: "/admin/chat")));
 
         // 4) Bugungi tug'ilgan kunlar (arxivlanmagan o'quvchilar).
         var mmdd = now.ToString("MM-dd");

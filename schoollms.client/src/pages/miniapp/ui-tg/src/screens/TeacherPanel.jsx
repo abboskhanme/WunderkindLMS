@@ -11,7 +11,7 @@
  * tab o'z joyida, ichida "bo'lim yopiq" deb yoziladi (server baribir 403 qaytaradi).
  */
 import { useState } from 'react'
-import { CalendarDays, ClipboardCheck, Home, ListChecks, Lock, MessageSquare } from 'lucide-react'
+import { CalendarDays, ClipboardCheck, Home, ListChecks, Lock } from 'lucide-react'
 import { Card, EmptyState, ErrorState, Hero, Loader, Screen, TabBar } from '../components/ui'
 import { useAsync } from '../lib/useAsync'
 import { teacherApi } from '../lib/teacherApi'
@@ -19,7 +19,6 @@ import { hrApi } from '../lib/hrApi'
 import { TodayTab } from './teacher/TodayTab'
 import { AttendanceTab } from './teacher/AttendanceTab'
 import { ScheduleTab } from './teacher/ScheduleTab'
-import { MessagesTab } from './teacher/MessagesTab'
 import { HrTab } from './hr/HrTab'
 
 /** `perm` — shu tab ichini ochish uchun kerakli ruxsat (null = hammaga). Tab o'zi doim ko'rinadi. */
@@ -29,7 +28,7 @@ const TABS = [
   { value: 'attendance', label: 'Jurnal', icon: ClipboardCheck, perm: 'journal' },
   { value: 'schedule', label: 'Jadval', icon: CalendarDays, perm: 'schedule' },
   // No 'Maosh' tab (client, 2026-09-28): teachers do not see their salary; the server refuses it too.
-  { value: 'chat', label: 'Xabarlar', icon: MessageSquare, perm: 'messages' },
+  // "Xabarlar" (guruh chati) olib tashlandi (mijoz, 2026-10-11): chat faqat admin panelida.
 ]
 
 /**
@@ -51,7 +50,7 @@ function Closed({ title, note }) {
   )
 }
 
-export function TeacherPanel({ user }) {
+export function TeacherPanel() {
   const ctx = useAsync(() => Promise.all([teacherApi.profile(), teacherApi.meta()]), [])
   // Panelni KUTTIRMAYDI: javob kelguncha beshta tab, xodim bo'lsa oltinchisi qo'shiladi.
   // Har qanday xato — "tab yo'q" (o'qituvchi paneli o'zgarishsiz qoladi).
@@ -113,8 +112,6 @@ export function TeacherPanel({ user }) {
         />
       )}
       {active === 'schedule' && allowed('schedule') && <ScheduleTab meta={meta} />}
-      {/* `user` — sessiya identifikatori: chatda o'z xabarlarini ajratish uchun. */}
-      {active === 'chat' && allowed('chat') && <MessagesTab profile={profile} user={user} />}
       {active === 'hr' &&
         (hrMe ? (
           <HrTab me={hrMe} />

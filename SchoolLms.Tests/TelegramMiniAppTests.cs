@@ -308,12 +308,12 @@ public class TelegramMiniAppTests(ApiFixture fixture)
     }
 
     /// <summary>
-    /// O'qilmagan xabarlar sanog'i — `chat_reads` jadvalining yagona ma'nosi.
-    /// O'qituvchining O'Z xabari o'qilmagan bo'la olmaydi, shuning uchun xabar
-    /// boshqa foydalanuvchi nomidan yoziladi.
+    /// 2026-10-11: guruh chati o'qituvchidan olib tashlandi — Mini App'da "Xabarlar" tabi ham,
+    /// o'qilmaganlar sanog'i ham yo'q. Xodimlar kanalida yangi xabar bo'lsa ham bosh sahifa 0 beradi
+    /// (maydon eski ilova versiyalari uchun qoldi).
     /// </summary>
     [Fact]
-    public async Task Oqilmagan_xabarlar_sanaladi_va_oqilgan_deb_belgilanadi()
+    public async Task Mini_App_oqituvchida_chat_yoq()
     {
         var (user, _) = await fixture.Api.SeedUserAsync(Roles.Teacher);
         var (author, _) = await fixture.Api.SeedUserAsync(Roles.Admin);
@@ -336,19 +336,11 @@ public class TelegramMiniAppTests(ApiFixture fixture)
         using var client = ClientWithToken(
             fixture.Api.TokenFor(Roles.Teacher, user.Id, user.FullName, user.Email));
 
-        var before = await GetJsonAsync(client, "/api/tg/teacher/chat/unread");
-        var staffBefore = before.EnumerateArray()
-            .Single(c => c.GetProperty("channel").GetString() == ChatService.StaffChannel);
-        Assert.True(staffBefore.GetProperty("unread").GetInt32() >= 1);
-
-        var marked = await client.PostAsync(
-            $"/api/tg/teacher/chat/{ChatService.StaffChannel}/read", content: null);
-        Assert.Equal(HttpStatusCode.NoContent, marked.StatusCode);
-
-        var after = await GetJsonAsync(client, "/api/tg/teacher/chat/unread");
-        var staffAfter = after.EnumerateArray()
-            .Single(c => c.GetProperty("channel").GetString() == ChatService.StaffChannel);
-        Assert.Equal(0, staffAfter.GetProperty("unread").GetInt32());
+        Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync("/api/tg/teacher/chat/unread")).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound,
+            (await client.PostAsync($"/api/tg/teacher/chat/{ChatService.StaffChannel}/read", content: null)).StatusCode);
+        var today = await GetJsonAsync(client, "/api/tg/teacher/today");
+        Assert.Equal(0, today.GetProperty("unreadMessages").GetInt32());
     }
 
     /// <summary>

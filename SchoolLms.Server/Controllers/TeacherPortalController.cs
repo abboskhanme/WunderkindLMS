@@ -21,7 +21,7 @@ namespace SchoolLms.Server.Controllers;
 [Authorize(Roles = "teacher")]
 [Route("api/teacher")]
 public class TeacherPortalController(
-    AppDbContext db, ChatService chat, IWebHostEnvironment env, ReferenceCache refCache,
+    AppDbContext db, IWebHostEnvironment env, ReferenceCache refCache,
     TelegramService telegram) : ControllerBase
 {
     /// <summary>Tokendagi foydalanuvchi id'si bo'yicha joriy o'qituvchini topadi.</summary>
@@ -728,67 +728,8 @@ public class TeacherPortalController(
         return await LessonSubstitutionService.CoversAsync(db, t.Id, classId, subjectId, date);
     }
 
-    // ---------- Guruh chati (dars beradigan sinflar + sinf rahbarligi) ----------
-
-    /// <summary>
-    /// Har bir kanal uchun oxirgi xabar vaqti (ISO) — frontend o'qilmagan xabarlarni aniqlaydi.
-    /// O'qituvchining barcha kanallari (sinflar + xodimlar) qaytadi. Xabari yo'q kanal uchun null.
-    /// </summary>
-    [HttpGet("chat/last-messages")]
-    public async Task<ActionResult<Dictionary<string, string?>>> ChatLastMessages()
-    {
-        if (!await HasPerm(TeacherPermissions.Messages)) return Forbid();
-        var uid = User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "";
-        var channels = await chat.ClassNamesForUserAsync(uid, "teacher");
-        var lastByChannel = (await db.ChatMessages
-                .Where(m => channels.Contains(m.ClassName))
-                .GroupBy(m => m.ClassName)
-                .Select(g => new { Name = g.Key, Last = g.Max(x => x.CreatedAt) })
-                .ToListAsync())
-            .ToDictionary(x => x.Name, x => (string?)x.Last.ToString("o"));
-        return channels.ToDictionary(c => c, c => lastByChannel.GetValueOrDefault(c, null));
-    }
-
-    [HttpGet("chat/classes")]
-    public async Task<ActionResult<IEnumerable<string>>> ChatClasses()
-    {
-        if (!await HasPerm(TeacherPermissions.Messages)) return Forbid();
-        var uid = User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "";
-        return await chat.ClassNamesForUserAsync(uid, "teacher");
-    }
-
-    /// <summary>
-    /// Kanallar NOMI bilan (G-17): o'quv guruhi kanalining kaliti
-    /// <c>grp:&lt;id&gt;</c> — uni ekranda ko'rsatib bo'lmaydi, shuning uchun
-    /// nomni server beradi. <c>chat/classes</c> esa faqat kalitlarni qaytaradi
-    /// va eski mijozlar uchun o'zgarishsiz qoldi.
-    /// </summary>
-    [HttpGet("chat/channels")]
-    public async Task<ActionResult<IEnumerable<ChatChannelDto>>> ChatChannels()
-    {
-        if (!await HasPerm(TeacherPermissions.Messages)) return Forbid();
-        var uid = User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "";
-        return await chat.ChannelsForUserAsync(uid, "teacher");
-    }
-
-    [HttpGet("chat/{className}")]
-    public async Task<ActionResult<IEnumerable<ChatMessageDto>>> Chat(string className, [FromQuery] string? since)
-    {
-        if (!await HasPerm(TeacherPermissions.Messages)) return Forbid();
-        var uid = User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "";
-        if (!await chat.CanAccessAsync(uid, "teacher", className)) return Forbid();
-        return await chat.GetMessagesAsync(className, ChatService.ParseSince(since));
-    }
-
-    [HttpPost("chat/{className}")]
-    public async Task<ActionResult<ChatMessageDto>> SendChat(string className, SendChatRequest req)
-    {
-        if (!await HasPerm(TeacherPermissions.Messages)) return Forbid();
-        var uid = User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "";
-        if (!await chat.CanAccessAsync(uid, "teacher", className)) return Forbid();
-        var dto = await chat.PostAsync(className, uid, req.Text);
-        return dto is null ? BadRequest(new { message = "Xabar bo'sh" }) : dto;
-    }
+    // Guruh chati o'qituvchidan butunlay olib tashlandi (mijoz, 2026-10-11) — chat faqat admin
+    // panelida (Future → Guruh chati, /api/admin/messages/chat).
 
     // ---------- Topshiriqlar / testlar (o'qituvchi yaratadi) ----------
 

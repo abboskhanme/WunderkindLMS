@@ -317,62 +317,28 @@ public class GroupTeacherAccessTests(ApiFixture fixture) : IAsyncLifetime
      * ================================================================== */
 
     /// <summary>
-    /// Guruh kanali: kalit <c>grp:&lt;id&gt;</c> (sinf nomi bilan
-    /// TO'QNASHMAYDI), nom — guruhning nomi. O'chirgichgacha kanal umuman
-    /// yo'q, yoqilgach o'qituvchi unga yozadi.
+    /// 2026-10-11: guruh chati o'qituvchidan butunlay olib tashlandi (mijoz: "umumiy chat
+    /// o'qituvchilar akkauntlarida ham ko'rinmasligi kerak") — o'z guruhining ham, begona
+    /// guruhning ham kanali yo'q, o'chirgich yoqilganda ham. Chat faqat admin panelida.
     /// </summary>
     [Fact]
-    public async Task Guruh_chati_kanali_grp_kaliti_bilan_paydo_boladi()
+    public async Task Oqituvchida_guruh_chati_yoq()
     {
         var w = await SeedAsync();
         using var teacher = w.GroupTeacherClient;
-        var key = ChatService.GroupChannel(Guid.Parse(w.GroupId));
-
-        Assert.DoesNotContain(key, await ChannelKeysAsync(teacher));
-        Assert.Equal(HttpStatusCode.Forbidden,
-            (await teacher.GetAsync($"/api/teacher/chat/{Uri.EscapeDataString(key)}")).StatusCode);
+        var own = Uri.EscapeDataString(ChatService.GroupChannel(Guid.Parse(w.GroupId)));
+        var other = Uri.EscapeDataString(ChatService.GroupChannel(Guid.Parse(w.OtherGroupId)));
 
         await WithGroupLessonsAsync(async () =>
         {
-            var channels = await ArrayAsync(teacher, "/api/teacher/chat/channels");
-            var row = Assert.Single(channels, x => x.GetProperty("key").GetString() == key);
-            Assert.Equal(w.GroupName, row.GetProperty("label").GetString());
-            Assert.Equal(LessonOwnerKind.Group, row.GetProperty("kind").GetString());
-
-            // Kalit sinf nomi bo'la olmaydi — prefiks ularni butunlay ajratadi.
-            Assert.StartsWith(ChatService.GroupChannelPrefix, key, StringComparison.Ordinal);
-            Assert.DoesNotContain(channels, x =>
-                x.GetProperty("kind").GetString() == LessonOwnerKind.Class
-                && x.GetProperty("key").GetString() == key);
-
-            var send = await teacher.PostAsJsonAsync(
-                $"/api/teacher/chat/{Uri.EscapeDataString(key)}", new { text = "Guruhga salom" });
-            Assert.Equal(HttpStatusCode.OK, send.StatusCode);
-
-            var messages = await ArrayAsync(teacher, $"/api/teacher/chat/{Uri.EscapeDataString(key)}");
-            Assert.Contains(messages, m => m.GetProperty("text").GetString() == "Guruhga salom");
-        });
-    }
-
-    /// <summary>
-    /// Begona guruhning kanali — yoqilgan holatda ham 403, va u kanallar
-    /// ro'yxatida umuman ko'rinmaydi.
-    /// </summary>
-    [Fact]
-    public async Task Begona_guruh_kanali_403()
-    {
-        var w = await SeedAsync();
-        using var teacher = w.GroupTeacherClient;
-        var otherKey = ChatService.GroupChannel(Guid.Parse(w.OtherGroupId));
-
-        await WithGroupLessonsAsync(async () =>
-        {
-            Assert.DoesNotContain(otherKey, await ChannelKeysAsync(teacher));
-            Assert.Equal(HttpStatusCode.Forbidden,
-                (await teacher.GetAsync($"/api/teacher/chat/{Uri.EscapeDataString(otherKey)}")).StatusCode);
-            Assert.Equal(HttpStatusCode.Forbidden,
-                (await teacher.PostAsJsonAsync(
-                    $"/api/teacher/chat/{Uri.EscapeDataString(otherKey)}", new { text = "yo'q" })).StatusCode);
+            foreach (var url in new[]
+                     {
+                         "/api/teacher/chat/channels", "/api/teacher/chat/classes", "/api/teacher/chat/last-messages",
+                         $"/api/teacher/chat/{own}", $"/api/teacher/chat/{other}",
+                     })
+                Assert.Equal(HttpStatusCode.NotFound, (await teacher.GetAsync(url)).StatusCode);
+            Assert.Equal(HttpStatusCode.NotFound,
+                (await teacher.PostAsJsonAsync($"/api/teacher/chat/{own}", new { text = "Guruhga salom" })).StatusCode);
         });
     }
 
@@ -539,10 +505,6 @@ public class GroupTeacherAccessTests(ApiFixture fixture) : IAsyncLifetime
             studentId = w.A1, date = Past, period = 1,
             grade = 5, reasonId = (string?)null, homework = 0, behavior = 0, mastery = (int?)null,
         });
-
-    private async Task<List<string>> ChannelKeysAsync(HttpClient client) =>
-        [.. (await ArrayAsync(client, "/api/teacher/chat/channels"))
-            .Select(x => x.GetProperty("key").GetString()!)];
 
     private async Task<List<string>> OwnerIdsAsync(HttpClient client, string url, string field = "classId") =>
         [.. (await ArrayAsync(client, url)).Select(x => x.GetProperty(field).GetString()!)];

@@ -175,18 +175,6 @@ export const api = {
     return request('POST', '/teacher/uploads', { form: fd })
   },
 
-  // ---- Chat ----
-  /**
-   * Chat kanallari — `{ key, label, kind }` ro'yxati (sinflar, o'quv
-   * guruhlari va xodimlar guruhi). O'quv guruhining kaliti `grp:<id>`,
-   * uni ekranda ko'rsatib bo'lmaydi — nom `label` da keladi (G-17).
-   */
-  chatChannels: () => GET('/teacher/chat/channels'),
-  chatClasses: () => GET('/teacher/chat/classes'),
-  chatLastMessages: () => GET('/teacher/chat/last-messages'),
-  chat: (className, since) => GET(`/teacher/chat/${encodeURIComponent(className)}`, { since }),
-  sendChat: (className, text) => POST(`/teacher/chat/${encodeURIComponent(className)}`, { text }),
-
   // ---- LMS (faqat ko'rish) ----
   lmsSubjects: (classId) => GET('/teacher/lms/subjects', { classId }),
   lmsTopics: (subjectId) => GET(`/teacher/lms/subjects/${subjectId}/topics`),

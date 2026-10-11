@@ -3,7 +3,6 @@ import type { ReactNode } from 'react'
 import type { ChatMessage } from '@/types'
 import { useAuth } from './auth-context'
 import { connectChat, getAdminLastMessages } from '@/api/services/messages'
-import { getTeacherLastMessages } from '@/api/services/teacher'
 
 /* ---------- localStorage yordamchilari ---------- */
 
@@ -82,12 +81,9 @@ export function UnreadProvider({ children }: { children: ReactNode }) {
     let active = true
 
     // 1. Rol bo'yicha to'g'ri endpoint ni tanlaymiz
+    // Guruh chati faqat admin panelida (2026-10-11) — o'qituvchi, o'quvchi, ota-onada yo'q.
     const fetchLastMessages =
-      role === 'admin' || role === 'superadmin' || role === 'staff'
-        ? getAdminLastMessages
-        : role === 'teacher'
-          ? getTeacherLastMessages
-          : null // student/parent uchun chat tarixi yo'q
+      role === 'admin' || role === 'superadmin' || role === 'staff' ? getAdminLastMessages : null
 
     if (fetchLastMessages) {
       const lastRead = loadLastRead(userId)

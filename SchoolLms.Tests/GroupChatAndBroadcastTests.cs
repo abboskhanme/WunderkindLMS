@@ -13,11 +13,10 @@ namespace SchoolLms.Tests;
 /// (docs/modules/students-parity.md §2.1.6 G-17 va §2.1.1 "Roster page").
 ///
 /// <list type="number">
-///   <item><b>O'quvchi portali guruh chatini ocha olmasdi.</b>
-///     <c>GET /api/student/chat</c> kanalni <c>s.ClassName</c> dan QATTIQ olardi,
-///     holbuki <see cref="ChatService"/> o'quvchiga guruh kanalini
-///     (<c>grp:&lt;id&gt;</c>) allaqachon berardi. Endi <c>?channel=</c> bor va u
-///     FAQAT o'quvchining O'Z kanallarini qabul qiladi.</item>
+///   <item><b>O'quvchi portali guruh chati</b> — 2026-10-11 dan BUTUNLAY yo'q (mijoz:
+///     "umumiy chat ota-onalar, o'qituvchilar akkauntlarida ham ko'rinmasligi kerak").
+///     Mini App'ning "Maktab e'lonlari" kartasi endi chatni emas, haqiqiy e'lonlarni
+///     o'qiydi (<c>GET /api/student/announcements</c>).</item>
 ///   <item><b>E'lon guruh ota-onalariga yetmasdi.</b>
 ///     <c>POST /api/admin/messages/broadcast</c> da <c>scope: "group"</c> yo'q edi;
 ///     guruh bir nechta sinfdan yig'ilgani uchun "sinfga e'lon" uning yarmiga
@@ -47,113 +46,67 @@ public class GroupChatAndBroadcastTests(ApiFixture fixture)
     private const string Broadcast = "/api/admin/messages/broadcast";
 
     // =====================================================================
-    //  1. O'quvchi portali — guruh chati
+    //  1. O'quvchi portali — guruh chati yo'q, "Maktab e'lonlari" — e'lonlar
     // =====================================================================
 
     /// <summary>
-    /// O'chirgich O'CHIQ: kanallar ro'yxatida faqat sinf turadi va guruh kaliti
-    /// RAD etiladi (403) — cut-over kafolati.
+    /// Guruh chati o'quvchi va ota-ona yuzasidan olib tashlandi (2026-10-11): o'quvchining
+    /// o'zi ham, uning nomidan admin ham chat yo'llarini topa olmaydi.
     /// </summary>
     [Fact]
-    public async Task Ochirgich_ochiq_oquvchida_faqat_sinf_kanali_boladi()
+    public async Task Oquvchi_portalida_guruh_chati_yoq()
     {
         var w = await SeedAsync();
-        using var admin = await fixture.Api.ClientAsAsync(Roles.Admin);
-
-        var channels = await ChannelsAsync(admin, w.MemberId);
-        Assert.Equal([w.ClassName], channels.Select(c => c.Key));
-
-        var forbidden = await admin.GetAsync(
-            $"/api/student/chat?studentId={w.MemberId}&channel={w.GroupChannel}");
-        Assert.Equal(HttpStatusCode.Forbidden, forbidden.StatusCode);
-    }
-
-    /// <summary>
-    /// O'chirgich YOQILGAN: guruh kanali ro'yxatda NOMI bilan paydo bo'ladi va
-    /// o'quvchi uning xabarlarini ocha oladi. <c>?channel=</c> berilmasa —
-    /// bugungi xulq, ya'ni o'z sinfi.
-    /// </summary>
-    [Fact]
-    public async Task Oquvchi_oz_guruh_chatini_ocha_oladi()
-    {
-        var w = await SeedAsync();
-        using var admin = await fixture.Api.ClientAsAsync(Roles.Admin);
-
-        await WithGroupLessonsAsync(async () =>
-        {
-            var channels = await ChannelsAsync(admin, w.MemberId);
-            var group = Assert.Single(channels, c => c.Kind == LessonOwnerKind.Group);
-            Assert.Equal(w.GroupChannel, group.Key);
-            Assert.Equal(w.GroupName, group.Label);
-
-            var messages = await MessagesAsync(admin, w.MemberId, w.GroupChannel);
-            Assert.Equal([w.GroupMessage], messages.Select(m => m.Text));
-
-            // Kanal berilmasa — o'z sinfi (bugungi xulq).
-            var classMessages = await MessagesAsync(admin, w.MemberId, channel: null);
-            Assert.Equal([w.ClassMessage], classMessages.Select(m => m.Text));
-        });
-    }
-
-    /// <summary>
-    /// RBAC: guruhda BO'LMAGAN sinfdosh o'sha kanalni ocha olmaydi (403), garchi
-    /// kalitni bilsa ham. Guruhning o'z sinfdoshlariga ham avtomatik ochilmaydi —
-    /// a'zolik kerak.
-    /// </summary>
-    [Fact]
-    public async Task Guruhda_bolmagan_oquvchi_guruh_kanalini_ocha_olmaydi()
-    {
-        var w = await SeedAsync();
-        using var admin = await fixture.Api.ClientAsAsync(Roles.Admin);
-
-        await WithGroupLessonsAsync(async () =>
-        {
-            var channels = await ChannelsAsync(admin, w.OutsiderId);
-            Assert.DoesNotContain(w.GroupChannel, channels.Select(c => c.Key));
-
-            var response = await admin.GetAsync(
-                $"/api/student/chat?studentId={w.OutsiderId}&channel={w.GroupChannel}");
-            Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
-        });
-    }
-
-    /// <summary>
-    /// O'quvchi o'z guruh kanaliga YOZA oladi, begonasiga esa yo'q (403).
-    /// Yozish faqat <c>student</c> rolida — admin bu yerdan boshqa odam nomidan
-    /// yoza olmaydi (bu qoida o'zgarmadi).
-    /// </summary>
-    [Fact]
-    public async Task Oquvchi_guruh_kanaliga_yozadi_begonasiga_yoza_olmaydi()
-    {
-        var w = await SeedAsync();
-        var (memberUser, _) = await fixture.Api.SeedUserAsync(Roles.Student);
-        var (outsiderUser, _) = await fixture.Api.SeedUserAsync(Roles.Student);
+        var (pupil, _) = await fixture.Api.SeedUserAsync(Roles.Student);
         await fixture.Api.WithDbAsync(async db =>
         {
-            (await db.Students.SingleAsync(s => s.Id == w.MemberId)).UserId = memberUser.Id;
-            (await db.Students.SingleAsync(s => s.Id == w.OutsiderId)).UserId = outsiderUser.Id;
+            (await db.Students.SingleAsync(s => s.Id == w.MemberId)).UserId = pupil.Id;
+            await db.SaveChangesAsync();
+        });
+        using var student = fixture.Api.ClientWithToken(fixture.Api.TokenFor(Roles.Student, pupil.Id, "A'zo"));
+        using var admin = await fixture.Api.ClientAsAsync(Roles.Admin);
+
+        foreach (var client in new[] { student, admin })
+        {
+            Assert.Equal(HttpStatusCode.NotFound,
+                (await client.GetAsync($"/api/student/chat?studentId={w.MemberId}")).StatusCode);
+            Assert.Equal(HttpStatusCode.NotFound,
+                (await client.GetAsync($"/api/student/chat/channels?studentId={w.MemberId}")).StatusCode);
+        }
+        Assert.Equal(HttpStatusCode.NotFound,
+            (await student.PostAsJsonAsync("/api/student/chat", new { text = "Salom" })).StatusCode);
+    }
+
+    /// <summary>
+    /// Mini App'ning "Maktab e'lonlari" kartasi: shu bolaga yuborilgan e'lonlar (oluvchilar
+    /// ro'yxati bo'yicha), formatlash belgilarisiz. Sinf chatidagi xabar bu yerga TUSHMAYDI,
+    /// boshqa bolaga yuborilgan e'lon ham.
+    /// </summary>
+    [Fact]
+    public async Task Maktab_elonlari_chat_emas_bolaga_yuborilgan_elonlar()
+    {
+        var w = await SeedAsync();
+        var tag = Guid.NewGuid().ToString("N")[..6];
+        var mine = new Broadcast { ClassName = "Tanlanganlar", Text = $"**Majlis** {tag}", SenderName = "Admin" };
+        var others = new Broadcast { ClassName = "Tanlanganlar", Text = $"Boshqaga {tag}", SenderName = "Admin" };
+        await fixture.Api.WithDbAsync(async db =>
+        {
+            db.Broadcasts.AddRange(mine, others);
+            db.BroadcastRecipients.AddRange(
+                new BroadcastRecipient { BroadcastId = mine.Id, StudentId = w.MemberId },
+                new BroadcastRecipient { BroadcastId = others.Id, StudentId = w.OutsiderId });
             await db.SaveChangesAsync();
         });
 
-        using var member = fixture.Api.ClientWithToken(
-            fixture.Api.TokenFor(Roles.Student, memberUser.Id, "A'zo"));
-        using var outsider = fixture.Api.ClientWithToken(
-            fixture.Api.TokenFor(Roles.Student, outsiderUser.Id, "Begona"));
+        using var admin = await fixture.Api.ClientAsAsync(Roles.Admin);
+        var response = await admin.GetAsync($"/api/student/announcements?studentId={w.MemberId}");
+        Assert.True(response.IsSuccessStatusCode, await response.Content.ReadAsStringAsync());
+        var texts = (await response.Content.ReadFromJsonAsync<List<Message>>())!.Select(m => m.Text).ToList();
 
-        await WithGroupLessonsAsync(async () =>
-        {
-            var sent = await member.PostAsJsonAsync(
-                $"/api/student/chat?channel={w.GroupChannel}", new { text = "Salom guruh" });
-            Assert.Equal(HttpStatusCode.OK, sent.StatusCode);
-
-            var refused = await outsider.PostAsJsonAsync(
-                $"/api/student/chat?channel={w.GroupChannel}", new { text = "Men ham" });
-            Assert.Equal(HttpStatusCode.Forbidden, refused.StatusCode);
-
-            var messages = await MessagesAsync(member, studentId: null, w.GroupChannel);
-            Assert.Contains("Salom guruh", messages.Select(m => m.Text));
-            Assert.DoesNotContain("Men ham", messages.Select(m => m.Text));
-        });
+        Assert.Contains($"Majlis {tag}", texts);
+        Assert.DoesNotContain($"Boshqaga {tag}", texts);
+        Assert.DoesNotContain(w.ClassMessage, texts);
+        Assert.Equal(HttpStatusCode.BadRequest, (await admin.GetAsync("/api/student/announcements")).StatusCode);
     }
 
     // =====================================================================
@@ -359,29 +312,7 @@ public class GroupChatAndBroadcastTests(ApiFixture fixture)
     //  Yordamchilar
     // =====================================================================
 
-    private sealed record Channel(string Key, string Label, string Kind);
-
     private sealed record Message(string Text);
-
-    private static async Task<List<Channel>> ChannelsAsync(HttpClient client, string studentId)
-    {
-        var response = await client.GetAsync($"/api/student/chat/channels?studentId={studentId}");
-        Assert.True(response.IsSuccessStatusCode,
-            $"{(int)response.StatusCode}: {await response.Content.ReadAsStringAsync()}");
-        return await response.Content.ReadFromJsonAsync<List<Channel>>() ?? [];
-    }
-
-    private static async Task<List<Message>> MessagesAsync(
-        HttpClient client, string? studentId, string? channel)
-    {
-        var query = new List<string>();
-        if (studentId is not null) query.Add("studentId=" + studentId);
-        if (channel is not null) query.Add("channel=" + Uri.EscapeDataString(channel));
-        var response = await client.GetAsync("/api/student/chat?" + string.Join("&", query));
-        Assert.True(response.IsSuccessStatusCode,
-            $"{(int)response.StatusCode}: {await response.Content.ReadAsStringAsync()}");
-        return await response.Content.ReadFromJsonAsync<List<Message>>() ?? [];
-    }
 
     /// <summary>
     /// Cut-over o'chirgichini yoqib turadi va ASL holatiga qaytaradi

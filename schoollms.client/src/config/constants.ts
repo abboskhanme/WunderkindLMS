@@ -62,7 +62,7 @@ export const teacherPermissions: { key: string; label: string }[] = [
   { key: 'journal', label: 'Jurnal' },
   { key: 'assignments', label: 'Topshiriqlar' },
   { key: 'schedule', label: 'Dars jadvali' },
-  { key: 'messages', label: 'Xabarlar (chat)' },
+  // 'messages' (guruh chati) retired 2026-10-11 — the chat lives only in the admin panel.
   // 'salary' retired 2026-09-28 — teachers never see their salary (TeacherPermissions.Salary).
 ]
 

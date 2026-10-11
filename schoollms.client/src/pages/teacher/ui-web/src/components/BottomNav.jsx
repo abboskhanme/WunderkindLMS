@@ -1,11 +1,11 @@
-import { Home, BookOpen, ClipboardList, MessageCircle, User } from 'lucide-react'
+import { Home, BookOpen, ClipboardList, User } from 'lucide-react'
 
-// AppBottomNav — 5 tabs. Active tab gets a soft pill behind the icon.
+// AppBottomNav — 4 tabs. Active tab gets a soft pill behind the icon.
+// "Suhbat" removed 2026-10-11: the group chat lives only in the admin panel.
 const TABS = [
   { icon: Home, label: 'Dashboard' },
   { icon: BookOpen, label: 'Jurnal' },
   { icon: ClipboardList, label: 'Vazifa' },
-  { icon: MessageCircle, label: 'Suhbat' },
   { icon: User, label: 'Profil' },
 ]
 

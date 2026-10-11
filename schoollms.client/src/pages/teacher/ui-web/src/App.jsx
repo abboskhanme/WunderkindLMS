@@ -10,8 +10,6 @@ import JournalGridScreen from './screens/JournalGridScreen'
 import AssignmentsScreen from './screens/AssignmentsScreen'
 import AssignmentCreateScreen from './screens/AssignmentCreateScreen'
 import AssignmentResultsScreen from './screens/AssignmentResultsScreen'
-import ChatChannelsScreen from './screens/ChatChannelsScreen'
-import ChatConversationScreen from './screens/ChatConversationScreen'
 import ProfileScreen from './screens/ProfileScreen'
 import HomeroomScreen from './screens/HomeroomScreen'
 import GroupsScreen from './screens/GroupsScreen'
@@ -29,14 +27,13 @@ const SCREENS = {
   home: { Comp: HomeScreen, tab: 0 },
   journal: { Comp: JournalPickerScreen, tab: 1 },
   assignments: { Comp: AssignmentsScreen, tab: 2 },
-  chat: { Comp: ChatChannelsScreen, tab: 3 },
-  profile: { Comp: ProfileScreen, tab: 4 },
+  // "Suhbat" (guruh chati) olib tashlandi (mijoz, 2026-10-11): chat faqat admin panelida.
+  profile: { Comp: ProfileScreen, tab: 3 },
 
   schedule: { Comp: ScheduleScreen },
   journalGrid: { Comp: JournalGridScreen },
   assignmentCreate: { Comp: AssignmentCreateScreen },
   assignmentResults: { Comp: AssignmentResultsScreen },
-  chatConversation: { Comp: ChatConversationScreen },
   homeroom: { Comp: HomeroomScreen },
   groups: { Comp: GroupsScreen },
   groupRoster: { Comp: GroupRosterScreen },
@@ -49,7 +46,7 @@ const SCREENS = {
   lmsTopicDetail: { Comp: LmsTopicDetailScreen },
 }
 
-const TAB_IDS = ['home', 'journal', 'assignments', 'chat', 'profile']
+const TAB_IDS = ['home', 'journal', 'assignments', 'profile']
 
 const THEME_KEY = 'teacher-theme'
 

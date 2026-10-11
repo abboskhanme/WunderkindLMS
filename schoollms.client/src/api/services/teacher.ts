@@ -2,7 +2,6 @@ import type {
   Assignment,
   AssignmentResult,
   AssignmentType,
-  ChatMessage,
   JournalColumn,
   JournalEntry,
   JournalTopic,
@@ -276,37 +275,6 @@ export async function setTeacherQuarterGrade(
   grade: number | null,
 ): Promise<void> {
   await api.put('/teacher/journal/quarter-grades', { classId, subjectId, quarter, studentId, grade })
-}
-
-/* ---------- Guruh chati ---------- */
-
-export async function getTeacherChatClasses(): Promise<string[]> {
-  if (USE_MOCK) return []
-  const { data } = await api.get<string[]>('/teacher/chat/classes')
-  return data
-}
-
-export async function getTeacherChat(className: string, since?: string): Promise<ChatMessage[]> {
-  if (USE_MOCK) return []
-  const { data } = await api.get<ChatMessage[]>(`/teacher/chat/${encodeURIComponent(className)}`, {
-    params: since ? { since } : undefined,
-  })
-  return data
-}
-
-export async function sendTeacherChat(className: string, text: string): Promise<ChatMessage> {
-  const { data } = await api.post<ChatMessage>(`/teacher/chat/${encodeURIComponent(className)}`, { text })
-  return data
-}
-
-/**
- * Har bir kanal uchun oxirgi xabar vaqti — o'qilmagan xabarlarni aniqlash uchun.
- * Qaytadi: { [channelName]: ISO vaqt yoki null (xabari yo'q kanal) }
- */
-export async function getTeacherLastMessages(): Promise<Record<string, string | null>> {
-  if (USE_MOCK) return {}
-  const { data } = await api.get<Record<string, string | null>>('/teacher/chat/last-messages')
-  return data
 }
 
 /* ---------- LMS (Ta'lim) — faqat ko'rish + progress ---------- */

@@ -421,12 +421,7 @@ public sealed class TelegramParentController(
     /// (<c>MessagesController.SendBroadcast</c>).
     /// </summary>
     private IQueryable<Broadcast> AnnouncementsFor(string studentId, string className) =>
-        db.Broadcasts.AsNoTracking().Where(b =>
-            db.BroadcastRecipients.Any(r => r.BroadcastId == b.Id && r.StudentId == studentId)
-            || (!db.BroadcastRecipients.Any(r => r.BroadcastId == b.Id)
-                && (b.ClassName == className
-                    || b.ClassName.StartsWith(className + " —")
-                    || b.ClassName.StartsWith("Barcha sinflar"))));
+        BroadcastFeed.For(db, studentId, className);
 
     /// <summary>Maktab yangiliklari — ota-ona auditoriyasi (sales-marketing.md §5.5).</summary>
     [HttpGet("news")]

@@ -53,7 +53,8 @@ public class MiniAppParentPortalTests(ApiFixture fixture)
 
             // Every call the Bosh / Jadval tabs make — none may answer 403 or 404
             // (`pickup` with no request today is 204, which the panel reads as null).
-            foreach (var path in new[] { "journal", "attendance", "chat", "chat/channels", "pickup" })
+            // "announcements" — "Maktab e'lonlari" (2026-10-11: chat o'rnida, guruh chati olib tashlandi).
+            foreach (var path in new[] { "journal", "attendance", "announcements", "pickup" })
             {
                 var response = await parent.GetAsync($"/api/student/{path}?studentId={id}");
                 Assert.True(response.IsSuccessStatusCode,
@@ -148,7 +149,7 @@ public class MiniAppParentPortalTests(ApiFixture fixture)
         var me = await GetJsonAsync(client, "/api/student/me");
         Assert.Equal(pupil.Id, me.GetProperty("id").GetString());
 
-        foreach (var path in new[] { "dashboard", "billing", "journal", "attendance", "chat", "pickup", "meta" })
+        foreach (var path in new[] { "dashboard", "billing", "journal", "attendance", "announcements", "pickup", "meta" })
         {
             var response = await client.GetAsync($"/api/student/{path}?studentId={pupil.Id}");
             Assert.True(response.IsSuccessStatusCode, $"{path} -> {(int)response.StatusCode}");

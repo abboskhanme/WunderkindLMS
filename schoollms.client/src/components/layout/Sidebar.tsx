@@ -108,7 +108,7 @@ export function Sidebar({ open, onNavigate }: SidebarProps) {
  * Ichki chat sahifalari — o'qilmagan xabarlar soni shu yozuvlarda ko'rinadi. Admin chati
  * 2026-10-11 dan Future → "Guruh chati" (/admin/chat); "Xabarlar" endi faqat e'lon.
  */
-const CHAT_PATHS = ['/teacher/messages', '/admin/chat']
+const CHAT_PATHS = ['/admin/chat']
 
 function UnreadBadge({ count }: { count: number }) {
   if (count <= 0) return null

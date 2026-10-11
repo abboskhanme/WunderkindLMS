@@ -29,9 +29,6 @@ function qs(params) {
  */
 const NEWS_TAKE = 20
 
-/** Kanal nomi yo'lga tushadi: "5-A" ham, "__xodimlar__" ham xavfsiz kodlanadi. */
-const channelPath = (name) => `${BASE}/chat/${encodeURIComponent(name)}`
-
 export const teacherApi = {
   /* ---------- profil va umumiy kontekst ---------- */
 
@@ -99,22 +96,6 @@ export const teacherApi = {
       throw e
     }
   },
-
-  /* ---------- xabarlar ---------- */
-
-  /**
-   * O'qituvchi a'zo bo'lgan chat kanallari — `{ key, label, kind }` ro'yxati
-   * (sinflar, o'quv guruhlari va xodimlar guruhi). O'quv guruhining kaliti
-   * `grp:<id>`, ya'ni uni ekranda ko'rsatib bo'lmaydi — shuning uchun nom
-   * (`label`) serverdan keladi (G-17).
-   */
-  chatChannels: () => api.get(`${BASE}/chat/channels`),
-  /** Har kanalning oxirgi xabar vaqti (ISO) yoki null. */
-  chatLastMessages: () => api.get(`${BASE}/chat/last-messages`),
-  /** Kanal xabarlari. `since` berilsa — faqat undan keyingilari (yangilanish/o'qilmagan). */
-  chatMessages: (channel, since) => api.get(`${channelPath(channel)}${qs({ since })}`),
-  /** Kanalga xabar yuborish. */
-  sendChatMessage: (channel, text) => api.post(channelPath(channel), { text }),
 
   /* ---------- dars tahlili (faqat o'zi haqida) ---------- */
 

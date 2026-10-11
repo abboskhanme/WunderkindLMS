@@ -15,11 +15,10 @@ import {
 import { AccountsButton } from '../../components/AccountSwitcher'
 import { useAsync } from '../../lib/useAsync'
 import { teacherApi } from '../../lib/teacherApi'
-import { readSeen } from '../../lib/chatSeen'
 import { todayISO } from '../../lib/weeks'
 import { fullDate, todayIndex, weekdayName } from '../../lib/format'
 import {
-  AsyncBlock, channelSummaries, lessonOwnerTitle, lessonPairs, lessonProgress, lessonTimeState,
+  AsyncBlock, lessonOwnerTitle, lessonPairs, lessonProgress, lessonTimeState,
   nowHHmm,
 } from './shared'
 import { NewsCard } from './NewsCard'
@@ -38,7 +37,6 @@ export function TodayTab({ profile, meta, onOpenAttendance }) {
   const perms = profile.permissions || []
   const canSchedule = perms.includes('schedule')
   const canJournal = perms.includes('journal')
-  const canMessages = perms.includes('messages')
   const quarter = meta.currentQuarter
   const week = meta.currentWeek
 
@@ -71,22 +69,9 @@ export function TodayTab({ profile, meta, onOpenAttendance }) {
       }
     })
 
-    // Xabarlar sanog'i — ikkinchi darajali: u yiqilsa kun jadvali baribir ko'rinadi.
-    const [progress, lastMessages] = await Promise.all([
-      teacherApi.progress(quarter),
-      canMessages ? teacherApi.chatLastMessages().catch(() => ({})) : Promise.resolve({}),
-    ])
+    const progress = await teacherApi.progress(quarter)
 
-    // O'qilmagan xabarlar — "Xabarlar" tabidagi bilan BIR XIL manbadan, ya'ni
-    // ikki ekran hech qachon boshqa-boshqa raqam ko'rsatmaydi.
-    const channels = Object.keys(lastMessages)
-    const summaries = canMessages
-      ? await channelSummaries(channels, lastMessages, readSeen()).catch(() => [])
-      : []
-    const unread = summaries.reduce((n, s) => n + s.unread, 0)
-    const unreadChannels = summaries.filter((s) => s.unread > 0).length
-
-    return { date, lessons, conducted, progress, channels, unread, unreadChannels }
+    return { date, lessons, conducted, progress }
   }, [quarter, week])
 
   const d = q.data
@@ -140,14 +125,11 @@ export function TodayTab({ profile, meta, onOpenAttendance }) {
                   value: `${meta.currentQuarter}-chorak`,
                   note: `${meta.currentWeek}-hafta`,
                 },
+                // "Yangi xabar" o'rnida (guruh chati olib tashlandi, 2026-10-11).
                 {
-                  label: 'Yangi xabar',
-                  value: canMessages ? String(data.unread) : '—',
-                  note: !canMessages
-                    ? 'bo\'lim yopiq'
-                    : data.unread > 0
-                      ? `${data.unreadChannels} ta guruhda`
-                      : `${data.channels.length} ta guruh o'qilgan`,
+                  label: 'Fanlarim',
+                  value: String(subjectNames.length),
+                  note: homeroomLine ?? (subjectNames.length > 0 ? 'fan' : "fan biriktirilmagan"),
                 },
               ]}
             />

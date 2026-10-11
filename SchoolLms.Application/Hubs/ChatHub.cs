@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
 using SchoolLms.Application.Services;
+using SchoolLms.Domain;
 using System.Security.Claims;
 
 namespace SchoolLms.Application.Hubs;
@@ -18,7 +19,9 @@ public class ChatHub(ChatService chat) : Hub
     {
         var uid = Context.User?.FindFirst(ClaimTypes.NameIdentifier)?.Value;
         var role = Context.User?.FindFirst(ClaimTypes.Role)?.Value;
-        if (uid is not null && role is not null)
+        // 2026-10-11: guruh chati faqat admin panelida — o'qituvchi, o'quvchi va ota-ona hech qaysi
+        // kanalga qo'shilmaydi (eski ilova ulansa ham xabar olmaydi).
+        if (uid is not null && role is not null && role is not (Roles.Teacher or Roles.Student or "parent"))
         {
             foreach (var className in await chat.ClassNamesForUserAsync(uid, role))
                 await Groups.AddToGroupAsync(Context.ConnectionId, ChatService.Group(className));
