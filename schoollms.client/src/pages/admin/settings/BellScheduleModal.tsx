@@ -14,8 +14,10 @@ import { Button } from '@/components/ui/Button'
 import { Input, Time24Input } from '@/components/ui/Input'
 import { Modal } from '@/components/ui/Modal'
 import { cn } from '@/lib/utils'
+import { schedulePeriods } from '@/config/constants'
 
-const MAX_PERIODS = 20
+/** Jadval muharrirlari shuncha soat ko'rsatadi — server ham shu bilan cheklaydi. */
+const MAX_PERIODS = schedulePeriods.length
 
 function toMinutes(t: string): number | null {
   const m = /^(\d{2}):(\d{2})$/.exec(t)
@@ -126,7 +128,13 @@ export function BellScheduleModal({
     if (!valid) return
     setSaving(true)
     setError(null)
-    const input: SaveBellScheduleInput = { name: name.trim(), periods: renumber(periods), ownerIds: [...selected] }
+    // O'chirilgan sinf/guruh (ro'yxatda yo'q) jadvalda qolib ketgan bo'lsa — yuborilmaydi.
+    const known = new Set(owners.map((o) => o.id))
+    const input: SaveBellScheduleInput = {
+      name: name.trim(),
+      periods: renumber(periods),
+      ownerIds: [...selected].filter((id) => known.has(id)),
+    }
     try {
       onSaved(await saveBellSchedule(schedule?.id ?? null, input))
     } catch (e) {
@@ -243,7 +251,9 @@ export function BellScheduleModal({
         <section>
           <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
             <h3 className="text-sm font-semibold text-slate-700">Qaysi sinf va guruhlar uchun</h3>
-            <span className="text-xs text-slate-400">{selected.size} ta tanlandi</span>
+            <span className="text-xs text-slate-400">
+              {owners.filter((o) => selected.has(o.id)).length} ta tanlandi
+            </span>
           </div>
           {owners.length === 0 ? (
             <p className="text-sm text-slate-400">Sinflar topilmadi.</p>

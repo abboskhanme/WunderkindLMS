@@ -66,7 +66,8 @@ public class LiveScheduleEditTests(ApiFixture fixture) : IAsyncLifetime
         await using var db = await NewDbAsync();
         var today = AppClock.Today;
         var (cls, tpl, weeks) = await SeedAsync(db, today.AddDays(-40), today.AddDays(40));
-        var monday = LiveScheduleEdit.ThisMonday();
+        // Chegara: joriy haftaning dushanbasi, yakshanba kuni — ertangi dushanba.
+        var monday = LiveScheduleEdit.EditBoundary();
 
         var target = await LiveScheduleEdit.PrepareAsync(db, tpl);
         Assert.Null(target.Error);
@@ -96,6 +97,38 @@ public class LiveScheduleEditTests(ApiFixture fixture) : IAsyncLifetime
         var old = await LiveScheduleEdit.PrepareAsync(db, tpl);
         Assert.NotNull(old.Error);
         Assert.Null(old.Template);
+    }
+
+    [Fact]
+    public async Task Asosiy_shablon_eski_versiya_emas_joriy_nusxa()
+    {
+        await using var db = await NewDbAsync();
+        var today = AppClock.Today;
+        var (cls, tpl, _) = await SeedAsync(db, today.AddDays(-40), today.AddDays(40));
+        var teacher = new Teacher { FullName = "Ustoz" };
+        db.Teachers.Add(teacher);
+        // Eski versiyada 3 ta dars, nusxada bittasi olib tashlanadi — darslar soni bo'yicha eski "yutardi".
+        tpl.Lessons.AddRange([
+            new ScheduleLesson { Day = 1, Period = 1, SubjectId = tpl.Lessons[0].SubjectId, TeacherId = teacher.Id },
+            new ScheduleLesson { Day = 2, Period = 1, SubjectId = tpl.Lessons[0].SubjectId, TeacherId = teacher.Id },
+        ]);
+        await db.SaveChangesAsync();
+
+        var target = await LiveScheduleEdit.PrepareAsync(db, tpl);
+        await db.SaveChangesAsync();
+        var copy = target.Template!;
+        db.RemoveRange(copy.Lessons.Where(l => l.Day == 2).ToList());
+        await db.SaveChangesAsync();
+
+        var main = Assert.Single(await TeacherLessons.MainTemplatesAsync(db), m => m.Owner.Id == cls.Id);
+        Assert.Equal(copy.Id, main.Template.Id);
+        var byWeekday = (await TeacherLessons.ByWeekdayAsync(db))[teacher.Id];
+        Assert.Equal(new[] { 0, 1, 0, 0, 0, 0 }, byWeekday);
+
+        // Eski versiya tarix — o'chirib bo'lmaydi; nusxa ham (joriy hafta o'tib ketgach) shunday bo'ladi.
+        Assert.True(await LiveScheduleEdit.UsedInPastAsync(db, tpl));
+        Assert.False(await LiveScheduleEdit.UsedInPastAsync(db, copy));
+        Assert.Contains(tpl.Id, await LiveScheduleEdit.PastOnlyTemplateIdsAsync(db));
     }
 
     [Fact]

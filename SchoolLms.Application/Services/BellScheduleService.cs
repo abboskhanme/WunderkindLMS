@@ -13,7 +13,8 @@ namespace SchoolLms.Application.Services;
 /// </summary>
 public static class BellScheduleService
 {
-    public const int MaxPeriods = 20;
+    /// <summary>Jadval muharrirlari 10 ta soat ko'rsatadi (<c>schedulePeriods</c>) — undan ortig'ini qo'yib bo'lmaydi.</summary>
+    public const int MaxPeriods = 10;
 
     public static async Task<List<BellScheduleDto>> ListAsync(IAppDbContext db, CancellationToken ct = default)
     {
@@ -64,7 +65,15 @@ public static class BellScheduleService
             .Concat((await db.StudyGroups.Where(g => groupIds.Contains(g.Id)).Select(g => g.Id).ToListAsync(ct))
                 .Select(g => g.ToString()))
             .ToHashSet(StringComparer.Ordinal);
-        if (ownerIds.Any(o => !known.Contains(o))) return (null, "Tanlangan sinf yoki guruhlardan biri topilmadi");
+        // O'chirilgan sinf/guruh shu jadvalda qolib ketgan bo'lsa — jimgina tushib qoladi (aks holda
+        // jadvalni hech qachon saqlab bo'lmasdi); yangi noma'lum id esa xato.
+        var stored = id is { } sid
+            ? (await db.BellScheduleOwners.Where(o => o.ScheduleId == sid).Select(o => o.OwnerId).ToListAsync(ct))
+                .ToHashSet(StringComparer.Ordinal)
+            : [];
+        if (ownerIds.Any(o => !known.Contains(o) && !stored.Contains(o)))
+            return (null, "Tanlangan sinf yoki guruhlardan biri topilmadi");
+        ownerIds = [.. ownerIds.Where(known.Contains)];
 
         BellSchedule? schedule;
         if (id is { } existingId)

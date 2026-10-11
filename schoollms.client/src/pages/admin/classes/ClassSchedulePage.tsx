@@ -13,6 +13,7 @@ import {
   createTemplate,
   renameTemplate,
   deleteTemplate,
+  isArchivedTemplateName,
 } from '@/api/services/scheduleTemplates'
 import { getSubjects } from '@/api/services/subjects'
 import { getTeachers } from '@/api/services/teachers'
@@ -152,9 +153,19 @@ export function ClassSchedulePage() {
     setEditingTpl(null)
   }
 
-  const handleDeleteTpl = (t: ScheduleTemplate) => {
+  const handleDeleteTpl = async (t: ScheduleTemplate) => {
     if (!confirm(`"${t.name}" jadvalini o'chirasizmi?`)) return
-    deleteTemplate(id, t.id)
+    setAssignError(null)
+    try {
+      // 2026-10-11: server o'tgan haftalarda ishlatilgan jadvalni rad etadi (tarix) — avval javobni
+      // kutamiz, aks holda quyida haftalar baribir bo'shatilib ketardi.
+      await deleteTemplate(id, t.id)
+    } catch (e) {
+      setAssignError(
+        (e as { response?: { data?: { message?: string } } })?.response?.data?.message ?? "Jadvalni o'chirib bo'lmadi",
+      )
+      return
+    }
     setTemplates((prev) => prev.filter((x) => x.id !== t.id))
     // shu jadval biriktirilgan haftalarni bo'shatamiz
     setAssignments((prev) => {
@@ -234,12 +245,15 @@ export function ClassSchedulePage() {
                         setNameOpen(true)
                       }}
                     />
-                    <IconBtn
-                      icon={Trash2}
-                      title="O'chirish"
-                      danger
-                      onClick={() => handleDeleteTpl(t)}
-                    />
+                    {/* Avtomatik saqlangan eski versiya — o'tgan haftalar tarixi, o'chirilmaydi. */}
+                    {!isArchivedTemplateName(t.name) && (
+                      <IconBtn
+                        icon={Trash2}
+                        title="O'chirish"
+                        danger
+                        onClick={() => void handleDeleteTpl(t)}
+                      />
+                    )}
                   </div>
                 </div>
               ))}

@@ -95,6 +95,14 @@ public class ScheduleTemplatesController(AppDbContext db) : ControllerBase
     {
         var tpl = await FindAsync(classId, templateId, ct);
         if (tpl is null) return NotFound();
+        // 2026-10-11: o'tgan haftalarda ishlatilgan jadval (jumladan avtomatik saqlangan eski versiya
+        // "… gacha") o'chirilsa, o'sha haftalarning darslari — jurnal, davomat, maosh tarixi — yo'qolardi.
+        if (await LiveScheduleEdit.UsedInPastAsync(db, tpl, ct))
+            return Conflict(new
+            {
+                message = "Bu jadval o'tgan haftalarda ishlatilgan — jurnal, davomat va maosh tarixi unga "
+                          + "tayanadi, shuning uchun o'chirilmaydi.",
+            });
         db.ScheduleTemplates.Remove(tpl);
         await db.SaveChangesAsync(ct);
         return NoContent();
@@ -218,8 +226,6 @@ public class ScheduleTemplatesController(AppDbContext db) : ControllerBase
     {
         var owner = await OwnerAsync(classId, ct);
         if (owner is null) return NotFound();
-        var tpl = await FindAsync(classId, templateId, ct);
-        if (tpl is null) return NotFound();
         var cells = req.Cells ?? [];
         if (cells.Count == 0) return BadRequest(new { message = "Katak berilmadi" });
         if (cells.GroupBy(c => (c.Day, c.Period)).Any(g => g.Count() > 1))
@@ -228,6 +234,12 @@ public class ScheduleTemplatesController(AppDbContext db) : ControllerBase
             if (CellError(owner, cell) is { } invalid) return BadRequest(new { message = invalid });
 
         await using var tx = await db.Database.BeginTransactionAsync(ct);
+        // Bir vaqtda kelgan ikki tahrir (umumiy jadval + sinf sahifasi) ikkalasi ham nusxa olmasin:
+        // shablon qatori qulflanadi va qulfdan keyin qayta o'qiladi.
+        await db.Database.ExecuteSqlInterpolatedAsync(
+            $"select 1 from schedule_templates where id = {templateId} for update", ct);
+        var tpl = await FindAsync(classId, templateId, ct);
+        if (tpl is null) return NotFound();
         var target = await LiveScheduleEdit.PrepareAsync(db, tpl, ct);
         if (target.Error is not null) return Conflict(new { message = target.Error });
         var edited = target.Template!;

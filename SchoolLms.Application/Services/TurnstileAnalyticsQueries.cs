@@ -573,10 +573,12 @@ public class TurnstileAnalyticsQueries(IAppDbContext db)
             .Where(c => !c.IsArchived)
             .ToDictionaryAsync(c => c.Id, c => c.Name, ct);
 
+        // Asosiy shablon — TeacherLessons.MainTemplatesAsync bilan bir xil qoida (2026-10-11).
+        var rank = await LiveScheduleEdit.TemplateRankAsync(db, ct);
         var templates = (await db.ScheduleTemplates.AsNoTracking().Include(t => t.Lessons).ToListAsync(ct))
             .Where(t => classNames.ContainsKey(t.ClassId))
             .GroupBy(t => t.ClassId)
-            .Select(g => g.OrderByDescending(t => t.Lessons.Count).ThenBy(t => t.Id).First());
+            .Select(g => LiveScheduleEdit.WithoutHistory(g, rank).OrderByDescending(t => t.Lessons.Count).ThenBy(t => t.Id).First());
 
         var start = new Dictionary<string, string[]>(StringComparer.Ordinal);
         var end = new Dictionary<string, string[]>(StringComparer.Ordinal);

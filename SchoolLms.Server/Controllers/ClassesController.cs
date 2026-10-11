@@ -293,6 +293,8 @@ public class ClassesController(AppDbContext db, AuditService audit) : Controller
         db.WeekAssignments.RemoveRange(
             await db.WeekAssignments.Where(
                 w => w.ClassId == cls.Id && w.OwnerKind == LessonOwnerKind.Class).ToListAsync());
+        // Qo'ng'iroq jadvaliga biriktirilishi ham (FK yo'q) — aks holda o'sha jadval saqlanmay qolardi.
+        db.BellScheduleOwners.RemoveRange(await db.BellScheduleOwners.Where(o => o.OwnerId == cls.Id).ToListAsync());
         db.Classes.Remove(cls);
         await db.SaveChangesAsync();
         return NoContent();

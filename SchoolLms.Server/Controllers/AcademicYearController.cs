@@ -378,6 +378,8 @@ public class AcademicYearController(AppDbContext db, AuditService audit) : Contr
                     // qoladi — bu yerda faqat "shu sinf boqadi" bog'lanishi uziladi.
                     db.StudyGroupClasses.RemoveRange(
                         await db.StudyGroupClasses.Where(g => g.ClassId == cls.Id).ToListAsync());
+                    db.BellScheduleOwners.RemoveRange(
+                        await db.BellScheduleOwners.Where(o => o.OwnerId == cls.Id).ToListAsync());
                     db.Classes.Remove(cls);
                 }
                 else

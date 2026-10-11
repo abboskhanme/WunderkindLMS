@@ -105,6 +105,44 @@ public class BellScheduleTests(ApiFixture fixture)
     }
 
     [Fact]
+    public async Task Ochirilgan_sinf_jadvalni_saqlashga_xalaqit_bermaydi()
+    {
+        var tag = Guid.NewGuid().ToString("N")[..6];
+        var gone = new SchoolClass { Name = $"G-{tag}", Grade = 2 };
+        var stays = new SchoolClass { Name = $"S-{tag}", Grade = 2 };
+        await fixture.Api.WithDbAsync(async db =>
+        {
+            db.Classes.AddRange(gone, stays);
+            await db.SaveChangesAsync();
+        });
+        using var admin = await fixture.Api.ClientAsAsync(Roles.Admin);
+        var created = await admin.PostAsJsonAsync(Url, Body($"Qoldiq {tag}", [gone.Id, stays.Id], ("08:00", "08:45")));
+        var id = (await created.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetGuid();
+        try
+        {
+            // Sinf o'chirilsa biriktirilishi ham ketadi.
+            Assert.Equal(HttpStatusCode.NoContent, (await admin.DeleteAsync($"/api/admin/classes/{gone.Id}")).StatusCode);
+            await fixture.Api.WithDbAsync(async db =>
+                Assert.False(await db.BellScheduleOwners.AnyAsync(o => o.OwnerId == gone.Id)));
+
+            // Qoldiq id (masalan eski ekran yuborgan) jadvalni saqlashga to'sqinlik qilmaydi.
+            await fixture.Api.WithDbAsync(async db =>
+            {
+                db.BellScheduleOwners.Add(new BellScheduleOwner { OwnerId = "eski-sinf", ScheduleId = id });
+                await db.SaveChangesAsync();
+            });
+            var saved = await admin.PutAsJsonAsync($"{Url}/{id}",
+                Body($"Qoldiq {tag}", ["eski-sinf", stays.Id], ("08:00", "08:45")));
+            Assert.True(saved.IsSuccessStatusCode, await saved.Content.ReadAsStringAsync());
+            Assert.Equal([stays.Id], (await saved.Content.ReadFromJsonAsync<BellScheduleDto>())!.OwnerIds);
+        }
+        finally
+        {
+            await admin.DeleteAsync($"{Url}/{id}");
+        }
+    }
+
+    [Fact]
     public async Task Notogri_jadval_rad_etiladi()
     {
         var tag = Guid.NewGuid().ToString("N")[..6];
@@ -173,6 +211,7 @@ public class BellScheduleTests(ApiFixture fixture)
         Assert.Equal([new LessonTimeDto(1, "08:00", "08:45"), new LessonTimeDto(2, "09:00", "09:45")], periods);
 
         Assert.NotNull(BellScheduleService.NormalizePeriods(
-            [.. Enumerable.Range(1, 21).Select(i => new LessonTimeDto(i, $"{i % 24:00}:00", $"{i % 24:00}:30"))]).Error);
+            [.. Enumerable.Range(1, BellScheduleService.MaxPeriods + 1)
+                .Select(i => new LessonTimeDto(i, $"{i + 7:00}:00", $"{i + 7:00}:30"))]).Error);
     }
 }

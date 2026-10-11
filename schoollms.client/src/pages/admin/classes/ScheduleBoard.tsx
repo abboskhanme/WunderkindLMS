@@ -166,6 +166,13 @@ export function ScheduleBoard({ classId, template, onTemplateReplaced }: Props) 
   const message = (e: unknown, fallback: string) =>
     (e as { response?: { data?: { message?: string } } })?.response?.data?.message ?? fallback
 
+  /** Rad etilgan katakni qaytarish — FAQAT o'sha katak: keyingi (saqlangan) o'zgarishlar ekranda qoladi. */
+  const restoreCell = (day: number, period: number, before: ScheduleLesson[]) =>
+    setLessons((prev) => [
+      ...prev.filter((l) => !(l.day === day && l.period === period)),
+      ...before.filter((l) => l.day === day && l.period === period),
+    ])
+
   const handleSave = (day: number, period: number, next: ScheduleLesson[]) => {
     const before = lessons
     setSaveError(null)
@@ -173,7 +180,7 @@ export function ScheduleBoard({ classId, template, onTemplateReplaced }: Props) 
     // Oyna yopiladi — mijoz aynan shuni so'radi: tanlandi, qo'yildi, ketdi.
     setSelected(null)
     setToast(`${weekDays[day]} · ${period}-dars saqlandi`)
-    persist([{ day, period, lessons: next }], () => setLessons(before), "Darsni saqlab bo'lmadi")
+    persist([{ day, period, lessons: next }], () => restoreCell(day, period, before), "Darsni saqlab bo'lmadi")
   }
 
   const handleClear = (day: number, period: number) => {
@@ -182,7 +189,7 @@ export function ScheduleBoard({ classId, template, onTemplateReplaced }: Props) 
     setLessons((prev) => prev.filter((l) => !(l.day === day && l.period === period)))
     setSelected(null)
     setToast(`${weekDays[day]} · ${period}-dars tozalandi`)
-    persist([{ day, period, lessons: [] }], () => setLessons(before), "Darsni o'chirib bo'lmadi")
+    persist([{ day, period, lessons: [] }], () => restoreCell(day, period, before), "Darsni o'chirib bo'lmadi")
   }
 
   const timeLabel = (period: number) => {

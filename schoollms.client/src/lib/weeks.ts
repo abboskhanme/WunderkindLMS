@@ -32,8 +32,10 @@ export function mondayOfISO(iso: string): string {
  * hech narsa topilmasa { quarter: 1, week: 1 }. */
 export function getCurrentQuarterAndWeek(
   quarters: Array<{ quarter: number; startDate?: string; endDate?: string }>,
+  /** Qaysi kunga nisbatan (sukut — bugun). */
+  date: Date = new Date(),
 ): { quarter: number; week: number } {
-  const today = toISO(new Date())
+  const today = toISO(date)
 
   const active = quarters.find(
     (q) => q.startDate && q.endDate && q.startDate <= today && today <= q.endDate,
@@ -64,6 +66,22 @@ export function getCurrentQuarterAndWeek(
   }
 
   return { quarter: 1, week: 1 }
+}
+
+/**
+ * Jadval o'zgarishi ("Nashr qilish", faollashtirish) kuchga kiradigan birinchi hafta: joriy hafta,
+ * YAKSHANBA kuni esa kelgusi hafta — o'tib bo'lgan Du–Sha qayta yozilmasin (server
+ * `LiveScheduleEdit.EditBoundary` bilan bir xil, 2026-10-11). O'quv yili choraklari tugagan bo'lsa
+ * null — o'tgan haftalarni qayta yozish o'rniga rad etiladi.
+ */
+export function getEditableQuarterAndWeek(
+  quarters: Array<{ quarter: number; startDate?: string; endDate?: string }>,
+): { quarter: number; week: number } | null {
+  const d = new Date()
+  if (d.getDay() === 0) d.setDate(d.getDate() + 1)
+  const iso = toISO(d)
+  if (!quarters.some((q) => q.startDate && q.endDate && q.endDate >= iso)) return null
+  return getCurrentQuarterAndWeek(quarters, d)
 }
 
 /**

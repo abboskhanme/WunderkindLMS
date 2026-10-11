@@ -59,9 +59,11 @@ public sealed record OwnedLesson(
 public static class TeacherLessons
 {
     /// <summary>
-    /// Har TIRIK eganing "asosiy" (eng ko'p darsli, tenglikda eng kichik id'li)
-    /// jadval shabloni. Bugungi qoidaning aynan o'zi, faqat endi ega sinf ham,
-    /// guruh ham bo'lishi mumkin.
+    /// Har TIRIK eganing "asosiy" (eng ko'p darsli, tenglikda eng kichik id'li) jadval shabloni.
+    /// 2026-10-11: egada joriy/keyingi haftalarga biriktirilgan shablon bo'lsa, faqat o'tgan
+    /// haftalardagi eski versiyalar ("… gacha") tanlovga kirmaydi
+    /// (<see cref="LiveScheduleEdit.WithoutHistory"/>) — aks holda faol jadvalga o'zgartirish
+    /// kiritilgach eski versiya darslar soni bilan yutib ketardi. Qolgan holatda qoida o'zgarmagan.
     ///
     /// <para>
     /// <c>owner_kind</c> ham solishtiriladi: id tasodifan mos kelib qolsa ham
@@ -73,11 +75,13 @@ public static class TeacherLessons
     {
         var owners = await LessonRoster.LiveOwnersAsync(db, ct);
         var templates = await db.ScheduleTemplates.Include(t => t.Lessons).ToListAsync(ct);
+        var rank = await LiveScheduleEdit.TemplateRankAsync(db, ct);
 
         return [.. templates
             .Where(t => owners.TryGetValue(t.ClassId, out var o) && o.Kind == t.OwnerKind)
             .GroupBy(t => t.ClassId, StringComparer.Ordinal)
-            .Select(g => g.OrderByDescending(t => t.Lessons.Count).ThenBy(t => t.Id, StringComparer.Ordinal).First())
+            .Select(g => LiveScheduleEdit.WithoutHistory(g, rank)
+                .OrderByDescending(t => t.Lessons.Count).ThenBy(t => t.Id, StringComparer.Ordinal).First())
             .Select(t => (owners[t.ClassId], t))];
     }
 
