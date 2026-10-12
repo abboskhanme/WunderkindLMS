@@ -779,6 +779,8 @@ export interface Staff {
   salary: number
   /** Maosh qaysi kundan hisoblanadi ("YYYY-MM-DD"); birinchi oy qisman. Bo'sh — belgilanmagan */
   salaryStartDate: string
+  /** Tizim egasi (superadmin): hamma bo'limga kiradi; o'chirilmaydi, rol berilmaydi, qatorini faqat superadmin ochadi */
+  isOwner?: boolean
 }
 
 /** Xodim roli: ruxsatlar rolga beriladi, xodimga faqat rol biriktiriladi. */

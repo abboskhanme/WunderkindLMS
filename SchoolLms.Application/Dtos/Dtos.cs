@@ -1215,9 +1215,10 @@ public record BranchPayload(
 /// <param name="AvatarUrl">Profil rasmi (<c>/uploads/…</c>) — admin qo'yadi yoki xodimning o'zi.</param>
 /// <param name="Salary">Oylik maosh (so'm).</param>
 /// <param name="SalaryStartDate">Maosh shu kundan hisoblanadi (<c>yyyy-MM-dd</c>, bo'sh = belgilanmagan).</param>
+/// <param name="IsOwner">Tizim egasi (superadmin) — hamma bo'limga kiradi, o'chirilmaydi, rol berilmaydi.</param>
 public record StaffDto(string Id, string FullName, string Position, string Login, List<string> Permissions,
     string? AvatarUrl = null, Guid? AccessRoleId = null, string? AccessRoleName = null, string? LastLoginAt = null,
-    string Phone = "", decimal Salary = 0, string SalaryStartDate = "");
+    string Phone = "", decimal Salary = 0, string SalaryStartDate = "", bool IsOwner = false);
 /// <param name="AvatarUrl">null — o'zgarmaydi; "" — olib tashlanadi; "/uploads/…" — yangi rasm.</param>
 /// <param name="Phone">null — o'zgarmaydi (yaratishda bo'sh).</param>
 /// <param name="Salary">null — o'zgarmaydi (yaratishda 0). Manfiy — 400.</param>

@@ -75,7 +75,7 @@ export function StaffFormDrawer({ editing, roles, canManageRoles, knownPositions
 
   /** Rol o'zgargan bo'lsa biriktiradi; xato bo'lsa xodim saqlangan qoladi, xabar qaytadi. */
   const applyRole = async (s: Staff): Promise<{ staff: Staff; roleError: string | null }> => {
-    if (!canManageRoles || (s.accessRoleId ?? '') === roleId) return { staff: s, roleError: null }
+    if (!canManageRoles || s.isOwner || (s.accessRoleId ?? '') === roleId) return { staff: s, roleError: null }
     try {
       return { staff: await setStaffRole(s.id, roleId || null), roleError: null }
     } catch (err) {
@@ -206,27 +206,31 @@ export function StaffFormDrawer({ editing, roles, canManageRoles, knownPositions
           </div>
         )}
 
-        <div>
-          <Select label="Rol" value={roleId} disabled={!canManageRoles} onChange={(e) => setRoleId(e.target.value)}>
-            <option value="">— Rol biriktirilmagan —</option>
-            {roles.map((r) => (
-              <option key={r.id} value={r.id}>
-                {r.name}
-              </option>
-            ))}
-          </Select>
-          <p className="mt-1 text-xs text-slate-400">
-            {canManageRoles
-              ? "Xodim faqat shu rolga berilgan bo'limlarni ko'radi. Ruxsatlar Boshqaruv → Rollar sahifasida."
-              : 'Rolni tizim egasi (superadmin) biriktiradi.'}
-          </p>
-          {editing && !editing.accessRoleId && editing.permissions.length > 0 && canManageRoles && (
-            <p className="mt-1 text-xs text-amber-600">
-              Hozir {editing.permissions.length} ta eski shaxsiy ruxsat amal qilyapti — rol tanlansa, ular rol
-              ruxsatlari bilan almashadi.
+        {editing?.isOwner ? (
+          <p className="text-xs text-slate-400">Tizim egasi hamma bo'limga kiradi — rol biriktirilmaydi.</p>
+        ) : (
+          <div>
+            <Select label="Rol" value={roleId} disabled={!canManageRoles} onChange={(e) => setRoleId(e.target.value)}>
+              <option value="">— Rol biriktirilmagan —</option>
+              {roles.map((r) => (
+                <option key={r.id} value={r.id}>
+                  {r.name}
+                </option>
+              ))}
+            </Select>
+            <p className="mt-1 text-xs text-slate-400">
+              {canManageRoles
+                ? "Xodim faqat shu rolga berilgan bo'limlarni ko'radi. Ruxsatlar Boshqaruv → Rollar sahifasida."
+                : 'Rolni tizim egasi (superadmin) biriktiradi.'}
             </p>
-          )}
-        </div>
+            {editing && !editing.accessRoleId && editing.permissions.length > 0 && canManageRoles && (
+              <p className="mt-1 text-xs text-amber-600">
+                Hozir {editing.permissions.length} ta eski shaxsiy ruxsat amal qilyapti — rol tanlansa, ular rol
+                ruxsatlari bilan almashadi.
+              </p>
+            )}
+          </div>
+        )}
 
         {!editing && (
           <p className="text-xs text-slate-400">

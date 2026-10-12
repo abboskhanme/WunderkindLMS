@@ -551,11 +551,16 @@ export function EmployeesPage() {
                             )}
                           </>
                         ) : (
-                          <>
-                            <IconBtn icon={KeyRound} title="Login/parol" onClick={() => showCredentials(e.staff)} />
-                            <IconBtn icon={Pencil} title="Tahrirlash" onClick={() => openStaffForm(e.staff)} />
-                            <IconBtn icon={Trash2} title="O'chirish" danger onClick={() => handleDeleteStaff(e.staff)} />
-                          </>
+                          // Tizim egasining qatorini faqat superadmin ochadi; ega o'chirilmaydi.
+                          (!e.staff.isOwner || isSuperadmin) && (
+                            <>
+                              <IconBtn icon={KeyRound} title="Login/parol" onClick={() => showCredentials(e.staff)} />
+                              <IconBtn icon={Pencil} title="Tahrirlash" onClick={() => openStaffForm(e.staff)} />
+                              {!e.staff.isOwner && (
+                                <IconBtn icon={Trash2} title="O'chirish" danger onClick={() => handleDeleteStaff(e.staff)} />
+                              )}
+                            </>
+                          )
                         )}
                       </span>
                     </td>
@@ -693,6 +698,13 @@ function Dash() {
 }
 
 function RoleCell({ s }: { s: Staff }) {
+  if (s.isOwner) {
+    return (
+      <span className="whitespace-nowrap rounded-full bg-slate-900 px-2.5 py-0.5 text-xs font-medium text-white">
+        Tizim egasi
+      </span>
+    )
+  }
   if (s.accessRoleName) {
     return (
       <span className="whitespace-nowrap rounded-full bg-brand-50 px-2.5 py-0.5 text-xs font-medium text-brand-700">

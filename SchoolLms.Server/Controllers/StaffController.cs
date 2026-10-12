@@ -14,6 +14,12 @@ namespace SchoolLms.Server.Controllers;
 /// paneliga kiruvchi tizim akkaunti (role="staff") generatsiya qilinadi. Qaysi bo'limlarni
 /// ko'rishi <see cref="AppUser.Permissions"/> bilan boshqariladi — uni FAQAT superadmin
 /// ("Xodimlar va rollar" bo'limi / <see cref="SetPermissions"/>) o'zgartiradi.
+/// <para>
+/// Tizim egalari (superadmin) ham ro'yxatda (mijoz, 2026-10-11: "super admin bo'lsa ham umumiy xodimlar
+/// ro'yxatida bo'lishi kerak"). Ularning qatorini faqat superadmin tahrirlaydi va login/parolini ko'radi —
+/// "staff" ruxsati egasining parolini tiklab, akkauntini egallay olmasin. Egani o'chirish, unga rol yoki
+/// ruxsat berish yo'q: u baribir hamma bo'limga kiradi.
+/// </para>
 /// </summary>
 [ApiController]
 [Authorize]
@@ -26,6 +32,8 @@ public class StaffController(AppDbContext db, AuditService audit) : ControllerBa
     /// <summary><c>users.salary</c> — <c>numeric(14,2)</c> ning eng katta qiymati.</summary>
     private const decimal MaxSalary = 999_999_999_999.99m;
     /// <summary>Shown when the account has an HR topshiriqlari row (its task history must stay).</summary>
+    private const string OwnerDeleteMessage = "Tizim egasi akkauntini o'chirib bo'lmaydi.";
+    private const string OwnerAccessMessage = "Tizim egasi hamma bo'limga kiradi — unga rol yoki ruxsat berilmaydi.";
     internal const string HrEmployeeDeleteMessage =
         "Bu foydalanuvchi HR xodimlari ro'yxatida — topshiriqlar tarixi saqlanishi uchun akkauntni o'chirib bo'lmaydi (HR bo'limida ishdan bo'shating).";
 
@@ -41,7 +49,8 @@ public class StaffController(AppDbContext db, AuditService audit) : ControllerBa
     {
         var roleNames = await RoleNamesAsync();
         var showSalary = CanSeeSalary();
-        return (await db.Users.Where(u => u.Role == Roles.Staff).OrderBy(u => u.FullName).ToListAsync())
+        return (await db.Users.Where(u => u.Role == Roles.Staff || u.Role == Roles.SuperAdmin)
+                .OrderBy(u => u.FullName).ToListAsync())
             .Select(u => ToDto(u, roleNames, showSalary)).ToList();
     }
 
@@ -72,8 +81,8 @@ public class StaffController(AppDbContext db, AuditService audit) : ControllerBa
     [HttpPut("{id}")]
     public async Task<ActionResult<StaffDto>> Update(string id, StaffPayload p)
     {
-        var user = await db.Users.FindAsync(id);
-        if (user is null || user.Role != Roles.Staff) return NotFound();
+        var (user, denied) = await FindListedAsync(id);
+        if (user is null) return denied!;
         if (ValidateSalary(p) is { } salaryError) return BadRequest(new { message = salaryError });
         var before = new { user.Salary, user.SalaryStartDate };
         user.FullName = p.FullName.Trim();
@@ -100,8 +109,9 @@ public class StaffController(AppDbContext db, AuditService audit) : ControllerBa
     [HttpDelete("{id}")]
     public async Task<IActionResult> Delete(string id)
     {
-        var user = await db.Users.FindAsync(id);
-        if (user is null || user.Role != Roles.Staff) return NotFound();
+        var (user, denied) = await FindListedAsync(id);
+        if (user is null) return denied!;
+        if (IsOwner(user)) return Conflict(new { message = OwnerDeleteMessage });
         // `expenses.employee_user_id` is RESTRICT: salary already paid is financial history.
         // Refuse with a readable message instead of a 23503 → 500.
         if (await db.Expenses.AnyAsync(e => e.EmployeeUserId == id))
@@ -120,8 +130,8 @@ public class StaffController(AppDbContext db, AuditService audit) : ControllerBa
     [HttpGet("{id}/credentials")]
     public async Task<ActionResult<CredentialsDto>> Credentials(string id)
     {
-        var user = await db.Users.FindAsync(id);
-        if (user is null || user.Role != Roles.Staff) return NotFound();
+        var (user, denied) = await FindListedAsync(id);
+        if (user is null) return denied!;
         return new CredentialsDto(user.Email, user.InitialPassword ?? "", user.Role);
     }
 
@@ -130,8 +140,8 @@ public class StaffController(AppDbContext db, AuditService audit) : ControllerBa
     [HttpPost("{id}/reset-password")]
     public async Task<ActionResult<CredentialsDto>> ResetPassword(string id)
     {
-        var user = await db.Users.FindAsync(id);
-        if (user is null || user.Role != Roles.Staff) return NotFound();
+        var (user, denied) = await FindListedAsync(id);
+        if (user is null) return denied!;
         var pwd = AccountFactory.GeneratePassword();
         user.SetInitialPassword(pwd);
         await db.SaveChangesAsync();
@@ -144,6 +154,7 @@ public class StaffController(AppDbContext db, AuditService audit) : ControllerBa
     public async Task<ActionResult<StaffDto>> SetPermissions(string id, SetStaffPermissionsRequest req)
     {
         var user = await db.Users.FindAsync(id);
+        if (user is not null && IsOwner(user)) return BadRequest(new { message = OwnerAccessMessage });
         if (user is null || user.Role != Roles.Staff) return NotFound();
         user.Permissions = req.Permissions ?? new();
         // Hand-picked permissions no longer follow a role.
@@ -161,6 +172,7 @@ public class StaffController(AppDbContext db, AuditService audit) : ControllerBa
     public async Task<ActionResult<StaffDto>> SetRole(string id, SetStaffRoleRequest req)
     {
         var user = await db.Users.FindAsync(id);
+        if (user is not null && IsOwner(user)) return BadRequest(new { message = OwnerAccessMessage });
         if (user is null || user.Role != Roles.Staff) return NotFound();
 
         if (req.AccessRoleId is { } roleId)
@@ -180,6 +192,20 @@ public class StaffController(AppDbContext db, AuditService audit) : ControllerBa
         return ToDto(user, await RoleNamesAsync());
     }
 
+    private static bool IsOwner(AppUser u) => u.Role == Roles.SuperAdmin;
+
+    /// <summary>
+    /// A listed account the caller may change or open: a staff member, or an owner — the owner's row
+    /// only for a superadmin (403 otherwise). Anything else — 404.
+    /// </summary>
+    private async Task<(AppUser? User, ActionResult? Denied)> FindListedAsync(string id)
+    {
+        var user = await db.Users.FindAsync(id);
+        if (user is null || (user.Role != Roles.Staff && !IsOwner(user))) return (null, NotFound());
+        if (IsOwner(user) && !User.IsInRole(Roles.SuperAdmin)) return (null, Forbid());
+        return (user, null);
+    }
+
     private Task<Dictionary<Guid, string>> RoleNamesAsync() =>
         db.AccessRoles.AsNoTracking().ToDictionaryAsync(r => r.Id, r => r.Name);
 
@@ -188,7 +214,7 @@ public class StaffController(AppDbContext db, AuditService audit) : ControllerBa
             u.AccessRoleId,
             u.AccessRoleId is { } rid ? roleNames.GetValueOrDefault(rid) : null,
             u.LastLoginAt,
-            u.Phone, showSalary ? u.Salary : 0m, showSalary ? u.SalaryStartDate : "");
+            u.Phone, showSalary ? u.Salary : 0m, showSalary ? u.SalaryStartDate : "", IsOwner(u));
 
     /// <summary>Oylikni kim ko'radi: admin/superadmin, moliya rollari, "staff" yoki "staff:view" ruxsati.</summary>
     private bool CanSeeSalary() =>
