@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using SchoolLms.Infrastructure.Data;
 using SchoolLms.Application.Abstractions;
@@ -147,6 +148,67 @@ public class TeacherPortalController(
         var t = await Me();
         if (t is null) return NotFound();
         return await HomeroomDebts.ForTeacherAsync(db, t.Id, ct);
+    }
+
+    /// <summary>
+    /// Rahbarning ro'yxati Excel'da — ekrandagi filtr bilan: <paramref name="group"/> (sinf yoki guruh,
+    /// bo'sh = hammasi) va <paramref name="all"/> (true = qarzi yo'qlar ham). Web-portal va brauzer uchun.
+    /// </summary>
+    [HttpGet("homeroom/debts/export")]
+    public async Task<IActionResult> HomeroomDebtsExport(
+        [FromQuery] string? group, [FromQuery] bool all = false, CancellationToken ct = default)
+    {
+        var t = await Me();
+        if (t is null) return NotFound();
+        var dto = await HomeroomDebts.ForTeacherAsync(db, t.Id, ct);
+        return File(HomeroomDebts.Workbook(dto, group, all, t.FullName),
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", HomeroomDebts.FileName(dto, group));
+    }
+
+    /// <summary>
+    /// O'sha Excel — o'qituvchining o'z Telegram chatiga, bot hujjati bo'lib. Telegram ichida fayl yuklab
+    /// olish ishonchsiz (Android jim e'tiborsiz qoldiradi), chatdagi faylni esa har telefon ochadi —
+    /// ota-ona chekidagi bilan bir xil yo'l (TelegramReceiptController).
+    /// 409 — Telegram ulanmagan; 503 — bot sozlanmagan; 502 — Telegram qabul qilmadi.
+    /// </summary>
+    [HttpPost("homeroom/debts/telegram")]
+    [EnableRateLimiting("telegram")]
+    public async Task<IActionResult> HomeroomDebtsToTelegram(
+        [FromQuery] string? group, [FromQuery] bool all = false, CancellationToken ct = default)
+    {
+        var t = await Me();
+        if (t is null) return NotFound();
+
+        var chats = await PenaltyNotifier.RecipientsAsync(db, EmployeeKind.Teacher, t.Id, ct);
+        if (chats.Count == 0)
+            return Conflict(new
+            {
+                code = "telegram_not_linked",
+                message = "Telegram hisobingiz ulanmagan. Ilovani Telegram ichidan oching.",
+            });
+        if (!telegram.IsConfigured)
+            return StatusCode(StatusCodes.Status503ServiceUnavailable, new
+            {
+                code = "telegram_not_configured",
+                message = "Telegram bot sozlanmagan. Maktab ma'muriyatiga murojaat qiling.",
+            });
+
+        var dto = await HomeroomDebts.ForTeacherAsync(db, t.Id, ct);
+        var bytes = HomeroomDebts.Workbook(dto, group, all, t.FullName);
+        var rows = HomeroomDebts.Rows(dto, group, all);
+        var caption = $"{(string.IsNullOrWhiteSpace(group) ? string.Join(", ", dto.Groups) : group)} — "
+                      + $"{rows.Count(r => r.Debt > 0m)} ta qarzdor, jami {AuditService.Money(rows.Sum(r => r.Debt))} so'm";
+        var delivered = false;
+        foreach (var chat in chats)
+            delivered |= await telegram.SendDocumentAsync(chat, bytes, HomeroomDebts.FileName(dto, group), caption, ct);
+
+        return delivered
+            ? Ok(new { sent = true })
+            : StatusCode(StatusCodes.Status502BadGateway, new
+            {
+                code = "telegram_send_failed",
+                message = "Telegram faylni qabul qilmadi. Botga /start yozib, qayta urinib ko'ring.",
+            });
     }
 
     /// <summary>"Topshirish" — farzandni ota-onasiga topshiradi (sana qoldiradi) va ota-onaga push yuboradi.</summary>

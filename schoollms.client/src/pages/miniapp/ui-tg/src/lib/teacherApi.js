@@ -8,7 +8,7 @@
  * bitta qatori o'zgaradi. EKRANLAR HECH QACHON `api` NI TO'G'RIDAN-TO'G'RI
  * CHAQIRMAYDI, shuning uchun ko'chirish narxi shu fayl bilan cheklanadi.
  */
-import { api, ApiError } from './api'
+import { api, ApiError, tokenStore } from './api'
 
 /** Endpoint prefiksi. `/tg/teacher` ga o'tganda faqat shu qator o'zgaradi. */
 const BASE = '/teacher'
@@ -49,6 +49,33 @@ export const teacherApi = {
 
   /** Sinf rahbari: rahbarlikdagi sinf/yo'nalish guruhi o'quvchilari va qarzi (2026-10-12). Rahbar bo'lmasa — bo'sh. */
   homeroomDebts: () => api.get(`${BASE}/homeroom/debts`),
+
+  /**
+   * Shu ro'yxat Excel'da — o'qituvchining o'z Telegram chatiga (bot hujjati). Telegram ichida fayl
+   * yuklab olish ishonchsiz, chatga kelgan faylni esa har telefon ochadi (ota-ona chekidagi yo'l).
+   * `group` — sinf/guruh (bo'sh = hammasi), `all` — qarzi yo'qlar ham.
+   */
+  homeroomDebtsToTelegram: ({ group, all } = {}) =>
+    api.post(`${BASE}/homeroom/debts/telegram${qs({ group, all: all || undefined })}`),
+
+  /** Telegramdan tashqarida (brauzerda) — o'sha Excel to'g'ridan-to'g'ri yuklab olinadi. */
+  downloadHomeroomDebts: async ({ group, all } = {}) => {
+    const token = tokenStore.get()
+    const res = await fetch(`/api${BASE}/homeroom/debts/export${qs({ group, all: all || undefined })}`, {
+      headers: token ? { Authorization: 'Bearer ' + token } : {},
+    })
+    if (!res.ok) throw new ApiError(res.status, { message: "Excel faylni olib bo'lmadi" })
+    const blob = await res.blob()
+    const name = /filename\*=UTF-8''([^;]+)/i.exec(res.headers.get('content-disposition') || '')?.[1]
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = name ? decodeURIComponent(name) : 'qarzdorlar.xlsx'
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
+  },
 
   /* ---------- jurnal / davomat ---------- */
 

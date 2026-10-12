@@ -4,19 +4,21 @@
  *
  *   HomeroomDebtsCard  — "Bugun" dagi karta: jami qarz, qarzdorlar soni va eng katta uchtasi.
  *   HomeroomDebtsSheet — butun ekran: qarzdorlar (yoki hamma) ro'yxati — to'lanmagan oylar va
- *                        ota-ona telefoni (eslatish uchun bosib qo'ng'iroq qilinadi).
+ *                        ota-ona telefoni (eslatish uchun bosib qo'ng'iroq qilinadi). Sinf / guruh
+ *                        bo'yicha filtr va Excel (2026-10-12): Telegram ichida fayl bot orqali
+ *                        o'qituvchining o'z chatiga keladi, brauzerda — to'g'ridan-to'g'ri yuklanadi.
  *
  * Faqat rahbarga: rahbarligi yo'q o'qituvchida karta umuman chizilmaydi (server ham bo'sh
  * ro'yxat qaytaradi). Faqat ko'rish — to'lov va chegirmalar bu yerda yo'q. Raqamlar admin'dagi
  * "Qarzdorlar" hisoboti bilan bir xil (`GET /api/teacher/homeroom/debts`).
  */
 import { useCallback, useEffect, useState } from 'react'
-import { ChevronRight, Phone, Users, Wallet, X } from 'lucide-react'
+import { ChevronRight, FileSpreadsheet, Phone, Users, Wallet, X } from 'lucide-react'
 import { Badge, Card, EmptyState, Hero, Row, Segmented, StatGrid } from '../../components/ui'
 import { useAsync } from '../../lib/useAsync'
 import { teacherApi } from '../../lib/teacherApi'
 import { money, monthTitle, sum } from '../../lib/format'
-import { haptic, showBackButton } from '../../lib/telegram'
+import { haptic, hapticNotify, inTelegram, showBackButton } from '../../lib/telegram'
 
 /** "2026-09-01" → "Sentabr" (shu yil) yoki "Sentabr 2025" (boshqa yil). */
 function monthLabel(iso) {
@@ -108,13 +110,45 @@ export function HomeroomDebtsCard() {
 export function HomeroomDebtsSheet({ onClose }) {
   const q = useAsync(() => teacherApi.homeroomDebts(), [])
   const [filter, setFilter] = useState('debtors')
+  /** Sinf yoki guruh nomi; '' — hammasi. */
+  const [group, setGroup] = useState('')
+  const [excel, setExcel] = useState({ busy: false, note: null, error: null })
 
   const back = useCallback(() => onClose(), [onClose])
   useEffect(() => showBackButton(back), [back])
 
   const d = q.data
   const manyGroups = (d?.groups.length ?? 0) > 1
-  const shown = d ? (filter === 'debtors' ? d.pupils.filter((p) => p.debt > 0) : d.pupils) : []
+  // Hamma raqam tanlangan sinf/guruh bo'yicha — ekran va Excel bir xil narsani ko'rsatsin.
+  const inGroup = d ? d.pupils.filter((p) => !group || p.group === group) : []
+  const debtors = inGroup.filter((p) => p.debt > 0)
+  const shown = filter === 'debtors' ? debtors : inGroup
+  const total = debtors.reduce((acc, p) => acc + p.debt, 0)
+
+  const pickGroup = (g) => {
+    haptic('light')
+    setGroup(g)
+    setExcel({ busy: false, note: null, error: null })
+  }
+
+  const exportExcel = async () => {
+    if (excel.busy) return
+    setExcel({ busy: true, note: null, error: null })
+    const params = { group: group || undefined, all: filter === 'all' }
+    try {
+      if (inTelegram) {
+        await teacherApi.homeroomDebtsToTelegram(params)
+        hapticNotify('success')
+        setExcel({ busy: false, note: "Excel fayl Telegram'dagi bot chatingizga yuborildi.", error: null })
+      } else {
+        await teacherApi.downloadHomeroomDebts(params)
+        setExcel({ busy: false, note: null, error: null })
+      }
+    } catch (e) {
+      hapticNotify('error')
+      setExcel({ busy: false, note: null, error: e?.message || "Excel faylni olib bo'lmadi" })
+    }
+  }
 
   return (
     <div role="dialog" aria-label="Sinfim" className="fixed inset-0 z-40 overflow-y-auto overscroll-contain bg-ground">
@@ -139,8 +173,8 @@ export function HomeroomDebtsSheet({ onClose }) {
               value={filter}
               onChange={setFilter}
               options={[
-                { value: 'debtors', label: `Qarzdorlar · ${d.debtorCount}` },
-                { value: 'all', label: `Hammasi · ${d.pupilCount}` },
+                { value: 'debtors', label: `Qarzdorlar · ${debtors.length}` },
+                { value: 'all', label: `Hammasi · ${inGroup.length}` },
               ]}
             />
           )}
@@ -152,10 +186,33 @@ export function HomeroomDebtsSheet({ onClose }) {
           <p className="px-4 py-6 text-center text-[14px] text-red-600">{q.error}</p>
         ) : (
           <>
+            {/* Sinf / guruh filtri — bir nechta rahbarlik bo'lsagina (2026-10-12). */}
+            {manyGroups && (
+              <div className="mt-3 flex gap-2 overflow-x-auto px-4">
+                {['', ...d.groups].map((g) => {
+                  const count = d.pupils.filter((p) => (!g || p.group === g) && p.debt > 0).length
+                  const active = group === g
+                  return (
+                    <button
+                      key={g || 'all'}
+                      type="button"
+                      onClick={() => pickGroup(g)}
+                      className={
+                        'shrink-0 rounded-full px-3.5 py-2 text-[14px] font-semibold transition ' +
+                        (active ? 'bg-brand-ink text-brand' : 'bg-white text-slate-600')
+                      }
+                    >
+                      {g || 'Barchasi'} · {count}
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+
             <StatGrid
               items={[
-                { label: "Jami qarz, so'm", value: sum(d.totalDebt) },
-                { label: 'Qarzdorlar', value: `${d.debtorCount}/${d.pupilCount}`, note: "o'quvchidan" },
+                { label: "Jami qarz, so'm", value: sum(total) },
+                { label: 'Qarzdorlar', value: `${debtors.length}/${inGroup.length}`, note: "o'quvchidan" },
               ]}
             />
 
@@ -166,6 +223,21 @@ export function HomeroomDebtsSheet({ onClose }) {
                 shown.map((p) => <PupilRow key={p.studentId} p={p} showGroup={manyGroups} />)
               )}
             </Card>
+
+            {/* Excel — ekrandagi filtr bilan (sinf/guruh, qarzdorlar yoki hammasi). */}
+            <div className="mx-4 mt-3">
+              <button
+                type="button"
+                onClick={exportExcel}
+                disabled={excel.busy || shown.length === 0}
+                className="flex w-full items-center justify-center gap-2 rounded-card bg-white px-4 py-3.5 text-[15px] font-semibold text-slate-800 disabled:opacity-50"
+              >
+                <FileSpreadsheet className="h-5 w-5 text-emerald-600" />
+                {excel.busy ? 'Tayyorlanmoqda…' : inTelegram ? "Excel'ni Telegram'ga yuborish" : 'Excel yuklab olish'}
+              </button>
+              {excel.note && <p className="mt-2 text-center text-[13px] text-emerald-700">{excel.note}</p>}
+              {excel.error && <p className="mt-2 text-center text-[13px] text-red-600">{excel.error}</p>}
+            </div>
 
             <p className="mx-6 mt-3 text-center text-[12px] text-slate-400">
               Qarz buxgalteriyadagi bilan bir xil. To'lov faqat kassada qabul qilinadi.

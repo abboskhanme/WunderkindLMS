@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { BellRing, CheckCircle2, Users2, Wallet } from 'lucide-react'
+import { BellRing, CheckCircle2, FileSpreadsheet, Users2, Wallet } from 'lucide-react'
 import { ScreenHeader } from '../components/ui'
 import Avatar from '../components/Avatar'
 import AppButton from '../components/AppButton'
@@ -22,6 +22,17 @@ export default function HomeroomScreen({ onBack }) {
   const debts = useFetch(() => api.homeroomDebts().catch(() => null), [])
   const debtById = {}
   for (const p of debts.data?.pupils || []) debtById[p.studentId] = p
+  const [excelBusy, setExcelBusy] = useState(false)
+  const downloadExcel = async () => {
+    setExcelBusy(true)
+    try {
+      await api.downloadHomeroomDebts()
+    } catch (e) {
+      alert((e && e.message) || "Excel faylni olib bo'lmadi")
+    } finally {
+      setExcelBusy(false)
+    }
+  }
   const [busy, setBusy] = useState(null) // studentId or pickupId being mutated
 
   const reload = () => { home.reload(); picks.reload() }
@@ -110,6 +121,16 @@ export default function HomeroomScreen({ onBack }) {
                       ? `Qarzdorlar: ${debts.data.debtorCount} ta · jami ${sum(debts.data.totalDebt)} so'm (${debts.data.groups.join(', ')})`
                       : "Qarzdor o'quvchi yo'q."}
                   </span>
+                  {debts.data.debtorCount > 0 && (
+                    <button
+                      type="button"
+                      onClick={downloadExcel}
+                      disabled={excelBusy}
+                      className="ml-auto shrink-0 inline-flex items-center gap-1 text-[12.5px] font-bold text-danger disabled:opacity-50"
+                    >
+                      <FileSpreadsheet size={15} /> {excelBusy ? '…' : 'Excel'}
+                    </button>
+                  )}
                 </div>
               </div>
             )}

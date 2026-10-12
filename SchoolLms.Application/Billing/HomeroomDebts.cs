@@ -1,6 +1,8 @@
+using System.Globalization;
 using Microsoft.EntityFrameworkCore;
 using SchoolLms.Application.Abstractions;
 using SchoolLms.Application.Services;
+using SchoolLms.Domain;
 
 namespace SchoolLms.Application.Billing;
 
@@ -94,5 +96,59 @@ public static class HomeroomDebts
 
         return new HomeroomDebtsDto(
             groups, rows.Count, rows.Count(r => r.Debt > 0m), rows.Sum(r => r.Debt), rows);
+    }
+
+    // =====================================================================
+    //  Filter and Excel (client, 2026-10-12: "sinf va guruh bo'yicha filterlash ... excelga yuklab olish")
+    // =====================================================================
+
+    /// <summary>The rows the screen shows: one class / group (null = all of them), debtors only or everyone.</summary>
+    public static IReadOnlyList<HomeroomDebtRowDto> Rows(HomeroomDebtsDto dto, string? group, bool everyone) =>
+        [.. dto.Pupils.Where(p => (everyone || p.Debt > 0m)
+                                  && (string.IsNullOrWhiteSpace(group) || string.Equals(p.Group, group, StringComparison.Ordinal)))];
+
+    private static readonly string[] Months =
+    [
+        "Yanvar", "Fevral", "Mart", "Aprel", "May", "Iyun",
+        "Iyul", "Avgust", "Sentabr", "Oktabr", "Noyabr", "Dekabr",
+    ];
+
+    /// <summary>The same list as a workbook: title, one row per pupil, a total.</summary>
+    public static byte[] Workbook(HomeroomDebtsDto dto, string? group, bool everyone, string teacherName)
+    {
+        var rows = Rows(dto, group, everyone);
+        var scope = string.IsNullOrWhiteSpace(group) ? string.Join(", ", dto.Groups) : group;
+        var title = $"{teacherName} — {scope} · {(everyone ? "barcha o'quvchilar" : "qarzdorlar")} · "
+                    + AppClock.Today.ToString("dd.MM.yyyy", CultureInfo.InvariantCulture);
+
+        IReadOnlyList<string> headers =
+            ["№", "O'quvchi", "Sinf / guruh", "Qarz, so'm", "To'lanmagan oylar", "Kechikkan, kun", "Ota-ona telefoni"];
+        var table = rows.Select((p, i) => (IReadOnlyList<ExcelExport.XlsxCell>)
+        [
+            (i + 1).ToString(CultureInfo.InvariantCulture),
+            p.FullName,
+            p.Group,
+            ExcelExport.XlsxCell.Num(p.Debt),
+            string.Join("; ", p.UnpaidMonths.Select(m =>
+                $"{Months[m.Month.Month - 1]} {m.Month.Year}: {m.Amount.ToString("#,0", CultureInfo.InvariantCulture).Replace(',', ' ')}")),
+            p.DaysOverdue > 0 ? p.DaysOverdue.ToString(CultureInfo.InvariantCulture) : "",
+            p.ParentPhone,
+        ]).ToList();
+        IReadOnlyList<ExcelExport.XlsxCell> totals =
+            ["", $"Jami: {rows.Count(r => r.Debt > 0m)} ta qarzdor", "", ExcelExport.XlsxCell.Num(rows.Sum(r => r.Debt))];
+
+        return ExcelExport.BuildTables(
+        [
+            new ExcelExport.TableSpec("Qarzdorlar", headers, table, totals, title, [6, 36, 16, 15, 44, 14, 20]),
+        ]);
+    }
+
+    /// <summary><c>qarzdorlar_7-A_2026-10-12.xlsx</c> — characters Windows refuses become "-".</summary>
+    public static string FileName(HomeroomDebtsDto dto, string? group)
+    {
+        var scope = string.IsNullOrWhiteSpace(group) ? string.Join("-", dto.Groups) : group;
+        var bad = Path.GetInvalidFileNameChars().Concat(['/', '\\', ':', '*', '?', '"', '<', '>', '|', ' ', ',']).ToHashSet();
+        var clean = new string([.. scope.Select(c => bad.Contains(c) ? '-' : c)]).Trim('-');
+        return $"qarzdorlar_{(clean.Length == 0 ? "sinfim" : clean)}_{AppClock.Today:yyyy-MM-dd}.xlsx";
     }
 }

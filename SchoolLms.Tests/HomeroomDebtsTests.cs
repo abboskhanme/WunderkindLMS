@@ -1,5 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
+using DocumentFormat.OpenXml.Packaging;
+using DocumentFormat.OpenXml.Spreadsheet;
 using Microsoft.EntityFrameworkCore;
 using SchoolLms.Application.Billing;
 using SchoolLms.Domain;
@@ -79,13 +81,69 @@ public class HomeroomDebtsTests(ApiFixture fixture)
         Assert.Equal(HttpStatusCode.Unauthorized, (await anonymous.GetAsync(Url)).StatusCode);
     }
 
+    [Fact]
+    public async Task Excel_ekrandagi_filtr_bilan_sinf_guruh_va_hammasi()
+    {
+        var w = await SeedAsync();
+
+        // Default: debtors of every group, largest first, with a total.
+        var all = await SheetAsync(w.Teacher, "");
+        Assert.Contains("qarzdorlar", all[0][0]);
+        Assert.Equal(["№", "O'quvchi", "Sinf / guruh", "Qarz, so'm", "To'lanmagan oylar", "Kechikkan, kun", "Ota-ona telefoni"], all[2]);
+        var body = all.Skip(3).ToList();
+        Assert.Equal([$"Ali {w.Tag}", $"Doniyor {w.Tag}"], body.SkipLast(1).Select(r => r[1]).ToArray());
+        Assert.Equal("2600000.00", body[0][3]);
+        Assert.Equal("Sentabr 2026: 1 600 000; Oktabr 2026: 1 000 000", body[0][4]);
+        Assert.Equal("+998901112233", body[0][6]);
+        Assert.Equal("3100000.00", body[^1][3]);
+
+        // One track group.
+        var track = await SheetAsync(w.Teacher, $"?group={Uri.EscapeDataString(w.TrackName)}");
+        Assert.Equal([$"Doniyor {w.Tag}"], track.Skip(3).SkipLast(1).Select(r => r[1]).ToArray());
+
+        // One class, everyone — the pupil who owes nothing too.
+        var cls = await SheetAsync(w.Teacher, $"?group={Uri.EscapeDataString(w.LedClass)}&all=true");
+        Assert.Equal([$"Ali {w.Tag}", $"Bobur {w.Tag}"], cls.Skip(3).SkipLast(1).Select(r => r[1]).ToArray());
+    }
+
+    [Fact]
+    public async Task Excel_telegramga_ulanmagan_bolsa_409_ulangan_bolsa_bot_sozlanmagani_503()
+    {
+        var w = await SeedAsync();
+        Assert.Equal(HttpStatusCode.Conflict, (await w.Teacher.PostAsync($"{Url}/telegram", null)).StatusCode);
+
+        await fixture.Api.WithDbAsync(async db =>
+        {
+            db.TelegramAccounts.Add(new TelegramAccount
+            {
+                TelegramUserId = Random.Shared.NextInt64(10_000, long.MaxValue), UserId = w.TeacherUserId, DisplayName = "Ustoz",
+            });
+            await db.SaveChangesAsync();
+        });
+        // The test host has no bot token: linked, but nothing can be sent.
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, (await w.Teacher.PostAsync($"{Url}/telegram", null)).StatusCode);
+    }
+
+    private static async Task<List<List<string>>> SheetAsync(HttpClient client, string query)
+    {
+        var res = await client.GetAsync($"{Url}/export{query}");
+        Assert.Equal(HttpStatusCode.OK, res.StatusCode);
+        using var stream = new MemoryStream(await res.Content.ReadAsByteArrayAsync());
+        using var doc = SpreadsheetDocument.Open(stream, false);
+        var sheet = doc.WorkbookPart!.WorksheetParts.First().Worksheet;
+        return [.. sheet.Descendants<Row>().Select(r => r.Elements<Cell>()
+            .Select(c => c.DataType?.Value == CellValues.InlineString ? c.InlineString!.InnerText : c.CellValue?.Text ?? "")
+            .ToList())];
+    }
+
     // =====================================================================
     //  Seed
     // =====================================================================
 
     private sealed record World(
         HttpClient Teacher, string LedClass, string TrackName,
-        string Ali, string Bobur, string Doniyor, string Archived, string OtherClassPupil);
+        string Ali, string Bobur, string Doniyor, string Archived, string OtherClassPupil,
+        string Tag = "", string TeacherUserId = "");
 
     private async Task<(string TeacherId, HttpClient Client)> TeacherAsync()
     {
@@ -155,7 +213,8 @@ public class HomeroomDebtsTests(ApiFixture fixture)
             await db.SaveChangesAsync();
         });
 
-        return new World(client, led.Name, track.Name, ali.Id, bobur.Id, doniyor.Id, archived.Id, stranger.Id);
+        return new World(client, led.Name, track.Name, ali.Id, bobur.Id, doniyor.Id, archived.Id, stranger.Id,
+            tag, track.CreatedBy);
     }
 
     private static Student Pupil(string fullName, string className)

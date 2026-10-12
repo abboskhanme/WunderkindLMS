@@ -118,6 +118,24 @@ export const api = {
   handover: (studentId) => POST('/teacher/homeroom/handover', { studentId }),
   // Rahbarlikdagi o'quvchilar qarzi (2026-10-12) — admin "Qarzdorlar" bilan bir xil raqam.
   homeroomDebts: () => GET('/teacher/homeroom/debts'),
+  // Qarzdorlar Excel'da (2026-10-12) — `group` bo'sh = hamma sinf/guruh, `all` — qarzi yo'qlar ham.
+  downloadHomeroomDebts: async ({ group, all } = {}) => {
+    const t = tokenStore.get()
+    const res = await fetch(`/api/teacher/homeroom/debts/export${qs({ group, all: all || undefined })}`, {
+      headers: t ? { Authorization: `Bearer ${t}` } : {},
+    })
+    if (!res.ok) throw new ApiError(res.status, { message: "Excel faylni olib bo'lmadi" })
+    const blob = await res.blob()
+    const name = /filename\*=UTF-8''([^;]+)/i.exec(res.headers.get('content-disposition') || '')?.[1]
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = name ? decodeURIComponent(name) : 'qarzdorlar.xlsx'
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    setTimeout(() => URL.revokeObjectURL(url), 60_000)
+  },
 
   // ---- O'quv guruhlari (Guruhlarim, X-3) ----
   // Ro'yxatni ko'rish har bir guruhga yetadigan o'qituvchiga ochiq; qo'shish/chiqarish

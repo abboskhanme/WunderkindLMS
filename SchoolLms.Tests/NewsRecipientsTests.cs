@@ -117,7 +117,7 @@ public class NewsRecipientsTests(ApiFixture fixture) : IAsyncLifetime
         var dto = await admin.GetFromJsonAsync<JsonElement>($"{News}/{withList}/recipients");
         Assert.True(dto.GetProperty("hasDetails").GetBoolean());
         Assert.Equal(["Yetmagan", "Ulanmagan", "Yetgan"],
-            dto.GetProperty("recipients").EnumerateArray().Select(r => r.GetProperty("name").GetString()).ToArray());
+            dto.GetProperty("recipients").EnumerateArray().Select(r => r.GetProperty("name").GetString()!).ToArray());
         Assert.Equal("Bola (7-A)", dto.GetProperty("recipients")[1].GetProperty("detail").GetString());
 
         var empty = await admin.GetFromJsonAsync<JsonElement>($"{News}/{withoutList}/recipients");
