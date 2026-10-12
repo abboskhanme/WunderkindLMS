@@ -14,8 +14,9 @@
  * jadvalda turibdi.
  *
  * Saqlash ikki ish qiladi: kelmagan o'quvchilarga sabab yozadi va darsni
- * "o'tildi" deb belgilaydi. Mavzu va uyga vazifa mavjud qayddan olib
- * uzatiladi — aks holda o'qituvchi kiritgan mavzu o'chib ketardi.
+ * "o'tildi" deb belgilaydi. Mavzu va uyga vazifa ham shu ekranda (mijoz,
+ * 2026-10-12: o'qituvchi profilida "baho qo'yish, vazifa berish, mavzu berish") —
+ * ota-ona ularni Mini App'ning "Jadval" bo'limida dars ostida ko'radi.
  */
 import { useEffect, useMemo, useState } from 'react'
 import { CalendarOff, Check, ChevronLeft, UserX } from 'lucide-react'
@@ -174,6 +175,9 @@ function LessonAttendance({ lesson, quarter, date, reasons, onBack, onSaved }) {
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState(null)
   const [savedAt, setSavedAt] = useState(null)
+  // Dars mavzusi va uyga vazifa (lesson note) — saqlashda dars bilan birga yoziladi.
+  const [topic, setTopic] = useState('')
+  const [homeworkText, setHomeworkText] = useState('')
 
   // Server javobi kelganda belgilarni bir marta serverdagi holatdan to'ldiramiz.
   const loadedKey = q.data ? `${classId}|${period}|${q.data.todayEntries.length}` : null
@@ -188,6 +192,8 @@ function LessonAttendance({ lesson, quarter, date, reasons, onBack, onSaved }) {
     setSeededKey(loadedKey)
     setMarks(seed)
     setGrades(gradeSeed)
+    setTopic(q.data.note?.topic ?? '')
+    setHomeworkText(q.data.note?.homework ?? '')
     setSaveError(null)
   }
 
@@ -294,7 +300,7 @@ function LessonAttendance({ lesson, quarter, date, reasons, onBack, onSaved }) {
         })
       }
 
-      // Darsni "o'tildi" deb belgilaymiz; mavzu va uy vazifa saqlanib qoladi.
+      // Darsni "o'tildi" deb belgilaymiz — mavzu va uyga vazifa bilan birga.
       await teacherApi.setJournalNote({
         classId,
         subjectId,
@@ -302,8 +308,8 @@ function LessonAttendance({ lesson, quarter, date, reasons, onBack, onSaved }) {
         date,
         period,
         subGroup,
-        topic: note?.topic ?? '',
-        homework: note?.homework ?? null,
+        topic: topic.trim(),
+        homework: homeworkText.trim() || null,
         conducted: true,
       })
 
@@ -351,6 +357,40 @@ function LessonAttendance({ lesson, quarter, date, reasons, onBack, onSaved }) {
         </Card>
       ) : (
         <>
+          <Card title="Mavzu va uyga vazifa">
+            <div className="space-y-3 px-4 pb-4 pt-2">
+              <label className="block">
+                <span className="mb-1 block text-[13px] font-semibold text-slate-500">Dars mavzusi</span>
+                <input
+                  type="text"
+                  value={topic}
+                  maxLength={300}
+                  onChange={(e) => {
+                    setTopic(e.target.value)
+                    setSavedAt(null)
+                  }}
+                  placeholder="Masalan: Kasrlarni qo'shish"
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-[15px] outline-none focus:border-brand focus:bg-white"
+                />
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-[13px] font-semibold text-slate-500">Uyga vazifa</span>
+                <textarea
+                  value={homeworkText}
+                  maxLength={1000}
+                  rows={3}
+                  onChange={(e) => {
+                    setHomeworkText(e.target.value)
+                    setSavedAt(null)
+                  }}
+                  placeholder="Masalan: 45-bet, 3–5-mashqlar"
+                  className="w-full resize-none rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-[15px] outline-none focus:border-brand focus:bg-white"
+                />
+              </label>
+              <p className="text-[12px] text-slate-400">Ota-ona va o'quvchi buni ilovada dars ostida ko'radi.</p>
+            </div>
+          </Card>
+
           <Card
             title="O'quvchilar"
             action={

@@ -178,6 +178,12 @@ function DayCard({ iso, lessons, isToday }) {
                     Guruh: {l.ownerName}
                   </>
                 )}
+                {l.topic && (
+                  <>
+                    <br />
+                    Mavzu: {l.topic}
+                  </>
+                )}
                 {l.homework && (
                   <>
                     <br />
