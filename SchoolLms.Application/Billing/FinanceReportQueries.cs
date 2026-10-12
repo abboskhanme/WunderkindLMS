@@ -75,12 +75,14 @@ namespace SchoolLms.Application.Billing;
 /// raqam bo'ladi. null = butun tarix bo'yicha jami qarz (sukut).
 /// </para>
 /// </param>
+/// <param name="StudentIds">Only these pupils (a homeroom teacher's own, 2026-10-12). null = all.</param>
 public record DebtorReportQuery(
     string? ClassName = null,
     decimal MinDebt = 0.01m,
     bool OnlyOverdue = false,
     bool IncludeArchived = true,
-    DateOnly? Month = null);
+    DateOnly? Month = null,
+    IReadOnlyCollection<string>? StudentIds = null);
 
 /// <summary>
 /// Oyma-oy qarzdorlik jadvalining (arrears pivot) filtri.
@@ -240,6 +242,8 @@ public sealed partial class FinanceReportQueries(IAppDbContext db)
             var className = query.ClassName.Trim();
             students = students.Where(s => s.ClassName == className);
         }
+        // A homeroom teacher's own pupils only (HomeroomDebts, 2026-10-12).
+        if (query.StudentIds is { } studentIds) students = students.Where(s => studentIds.Contains(s.Id));
 
         // Oy filtri BITTA joyda qo'llanadi va uchala so'rov ham shu tor
         // to'plamdan foydalanadi — aks holda "hisoblangan" bir oyniki,

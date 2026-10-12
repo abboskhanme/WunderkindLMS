@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { BellRing, CheckCircle2, Users2 } from 'lucide-react'
+import { BellRing, CheckCircle2, Users2, Wallet } from 'lucide-react'
 import { ScreenHeader } from '../components/ui'
 import Avatar from '../components/Avatar'
 import AppButton from '../components/AppButton'
@@ -7,11 +7,21 @@ import { AsyncView } from '../components/State'
 import EmptyState, { EmptyIllustration } from '../components/EmptyState'
 import { useFetch } from '../lib/session'
 import { api } from '../lib/api'
+import { MONTH_NAMES } from '../lib/seasonal'
+
+/** 1600000 → "1 600 000". */
+const sum = (n) => Math.round(Number(n) || 0).toLocaleString('ru-RU').replace(/\s/g, ' ')
+/** "2026-09-01" → "sentabr". */
+const monthName = (iso) => (MONTH_NAMES[Number(String(iso).slice(5, 7)) - 1] || '').toLowerCase()
 
 // Homeroom — parent-arrived students highlighted + sorted to top, handover button.
 export default function HomeroomScreen({ onBack }) {
   const home = useFetch(() => api.homeroom(), [])
   const picks = useFetch(() => api.pickups(), [])
+  // Qarzdorlik (mijoz, 2026-10-12) — alohida so'rov: yiqilsa ham ro'yxat va topshirish ishlayveradi.
+  const debts = useFetch(() => api.homeroomDebts().catch(() => null), [])
+  const debtById = {}
+  for (const p of debts.data?.pupils || []) debtById[p.studentId] = p
   const [busy, setBusy] = useState(null) // studentId or pickupId being mutated
 
   const reload = () => { home.reload(); picks.reload() }
@@ -85,6 +95,25 @@ export default function HomeroomScreen({ onBack }) {
               </div>
             </div>
 
+            {debts.data && debts.data.groups.length > 0 && (
+              <div className="px-4 pb-2">
+                <div
+                  className="px-3 py-2.5 rounded-xl flex items-start gap-2.5"
+                  style={{ background: debts.data.debtorCount > 0 ? '#EF44441A' : 'var(--primary-soft)' }}
+                >
+                  <Wallet size={18} className={`shrink-0 mt-0.5 ${debts.data.debtorCount > 0 ? 'text-danger' : 'text-primary'}`} />
+                  <span
+                    className="text-[12.5px] font-medium leading-snug"
+                    style={{ color: debts.data.debtorCount > 0 ? '#EF4444' : 'var(--primary)' }}
+                  >
+                    {debts.data.debtorCount > 0
+                      ? `Qarzdorlar: ${debts.data.debtorCount} ta · jami ${sum(debts.data.totalDebt)} so'm (${debts.data.groups.join(', ')})`
+                      : "Qarzdor o'quvchi yo'q."}
+                  </span>
+                </div>
+              </div>
+            )}
+
             <div className="flex-1 overflow-y-auto no-scrollbar px-4 pt-1 pb-6 space-y-2.5">
               {sorted.map((s) => {
                 const isPending = s.hasPendingPickup && s.status !== 'accepted'
@@ -114,6 +143,13 @@ export default function HomeroomScreen({ onBack }) {
                         <p className="text-[12.5px] text-muted">Topshirilgan</p>
                       ) : (
                         <p className="text-[12.5px] text-muted">Kutilmoqda emas</p>
+                      )}
+                      {debtById[s.studentId]?.debt > 0 && (
+                        <p className="text-[12.5px] font-semibold text-danger mt-0.5">
+                          Qarz: {sum(debtById[s.studentId].debt)} so'm
+                          {debtById[s.studentId].unpaidMonths.length > 0 &&
+                            ` · ${debtById[s.studentId].unpaidMonths.map((m) => monthName(m.month)).join(', ')}`}
+                        </p>
                       )}
                     </div>
                     {accepted ? (

@@ -24,6 +24,7 @@ import {
 import { NewsCard } from './NewsCard'
 import { PenaltiesCard } from './PenaltiesCard'
 import { FeedbackCard } from './FeedbackCard'
+import { HomeroomDebtsCard } from './HomeroomDebtsCard'
 import { PollsCard } from '../../components/PollSheet'
 
 // So'rovnomalar (2026-10-07): the teacher's open polls.
@@ -113,6 +114,9 @@ export function TodayTab({ profile, meta, onOpenAttendance, onOpenBoarding }) {
 
             {/* Komendant (2026-10-12) — faqat roli bor o'qituvchida. */}
             {hasBoarding && <CommandantCard profile={profile} onOpen={onOpenBoarding} />}
+
+            {/* Sinf rahbari: o'quvchilari va qarzi (2026-10-12) — faqat rahbarlik bor o'qituvchida. */}
+            {profile.homeroomClass && <HomeroomDebtsCard />}
 
             <StatGrid
               items={[

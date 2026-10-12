@@ -47,6 +47,9 @@ export const teacherApi = {
   /** Chorak bo'yicha o'tilgan darslar progresi (reja / o'tilgan / kesimlar). */
   progress: (quarter) => api.get(`${BASE}/progress${qs({ quarter })}`),
 
+  /** Sinf rahbari: rahbarlikdagi sinf/yo'nalish guruhi o'quvchilari va qarzi (2026-10-12). Rahbar bo'lmasa — bo'sh. */
+  homeroomDebts: () => api.get(`${BASE}/homeroom/debts`),
+
   /* ---------- jurnal / davomat ---------- */
 
   /** Sinf o'quvchilari (jurnal ro'yxati — bu yerda pul ko'rsatilmaydi). */

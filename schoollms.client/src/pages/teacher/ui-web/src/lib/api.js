@@ -116,6 +116,8 @@ export const api = {
   pickups: () => GET('/teacher/pickups'),
   acceptPickup: (id) => POST(`/teacher/pickups/${id}/accept`),
   handover: (studentId) => POST('/teacher/homeroom/handover', { studentId }),
+  // Rahbarlikdagi o'quvchilar qarzi (2026-10-12) — admin "Qarzdorlar" bilan bir xil raqam.
+  homeroomDebts: () => GET('/teacher/homeroom/debts'),
 
   // ---- O'quv guruhlari (Guruhlarim, X-3) ----
   // Ro'yxatni ko'rish har bir guruhga yetadigan o'qituvchiga ochiq; qo'shish/chiqarish

@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using SchoolLms.Infrastructure.Data;
 using SchoolLms.Application.Abstractions;
+using SchoolLms.Application.Billing;
 using SchoolLms.Application.Dtos;
 using SchoolLms.Application.Hr;
 using SchoolLms.Domain;
@@ -133,6 +134,19 @@ public class TeacherPortalController(
             return new HomeroomStudentDto(s.Id, s.FullName, pr?.Status == "pending", pr?.Status, pr?.CreatedAt, s.ClassName);
         }).ToList();
         return Ok(new { className = string.Join(", ", classNames), students = rows });
+    }
+
+    /// <summary>
+    /// Sinf rahbarining o'quvchilari va ularning qarzi (mijoz, 2026-10-12) — rahbarlikdagi sinflar va
+    /// yo'nalish guruhlari. Faqat rahbarga: oddiy fan o'qituvchisi pulni ko'rmaydi (bo'sh ro'yxat).
+    /// Mini App va web-portal ikkalasi shu endpointni o'qiydi. Batafsil: <c>HomeroomDebts.cs</c>.
+    /// </summary>
+    [HttpGet("homeroom/debts")]
+    public async Task<ActionResult<HomeroomDebtsDto>> HomeroomDebtsList(CancellationToken ct)
+    {
+        var t = await Me();
+        if (t is null) return NotFound();
+        return await HomeroomDebts.ForTeacherAsync(db, t.Id, ct);
     }
 
     /// <summary>"Topshirish" — farzandni ota-onasiga topshiradi (sana qoldiradi) va ota-onaga push yuboradi.</summary>
