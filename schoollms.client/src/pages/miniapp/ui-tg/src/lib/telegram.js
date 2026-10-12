@@ -111,11 +111,25 @@ export function useKeyboardOpen() {
     const typing = (el) =>
       el instanceof HTMLTextAreaElement ||
       (el instanceof HTMLInputElement && !['checkbox', 'radio', 'button', 'submit'].includes(el.type))
-    const onIn = (e) => setOpen(typing(e.target))
-    const onOut = () => setOpen(false)
+    // Panel bosish TUGAGANDAN keyin qaytadi: darrov qaytsa, maydondan chiqargan bosish (mousedown)
+    // bilan uning oxiri (mouseup) orasida panel barmoq ostiga chiqib, bosish tugmaga yetmay qolardi —
+    // yozib bo'lib bosilgan birinchi tugma (sinf, variant) "yo'qolardi" (2026-10-12).
+    // Fokus maydondan TUGMAGA o'tganda ham (mousedown) shunday — faqat yozish maydoni darrov yashiradi.
+    let timer = 0
+    const later = () => {
+      window.clearTimeout(timer)
+      timer = window.setTimeout(() => setOpen(typing(document.activeElement)), 250)
+    }
+    const onIn = (e) => {
+      if (!typing(e.target)) return later()
+      window.clearTimeout(timer)
+      setOpen(true)
+    }
+    const onOut = later
     document.addEventListener('focusin', onIn)
     document.addEventListener('focusout', onOut)
     return () => {
+      window.clearTimeout(timer)
       document.removeEventListener('focusin', onIn)
       document.removeEventListener('focusout', onOut)
     }

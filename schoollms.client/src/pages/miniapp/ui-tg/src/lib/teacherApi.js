@@ -133,4 +133,24 @@ export const teacherApi = {
   boardingDay: (date, session) => api.get(`/admin/boarding-attendance${qs({ date, session })}`),
   /** Saves marks — `{ saved, notified }` (notified = parents told by Telegram). */
   saveBoarding: (date, session, marks) => api.put('/admin/boarding-attendance', { date, session, marks }),
+
+  /* ---------- vazifalar — o'quvchilarga topshiriqlar (2026-10-12) ---------- */
+
+  // The teacher portal's assignments (the old web app's "Topshiriqlar"): test, written, file, video.
+  /** Vazifalarim, yangisi tepada — sinflar, materiallar va (test bo'lsa) to'g'ri javobli savollar bilan. */
+  assignments: () => api.get(`${BASE}/assignments`),
+  createAssignment: (body) => api.post(`${BASE}/assignments`, body),
+  updateAssignment: (id, body) => api.put(`${BASE}/assignments/${encodeURIComponent(id)}`, body),
+  deleteAssignment: (id) => api.del(`${BASE}/assignments/${encodeURIComponent(id)}`),
+  /** Kim topshirdi / topshirmadi — har o'quvchining javobi (matn, fayl) va bali. */
+  assignmentResults: (id) => api.get(`${BASE}/assignments/${encodeURIComponent(id)}/results`),
+  /** Bajardi/bajarmadi + ball (o'qituvchi baholaydi). */
+  setSubmission: (id, studentId, body) =>
+    api.put(`${BASE}/assignments/${encodeURIComponent(id)}/submissions/${encodeURIComponent(studentId)}`, body),
+  /** Material fayli (PDF, rasm, hujjat, ~20 MB gacha) — `{ name, url, size, contentType }`. */
+  uploadMaterial: (file) => {
+    const form = new FormData()
+    form.append('file', file)
+    return api.form(`${BASE}/uploads`, form)
+  },
 }

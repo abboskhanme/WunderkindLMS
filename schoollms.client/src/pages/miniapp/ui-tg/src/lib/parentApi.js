@@ -321,3 +321,25 @@ export const getPolls = (childId) => api.get('/student/polls' + forChild(childId
 
 export const answerPoll = (childId, pollId, answers) =>
   api.post(`/student/polls/${pollId}` + forChild(childId), { answers })
+
+/* -------------------------------------------------------------- Vazifalar */
+
+/**
+ * O'qituvchi bergan vazifalar (2026-10-12) — har birida shu o'quvchining holati va bali, yangisi tepada.
+ * Ota-ona ham, o'quvchi ham ko'radi; topshirish — faqat o'quvchining o'z login'i.
+ */
+export const getAssignments = (childId) => api.get('/student/assignments' + forChild(childId))
+
+/** Bitta vazifa: tavsif, materiallar, test savollari (to'g'ri javobsiz) va o'quvchining javobi. */
+export const getAssignment = (childId, id) =>
+  api.get(`/student/assignments/${encodeURIComponent(id)}` + forChild(childId))
+
+/** Topshirish: test — `answers`, yozma — `answerText`, fayl/video — `fileUrl`. Test bo'lsa ball qaytadi. */
+export const submitAssignment = (id, body) => api.post(`/student/assignments/${encodeURIComponent(id)}/submit`, body)
+
+/** Javob fayli (rasm, PDF, video; ~20 MB) — `{ name, url, size, contentType }`. */
+export function uploadAnswer(file) {
+  const form = new FormData()
+  form.append('file', file)
+  return api.form('/student/uploads', form)
+}

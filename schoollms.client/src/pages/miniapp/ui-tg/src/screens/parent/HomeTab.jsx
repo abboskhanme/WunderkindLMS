@@ -33,12 +33,13 @@ import { AsyncBlock, balanceShort, gradeTone, monthLabel } from './shared'
 import { NewsCard } from './NewsCard'
 import { CertificatesCard } from './CertificatesCard'
 import { PollsCard } from '../../components/PollSheet'
+import { AssignmentsCard } from './AssignmentsCard'
 import { todayISO } from '../../lib/weeks'
 
 /** A request that may fail without taking the screen down: `{ value }` or `{ error }`. */
 const settle = (promise) => promise.then((value) => ({ value }), (e) => ({ error: e?.message || 'Yuklab bo\'lmadi' }))
 
-export function HomeTab({ child, onOpenTab, showGrades = true, onOpenFeedback }) {
+export function HomeTab({ child, onOpenTab, showGrades = true, onOpenFeedback, canSubmit = false }) {
   const state = useAsync(
     () =>
       Promise.all([
@@ -92,6 +93,9 @@ export function HomeTab({ child, onOpenTab, showGrades = true, onOpenFeedback })
             )}
 
             <LessonsCard lessons={lessons} grades={grades} rows={todayRows} />
+
+            {/* O'qituvchi bergan vazifalar (2026-10-12); topshirish — faqat o'quvchining o'z login'i. */}
+            <AssignmentsCard child={child} canSubmit={canSubmit} />
 
             {/* Polls (client, 2026-10-07) — the row stays with nothing open, like the teacher panel. */}
             <PollsCard

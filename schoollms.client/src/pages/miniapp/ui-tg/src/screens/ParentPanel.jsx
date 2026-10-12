@@ -127,6 +127,8 @@ export function ParentPanel({ user }) {
             onOpenTab={setTab}
             showGrades={showGrades}
             onOpenFeedback={openFeedback}
+            // The pupil's own profile only (the family list puts it first): siblings are view-only.
+            canSubmit={user.role === 'student' && child.id === children[0]?.id}
           />
         )}
         {child && showGrades && tab === 'grades' && <GradesTab key={child.id} child={child} />}

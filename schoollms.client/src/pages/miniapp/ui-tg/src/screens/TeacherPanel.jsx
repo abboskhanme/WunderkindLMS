@@ -11,7 +11,7 @@
  * tab o'z joyida, ichida "bo'lim yopiq" deb yoziladi (server baribir 403 qaytaradi).
  */
 import { useState } from 'react'
-import { CalendarDays, ClipboardCheck, Home, ListChecks, Lock } from 'lucide-react'
+import { BookOpenCheck, CalendarDays, ClipboardCheck, Home, ListChecks, Lock } from 'lucide-react'
 import { Card, EmptyState, ErrorState, Hero, Loader, Screen, TabBar } from '../components/ui'
 import { useAsync } from '../lib/useAsync'
 import { teacherApi } from '../lib/teacherApi'
@@ -20,6 +20,7 @@ import { TodayTab } from './teacher/TodayTab'
 import { AttendanceTab } from './teacher/AttendanceTab'
 import { ScheduleTab } from './teacher/ScheduleTab'
 import { BoardingScreen } from './teacher/BoardingScreen'
+import { AssignmentsTab } from './teacher/AssignmentsTab'
 import { HrTab } from './hr/HrTab'
 
 /** `perm` — shu tab ichini ochish uchun kerakli ruxsat (null = hammaga). Tab o'zi doim ko'rinadi. */
@@ -28,12 +29,14 @@ const TABS = [
   // "Jurnal": davomat va baho bitta ro'yxatda (mijoz, 2026-09-29).
   { value: 'attendance', label: 'Jurnal', icon: ClipboardCheck, perm: 'journal' },
   { value: 'schedule', label: 'Jadval', icon: CalendarDays, perm: 'schedule' },
+  // O'quvchilarga vazifalar (mijoz, 2026-10-12): test, yozma, fayl, video — "Topshiriqlar" HR'niki.
+  { value: 'tasks', label: 'Vazifalar', icon: BookOpenCheck, perm: 'assignments' },
   // No 'Maosh' tab (client, 2026-09-28): teachers do not see their salary; the server refuses it too.
   // "Xabarlar" (guruh chati) olib tashlandi (mijoz, 2026-10-11): chat faqat admin panelida.
 ]
 
 /**
- * HR topshiriqlari (hr-tasks.md §8) — doim beshinchi tab. Ichi `GET /hr/me` javobiga qarab:
+ * HR topshiriqlari (hr-tasks.md §8) — doim oxirgi tab (o'quvchi vazifalari — alohida "Vazifalar" tabi). Ichi `GET /hr/me` javobiga qarab:
  * xodim qatori bo'lsa topshiriqlar, bo'lmasa "topshiriq yo'q".
  */
 const HR_TAB = { value: 'hr', label: 'Topshiriqlar', icon: ListChecks, perm: null }
@@ -127,6 +130,7 @@ export function TeacherPanel() {
         />
       )}
       {active === 'schedule' && allowed('schedule') && <ScheduleTab meta={meta} />}
+      {active === 'tasks' && allowed('tasks') && <AssignmentsTab />}
       {active === 'hr' &&
         (hrMe ? (
           <HrTab me={hrMe} />
