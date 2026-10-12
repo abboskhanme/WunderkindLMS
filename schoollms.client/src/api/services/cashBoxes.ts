@@ -44,12 +44,18 @@ import { api } from '../client'
 export interface CashBox {
   id: string
   name: string
+  /** Mas'ul xodimning `users.id` si — ko'chirishni shu odam qabul qiladi. */
+  responsibleUserId?: string | null
   responsibleName: string | null
   balance: number
   /** Usul kesimida qoldiq — jami to'rtta usul chiqishi shart emas. */
   byMethod: Partial<Record<PaymentMethod, number>>
   isDefault: boolean
   isActive: boolean
+  /** Ko'chirishlar shu kassaga — mas'ul hali qabul qilmagan, balansda YO'Q (2026-10-12). */
+  pendingIn?: number
+  /** Ko'chirishlar shu kassadan — qabul qiluvchi hali tasdiqlamagan, pul hamon shu yerda. */
+  pendingOut?: number
 }
 
 export interface CashBoxInput {
@@ -177,8 +183,12 @@ export async function cashBoxExchange(id: string, payload: CashBoxExchangePayloa
  */
 export type CashTransactionKind = 'pay_in' | 'pay_out' | 'transfer' | 'exchange' | string
 
-/** Server: `posted` | `cancelled` | `reversal` (`CashBoxService.DisplayStatus`). */
-export type CashTransactionStatus = 'posted' | 'cancelled' | 'reversal' | string
+/**
+ * Server: `posted` | `cancelled` | `reversal` (`CashBoxService.DisplayStatus`), plus a transfer's
+ * `pending` (the receiver has not accepted it yet) and `returned` (the receiver sent it back) —
+ * in both, no money moved (2026-10-12).
+ */
+export type CashTransactionStatus = 'posted' | 'cancelled' | 'reversal' | 'pending' | 'returned' | string
 
 export interface CashBoxTransactionRow {
   id: string
@@ -200,6 +210,12 @@ export interface CashBoxTransactionRow {
   createdAt: string
   /** Maosh chiqimida — pul berilgan o'qituvchi yoki xodim. */
   recipientName?: string | null
+  /** Qatorni kim yozgan — kassir (o'quvchi to'lovida ham; "Kim" esa o'quvchi). */
+  cashierName?: string | null
+  /** Qator qaysi kassada; ko'chirishda — yuborgan kassa. */
+  boxName?: string | null
+  /** Faqat ko'chirishda — qabul qiluvchi kassa. */
+  toBoxName?: string | null
 }
 
 export interface CashBoxTransactionsResult {
@@ -236,4 +252,63 @@ export async function getCashBoxTransactions(
 
 export async function cancelCashBoxTransaction(id: string, reason: string): Promise<void> {
   await api.post(`/admin/cash-boxes/transactions/${id}/cancel`, { reason })
+}
+
+/* ========================================================================
+   Ko'chirishni tasdiqlash (mijoz, 2026-10-12): qabul qiluvchi kassaning
+   mas'uli pulni sanab "Qabul qilish" yoki "Qaytarish" ni bosadi. Ungacha pul
+   hech qayerga o'tmaydi.
+   ======================================================================== */
+
+/** Joriy foydalanuvchining javobini kutayotgan ko'chirish. */
+export interface IncomingCashBoxTransfer {
+  id: string
+  createdAt: string
+  fromBoxId: string
+  fromBoxName: string
+  toBoxId: string
+  toBoxName: string
+  amount: number
+  method: PaymentMethod
+  note: string | null
+  senderName: string
+}
+
+export async function getIncomingTransfers(): Promise<IncomingCashBoxTransfer[]> {
+  const { data } = await api.get<IncomingCashBoxTransfer[]>('/admin/cash-boxes/transfers/incoming')
+  return data
+}
+
+export async function acceptCashBoxTransfer(id: string): Promise<void> {
+  await api.post(`/admin/cash-boxes/transfers/${id}/accept`)
+}
+
+export async function returnCashBoxTransfer(id: string, reason: string): Promise<void> {
+  await api.post(`/admin/cash-boxes/transfers/${id}/return`, { reason })
+}
+
+/* ========================================================================
+   Eksport — haqiqiy .xlsx, serverda yasaladi (2026-10-12). Brauzerdagi CSV
+   Excel'da bitta ustun bo'lib, harflari buzilib ochilardi.
+   ======================================================================== */
+
+/**
+ * Ekrandagi qatorlarni (`ids`, ekrandagi tartibda) .xlsx qilib yuklab beradi.
+ * POST — bir kunlik qatorlar id'lari URL'ga sig'maydi; server hech narsa yozmaydi.
+ */
+export async function exportCashBoxTransactions(
+  filters: CashBoxTransactionsFilters,
+  ids: string[],
+): Promise<void> {
+  const res = await api.post('/admin/cash-boxes/transactions/export', { ...filters, ids }, { responseType: 'blob' })
+  const url = URL.createObjectURL(res.data as Blob)
+  const a = document.createElement('a')
+  a.href = url
+  const cd = (res.headers['content-disposition'] as string | undefined) ?? ''
+  const m = cd.match(/filename="?([^";]+)"?/)
+  a.download = m?.[1] ?? `kassa-tranzaksiyalari_${filters.from ?? ''}_${filters.to ?? ''}.xlsx`
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  URL.revokeObjectURL(url)
 }

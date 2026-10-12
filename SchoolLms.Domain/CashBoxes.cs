@@ -171,6 +171,52 @@ public class CashBoxTransaction
 
     /// <summary>Salary Chiqim only: the non-teacher employee it was paid to (users.id).</summary>
     public string? EmployeeUserId { get; set; }
+
+    /// <summary>
+    /// Transfer only: the money moves only after the receiving box's responsible person accepts it
+    /// (client, 2026-10-12: the accountant confirms what the cashier sends, or returns it). Written once
+    /// at INSERT, like every column here; the answer is a <see cref="CashBoxTransferDecision"/> row.
+    /// <c>false</c> = the transfer took effect at once: the receiving box has no responsible person,
+    /// that person sent it, or the row predates the rule.
+    /// </summary>
+    public bool NeedsAcceptance { get; set; }
+}
+
+/// <summary>
+/// The receiver's answer to a transfer that needs acceptance (<see cref="CashBoxTransaction.NeedsAcceptance"/>).
+/// Insert-only like the transfer itself, and at most one per transfer — the transfer id is the key.
+/// <list type="bullet">
+///   <item><c>accepted</c> — the money moves: out of the sending box, into the receiving one, as of the
+///     moment the transfer was written (the handover happened then; the answer only confirms it);</item>
+///   <item><c>returned</c> — the money never moved; it stays in the sending box. <see cref="Note"/> says why.</item>
+/// </list>
+/// Until a row exists the transfer is pending and counts in neither box.
+/// </summary>
+public class CashBoxTransferDecision
+{
+    /// <summary>The transfer (cash_box_transactions.id).</summary>
+    public Guid TransferId { get; set; }
+
+    /// <summary>accepted | returned — <see cref="CashBoxTransferDecisionKind"/>.</summary>
+    public string Decision { get; set; } = string.Empty;
+
+    /// <summary>Why it was returned (required then); optional on accept.</summary>
+    public string? Note { get; set; }
+
+    /// <summary>Who answered (users.id) — from the JWT, never the request body.</summary>
+    public string DecidedBy { get; set; } = string.Empty;
+
+    public DateTimeOffset DecidedAt { get; set; }
+}
+
+/// <summary><see cref="CashBoxTransferDecision.Decision"/> values.</summary>
+public static class CashBoxTransferDecisionKind
+{
+    public const string Accepted = "accepted";
+
+    public const string Returned = "returned";
+
+    public static readonly IReadOnlyList<string> All = [Accepted, Returned];
 }
 
 /// <summary>Kassa amali turi (<see cref="CashBoxTransaction.Kind"/>).</summary>

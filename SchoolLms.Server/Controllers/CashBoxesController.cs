@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using SchoolLms.Application.Abstractions;
 using SchoolLms.Application.Billing;
+using SchoolLms.Application.Services;
 using SchoolLms.Domain;
 
 namespace SchoolLms.Server.Controllers;
@@ -24,6 +25,10 @@ namespace SchoolLms.Server.Controllers;
 //    POST   /api/admin/cash-boxes/{id}/exchange
 //    GET    /api/admin/cash-boxes/transactions?from=&to=&boxId=&q=
 //    POST   /api/admin/cash-boxes/transactions/{id}/cancel
+//    POST   /api/admin/cash-boxes/transactions/export        (2026-10-12, .xlsx)
+//    GET    /api/admin/cash-boxes/transfers/incoming         (2026-10-12)
+//    POST   /api/admin/cash-boxes/transfers/{id}/accept      (2026-10-12)
+//    POST   /api/admin/cash-boxes/transfers/{id}/return      (2026-10-12)
 //
 //  NEGA XIZMAT DI'DAN EMAS, SHU YERDA QURILADI
 //  --------------------------------------------
@@ -53,8 +58,11 @@ namespace SchoolLms.Server.Controllers;
 [Route("api/admin/cash-boxes")]
 [BillingFault]
 [Produces("application/json")]
-public sealed class CashBoxesController(IAppDbContext db) : ControllerBase
+public sealed class CashBoxesController(
+    IAppDbContext db, TelegramService telegram, ILogger<CashBoxTransferNotifier> notifierLogger) : ControllerBase
 {
+    private CashBoxTransferNotifier Notifier => new(db, telegram, notifierLogger);
+
     /// <summary>
     /// <see cref="CashHandoversController"/> dagi bilan bir xil naqsh — fayl
     /// boshidagi izohga qarang.
@@ -170,7 +178,48 @@ public sealed class CashBoxesController(IAppDbContext db) : ControllerBase
         if (request is null)
             return BadRequest(new BillingErrorDto("invalid_body", "So'rov tanasi o'qilmadi."));
 
-        return Ok(await boxes.TransferAsync(id, request, FinanceActor.RequireUserId(User), ct));
+        var row = await boxes.TransferAsync(id, request, FinanceActor.RequireUserId(User), ct);
+        if (row.Status == CashBoxRowStatus.Pending)
+            await Notifier.NotifyPendingAsync(row.Id, CancellationToken.None);
+        return Ok(row);
+    }
+
+    // -----------------------------------------------------------------
+    //  Transfer acceptance (client, 2026-10-12) — the receiving box's responsible person
+    //  accepts what was sent, or returns it. The service checks who may answer.
+    // -----------------------------------------------------------------
+
+    /// <summary>Transfers waiting for the current user's answer (into boxes they are responsible for).</summary>
+    [HttpGet("transfers/incoming")]
+    [FinanceRole(FinanceAction.ViewCashBoxes)]
+    public async Task<ActionResult<IEnumerable<IncomingCashBoxTransferDto>>> IncomingTransfers(CancellationToken ct) =>
+        Ok(await boxes.IncomingTransfersAsync(FinanceActor.RequireUserId(User), ct));
+
+    /// <summary>Accept: the money leaves the sending box and lands in the receiving one.</summary>
+    [HttpPost("transfers/{id:guid}/accept")]
+    [FinanceRole(FinanceAction.OperateCashBox)]
+    public async Task<ActionResult<CashBoxTransactionRowDto>> AcceptTransfer(Guid id, CancellationToken ct)
+    {
+        var row = await boxes.AcceptTransferAsync(id, FinanceActor.RequireUserId(User), ct);
+        await Notifier.NotifyDecidedAsync(id, CancellationToken.None);
+        return Ok(row);
+    }
+
+    /// <summary>Return: the money stays in the sending box. A reason is required.</summary>
+    [HttpPost("transfers/{id:guid}/return")]
+    [FinanceRole(FinanceAction.OperateCashBox)]
+    public async Task<ActionResult<CashBoxTransactionRowDto>> ReturnTransfer(
+        Guid id, [FromBody] JsonElement body, CancellationToken ct)
+    {
+        if (RejectServerDerivedFields(body) is { } rejected) return rejected;
+
+        var request = Read<ReturnCashBoxTransferRequest>(body);
+        if (request is null)
+            return BadRequest(new BillingErrorDto("invalid_body", "So'rov tanasi o'qilmadi."));
+
+        var row = await boxes.ReturnTransferAsync(id, request.Reason ?? string.Empty, FinanceActor.RequireUserId(User), ct);
+        await Notifier.NotifyDecidedAsync(id, CancellationToken.None);
+        return Ok(row);
     }
 
     /// <summary>Ayirboshlash — bitta kassa ichida usuldan usulga (jami o'zgarmaydi).</summary>
@@ -225,6 +274,33 @@ public sealed class CashBoxesController(IAppDbContext db) : ControllerBase
     }
 
     /// <summary>
+    /// The journal as .xlsx — the rows on screen, in screen order (<see cref="CashBoxTransactionsExport"/>).
+    /// A POST because the ids of a full day do not fit in a query string; it writes nothing.
+    /// </summary>
+    [HttpPost("transactions/export")]
+    [FinanceRole(FinanceAction.ViewCashBoxes, ReadOnlyPost = true)]
+    public async Task<IActionResult> ExportTransactions(
+        [FromBody] CashBoxTransactionsExportRequest request, CancellationToken ct)
+    {
+        var page = await boxes.TransactionsAsync(
+            new CashBoxTransactionsQuery(request.From, request.To, request.BoxId, request.Q), ct);
+
+        IReadOnlyList<CashBoxTransactionRowDto> rows = page.Rows;
+        if (request.Ids is { Count: > 0 } ids)
+        {
+            var byId = page.Rows.ToDictionary(r => r.Id);
+            rows = [.. ids.Distinct().Where(byId.ContainsKey).Select(id => byId[id])];
+        }
+
+        var boxName = request.BoxId is { } boxId
+            ? await db.CashBoxes.AsNoTracking().Where(b => b.Id == boxId).Select(b => b.Name).FirstOrDefaultAsync(ct)
+            : null;
+        var bytes = CashBoxTransactionsExport.Build(rows, request.From, request.To, boxName);
+        return File(bytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            CashBoxTransactionsExport.FileName(request.From, request.To));
+    }
+
+    /// <summary>
     /// Amalni bekor qiladi: qarshi qator qo'shiladi (original TEGILMAYDI,
     /// SPEC §4.1). Sabab majburiy.
     /// </summary>
@@ -275,3 +351,8 @@ public sealed class CashBoxesController(IAppDbContext db) : ControllerBase
 /// <summary>A person a salary Chiqim can name.</summary>
 /// <param name="Kind"><c>teacher</c> (teachers.id) or <c>employee</c> (users.id).</param>
 public sealed record SalaryRecipientDto(string Kind, string Id, string Name);
+
+/// <summary>What to export: the journal filter, and the ids of the rows on screen (null or empty = all of them).</summary>
+public sealed record CashBoxTransactionsExportRequest(
+    DateOnly? From = null, DateOnly? To = null, Guid? BoxId = null, string? Q = null,
+    IReadOnlyList<Guid>? Ids = null);

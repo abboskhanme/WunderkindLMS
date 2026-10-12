@@ -33,6 +33,7 @@ internal static class CashBoxModel
         ConfigurePaymentCashBox(b);
         ConfigureExpenseCashBox(b);
         ConfigureStudentRefundCashBox(b);
+        ConfigureTransferDecisions(b);
     }
 
     // =====================================================================
@@ -107,6 +108,7 @@ internal static class CashBoxModel
             // PostgreSQL'da bir-biridan farqli, ya'ni storno bo'lmagan
             // minglab qatorga xalaqit bermaydi).
             e.HasIndex(x => x.ReversalOf).IsUnique();
+            e.Property(x => x.NeedsAcceptance).HasDefaultValue(false);
 
             e.ToTable(t =>
             {
@@ -133,6 +135,9 @@ internal static class CashBoxModel
                     "(kind = 'exchange') = (to_method is not null)");
                 t.HasCheckConstraint("ck_cash_box_transactions_exchange_methods_differ",
                     "to_method is null or to_method <> method");
+                // Only an original transfer can wait for the receiver — a storno never does.
+                t.HasCheckConstraint("ck_cash_box_transactions_acceptance_shape",
+                    "not needs_acceptance or (kind = 'transfer' and reversal_of is null)");
             });
         });
     }
@@ -182,6 +187,35 @@ internal static class CashBoxModel
             e.HasOne<CashBox>().WithMany().HasForeignKey(x => x.CashBoxId)
                 .OnDelete(DeleteBehavior.Restrict);
             e.HasIndex(x => x.CashBoxId);
+        });
+    }
+
+    // =====================================================================
+    //  The receiver's answer to a transfer (2026-10-12) — insert-only.
+    // =====================================================================
+
+    private static void ConfigureTransferDecisions(ModelBuilder b)
+    {
+        b.Entity<CashBoxTransferDecision>(e =>
+        {
+            e.ToTable("cash_box_transfer_decisions");
+            // The transfer id is the key: one answer per transfer, enforced by the database.
+            e.HasKey(x => x.TransferId);
+            e.Property(x => x.DecidedAt).HasDefaultValueSql("now()");
+
+            e.HasOne<CashBoxTransaction>().WithMany().HasForeignKey(x => x.TransferId)
+                .OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<AppUser>().WithMany().HasForeignKey(x => x.DecidedBy)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            e.ToTable(t =>
+            {
+                t.HasCheckConstraint("ck_cash_box_transfer_decisions_decision",
+                    "decision in ('accepted','returned')");
+                // A return always says why — the cashier reads it on the row.
+                t.HasCheckConstraint("ck_cash_box_transfer_decisions_return_note",
+                    "decision <> 'returned' or btrim(coalesce(note, '')) <> ''");
+            });
         });
     }
 }

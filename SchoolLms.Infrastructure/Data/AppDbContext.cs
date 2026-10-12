@@ -166,6 +166,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
     // naqshi), `CashBoxes` — oddiy kataloq (DELETE yopiq, UPDATE ochiq).
     public DbSet<CashBox> CashBoxes => Set<CashBox>();
     public DbSet<CashBoxTransaction> CashBoxTransactions => Set<CashBoxTransaction>();
+    public DbSet<CashBoxTransferDecision> CashBoxTransferDecisions => Set<CashBoxTransferDecision>();
 
     // Rejalashtirilgan chiqim shablonlari (F6.01, finance-parity.md §2.6).
     // Konfiguratsiya: ExpenseTemplateModel.cs.

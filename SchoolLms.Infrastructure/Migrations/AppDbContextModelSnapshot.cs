@@ -1314,6 +1314,12 @@ namespace SchoolLms.Infrastructure.Migrations
                         .HasColumnType("text")
                         .HasColumnName("method");
 
+                    b.Property<bool>("NeedsAcceptance")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("needs_acceptance");
+
                     b.Property<string>("Note")
                         .HasColumnType("text")
                         .HasColumnName("note");
@@ -1380,6 +1386,8 @@ namespace SchoolLms.Infrastructure.Migrations
 
                     b.ToTable("cash_box_transactions", null, t =>
                         {
+                            t.HasCheckConstraint("ck_cash_box_transactions_acceptance_shape", "not needs_acceptance or (kind = 'transfer' and reversal_of is null)");
+
                             t.HasCheckConstraint("ck_cash_box_transactions_amount", "amount > 0");
 
                             t.HasCheckConstraint("ck_cash_box_transactions_exchange_methods_differ", "to_method is null or to_method <> method");
@@ -1403,6 +1411,46 @@ namespace SchoolLms.Infrastructure.Migrations
                             t.HasCheckConstraint("ck_cash_box_transactions_transfer_not_self", "transfer_to_box_id is null or transfer_to_box_id <> cash_box_id");
 
                             t.HasCheckConstraint("ck_cash_box_transactions_transfer_shape", "(kind = 'transfer') = (transfer_to_box_id is not null)");
+                        });
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.CashBoxTransferDecision", b =>
+                {
+                    b.Property<Guid>("TransferId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("transfer_id");
+
+                    b.Property<DateTimeOffset>("DecidedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("decided_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<string>("DecidedBy")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("decided_by");
+
+                    b.Property<string>("Decision")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("decision");
+
+                    b.Property<string>("Note")
+                        .HasColumnType("text")
+                        .HasColumnName("note");
+
+                    b.HasKey("TransferId")
+                        .HasName("pk_cash_box_transfer_decisions");
+
+                    b.HasIndex("DecidedBy")
+                        .HasDatabaseName("ix_cash_box_transfer_decisions_decided_by");
+
+                    b.ToTable("cash_box_transfer_decisions", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_cash_box_transfer_decisions_decision", "decision in ('accepted','returned')");
+
+                            t.HasCheckConstraint("ck_cash_box_transfer_decisions_return_note", "decision <> 'returned' or btrim(coalesce(note, '')) <> ''");
                         });
                 });
 
@@ -9761,6 +9809,23 @@ namespace SchoolLms.Infrastructure.Migrations
                         .HasForeignKey("TransferToBoxId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .HasConstraintName("fk_cash_box_transactions_cash_boxes_transfer_to_box_id");
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.CashBoxTransferDecision", b =>
+                {
+                    b.HasOne("SchoolLms.Domain.AppUser", null)
+                        .WithMany()
+                        .HasForeignKey("DecidedBy")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_cash_box_transfer_decisions_users_decided_by");
+
+                    b.HasOne("SchoolLms.Domain.CashBoxTransaction", null)
+                        .WithMany()
+                        .HasForeignKey("TransferId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_cash_box_transfer_decisions_cash_box_transactions_transfer_");
                 });
 
             modelBuilder.Entity("SchoolLms.Domain.CashHandover", b =>

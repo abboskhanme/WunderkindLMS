@@ -513,13 +513,21 @@ public sealed class TransactionJournalQuery(IAppDbContext db)
             _ => q,
         };
 
+        // A transfer waiting for the receiver is pending; one the receiver returned reads as reversed —
+        // in both, no money moved (CashBoxTransferDecision).
+        var decisions = db.CashBoxTransferDecisions;
         q = f.Status switch
         {
             TransactionStatus.Active => q.Where(t =>
-                t.ReversalOf != null || !db.CashBoxTransactions.Any(r => r.ReversalOf == t.Id)),
+                (t.ReversalOf != null || !db.CashBoxTransactions.Any(r => r.ReversalOf == t.Id))
+                && (!t.NeedsAcceptance || decisions.Any(d => d.TransferId == t.Id
+                                                             && d.Decision == CashBoxTransferDecisionKind.Accepted))),
             TransactionStatus.Reversed => q.Where(t =>
-                t.ReversalOf == null && db.CashBoxTransactions.Any(r => r.ReversalOf == t.Id)),
-            TransactionStatus.Pending => q.Where(_ => false),
+                (t.ReversalOf == null && db.CashBoxTransactions.Any(r => r.ReversalOf == t.Id))
+                || (t.NeedsAcceptance && decisions.Any(d => d.TransferId == t.Id
+                                                            && d.Decision == CashBoxTransferDecisionKind.Returned))),
+            TransactionStatus.Pending => q.Where(t =>
+                t.NeedsAcceptance && !decisions.Any(d => d.TransferId == t.Id)),
             _ => q,
         };
 
@@ -750,6 +758,14 @@ public sealed class TransactionJournalQuery(IAppDbContext db)
                 .ToListAsync(ct))
             .ToDictionary(r => r.Original, r => r);
 
+        // Transfers the receiver has not accepted yet (pending) or returned (reversed, with the reason).
+        var awaiting = raw.Where(t => t.NeedsAcceptance).Select(t => t.Id).ToList();
+        var decisions = awaiting.Count == 0
+            ? []
+            : await db.CashBoxTransferDecisions.AsNoTracking()
+                .Where(d => awaiting.Contains(d.TransferId))
+                .ToDictionaryAsync(d => d.TransferId, ct);
+
         return [.. raw.Select(t =>
         {
             var isReversal = t.ReversalOf is not null;
@@ -760,6 +776,8 @@ public sealed class TransactionJournalQuery(IAppDbContext db)
             var student = t.StudentId is null ? null : students.GetValueOrDefault(t.StudentId);
             var reversal = reversals.GetValueOrDefault(t.Id);
             var box = boxNames.GetValueOrDefault(t.CashBoxId);
+            var decision = t.NeedsAcceptance ? decisions.GetValueOrDefault(t.Id) : null;
+            var returned = decision?.Decision == CashBoxTransferDecisionKind.Returned;
 
             var (personId, personName, personKind) =
                 student is not null ? (t.StudentId, student.FullName, "student")
@@ -795,11 +813,13 @@ public sealed class TransactionJournalQuery(IAppDbContext db)
                 t.CreatedBy,
                 users.GetValueOrDefault(t.CreatedBy, "—"),
                 isReversal ? null : t.Note,
-                !isReversal && reversal is not null ? TransactionStatus.Reversed : TransactionStatus.Active,
+                t.NeedsAcceptance && decision is null ? TransactionStatus.Pending
+                    : returned || (!isReversal && reversal is not null) ? TransactionStatus.Reversed
+                    : TransactionStatus.Active,
                 t.ReversalOf,
                 reversal?.Id,
                 t.TransferToBoxId is { } toBox ? $"{box} → {boxNames.GetValueOrDefault(toBox)}" : box,
-                isReversal ? t.Note : reversal?.Note);
+                isReversal ? t.Note : returned ? decision!.Note : reversal?.Note);
         })];
     }
 

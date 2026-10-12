@@ -157,7 +157,13 @@ export function CashLedger({
             rows={rows}
             getRowId={(r) => r.id}
             loading={loading}
-            rowClassName={(row) => (row.status === 'cancelled' ? 'bg-red-50/60' : 'hover:bg-slate-50/60')}
+            rowClassName={(row) =>
+              row.status === 'cancelled'
+                ? 'bg-red-50/60'
+                : row.status === 'pending'
+                  ? 'bg-amber-50/60'
+                  : 'hover:bg-slate-50/60'
+            }
             emptyMessage="Tanlangan davrda tranzaksiya yo'q."
           />
         )}
@@ -175,10 +181,11 @@ export function CashLedger({
  * bu amalni bajargan kassir; o'quvchi to'lovi va qaytarimida esa O'QUVCHI ismi
  * (2026-09-22 dan beri ular ham shu jurnalda ko'rinadi).
  *
- * KASSIR — shuning uchun faqat kassaning o'z amallarida to'ldiriladi. To'lov
- * qatorida u bo'sh turadi: DTO'da kassirning alohida maydoni yo'q va o'sha
- * yerga o'quvchi ismini qo'yish — yolg'on bo'lardi. Maydon qo'shilgach
- * to'ldiriladi (`docs/PENDING_WIRING.md`).
+ * KASSIR — `row.cashierName` (2026-10-12): qatorni YOZGAN xodim, to'lov
+ * qatorida ham (to'lovning kassiri). Eski javobda maydon bo'lmasa — avvalgidek
+ * faqat kassaning o'z amallarida `row.who`.
+ *
+ * KASSA — qator qaysi kassada; ko'chirishda "yuborgan → qabul qiluvchi".
  */
 function ledgerColumns(
   allSelected: boolean,
@@ -233,6 +240,16 @@ function ledgerColumns(
       cell: (row) => <span className="text-slate-700">{row.who}</span>,
     },
     {
+      id: 'box',
+      header: 'Kassa',
+      cell: (row) => (
+        <span className="whitespace-nowrap text-slate-600">
+          {row.boxName ?? '—'}
+          {row.toBoxName && <span className="text-slate-400"> → {row.toBoxName}</span>}
+        </span>
+      ),
+    },
+    {
       id: 'contract',
       header: 'Shartnoma raqami',
       cell: (row) =>
@@ -254,7 +271,11 @@ function ledgerColumns(
         <span
           className={cn(
             'font-medium tabular-nums',
-            row.status === 'cancelled' ? 'text-slate-400 line-through' : 'text-slate-800',
+            row.status === 'cancelled' || row.status === 'returned'
+              ? 'text-slate-400 line-through'
+              : row.status === 'pending'
+                ? 'text-amber-700'
+                : 'text-slate-800',
           )}
         >
           {formatSum(row.amount)}
@@ -282,7 +303,17 @@ function ledgerColumns(
       id: 'status',
       header: 'Holati',
       cell: (row) => (
-        <StatusPill tone={row.status === 'posted' ? 'success' : 'danger'}>
+        <StatusPill
+          tone={
+            row.status === 'posted'
+              ? 'success'
+              : row.status === 'pending'
+                ? 'warning'
+                : row.status === 'returned'
+                  ? 'neutral'
+                  : 'danger'
+          }
+        >
           {statusLabel(row.status)}
         </StatusPill>
       ),
@@ -295,10 +326,10 @@ function ledgerColumns(
     {
       id: 'cashier',
       header: 'Kassir',
-      // `row.who` bilan bir xil manba — izoh: shu funksiya boshidagi hujjat.
+      // Izoh: shu funksiya boshidagi hujjat.
       cell: (row) => (
         <span className="text-slate-600">
-          {NATIVE_CASH_KINDS.includes(row.kind) ? row.who : '—'}
+          {row.cashierName ?? (NATIVE_CASH_KINDS.includes(row.kind) ? row.who : '—')}
         </span>
       ),
     },
@@ -349,7 +380,9 @@ function ledgerColumns(
           >
             <Printer className="h-4 w-4" />
           </button>
-          {row.status !== 'cancelled' && NATIVE_CASH_KINDS.includes(row.kind) && (
+          {/* Faqat kuchdagi qator: kutayotgan yoki qaytarilgan ko'chirish pulni
+              qo'zg'atmagan — uni qabul qiluvchi qaytaradi (server ham rad etadi). */}
+          {row.status === 'posted' && NATIVE_CASH_KINDS.includes(row.kind) && (
           <button
             type="button"
             title="Tranzaksiyani bekor qilish"

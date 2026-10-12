@@ -114,7 +114,13 @@ public static class CashBoxRowStatus
     /// <summary>Bu qatorning O'ZI — boshqasining stornosi.</summary>
     public const string Reversal = "reversal";
 
-    public static readonly IReadOnlyList<string> All = [Posted, Cancelled, Reversal];
+    /// <summary>A transfer waiting for the receiver to accept it — the money has not moved yet.</summary>
+    public const string Pending = "pending";
+
+    /// <summary>A transfer the receiver returned — the money never left the sending box.</summary>
+    public const string Returned = "returned";
+
+    public static readonly IReadOnlyList<string> All = [Posted, Cancelled, Reversal, Pending, Returned];
 }
 
 /// <summary>
@@ -129,6 +135,7 @@ public static class CashBoxRowStatus
 /// chiqimda — chiqimni yozgan xodim.</param>
 /// <param name="TypeName">"Tranzaksiya turi" ustuni — chiqimda toifa nomi, qolganida <c>null</c>.</param>
 /// <param name="ReceiptNo">Chek raqami (faqat to'lov; kassa bo'yicha uzluksiz).</param>
+/// <param name="CashierName">Who recorded it: the payment's cashier, the expense's author, the refund's approver.</param>
 internal sealed record CashBoxExternalRow(
     Guid Id,
     Guid BoxId,
@@ -143,7 +150,8 @@ internal sealed record CashBoxExternalRow(
     string? TypeName,
     string? Note,
     string? CancelReason,
-    long? ReceiptNo);
+    long? ReceiptNo,
+    string? CashierName = null);
 
 /// <summary>Bitta kassaning bitta usul bo'yicha tashqi yig'indisi (ishorasi bilan).</summary>
 internal sealed record CashBoxExternalTotal(Guid BoxId, string Method, decimal Amount);
@@ -265,6 +273,7 @@ internal sealed class CashBoxExternalLedger(IAppDbContext db)
                 p.Note,
                 p.ReceivedAt,
                 p.ReversalOf,
+                p.CashierId,
             })
             .ToListAsync(ct);
 
@@ -273,6 +282,7 @@ internal sealed class CashBoxExternalLedger(IAppDbContext db)
 
         var studentIds = raw.Select(p => p.StudentId).Distinct().ToList();
         var names = await StudentNamesAsync(studentIds, ct);
+        var cashiers = await UserNamesAsync([.. raw.Select(p => p.CashierId)], ct);
         var contractNos = await CashBoxService.LatestContractNumbersAsync(db, studentIds, ct);
 
         // Qaysi to'lov BEKOR QILINGAN va nega: stornoning IZOHI aynan sabab
@@ -308,7 +318,8 @@ internal sealed class CashBoxExternalLedger(IAppDbContext db)
                 // matn turmasin (`CashBoxService.ToRowDtosAsync` naqshi).
                 Note: isReversal ? null : p.Note,
                 CancelReason: isReversal ? p.Note : reason,
-                ReceiptNo: p.ReceiptNo);
+                ReceiptNo: p.ReceiptNo,
+                CashierName: cashiers.GetValueOrDefault(p.CashierId));
         })];
     }
 
@@ -380,7 +391,8 @@ internal sealed class CashBoxExternalLedger(IAppDbContext db)
                 TypeName: CategoryLabel(e.Category),
                 Note: e.Note,
                 CancelReason: reason,
-                ReceiptNo: null);
+                ReceiptNo: null,
+                CashierName: names.GetValueOrDefault(e.CreatedBy));
         })];
     }
 
@@ -409,6 +421,7 @@ internal sealed class CashBoxExternalLedger(IAppDbContext db)
                 r.Reason,
                 ApprovedAt = r.ApprovedAt!.Value,
                 r.ReversalOf,
+                Actor = r.ApprovedBy ?? r.RequestedBy,
             })
             .ToListAsync(ct);
 
@@ -418,6 +431,7 @@ internal sealed class CashBoxExternalLedger(IAppDbContext db)
         var studentIds = raw.Select(r => r.StudentId).Distinct().ToList();
         var names = await StudentNamesAsync(studentIds, ct);
         var contractNos = await CashBoxService.LatestContractNumbersAsync(db, studentIds, ct);
+        var actorNames = await UserNamesAsync([.. raw.Select(r => r.Actor)], ct);
 
         // Bekor qilingan qaytarim — uni bekor qilgan TASDIQLANGAN storno
         // qatoridan bilinadi (`StudentRefundService`: storno ham tasdiqdan
@@ -453,13 +467,26 @@ internal sealed class CashBoxExternalLedger(IAppDbContext db)
                 // qatorida u bekor qilish sababi (to'lovdagi bilan bir xil qoida).
                 Note: isReversal ? null : r.Reason,
                 CancelReason: isReversal ? r.Reason : reason,
-                ReceiptNo: null);
+                ReceiptNo: null,
+                CashierName: actorNames.GetValueOrDefault(r.Actor));
         })];
     }
 
     // =====================================================================
     //  Yordamchilar
     // =====================================================================
+
+    /// <summary>Staff names by users.id — a projection: the read-only role may not read password hashes.</summary>
+    private async Task<Dictionary<string, string>> UserNamesAsync(List<string> userIds, CancellationToken ct)
+    {
+        var ids = userIds.Where(id => !string.IsNullOrEmpty(id)).Distinct().ToList();
+        return ids.Count == 0
+            ? new Dictionary<string, string>(StringComparer.Ordinal)
+            : await db.Users.AsNoTracking()
+                .Where(u => ids.Contains(u.Id))
+                .Select(u => new { u.Id, u.FullName })
+                .ToDictionaryAsync(u => u.Id, u => u.FullName, StringComparer.Ordinal, ct);
+    }
 
     private async Task<Dictionary<string, string>> StudentNamesAsync(
         List<string> studentIds, CancellationToken ct) =>

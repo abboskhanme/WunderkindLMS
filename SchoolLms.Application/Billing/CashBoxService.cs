@@ -55,10 +55,14 @@ namespace SchoolLms.Application.Billing;
 //  cheklovi ostida yangi funksiya BIRINCHI kundanoq ishlashi kerak edi.
 
 /// <summary>Kassa — ro'yxat va kartochka uchun (balans HAR SAFAR hisoblanadi).</summary>
+/// <param name="PendingIn">Transfers into this box still waiting for its responsible person to accept them —
+/// not in <paramref name="Balance"/> yet.</param>
+/// <param name="PendingOut">Transfers out of this box still waiting for the receiver — the money is still here and
+/// still in <paramref name="Balance"/>.</param>
 public record CashBoxDto(
     Guid Id, string Name, string? ResponsibleUserId, string? ResponsibleName,
     decimal Balance, IReadOnlyDictionary<string, decimal> ByMethod,
-    bool IsDefault, bool IsActive);
+    bool IsDefault, bool IsActive, decimal PendingIn = 0m, decimal PendingOut = 0m);
 
 /// <summary>Yangi kassa ochish.</summary>
 /// <param name="IsDefault">true — shu kassa SUKUT bo'ladi (boshqasiniki avtomatik yechiladi).</param>
@@ -120,6 +124,14 @@ public record CashBoxExchangeRequest(
 /// <summary>Amalni bekor qilish. Sabab majburiy — u qarshi qatorning izohiga tushadi.</summary>
 public record CancelCashBoxTransactionRequest(string Reason);
 
+/// <summary>Returning a transfer to its sender. The reason is required — the cashier reads it on the row.</summary>
+public record ReturnCashBoxTransferRequest(string Reason);
+
+/// <summary>A transfer waiting for the current user to accept or return it.</summary>
+public record IncomingCashBoxTransferDto(
+    Guid Id, DateTimeOffset CreatedAt, Guid FromBoxId, string FromBoxName, Guid ToBoxId, string ToBoxName,
+    decimal Amount, string Method, string? Note, string SenderName);
+
 /// <summary>
 /// Kassa jurnalining bitta qatori — kassa harakati (<c>cash_box_transactions</c>)
 /// YOKI o'sha kassaga biriktirilgan to'lov / chiqim / qaytarim
@@ -170,11 +182,15 @@ public record CancelCashBoxTransactionRequest(string Reason);
 /// maydonni ham qamrab oladi: ekrandagi qidiruv maydoni "chek yoki shartnoma
 /// raqami" deb turibdi.
 /// </param>
+/// <param name="CashierName">Who recorded the row — the cashier, never the pupil (the "Kassir" column; 2026-10-12).</param>
+/// <param name="BoxName">The cash box the row belongs to; for a transfer, the sending box.</param>
+/// <param name="ToBoxName">Transfer only: the receiving box.</param>
 public record CashBoxTransactionRowDto(
     Guid Id, int No, DateOnly Date, string Who, string? ContractNo,
     decimal Amount, string Kind, string Method, string Status,
     string? TransactionTypeName, string? Note = null, string? CancelReason = null,
-    DateTimeOffset CreatedAt = default, long? ReceiptNo = null, string? RecipientName = null);
+    DateTimeOffset CreatedAt = default, long? ReceiptNo = null, string? RecipientName = null,
+    string? CashierName = null, string? BoxName = null, string? ToBoxName = null);
 
 /// <summary>Kassa harakatlari ro'yxati uchun filtr.</summary>
 public record CashBoxTransactionsQuery(
@@ -222,6 +238,18 @@ public interface ICashBoxService
     /// <summary>Storno: qarshi qator qo'shiladi. Original TEGILMAYDI (SPEC §4.1).</summary>
     Task<CashBoxTransactionRowDto> CancelTransactionAsync(
         Guid transactionId, string reason, string actorId, CancellationToken ct = default);
+
+    /// <summary>The receiving box's responsible person accepts a pending transfer: the money moves.</summary>
+    Task<CashBoxTransactionRowDto> AcceptTransferAsync(
+        Guid transferId, string actorId, CancellationToken ct = default);
+
+    /// <summary>The receiving box's responsible person returns a pending transfer: the money stays with the sender.</summary>
+    Task<CashBoxTransactionRowDto> ReturnTransferAsync(
+        Guid transferId, string reason, string actorId, CancellationToken ct = default);
+
+    /// <summary>Pending transfers into the boxes <paramref name="actorId"/> is responsible for, oldest first.</summary>
+    Task<IReadOnlyList<IncomingCashBoxTransferDto>> IncomingTransfersAsync(
+        string actorId, CancellationToken ct = default);
 
     Task<CashBoxTransactionsPageDto> TransactionsAsync(
         CashBoxTransactionsQuery query, CancellationToken ct = default);
@@ -637,6 +665,14 @@ public sealed class CashBoxService(IAppDbContext db) : ICashBoxService
         await RequireActiveBoxAsync(fromBoxId, ct);
         await RequireActiveBoxAsync(toBoxId, ct);
 
+        // The receiving box's responsible person confirms the money arrived (client, 2026-10-12) —
+        // unless they sent it themselves, or the box has nobody to confirm.
+        var receiver = await db.CashBoxes.AsNoTracking()
+            .Where(b => b.Id == toBoxId)
+            .Select(b => b.ResponsibleUserId)
+            .FirstOrDefaultAsync(ct);
+        var needsAcceptance = receiver is not null && receiver != actorId;
+
         // BITTA qator — ikkala tomonni ham qamrab oladi (Domain/CashBoxes.cs
         // izohi): manba `CashBoxId`, manzil `TransferToBoxId`. "Ikkalasi ham
         // bo'ladi yoki hech biri bo'lmaydi" shu bitta INSERT bilan avtomatik —
@@ -653,13 +689,15 @@ public sealed class CashBoxService(IAppDbContext db) : ICashBoxService
             CreatedBy = actorId,
             CreatedAt = transferAt,
             TransferToBoxId = toBoxId,
+            NeedsAcceptance = needsAcceptance,
         };
         db.CashBoxTransactions.Add(row);
 
         db.AuditLogs.Add(AuditService.Entry(
             AuditEntityCashBoxTransaction, row.Id.ToString("D"), "create",
             $"Kassalar orasida ko'chirish: {AuditService.Money(amount)} so'm ({method})"
-            + (note is null ? "" : $" — {note}"),
+            + (note is null ? "" : $" — {note}")
+            + (needsAcceptance ? " — qabul qiluvchi tasdig'i kutilmoqda" : ""),
             actorId: actorId, actorName: await actors.OfAsync(actorId, ct), after: Snapshot(row)));
 
         await db.SaveChangesAsync(ct);
@@ -734,6 +772,22 @@ public sealed class CashBoxService(IAppDbContext db) : ICashBoxService
         if (await db.CashBoxTransactions.AsNoTracking().AnyAsync(t => t.ReversalOf == transactionId, ct))
             throw BillingRuleException.Conflict("already_cancelled", "Bu amal allaqachon bekor qilingan.");
 
+        // A transfer that never moved money has nothing to reverse: while it waits, the receiver
+        // returns it; once returned, it is already undone.
+        if (original.NeedsAcceptance)
+        {
+            var decision = await db.CashBoxTransferDecisions.AsNoTracking()
+                .Where(d => d.TransferId == transactionId)
+                .Select(d => d.Decision)
+                .FirstOrDefaultAsync(ct);
+            if (decision is null)
+                throw BillingRuleException.Conflict("transfer_pending",
+                    "Ko'chirish hali qabul qilinmagan — pul joyidan qo'zg'almagan. Xato bo'lsa, qabul qiluvchi uni qaytaradi.");
+            if (decision == CashBoxTransferDecisionKind.Returned)
+                throw BillingRuleException.Conflict("transfer_returned",
+                    "Ko'chirish qaytarilgan — pul joyidan qo'zg'almagan, bekor qiladigan narsa yo'q.");
+        }
+
         await using var tx = await db.BeginTransactionAsync(ct);
 
         // Ko'chirish bo'lsa — ikkala kassaning qulfi ham, xuddi
@@ -788,6 +842,121 @@ public sealed class CashBoxService(IAppDbContext db) : ICashBoxService
         await tx.CommitAsync(ct);
 
         return (await ToRowDtosAsync([mirror], ct))[0];
+    }
+
+    // =====================================================================
+    //  Transfer acceptance (client, 2026-10-12): "Mendan tasdiqlansa keyin pul menga o'tishi kerak.
+    //  Xato bo'lsa men qaytarishim kerak" — the accountant accepts what the cashier sends, or returns it.
+    // =====================================================================
+
+    /// <inheritdoc />
+    public Task<CashBoxTransactionRowDto> AcceptTransferAsync(
+        Guid transferId, string actorId, CancellationToken ct = default) =>
+        DecideTransferAsync(transferId, CashBoxTransferDecisionKind.Accepted, null, actorId, ct);
+
+    /// <inheritdoc />
+    public Task<CashBoxTransactionRowDto> ReturnTransferAsync(
+        Guid transferId, string reason, string actorId, CancellationToken ct = default)
+    {
+        var note = Trim(reason)
+            ?? throw BillingRuleException.Invalid("reason_required", "Qaytarish sababini yozing.");
+        return DecideTransferAsync(transferId, CashBoxTransferDecisionKind.Returned, note, actorId, ct);
+    }
+
+    /// <summary>
+    /// One answer per transfer, and only from the person responsible for the receiving box <i>now</i>
+    /// (if the box changes hands, the new person answers). Not even the owner answers for them: the
+    /// point is that the person who holds the money confirms it arrived.
+    /// </summary>
+    private async Task<CashBoxTransactionRowDto> DecideTransferAsync(
+        Guid transferId, string decision, string? note, string actorId, CancellationToken ct)
+    {
+        RequireActor(actorId);
+
+        var transfer = await db.CashBoxTransactions.AsNoTracking()
+            .FirstOrDefaultAsync(t => t.Id == transferId, ct)
+            ?? throw BillingRuleException.NotFound("transaction_not_found", "Amal topilmadi.");
+        if (transfer.Kind != CashBoxTransactionKind.Transfer || transfer.TransferToBoxId is not { } toBoxId
+            || !transfer.NeedsAcceptance)
+            throw BillingRuleException.Conflict("transfer_not_awaiting", "Bu amal tasdiq kutmaydi.");
+
+        await using var tx = await db.BeginTransactionAsync(ct);
+
+        // Both boxes, in the same fixed order as TransferAsync — the answer moves money between them.
+        var (first, second) = transfer.CashBoxId.CompareTo(toBoxId) <= 0
+            ? (transfer.CashBoxId, toBoxId) : (toBoxId, transfer.CashBoxId);
+        await LockBoxAsync(first, ct);
+        await LockBoxAsync(second, ct);
+
+        // Under the lock: a double click or a second tab cannot answer twice (the key would refuse it
+        // anyway, but with a 23505 instead of a sentence).
+        if (await db.CashBoxTransferDecisions.AsNoTracking().AnyAsync(d => d.TransferId == transferId, ct))
+            throw BillingRuleException.Conflict("transfer_already_decided",
+                "Bu ko'chirish allaqachon ko'rib chiqilgan.");
+
+        var receiver = await db.CashBoxes.AsNoTracking()
+            .Where(b => b.Id == toBoxId)
+            .Select(b => b.ResponsibleUserId)
+            .FirstOrDefaultAsync(ct);
+        if (receiver != actorId)
+            throw BillingRuleException.Forbidden("not_transfer_receiver",
+                "Ko'chirishni faqat qabul qiluvchi kassaning mas'uli tasdiqlaydi yoki qaytaradi.");
+
+        if (decision == CashBoxTransferDecisionKind.Accepted)
+        {
+            await RequireActiveBoxAsync(transfer.CashBoxId, ct);
+            await RequireActiveBoxAsync(toBoxId, ct);
+        }
+
+        db.CashBoxTransferDecisions.Add(new CashBoxTransferDecision
+        {
+            TransferId = transferId,
+            Decision = decision,
+            Note = note,
+            DecidedBy = actorId,
+            DecidedAt = AppClock.NowInstant,
+        });
+
+        db.AuditLogs.Add(AuditService.Entry(
+            AuditEntityCashBoxTransaction, transferId.ToString("D"), decision == CashBoxTransferDecisionKind.Accepted ? "accept" : "return",
+            (decision == CashBoxTransferDecisionKind.Accepted ? "Ko'chirish QABUL QILINDI: " : "Ko'chirish QAYTARILDI: ")
+            + $"{AuditService.Money(transfer.Amount)} so'm ({transfer.Method})"
+            + (note is null ? "" : $". Sabab: {note}"),
+            actorId: actorId, actorName: await actors.OfAsync(actorId, ct), before: Snapshot(transfer)));
+
+        await db.SaveChangesAsync(ct);
+        await tx.CommitAsync(ct);
+
+        return (await ToRowDtosAsync([transfer], ct))[0];
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<IncomingCashBoxTransferDto>> IncomingTransfersAsync(
+        string actorId, CancellationToken ct = default)
+    {
+        RequireActor(actorId);
+
+        var mine = db.CashBoxes.Where(b => b.ResponsibleUserId == actorId).Select(b => b.Id);
+        var rows = await db.CashBoxTransactions.AsNoTracking()
+            .Where(t => t.NeedsAcceptance && t.TransferToBoxId != null && mine.Contains(t.TransferToBoxId.Value)
+                        && !db.CashBoxTransferDecisions.Any(d => d.TransferId == t.Id))
+            .OrderBy(t => t.CreatedAt)
+            .ToListAsync(ct);
+        if (rows.Count == 0) return [];
+
+        var boxIds = rows.Select(r => r.CashBoxId).Concat(rows.Select(r => r.TransferToBoxId!.Value)).Distinct().ToList();
+        var boxNames = await db.CashBoxes.AsNoTracking().Where(b => boxIds.Contains(b.Id))
+            .ToDictionaryAsync(b => b.Id, b => b.Name, ct);
+        var senderIds = rows.Select(r => r.CreatedBy).Distinct().ToList();
+        var senders = await db.Users.AsNoTracking().Where(u => senderIds.Contains(u.Id))
+            .Select(u => new { u.Id, u.FullName })
+            .ToDictionaryAsync(u => u.Id, u => u.FullName, ct);
+
+        return [.. rows.Select(r => new IncomingCashBoxTransferDto(
+            r.Id, r.CreatedAt,
+            r.CashBoxId, boxNames.GetValueOrDefault(r.CashBoxId, "—"),
+            r.TransferToBoxId!.Value, boxNames.GetValueOrDefault(r.TransferToBoxId.Value, "—"),
+            r.Amount, r.Method, r.Note, senders.GetValueOrDefault(r.CreatedBy, "—")))];
     }
 
     /// <summary>
@@ -878,11 +1047,16 @@ public sealed class CashBoxService(IAppDbContext db) : ICashBoxService
         // `native[i]` ↔ `rows[i]`: `ToRowDtosAsync` har qatorga AYNAN bitta
         // DTO va AYNAN o'sha tartibda qaytaradi, shuning uchun qatorning
         // kassaga ta'siri (`Contributions`) shu indeks orqali olinadi.
+        // A waiting or returned transfer is listed, but moved no money — it adds nothing to the totals.
+        var boxNames = await db.CashBoxes.AsNoTracking().ToDictionaryAsync(b => b.Id, b => b.Name, ct);
         var lines = native
             .Select((dto, i) => new LedgerLine(
-                dto, [.. ContributionsFor(rows[i], query.BoxId)], InOf(rows[i]), OutOf(rows[i]),
+                dto,
+                dto.Status is CashBoxRowStatus.Pending or CashBoxRowStatus.Returned
+                    ? [] : [.. ContributionsFor(rows[i], query.BoxId)],
+                InOf(rows[i]), OutOf(rows[i]),
                 rows[i].ReversalOf is not null))
-            .Concat(externals.Select(LineOf))
+            .Concat(externals.Select(e => LineOf(e, boxNames)))
             .OrderByDescending(l => l.Dto.CreatedAt)
             // Bir xil lahzali ikki qator har so'rovda joyini almashtirmasin:
             // orqadagi sana bilan yozilganda bu haqiqiy ehtimol
@@ -953,7 +1127,7 @@ public sealed class CashBoxService(IAppDbContext db) : ICashBoxService
     /// kassaga ta'siriga. Ishora manbada qo'yilgan
     /// (<c>CashBoxExternalLedger</c>): to'lov +, chiqim va qaytarim −.
     /// </summary>
-    private static LedgerLine LineOf(CashBoxExternalRow row) => new(
+    private static LedgerLine LineOf(CashBoxExternalRow row, IReadOnlyDictionary<Guid, string> boxNames) => new(
         new CashBoxTransactionRowDto(
             row.Id,
             0,                                  // tartib raqami oxirida qo'yiladi
@@ -968,7 +1142,9 @@ public sealed class CashBoxService(IAppDbContext db) : ICashBoxService
             row.Note,
             row.CancelReason,
             row.At,
-            row.ReceiptNo),
+            row.ReceiptNo,
+            CashierName: row.CashierName,
+            BoxName: boxNames.GetValueOrDefault(row.BoxId)),
         [(row.Method, row.Signed)],
         row.Kind == CashBoxLedgerKind.StudentPayment ? row.Signed : 0m,
         row.Kind == CashBoxLedgerKind.StudentPayment ? 0m : -row.Signed);
@@ -1054,17 +1230,29 @@ public sealed class CashBoxService(IAppDbContext db) : ICashBoxService
                 .Where(u => responsibleIds.Contains(u.Id))
                 .ToDictionaryAsync(u => u.Id, u => u.FullName, ct);
 
+        // A transfer that waits for the receiver (or was returned) has not moved money: it counts in
+        // neither box. Only the waiting ones are summed separately, for the card.
+        var decisions = db.CashBoxTransferDecisions;
+
         // Manba tomoni: shu kassalarga tegishli BARCHA qatorlar.
         var outgoing = await db.CashBoxTransactions.AsNoTracking()
             .Where(t => ids.Contains(t.CashBoxId))
-            .Select(t => new { t.CashBoxId, t.Kind, t.Amount, t.Method, t.ToMethod, t.ReversalOf })
+            .Select(t => new
+            {
+                t.CashBoxId, t.Kind, t.Amount, t.Method, t.ToMethod, t.ReversalOf, t.NeedsAcceptance,
+                Decision = decisions.Where(d => d.TransferId == t.Id).Select(d => d.Decision).FirstOrDefault(),
+            })
             .ToListAsync(ct);
 
         // Manzil tomoni: shu kassalarga KO'CHIRILGAN qatorlar (faqat transfer).
         var incoming = await db.CashBoxTransactions.AsNoTracking()
             .Where(t => t.Kind == CashBoxTransactionKind.Transfer
                         && t.TransferToBoxId != null && ids.Contains(t.TransferToBoxId.Value))
-            .Select(t => new { CashBoxId = t.TransferToBoxId!.Value, t.Amount, t.Method, t.ReversalOf })
+            .Select(t => new
+            {
+                CashBoxId = t.TransferToBoxId!.Value, t.Amount, t.Method, t.ReversalOf, t.NeedsAcceptance,
+                Decision = decisions.Where(d => d.TransferId == t.Id).Select(d => d.Decision).FirstOrDefault(),
+            })
             .ToListAsync(ct);
 
         // Uchinchi manba: o'quvchi to'lovi, naqd chiqim va qaytarim — ular
@@ -1078,7 +1266,7 @@ public sealed class CashBoxService(IAppDbContext db) : ICashBoxService
             var byMethod = new Dictionary<string, decimal>(StringComparer.Ordinal);
             foreach (var m in PaymentMethod.All) byMethod[m] = 0m;
 
-            foreach (var t in outgoing.Where(t => t.CashBoxId == box.Id))
+            foreach (var t in outgoing.Where(t => t.CashBoxId == box.Id && MovedMoney(t.NeedsAcceptance, t.Decision)))
                 foreach (var (method, delta) in Contributions(new CashBoxTransaction
                 {
                     CashBoxId = t.CashBoxId, Kind = t.Kind, Amount = t.Amount,
@@ -1086,7 +1274,7 @@ public sealed class CashBoxService(IAppDbContext db) : ICashBoxService
                 }))
                     byMethod[method] = decimal.Round(byMethod[method] + delta, MoneyScale);
 
-            foreach (var t in incoming.Where(t => t.CashBoxId == box.Id))
+            foreach (var t in incoming.Where(t => t.CashBoxId == box.Id && MovedMoney(t.NeedsAcceptance, t.Decision)))
             {
                 var sign = t.ReversalOf is null ? 1m : -1m;
                 byMethod[t.Method] = decimal.Round(byMethod[t.Method] + sign * t.Amount, MoneyScale);
@@ -1097,12 +1285,18 @@ public sealed class CashBoxService(IAppDbContext db) : ICashBoxService
             foreach (var t in externalTotals.Where(t => t.BoxId == box.Id))
                 byMethod[t.Method] = decimal.Round(byMethod[t.Method] + t.Amount, MoneyScale);
 
+            var pendingIn = incoming.Where(t => t.CashBoxId == box.Id && t.NeedsAcceptance && t.Decision is null)
+                .Sum(t => t.Amount);
+            var pendingOut = outgoing.Where(t => t.CashBoxId == box.Id && t.NeedsAcceptance && t.Decision is null)
+                .Sum(t => t.Amount);
+
             return new CashBoxDto(
                 box.Id, box.Name, box.ResponsibleUserId,
                 box.ResponsibleUserId is null ? null : names.GetValueOrDefault(box.ResponsibleUserId, "—"),
                 decimal.Round(byMethod.Values.Sum(), MoneyScale),
                 byMethod,
-                box.IsDefault, box.IsActive);
+                box.IsDefault, box.IsActive,
+                decimal.Round(pendingIn, MoneyScale), decimal.Round(pendingOut, MoneyScale));
         })];
     }
 
@@ -1162,6 +1356,20 @@ public sealed class CashBoxService(IAppDbContext db) : ICashBoxService
             .GroupBy(x => x.Original)
             .ToDictionary(g => g.Key, g => g.Select(x => x.Note).FirstOrDefault(n => n is not null));
 
+        // The receiver's answer to transfers that wait for one; a return's note is its "Sabab".
+        var awaiting = rows.Where(r => r.NeedsAcceptance).Select(r => r.Id).ToList();
+        var decisions = awaiting.Count == 0
+            ? []
+            : await db.CashBoxTransferDecisions.AsNoTracking()
+                .Where(d => awaiting.Contains(d.TransferId))
+                .ToDictionaryAsync(d => d.TransferId, ct);
+
+        var boxIds = rows.Select(r => r.CashBoxId)
+            .Concat(rows.Where(r => r.TransferToBoxId is not null).Select(r => r.TransferToBoxId!.Value))
+            .Distinct().ToList();
+        var boxNames = await db.CashBoxes.AsNoTracking().Where(b => boxIds.Contains(b.Id))
+            .ToDictionaryAsync(b => b.Id, b => b.Name, ct);
+
         return [.. rows.Select((r, idx) => new CashBoxTransactionRowDto(
             r.Id,
             idx + 1,
@@ -1171,7 +1379,7 @@ public sealed class CashBoxService(IAppDbContext db) : ICashBoxService
             r.Amount,
             r.Kind,
             r.Method,
-            DisplayStatus(r, reversedIds.Contains(r.Id)),
+            DisplayStatus(r, reversedIds.Contains(r.Id), decisions.GetValueOrDefault(r.Id)?.Decision),
             r.TransactionTypeId is null ? null : typeNames.GetValueOrDefault(r.TransactionTypeId.Value),
             // Stornoning o'z izohi AYNAN bekor qilish sababi, shuning uchun u
             // faqat "Sabab" ustunida chiqadi — ikkala ustunda bir xil matn
@@ -1179,11 +1387,16 @@ public sealed class CashBoxService(IAppDbContext db) : ICashBoxService
             r.Status == CashBoxTransactionStatus.Reversal ? null : r.Note,
             r.Status == CashBoxTransactionStatus.Reversal
                 ? r.Note
-                : cancelReasons.GetValueOrDefault(r.Id),
+                : decisions.GetValueOrDefault(r.Id) is { Decision: CashBoxTransferDecisionKind.Returned } returned
+                    ? returned.Note
+                    : cancelReasons.GetValueOrDefault(r.Id),
             r.CreatedAt,
             RecipientName: r.TeacherId is not null ? teacherNames.GetValueOrDefault(r.TeacherId)
                 : r.EmployeeUserId is not null ? employeeNames.GetValueOrDefault(r.EmployeeUserId)
-                : null))];
+                : null,
+            CashierName: names.GetValueOrDefault(r.CreatedBy, "—"),
+            BoxName: boxNames.GetValueOrDefault(r.CashBoxId),
+            ToBoxName: r.TransferToBoxId is { } to ? boxNames.GetValueOrDefault(to) : null))];
     }
 
     /// <summary>
@@ -1221,10 +1434,19 @@ public sealed class CashBoxService(IAppDbContext db) : ICashBoxService
     /// qilgan storno bor-yo'qligidan) hisoblanadi — <c>ExpenseStatus</c> dagi
     /// bilan bir xil naqsh.
     /// </summary>
-    private static string DisplayStatus(CashBoxTransaction row, bool hasReversal) =>
+    private static string DisplayStatus(CashBoxTransaction row, bool hasReversal, string? decision) =>
         row.Status == CashBoxTransactionStatus.Reversal ? CashBoxRowStatus.Reversal
+        : row.NeedsAcceptance && decision is null ? CashBoxRowStatus.Pending
+        : row.NeedsAcceptance && decision == CashBoxTransferDecisionKind.Returned ? CashBoxRowStatus.Returned
         : hasReversal ? CashBoxRowStatus.Cancelled
         : CashBoxRowStatus.Posted;
+
+    /// <summary>
+    /// Did this row move money? Everything does, except a transfer still waiting for the receiver or
+    /// one the receiver returned (<see cref="CashBoxTransaction.NeedsAcceptance"/>).
+    /// </summary>
+    private static bool MovedMoney(bool needsAcceptance, string? decision) =>
+        !needsAcceptance || decision == CashBoxTransferDecisionKind.Accepted;
 
     // =====================================================================
     //  Yordamchilar

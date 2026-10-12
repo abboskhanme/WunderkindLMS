@@ -141,12 +141,14 @@ export function kindLabel(kind: string): string {
   return kindLabels[kind] ?? kind
 }
 
-/** Server: `posted` | `cancelled` | `reversal` (`CashBoxService.DisplayStatus`). */
+/** Server: `posted` | `cancelled` | `reversal` | `pending` | `returned` (`CashBoxService.DisplayStatus`). */
 const statusLabels: Record<string, string> = {
   posted: 'Bajarildi',
   completed: 'Bajarildi',
   cancelled: 'Bekor qilindi',
   reversal: 'Storno',
+  pending: 'Tasdiq kutilmoqda',
+  returned: 'Qaytarildi',
 }
 
 export function statusLabel(status: string): string {

@@ -35,6 +35,8 @@ DECLARE
         'bell_schedule_owners', 'bell_schedule_periods', 'bell_schedules',
         'assignment_types', 'assignments', 'billing_settings', 'boarding_attendance', 'broadcasts',
         'cash_box_transactions', 'cash_boxes', 'cash_handovers', 'cash_shifts',
+        -- cash_box_transfer_decisions: a transfer's status in the journal tool (2026-10-12)
+        'cash_box_transfer_decisions',
         'certificate_subjects', 'certificate_types', 'certificates', 'class_homeroom_teachers',
         'class_memberships', 'classes',
         'daily_attendance_marks', 'debtor_actions', 'debtor_statuses', 'discipline_points',

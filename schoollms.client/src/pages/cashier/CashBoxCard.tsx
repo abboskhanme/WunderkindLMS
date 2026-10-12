@@ -1,7 +1,18 @@
-import { ArrowLeftRight, ArrowDownCircle, ArrowUpCircle, Pencil, Repeat, Star } from 'lucide-react'
+import { ArrowLeftRight, ArrowDownCircle, ArrowUpCircle, Clock, Pencil, Repeat, Star } from 'lucide-react'
 import type { CashBox } from '@/api/services/cashBoxes'
 import { cn } from '@/lib/utils'
 import { formatSumWithUnit } from './format'
+
+/**
+ * Tasdiq kutayotgan ko'chirishlar (2026-10-12) — balansga KIRMAGAN pul. Yuborgan
+ * kassada: "ketadi" (pul hamon shu yerda); qabul qiluvchida: "keladi".
+ */
+function pendingLines(box: CashBox): string[] {
+  const lines: string[] = []
+  if (box.pendingOut) lines.push(`Ketadi (tasdiq kutilmoqda): −${formatSumWithUnit(box.pendingOut)}`)
+  if (box.pendingIn) lines.push(`Keladi (tasdiq kutilmoqda): +${formatSumWithUnit(box.pendingIn)}`)
+  return lines
+}
 
 export type CashBoxActionMode = 'in' | 'out' | 'transfer' | 'exchange'
 
@@ -40,6 +51,15 @@ export function CashBoxCard({ box, selected, canManage, onSelect, onEdit, onActi
             {box.responsibleName && (
               <p className="mt-0.5 truncate text-xs text-brand-100">{box.responsibleName}</p>
             )}
+            {pendingLines(box).map((line) => (
+              <p
+                key={line}
+                className="mt-2 flex items-center gap-1.5 rounded-md bg-white/15 px-2 py-1 text-xs tabular-nums"
+              >
+                <Clock className="h-3.5 w-3.5 shrink-0" />
+                <span className="min-w-0">{line}</span>
+              </p>
+            ))}
             {!box.isActive && (
               <span className="mt-2 inline-block rounded-md bg-white/15 px-2 py-0.5 text-xs">
                 Nofaol
@@ -122,6 +142,12 @@ export function CashBoxCard({ box, selected, canManage, onSelect, onEdit, onActi
       {box.responsibleName && (
         <p className="mt-0.5 truncate text-xs text-slate-400">{box.responsibleName}</p>
       )}
+      {pendingLines(box).map((line) => (
+        <p key={line} className="mt-1.5 flex items-center gap-1.5 text-xs tabular-nums text-amber-700">
+          <Clock className="h-3.5 w-3.5 shrink-0" />
+          <span className="min-w-0">{line}</span>
+        </p>
+      ))}
     </button>
   )
 }

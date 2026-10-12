@@ -26,6 +26,12 @@ public sealed class FinanceRoleAttribute(FinanceAction action) : Attribute, IAut
 {
     public FinanceAction Action { get; } = action;
 
+    /// <summary>
+    /// A POST that only reads — a file built from ids too many for a query string (the cash-box
+    /// export, 2026-10-12). A view-only finance user passes it like a GET.
+    /// </summary>
+    public bool ReadOnlyPost { get; set; }
+
     public void OnAuthorization(AuthorizationFilterContext context)
     {
         var user = context.HttpContext.User;
@@ -35,7 +41,8 @@ public sealed class FinanceRoleAttribute(FinanceAction action) : Attribute, IAut
         // O'QISH tomonini ko'radi — ruxsat bor bo'limning ma'lumoti chiqmay qolmasin
         // (2026-09-26). Yozish so'rovlarini ViewOnlyWriteGuard rad etadi.
         var method = context.HttpContext.Request.Method;
-        var isRead = HttpMethods.IsGet(method) || HttpMethods.IsHead(method) || HttpMethods.IsOptions(method);
+        var isRead = HttpMethods.IsGet(method) || HttpMethods.IsHead(method) || HttpMethods.IsOptions(method)
+                     || (ReadOnlyPost && HttpMethods.IsPost(method));
         if (isRead && user.IsInRole(Roles.FinanceViewer)) return;
 
         if (!FinanceMatrix.IsAllowed(Action, user)) context.Result = new ForbidResult();

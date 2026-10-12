@@ -113,12 +113,15 @@ public static class ExcelExport
     /// <param name="Title">Optional bold title line above the table, followed by one blank
     /// row (the lesson-analysis rating export, docs/modules/lesson-analysis.md §5). null = the
     /// header is the first row, exactly as before.</param>
+    /// <param name="Widths">Optional column widths in Excel character units, left to right (the cash-box
+    /// export, 2026-10-12). null = Excel's default width, exactly as before.</param>
     public sealed record TableSpec(
         string Name,
         IReadOnlyList<string> Headers,
         IEnumerable<IReadOnlyList<XlsxCell>> Rows,
         IReadOnlyList<XlsxCell>? Totals = null,
-        string? Title = null);
+        string? Title = null,
+        IReadOnlyList<double>? Widths = null);
 
     /// <summary>Bitta varaqli moliya jadvali (F0.01).</summary>
     public static byte[] BuildTable(
@@ -151,7 +154,13 @@ public static class ExcelExport
             {
                 var wsPart = wbPart.AddNewPart<WorksheetPart>();
                 var sheetData = new SheetData();
-                wsPart.Worksheet = new Worksheet(sheetData);
+                // <cols> must precede <sheetData> in the schema, or Excel "repairs" the file.
+                wsPart.Worksheet = spec.Widths is { Count: > 0 } widths
+                    ? new Worksheet(new Columns(widths.Select((w, i) => new Column
+                    {
+                        Min = (uint)(i + 1), Max = (uint)(i + 1), Width = w, CustomWidth = true,
+                    })), sheetData)
+                    : new Worksheet(sheetData);
 
                 sheets.Append(new Sheet
                 {

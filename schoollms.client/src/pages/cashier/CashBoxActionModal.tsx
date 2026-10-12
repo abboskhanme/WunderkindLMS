@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useAuth } from '@/context/auth-context'
 import type { PaymentMethod } from '@/types'
 import type { CashBox, SalaryRecipient } from '@/api/services/cashBoxes'
 import {
@@ -58,6 +59,7 @@ interface Props {
  * usullar orasidagi ayirboshlash).
  */
 export function CashBoxActionModal({ box, otherBoxes, mode, onClose, onDone }: Props) {
+  const { user } = useAuth()
   const [amountRaw, setAmountRaw] = useState('')
   const [method, setMethod] = useState<PaymentMethod>('cash')
   const [fromMethod, setFromMethod] = useState<PaymentMethod>('cash')
@@ -127,6 +129,8 @@ export function CashBoxActionModal({ box, otherBoxes, mode, onClose, onDone }: P
   const amount = parseSum(amountRaw)
   const amountValid = amount !== null && amount > 0
   const exchangeValid = mode !== 'exchange' || fromMethod !== toMethod
+  /** Ko'chirish manzili — uning mas'uli pulni qabul qiladi (yoki qaytaradi). */
+  const receiver = otherBoxes.find((b) => b.id === toBoxId && b.responsibleUserId)
   const transferValid = mode !== 'transfer' || toBoxId !== ''
   // Chiqimda tur MAJBURIY — kirim shakli bilan bir xil qoida (mijoz shakli).
   const typeValid = mode !== 'out' || transactionTypeId !== ''
@@ -301,6 +305,14 @@ export function CashBoxActionModal({ box, otherBoxes, mode, onClose, onDone }: P
             </Select>
             {otherBoxes.length === 0 && (
               <p className="text-xs text-amber-600">Ko'chirish uchun boshqa faol kassa yo'q.</p>
+            )}
+            {/* Server bilan bir xil qoida (CashBoxService.TransferAsync, 2026-10-12): mas'uli bor
+                kassaga ko'chirilgan pul o'sha odam qabul qilgachgina o'tadi. */}
+            {receiver && receiver.responsibleUserId !== user?.id && (
+              <Notice tone="info">
+                Pul {receiver.responsibleName ?? "kassa mas'uli"} qabul qilgach o'tadi. Ungacha u shu kassada
+                turadi; xato bo'lsa, qabul qiluvchi qaytaradi.
+              </Notice>
             )}
           </>
         )}

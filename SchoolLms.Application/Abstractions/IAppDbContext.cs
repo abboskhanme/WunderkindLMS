@@ -225,6 +225,9 @@ public interface IAppDbContext
     DbSet<CashBox> CashBoxes { get; }
     DbSet<CashBoxTransaction> CashBoxTransactions { get; }
 
+    /// <summary>The receiver's answer to a transfer that needs acceptance — insert-only (<c>cash_box_transfer_decisions_guards.sql</c>).</summary>
+    DbSet<CashBoxTransferDecision> CashBoxTransferDecisions { get; }
+
     /// <summary>
     /// Rejalashtirilgan chiqim shablonlari (F6.01, finance-parity.md §2.6).
     /// Moliyaviy EMAS — to'liq CRUD (<c>students_parity_p1_guards.sql</c>

@@ -23,7 +23,13 @@ import {
   suggestAllocation,
 } from '@/api/services/cashier'
 import type { CashBox, CashBoxTransactionRow, CashBoxTransactionsResult } from '@/api/services/cashBoxes'
-import { cancelCashBoxTransaction, cashBoxIn, getCashBoxTransactions, getCashBoxes } from '@/api/services/cashBoxes'
+import {
+  cancelCashBoxTransaction,
+  cashBoxIn,
+  exportCashBoxTransactions,
+  getCashBoxTransactions,
+  getCashBoxes,
+} from '@/api/services/cashBoxes'
 import type { TransactionType } from '@/api/services/transactionTypes'
 import { getTransactionTypes } from '@/api/services/transactionTypes'
 import type { StudentContract } from '@/api/services/studentContracts'
@@ -35,7 +41,7 @@ import { Card } from '@/components/ui/Card'
 import { Modal } from '@/components/ui/Modal'
 import { Loader } from '@/components/ui/Loader'
 import { Select, Textarea } from '@/components/ui/Input'
-import { cn, exportToCsv } from '@/lib/utils'
+import { cn } from '@/lib/utils'
 import { ReasonModal } from '@/pages/admin/billing/ReasonModal'
 import { MoneyInput } from './MoneyInput'
 import { PaymentSplitModal } from './PaymentSplitModal'
@@ -46,18 +52,17 @@ import { CashBoxActionModal } from './CashBoxActionModal'
 import type { CashBoxActionMode } from './CashBoxCard'
 import { CashLedger } from './CashLedger'
 import { CashTransactionReceipt } from './CashTransactionReceipt'
+import { IncomingTransfers } from './IncomingTransfers'
 import { SickDiscountModal } from './SickDiscountModal'
 import { SickDiscountNotices } from './SickDiscountNotices'
 import { canUseCashDesk } from './cashDeskRoles'
 import {
-  formatDateTime,
   formatPeriod,
   formatSum,
   formatSumWithUnit,
   kindLabel,
   methodLabels,
   parseSum,
-  statusLabel,
 } from './format'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { formatPhone } from '@/lib/phone'
@@ -467,31 +472,30 @@ export function CashierPage() {
     }
   }
 
-  const handleExport = () => {
-    // Ekranda TURGAN qatorlar eksport qilinadi — filtrlangan ro'yxat, ekrandagi bilan bir xil.
+  const [exporting, setExporting] = useState(false)
+  const [exportError, setExportError] = useState<string | null>(null)
+
+  /**
+   * Ekranda TURGAN qatorlar (tanlangan bo'lsa — faqat ular), ekrandagi tartibda — haqiqiy .xlsx,
+   * serverda yasaladi (2026-10-12). Ilgari brauzer CSV yasardi: Excel uni bitta ustun qilib,
+   * harflarini buzib ochardi, har qatorda 05:00 turardi va "Kassir" ustunida o'quvchi ismi chiqardi.
+   */
+  const handleExport = async () => {
     const rows = filteredRows
     const source = selectedRows.size > 0 ? rows.filter((r) => selectedRows.has(r.id)) : rows
-    exportToCsv(
-      `kassa-tranzaksiyalari-${from}_${to}.csv`,
-      [
-        '№', 'Sana', 'Kim', 'Shartnoma raqami', 'Miqdor', 'Tranzaksiya',
-        'Tranzaksiya turi', "To'lov usuli", 'Holati', 'Kassir', 'Izoh', 'Sabab',
-      ],
-      source.map((r) => [
-        String(r.no),
-        formatDateTime(r.date),
-        r.who,
-        r.contractNo ?? '',
-        String(r.amount),
-        kindLabel(r.kind),
-        r.transactionTypeName ?? '',
-        methodLabels[r.method] ?? r.method,
-        statusLabel(r.status),
-        r.who,
-        r.note ?? '',
-        r.cancelReason ?? '',
-      ]),
-    )
+    if (source.length === 0 || exporting) return
+    setExporting(true)
+    setExportError(null)
+    try {
+      await exportCashBoxTransactions(
+        { from, to, boxId: boxFilter || undefined, q: q.trim() || undefined },
+        source.map((r) => r.id),
+      )
+    } catch (err) {
+      setExportError(financeErrorMessage(err, "Eksport qilib bo'lmadi."))
+    } finally {
+      setExporting(false)
+    }
   }
 
   /* ---- Tanlangan o'quvchi va taqsimotga uzatiladigan to'lov ----
@@ -593,11 +597,25 @@ export function CashierPage() {
           <Button variant="secondary" onClick={() => setFiltersOpen((v) => !v)}>
             <Filter className="h-4 w-4" /> Filtr
           </Button>
-          <Button variant="secondary" onClick={handleExport} disabled={filteredRows.length === 0}>
-            <Download className="h-4 w-4" /> Export
+          <Button
+            variant="secondary"
+            onClick={() => void handleExport()}
+            disabled={filteredRows.length === 0 || exporting}
+          >
+            <Download className="h-4 w-4" /> {exporting ? 'Tayyorlanmoqda…' : 'Excel'}
           </Button>
         </div>
       </header>
+      {exportError && <p className="text-sm text-red-600">{exportError}</p>}
+
+      {/* Qabul qiluvchi kassaning mas'uliga kelgan, javob kutayotgan ko'chirishlar (2026-10-12). */}
+      <IncomingTransfers
+        reloadKey={ledgerReload}
+        onDecided={() => {
+          void loadBoxes()
+          setLedgerReload((n) => n + 1)
+        }}
+      />
 
       {filtersOpen && (
         <Card className="flex flex-col gap-3 p-4">
