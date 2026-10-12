@@ -9,6 +9,7 @@ import {
   Users,
   Search,
   Eye,
+  Download,
 } from 'lucide-react'
 import type { Subject } from '@/types'
 import type { StudyGroupListItem } from '@/api/services/groups'
@@ -17,6 +18,7 @@ import {
   archiveGroup,
   unarchiveGroup,
   duplicateGroup,
+  downloadGroups,
 } from '@/api/services/groups'
 import { getSubjects } from '@/api/services/subjects'
 import { Card } from '@/components/ui/Card'
@@ -45,6 +47,7 @@ export function GroupsPage() {
   const [subjectId, setSubjectId] = useState('')
   const [showArchived, setShowArchived] = useState(false)
   const [gradesOpen, setGradesOpen] = useState(false)
+  const [exporting, setExporting] = useState(false)
 
   const load = useCallback(() => {
     setLoading(true)
@@ -62,6 +65,14 @@ export function GroupsPage() {
     const t = setTimeout(load, 250)
     return () => clearTimeout(t)
   }, [load])
+
+  /** Ekrandagi filtrlar bilan bir xil ro'yxat — sinflardagi "Excel" kabi (2026-10-12). */
+  const handleExport = () => {
+    setExporting(true)
+    downloadGroups({ search, grades, subjectId, archived: showArchived })
+      .catch(() => alert("Yuklab bo'lmadi"))
+      .finally(() => setExporting(false))
+  }
 
   const toggleGrade = (g: number) =>
     setGrades((prev) => (prev.includes(g) ? prev.filter((x) => x !== g) : [...prev, g]))
@@ -114,6 +125,10 @@ export function GroupsPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <Button variant="secondary" onClick={handleExport} disabled={exporting || groups.length === 0}>
+            <Download className="h-4 w-4" />
+            {exporting ? 'Tayyorlanmoqda...' : 'Excel'}
+          </Button>
           <Button variant="secondary" onClick={() => setShowArchived((v) => !v)}>
             {showArchived ? (
               <>

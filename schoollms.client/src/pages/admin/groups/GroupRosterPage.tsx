@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft, ArrowRightLeft, History, Pencil, Send, Trash2 } from 'lucide-react'
+import { ArrowLeft, ArrowRightLeft, Download, History, Pencil, Send, Trash2 } from 'lucide-react'
 import type { StudyGroupDetail, StudyGroupMember } from '@/api/services/groups'
-import { getGroup, getGroupMembers, removeGroupMember } from '@/api/services/groups'
+import { downloadGroupMembers, getGroup, getGroupMembers, removeGroupMember } from '@/api/services/groups'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Loader } from '@/components/ui/Loader'
@@ -28,6 +28,7 @@ export function GroupRosterPage() {
   const [selected, setSelected] = useState<string[]>([])
   const [messageOpen, setMessageOpen] = useState(false)
   const [transferFor, setTransferFor] = useState<StudyGroupMember | null>(null)
+  const [exporting, setExporting] = useState(false)
 
   const load = useCallback(() => {
     setLoading(true)
@@ -50,6 +51,14 @@ export function GroupRosterPage() {
     )
 
   const activeMembers = members.filter((m) => !m.leftOn)
+
+  /** Ekrandagi ro'yxat Excel'da — "Tarix bilan" yoqilgan bo'lsa chiqib ketganlar ham (2026-10-12). */
+  const handleExport = () => {
+    setExporting(true)
+    downloadGroupMembers(id, showHistory)
+      .catch(() => alert("Yuklab bo'lmadi"))
+      .finally(() => setExporting(false))
+  }
 
   const handleRemove = (m: StudyGroupMember) => {
     const reason = prompt(
@@ -87,6 +96,9 @@ export function GroupRosterPage() {
         <div className="flex flex-wrap items-center gap-2">
           <Button variant="secondary" onClick={() => setShowHistory((v) => !v)}>
             <History className="h-4 w-4" /> {showHistory ? 'Faqat faol' : 'Tarix bilan'}
+          </Button>
+          <Button variant="secondary" onClick={handleExport} disabled={exporting || members.length === 0}>
+            <Download className="h-4 w-4" /> {exporting ? 'Tayyorlanmoqda...' : 'Excel'}
           </Button>
           <Button
             variant="secondary"

@@ -119,6 +119,51 @@ export async function getGroups(filters: GroupFilters = {}): Promise<StudyGroupL
   return data
 }
 
+/**
+ * Brauzerda faylni yuklab berish — `downloadClasses` (classes.ts) dagi naqsh: endpoint JWT talab
+ * qiladi, oddiy `<a href>` esa sarlavha yubormaydi.
+ */
+function saveBlob(data: Blob, contentDisposition: string | undefined, fallback: string) {
+  const url = URL.createObjectURL(data)
+  const a = document.createElement('a')
+  a.href = url
+  // `filename*` (UTF-8) first: a group name may hold letters like ʻ that the plain `filename` mangles.
+  const cd = contentDisposition ?? ''
+  const utf8 = cd.match(/filename\*=UTF-8''([^;]+)/i)
+  const plain = cd.match(/filename="?([^";]+)"?/)
+  a.download = utf8 ? decodeURIComponent(utf8[1]) : (plain?.[1] ?? fallback)
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  URL.revokeObjectURL(url)
+}
+
+/** Guruhlar ro'yxati Excel'da — ekrandagi filtrlar bilan bir xil qatorlar (sinflardagi "Excel" kabi). */
+export async function downloadGroups(filters: GroupFilters = {}): Promise<void> {
+  const res = await api.get(`${base}/export`, {
+    params: {
+      search: filters.search || undefined,
+      grades: filters.grades?.length ? filters.grades.join(',') : undefined,
+      subjectId: filters.subjectId || undefined,
+      teacherId: filters.teacherId || undefined,
+      archived: filters.archived ? true : undefined,
+    },
+    responseType: 'blob',
+  })
+  saveBlob(res.data as Blob, res.headers['content-disposition'] as string | undefined,
+    `guruhlar_${new Date().toISOString().slice(0, 10)}.xlsx`)
+}
+
+/** Bitta guruhning o'quvchilar ro'yxati Excel'da (`includeHistory` — chiqib ketganlar bilan). */
+export async function downloadGroupMembers(id: string, includeHistory = false): Promise<void> {
+  const res = await api.get(`${base}/${id}/members/export`, {
+    params: includeHistory ? { includeHistory: true } : undefined,
+    responseType: 'blob',
+  })
+  saveBlob(res.data as Blob, res.headers['content-disposition'] as string | undefined,
+    `guruh_${new Date().toISOString().slice(0, 10)}.xlsx`)
+}
+
 export async function getGroup(id: string): Promise<StudyGroupDetail> {
   const { data } = await api.get<StudyGroupDetail>(`${base}/${id}`)
   return data

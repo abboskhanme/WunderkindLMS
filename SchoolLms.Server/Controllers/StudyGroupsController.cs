@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -125,6 +126,106 @@ public class StudyGroupsController(AppDbContext db, AuditService audit) : Contro
     {
         if (!await db.StudyGroups.AnyAsync(g => g.Id == id, ct)) return NotFound();
         return await MembersAsync(id, includeHistory, ct);
+    }
+
+    /// <summary>
+    /// Guruhlar ro'yxati Excel'da — ekrandagi filtrlar bilan bir xil qatorlar, sinflar ro'yxatining
+    /// "Excel" tugmasi kabi (client, 2026-10-12: "guruhlarni ichidan ham xuddi sinflar kabi ro'yxatni
+    /// yuklab olish mumkin bo'lsin").
+    /// </summary>
+    [HttpGet("export")]
+    public async Task<IActionResult> Export(
+        [FromQuery] string? search = null,
+        [FromQuery] string? grades = null,
+        [FromQuery] string? subjectId = null,
+        [FromQuery] string? teacherId = null,
+        [FromQuery] bool archived = false,
+        CancellationToken ct = default)
+    {
+        var groups = (await GetAll(search, grades, subjectId, teacherId, archived, ct)).Value ?? [];
+
+        IReadOnlyList<string> headers = ["№", "Guruh", "Fan", "Sinflar", "O'qituvchilar", "O'quvchilar soni", "Holat"];
+        var rows = groups.Select((g, i) => (IReadOnlyList<ExcelExport.XlsxCell>)
+        [
+            (i + 1).ToString(CultureInfo.InvariantCulture),
+            g.Name,
+            g.IsTrack ? "Yo'nalish" : g.SubjectName,
+            string.Join(", ", g.Classes.Select(c => c.Name)),
+            string.Join(", ", g.Teachers.Select(t => t.FullName)),
+            g.MemberCount.ToString(CultureInfo.InvariantCulture),
+            g.IsArchived ? "Arxivda" : "Faol",
+        ]).ToList();
+
+        var title = $"{(archived ? "Arxivlangan guruhlar" : "O'quv guruhlari")} · {AppClock.Now:dd.MM.yyyy} · jami {rows.Count} ta";
+        var bytes = ExcelExport.BuildTables(
+            [new ExcelExport.TableSpec("Guruhlar", headers, rows, Title: title, Widths: [6, 28, 22, 24, 34, 16, 10])]);
+        return File(bytes, XlsxMime, $"guruhlar_{AppClock.Now:yyyy-MM-dd}.xlsx");
+    }
+
+    /// <summary>
+    /// Bitta guruhning o'quvchilar ro'yxati Excel'da — ro'yxat sahifasidagi bilan bir xil:
+    /// <paramref name="includeHistory"/>=true bo'lsa chiqib ketganlar ham, chiqqan sanasi va sababi bilan.
+    /// </summary>
+    [HttpGet("{id:guid}/members/export")]
+    public async Task<IActionResult> ExportMembers(
+        Guid id, [FromQuery] bool includeHistory = false, CancellationToken ct = default)
+    {
+        var group = await db.StudyGroups.AsNoTracking().FirstOrDefaultAsync(g => g.Id == id, ct);
+        if (group is null) return NotFound();
+
+        var members = await MembersAsync(id, includeHistory, ct);
+        var subject = group.IsTrack || group.SubjectId is null
+            ? "Yo'nalish guruhi"
+            : await db.Subjects.AsNoTracking().Where(x => x.Id == group.SubjectId).Select(x => x.Name).FirstOrDefaultAsync(ct) ?? "";
+        var classes = (await ClassesOfAsync([id], ct)).GetValueOrDefault(id, []);
+        var teachers = (await TeachersOfAsync([id], ct)).GetValueOrDefault(id, []);
+
+        List<string> headers = ["№", "O'quvchi", "Sinf", "Qo'shilgan"];
+        List<double> widths = [6, 38, 10, 13];
+        if (includeHistory)
+        {
+            headers.AddRange(["Chiqqan", "Sabab"]);
+            widths.AddRange([13, 34]);
+        }
+
+        var rows = members.Select((m, i) =>
+        {
+            List<ExcelExport.XlsxCell> row =
+            [
+                (i + 1).ToString(CultureInfo.InvariantCulture),
+                m.FullName,
+                m.ClassName,
+                m.JoinedOn.ToString("dd.MM.yyyy", CultureInfo.InvariantCulture),
+            ];
+            if (includeHistory)
+            {
+                row.Add(m.LeftOn?.ToString("dd.MM.yyyy", CultureInfo.InvariantCulture));
+                row.Add(m.LeaveReason);
+            }
+            return (IReadOnlyList<ExcelExport.XlsxCell>)row;
+        }).ToList();
+
+        var title = string.Join(" · ", new[]
+        {
+            group.Name, subject,
+            string.Join(", ", classes.Select(c => c.Name)),
+            string.Join(", ", teachers.Select(t => t.FullName)),
+            $"{members.Count(m => m.LeftOn is null)} ta o'quvchi",
+        }.Where(x => !string.IsNullOrWhiteSpace(x)));
+
+        var bytes = ExcelExport.BuildTables(
+            [new ExcelExport.TableSpec("Ro'yxat", headers, rows, Title: title, Widths: widths)]);
+        return File(bytes, XlsxMime, $"guruh_{SafeFileName(group.Name)}_{AppClock.Now:yyyy-MM-dd}.xlsx");
+    }
+
+    private const string XlsxMime = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+
+    /// <summary>A group name as a file name: characters Windows refuses become "-".</summary>
+    private static string SafeFileName(string name)
+    {
+        var bad = Path.GetInvalidFileNameChars().Concat(['/', '\\', ':', '*', '?', '"', '<', '>', '|']).ToHashSet();
+        var clean = new string([.. name.Trim().Select(c => bad.Contains(c) ? '-' : c)]);
+        return string.IsNullOrWhiteSpace(clean) ? "guruh" : clean;
     }
 
     /// <summary>
