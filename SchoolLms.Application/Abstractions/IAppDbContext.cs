@@ -254,6 +254,9 @@ public interface IAppDbContext
     DbSet<SurveySubmission> SurveySubmissions { get; }
     DbSet<NewsItem> News { get; }
 
+    /// <summary>Who a news item's Telegram message reached or missed (2026-10-12).</summary>
+    DbSet<NewsTelegramRecipient> NewsTelegramRecipients { get; }
+
     /// <summary>
     /// Lid → o'quvchi statistikasi. Aylantirilgan lid o'chiriladi (mijoz qarori,
     /// 2026-09-22), bu yerda esa faqat SON qoladi — shaxsiy ma'lumotsiz.

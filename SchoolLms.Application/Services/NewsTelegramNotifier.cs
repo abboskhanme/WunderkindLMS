@@ -67,10 +67,37 @@ public sealed class NewsTelegramNotifier(
         try
         {
             var chatIds = await RecipientsAsync(db, news, ct);
+            // Whose each chat is, and who has none (2026-10-12) — saved with the news by the caller's
+            // SaveChanges (NewsService.PublishAsync), one row per chat and per unreachable person.
+            var audience = await NewsAudiencePeople.ResolveAsync(db, news, ct);
+            var people = audience.Where(a => a.ChatId is not null)
+                .GroupBy(a => a.ChatId!.Value).ToDictionary(g => g.Key, g => g.First());
             var text = BuildMessage(news);
             var sent = 0;
+            var rows = new List<NewsTelegramRecipient>();
             foreach (var chatId in chatIds)
-                if (await telegram.SendRichAsync(chatId, text, ct)) sent++;
+            {
+                var ok = await telegram.SendRichAsync(chatId, text, ct);
+                if (ok) sent++;
+                people.TryGetValue(chatId, out var who);
+                rows.Add(new NewsTelegramRecipient
+                {
+                    NewsId = news.Id,
+                    ChatId = chatId,
+                    Kind = who?.Kind ?? (news.ForParent ? NewsRecipientKind.Parent
+                        : news.ForEmployee ? NewsRecipientKind.Employee : NewsRecipientKind.Student),
+                    Name = who?.Name ?? "",
+                    Detail = who?.Detail,
+                    Status = ok ? BroadcastDelivery.Sent : BroadcastDelivery.Failed,
+                });
+            }
+            rows.AddRange(audience.Where(a => a.ChatId is null).Select(who => new NewsTelegramRecipient
+            {
+                NewsId = news.Id, ChatId = null, Kind = who.Kind, Name = who.Name, Detail = who.Detail,
+                Status = BroadcastDelivery.NoTelegram,
+            }));
+            // Added only once every chat was tried: a failure half-way leaves no half list behind.
+            db.NewsTelegramRecipients.AddRange(rows);
 
             logger.LogInformation(
                 "Yangilik Telegram'ga yuborildi: news={NewsId}, chats={Total}, sent={Sent}",

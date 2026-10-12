@@ -182,6 +182,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<Survey> Surveys => Set<Survey>();
     public DbSet<SurveySubmission> SurveySubmissions => Set<SurveySubmission>();
     public DbSet<NewsItem> News => Set<NewsItem>();
+    public DbSet<NewsTelegramRecipient> NewsTelegramRecipients => Set<NewsTelegramRecipient>();
     /// <summary>Lid → o'quvchi statistikasi (lid o'zi o'chiriladi, son qoladi).</summary>
     public DbSet<LeadConversion> LeadConversions => Set<LeadConversion>();
     public DbSet<NotificationState> NotificationStates => Set<NotificationState>();

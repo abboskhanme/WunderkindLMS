@@ -88,6 +88,31 @@ export async function getNews(id: string): Promise<NewsAdminDto> {
   return data
 }
 
+/** Telegram xabarining bitta oluvchisi (2026-10-12) — `GET /api/admin/news/{id}/recipients`. */
+export interface NewsRecipient {
+  /** `parent` — ota-ona, `employee` — xodim, `student` — o'quvchi. */
+  kind: 'parent' | 'employee' | 'student'
+  /** Kim: ota-onaning yoki xodimning ismi (yuborilgan paytdagi). */
+  name: string
+  /** Ota-onada — farzand(lar)i ("Ali (7-A)"), xodimda — lavozimi. */
+  detail: string | null
+  chatId: string | null
+  /** `sent` — yetkazildi, `failed` — yetmadi, `no_telegram` — Telegramga ulanmagan. */
+  status: 'sent' | 'failed' | 'no_telegram'
+}
+
+/** `hasDetails = false` — ro'yxat saqlana boshlashidan (12.10.2026) oldin yuborilgan. */
+export interface NewsRecipients {
+  hasDetails: boolean
+  recipients: NewsRecipient[]
+}
+
+/** Telegram xabari kimga yetdi, kimga yetmadi (muammolilar tepada). */
+export async function getNewsRecipients(id: string): Promise<NewsRecipients> {
+  const { data } = await api.get<NewsRecipients>(`/admin/news/${id}/recipients`)
+  return data
+}
+
 /** `POST /api/admin/news` — har doim qoralama qaytadi. */
 export async function createNews(req: NewsSaveRequest): Promise<NewsAdminDto> {
   const { data } = await api.post<NewsAdminDto>('/admin/news', req)

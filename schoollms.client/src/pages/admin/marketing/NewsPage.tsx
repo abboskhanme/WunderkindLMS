@@ -58,6 +58,7 @@ import { PhotoUpload } from '@/components/ui/PhotoUpload'
 import { Toast } from '@/components/ui/Toast'
 import { cn } from '@/lib/utils'
 import { NewsConfirmDialog, NewsPublishDialog } from './NewsDialogs'
+import { NewsRecipientsModal } from './NewsRecipientsModal'
 import {
   AUDIENCE_ORDER,
   audienceLabel,
@@ -119,6 +120,8 @@ export function NewsPage() {
 
   /** Serverdagi nusxa: `null` — yangi yangilik yozilmoqda. */
   const [editing, setEditing] = useState<NewsAdminDto | null>(null)
+  /** "Kimga yetdi" oynasi ochilgan yangilik (2026-10-12). */
+  const [recipientsOf, setRecipientsOf] = useState<NewsAdminDto | null>(null)
   /**
    * Ochilgan yangilik arxivdanmi. DTO buni aytmaydi (§5.4 `deleted_at` ni
    * qaytarmaydi), shuning uchun uni QAYSI ro'yxatdan ochilgani hal qiladi:
@@ -426,6 +429,7 @@ export function NewsPage() {
                     setDialogError(null)
                     setDeleteTarget(row)
                   }}
+                  onRecipients={() => setRecipientsOf(row)}
                 />
               ))}
 
@@ -701,6 +705,8 @@ export function NewsPage() {
         </p>
       </NewsConfirmDialog>
 
+      <NewsRecipientsModal news={recipientsOf} onClose={() => setRecipientsOf(null)} />
+
       <Toast message={toast} duration={6000} onClose={() => setToast(null)} />
     </div>
   )
@@ -739,9 +745,11 @@ interface RowProps {
   onPublish: () => void
   onUnpublish: () => void
   onDelete: () => void
+  /** Telegram xabari kimga yetdi — faqat Telegram'ga yuborilgan yangilikda. */
+  onRecipients: () => void
 }
 
-function NewsRow({ row, active, archived, busy, onEdit, onPublish, onUnpublish, onDelete }: RowProps) {
+function NewsRow({ row, active, archived, busy, onEdit, onPublish, onUnpublish, onDelete, onRecipients }: RowProps) {
   const published = row.publishedAt != null
   const telegram = telegramSummary(row)
 
@@ -768,7 +776,16 @@ function NewsRow({ row, active, archived, busy, onEdit, onPublish, onUnpublish, 
         </span>
       </div>
 
-      {telegram && <p className="text-xs text-slate-400">{telegram}</p>}
+      {telegram && (
+        <p className="flex flex-wrap items-center gap-x-2 text-xs text-slate-400">
+          {telegram}
+          {row.telegramSentAt && (
+            <button type="button" onClick={onRecipients} className="font-medium text-brand-600 hover:underline">
+              Kimga yetdi →
+            </button>
+          )}
+        </p>
+      )}
 
       <div className="flex flex-wrap justify-end gap-2 pt-1">
         <Button variant="ghost" onClick={onEdit} disabled={busy}>

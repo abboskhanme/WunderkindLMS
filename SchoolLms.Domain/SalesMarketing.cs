@@ -304,3 +304,39 @@ public class NewsItem
     /// </summary>
     public DateTimeOffset? DeletedAt { get; set; }
 }
+
+/// <summary>
+/// One person a news item's Telegram message was meant for (client, 2026-10-12: "Telegram: 120/150
+/// bunda aynan kimlarga borgan bormaganini bilsa bo'ladimi"): a chat that got it or did not, or a
+/// pupil's parents / an employee with no Telegram at all. Written once, when the news is sent.
+/// </summary>
+public class NewsTelegramRecipient
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+
+    /// <summary>news.id</summary>
+    public Guid NewsId { get; set; }
+
+    /// <summary>The Telegram chat; null = not connected to Telegram.</summary>
+    public long? ChatId { get; set; }
+
+    /// <summary>parent | employee | student — <see cref="NewsRecipientKind"/>.</summary>
+    public string Kind { get; set; } = string.Empty;
+
+    /// <summary>Who: the parent's or the employee's name, as known when the news was sent.</summary>
+    public string Name { get; set; } = string.Empty;
+
+    /// <summary>For a parent — their children ("Ali (7-A)"); for an employee — the role.</summary>
+    public string? Detail { get; set; }
+
+    /// <summary>sent | failed | no_telegram — <see cref="BroadcastDelivery"/>, as for announcements.</summary>
+    public string Status { get; set; } = BroadcastDelivery.Sent;
+}
+
+/// <summary><see cref="NewsTelegramRecipient.Kind"/> values.</summary>
+public static class NewsRecipientKind
+{
+    public const string Parent = "parent";
+    public const string Employee = "employee";
+    public const string Student = "student";
+}

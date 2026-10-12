@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -88,6 +89,32 @@ public class NewsController(AppDbContext db, AuditService audit, INewsTelegramNo
         var row = await db.News.AsNoTracking().FirstOrDefaultAsync(n => n.Id == id, ct);
         if (row is null) return NotFound(new { message = NewsService.NotFoundMessage });
         return NewsService.ToDto(row);
+    }
+
+    /// <summary>
+    /// Telegram xabari kimga yetdi, kimga yetmadi va kim Telegramga ulanmagan (mijoz, 2026-10-12) —
+    /// muammolilar tepada. 2026-10-12 dan oldin yuborilganlarda ro'yxat yo'q (<c>hasDetails = false</c>).
+    /// </summary>
+    [HttpGet("{id:guid}/recipients")]
+    public async Task<ActionResult<NewsRecipientsDto>> Recipients(Guid id, CancellationToken ct = default)
+    {
+        if (!await db.News.AsNoTracking().AnyAsync(n => n.Id == id, ct))
+            return NotFound(new { message = NewsService.NotFoundMessage });
+
+        var rows = await db.NewsTelegramRecipients.AsNoTracking().Where(r => r.NewsId == id).ToListAsync(ct);
+        static int Rank(string status) => status switch
+        {
+            BroadcastDelivery.Failed => 0,
+            BroadcastDelivery.NoTelegram => 1,
+            _ => 2,
+        };
+        var list = rows
+            .OrderBy(r => Rank(r.Status))
+            .ThenBy(r => r.Kind, StringComparer.Ordinal)
+            .ThenBy(r => r.Name, StringComparer.Ordinal)
+            .Select(r => new NewsRecipientDto(r.Kind, r.Name, r.Detail, r.ChatId?.ToString(CultureInfo.InvariantCulture), r.Status))
+            .ToList();
+        return new NewsRecipientsDto(rows.Count > 0, list);
     }
 
     /* ===================================================================

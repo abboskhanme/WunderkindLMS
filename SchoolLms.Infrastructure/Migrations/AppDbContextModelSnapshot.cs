@@ -6263,6 +6263,57 @@ namespace SchoolLms.Infrastructure.Migrations
                         });
                 });
 
+            modelBuilder.Entity("SchoolLms.Domain.NewsTelegramRecipient", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<long?>("ChatId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("chat_id");
+
+                    b.Property<string>("Detail")
+                        .HasColumnType("text")
+                        .HasColumnName("detail");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("kind");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("name");
+
+                    b.Property<Guid>("NewsId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("news_id");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("status");
+
+                    b.HasKey("Id")
+                        .HasName("pk_news_telegram_recipients");
+
+                    b.HasIndex("NewsId")
+                        .HasDatabaseName("ix_news_telegram_recipients_news_id");
+
+                    b.ToTable("news_telegram_recipients", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_news_telegram_recipients_chat", "(status = 'no_telegram') = (chat_id is null)");
+
+                            t.HasCheckConstraint("ck_news_telegram_recipients_kind", "kind in ('parent','employee','student')");
+
+                            t.HasCheckConstraint("ck_news_telegram_recipients_status", "status in ('sent','failed','no_telegram')");
+                        });
+                });
+
             modelBuilder.Entity("SchoolLms.Domain.NotificationState", b =>
                 {
                     b.Property<string>("UserId")
@@ -10663,6 +10714,16 @@ namespace SchoolLms.Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_news_users_author_id");
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.NewsTelegramRecipient", b =>
+                {
+                    b.HasOne("SchoolLms.Domain.NewsItem", null)
+                        .WithMany()
+                        .HasForeignKey("NewsId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_news_telegram_recipients_news_news_id");
                 });
 
             modelBuilder.Entity("SchoolLms.Domain.NotificationState", b =>

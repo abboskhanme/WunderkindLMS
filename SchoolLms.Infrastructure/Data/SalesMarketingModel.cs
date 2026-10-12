@@ -34,6 +34,7 @@ internal static class SalesMarketingModel
         ConfigureSurveys(b);
         ConfigureSurveySubmissions(b);
         ConfigureNews(b);
+        ConfigureNewsTelegramRecipients(b);
         ConfigureLeadSource(b);
     }
 
@@ -194,6 +195,25 @@ internal static class SalesMarketingModel
                 t.HasCheckConstraint(
                     "ck_news_audience",
                     "for_employee or for_parent or for_student");
+            });
+        });
+    }
+
+    /// <summary>Who a news item's Telegram message reached (2026-10-12) — written once, at sending.</summary>
+    private static void ConfigureNewsTelegramRecipients(ModelBuilder b)
+    {
+        b.Entity<NewsTelegramRecipient>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasDefaultValueSql("gen_random_uuid()");
+            e.HasOne<NewsItem>().WithMany().HasForeignKey(x => x.NewsId).OnDelete(DeleteBehavior.Restrict);
+            e.HasIndex(x => x.NewsId);
+            e.ToTable("news_telegram_recipients", t =>
+            {
+                t.HasCheckConstraint("ck_news_telegram_recipients_kind", "kind in ('parent','employee','student')");
+                t.HasCheckConstraint("ck_news_telegram_recipients_status", "status in ('sent','failed','no_telegram')");
+                t.HasCheckConstraint("ck_news_telegram_recipients_chat",
+                    "(status = 'no_telegram') = (chat_id is null)");
             });
         });
     }
