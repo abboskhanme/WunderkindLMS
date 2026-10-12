@@ -21,6 +21,8 @@ import { Input, Select } from '@/components/ui/Input'
 import { PhoneInput } from '@/components/ui/PhoneInput'
 import { PhotoUpload } from '@/components/ui/PhotoUpload'
 import { Notice } from '../billing/BillingUi'
+import { useAuth } from '@/context/auth-context'
+import { withinUserRights } from '@/lib/access'
 
 /** Lavozim takliflari — ro'yxatda allaqachon borlari ham qo'shiladi. */
 const DEFAULT_POSITIONS = ['Kassir', 'Administrator', "Direktor o'rinbosari", 'Qorovul', 'Hisobchi']
@@ -40,6 +42,7 @@ interface Props {
   /** null — yangi xodim. */
   editing: Staff | null
   roles: AccessRole[]
+  /** The user may assign roles at all (lib/access.ts `canAssignRoles`). */
   canManageRoles: boolean
   /** Lavozim takliflari uchun mavjud lavozimlar. */
   knownPositions: string[]
@@ -48,6 +51,13 @@ interface Props {
 }
 
 export function StaffFormDrawer({ editing, roles, canManageRoles, knownPositions, onClose, onSaved }: Props) {
+  const { user } = useAuth()
+  // 2026-10-12: a role assigner never changes their own role nor touches someone with wider rights,
+  // and is offered only roles within their own rights (server: RoleAssignment).
+  const self = !!editing && editing.id === user?.id
+  const targetWithin = !editing || withinUserRights(user, editing.permissions)
+  const canPickRole = canManageRoles && !self && targetWithin
+  const assignable = roles.filter((r) => withinUserRights(user, r.permissions) || r.id === editing?.accessRoleId)
   const [fullName, setFullName] = useState(editing?.fullName ?? '')
   const [position, setPosition] = useState(editing?.position ?? '')
   const [avatarUrl, setAvatarUrl] = useState(editing?.avatarUrl ?? '')
@@ -75,7 +85,7 @@ export function StaffFormDrawer({ editing, roles, canManageRoles, knownPositions
 
   /** Rol o'zgargan bo'lsa biriktiradi; xato bo'lsa xodim saqlangan qoladi, xabar qaytadi. */
   const applyRole = async (s: Staff): Promise<{ staff: Staff; roleError: string | null }> => {
-    if (!canManageRoles || s.isOwner || (s.accessRoleId ?? '') === roleId) return { staff: s, roleError: null }
+    if (!canPickRole || s.isOwner || (s.accessRoleId ?? '') === roleId) return { staff: s, roleError: null }
     try {
       return { staff: await setStaffRole(s.id, roleId || null), roleError: null }
     } catch (err) {
@@ -210,20 +220,25 @@ export function StaffFormDrawer({ editing, roles, canManageRoles, knownPositions
           <p className="text-xs text-slate-400">Tizim egasi hamma bo'limga kiradi — rol biriktirilmaydi.</p>
         ) : (
           <div>
-            <Select label="Rol" value={roleId} disabled={!canManageRoles} onChange={(e) => setRoleId(e.target.value)}>
+            <Select label="Rol" value={roleId} disabled={!canPickRole} onChange={(e) => setRoleId(e.target.value)}>
               <option value="">— Rol biriktirilmagan —</option>
-              {roles.map((r) => (
+              {(canPickRole ? assignable : roles).map((r) => (
                 <option key={r.id} value={r.id}>
                   {r.name}
                 </option>
               ))}
             </Select>
             <p className="mt-1 text-xs text-slate-400">
-              {canManageRoles
-                ? "Xodim faqat shu rolga berilgan bo'limlarni ko'radi. Ruxsatlar Boshqaruv → Rollar sahifasida."
-                : 'Rolni tizim egasi (superadmin) biriktiradi.'}
+              {!canManageRoles
+                ? "Rolni tizim egasi yoki Rollar bo'limiga to'liq ruxsati bor xodim biriktiradi."
+                : self
+                  ? "O'z rolingizni o'zgartira olmaysiz."
+                  : !targetWithin
+                    ? "Bu xodimning huquqi sizdagidan keng — uning rolini tizim egasi o'zgartiradi."
+                    : "Xodim faqat shu rolga berilgan bo'limlarni ko'radi. Ruxsatlar Boshqaruv → Rollar sahifasida."}
+              {canPickRole && assignable.length < roles.length && " Sizdagidan keng huquqli rollar ro'yxatda yo'q."}
             </p>
-            {editing && !editing.accessRoleId && editing.permissions.length > 0 && canManageRoles && (
+            {editing && !editing.accessRoleId && editing.permissions.length > 0 && canPickRole && (
               <p className="mt-1 text-xs text-amber-600">
                 Hozir {editing.permissions.length} ta eski shaxsiy ruxsat amal qilyapti — rol tanlansa, ular rol
                 ruxsatlari bilan almashadi.

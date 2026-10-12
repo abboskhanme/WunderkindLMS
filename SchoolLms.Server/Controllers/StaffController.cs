@@ -164,21 +164,28 @@ public class StaffController(AppDbContext db, AuditService audit) : ControllerBa
     }
 
     /// <summary>
-    /// Assigns an access role (Boshqaruv → Rollar) — FAQAT superadmin, like permissions.
+    /// Assigns an access role (Boshqaruv → Rollar) — the superadmin, admin, or a staff member with the
+    /// Rollar page at the full level, within their own rights (<see cref="RoleAssignment"/>, 2026-10-12).
+    /// Hand-picked permissions stay superadmin-only.
     /// The member's permissions become a copy of the role's; removing the role clears them.
     /// </summary>
     [HttpPut("{id}/role")]
-    [Authorize(Roles = "superadmin")]
     public async Task<ActionResult<StaffDto>> SetRole(string id, SetStaffRoleRequest req)
     {
+        if (!RoleAssignment.CanAssign(User)) return StatusCode(403, new { message = RoleAssignment.NotAllowedMessage });
         var user = await db.Users.FindAsync(id);
         if (user is not null && IsOwner(user)) return BadRequest(new { message = OwnerAccessMessage });
         if (user is null || user.Role != Roles.Staff) return NotFound();
+        if (RoleAssignment.IsSelf(User, user.Id)) return StatusCode(403, new { message = RoleAssignment.OwnRoleMessage });
+        if (!RoleAssignment.Within(User, user.Permissions))
+            return StatusCode(403, new { message = RoleAssignment.WiderMessage });
 
         if (req.AccessRoleId is { } roleId)
         {
             var role = await db.AccessRoles.AsNoTracking().FirstOrDefaultAsync(r => r.Id == roleId);
             if (role is null) return BadRequest(new { message = "Rol topilmadi" });
+            if (!RoleAssignment.Within(User, role.Permissions))
+                return StatusCode(403, new { message = RoleAssignment.WiderMessage });
             user.AccessRoleId = role.Id;
             user.Permissions = [.. role.Permissions];
         }

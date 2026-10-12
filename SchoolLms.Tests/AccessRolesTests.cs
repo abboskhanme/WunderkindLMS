@@ -106,14 +106,23 @@ public class AccessRolesTests(ApiFixture fixture)
             (await boss.PostAsJsonAsync(RolesUrl, new AccessRolePayload(name, null, []))).StatusCode);
     }
 
+    /// <summary>
+    /// Client, 2026-10-12: whoever has the roles section may assign roles — the admin too (it was
+    /// superadmin-only before). Creating and editing roles stays with the superadmin.
+    /// </summary>
     [Fact]
-    public async Task Admin_xodimga_rol_biriktira_olmaydi()
+    public async Task Admin_xodimga_rol_biriktira_oladi()
     {
+        using var boss = await fixture.Api.ClientAsAsync(Roles.SuperAdmin);
+        var role = (await (await boss.PostAsJsonAsync(RolesUrl,
+            new AccessRolePayload(Unique("Kotib"), null, ["students"]))).Content.ReadFromJsonAsync<AccessRoleDto>())!;
         using var admin = await fixture.Api.ClientAsAsync(Roles.Admin);
         var (member, _) = await fixture.Api.SeedUserAsync(Roles.Staff);
 
-        var res = await admin.PutAsJsonAsync($"{StaffUrl}/{member.Id}/role", new SetStaffRoleRequest(Guid.NewGuid()));
-
-        Assert.Equal(HttpStatusCode.Forbidden, res.StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest,
+            (await admin.PutAsJsonAsync($"{StaffUrl}/{member.Id}/role", new SetStaffRoleRequest(Guid.NewGuid()))).StatusCode);
+        var res = await admin.PutAsJsonAsync($"{StaffUrl}/{member.Id}/role", new SetStaffRoleRequest(role.Id));
+        Assert.Equal(HttpStatusCode.OK, res.StatusCode);
+        Assert.Equal(["students"], (await res.Content.ReadFromJsonAsync<StaffDto>())!.Permissions);
     }
 }

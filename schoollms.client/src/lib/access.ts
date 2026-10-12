@@ -183,6 +183,39 @@ export function pageLevel(user: User | null, pageKey: string): AccessLevel {
   return level
 }
 
+/** Boshqaruv → Rollar. */
+export const ROLES_PAGE = '/admin/boshqaruv/roles'
+
+/**
+ * May the user assign access roles to staff and teachers (client, 2026-10-12: "rolelarga dostupi bor
+ * odam ham role biriktira olsin") — mirror of the server's `RoleAssignment.CanAssign`: superadmin and
+ * admin always; a staff member with the Rollar page at the full level. Editing roles stays superadmin-only.
+ */
+export function canAssignRoles(user: User | null): boolean {
+  if (!user) return false
+  if (user.role === 'superadmin' || user.role === 'admin') return true
+  return (
+    user.role === 'staff' &&
+    sectionLevel(user.permissions ?? [], 'staff') === 'edit' &&
+    pageLevel(user, ROLES_PAGE) === 'edit'
+  )
+}
+
+/**
+ * Every section key of `permissions` is one the user holds at that level (server: `RoleAssignment.Within`)
+ * — a role assigner never hands out more than they have. Page grants carry no server access.
+ */
+export function withinUserRights(user: User | null, permissions: readonly string[]): boolean {
+  if (!user) return false
+  if (user.role === 'superadmin' || user.role === 'admin') return true
+  const own = user.permissions ?? []
+  return permissions
+    .filter((k) => !isPageGrant(k))
+    .every((k) =>
+      k.endsWith(':view') ? sectionLevel(own, k.slice(0, -':view'.length)) !== 'none' : sectionLevel(own, k) === 'edit',
+    )
+}
+
 /** Manzil qaysi katalog sahifasiga tegishli (aniq moslik, keyin eng uzun prefiks). */
 export function pageForPath(pathname: string, search = ''): AccessPage | null {
   const full = pathname + search

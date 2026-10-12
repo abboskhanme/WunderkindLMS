@@ -50,7 +50,7 @@ import { getClasses } from '@/api/services/classes'
 import { getSalaryRates } from '@/api/services/salaryRates'
 import { billingErrorMessage, billingErrorStatus } from '@/api/services/billingError'
 import { useAuth } from '@/context/auth-context'
-import { grantsOf, hasSection } from '@/lib/access'
+import { canAssignRoles, grantsOf, hasSection } from '@/lib/access'
 import { formatPhone } from '@/lib/phone'
 import {
   TEACHER_POSITION,
@@ -133,8 +133,10 @@ export function EmployeesPage() {
   const { user } = useAuth()
   const canTeachers = hasSection(user, 'teachers')
   const canStaff = hasSection(user, 'staff')
-  // Rol biriktirish va o'qituvchilar login/paroli eksporti — faqat tizim egasi (server ham shunday).
+  // O'qituvchilar login/paroli eksporti — faqat tizim egasi (server ham shunday).
   const isSuperadmin = user?.role === 'superadmin'
+  // Rol biriktirish — tizim egasi, admin va Rollar bo'limiga to'liq ruxsati bor xodim (2026-10-12).
+  const canRoles = canAssignRoles(user)
   // O'qituvchi oyligi jadval va toifadan hisoblanadi — moliya ruxsati bo'lsa ko'rsatamiz.
   const canSeeTeacherPay = canTeachers && hasFinanceAccess(user)
 
@@ -288,9 +290,9 @@ export function EmployeesPage() {
     setStaffForm({ editing: s })
   }
 
-  /** The role picked in the teacher form — only the superadmin's pick is sent (server: superadmin-only). */
+  /** The role picked in the teacher form — sent only by a role assigner (server: RoleAssignment). */
   const applyTeacherRole = (teacherId: string, roleId: string) => {
-    if (!isSuperadmin || (teacherRoles.get(teacherId)?.accessRoleId ?? '') === roleId) return
+    if (!canRoles || (teacherRoles.get(teacherId)?.accessRoleId ?? '') === roleId) return
     setTeacherRole(teacherId, roleId || null)
       .then((r) =>
         setTeacherRoles((prev) => {
@@ -643,7 +645,7 @@ export function EmployeesPage() {
             classes={classes}
             roles={roles}
             role={editingTeacher ? (teacherRoles.get(editingTeacher.id) ?? null) : null}
-            canManageRoles={isSuperadmin}
+            canManageRoles={canRoles}
           />
           <TeacherViewModal teacher={viewingTeacher} subjects={subjects} onClose={() => setViewingTeacher(null)} />
         </>
@@ -685,7 +687,7 @@ export function EmployeesPage() {
         <StaffFormDrawer
           editing={staffForm.editing}
           roles={roles}
-          canManageRoles={isSuperadmin}
+          canManageRoles={canRoles}
           knownPositions={staffPositionsForForm}
           onClose={() => setStaffForm(null)}
           onSaved={handleStaffSaved}

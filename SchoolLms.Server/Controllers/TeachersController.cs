@@ -197,18 +197,22 @@ public class TeachersController(AppDbContext db, AuditService audit, IExpenseSer
                select new TeacherRoleDto(t.Id, r.Id, r.Name)).ToListAsync();
 
     /// <summary>
-    /// Gives a teacher an access role (Boshqaruv → Rollar) — superadmin only, as for staff. Only a role
-    /// whose every key a teacher can use (<see cref="TeacherPermissions.FitsTeacher"/>); null removes it.
+    /// Gives a teacher an access role (Boshqaruv → Rollar) — whoever may assign roles to staff, within
+    /// their own rights (<see cref="RoleAssignment"/>). Only a role whose every key a teacher can use
+    /// (<see cref="TeacherPermissions.FitsTeacher"/>); null removes it.
     /// The teacher's account keeps a copy of the role's keys, like a staff member's.
     /// </summary>
     [HttpPut("{id}/role")]
-    [Authorize(Roles = Roles.SuperAdmin)]
     public async Task<ActionResult<TeacherRoleDto>> SetRole(string id, SetStaffRoleRequest req)
     {
+        if (!RoleAssignment.CanAssign(User)) return StatusCode(403, new { message = RoleAssignment.NotAllowedMessage });
         var teacher = await db.Teachers.FindAsync(id);
         if (teacher is null) return NotFound();
         var user = teacher.UserId is null ? null : await db.Users.FindAsync(teacher.UserId);
         if (user is null) return BadRequest(new { message = "O'qituvchining tizim akkaunti yo'q" });
+        // Only the roll-call keys ever reach a teacher — the rest of a widened role's copy is inert.
+        if (!RoleAssignment.Within(User, user.Permissions.Where(TeacherPermissions.IsRoleKey)))
+            return StatusCode(403, new { message = RoleAssignment.WiderMessage });
 
         AccessRole? role = null;
         if (req.AccessRoleId is { } roleId)
@@ -216,6 +220,8 @@ public class TeachersController(AppDbContext db, AuditService audit, IExpenseSer
             role = await db.AccessRoles.AsNoTracking().FirstOrDefaultAsync(r => r.Id == roleId);
             if (role is null) return BadRequest(new { message = "Rol topilmadi" });
             if (!TeacherPermissions.FitsTeacher(role.Permissions)) return BadRequest(new { message = TeacherRoleMismatch });
+            if (!RoleAssignment.Within(User, role.Permissions))
+                return StatusCode(403, new { message = RoleAssignment.WiderMessage });
         }
         user.AccessRoleId = role?.Id;
         user.Permissions = role is null ? new() : [.. role.Permissions];

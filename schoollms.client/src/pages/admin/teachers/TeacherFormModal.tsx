@@ -10,6 +10,8 @@ import { fitsTeacher, genderOptions, teacherPermissions, teacherCategories } fro
 import { cn, randomPassword } from '@/lib/utils'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { getHomeroomAssignments } from '@/api/services/classes'
+import { useAuth } from '@/context/auth-context'
+import { withinUserRights } from '@/lib/access'
 
 interface Props {
   open: boolean
@@ -23,7 +25,7 @@ interface Props {
   roles?: AccessRole[]
   /** The teacher's current access role (2026-10-12: commandants). */
   role?: TeacherRole | null
-  /** Only the superadmin gives roles (the server says so too). */
+  /** The user may assign roles at all (lib/access.ts `canAssignRoles`; the server says so too). */
   canManageRoles?: boolean
 }
 
@@ -58,6 +60,13 @@ export function TeacherFormModal({
   const [form, setForm] = useState<TeacherPayload>(empty)
   const currentRoleId = role?.accessRoleId ?? ''
   const [roleId, setRoleId] = useState(currentRoleId)
+  // 2026-10-12: a role assigner gives only roles within their own rights and leaves alone a teacher whose
+  // current role is wider (server: RoleAssignment). Only roll-call keys reach a teacher.
+  const { user } = useAuth()
+  const currentRole = roles.find((r) => r.id === currentRoleId)
+  const roleWithin = (permissions: string[]) => withinUserRights(user, permissions.filter((k) => fitsTeacher([k])))
+  const targetWithin = !currentRole || roleWithin(currentRole.permissions)
+  const canPickRole = canManageRoles && targetWithin
   /**
    * Rahbarlik sinflari — bir nechta (mijoz, 2026-10-09). null = hali yuklanmadi: shu holatda
    * saqlansa server rahbarlikka tegmaydi (ro'yxat yuborilmaydi).
@@ -310,11 +319,11 @@ export function TeacherFormModal({
 
         {(canManageRoles || role?.accessRoleName) && (
           <div className="border-t border-slate-100 pt-4">
-            {canManageRoles ? (
+            {canPickRole ? (
               <Select label="Qo'shimcha rol" value={roleId} onChange={(e) => setRoleId(e.target.value)}>
                 <option value="">— Rol biriktirilmagan —</option>
                 {roles
-                  .filter((r) => fitsTeacher(r.permissions) || r.id === currentRoleId)
+                  .filter((r) => (fitsTeacher(r.permissions) && roleWithin(r.permissions)) || r.id === currentRoleId)
                   .map((r) => (
                     <option key={r.id} value={r.id}>
                       {r.name}
@@ -323,13 +332,15 @@ export function TeacherFormModal({
               </Select>
             ) : (
               <p className="text-sm text-slate-600">
-                Qo'shimcha rol: <b>{role?.accessRoleName}</b>
+                Qo'shimcha rol: <b>{role?.accessRoleName ?? '—'}</b>
               </p>
             )}
             <p className="mt-1 text-xs text-slate-400">
-              {canManageRoles
-                ? "Masalan, «Komendant» — o'qituvchi Mini App'da kechki dars va yotoqxona davomatini oladi. Faqat shu bo'limli rollar ko'rsatiladi."
-                : 'Rolni tizim egasi (superadmin) biriktiradi.'}
+              {!canManageRoles
+                ? "Rolni tizim egasi yoki Rollar bo'limiga to'liq ruxsati bor xodim biriktiradi."
+                : !canPickRole
+                  ? "Bu rol sizdagidan keng huquqli — uni tizim egasi o'zgartiradi."
+                  : "Masalan, «Komendant» — o'qituvchi Mini App'da kechki dars va yotoqxona davomatini oladi. Faqat shu bo'limli va sizda bor huquqli rollar ko'rsatiladi."}
             </p>
           </div>
         )}

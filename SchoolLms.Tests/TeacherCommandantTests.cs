@@ -99,7 +99,7 @@ public class TeacherCommandantTests(ApiFixture fixture)
     }
 
     [Fact]
-    public async Task Oqituvchiga_faqat_davomat_roli_va_faqat_superadmin_beradi()
+    public async Task Oqituvchiga_faqat_davomat_roli_va_faqat_rol_beruvchi_beradi()
     {
         using var boss = await fixture.Api.ClientAsAsync(Roles.SuperAdmin);
         var wide = await CreateRoleAsync(boss, "attendanceDorm", "students");
@@ -111,11 +111,13 @@ public class TeacherCommandantTests(ApiFixture fixture)
         Assert.Equal(HttpStatusCode.BadRequest, (await AssignAsync(boss, teacherId, Guid.NewGuid())).StatusCode);
         Assert.Equal(HttpStatusCode.NotFound, (await AssignAsync(boss, "no-such-teacher", narrow.Id)).StatusCode);
 
+        // Staff with the teachers list but without the roles section, and the teacher itself, cannot;
+        // the admin can (2026-10-12: whoever has the roles section assigns roles — RoleAssignmentTests).
         using var admin = await fixture.Api.ClientAsAsync(Roles.Admin);
         using var hr = await fixture.Api.ClientAsAsync(Roles.Staff, "teachers");
-        Assert.Equal(HttpStatusCode.Forbidden, (await AssignAsync(admin, teacherId, narrow.Id)).StatusCode);
         Assert.Equal(HttpStatusCode.Forbidden, (await AssignAsync(hr, teacherId, narrow.Id)).StatusCode);
         Assert.Equal(HttpStatusCode.Forbidden, (await AssignAsync(teacher, teacherId, narrow.Id)).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await AssignAsync(admin, teacherId, narrow.Id)).StatusCode);
 
         // A role saved from Boshqaruv → Rollar carries page grants next to its keys — it still fits.
         var paged = await CreateRoleAsync(boss, "/admin/attendance/boarding?session=dorm|edit", "attendanceDorm");
