@@ -29,15 +29,17 @@ import {
   Search,
   Trash2,
 } from 'lucide-react'
-import type { AccessRole, Credentials, SchoolClass, Staff, Subject, Teacher } from '@/types'
+import type { AccessRole, Credentials, SchoolClass, Staff, Subject, Teacher, TeacherRole } from '@/types'
 import {
   archiveTeacher,
   createTeacher,
   deleteTeacher,
   downloadTeacherCredentials,
   getArchivedTeachers,
+  getTeacherRoles,
   getTeachers,
   restoreTeacher,
+  setTeacherRole,
   updateTeacher,
   type TeacherPayload,
 } from '@/api/services/teachers'
@@ -148,6 +150,8 @@ export function EmployeesPage() {
   const [subjects, setSubjects] = useState<Subject[]>([])
   const [classes, setClasses] = useState<SchoolClass[]>([])
   const [roles, setRoles] = useState<AccessRole[]>([])
+  /** Teachers' access roles by teacher id (2026-10-12: commandants). */
+  const [teacherRoles, setTeacherRoles] = useState<Map<string, TeacherRole>>(new Map())
   const [teacherPay, setTeacherPay] = useState<Map<string, number>>(new Map())
 
   // URL: `?q=` (global qidiruv), `?tab=archived`, `?position=teacher` (HR'dan eski havola).
@@ -225,6 +229,9 @@ export function EmployeesPage() {
       // O'qituvchi formasi uchun; ruxsat bo'lmasa forma bo'sh ro'yxat bilan ochiladi.
       getSubjects().then(setSubjects).catch(() => undefined)
       getClasses().then(setClasses).catch(() => undefined)
+      getTeacherRoles()
+        .then((rows) => setTeacherRoles(new Map(rows.map((r) => [r.teacherId, r]))))
+        .catch(() => undefined)
     }
     if (canStaff) getAccessRoles().then(setRoles).catch(() => undefined)
     if (canSeeTeacherPay) {
@@ -281,7 +288,22 @@ export function EmployeesPage() {
     setStaffForm({ editing: s })
   }
 
-  const submitTeacher = (values: TeacherPayload) => {
+  /** The role picked in the teacher form — only the superadmin's pick is sent (server: superadmin-only). */
+  const applyTeacherRole = (teacherId: string, roleId: string) => {
+    if (!isSuperadmin || (teacherRoles.get(teacherId)?.accessRoleId ?? '') === roleId) return
+    setTeacherRole(teacherId, roleId || null)
+      .then((r) =>
+        setTeacherRoles((prev) => {
+          const next = new Map(prev)
+          if (r.accessRoleId) next.set(r.teacherId, r)
+          else next.delete(r.teacherId)
+          return next
+        }),
+      )
+      .catch((e: unknown) => fail(e, "Rolni biriktirib bo'lmadi"))
+  }
+
+  const submitTeacher = (values: TeacherPayload, roleId: string) => {
     const target = editingTeacher
     setTeacherFormOpen(false)
     setEditingTeacher(null)
@@ -290,6 +312,7 @@ export function EmployeesPage() {
         .then((u) => {
           setTeachers((prev) => prev.map((t) => (t.id === u.id ? u : t)))
           notify("O'qituvchi saqlandi")
+          applyTeacherRole(u.id, roleId)
         })
         .catch((e: unknown) => fail(e, "O'qituvchini saqlab bo'lmadi"))
     } else {
@@ -298,6 +321,7 @@ export function EmployeesPage() {
           setTeachers((prev) => [c, ...prev])
           setTab('active')
           setViewingTeacher(c) // login/parolni darrov ko'rsatamiz
+          applyTeacherRole(c.id, roleId)
         })
         .catch((e: unknown) => fail(e, "O'qituvchini qo'shib bo'lmadi"))
     }
@@ -500,7 +524,15 @@ export function EmployeesPage() {
                     <td className="whitespace-nowrap px-4 py-3 text-slate-600">{e.position || '—'}</td>
                     {activeTab === 'active' ? (
                       <>
-                        <td className="px-4 py-3">{e.kind === 'staff' ? <RoleCell s={e.staff} /> : <Dash />}</td>
+                        <td className="px-4 py-3">
+                          {e.kind === 'staff' ? (
+                            <RoleCell s={e.staff} />
+                          ) : teacherRoles.get(e.id)?.accessRoleName ? (
+                            <RoleBadge name={teacherRoles.get(e.id)!.accessRoleName!} />
+                          ) : (
+                            <Dash />
+                          )}
+                        </td>
                         <td className="whitespace-nowrap px-4 py-3 text-right text-slate-700">
                           <SalaryCell employee={e} teacherPay={teacherPay} />
                         </td>
@@ -609,6 +641,9 @@ export function EmployeesPage() {
             initial={editingTeacher}
             subjects={subjects}
             classes={classes}
+            roles={roles}
+            role={editingTeacher ? (teacherRoles.get(editingTeacher.id) ?? null) : null}
+            canManageRoles={isSuperadmin}
           />
           <TeacherViewModal teacher={viewingTeacher} subjects={subjects} onClose={() => setViewingTeacher(null)} />
         </>
@@ -697,6 +732,14 @@ function Dash() {
   return <span className="text-slate-300">—</span>
 }
 
+function RoleBadge({ name }: { name: string }) {
+  return (
+    <span className="whitespace-nowrap rounded-full bg-brand-50 px-2.5 py-0.5 text-xs font-medium text-brand-700">
+      {name}
+    </span>
+  )
+}
+
 function RoleCell({ s }: { s: Staff }) {
   if (s.isOwner) {
     return (
@@ -705,13 +748,7 @@ function RoleCell({ s }: { s: Staff }) {
       </span>
     )
   }
-  if (s.accessRoleName) {
-    return (
-      <span className="whitespace-nowrap rounded-full bg-brand-50 px-2.5 py-0.5 text-xs font-medium text-brand-700">
-        {s.accessRoleName}
-      </span>
-    )
-  }
+  if (s.accessRoleName) return <RoleBadge name={s.accessRoleName} />
   return (
     <span
       className="whitespace-nowrap text-xs text-slate-400"

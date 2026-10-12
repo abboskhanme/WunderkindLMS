@@ -5,6 +5,7 @@ import type {
   PaymentMethod,
   SalaryLedger,
   Teacher,
+  TeacherRole,
 } from '@/types'
 import { delay, uid } from '@/lib/utils'
 import { api, USE_MOCK } from '../client'
@@ -123,6 +124,19 @@ export async function resetTeacherPassword(id: string): Promise<Credentials> {
     return { login: 'umarovaziz', password: 'yangi' + Math.random().toString(36).slice(2, 8), role: 'teacher' }
   }
   const { data } = await api.post<Credentials>(`/admin/teachers/${id}/reset-password`)
+  return data
+}
+
+/** Teachers holding an access role (2026-10-12: commandants). */
+export async function getTeacherRoles(): Promise<TeacherRole[]> {
+  if (USE_MOCK) return []
+  const { data } = await api.get<TeacherRole[]>('/admin/teachers/roles')
+  return data
+}
+
+/** Gives a teacher an access role — superadmin only; null removes it. */
+export async function setTeacherRole(id: string, accessRoleId: string | null): Promise<TeacherRole> {
+  const { data } = await api.put<TeacherRole>(`/admin/teachers/${id}/role`, { accessRoleId })
   return data
 }
 

@@ -784,6 +784,13 @@ export interface Staff {
 }
 
 /** Xodim roli: ruxsatlar rolga beriladi, xodimga faqat rol biriktiriladi. */
+/** A teacher's access role (2026-10-12: commandants); `accessRoleId` null when none. */
+export interface TeacherRole {
+  teacherId: string
+  accessRoleId: string | null
+  accessRoleName: string | null
+}
+
 export interface AccessRole {
   id: string
   name: string

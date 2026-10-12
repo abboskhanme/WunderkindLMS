@@ -183,6 +183,46 @@ public class TeachersController(AppDbContext db, AuditService audit, IExpenseSer
         return teacher;
     }
 
+    /* ---------- Access role (2026-10-12: "o'qituvchi profilida role berish mumkin bo'lsin") ---------- */
+
+    private const string TeacherRoleMismatch =
+        "Bu rolda o'qituvchi panelida ishlamaydigan bo'limlar bor. O'qituvchiga faqat kechki dars va yotoqxona davomati rollari beriladi.";
+
+    /// <summary>Teachers holding an access role — the staff list shows it next to the name.</summary>
+    [HttpGet("roles")]
+    public async Task<ActionResult<List<TeacherRoleDto>>> AccessRoles() =>
+        await (from t in db.Teachers.AsNoTracking()
+               join u in db.Users.AsNoTracking() on t.UserId equals u.Id
+               join r in db.AccessRoles.AsNoTracking() on u.AccessRoleId equals (Guid?)r.Id
+               select new TeacherRoleDto(t.Id, r.Id, r.Name)).ToListAsync();
+
+    /// <summary>
+    /// Gives a teacher an access role (Boshqaruv → Rollar) — superadmin only, as for staff. Only a role
+    /// whose every key a teacher can use (<see cref="TeacherPermissions.FitsTeacher"/>); null removes it.
+    /// The teacher's account keeps a copy of the role's keys, like a staff member's.
+    /// </summary>
+    [HttpPut("{id}/role")]
+    [Authorize(Roles = Roles.SuperAdmin)]
+    public async Task<ActionResult<TeacherRoleDto>> SetRole(string id, SetStaffRoleRequest req)
+    {
+        var teacher = await db.Teachers.FindAsync(id);
+        if (teacher is null) return NotFound();
+        var user = teacher.UserId is null ? null : await db.Users.FindAsync(teacher.UserId);
+        if (user is null) return BadRequest(new { message = "O'qituvchining tizim akkaunti yo'q" });
+
+        AccessRole? role = null;
+        if (req.AccessRoleId is { } roleId)
+        {
+            role = await db.AccessRoles.AsNoTracking().FirstOrDefaultAsync(r => r.Id == roleId);
+            if (role is null) return BadRequest(new { message = "Rol topilmadi" });
+            if (!TeacherPermissions.FitsTeacher(role.Permissions)) return BadRequest(new { message = TeacherRoleMismatch });
+        }
+        user.AccessRoleId = role?.Id;
+        user.Permissions = role is null ? new() : [.. role.Permissions];
+        await db.SaveChangesAsync();
+        return new TeacherRoleDto(teacher.Id, role?.Id, role?.Name);
+    }
+
     [HttpDelete("{id}")]
     public async Task<IActionResult> Delete(string id)
     {

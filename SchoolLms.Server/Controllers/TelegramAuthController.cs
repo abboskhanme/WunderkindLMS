@@ -342,9 +342,10 @@ public sealed class TelegramAuthController(
                         .Where(s => t.SubjectIds.Contains(s.Id)).ToListAsync(ct))
                     .Select(s => new SubjectDto(s.Id, s.Name))
                     .OrderBy(s => s.Name, StringComparer.OrdinalIgnoreCase).ToList();
+                var (roleName, rolePermissions) = await TeacherRoleAccess.OfAsync(db, user, ct);
                 teacher = new TeacherProfileDto(
                     t.Id, t.FullName, user.Email, await HomeroomDirectory.LabelAsync(db, t.Id, ct), subjects,
-                    t.Permissions, t.PhotoUrl);
+                    t.Permissions, t.PhotoUrl, roleName, rolePermissions);
             }
         }
 

@@ -8,7 +8,7 @@
  * davomatga olib boradi — bu ekrandan chiqadigan asosiy amal.
  */
 import { useEffect, useState } from 'react'
-import { CalendarOff, ChevronRight, Clock } from 'lucide-react'
+import { BedDouble, CalendarOff, ChevronRight, Clock, Moon } from 'lucide-react'
 import {
   Badge, Card, DateChip, EmptyState, Hero, HeroProgress, Row, Screen, StatGrid,
 } from '../../components/ui'
@@ -32,8 +32,9 @@ const POLLS_API = {
   submit: (id, answers) => teacherApi.answerPoll(id, answers),
 }
 import { LessonAnalysisCard } from './LessonAnalysis'
+import { boardingSessions } from './BoardingScreen'
 
-export function TodayTab({ profile, meta, onOpenAttendance }) {
+export function TodayTab({ profile, meta, onOpenAttendance, onOpenBoarding }) {
   const perms = profile.permissions || []
   const canSchedule = perms.includes('schedule')
   const canJournal = perms.includes('journal')
@@ -84,7 +85,9 @@ export function TodayTab({ profile, meta, onOpenAttendance }) {
   const subjectLine =
     subjectNames.length > 2 ? `${subjectNames.slice(0, 2).join(', ')} +${subjectNames.length - 2}` : subjectNames.join(', ')
   const homeroomLine = profile.homeroomClass ? `${profile.homeroomClass} sinf rahbari` : null
-  const subtitle = ["O'qituvchi", homeroomLine, subjectLine].filter(Boolean).join(' · ')
+  // Komendant kabi qo'shimcha rol (2026-10-12) — "O'qituvchi" dan keyin.
+  const subtitle = ["O'qituvchi", profile.accessRoleName, homeroomLine, subjectLine].filter(Boolean).join(' · ')
+  const hasBoarding = boardingSessions(profile).length > 0
 
   return (
     <Screen>
@@ -107,6 +110,9 @@ export function TodayTab({ profile, meta, onOpenAttendance }) {
               canSchedule={canSchedule}
               onOpenAttendance={onOpenAttendance}
             />
+
+            {/* Komendant (2026-10-12) — faqat roli bor o'qituvchida. */}
+            {hasBoarding && <CommandantCard profile={profile} onOpen={onOpenBoarding} />}
 
             <StatGrid
               items={[
@@ -184,6 +190,69 @@ export function TodayTab({ profile, meta, onOpenAttendance }) {
         )}
       </AsyncBlock>
     </Screen>
+  )
+}
+
+/* ------------------------------------------------------------ komendant */
+
+/**
+ * Komendant kartasi (2026-10-12: o'qituvchi yotoqxona komendanti ham). Roli ochgan har sessiya —
+ * bitta qator: bugun nechta o'quvchi va nechtasi belgilangan. Bosilsa yo'qlama ochiladi.
+ */
+function CommandantCard({ profile, onOpen }) {
+  const sessions = boardingSessions(profile)
+  const date = todayISO()
+  const q = useAsync(
+    () => Promise.all(sessions.map((s) => teacherApi.boardingDay(date, s.key).catch(() => null))),
+    [sessions.map((s) => s.key).join(',')],
+  )
+
+  return (
+    <Card
+      title={profile.accessRoleName || 'Komendant'}
+      action={<Badge>{fullDate(date)}</Badge>}
+      className="ring-2 ring-brand"
+    >
+      {sessions.map((s, i) => {
+        const day = q.data?.[i] ?? null
+        const total = day?.eligible ?? 0
+        const marked = day?.marked ?? 0
+        const subtitle = !day
+          ? q.loading
+            ? 'Yuklanmoqda…'
+            : "Ma'lumot olinmadi"
+          : total === 0
+            ? "Ro'yxat bo'sh"
+            : `${total} o'quvchi · ${marked}/${total} belgilandi`
+        const Icon = s.key === 'dorm' ? BedDouble : Moon
+        return (
+          <Row
+            key={s.key}
+            onClick={() => onOpen(s.key)}
+            lead={
+              <span
+                className={
+                  'flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ' +
+                  (s.key === 'dorm' ? 'bg-brand-ink text-brand' : 'bg-brand/25 text-brand-ink')
+                }
+              >
+                <Icon className="h-5 w-5" />
+              </span>
+            }
+            title={s.title}
+            subtitle={subtitle}
+            right={
+              <span className="flex shrink-0 items-center gap-1">
+                {day && total > 0 && (
+                  <Badge tone={marked >= total ? 'success' : 'danger'}>{marked >= total ? 'Olingan' : 'Olinmagan'}</Badge>
+                )}
+                <ChevronRight className="h-4 w-4 text-slate-300" />
+              </span>
+            }
+          />
+        )
+      })}
+    </Card>
   )
 }
 

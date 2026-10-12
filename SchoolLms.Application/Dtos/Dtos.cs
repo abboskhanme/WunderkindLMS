@@ -891,9 +891,12 @@ public record AuditLogDto(
 
 /* ---------- Teacher portal (ilova) ---------- */
 /// <summary>O'qituvchining o'z profili (ilovada ko'rsatish uchun).</summary>
+/// <param name="AccessRoleName">Access role on the teacher account (e.g. "Komendant"), null when none.</param>
+/// <param name="RolePermissions">The role's keys a teacher can use (<c>TeacherPermissions.RoleKeys</c>, full or ":view").</param>
 public record TeacherProfileDto(
     string Id, string FullName, string Email, string HomeroomClass, List<SubjectDto> Subjects,
-    List<string> Permissions, string? PhotoUrl = null);
+    List<string> Permissions, string? PhotoUrl = null, string? AccessRoleName = null,
+    List<string>? RolePermissions = null);
 /// <summary>
 /// O'qituvchi yetadigan bitta EGA — sinf yoki o'quv guruhi (qaysi fanlarni
 /// o'qitadi va sinf rahbarimi / guruhga biriktirilganmi).
@@ -1229,6 +1232,8 @@ public record StaffPayload(string FullName, string Position, string? NewPassword
 public record SetStaffPermissionsRequest(List<string> Permissions);
 /// <summary>Assign an access role to a staff member; null removes it (and its permissions).</summary>
 public record SetStaffRoleRequest(Guid? AccessRoleId);
+/// <summary>A teacher's access role (2026-10-12: commandants) — <c>AccessRoleId</c> null when none.</summary>
+public record TeacherRoleDto(string TeacherId, Guid? AccessRoleId, string? AccessRoleName);
 
 /// <summary>Staff access role (Boshqaruv → Rollar).</summary>
 public record AccessRoleDto(Guid Id, string Name, string Description, List<string> Permissions, int StaffCount);

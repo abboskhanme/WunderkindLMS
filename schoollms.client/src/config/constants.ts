@@ -57,6 +57,21 @@ export const STAFF_CHANNEL = '__xodimlar__'
 /** Xodimlar kanalining ko'rsatiladigan nomi */
 export const STAFF_CHANNEL_LABEL = 'Xodimlar'
 
+/**
+ * Admin-section keys a teacher can hold through a role (2026-10-12: teachers who are also dorm
+ * commandants) — `TeacherPermissions.RoleKeys` on the server. Each also in its ":view" form.
+ */
+export const teacherRoleKeys = ['attendanceEvening', 'attendanceDorm']
+
+/**
+ * A role a teacher can be given: at least one section key, every section key a teacher role key (full
+ * or ":view"). Page grants ("/admin/…|edit") give no server access and are skipped.
+ */
+export const fitsTeacher = (permissions: string[]) => {
+  const sections = permissions.filter((k) => !k.startsWith('/'))
+  return sections.length > 0 && sections.every((k) => teacherRoleKeys.includes(k.replace(/:view$/, '')))
+}
+
 /** O'qituvchi web paneli bo'limlari (admin ruxsat beradi). Kalitlar backend bilan bir xil. */
 export const teacherPermissions: { key: string; label: string }[] = [
   { key: 'journal', label: 'Jurnal' },

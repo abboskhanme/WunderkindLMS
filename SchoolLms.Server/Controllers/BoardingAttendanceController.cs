@@ -17,9 +17,12 @@ namespace SchoolLms.Server.Controllers;
 /// yotoqxona — <c>attendanceDorm</c>. Uch xil odam uch xil davomat oladi va biri ikkinchisining
 /// ro'yxatini ko'rmasligi kerak, shuning uchun xodimning "hamma narsani o'qiydi" qoidasi bu yerda
 /// ishlamaydi. Admin va superadmin — har doim.</para>
+/// <para>Teachers too (2026-10-12): a teacher who is also a commandant gets the same keys through an
+/// access role on the teacher account and marks from the Mini App — one login. Every action here
+/// checks the session's key, so a teacher without the role gets 403.</para>
 /// </summary>
 [ApiController]
-[Authorize(Roles = "admin,superadmin,staff")]
+[Authorize(Roles = "admin,superadmin,staff,teacher")]
 [Route("api/admin/boarding-attendance")]
 public class BoardingAttendanceController(BoardingAttendanceService service, AppDbContext db) : ControllerBase
 {

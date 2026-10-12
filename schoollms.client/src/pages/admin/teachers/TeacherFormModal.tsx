@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react'
-import type { SchoolClass, Subject, Teacher } from '@/types'
+import type { AccessRole, SchoolClass, Subject, Teacher, TeacherRole } from '@/types'
 import type { TeacherPayload } from '@/api/services/teachers'
 import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
 import { Input, Select } from '@/components/ui/Input'
 import { PhoneInput } from '@/components/ui/PhoneInput'
 import { PhotoUpload } from '@/components/ui/PhotoUpload'
-import { genderOptions, teacherPermissions, teacherCategories } from '@/config/constants'
+import { fitsTeacher, genderOptions, teacherPermissions, teacherCategories } from '@/config/constants'
 import { cn, randomPassword } from '@/lib/utils'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { getHomeroomAssignments } from '@/api/services/classes'
@@ -14,10 +14,17 @@ import { getHomeroomAssignments } from '@/api/services/classes'
 interface Props {
   open: boolean
   onClose: () => void
-  onSubmit: (values: TeacherPayload) => void
+  /** `roleId` — the access role picked in the form ('' = none); applied only for a superadmin. */
+  onSubmit: (values: TeacherPayload, roleId: string) => void
   initial?: Teacher | null
   subjects: Subject[]
   classes: SchoolClass[]
+  /** Access roles (Boshqaruv → Rollar); only those a teacher can hold are offered. */
+  roles?: AccessRole[]
+  /** The teacher's current access role (2026-10-12: commandants). */
+  role?: TeacherRole | null
+  /** Only the superadmin gives roles (the server says so too). */
+  canManageRoles?: boolean
 }
 
 const empty: TeacherPayload = {
@@ -37,8 +44,20 @@ const empty: TeacherPayload = {
   permissions: teacherPermissions.map((p) => p.key),
 }
 
-export function TeacherFormModal({ open, onClose, onSubmit, initial, subjects, classes }: Props) {
+export function TeacherFormModal({
+  open,
+  onClose,
+  onSubmit,
+  initial,
+  subjects,
+  classes,
+  roles = [],
+  role = null,
+  canManageRoles = false,
+}: Props) {
   const [form, setForm] = useState<TeacherPayload>(empty)
+  const currentRoleId = role?.accessRoleId ?? ''
+  const [roleId, setRoleId] = useState(currentRoleId)
   /**
    * Rahbarlik sinflari — bir nechta (mijoz, 2026-10-09). null = hali yuklanmadi: shu holatda
    * saqlansa server rahbarlikka tegmaydi (ro'yxat yuborilmaydi).
@@ -81,6 +100,12 @@ export function TeacherFormModal({ open, onClose, onSubmit, initial, subjects, c
     }
   }, [open, initial])
 
+  // Its own effect: the teachers' roles may arrive after the form opened — the rest of the form stays.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- sync the picked role with the loaded one
+    if (open) setRoleId(currentRoleId)
+  }, [open, currentRoleId])
+
   const toggleHomeroom = (classId: string) =>
     setHomeroomIds((prev) =>
       prev === null ? prev : prev.includes(classId) ? prev.filter((x) => x !== classId) : [...prev, classId],
@@ -108,7 +133,7 @@ export function TeacherFormModal({ open, onClose, onSubmit, initial, subjects, c
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     if (!form.fullName.trim()) return
-    onSubmit(homeroomIds === null ? form : { ...form, homeroomClassIds: homeroomIds })
+    onSubmit(homeroomIds === null ? form : { ...form, homeroomClassIds: homeroomIds }, roleId)
   }
 
   return (
@@ -282,6 +307,32 @@ export function TeacherFormModal({ open, onClose, onSubmit, initial, subjects, c
             })}
           </div>
         </div>
+
+        {(canManageRoles || role?.accessRoleName) && (
+          <div className="border-t border-slate-100 pt-4">
+            {canManageRoles ? (
+              <Select label="Qo'shimcha rol" value={roleId} onChange={(e) => setRoleId(e.target.value)}>
+                <option value="">— Rol biriktirilmagan —</option>
+                {roles
+                  .filter((r) => fitsTeacher(r.permissions) || r.id === currentRoleId)
+                  .map((r) => (
+                    <option key={r.id} value={r.id}>
+                      {r.name}
+                    </option>
+                  ))}
+              </Select>
+            ) : (
+              <p className="text-sm text-slate-600">
+                Qo'shimcha rol: <b>{role?.accessRoleName}</b>
+              </p>
+            )}
+            <p className="mt-1 text-xs text-slate-400">
+              {canManageRoles
+                ? "Masalan, «Komendant» — o'qituvchi Mini App'da kechki dars va yotoqxona davomatini oladi. Faqat shu bo'limli rollar ko'rsatiladi."
+                : 'Rolni tizim egasi (superadmin) biriktiradi.'}
+            </p>
+          </div>
+        )}
 
         {initial && (
           <div className="border-t border-slate-100 pt-4">

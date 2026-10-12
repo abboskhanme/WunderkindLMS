@@ -171,7 +171,20 @@ builder.Services
 
                 bool blocked;
                 if (p.IsInRole(Roles.Teacher))
+                {
                     blocked = !await db.Teachers.AnyAsync(t => t.UserId == userId && !t.IsArchived);
+                    // A teacher's access role (2026-10-12: commandants) — per request like staff, but only
+                    // the keys a teacher can use (TeacherPermissions.RoleKeys); the rest of a role never applies.
+                    if (!blocked && p.Identity is ClaimsIdentity teacherIdent)
+                    {
+                        var rolePerms = await db.Users.AsNoTracking()
+                            .Where(u => u.Id == userId && u.AccessRoleId != null)
+                            .Select(u => u.Permissions).FirstOrDefaultAsync();
+                        foreach (var perm in rolePerms ?? [])
+                            if (TeacherPermissions.IsRoleKey(perm))
+                                teacherIdent.AddClaim(new Claim(AdminPermAttribute.ClaimType, perm));
+                    }
+                }
                 else if (p.IsInRole(Roles.Student))
                     blocked = !await db.Students.AnyAsync(s => s.UserId == userId && !s.IsArchived);
                 // `cashier` (P1-04) SHU YERDA bo'lishi SHART: aks holda u pastdagi

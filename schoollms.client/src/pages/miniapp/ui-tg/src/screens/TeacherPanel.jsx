@@ -19,6 +19,7 @@ import { hrApi } from '../lib/hrApi'
 import { TodayTab } from './teacher/TodayTab'
 import { AttendanceTab } from './teacher/AttendanceTab'
 import { ScheduleTab } from './teacher/ScheduleTab'
+import { BoardingScreen } from './teacher/BoardingScreen'
 import { HrTab } from './hr/HrTab'
 
 /** `perm` — shu tab ichini ochish uchun kerakli ruxsat (null = hammaga). Tab o'zi doim ko'rinadi. */
@@ -60,6 +61,9 @@ export function TeacherPanel() {
   const [tab, setTab] = useState('home')
   // "Bugun" dan darsga bosilganda davomat o'sha darsda ochilishi uchun.
   const [focusLesson, setFocusLesson] = useState(null)
+  // Komendant (2026-10-12): "Bugun" dagi kartadan ochilgan yo'qlama — 'evening' | 'dorm' | null.
+  // Alohida tab emas: pastki menyu hammada bir xil qoladi.
+  const [boarding, setBoarding] = useState(null)
 
   if (ctx.loading && ctx.data === null) {
     return (
@@ -92,13 +96,24 @@ export function TeacherPanel() {
 
   const change = (next) => {
     if (next !== 'attendance') setFocusLesson(null)
+    setBoarding(null)
     setTab(next)
   }
 
   return (
     <>
-      {active === 'home' && (
-        <TodayTab profile={profile} meta={meta} onOpenAttendance={openAttendance} />
+      {active === 'home' && !boarding && (
+        <TodayTab profile={profile} meta={meta} onOpenAttendance={openAttendance} onOpenBoarding={setBoarding} />
+      )}
+      {active === 'home' && boarding && (
+        <BoardingScreen
+          key={boarding}
+          profile={profile}
+          meta={meta}
+          session={boarding}
+          onSession={setBoarding}
+          onBack={() => setBoarding(null)}
+        />
       )}
       {active !== 'home' && active !== 'hr' && !allowed(active) && (
         <Closed title={ALL_TABS.find((t) => t.value === active)?.label ?? ''} note={closedNote} />

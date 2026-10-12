@@ -21,6 +21,11 @@ namespace SchoolLms.Server.Controllers;
 /// same transaction, so the change applies on their next request (claims are
 /// loaded from the DB per request), with no re-login.
 /// </para>
+/// <para>
+/// Teachers can hold a role too (2026-10-12, <see cref="TeachersController.SetRole"/>) — they are
+/// members here like staff (counted, copies rewritten), but only the role's
+/// <see cref="TeacherPermissions.RoleKeys"/> ever apply to them.
+/// </para>
 /// </summary>
 [ApiController]
 [Authorize]
@@ -36,7 +41,7 @@ public class AccessRolesController(AppDbContext db) : ControllerBase
     public async Task<ActionResult<IEnumerable<AccessRoleDto>>> GetAll()
     {
         var counts = await db.Users
-            .Where(u => u.Role == Roles.Staff && u.AccessRoleId != null)
+            .Where(u => (u.Role == Roles.Staff || u.Role == Roles.Teacher) && u.AccessRoleId != null)
             .GroupBy(u => u.AccessRoleId!.Value)
             .Select(g => new { g.Key, Count = g.Count() })
             .ToDictionaryAsync(x => x.Key, x => x.Count);
@@ -82,7 +87,8 @@ public class AccessRolesController(AppDbContext db) : ControllerBase
         role.Permissions = Clean(p.Permissions);
 
         // Members get the new permission set in the same save.
-        var members = await db.Users.Where(u => u.Role == Roles.Staff && u.AccessRoleId == id).ToListAsync();
+        var members = await db.Users
+            .Where(u => (u.Role == Roles.Staff || u.Role == Roles.Teacher) && u.AccessRoleId == id).ToListAsync();
         foreach (var m in members) m.Permissions = [.. role.Permissions];
 
         await db.SaveChangesAsync();

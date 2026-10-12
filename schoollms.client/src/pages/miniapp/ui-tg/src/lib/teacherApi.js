@@ -124,4 +124,13 @@ export const teacherApi = {
   // So'rovnomalar (client, 2026-10-07) — open polls for teachers, one answer sheet each.
   polls: () => api.get(`${BASE}/polls`),
   answerPoll: (id, answers) => api.post(`${BASE}/polls/${id}`, { answers }),
+
+  /* ---------- kechki dars va yotoqxona — komendant roli (2026-10-12) ---------- */
+
+  // The admin roll-call endpoints themselves: the teacher reaches them through the access role on
+  // their account (profile.rolePermissions); without it the server answers 403.
+  /** One day × session: sections, pupils and their marks. */
+  boardingDay: (date, session) => api.get(`/admin/boarding-attendance${qs({ date, session })}`),
+  /** Saves marks — `{ saved, notified }` (notified = parents told by Telegram). */
+  saveBoarding: (date, session, marks) => api.put('/admin/boarding-attendance', { date, session, marks }),
 }

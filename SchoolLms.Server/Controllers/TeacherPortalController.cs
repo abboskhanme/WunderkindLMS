@@ -57,8 +57,9 @@ public class TeacherPortalController(
         var names = (await db.Subjects.Where(s => t.SubjectIds.Contains(s.Id)).ToListAsync())
             .Select(s => new SubjectDto(s.Id, s.Name))
             .OrderBy(s => s.Name, StringComparer.OrdinalIgnoreCase).ToList();
+        var (roleName, rolePermissions) = await TeacherRoleAccess.OfAsync(db, user);
         return new TeacherProfileDto(t.Id, t.FullName, user?.Email ?? "", await HomeroomDirectory.LabelAsync(db, t.Id),
-            names, t.Permissions, t.PhotoUrl);
+            names, t.Permissions, t.PhotoUrl, roleName, rolePermissions);
     }
 
     [HttpGet("meta")]
