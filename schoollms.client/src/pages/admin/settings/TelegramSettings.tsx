@@ -13,7 +13,9 @@ import { Loader } from '@/components/ui/Loader'
 
 /** Telegram bot tokenini (ota-onalarga e'lon yuborish uchun) kiritadigan sozlama. */
 export function TelegramSettings() {
+  /** Faqat YANGI token kiritiladi — saqlangani ekranga hech qachon kelmaydi (2026-10-13). */
   const [token, setToken] = useState('')
+  const [tokenHint, setTokenHint] = useState('')
   const [username, setUsername] = useState('')
   const [name, setName] = useState('')
   const [configured, setConfigured] = useState(false)
@@ -23,7 +25,7 @@ export function TelegramSettings() {
   useEffect(() => {
     getTelegramSettings()
       .then((c: TelegramConfig) => {
-        setToken(c.botToken)
+        setTokenHint(c.tokenHint ?? '')
         setUsername(c.botUsername)
         setName(c.botName)
         setConfigured(c.configured)
@@ -40,6 +42,8 @@ export function TelegramSettings() {
       botName: name.trim(),
     })
     setConfigured(saved.configured)
+    setTokenHint(saved.tokenHint ?? '')
+    setToken('')
     setStatus('saved')
     setTimeout(() => setStatus('idle'), 2000)
   }
@@ -67,13 +71,22 @@ export function TelegramSettings() {
       </p>
 
       <form onSubmit={onSubmit} className="max-w-2xl space-y-4">
-        <Input
-          label="Bot tokeni"
-          placeholder="123456789:AAH..."
-          value={token}
-          onChange={(e) => setToken(e.target.value)}
-          autoComplete="off"
-        />
+        <div>
+          <Input
+            label={tokenHint ? 'Yangi bot tokeni' : 'Bot tokeni'}
+            placeholder={tokenHint ? "Almashtirish uchun kiriting — bo'sh qolsa o'zgarmaydi" : '123456789:AAH...'}
+            value={token}
+            onChange={(e) => setToken(e.target.value)}
+            autoComplete="off"
+            type="password"
+          />
+          {tokenHint && (
+            <p className="mt-1 text-xs text-slate-400">
+              Saqlangan token: <span className="font-mono text-slate-500">{tokenHint}</span> — xavfsizlik uchun
+              to'liq ko'rsatilmaydi.
+            </p>
+          )}
+        </div>
         <Input
           label="Bot nomi (ko'rsatish uchun)"
           placeholder="Maktab LMS Bot"

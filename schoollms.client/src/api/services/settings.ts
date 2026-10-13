@@ -145,7 +145,10 @@ export async function saveGeneralSettings(flags: GeneralSettings): Promise<Gener
 /* ---------- Telegram bot sozlamasi ---------- */
 
 export interface TelegramConfig {
+  /** Server tokenni QAYTARMAYDI (2026-10-13, token o'g'irlandi) — har doim bo'sh. */
   botToken: string
+  /** Saqlangan tokenning belgisi: bot id va oxirgi 3 belgi ("8364493267:…a0E"); token yo'q — bo'sh. */
+  tokenHint?: string
   botUsername: string
   /** Bot ko'rsatiladigan nomi (masalan "Maktab LMS Bot") */
   botName: string

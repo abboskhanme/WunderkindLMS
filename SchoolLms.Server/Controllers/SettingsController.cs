@@ -12,7 +12,8 @@ namespace SchoolLms.Server.Controllers;
 [Authorize]
 [AdminPerm("settings")]
 [Route("api/admin/settings")]
-public class SettingsController(AppDbContext db, TelegramService telegram, ContractService contracts) : ControllerBase
+public class SettingsController(
+    AppDbContext db, TelegramService telegram, ContractService contracts, AuditService audit) : ControllerBase
 {
     [HttpGet]
     public async Task<ActionResult<SchoolSettingsDto>> Get()
@@ -170,9 +171,24 @@ public class SettingsController(AppDbContext db, TelegramService telegram, Contr
     public async Task<ActionResult<TelegramSettingsDto>> GetTelegram()
     {
         var m = await db.SchoolMeta.FirstOrDefaultAsync();
-        return new TelegramSettingsDto(
-            m?.TelegramBotToken ?? "", m?.TelegramBotUsername ?? "", m?.TelegramBotName ?? "",
-            telegram.IsConfigured);
+        return TelegramDto(m);
+    }
+
+    /// <summary>
+    /// The token never leaves the server again (2026-10-13: it was stolen, and this screen showed it in
+    /// full to everyone with the settings key) — only the bot id and the last three characters.
+    /// </summary>
+    private TelegramSettingsDto TelegramDto(SchoolMeta? m) =>
+        new("", m?.TelegramBotUsername ?? "", m?.TelegramBotName ?? "", telegram.IsConfigured,
+            TokenHint(m?.TelegramBotToken));
+
+    internal static string TokenHint(string? token)
+    {
+        if (string.IsNullOrWhiteSpace(token)) return "";
+        var t = token.Trim();
+        var colon = t.IndexOf(':');
+        var id = colon > 0 ? t[..colon] : "";
+        return t.Length > 3 ? $"{id}:…{t[^3..]}" : "…";
     }
 
     [HttpPut("telegram")]
@@ -184,15 +200,22 @@ public class SettingsController(AppDbContext db, TelegramService telegram, Contr
             m = new SchoolMeta();
             db.SchoolMeta.Add(m);
         }
-        m.TelegramBotToken = (req.BotToken ?? "").Trim();
+        // An empty field keeps the stored token: the screen no longer receives it, so saving the
+        // username alone must not wipe it (and stop the bot).
+        var newToken = (req.BotToken ?? "").Trim();
+        var tokenChanged = newToken.Length > 0 && newToken != m.TelegramBotToken;
+        if (newToken.Length > 0) m.TelegramBotToken = newToken;
         m.TelegramBotUsername = (req.BotUsername ?? "").Trim().TrimStart('@');
         m.TelegramBotName = (req.BotName ?? "").Trim();
+        if (tokenChanged)
+            audit.Record("TelegramBot", "token", "update",
+                $"Telegram bot tokeni almashtirildi ({TokenHint(m.TelegramBotToken)})");
         await db.SaveChangesAsync();
 
         // Ishlab turgan xizmat (va bot) darrov yangi tokenni ishlatishi uchun keshni yangilaymiz.
         telegram.Set(m.TelegramBotToken, m.TelegramBotUsername, m.TelegramBotName);
 
-        return new TelegramSettingsDto(m.TelegramBotToken, m.TelegramBotUsername, m.TelegramBotName, telegram.IsConfigured);
+        return TelegramDto(m);
     }
 
     // ---------- Turniket / FaceID integratsiyasi ----------

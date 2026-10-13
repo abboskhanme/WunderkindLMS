@@ -826,9 +826,13 @@ public record SchoolInfoDto(
     string Address, string Region, string District);
 /// <summary>Maktab nomi (brending — barcha foydalanuvchilar uchun).</summary>
 public record SchoolNameDto(string Name);
-/// <summary>Telegram bot sozlamasi (admin). Configured = token bo'sh emasligini bildiradi.</summary>
-public record TelegramSettingsDto(string BotToken, string BotUsername, string BotName, bool Configured);
-/// <summary>Telegram bot sozlamasini saqlash so'rovi.</summary>
+/// <summary>
+/// Telegram bot sozlamasi (admin). Configured = token bo'sh emasligini bildiradi.
+/// <paramref name="BotToken"/> javobda HAR DOIM bo'sh (2026-10-13: token o'g'irlandi — u ekranda ochiq
+/// turardi); qaysi token saqlangani <paramref name="TokenHint"/> dan ko'rinadi: "8364493267:…a0E".
+/// </summary>
+public record TelegramSettingsDto(string BotToken, string BotUsername, string BotName, bool Configured, string TokenHint = "");
+/// <summary>Telegram bot sozlamasini saqlash so'rovi. Bo'sh <c>BotToken</c> — saqlangan token o'zgarmaydi.</summary>
 public record SaveTelegramSettingsRequest(string? BotToken, string? BotUsername, string? BotName);
 
 /// <summary>Turniket/FaceID integratsiya sozlamasi (o'qituvchilar davomati avtomatik).
