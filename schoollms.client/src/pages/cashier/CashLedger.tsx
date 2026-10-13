@@ -26,6 +26,8 @@ interface Props {
   rows: CashBoxTransactionRow[]
   /** true — usul/turi/o'quvchi/sinf filtridan biri ishga tushgan: jadval torroq, yig'indilar EMAS. */
   narrowed?: boolean
+  /** Whose money is on screen: the selected box, or every box (2026-10-13). */
+  scope?: { boxName: string; allBoxes: boolean; onAllBoxesChange: (all: boolean) => void }
   loading: boolean
   error: string | null
   onRetry: () => void
@@ -57,6 +59,7 @@ export function CashLedger({
   outByMethod,
   rows,
   narrowed,
+  scope,
   loading,
   error,
   onRetry,
@@ -78,6 +81,37 @@ export function CashLedger({
     // chiqib ketadi; endi jadval O'Z ichida yonga suriladi (`DataTable`da
     // `overflow-x-auto` bor), kartalar esa ekranga sig'adi.
     <div className="min-w-0 space-y-4">
+      {scope && (
+        <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
+          <p className="min-w-0 truncate text-slate-500">
+            {scope.allBoxes ? (
+              <span className="font-medium text-slate-800">Barcha kassalar</span>
+            ) : (
+              <>
+                <span className="font-medium text-slate-800">{scope.boxName}</span> kassasi
+              </>
+            )}{' '}
+            — kirim va chiqim
+          </p>
+          <div className="flex rounded-lg bg-slate-100 p-0.5 text-xs font-medium">
+            {[false, true].map((all) => (
+              <button
+                key={String(all)}
+                type="button"
+                onClick={() => scope.onAllBoxesChange(all)}
+                aria-pressed={scope.allBoxes === all}
+                className={cn(
+                  'rounded-md px-3 py-1 transition-colors',
+                  scope.allBoxes === all ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700',
+                )}
+              >
+                {all ? 'Barcha kassalar' : 'Shu kassa'}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* --- Usul kesimidagi yig'indi — kartalar eni bo'yicha teng taqsimlanadi
           (mijoz, 2026-09-18: "siqilib qolmasin"). `auto-fit` tufayli usullar
           soni nechta bo'lsa, shuncha ustun chiqadi va qator to'liq to'ladi. --- */}

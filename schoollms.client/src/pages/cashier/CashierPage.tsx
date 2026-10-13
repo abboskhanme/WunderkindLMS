@@ -178,6 +178,8 @@ export function CashierPage() {
   const [boxesLoading, setBoxesLoading] = useState(true)
   const [boxesError, setBoxesError] = useState<string | null>(null)
   const [selectedBoxId, setSelectedBoxId] = useState<string | null>(null)
+  /** The first box list has arrived — until then the ledger does not know which box to show. */
+  const [boxesReady, setBoxesReady] = useState(false)
 
   const loadBoxes = useCallback(async () => {
     setBoxesLoading(true)
@@ -193,6 +195,7 @@ export function CashierPage() {
       setBoxesError(financeErrorMessage(err, "Kassalarni yuklab bo'lmadi."))
     } finally {
       setBoxesLoading(false)
+      setBoxesReady(true)
     }
   }, [])
 
@@ -229,7 +232,15 @@ export function CashierPage() {
   // bosilsa filterlar tushib chiqadi, yani bekinadi yoki ko'rinadi" — demak
   // tugma bilan YOPIQ/OCHIQ bo'lishi kerak, oldingi "Filtr" tugmasi kabi.
   const [filtersOpen, setFiltersOpen] = useState(false)
-  const [boxFilter, setBoxFilter] = useState('')
+  /* The ledger follows the selected box — its rows and the method cards are that box's in and out
+     (client, 2026-10-13: "tanlangan kassani kirim chiqimlarini ko'rsatib turishi kerak, cardlar qismi
+     ham tanlanadigan kassaga qarab o'zgarishi kerak"). "Barcha kassalar" is still one click away. */
+  const [allBoxes, setAllBoxes] = useState(false)
+  const ledgerBoxId = allBoxes ? undefined : (selectedBoxId ?? undefined)
+  const selectBox = (id: string) => {
+    setSelectedBoxId(id)
+    setAllBoxes(false)
+  }
   const [q, setQ] = useState('')
 
   /* ---- Qo'shimcha filtrlar (EduSchool skrinshoti): To'lov usuli, Tranzaksiya
@@ -280,14 +291,14 @@ export function CashierPage() {
   const [cancelError, setCancelError] = useState<string | null>(null)
 
   useEffect(() => {
-    if (!allowed) return
+    if (!allowed || !boxesReady) return
     const controller = new AbortController()
     // Har bir qidiruv/filtr o'zgarishida 300 ms kutamiz — kassir tez yozadi.
     const timer = setTimeout(() => {
       setLedgerLoading(true)
       setLedgerError(null)
       getCashBoxTransactions(
-        { from, to, boxId: boxFilter || undefined, q: q.trim() || undefined },
+        { from, to, boxId: ledgerBoxId, q: q.trim() || undefined },
         controller.signal,
       )
         .then((res) => {
@@ -306,7 +317,7 @@ export function CashierPage() {
       clearTimeout(timer)
       controller.abort()
     }
-  }, [allowed, from, to, boxFilter, q, ledgerReload])
+  }, [allowed, boxesReady, from, to, ledgerBoxId, q, ledgerReload])
 
   /* ---- Tranzaksiya turlari — filtr ro'yxati uchun, bir marta yuklanadi ---- */
   useEffect(() => {
@@ -488,7 +499,7 @@ export function CashierPage() {
     setExportError(null)
     try {
       await exportCashBoxTransactions(
-        { from, to, boxId: boxFilter || undefined, q: q.trim() || undefined },
+        { from, to, boxId: ledgerBoxId, q: q.trim() || undefined },
         source.map((r) => r.id),
       )
     } catch (err) {
@@ -622,8 +633,8 @@ export function CashierPage() {
           <div className="flex flex-wrap items-end gap-3">
             <Select
               label="Kassa bo'yicha"
-              value={boxFilter}
-              onChange={(e) => setBoxFilter(e.target.value)}
+              value={ledgerBoxId ?? ''}
+              onChange={(e) => (e.target.value ? selectBox(e.target.value) : setAllBoxes(true))}
               className="max-w-xs"
             >
               <option value="">Barcha kassalar</option>
@@ -774,7 +785,7 @@ export function CashierPage() {
             boxes={boxes}
             selectedId={selectedBoxId}
             canManage={canManageBoxes}
-            onSelect={setSelectedBoxId}
+            onSelect={selectBox}
             onAdd={() => {
               setEditingBox(null)
               setBoxFormOpen(true)
@@ -799,6 +810,15 @@ export function CashierPage() {
             outByMethod={ledger?.outByMethod}
             rows={filteredRows}
             narrowed={rowsNarrowed}
+            scope={
+              selectedBoxId
+                ? {
+                    boxName: boxes.find((b) => b.id === selectedBoxId)?.name ?? '',
+                    allBoxes,
+                    onAllBoxesChange: setAllBoxes,
+                  }
+                : undefined
+            }
             loading={ledgerLoading}
             error={ledgerError}
             onRetry={() => setLedgerReload((n) => n + 1)}
@@ -910,10 +930,9 @@ export function CashierPage() {
       {receiptRow && (
         <CashTransactionReceipt
           row={receiptRow}
-          // Jadval qatorida kassa nomi yo'q — filtrlangan kassa (yoki
-          // tanlangan kassa) nomini chekka o'zimiz beramiz.
+          // The row carries its own box; older answers did not — then the box on screen.
           boxName={
-            boxes.find((b) => b.id === (boxFilter || selectedBoxId))?.name ?? ''
+            receiptRow.boxName ?? boxes.find((b) => b.id === (ledgerBoxId ?? selectedBoxId))?.name ?? ''
           }
           onClose={() => setReceiptRow(null)}
         />
