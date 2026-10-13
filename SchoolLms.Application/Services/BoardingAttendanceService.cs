@@ -48,6 +48,13 @@ public sealed class BoardingAttendanceService(
             .Where(a => a.Date == date && a.Session == session)
             .ToDictionaryAsync(a => a.StudentId, a => (a.Status, a.ReasonId), ct);
 
+        BoardingStudentDto Row(string id, string name, string? cls) =>
+            new(id, name, cls ?? "", eligible.Contains(id),
+                marks.TryGetValue(id, out var m) ? m.Status : null,
+                marks.TryGetValue(id, out var r) ? r.ReasonId : null);
+
+        if (session == BoardingSession.Dorm) return await DormDayAsync(date, eligible, Row, ct);
+
         // Yo'nalish guruhlari va ularning faol a'zolari.
         var tracks = await db.StudyGroups.AsNoTracking()
             .Where(g => g.IsTrack && !g.IsArchived)
@@ -60,11 +67,6 @@ public sealed class BoardingAttendanceService(
             join st in db.Students.AsNoTracking() on m.StudentId equals st.Id
             where trackIds.Contains(m.GroupId) && m.LeftOn == null && !st.IsArchived
             select new { m.GroupId, st.Id, st.FullName, st.ClassName }).ToListAsync(ct);
-
-        BoardingStudentDto Row(string id, string name, string? cls) =>
-            new(id, name, cls ?? "", eligible.Contains(id),
-                marks.TryGetValue(id, out var m) ? m.Status : null,
-                marks.TryGetValue(id, out var r) ? r.ReasonId : null);
 
         var sections = new List<BoardingSectionDto>();
         var inTrack = new HashSet<string>(StringComparer.Ordinal);
@@ -98,6 +100,35 @@ public sealed class BoardingAttendanceService(
 
         return new BoardingDayDto(
             date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), session, sections,
+            sections.Sum(s => s.Eligible), sections.Sum(s => s.Marked), sections.Sum(s => s.Absent));
+    }
+
+    /// <summary>
+    /// The dormitory is checked by building, not by track (client, 2026-10-13: "yotoqxonasini qiz bola
+    /// o'g'il bolaga alohida guruhlash kerak"): girls, then boys; a pupil with no gender on file gets a
+    /// section of their own so they are never dropped.
+    /// </summary>
+    private async Task<BoardingDayDto> DormDayAsync(
+        DateOnly date, HashSet<string> eligible, Func<string, string, string?, BoardingStudentDto> row, CancellationToken ct)
+    {
+        var ids = eligible.ToList();
+        var students = await db.Students.AsNoTracking()
+            .Where(s => ids.Contains(s.Id))
+            .Select(s => new { s.Id, s.FullName, s.ClassName, s.Gender })
+            .ToListAsync(ct);
+
+        (string Key, string Title)[] buildings = [("female", "Qizlar"), ("male", "O'g'il bolalar"), ("", "Jinsi ko'rsatilmagan")];
+        static string GenderOf(string? g) => g is "female" or "male" ? g : "";
+        var sections = buildings
+            .Select(b => (b, rows: students.Where(s => GenderOf(s.Gender) == b.Key)
+                .OrderBy(s => s.FullName, StringComparer.Ordinal)
+                .Select(s => row(s.Id, s.FullName, s.ClassName)).ToList()))
+            .Where(x => x.rows.Count > 0)
+            .Select(x => Section("gender:" + x.b.Key, x.b.Title, "gender", x.rows))
+            .ToList();
+
+        return new BoardingDayDto(
+            date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), BoardingSession.Dorm, sections,
             sections.Sum(s => s.Eligible), sections.Sum(s => s.Marked), sections.Sum(s => s.Absent));
     }
 

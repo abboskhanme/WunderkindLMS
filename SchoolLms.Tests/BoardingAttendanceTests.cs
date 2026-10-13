@@ -115,6 +115,49 @@ public class BoardingAttendanceTests(ApiFixture fixture)
     }
 
     /// <summary>
+    /// The dormitory is grouped girls / boys (client, 2026-10-13); the evening stays by track group.
+    /// A pupil with no gender on file is still listed.
+    /// </summary>
+    [Fact]
+    public async Task Yotoqxona_qizlar_va_ogil_bolalar_alohida()
+    {
+        var w = await SeedAsync();
+        Student Pupil(string n, string gender) => new()
+        {
+            FullName = $"{n} {w.Tag}", LastName = n, FirstName = w.Tag, BirthDate = "2010-01-01",
+            Gender = gender, ClassName = $"10-{w.Tag}", EnrollmentDate = "2025-09-01",
+        };
+        var girl = Pupil("Qiz", "female");
+        var unknown = Pupil("Noma'lum", "");
+        await fixture.Api.WithDbAsync(async db =>
+        {
+            db.Students.AddRange(girl, unknown);
+            db.BoardingRosters.AddRange(new[] { girl, unknown }.Select(s => new BoardingRosterEntry
+            {
+                Session = BoardingSession.Dorm, StudentId = s.Id, AddedOn = AppClock.Today.AddDays(-1),
+                AddedBy = "", CreatedAt = AppClock.NowInstant,
+            }));
+            await db.SaveChangesAsync();
+        });
+        using var admin = await fixture.Api.ClientAsAsync(Roles.Admin);
+
+        var dorm = (await DayAsync(admin, w.Date, BoardingSession.Dorm))!;
+        string SectionOf(string id) => dorm.Sections.Single(s => s.Students.Any(x => x.StudentId == id)).Key;
+        Assert.Equal("gender:female", SectionOf(girl.Id));
+        Assert.Equal("gender:male", SectionOf(w.Boarder));
+        Assert.Equal("gender:male", SectionOf(w.Loose));
+        Assert.Equal("gender:", SectionOf(unknown.Id));
+        Assert.All(dorm.Sections, s => Assert.Equal("gender", s.Kind));
+        Assert.Equal(["Qizlar", "O'g'il bolalar", "Jinsi ko'rsatilmagan"], dorm.Sections.Select(s => s.Title));
+        Assert.Equal(dorm.Sections.Sum(s => s.Students.Count), dorm.Eligible);
+
+        // The evening list is unchanged: by track group, the girl is not on it.
+        var evening = (await DayAsync(admin, w.Date, BoardingSession.Evening))!;
+        Assert.Equal("group", evening.Sections.Single(s => s.Students.Any(x => x.StudentId == w.Boarder)).Kind);
+        Assert.DoesNotContain(evening.Sections.SelectMany(s => s.Students), s => s.StudentId == girl.Id);
+    }
+
+    /// <summary>
     /// 2026-09-26: kechki dars va yotoqxona ham K / Y + sabab. Sabab saqlanadi va qaytadi;
     /// holatga mos kelmagan sabab (keldi + yo'qlik sababi) rad etiladi.
     /// </summary>

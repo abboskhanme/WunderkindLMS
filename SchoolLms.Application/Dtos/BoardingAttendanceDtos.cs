@@ -7,8 +7,8 @@ public record BoardingStudentDto(
     string StudentId, string FullName, string ClassName, bool Eligible, string? Status,
     string? ReasonId = null);
 
-/// <summary>Bitta bo'lim — yo'nalish guruhi yoki (guruhsizlar uchun) sinf.</summary>
-/// <param name="Kind">group | class</param>
+/// <summary>Bitta bo'lim — yo'nalish guruhi yoki (guruhsizlar uchun) sinf; yotoqxonada — qizlar / o'g'il bolalar.</summary>
+/// <param name="Kind">group | class | gender (dorm, 2026-10-13)</param>
 public record BoardingSectionDto(
     string Key, string Title, string Kind, List<BoardingStudentDto> Students,
     int Eligible, int Marked, int Absent);

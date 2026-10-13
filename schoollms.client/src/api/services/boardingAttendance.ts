@@ -22,7 +22,7 @@ export interface BoardingSection {
   key: string
   title: string
   /** group — yo'nalish guruhi; class — guruhsizlar sinf bo'yicha */
-  kind: 'group' | 'class'
+  kind: 'group' | 'class' | 'gender'
   students: BoardingStudent[]
   eligible: number
   marked: number
