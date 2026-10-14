@@ -22,6 +22,7 @@ import {
   getFeedbackDepartments, getMyFeedback, getShowLearningProgress, listChildren, sendFeedback,
 } from '../lib/parentApi'
 import { showBackButton } from '../lib/telegram'
+import { SHOW_PARENT_FINANCE } from '../lib/flags'
 import { ChildSwitcher } from './parent/ChildSwitcher'
 import { HomeTab } from './parent/HomeTab'
 import { GradesTab } from './parent/GradesTab'
@@ -46,7 +47,10 @@ export function ParentPanel({ user }) {
   // Javob kelguncha tab ko'rinadi (eski xatti-harakat); qulf baribir serverda.
   const progress = useAsync(() => getShowLearningProgress(), [])
   const showGrades = progress.data !== false
-  const tabs = showGrades ? TABS : TABS.filter((t) => t.value !== 'grades')
+  // "To'lov" is hidden while SHOW_PARENT_FINANCE is off (client, 2026-10-14).
+  const tabs = TABS.filter(
+    (t) => (showGrades || t.value !== 'grades') && (SHOW_PARENT_FINANCE || t.value !== 'finance'),
+  )
   const children = state.data ?? []
   // Tanlanmagan bo'lsa — birinchi farzand. Tanlangani ro'yxatdan chiqib
   // ketsa (arxivlandi, bog'lanish o'chdi) yana birinchisiga qaytamiz: bo'sh
@@ -133,7 +137,7 @@ export function ParentPanel({ user }) {
         )}
         {child && showGrades && tab === 'grades' && <GradesTab key={child.id} child={child} />}
         {child && tab === 'schedule' && <ScheduleTab key={child.id} child={child} />}
-        {child && tab === 'finance' && <FinanceTab key={child.id} child={child} />}
+        {child && SHOW_PARENT_FINANCE && tab === 'finance' && <FinanceTab key={child.id} child={child} />}
         {child && tab === 'menu' && <MenuTab key={child.id} child={child} />}
       </Screen>
 

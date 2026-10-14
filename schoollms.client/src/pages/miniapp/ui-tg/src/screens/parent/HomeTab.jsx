@@ -35,6 +35,7 @@ import { CertificatesCard } from './CertificatesCard'
 import { PollsCard } from '../../components/PollSheet'
 import { AssignmentsCard } from './AssignmentsCard'
 import { todayISO } from '../../lib/weeks'
+import { SHOW_PARENT_FINANCE } from '../../lib/flags'
 
 /** A request that may fail without taking the screen down: `{ value }` or `{ error }`. */
 const settle = (promise) => promise.then((value) => ({ value }), (e) => ({ error: e?.message || 'Yuklab bo\'lmadi' }))
@@ -44,7 +45,8 @@ export function HomeTab({ child, onOpenTab, showGrades = true, onOpenFeedback, c
     () =>
       Promise.all([
         getDashboard(child.id),
-        settle(getBilling(child.id)),
+        // Not even requested while the finance screens are hidden (lib/flags.js).
+        SHOW_PARENT_FINANCE ? settle(getBilling(child.id)) : null,
         settle(getAttendance(child.id)),
         settle(getAnnouncements(child.id)),
         settle(getPickup(child.id)),
@@ -61,7 +63,7 @@ export function HomeTab({ child, onOpenTab, showGrades = true, onOpenFeedback, c
         const grades = dashboard.todayGrades ?? []
         const today = todayISO()
         const todayRows = (attendance.value?.rows ?? []).filter((r) => r.date === today)
-        const billing = billingResult.value
+        const billing = billingResult?.value
 
         return (
           <>
@@ -80,17 +82,17 @@ export function HomeTab({ child, onOpenTab, showGrades = true, onOpenFeedback, c
                   label: 'Bajarilmagan vazifa',
                   value: String(dashboard.pendingAssignmentsCount ?? 0),
                 },
-                billing
+                SHOW_PARENT_FINANCE && (billing
                   ? balanceShort(billing.debt, billing.credit)
-                  : { value: '—', label: "To'lov" },
+                  : { value: '—', label: "To'lov" }),
               ].filter(Boolean)}
             />
 
-            {billing ? (
+            {SHOW_PARENT_FINANCE && (billing ? (
               <MoneyCard billing={billing} onOpenTab={onOpenTab} />
             ) : (
               <FailedCard title="To'lov" message={billingResult.error} />
-            )}
+            ))}
 
             <LessonsCard lessons={lessons} grades={grades} rows={todayRows} />
 

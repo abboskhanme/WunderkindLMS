@@ -23,6 +23,7 @@ import { getProfile } from '../../lib/parentApi'
 import { shortSum } from '../../lib/format'
 import { haptic, showBackButton } from '../../lib/telegram'
 import { AsyncBlock } from './shared'
+import { SHOW_PARENT_FINANCE } from '../../lib/flags'
 
 const RELATION = {
   parent: 'Ota-ona',
@@ -215,7 +216,8 @@ function ChildRow({ child, active, onClick }) {
       subtitle={subtitle}
       right={
         <div className="flex shrink-0 items-center gap-1.5">
-          {child.debt > 0 ? (
+          {/* No debt badge while the finance screens are hidden (lib/flags.js). */}
+          {!SHOW_PARENT_FINANCE ? null : child.debt > 0 ? (
             <Badge tone="danger">Qarz {shortSum(child.debt)}</Badge>
           ) : child.debt === 0 ? (
             <Badge tone="success">Qarz yo'q</Badge>

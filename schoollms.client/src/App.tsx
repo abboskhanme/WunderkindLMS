@@ -16,6 +16,7 @@ import { DiscountsPage } from '@/pages/admin/billing/DiscountsPage'
 import { ExpensesPage } from '@/pages/admin/billing/ExpensesPage'
 import { CashierPage } from '@/pages/cashier/CashierPage'
 import { FinanceView } from '@/pages/portal/FinanceView'
+import { SHOW_PARENT_FINANCE } from '@/config/flags'
 import { LoginPage } from '@/pages/LoginPage'
 import { AdminHome } from '@/pages/admin/AdminHome'
 import { LeadsPage } from '@/pages/admin/leads/LeadsPage'
@@ -349,16 +350,17 @@ export default function App() {
         </Route>
       </Route>
 
-      {/* Ota-ona va o'quvchi portali — hozircha moliya ko'rinishi. */}
+      {/* Ota-ona va o'quvchi portali — hozircha moliya ko'rinishi.
+          Moliya vaqtincha yopiq bo'lsa (config/flags.ts) bosh sahifa yangiliklarni ochadi. */}
       <Route element={<ProtectedRoute role="parent" />}>
         <Route path="/parent" element={<AppLayout />}>
-          <Route index element={<FinanceView />} />
+          <Route index element={SHOW_PARENT_FINANCE ? <FinanceView /> : <Navigate to="yangiliklar" replace />} />
           <Route path="yangiliklar" element={<PortalNewsPage />} />
         </Route>
       </Route>
       <Route element={<ProtectedRoute role="student" />}>
         <Route path="/student" element={<AppLayout />}>
-          <Route index element={<FinanceView />} />
+          <Route index element={SHOW_PARENT_FINANCE ? <FinanceView /> : <Navigate to="yangiliklar" replace />} />
           <Route path="yangiliklar" element={<PortalNewsPage />} />
         </Route>
       </Route>

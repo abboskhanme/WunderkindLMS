@@ -21,6 +21,7 @@ import {
   ListChecks,
 } from 'lucide-react'
 import type { Role } from '@/types'
+import { SHOW_PARENT_FINANCE } from './flags'
 
 export interface NavChild {
   label: string
@@ -401,12 +402,13 @@ export const navByRole: Record<Role, NavItem[]> = {
     // "Xabarlar" (guruh chati) olib tashlandi (mijoz, 2026-10-11): chat faqat admin panelida.
     // No 'Maosh' (client, 2026-09-28): teachers do not see their salary; /api/teacher/salary is 403.
   ],
+  // "Bosh sahifa" is the finance screen; while it is hidden (config/flags.ts) only the news stay.
   student: [
-    { label: 'Bosh sahifa', to: '/student', icon: LayoutDashboard },
+    ...(SHOW_PARENT_FINANCE ? [{ label: 'Bosh sahifa', to: '/student', icon: LayoutDashboard }] : []),
     { label: 'Yangiliklar', to: '/student/yangiliklar', icon: Newspaper },
   ],
   parent: [
-    { label: 'Bosh sahifa', to: '/parent', icon: LayoutDashboard },
+    ...(SHOW_PARENT_FINANCE ? [{ label: 'Bosh sahifa', to: '/parent', icon: LayoutDashboard }] : []),
     { label: 'Yangiliklar', to: '/parent/yangiliklar', icon: Newspaper },
   ],
   // Superadmin admin bilan bir xil nav'ni ishlatadi (qo'shimcha menyusiz, faqat ruxsat farqli)
