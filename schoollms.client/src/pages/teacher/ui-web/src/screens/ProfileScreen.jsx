@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import {
   GraduationCap, BookOpen, Badge, LineChart, Users2,
-  MessageSquareWarning, Moon, Lock, LogOut, ChevronRight, Download, ListChecks,
+  MessageSquareWarning, Moon, Lock, LogOut, ChevronRight, Download, ListChecks, ClipboardList,
 } from 'lucide-react'
 import Avatar from '../components/Avatar'
 import AppButton from '../components/AppButton'
@@ -91,6 +91,8 @@ export default function ProfileScreen({ onNavigate, dark, onToggleTheme }) {
             {/* "Maosh" yo'q (mijoz, 2026-09-28): o'qituvchi o'z oyligini ko'rmaydi — server ham bermaydi. */}
             {/* Dars tahlili asosiy ilovada (/teacher/dars-tahlili) — token ikkalasida bir xil kalitda. */}
             <Item icon={<ListChecks size={16} />} title="Dars tahlilim" hint="Darslarim tahlili va reytingim" onClick={() => window.location.assign('/teacher/dars-tahlili')} />
+            {/* Uy vazifasi bajarilishi — asosiy ilovada (/teacher/uy-vazifasi), docs/modules/homework-completion.md. */}
+            <Item icon={<ClipboardList size={16} />} title="Uy vazifasi jadvali" hint="Kim vazifani bajardi: + − * K Y" onClick={() => window.location.assign('/teacher/uy-vazifasi')} />
             <Item icon={<MessageSquareWarning size={16} />} title="Taklif va shikoyatlar" hint="Adminga murojaat yuborish" last onClick={() => onNavigate?.('feedback')} />
           </Card>
         </div>

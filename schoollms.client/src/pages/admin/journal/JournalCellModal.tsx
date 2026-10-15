@@ -3,6 +3,7 @@ import type { AbsenceReason, JournalEntry } from '@/types'
 import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
 import { cn } from '@/lib/utils'
+import { HOMEWORK_STATUSES } from '@/lib/homeworkStatus'
 
 interface Props {
   open: boolean
@@ -11,7 +12,7 @@ interface Props {
   entry: JournalEntry | null
   reasons: AbsenceReason[]
   onClose: () => void
-  /** Baho, davomat, uyga vazifa (0/1/2), xulq (0/1/2) va o'zlashtirish %ni birga saqlaydi. */
+  /** Baho, davomat, uyga vazifa (0..5 — lib/homeworkStatus), xulq (0/1/2) va o'zlashtirish %ni birga saqlaydi. */
   onSave: (
     grade: number | null,
     reasonId: string | null,
@@ -137,28 +138,52 @@ export function JournalCellModal({
           )}
         </Section>
 
-        <div className="grid grid-cols-2 gap-3">
-          <Section title="Uyga vazifa">
-            <div className="grid grid-cols-2 gap-2">
-              <Chip active={homework === 1} tone="green" onClick={() => toggle(homework, setHomework, 1)}>
-                Qildi
-              </Chip>
-              <Chip active={homework === 2} tone="red" onClick={() => toggle(homework, setHomework, 2)}>
-                Qilmadi
-              </Chip>
-            </div>
-          </Section>
-          <Section title="Xulq">
-            <div className="grid grid-cols-2 gap-2">
-              <Chip active={behavior === 1} tone="green" onClick={() => toggle(behavior, setBehavior, 1)}>
-                Yaxshi
-              </Chip>
-              <Chip active={behavior === 2} tone="red" onClick={() => toggle(behavior, setBehavior, 2)}>
-                Yomon
-              </Chip>
-            </div>
-          </Section>
-        </div>
+        {/* Five statuses (client, 2026-10-15; homework-completion.md) — symbol and word together, so
+            the meaning never depends on the symbol. 1 and 2 are the old "Qildi" / "Qilmadi". */}
+        <Section
+          title="Uyga vazifa"
+          hint={
+            homework === 0 && reasonId != null && !selectedLate
+              ? "Darsda yo'q — «Uy vazifasi bajarilishi» jadvalida «Y Kelmadi» bo'lib ko'rinadi."
+              : undefined
+          }
+        >
+          <div className="grid grid-cols-5 gap-1.5">
+            {HOMEWORK_STATUSES.map((s) => (
+              <button
+                key={s.value}
+                type="button"
+                onClick={() => toggle(homework, setHomework, s.value)}
+                title={s.label}
+                className={cn(
+                  'flex h-12 flex-col items-center justify-center gap-0.5 rounded-xl ring-1 transition-colors',
+                  homework === s.value ? s.solid : 'bg-white ring-slate-200 hover:bg-slate-100',
+                )}
+              >
+                <span className={cn('text-base font-bold leading-none', homework === s.value ? '' : s.text)}>{s.symbol}</span>
+                <span
+                  className={cn(
+                    'px-0.5 text-center text-[10px] font-medium leading-tight',
+                    homework === s.value ? 'text-white/90' : 'text-slate-500',
+                  )}
+                >
+                  {s.label}
+                </span>
+              </button>
+            ))}
+          </div>
+        </Section>
+
+        <Section title="Xulq">
+          <div className="grid grid-cols-2 gap-2">
+            <Chip active={behavior === 1} tone="green" onClick={() => toggle(behavior, setBehavior, 1)}>
+              Yaxshi
+            </Chip>
+            <Chip active={behavior === 2} tone="red" onClick={() => toggle(behavior, setBehavior, 2)}>
+              Yomon
+            </Chip>
+          </div>
+        </Section>
 
         <Section title="Darsni o'zlashtirish">
           <div className="flex items-center gap-2">

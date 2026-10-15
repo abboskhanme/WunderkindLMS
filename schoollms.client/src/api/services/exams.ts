@@ -838,3 +838,102 @@ export function examsErrorMessage(err: unknown, op: ExamOp): string {
   if (status >= 500) return "Serverda xatolik. Keyinroq urinib ko'ring."
   return messages.fallback
 }
+
+/* ---------------------------------------------------------------- awards */
+
+/**
+ * Test natijasi bo'yicha xabar (mijoz, 2026-10-15): eng yaxshi N tasiga tashakkurnoma, eng past M tasiga
+ * ogohlantirish — N va M qo'lda. Server: `ExamAwardsController` (docs/modules/exam-awards.md).
+ *   GET  /api/admin/exams/{id}/awards/preview?top&bottom&perClass → ExamAwardPreview
+ *   POST /api/admin/exams/{id}/awards/send     ExamAwardSendRequest → ExamAwardSendResult (exams + messages)
+ *   GET  /api/admin/exams/{id}/awards                                → ExamAwardNotice[]
+ */
+export interface ExamAwardRow {
+  studentId: string
+  fullName: string
+  className: string
+  /** O'rin: tepada 1 — eng yaxshi, pastda 1 — eng past; teng natija bitta o'rin */
+  rank: number
+  totalPoints: number | null
+  maxPoints: number | null
+  percent: number | null
+  /** Bog'langan Telegram chatlari; 0 — xabar hech kimga yetmaydi (ilovadagi e'lonlarda qoladi) */
+  chats: number
+  alreadySent: boolean
+}
+
+export interface ExamAwardGroup {
+  /** null — butun imtihon */
+  className: string | null
+  scored: number
+  top: ExamAwardRow[]
+  bottom: ExamAwardRow[]
+}
+
+export interface ExamAwardPreview {
+  examId: string
+  examTitle: string
+  examDate: string | null
+  scored: number
+  top: number
+  bottom: number
+  perClass: boolean
+  groups: ExamAwardGroup[]
+  topText: string
+  bottomText: string
+  tokens: string[]
+  telegramConfigured: boolean
+}
+
+export interface ExamAwardSendRequest {
+  top: number
+  bottom: number
+  perClass: boolean
+  topText: string | null
+  bottomText: string | null
+  diploma: boolean
+  excludeStudentIds: string[] | null
+}
+
+export interface ExamAwardSendResult {
+  topSent: number
+  bottomSent: number
+  delivered: number
+  noTelegram: number
+  failed: number
+  skipped: number
+}
+
+export interface ExamAwardNotice {
+  id: string
+  studentId: string
+  fullName: string
+  className: string
+  kind: 'top' | 'bottom'
+  rank: number
+  percent: number | null
+  delivered: number
+  withDiploma: boolean
+  sentByName: string
+  sentAt: string
+}
+
+export async function previewExamAwards(
+  examId: string,
+  top: number,
+  bottom: number,
+  perClass: boolean,
+): Promise<ExamAwardPreview> {
+  const { data } = await api.get<ExamAwardPreview>(`${BASE}/${examId}/awards/preview`, { params: { top, bottom, perClass } })
+  return data
+}
+
+export async function sendExamAwards(examId: string, req: ExamAwardSendRequest): Promise<ExamAwardSendResult> {
+  const { data } = await api.post<ExamAwardSendResult>(`${BASE}/${examId}/awards/send`, req)
+  return data
+}
+
+export async function listExamAwards(examId: string): Promise<ExamAwardNotice[]> {
+  const { data } = await api.get<ExamAwardNotice[]>(`${BASE}/${examId}/awards`)
+  return data
+}

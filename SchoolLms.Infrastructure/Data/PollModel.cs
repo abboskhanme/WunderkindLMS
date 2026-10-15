@@ -17,12 +17,18 @@ internal static class PollModel
             e.Property(x => x.Audience).HasMaxLength(20);
             e.Property(x => x.Status).HasMaxLength(20);
             e.Property(x => x.ClosesOn).HasColumnType("date");
+            e.Property(x => x.PublicToken).HasMaxLength(32);
+            e.Property(x => x.PublicLink).HasDefaultValue(false);
+            e.Property(x => x.CollectContact).HasDefaultValue(false);
             e.HasMany(x => x.Questions).WithOne().HasForeignKey(x => x.PollId).OnDelete(DeleteBehavior.Cascade);
             e.HasIndex(x => new { x.Status, x.Audience });
+            // The public page finds its poll by the token; NULLs (polls never saved since 2026-10-15) don't collide.
+            e.HasIndex(x => x.PublicToken).IsUnique();
             e.ToTable(t =>
             {
-                t.HasCheckConstraint("ck_polls_audience", "audience in ('parents','teachers')");
+                t.HasCheckConstraint("ck_polls_audience", "audience in ('parents','teachers','public')");
                 t.HasCheckConstraint("ck_polls_status", "status in ('draft','open','closed')");
+                t.HasCheckConstraint("ck_polls_contact_not_anonymous", "not (collect_contact and anonymous)");
             });
         });
 
@@ -32,12 +38,20 @@ internal static class PollModel
             e.HasKey(x => x.Id);
             e.Property(x => x.Kind).HasMaxLength(20);
             e.Property(x => x.Text).HasMaxLength(500);
-            e.Property(x => x.Options).HasMaxLength(2000);
+            e.Property(x => x.Description).HasMaxLength(1000);
+            // 4000: a dropdown may list up to 50 options.
+            e.Property(x => x.Options).HasMaxLength(4000);
+            e.Property(x => x.AllowOther).HasDefaultValue(false);
+            e.Property(x => x.MinValue).HasPrecision(18, 4);
+            e.Property(x => x.MaxValue).HasPrecision(18, 4);
+            e.Property(x => x.MinLabel).HasMaxLength(100);
+            e.Property(x => x.MaxLabel).HasMaxLength(100);
             e.Property(x => x.Target).HasMaxLength(20);
             e.HasIndex(x => new { x.PollId, x.Position });
             e.ToTable(t =>
             {
-                t.HasCheckConstraint("ck_poll_questions_kind", "kind in ('nps','stars','choice','text')");
+                t.HasCheckConstraint("ck_poll_questions_kind",
+                    "kind in ('nps','stars','choice','text','multi','dropdown','short','scale','number','date','section')");
                 t.HasCheckConstraint("ck_poll_questions_target", "target in ('school','teachers','management')");
             });
         });
@@ -48,6 +62,9 @@ internal static class PollModel
             e.HasKey(x => x.Id);
             e.Property(x => x.RespondentKey).HasMaxLength(100);
             e.Property(x => x.ClassName).HasMaxLength(100);
+            e.Property(x => x.ViaLink).HasDefaultValue(false);
+            e.Property(x => x.ContactName).HasMaxLength(100);
+            e.Property(x => x.ContactPhone).HasMaxLength(20);
             e.HasOne<Poll>().WithMany().HasForeignKey(x => x.PollId).OnDelete(DeleteBehavior.Restrict);
             e.HasMany(x => x.Answers).WithOne().HasForeignKey(x => x.ResponseId).OnDelete(DeleteBehavior.Cascade);
             // One answer sheet per respondent (per child for parents).
@@ -60,6 +77,8 @@ internal static class PollModel
             e.HasKey(x => x.Id);
             e.Property(x => x.Choice).HasMaxLength(200);
             e.Property(x => x.Text).HasMaxLength(2000);
+            e.Property(x => x.Number).HasPrecision(18, 4);
+            e.Property(x => x.Date).HasColumnType("date");
             e.HasOne<PollQuestion>().WithMany().HasForeignKey(x => x.QuestionId).OnDelete(DeleteBehavior.Restrict);
             e.HasIndex(x => new { x.QuestionId, x.SubjectId });
             e.ToTable(t => t.HasCheckConstraint("ck_poll_answers_score", "score is null or (score >= 0 and score <= 10)"));

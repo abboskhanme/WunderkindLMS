@@ -274,6 +274,20 @@ builder.Services.AddRateLimiter(options =>
                 Window = TimeSpan.FromMinutes(1),
                 QueueLimit = 0,
             }));
+
+    // Public poll page (`/sorovnoma/{token}`, docs/modules/surveys-forms.md). Submitting: 30 per 10
+    // minutes — looser than the lead form, because a poll answer creates no lead and parents at a
+    // school meeting answer from one Wi-Fi; one answer per browser is enforced by the service.
+    // Opening the page shares `survey-read`.
+    options.AddPolicy("poll", httpContext =>
+        System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey: PublicFormPartition(httpContext),
+            factory: _ => new System.Threading.RateLimiting.FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 30,
+                Window = TimeSpan.FromMinutes(10),
+                QueueLimit = 0,
+            }));
 });
 
 // Ommaviy forma uchun chastota kaliti. IPv6 manzil /64 prefiksi bo'yicha: bitta
@@ -331,6 +345,8 @@ builder.Services.AddScoped<SchoolLms.Application.Services.TurnstileService>();
 builder.Services.AddScoped<SchoolLms.Application.Services.SurveySubmissionService>();
 // Kechki dars va yotoqxona davomati (2026-09-23).
 builder.Services.AddScoped<SchoolLms.Application.Services.BoardingAttendanceService>();
+// Thank-you / warning messages after a test (exam-awards.md, 2026-10-15).
+builder.Services.AddScoped<SchoolLms.Application.Services.ExamAwardService>();
 builder.Services.AddScoped<SchoolLms.Application.Services.DailyAbsenceNotifier>();
 // Yangilik e'lon qilinganda Telegram tarqatmasi (§3.3 N4, N6).
 builder.Services.AddScoped<SchoolLms.Application.Services.INewsTelegramNotifier,
@@ -355,6 +371,8 @@ builder.Services.AddScoped<SchoolLms.Application.Billing.IPaymentService,
 builder.Services.AddScoped<SchoolLms.Application.Billing.IReceiptService,
                            SchoolLms.Application.Billing.ReceiptService>();
 builder.Services.AddHostedService<SchoolLms.Application.Billing.BillingAccrualService>();
+// Automatic Telegram messages to parents — every rule ships switched off (auto-messages.md, 2026-10-13).
+builder.Services.AddHostedService<SchoolLms.Application.Services.AutoMessageScheduler>();
 
 // Kamera (videokuzatuv) media-shlyuzi (MediaMTX) bilan ishlash
 builder.Services.AddHttpClient<SchoolLms.Application.Services.CameraGateway>();
@@ -700,7 +718,10 @@ app.MapFallback(async ctx =>
     // Dars tahlili — o'qituvchining sahifasi PWA'da emas, ASOSIY SPA'da
     // (docs/modules/lesson-analysis.md §7). PWA'ning Profil ekrani shu yerga olib keladi;
     // istisnosiz havola yoki sahifani yangilash PWA'ning index.html iga tushardi.
-    if (path.StartsWith("/teacher/dars-tahlili", StringComparison.OrdinalIgnoreCase))
+    // "Uy vazifasi bajarilishi" (docs/modules/homework-completion.md) — the same exception: the page
+    // lives in the main SPA, the PWA's Profil screen links to it.
+    if (path.StartsWith("/teacher/dars-tahlili", StringComparison.OrdinalIgnoreCase)
+        || path.StartsWith("/teacher/uy-vazifasi", StringComparison.OrdinalIgnoreCase))
     {
         var spaIndex = Path.Combine(webRoot, "index.html");
         if (!File.Exists(spaIndex)) { ctx.Response.StatusCode = StatusCodes.Status404NotFound; return; }
@@ -742,9 +763,11 @@ app.MapFallback(async ctx =>
     // qoida `landing.html` berardi — havola jimgina bosh sahifaga aylanib qolardi.
     // docs/modules/sales-marketing.md D2.
     // The public vacancy page (/vakansiya, /vakansiya/{slug}) — the same rule, any host.
+    // The public poll page (/sorovnoma/{token}, docs/modules/surveys-forms.md) — the same rule.
     if (path.StartsWith("/ariza/", StringComparison.OrdinalIgnoreCase)
         || path.Equals("/vakansiya", StringComparison.OrdinalIgnoreCase)
-        || path.StartsWith("/vakansiya/", StringComparison.OrdinalIgnoreCase))
+        || path.StartsWith("/vakansiya/", StringComparison.OrdinalIgnoreCase)
+        || path.StartsWith("/sorovnoma/", StringComparison.OrdinalIgnoreCase))
     {
         var spaIndex = Path.Combine(webRoot, "index.html");
         if (!File.Exists(spaIndex)) { ctx.Response.StatusCode = StatusCodes.Status404NotFound; return; }

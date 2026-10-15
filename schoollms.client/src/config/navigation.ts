@@ -122,7 +122,19 @@ export const navByRole: Record<Role, NavItem[]> = {
         { label: 'Moliya analitikasi', to: '/admin/finance/money-flow', roles: ['admin', 'superadmin', 'staff'], group: 'HISOBOTLAR' },
       ],
     },
-    { label: 'Jurnal', to: '/admin/journal', icon: NotebookText, perm: 'journal' },
+    {
+      // "Uy vazifasi bajarilishi" sits UNDER the journal (client, 2026-10-15; homework-completion.md):
+      // same `journal` key, same data (the journal cell's homework mark). The journal itself keeps
+      // its address; the new page is its own catalog entry in the role editor.
+      label: 'Jurnal',
+      to: '/admin/journal',
+      icon: NotebookText,
+      perm: 'journal',
+      children: [
+        { label: 'Jurnal', to: '/admin/journal', group: 'JURNAL' },
+        { label: 'Uy vazifasi bajarilishi', to: '/admin/journal-homework', group: 'JURNAL' },
+      ],
+    },
     {
       label: "O'quv bo'limi",
       to: '/admin/students',
@@ -393,6 +405,8 @@ export const navByRole: Record<Role, NavItem[]> = {
   teacher: [
     { label: 'Bosh sahifa', to: '/teacher', icon: LayoutDashboard },
     { label: 'Jurnal', to: '/teacher/journal', icon: NotebookText, perm: 'journal' },
+    // Uy vazifasi bajarilishi (homework-completion.md) — a SPA page like Dars tahlilim; same `journal` key.
+    { label: 'Uy vazifasi', to: '/teacher/uy-vazifasi', icon: ClipboardCheck, perm: 'journal' },
     { label: 'Feedback', to: '/teacher/evaluation', icon: ClipboardList },
     // Dars tahlilim — o'z yakunlangan dars kuzatuvlari va ko'rsatkichi (lesson-analysis.md §7).
     { label: 'Dars tahlilim', to: '/teacher/dars-tahlili', icon: ListChecks },

@@ -1,13 +1,15 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { BarChart3, Lock, Megaphone, Pencil, Play, Plus, Square, Trash2, Users } from 'lucide-react'
+import { BarChart3, Copy, Link2, Lock, Megaphone, Pencil, Play, Plus, Square, Trash2, Users } from 'lucide-react'
 import {
   closePoll,
   deletePoll,
+  duplicatePoll,
   getPollRecipients,
   getPolls,
   notifyPoll,
   openPoll,
+  pollLink,
   POLL_AUDIENCE,
   POLL_STATUS,
   type Poll,
@@ -29,7 +31,9 @@ const STATUS_TONE: Record<Poll['status'], string> = {
 
 /**
  * So'rovnomalar va NPS (client, 2026-10-07): polls for parents or teachers, answered in the
- * Telegram Mini App; the results page shows NPS by class and by person.
+ * Telegram Mini App; the results page shows NPS by class and by person. Since 2026-10-15 also
+ * Google-Forms-like polls for anyone with the link (`/sorovnoma/{token}`), "Nusxa olish" and
+ * the link copy button (docs/modules/surveys-forms.md).
  */
 export function PollsPage() {
   const [polls, setPolls] = useState<Poll[] | null>(null)
@@ -63,6 +67,17 @@ export function PollsPage() {
     }
   }
 
+  /** The clipboard needs a secure context; elsewhere the link is shown to copy by hand. */
+  const copyLink = async (token: string) => {
+    const url = pollLink(token)
+    try {
+      await navigator.clipboard.writeText(url)
+      setToast('Havola nusxalandi')
+    } catch {
+      window.prompt("Havolani nusxalang", url)
+    }
+  }
+
   const askAnnounce = async (poll: Poll) => {
     try {
       const r = await getPollRecipients(poll.id)
@@ -78,7 +93,8 @@ export function PollsPage() {
         <div>
           <h1 className="text-xl font-semibold text-slate-800">So'rovnomalar va NPS</h1>
           <p className="text-sm text-slate-400">
-            Ota-onalar va o'qituvchilar Telegram ilovasida javob beradi — natijada maktab, ustozlar va rahbariyat NPS'i
+            Ota-onalar va o'qituvchilar Telegram ilovasida, boshqalar havola orqali javob beradi — natijada maktab, ustozlar
+            va rahbariyat NPS'i
           </p>
         </div>
         <Button onClick={() => setEditing('new')}>
@@ -113,10 +129,18 @@ export function PollsPage() {
                         <Lock className="h-3 w-3" /> Anonim
                       </span>
                     )}
+                    {p.publicToken && p.audience !== 'public' && (
+                      <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2 py-0.5 text-xs text-slate-500">
+                        <Link2 className="h-3 w-3" /> Havola orqali ham
+                      </span>
+                    )}
+                    {p.publicToken && p.collectContact && (
+                      <span className="rounded-md bg-slate-100 px-2 py-0.5 text-xs text-slate-500">Ism va telefon so'raladi</span>
+                    )}
                   </div>
                   {p.description && <p className="mt-1 text-sm text-slate-500">{p.description}</p>}
                   <p className="mt-1 text-xs text-slate-400">
-                    {p.questions.length} ta savol · yaratilgan {fmtDate(p.createdAt)}
+                    {p.questions.filter((q) => q.kind !== 'section').length} ta savol · yaratilgan {fmtDate(p.createdAt)}
                     {p.closesOn && ` · ${fmtDate(p.closesOn)} gacha`}
                     {p.notifiedAt && ` · botdan e'lon qilingan ${fmtDate(p.notifiedAt)}`}
                   </p>
@@ -139,7 +163,13 @@ export function PollsPage() {
                   <Pencil className="h-4 w-4" /> Tahrirlash
                 </Button>
                 {p.status !== 'open' ? (
-                  <Button variant="secondary" disabled={busy} onClick={() => run(() => openPoll(p.id), "So'rovnoma ochildi — ilovada ko'rinadi")}>
+                  <Button
+                    variant="secondary"
+                    disabled={busy}
+                    onClick={() =>
+                      run(() => openPoll(p.id), p.audience === 'public' ? "So'rovnoma ochildi — havola ishlaydi" : "So'rovnoma ochildi — ilovada ko'rinadi")
+                    }
+                  >
                     <Play className="h-4 w-4" /> Ochish
                   </Button>
                 ) : (
@@ -147,13 +177,21 @@ export function PollsPage() {
                     <Button variant="secondary" disabled={busy} onClick={() => run(() => closePoll(p.id), "So'rovnoma yopildi")}>
                       <Square className="h-4 w-4" /> Yopish
                     </Button>
-                    {!p.notifiedAt && (
+                    {!p.notifiedAt && p.audience !== 'public' && (
                       <Button variant="secondary" disabled={busy} onClick={() => askAnnounce(p)}>
                         <Megaphone className="h-4 w-4" /> Botdan e'lon qilish
                       </Button>
                     )}
                   </>
                 )}
+                {p.publicToken && (
+                  <Button variant="secondary" onClick={() => copyLink(p.publicToken!)}>
+                    <Link2 className="h-4 w-4" /> Havolani nusxalash
+                  </Button>
+                )}
+                <Button variant="ghost" disabled={busy} onClick={() => run(() => duplicatePoll(p.id), "Nusxa yaratildi — qoralama")}>
+                  <Copy className="h-4 w-4" /> Nusxa olish
+                </Button>
                 {p.responses === 0 && (
                   <Button variant="ghost" disabled={busy} onClick={() => run(() => deletePoll(p.id), "So'rovnoma o'chirildi")}>
                     <Trash2 className="h-4 w-4" /> O'chirish

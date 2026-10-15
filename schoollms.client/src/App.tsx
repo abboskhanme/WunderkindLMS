@@ -60,6 +60,7 @@ import { SeasonalEntryPage } from '@/pages/admin/seasonal-marks/SeasonalEntryPag
 import { CoverageReportPage } from '@/pages/admin/seasonal-marks/CoverageReportPage'
 import { JournalClassesPage } from '@/pages/admin/journal/JournalClassesPage'
 import { JournalSubjectsPage } from '@/pages/admin/journal/JournalSubjectsPage'
+import { HomeworkCompletionPage } from '@/pages/admin/journal/HomeworkCompletionPage'
 import { MessagesPage } from '@/pages/admin/messages/MessagesPage'
 import { GroupChatPage } from '@/pages/admin/messages/GroupChatPage'
 import { AssignmentsPage } from '@/pages/admin/assignments/AssignmentsPage'
@@ -88,6 +89,7 @@ import { SurveyPage } from '@/pages/public/SurveyPage'
 import { VacancyListPage, VacancyPage } from '@/pages/public/VacancyPage'
 import { RecruitmentPage } from '@/pages/admin/recruitment/RecruitmentPage'
 import { ReceiptVerifyPage } from '@/pages/public/ReceiptVerifyPage'
+import { PollPublicPage } from '@/pages/public/PollPublicPage'
 import { PortalNewsPage } from '@/pages/portal/PortalNewsPage'
 import { CandidatesPage } from '@/pages/admin/admission/CandidatesPage'
 import { CandidateCardPage } from '@/pages/admin/admission/CandidateCardPage'
@@ -157,6 +159,8 @@ export default function App() {
       <Route path="/vakansiya/:slug" element={<VacancyPage />} />
       {/* Chek QR kodi (2026-09-24) — login'siz. */}
       <Route path="/r/:token" element={<ReceiptVerifyPage />} />
+      {/* So'rovnoma havolasi (2026-10-15) — login'siz; server `/sorovnoma/` ni har qanday hostda SPA'ga beradi. */}
+      <Route path="/sorovnoma/:token" element={<PollPublicPage />} />
 
       <Route path="/" element={<RootRedirect />} />
 
@@ -218,6 +222,8 @@ export default function App() {
           <Route path="journal" element={<RequirePerm perm="journal"><JournalClassesPage /></RequirePerm>} />
           <Route path="journal/:classId" element={<RequirePerm perm="journal"><JournalSubjectsPage /></RequirePerm>} />
           <Route path="journal/:classId/:subjectId" element={<RequirePerm perm="journal"><JournalPage /></RequirePerm>} />
+          {/* Uy vazifasi bajarilishi (docs/modules/homework-completion.md) — the journal's key. */}
+          <Route path="journal-homework" element={<RequirePerm perm="journal"><HomeworkCompletionPage scope="admin" /></RequirePerm>} />
           <Route path="assignments" element={<RequirePerm perm="app"><AssignmentsPage /></RequirePerm>} />
           <Route path="assignment-scores" element={<RequirePerm perm="app"><AssignmentScoresPage /></RequirePerm>} />
           <Route path="lms" element={<RequirePerm perm="app"><LmsClassesPage /></RequirePerm>} />
@@ -375,6 +381,11 @@ export default function App() {
         <Route path="/teacher/dars-tahlili" element={<AppLayout />}>
           <Route index element={<MyLessonAnalysisPage />} />
           <Route path=":id" element={<MyObservationDetailPage />} />
+        </Route>
+        {/* Uy vazifasi bajarilishi — the same SPA exception as Dars tahlilim (Program.cs MapFallback);
+            the PWA's Profil screen links here. Own class + subject only (server gate). */}
+        <Route path="/teacher/uy-vazifasi" element={<AppLayout />}>
+          <Route index element={<RequirePerm perm="journal"><HomeworkCompletionPage scope="teacher" /></RequirePerm>} />
         </Route>
       </Route>
       <Route path="/teacher/*" element={<TeacherAppRedirect />} />

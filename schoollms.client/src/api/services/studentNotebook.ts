@@ -25,10 +25,18 @@ export interface SubjectEvaluation {
 /** O'quvchining bitta chorakdagi uy vazifa/xulq jamlamasi */
 export interface QuarterMarks {
   quarter: number
+  /** + Bajardi (1) */
   homeworkDone: number
+  /** * Umuman yo'q (2 — the old "qilmadi") */
   homeworkMissed: number
   behaviorGood: number
   behaviorBad: number
+  /** − Chala (3) — homework-completion.md; older servers omit it */
+  homeworkPartial?: number
+  /** K Kech qoldi (4) */
+  homeworkLate?: number
+  /** Y Kelmadi (5, stored) */
+  homeworkAbsent?: number
 }
 
 /** Bitta topshiriqdagi natija */
@@ -107,6 +115,10 @@ export interface StudentNotebook {
   behaviorGood: number
   behaviorBad: number
   marksTrend: QuarterMarks[]
+  /** Statuses added 2026-10-15 (homework-completion.md): − Chala, K Kech qoldi, Y Kelmadi */
+  homeworkPartial?: number
+  homeworkLate?: number
+  homeworkAbsent?: number
 }
 
 export async function getStudentNotebook(id: string): Promise<StudentNotebook> {

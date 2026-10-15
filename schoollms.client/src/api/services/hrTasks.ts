@@ -379,6 +379,7 @@ export async function getTasks(filters: HrTaskFilters = {}): Promise<HrTaskPage>
       accepted: filters.accepted,
       q: filters.q,
       sort: filters.sort ?? '-due_at',
+      view: filters.view,
       limit: filters.limit ?? HR_DEFAULT_PAGE_SIZE,
       cursor: filters.cursor,
       withTotal: filters.withTotal,

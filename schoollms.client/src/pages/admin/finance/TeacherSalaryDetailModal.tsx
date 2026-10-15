@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import type { MonthStatus, SalaryLedger, SalaryReportRow } from '@/types'
+import type { MonthSalary, MonthStatus, SalaryLedger, SalaryReportRow } from '@/types'
 import { getSalaryLedger } from '@/api/services/teachers'
 import { getStaffSalaryLedger } from '@/api/services/staff'
 import { billingErrorMessage } from '@/api/services/billingError'
@@ -25,6 +25,20 @@ const statusStyles: Record<MonthStatus, string> = {
   paid: 'bg-emerald-50 text-emerald-700',
   partial: 'bg-amber-50 text-amber-700',
   unpaid: 'bg-red-50 text-red-700',
+}
+
+/**
+ * What the month's amount is made of (2026-10-15: fines, bonuses, certificates and allowances are in the salary) —
+ * only the parts that are there; nothing when the amount is plain lesson pay / fixed salary.
+ */
+function monthParts(m: MonthSalary, isStaff: boolean): string | null {
+  const parts: string[] = []
+  if ((m.ustama ?? 0) > 0) parts.push(`ustama +${formatMoney(m.ustama ?? 0)}`)
+  if ((m.allowances ?? 0) > 0) parts.push(`sertifikat/ustama +${formatMoney(m.allowances ?? 0)}`)
+  if ((m.bonus ?? 0) > 0) parts.push(`bonus +${formatMoney(m.bonus ?? 0)}`)
+  if ((m.penalty ?? 0) > 0) parts.push(`jarima −${formatMoney(m.penalty ?? 0)}`)
+  if (parts.length === 0) return null
+  return [`${isStaff ? 'oylik' : 'dars'} ${formatMoney(m.lessonPay ?? 0)}`, ...parts].join(' · ')
 }
 
 /** Xodim (o'qituvchi yoki boshqa xodim) maoshi — davr bo'yicha hisob va maosh berish. */
@@ -142,7 +156,12 @@ export function TeacherSalaryDetailModal({ teacher, from, to, onClose, onPaid }:
                   {ledger.months.map((m) => (
                     <tr key={m.month} className="hover:bg-slate-50/60">
                       <td className="px-4 py-2.5 font-medium text-slate-700">{formatMonth(m.month)}</td>
-                      <td className="px-4 py-2.5 text-right text-slate-600">{formatMoney(m.expected)}</td>
+                      <td className="px-4 py-2.5 text-right text-slate-600">
+                        {formatMoney(m.expected)}
+                        {monthParts(m, isStaff) && (
+                          <div className="mt-0.5 text-[11px] font-normal text-slate-400">{monthParts(m, isStaff)}</div>
+                        )}
+                      </td>
                       <td className="px-4 py-2.5 text-right text-emerald-600">{formatMoney(m.paid)}</td>
                       <td
                         className={cn(

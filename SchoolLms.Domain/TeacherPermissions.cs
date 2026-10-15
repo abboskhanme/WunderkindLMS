@@ -34,8 +34,10 @@ public static class TeacherPermissions
     /// evening-lesson and dorm roll calls (client, 2026-10-12: some teachers are also dorm
     /// commandants — one account, no second login). Each key also counts in its ":view" form.
     /// Only these keys reach a teacher's request; a role holding any other key is not given to a teacher.
+    /// The dorm gender flags (<see cref="DormGender"/>, 2026-10-15) ride along: they only narrow the dorm key.
     /// </summary>
-    public static readonly IReadOnlyList<string> RoleKeys = [.. BoardingSession.All.Select(BoardingSession.PermissionOf)];
+    public static readonly IReadOnlyList<string> RoleKeys =
+        [.. BoardingSession.All.Select(BoardingSession.PermissionOf), .. DormGender.Keys];
 
     /// <summary>True for a <see cref="RoleKeys"/> key, full or ":view".</summary>
     public static bool IsRoleKey(string key) =>

@@ -17,6 +17,10 @@
  * "o'tildi" deb belgilaydi. Mavzu va uyga vazifa ham shu ekranda (mijoz,
  * 2026-10-12: o'qituvchi profilida "baho qo'yish, vazifa berish, mavzu berish") —
  * ota-ona ularni Mini App'ning "Jadval" bo'limida dars ostida ko'radi.
+ *
+ * Uy vazifasi bajarilishi ham shu ro'yxatda (mijoz, 2026-10-15; homework-completion.md): har
+ * o'quvchida bir teginishli besh belgi (+ − * K Y) va "Hammasi bajardi". U o'sha jurnal katagining
+ * `homework` maydoni, shuning uchun baho va davomat bilan BITTA so'rovda saqlanadi.
  */
 import { useEffect, useMemo, useState } from 'react'
 import { CalendarOff, Check, ChevronLeft, UserX } from 'lucide-react'
@@ -29,6 +33,7 @@ import { todayISO } from '../../lib/weeks'
 import { fullDate, todayIndex, weekdayName } from '../../lib/format'
 import { haptic, showBackButton } from '../../lib/telegram'
 import { AsyncBlock, lessonKey, lessonOwnerTitle, lessonPairs } from './shared'
+import { HOMEWORK_STATUSES, HW_DONE } from '../../lib/homework'
 
 export function AttendanceTab({ profile, meta, focusLesson, onClearFocus }) {
   const quarter = meta.currentQuarter
@@ -172,6 +177,8 @@ function LessonAttendance({ lesson, quarter, date, reasons, onBack, onSaved }) {
   const [marks, setMarks] = useState(null)
   // Baholar: { [studentId]: 1..5 } — yo'q = baho qo'yilmagan.
   const [grades, setGrades] = useState(null)
+  // Uy vazifasi: { [studentId]: 1..5 } (lib/homework) — yo'q = belgilanmagan.
+  const [homework, setHomework] = useState(null)
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState(null)
   const [savedAt, setSavedAt] = useState(null)
@@ -185,13 +192,16 @@ function LessonAttendance({ lesson, quarter, date, reasons, onBack, onSaved }) {
   if (q.data && seededKey !== loadedKey) {
     const seed = {}
     const gradeSeed = {}
+    const homeworkSeed = {}
     for (const e of q.data.todayEntries) {
       if (e.reasonId) seed[e.studentId] = e.reasonId
       if (e.grade != null) gradeSeed[e.studentId] = e.grade
+      if (e.homework) homeworkSeed[e.studentId] = e.homework
     }
     setSeededKey(loadedKey)
     setMarks(seed)
     setGrades(gradeSeed)
+    setHomework(homeworkSeed)
     setTopic(q.data.note?.topic ?? '')
     setHomeworkText(q.data.note?.homework ?? '')
     setSaveError(null)
@@ -217,6 +227,12 @@ function LessonAttendance({ lesson, quarter, date, reasons, onBack, onSaved }) {
   const { roster, todayEntries, note } = q.data
   const current = marks || {}
   const currentGrades = grades || {}
+  const currentHomework = homework || {}
+  // Kechikkan o'quvchi darsda bo'lgan — uy vazifasi undan ham so'raladi; kelmaganidan esa yo'q.
+  const lateIds = new Set(reasons.filter((r) => r.isLate).map((r) => r.id))
+  const inClass = (studentId) => !current[studentId] || lateIds.has(current[studentId])
+  const homeworkCount = roster.filter((s) => currentHomework[s.id]).length
+  const homeworkEmpty = roster.filter((s) => inClass(s.id) && !currentHomework[s.id]).length
   // Faqat SHU ro'yxatdagilarni sanaymiz: bo'lingan darsda jurnalda boshqa
   // guruhning yozuvi ham bo'lishi mumkin, u bu darsga tegishli emas.
   const absentCount = roster.filter((s) => current[s.id]).length
@@ -253,6 +269,29 @@ function LessonAttendance({ lesson, quarter, date, reasons, onBack, onSaved }) {
     setSavedAt(null)
   }
 
+  /** Bir teginish — belgi qo'yiladi; o'sha belgiga yana teginish — olib tashlanadi. */
+  const setHomeworkMark = (studentId, value) => {
+    haptic()
+    setHomework((prev) => {
+      const next = { ...(prev || {}) }
+      if (next[studentId] === value) delete next[studentId]
+      else next[studentId] = value
+      return next
+    })
+    setSavedAt(null)
+  }
+
+  /** Darsdagi, hali belgisiz o'quvchilarga "+ Bajardi"; qo'yilgan belgilarga tegmaydi. */
+  const markAllDone = () => {
+    haptic('medium')
+    setHomework((prev) => {
+      const next = { ...(prev || {}) }
+      for (const s of roster) if (inClass(s.id) && !next[s.id]) next[s.id] = HW_DONE
+      return next
+    })
+    setSavedAt(null)
+  }
+
   const markAllPresent = () => {
     haptic('medium')
     setMarks({})
@@ -267,13 +306,19 @@ function LessonAttendance({ lesson, quarter, date, reasons, onBack, onSaved }) {
       for (const s of roster) {
         const desired = current[s.id] || null
         const desiredGrade = currentGrades[s.id] ?? null
+        const desiredHomework = currentHomework[s.id] ?? 0
         const existing = byStudent.get(s.id) || null
-        if ((existing?.reasonId || null) === desired && (existing?.grade ?? null) === desiredGrade) continue
+        if (
+          (existing?.reasonId || null) === desired &&
+          (existing?.grade ?? null) === desiredGrade &&
+          (existing?.homework ?? 0) === desiredHomework
+        )
+          continue
 
         const keepsSomething =
           desired !== null ||
           desiredGrade !== null ||
-          (existing?.homework ?? 0) !== 0 ||
+          desiredHomework !== 0 ||
           (existing?.behavior ?? 0) !== 0 ||
           existing?.mastery != null
 
@@ -293,8 +338,8 @@ function LessonAttendance({ lesson, quarter, date, reasons, onBack, onSaved }) {
           period,
           grade: desiredGrade,
           reasonId: desired,
-          // Uyga vazifa, xulq va o'zlashtirish bu ekranda yo'q — ular o'zgarmasdan qoladi.
-          homework: existing?.homework ?? 0,
+          homework: desiredHomework,
+          // Xulq va o'zlashtirish bu ekranda yo'q — ular o'zgarmasdan qoladi.
           behavior: existing?.behavior ?? 0,
           mastery: existing?.mastery ?? null,
         })
@@ -414,7 +459,28 @@ function LessonAttendance({ lesson, quarter, date, reasons, onBack, onSaved }) {
                 {roster.length} ta jami
                 {' · '}
                 <span className={gradedCount ? 'font-bold text-slate-700' : ''}>{gradedCount} ta baho</span>
+                {' · '}
+                <span className={homeworkCount ? 'font-bold text-slate-700' : ''}>{homeworkCount} ta vazifa</span>
               </p>
+              <div className="mt-2 flex items-start gap-2">
+                <p className="min-w-0 flex-1 text-[11px] leading-snug text-slate-400">
+                  Uy vazifasi:{' '}
+                  {HOMEWORK_STATUSES.map((h, i) => (
+                    <span key={h.value}>
+                      {i > 0 && ' · '}
+                      <b className={h.tone}>{h.symbol}</b> {h.label.toLowerCase()}
+                    </span>
+                  ))}
+                </p>
+                <button
+                  type="button"
+                  onClick={markAllDone}
+                  disabled={homeworkEmpty === 0}
+                  className="shrink-0 rounded-full bg-slate-100 px-3 py-1.5 text-[12px] font-semibold text-slate-600 disabled:opacity-40"
+                >
+                  Hammasi bajardi
+                </button>
+              </div>
             </div>
             {roster.map((s, i) => (
               <StudentRow
@@ -424,9 +490,13 @@ function LessonAttendance({ lesson, quarter, date, reasons, onBack, onSaved }) {
                 reasonId={current[s.id] || null}
                 reasons={reasons}
                 grade={currentGrades[s.id] ?? null}
+                homework={currentHomework[s.id] ?? 0}
+                // Kelmaganda yashirin — lekin oldin qo'yilgan belgi bo'lsa, ko'rinib turadi (yashirin qiymat qolmasin).
+                showHomework={inClass(s.id) || Boolean(currentHomework[s.id])}
                 onToggle={() => toggle(s.id)}
                 onReason={(rid) => setReason(s.id, rid)}
                 onGrade={(g) => setGrade(s.id, g)}
+                onHomework={(v) => setHomeworkMark(s.id, v)}
               />
             ))}
           </Card>
@@ -498,8 +568,11 @@ const GRADES = [1, 2, 3, 4, 5]
  * Bitta o'quvchi. Qatorning o'zi — bitta teginishda "keldi ⇄ kelmadi".
  * Kelgan o'quvchida baho tugmalari (1–5), kelmaganida sabab tugmalari (sukut: sababsiz).
  * Kelmagan o'quvchining oldin qo'yilgan bahosi o'chirilmaydi — faqat tugmalari yashirinadi.
+ * Darsda bo'lgan (kelgan yoki kechikkan) o'quvchida — uy vazifasi belgilari (+ − * K Y).
  */
-function StudentRow({ index, student, reasonId, reasons, grade, onToggle, onReason, onGrade }) {
+function StudentRow({
+  index, student, reasonId, reasons, grade, homework, showHomework, onToggle, onReason, onGrade, onHomework,
+}) {
   // Sabab bor = kelmagan. Sabablar ro'yxati bo'sh bo'lganda bu ekranga umuman
   // kirilmaydi (yuqorida tekshiriladi), shuning uchun bu yerda shart yetarli.
   const absent = Boolean(reasonId)
@@ -535,6 +608,31 @@ function StudentRow({ index, student, reasonId, reasons, grade, onToggle, onReas
                 }
               >
                 {g}
+              </button>
+            )
+          })}
+        </div>
+      )}
+
+      {showHomework && (
+        <div className="mt-1.5 flex items-center gap-1.5 pl-8" role="group" aria-label={`${student.fullName} — uy vazifasi`}>
+          <span className="w-11 shrink-0 text-[11px] font-semibold text-slate-400">Vazifa</span>
+          {HOMEWORK_STATUSES.map((h) => {
+            const on = h.value === homework
+            return (
+              <button
+                key={h.value}
+                type="button"
+                onClick={() => onHomework(h.value)}
+                aria-pressed={on}
+                aria-label={`Uy vazifasi: ${h.label}`}
+                title={h.label}
+                className={
+                  'h-8 min-w-[34px] flex-1 rounded-lg text-[15px] font-bold ' +
+                  (on ? 'bg-brand-ink text-brand' : `bg-slate-100 ${h.tone}`)
+                }
+              >
+                {h.symbol}
               </button>
             )
           })}

@@ -849,6 +849,16 @@ export interface MonthSalary {
   /** Qoldiq (belgilangan − berilgan) */
   remaining: number
   status: MonthStatus
+  /**
+   * Belgilangan summaning tarkibi (2026-10-15). O'qituvchi: dars puli (darslar × narx), xodim: belgilangan oylik;
+   * keyin ustama, sertifikat/ustamalar, bonus va jarima. Eski javoblarda bo'lmasligi mumkin.
+   */
+  lessonPay?: number
+  ustama?: number
+  allowances?: number
+  bonus?: number
+  penalty?: number
+  substitutionLessons?: number
 }
 
 /** O'qituvchi maoshi bo'yicha batafsil hisob (davr bo'yicha) */

@@ -196,16 +196,17 @@ public sealed class HrTasksController(HrTasksService service, AppDbContext db) :
 
     // ---------- Tasks ----------
 
-    /// <summary><c>?status=open&amp;status=returned</c>; dates filter the LOCAL date of <c>dueAt</c>; <c>overdue</c> ignores dates.</summary>
+    /// <summary><c>?status=open&amp;status=returned</c>; dates filter the LOCAL date of <c>dueAt</c>; <c>overdue</c> ignores dates;
+    /// <c>view=staff|given</c> leaves the caller's own tasks out (<see cref="HrTaskViews"/>).</summary>
     [HttpGet("tasks")]
     public Task<ActionResult> Tasks(
         [FromQuery] DateOnly? dateFrom = null, [FromQuery] DateOnly? dateTo = null, [FromQuery] string? employeeId = null,
         [FromQuery] string? positionId = null, [FromQuery] string[]? status = null, [FromQuery] string[]? source = null,
         [FromQuery] bool? overdue = null, [FromQuery] string? branch = null, [FromQuery] bool? accepted = null,
-        [FromQuery] string? q = null, [FromQuery] string? sort = null,
+        [FromQuery] string? q = null, [FromQuery] string? sort = null, [FromQuery] string? view = null,
         [FromQuery] int? limit = null, [FromQuery] string? cursor = null, [FromQuery] bool withTotal = false) =>
         Run(p => service.TasksAsync(p,
-            new HrTaskFilter(dateFrom, dateTo, employeeId, positionId, status, source, overdue == true, branch, accepted, q, sort),
+            new HrTaskFilter(dateFrom, dateTo, employeeId, positionId, status, source, overdue == true, branch, accepted, q, sort, view),
             Paging(limit, cursor, withTotal), Ct));
 
     /// <summary>The employee is told on Telegram immediately.</summary>

@@ -3,21 +3,22 @@ import { Link } from 'react-router-dom'
 import type { HubConnection } from '@microsoft/signalr'
 import { RefreshCw, Wifi, WifiOff, CheckCircle2, Search } from 'lucide-react'
 import {
-  getTeacherAttendance,
+  getTeacherAttendanceRange,
   setTeacherAttendance,
   setTeacherAttendanceDay,
   getAttendanceDashboard,
   syncTurnstile,
-  type TeacherAttendanceBoard,
+  type TeacherAttendanceDay,
+  type TeacherAttendanceRangeBoard,
   type AttendanceDashboard,
 } from '@/api/services/teacherAttendance'
 import { connectLiveTopic } from '@/api/services/live'
+import { addDaysISO, mondayOfISO } from '@/lib/weeks'
 import { cn } from '@/lib/utils'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Loader } from '@/components/ui/Loader'
 import { DatePicker } from '@/components/ui/DatePicker'
-import { MonthPicker } from '@/components/ui/DatePicker'
 
 // Bo'sh → keldi → kelmadi → kechikdi → bo'sh
 const CYCLE: Record<string, string> = { '': 'present', present: 'absent', absent: 'late', late: '' }
@@ -36,16 +37,50 @@ const DASH_STATUS: Record<string, { label: string; badge: string; dot: string }>
   '': { label: 'Kelmagan', badge: 'bg-slate-100 text-slate-500', dot: 'bg-slate-300' },
 }
 
+const MONTHS = [
+  'Yanvar', 'Fevral', 'Mart', 'Aprel', 'May', 'Iyun',
+  'Iyul', 'Avgust', 'Sentabr', 'Oktabr', 'Noyabr', 'Dekabr',
+]
+
+/** The server refuses longer ranges (TeacherAttendanceController.MaxRangeDays). */
+const MAX_RANGE_DAYS = 93
+
 const weekdayShort = (iso: string) => ['Ya', 'Du', 'Se', 'Ch', 'Pa', 'Ju', 'Sh'][new Date(iso).getDay()] ?? ''
-const isSunday = (iso: string) => new Date(iso).getDay() === 0
+const pad = (n: number) => String(n).padStart(2, '0')
 const today = () => {
   const d = new Date()
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
 }
-const currentMonth = () => today().slice(0, 7)
 const initials = (name: string) =>
   name.split(' ').filter(Boolean).slice(0, 2).map((s) => s[0]?.toUpperCase()).join('')
 const syncLabel = (iso: string) => (iso && iso.length >= 16 ? `${iso.slice(0, 10)} ${iso.slice(11, 16)}` : '—')
+
+/** First and last day of the month that contains `iso`. */
+const monthRange = (iso: string) => {
+  const [y, m] = iso.split('-').map(Number)
+  return { from: `${iso.slice(0, 7)}-01`, to: `${iso.slice(0, 7)}-${pad(new Date(y, m, 0).getDate())}` }
+}
+const daysBetween = (from: string, to: string) => Math.round((Date.parse(to) - Date.parse(from)) / 86_400_000)
+
+const PRESETS: { key: string; label: string; range: () => { from: string; to: string } }[] = [
+  { key: 'thisMonth', label: 'Shu oy', range: () => monthRange(today()) },
+  {
+    key: 'lastMonth',
+    label: "O'tgan oy",
+    range: () => {
+      const [y, m] = today().split('-').map(Number)
+      return monthRange(m === 1 ? `${y - 1}-12-01` : `${y}-${pad(m - 1)}-01`)
+    },
+  },
+  {
+    key: 'thisWeek',
+    label: 'Shu hafta',
+    range: () => {
+      const monday = mondayOfISO(today())
+      return { from: monday, to: addDaysISO(monday, 5) }
+    },
+  },
+]
 
 export function TeacherAttendancePage() {
   return (
@@ -54,9 +89,10 @@ export function TeacherAttendancePage() {
         <h1 className="text-xl font-semibold text-slate-800">O'qituvchilar davomati</h1>
         <p className="text-sm text-slate-400">
           Turniket/FaceID qurilmasidan avtomatik yuklanadi. Kunlik holat — kim keldi, soat nechada, kechikdimi.
+          Dars jadvaliga bog'langan: har kuni faqat o'sha kuni darsi bor ustozlar ko'rsatiladi.
         </p>
       </div>
-      <MonthlyGrid />
+      <RangeGrid />
       <DashboardSection />
     </div>
   )
@@ -109,9 +145,10 @@ function DashboardSection() {
     }
   }
 
-  // Holatni qo'lda almashtirish (admin tuzatishi mumkin — manual sifatida saqlanadi)
-  const cycle = (teacherId: string, current: string) => {
-    if (!dash?.inTeachingPeriod) return
+  // Holatni qo'lda almashtirish (admin tuzatishi mumkin — manual sifatida saqlanadi).
+  // A teacher without lessons that day cannot be marked (the server refuses it too).
+  const cycle = (teacherId: string, current: string, hasLessons: boolean) => {
+    if (!dash?.inTeachingPeriod || !hasLessons) return
     const next = CYCLE[current] ?? 'present'
     setDash((prev) =>
       prev
@@ -203,12 +240,22 @@ function DashboardSection() {
         })}
       </div>
 
+      {!loading && dash && dash.noLessonTeachers > 0 && (
+        <p className="-mt-2 mb-4 text-xs text-slate-400">
+          Bu kuni {dash.noLessonTeachers} nafar ustozning darsi yo'q.
+        </p>
+      )}
+
       {loading ? (
         <Loader label="Yuklanmoqda..." />
-      ) : !dash || dash.rows.length === 0 ? (
+      ) : !dash ? (
         <p className="py-8 text-center text-slate-400">O'qituvchi yo'q</p>
       ) : !dash.inTeachingPeriod ? (
         <p className="py-8 text-center text-slate-400">Bu kun dars jadvali (chorak) davrida emas</p>
+      ) : dash.rows.length === 0 ? (
+        <p className="py-8 text-center text-slate-400">
+          Bu kuni darsi bor ustoz yo'q (yakshanba, bayram yoki jadvalda dars yo'q)
+        </p>
       ) : visibleRows.length === 0 ? (
         <p className="py-8 text-center text-slate-400">Filtrga mos o'qituvchi topilmadi</p>
       ) : (
@@ -239,9 +286,10 @@ function DashboardSection() {
                         )}
                         <div>
                           <div className="font-medium text-slate-800">{r.fullName}</div>
-                          {!r.deviceUserId && (
-                            <div className="text-[11px] text-amber-500">qurilma ID yo'q</div>
-                          )}
+                          <div className="text-[11px] text-slate-400">
+                            {r.hasLessons ? `${r.lessons} ta dars` : "darsi yo'q"}
+                            {!r.deviceUserId && <span className="text-amber-500"> · qurilma ID yo'q</span>}
+                          </div>
                         </div>
                       </div>
                     </td>
@@ -259,10 +307,16 @@ function DashboardSection() {
                     <td className="px-3 py-2 text-center">
                       <button
                         type="button"
-                        onClick={() => cycle(r.teacherId, r.status)}
-                        title="Bosing: qo'lda o'zgartirish"
+                        onClick={() => cycle(r.teacherId, r.status, r.hasLessons)}
+                        disabled={!r.hasLessons}
+                        title={
+                          r.hasLessons
+                            ? "Bosing: qo'lda o'zgartirish"
+                            : "Bu kuni darsi yo'q — belgini yuqoridagi jadvaldan o'chirish mumkin"
+                        }
                         className={cn(
-                          'inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium transition-opacity hover:opacity-80',
+                          'inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium transition-opacity',
+                          r.hasLessons ? 'hover:opacity-80' : 'cursor-default opacity-60',
                           meta.badge,
                         )}
                       >
@@ -282,79 +336,138 @@ function DashboardSection() {
   )
 }
 
-/* ---------------- Oylik jadval (qo'lda belgilash) ---------------- */
+/* ---------------- Range grid (manual marking, tied to the timetable) ---------------- */
 
-function MonthlyGrid() {
-  const [month, setMonth] = useState(currentMonth())
-  const [board, setBoard] = useState<TeacherAttendanceBoard>({ teachers: [], entries: [], quarters: [] })
+const EMPTY_BOARD: TeacherAttendanceRangeBoard = {
+  teachers: [], entries: [], quarters: [], from: '', to: '', days: [], lessons: [],
+}
+
+/** Why a day has no lessons for anybody — or, failing that, for this teacher. */
+const noLessonReason = (d: TeacherAttendanceDay) =>
+  d.isHoliday
+    ? d.holidayName ? `Bayram: ${d.holidayName}` : 'Bayram'
+    : !d.inQuarter
+      ? 'Dars jadvali (chorak) davri emas'
+      : "Dars yo'q"
+
+function RangeGrid() {
+  const [range, setRange] = useState(() => monthRange(today()))
+  const [board, setBoard] = useState<TeacherAttendanceRangeBoard>(EMPTY_BOARD)
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  // Only the latest request may fill the grid — switching ranges quickly must not show an older one.
+  const requestRef = useRef(0)
 
-  const load = useCallback((m: string) => {
+  const load = useCallback((from: string, to: string) => {
+    const id = ++requestRef.current
     setLoading(true)
-    getTeacherAttendance(m)
-      .then(setBoard)
-      .finally(() => setLoading(false))
+    setError(null)
+    getTeacherAttendanceRange(from, to)
+      .then((b) => id === requestRef.current && setBoard(b))
+      .catch((e) => id === requestRef.current && setError(e?.response?.data?.message ?? "Davomatni yuklab bo'lmadi"))
+      .finally(() => id === requestRef.current && setLoading(false))
   }, [])
 
-  // eslint-disable-next-line react-hooks/set-state-in-effect -- oy o'zgarganda ma'lumotni qayta yuklaymiz, yangi so'rovdan oldin "yuklanmoqda" holati (maqsadli)
-  useEffect(() => load(month), [month, load])
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- reload when the range changes; the "loading" state before the request is intended
+  useEffect(() => load(range.from, range.to), [range, load])
 
-  // Oydagi ish kunlari ("yyyy-MM-dd") — yakshanba (dam olish) chiqarib tashlanadi.
-  const days = useMemo(() => {
-    const [y, mo] = month.split('-').map(Number)
-    const count = new Date(y, mo, 0).getDate()
-    return Array.from({ length: count }, (_, i) => `${month}-${String(i + 1).padStart(2, '0')}`)
-      .filter((d) => !isSunday(d))
-  }, [month])
+  const onFrom = (value: string) => {
+    if (!value) return
+    setRange((r) => {
+      let to = r.to < value ? value : r.to
+      if (daysBetween(value, to) >= MAX_RANGE_DAYS) to = addDaysISO(value, MAX_RANGE_DAYS - 1)
+      return { from: value, to }
+    })
+  }
+  const onTo = (value: string) => {
+    if (value) setRange((r) => ({ ...r, to: value }))
+  }
+  const activePreset = PRESETS.find((p) => {
+    const r = p.range()
+    return r.from === range.from && r.to === range.to
+  })?.key
 
-  // Sana dars jadvali (chorak) davrida ekanmi. Choraklar bo'sh = cheklov yo'q (hammasi ochiq).
-  const inQuarter = (date: string) =>
-    board.quarters.length === 0 || board.quarters.some((q) => date >= q.start && date <= q.end)
+  // Columns — the range's days without Sundays.
+  const days = useMemo(() => board.days.filter((d) => !d.isSunday), [board.days])
 
-  // teacherId|date → status (tezkor qidiruv uchun)
-  const map = useMemo(() => {
+  // Month headings over the day columns — a range may cross a month boundary.
+  const months = useMemo(() => {
+    const out: { key: string; label: string; span: number }[] = []
+    days.forEach((d) => {
+      const key = d.date.slice(0, 7)
+      const last = out[out.length - 1]
+      if (last?.key === key) last.span++
+      else out.push({ key, label: `${MONTHS[Number(key.slice(5, 7)) - 1] ?? ''} ${key.slice(0, 4)}`, span: 1 })
+    })
+    return out
+  }, [days])
+
+  // teacherId|date → status / lesson count (quick lookup)
+  const entryMap = useMemo(() => {
     const m: Record<string, string> = {}
     board.entries.forEach((e) => (m[`${e.teacherId}|${e.date}`] = e.status))
     return m
   }, [board.entries])
+  const lessonMap = useMemo(() => {
+    const m: Record<string, number> = {}
+    board.lessons.forEach((l) => (m[`${l.teacherId}|${l.date}`] = l.lessons))
+    return m
+  }, [board.lessons])
 
-  const statusOf = (teacherId: string, date: string) => map[`${teacherId}|${date}`] ?? ''
+  const statusOf = (teacherId: string, date: string) => entryMap[`${teacherId}|${date}`] ?? ''
+  /** undefined — the teacher has no lessons that day and cannot be marked. */
+  const lessonsOf = (teacherId: string, date: string): number | undefined => lessonMap[`${teacherId}|${date}`]
   const notYet = (startDate: string, date: string) => !!startDate && date < startDate
+
+  const applyEntry = (teacherId: string, date: string, status: string) =>
+    setBoard((prev) => {
+      const rest = prev.entries.filter((e) => !(e.teacherId === teacherId && e.date === date))
+      return status
+        ? { ...prev, entries: [...rest, { teacherId, date, status, note: '' }] }
+        : { ...prev, entries: rest }
+    })
 
   const cycle = (teacherId: string, date: string) => {
     const teacher = board.teachers.find((x) => x.id === teacherId)
-    if (!inQuarter(date) || (teacher && notYet(teacher.startDate, date))) return
+    if (lessonsOf(teacherId, date) === undefined || (teacher && notYet(teacher.startDate, date))) return
 
     const prevStatus = statusOf(teacherId, date)
     const next = CYCLE[prevStatus] ?? 'present'
-    const apply = (status: string) =>
-      setBoard((prev) => {
-        const rest = prev.entries.filter((e) => !(e.teacherId === teacherId && e.date === date))
-        return status
-          ? { ...prev, entries: [...rest, { teacherId, date, status, note: '' }] }
-          : { ...prev, entries: rest }
-      })
-
-    apply(next)
+    applyEntry(teacherId, date, next)
     setTeacherAttendance(teacherId, date, next || null).catch((e) => {
-      apply(prevStatus)
+      applyEntry(teacherId, date, prevStatus)
       alert(e?.response?.data?.message ?? 'Davomatni saqlashda xatolik')
     })
   }
 
-  const activeOn = (date: string) =>
-    inQuarter(date) ? board.teachers.filter((t) => !notYet(t.startDate, date)) : []
+  // A mark left on a day without lessons (older data, a holiday declared later) cannot be changed,
+  // only removed — it may still cost the teacher a salary deduction.
+  const clearMark = (teacherId: string, date: string) => {
+    const prevStatus = statusOf(teacherId, date)
+    if (!prevStatus || !confirm("Bu kuni ustozning darsi yo'q. Belgini o'chirasizmi?")) return
+    applyEntry(teacherId, date, '')
+    setTeacherAttendance(teacherId, date, null).catch((e) => {
+      applyEntry(teacherId, date, prevStatus)
+      alert(e?.response?.data?.message ?? "Belgini o'chirishda xatolik")
+    })
+  }
+
+  // The day header touches only the teachers who teach that day — those whose every lesson went to
+  // a substitute are left out as well (the server does the same).
+  const teachingOn = (date: string) =>
+    board.teachers.filter((t) => !notYet(t.startDate, date) && (lessonsOf(t.id, date) ?? 0) > 0)
   const allPresent = (date: string) => {
-    const act = activeOn(date)
+    const act = teachingOn(date)
     return act.length > 0 && act.every((t) => statusOf(t.id, date) === 'present')
   }
 
   const toggleDay = (date: string) => {
-    if (!inQuarter(date)) return
+    const act = teachingOn(date)
+    if (act.length === 0) return
     const makePresent = !allPresent(date)
-    const act = activeOn(date)
+    const ids = new Set(act.map((t) => t.id))
     setBoard((prev) => {
-      const rest = prev.entries.filter((e) => e.date !== date)
+      const rest = prev.entries.filter((e) => !(e.date === date && ids.has(e.teacherId)))
       return {
         ...prev,
         entries: makePresent
@@ -362,14 +475,18 @@ function MonthlyGrid() {
           : rest,
       }
     })
-    setTeacherAttendanceDay(date, makePresent ? 'present' : null).catch(() => load(month))
+    setTeacherAttendanceDay(date, makePresent ? 'present' : null).catch((e) => {
+      alert(e?.response?.data?.message ?? 'Davomatni saqlashda xatolik')
+      load(range.from, range.to)
+    })
   }
 
-  const counts = (teacherId: string) => {
-    const c = { present: 0, absent: 0, late: 0 }
+  const totals = (teacherId: string) => {
+    const c = { present: 0, absent: 0, late: 0, lessons: 0 }
     days.forEach((d) => {
-      const st = statusOf(teacherId, d)
-      if (st in c) c[st as keyof typeof c]++
+      const st = statusOf(teacherId, d.date)
+      if (st === 'present' || st === 'absent' || st === 'late') c[st]++
+      c.lessons += lessonsOf(teacherId, d.date) ?? 0
     })
     return c
   }
@@ -378,92 +495,157 @@ function MonthlyGrid() {
     <Card className="p-0">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-4 py-3">
         <div>
-          <h2 className="font-semibold text-slate-800">Oylik jadval</h2>
+          <h2 className="font-semibold text-slate-800">Davomat jadvali</h2>
           <p className="text-xs text-slate-400">
-            Katakni bosing: Keldi → Kelmadi → Kechikdi → bo'sh. Sarlavhani bossangiz — kun hammaga "Keldi" / tozalash.
+            Faqat o'sha kuni darsi bor ustozlar belgilanadi. Katakni bosing: Keldi → Kelmadi → Kechikdi → bo'sh.
+            Sarlavhani bossangiz — o'sha kuni darsi borlarga "Keldi" / tozalash.
           </p>
         </div>
-        <MonthPicker
-          value={month}
-          onChange={(value: string) => setMonth(value)}
-          className="w-44"
-        />
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-2">
+            <DatePicker value={range.from} onChange={onFrom} className="w-40" ariaLabel="Davr boshi" />
+            <span className="text-slate-400">—</span>
+            <DatePicker
+              value={range.to}
+              min={range.from}
+              max={addDaysISO(range.from, MAX_RANGE_DAYS - 1)}
+              onChange={onTo}
+              className="w-40"
+              ariaLabel="Davr oxiri"
+            />
+          </div>
+          <div className="flex w-fit gap-1 rounded-lg bg-slate-100 p-1">
+            {PRESETS.map((p) => (
+              <button
+                key={p.key}
+                type="button"
+                onClick={() => setRange(p.range())}
+                className={cn(
+                  'rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
+                  activePreset === p.key
+                    ? 'bg-white text-slate-800 shadow-sm'
+                    : 'text-slate-600 hover:bg-white hover:text-slate-800',
+                )}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
 
       {loading ? (
         <div className="p-6">
           <Loader label="Yuklanmoqda..." />
         </div>
+      ) : error ? (
+        <p className="m-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>
       ) : board.teachers.length === 0 ? (
-        <p className="py-8 text-center text-slate-400">O'qituvchi yo'q</p>
+        <p className="py-8 text-center text-slate-400">Bu davrda darsi bor ustoz yo'q</p>
       ) : (
         <>
           <div className="overflow-x-auto">
             <table className="w-full border-separate border-spacing-0 text-sm">
               <thead className="whitespace-nowrap">
                 <tr className="bg-slate-50 text-slate-400">
-                  <th className="sticky left-0 z-10 bg-slate-50 px-3 py-2 text-left text-xs font-medium uppercase">
+                  <th
+                    rowSpan={2}
+                    className="sticky left-0 z-10 bg-slate-50 px-3 py-2 text-left text-xs font-medium uppercase"
+                  >
                     F.I.SH
                   </th>
+                  {months.map((m) => (
+                    <th key={m.key} colSpan={m.span} className="px-1 pt-1.5 text-left text-[11px] font-medium text-slate-500">
+                      {m.label}
+                    </th>
+                  ))}
+                  <th rowSpan={2} className="px-2 py-2 text-center text-xs font-medium uppercase">Jami</th>
+                  <th rowSpan={2} className="px-2 py-2 text-center text-xs font-medium uppercase">Darslar</th>
+                </tr>
+                <tr className="bg-slate-50 text-slate-400">
                   {days.map((d) => {
-                    const off = !inQuarter(d)
+                    const off = d.isHoliday || !d.inQuarter
+                    const count = off ? 0 : teachingOn(d.date).length
                     return (
-                      <th key={d} className="px-0.5 py-1 text-center">
+                      <th key={d.date} className="px-0.5 py-1 text-center">
                         <button
                           type="button"
-                          disabled={off}
-                          onClick={() => toggleDay(d)}
+                          disabled={count === 0}
+                          onClick={() => toggleDay(d.date)}
                           title={
                             off
-                              ? 'Dars jadvali (chorak) davri emas'
-                              : allPresent(d)
-                                ? 'Bosing: shu kunni tozalash'
-                                : 'Bosing: hammasi keldi'
+                              ? noLessonReason(d)
+                              : count === 0
+                                ? "Bu kuni darsi bor ustoz yo'q"
+                                : allPresent(d.date)
+                                  ? 'Bosing: darsi borlarni tozalash'
+                                  : `Bosing: darsi bor ${count} ustoz — keldi`
                           }
                           className={cn(
                             'mx-auto flex flex-col items-center rounded-md px-1 py-0.5 transition-colors',
-                            off ? 'cursor-not-allowed opacity-40' : 'hover:bg-brand-50',
+                            count === 0 ? 'cursor-not-allowed opacity-40' : 'hover:bg-brand-50',
                           )}
                         >
-                          <span className="text-[10px] font-normal text-slate-400">{weekdayShort(d)}</span>
-                          <span className="text-xs font-semibold text-slate-600">{d.slice(8)}</span>
+                          <span className="text-[10px] font-normal text-slate-400">{weekdayShort(d.date)}</span>
+                          <span className="text-xs font-semibold text-slate-600">{d.date.slice(8)}</span>
                         </button>
                       </th>
                     )
                   })}
-                  <th className="px-2 py-2 text-center text-xs font-medium uppercase">Jami</th>
                 </tr>
               </thead>
               <tbody>
                 {board.teachers.map((t) => {
-                  const c = counts(t.id)
+                  const c = totals(t.id)
                   return (
                     <tr key={t.id} className="border-t border-slate-100 hover:bg-slate-50/40">
                       <td className="sticky left-0 z-10 whitespace-nowrap bg-white px-3 py-1.5 font-medium text-slate-800">
                         {t.fullName}
                       </td>
                       {days.map((d) => {
-                        const offQuarter = !inQuarter(d)
-                        if (offQuarter || notYet(t.startDate, d)) {
+                        const st = statusOf(t.id, d.date)
+                        const meta = st ? STATUS[st] : null
+                        const count = lessonsOf(t.id, d.date)
+                        const off = d.isHoliday || !d.inQuarter
+
+                        // No lessons that day (or not hired yet): not markable. An old mark is shown and can
+                        // only be removed. "—" = no lessons / holiday, "·" = outside the quarter / not hired yet.
+                        if (count === undefined || notYet(t.startDate, d.date)) {
+                          const noLessons = count === undefined
+                          const reason = noLessons ? noLessonReason(d) : "O'qituvchi hali ishga kirmagan"
                           return (
-                            <td key={d} className="px-0.5 py-1 text-center">
-                              <span
-                                title={offQuarter ? 'Dars jadvali (chorak) davri emas' : "O'qituvchi hali ishga kirmagan"}
-                                className="mx-auto flex h-7 w-7 items-center justify-center rounded-md bg-slate-50 text-slate-200"
-                              >
-                                ·
-                              </span>
+                            <td key={d.date} className={cn('px-0.5 py-1 text-center', d.isHoliday && 'bg-slate-50/70')}>
+                              {meta ? (
+                                <button
+                                  type="button"
+                                  onClick={() => clearMark(t.id, d.date)}
+                                  title={`${meta.label} · ${reason} — bosing: belgini o'chirish`}
+                                  className={cn(
+                                    'mx-auto flex h-7 w-7 items-center justify-center rounded-md text-xs font-bold opacity-50 transition-opacity hover:opacity-80',
+                                    meta.cell,
+                                  )}
+                                >
+                                  {meta.short}
+                                </button>
+                              ) : (
+                                <span
+                                  title={reason}
+                                  className="mx-auto flex h-7 w-7 items-center justify-center rounded-md bg-slate-50 text-slate-300"
+                                >
+                                  {!noLessons || (off && !d.isHoliday) ? '·' : '—'}
+                                </span>
+                              )}
                             </td>
                           )
                         }
-                        const st = statusOf(t.id, d)
-                        const meta = st ? STATUS[st] : null
+
+                        const lessonsLabel = count === 0 ? "darslari o'rindoshga berilgan" : `${count} ta dars`
                         return (
-                          <td key={d} className="px-0.5 py-1 text-center">
+                          <td key={d.date} className="px-0.5 py-1 text-center">
                             <button
                               type="button"
-                              onClick={() => cycle(t.id, d)}
-                              title={meta ? meta.label : 'Belgilash'}
+                              onClick={() => cycle(t.id, d.date)}
+                              title={`${meta ? meta.label : 'Belgilash'} · ${lessonsLabel}`}
                               className={cn(
                                 'mx-auto flex h-7 w-7 items-center justify-center rounded-md text-xs font-bold transition-colors',
                                 meta ? meta.cell : 'bg-slate-50 text-slate-300 hover:bg-brand-50',
@@ -481,6 +663,9 @@ function MonthlyGrid() {
                         <span className="text-slate-300"> / </span>
                         <span className="font-semibold text-amber-600">{c.late}</span>
                       </td>
+                      <td className="whitespace-nowrap px-2 py-1.5 text-center text-xs font-semibold text-slate-600">
+                        {c.lessons}
+                      </td>
                     </tr>
                   )
                 })}
@@ -497,7 +682,10 @@ function MonthlyGrid() {
             <span className="inline-flex items-center gap-1.5">
               <span className="flex h-5 w-5 items-center justify-center rounded bg-amber-100 font-bold text-amber-700">K</span> Kechikdi
             </span>
-            <span className="ml-auto text-slate-400">Jami: Keldi / Kelmadi / Kechikdi</span>
+            <span className="inline-flex items-center gap-1.5">
+              <span className="flex h-5 w-5 items-center justify-center rounded bg-slate-50 text-slate-300">—</span> Dars yo'q / bayram
+            </span>
+            <span className="ml-auto text-slate-400">Jami: Keldi / Kelmadi / Kechikdi · Darslar: davrdagi darslar soni</span>
           </div>
         </>
       )}

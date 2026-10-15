@@ -114,6 +114,9 @@ public static class JournalService
     /// </returns>
     public static async Task<string?> SetEntryAsync(IAppDbContext db, SetJournalEntryRequest req)
     {
+        // Homework status 0..5 (homework-completion.md); the column has no CHECK constraint.
+        if (!HomeworkStatus.IsValid(req.Homework)) return HomeworkStatus.InvalidMessage;
+
         // An archived pupil's journal is closed (client, 2026-10-08).
         var archived = await ArchivedStudents.NamesAsync(db, [req.StudentId]);
         if (archived.Count > 0) return ArchivedStudents.Message(archived);
@@ -173,39 +176,53 @@ public static class JournalService
         // avtomatik belgilaymiz. §5.5 `is_student_grade_required` yoqiq bo'lsa, bu AVTOMATIK
         // belgi baholar to'lgunicha kutadi (rad etilmaydi — aks holda birinchi bahoni ham
         // kiritib bo'lmasdi; batafsil izoh JournalSettingsGuard'da).
-        if (touched
-            && (!flags.GradeRequired || await JournalSettingsGuard.SlotFullyGradedAsync(
-                db, req.ClassId, req.SubjectId, req.Quarter, req.Date, req.Period, subGroup)))
-        {
-            var note = await db.LessonNotes.FirstOrDefaultAsync(n =>
-                n.ClassId == req.ClassId && n.SubjectId == req.SubjectId &&
-                n.Quarter == req.Quarter && n.Date == req.Date && n.Period == req.Period &&
-                n.SubGroup == subGroup && n.OwnerKind == ownerKind);
-            if (note is null)
-            {
-                db.LessonNotes.Add(new LessonNote
-                {
-                    ClassId = req.ClassId,
-                    SubjectId = req.SubjectId,
-                    Quarter = req.Quarter,
-                    Date = req.Date,
-                    Period = req.Period,
-                    SubGroup = subGroup,
-                    OwnerKind = ownerKind,
-                    Conducted = true,
-                });
-                await db.SaveChangesAsync();
-            }
-            else if (!note.Conducted)
-            {
-                note.Conducted = true;
-                await db.SaveChangesAsync();
-            }
-        }
+        if (touched)
+            await AutoConductAsync(db, flags, req.ClassId, req.SubjectId, req.Quarter, req.Date, req.Period,
+                subGroup, ownerKind);
 
         // Push olib tashlandi (2026-10-11): kelmaganlik haqida ota-onaga Telegram — hamshira
         // "Davomat belgilash" ekranidagi tugma bilan yuboradi (DailyAbsenceNotifier).
         return null;
+    }
+
+    /// <summary>
+    /// A journal cell was filled — mark that lesson "o'tildi" (the AUTOMATIC path of
+    /// <see cref="JournalSettingsGuard"/>: with <c>is_student_grade_required</c> on it waits until every
+    /// present pupil has a grade, silently). Shared by <see cref="SetEntryAsync"/> and the homework
+    /// sheet's bulk write (<see cref="HomeworkCompletionService"/>), so both close a lesson the same way.
+    /// </summary>
+    internal static async Task AutoConductAsync(
+        IAppDbContext db, JournalSettingsGuard.Flags flags, string classId, string subjectId, int quarter,
+        string date, int period, int subGroup, string ownerKind)
+    {
+        if (flags.GradeRequired && !await JournalSettingsGuard.SlotFullyGradedAsync(
+                db, classId, subjectId, quarter, date, period, subGroup))
+            return;
+
+        var note = await db.LessonNotes.FirstOrDefaultAsync(n =>
+            n.ClassId == classId && n.SubjectId == subjectId &&
+            n.Quarter == quarter && n.Date == date && n.Period == period &&
+            n.SubGroup == subGroup && n.OwnerKind == ownerKind);
+        if (note is null)
+        {
+            db.LessonNotes.Add(new LessonNote
+            {
+                ClassId = classId,
+                SubjectId = subjectId,
+                Quarter = quarter,
+                Date = date,
+                Period = period,
+                SubGroup = subGroup,
+                OwnerKind = ownerKind,
+                Conducted = true,
+            });
+            await db.SaveChangesAsync();
+        }
+        else if (!note.Conducted)
+        {
+            note.Conducted = true;
+            await db.SaveChangesAsync();
+        }
     }
 
     public static async Task ClearEntryAsync(

@@ -13,7 +13,7 @@
 import { hasFinanceAccess } from '@/pages/admin/billing/access'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Wallet, Save, Clock, Percent, Lock } from 'lucide-react'
-import { getSalaryRates, saveSalaryRates, setBonusBulk, type SalaryRates } from '@/api/services/salaryRates'
+import { getSalaryRates, saveSalaryRates, setBonusBulk, teacherMonthPay, type SalaryRates } from '@/api/services/salaryRates'
 import { getSalaryReport } from '@/api/services/finance'
 import { billingErrorMessage } from '@/api/services/billingError'
 import type { SalaryReportRow } from '@/types'
@@ -123,15 +123,13 @@ function SalaryCalcView() {
   // eslint-disable-next-line react-hooks/set-state-in-effect -- oy o'zgarganda ma'lumotni qayta yuklaymiz, yangi so'rovdan oldin "yuklanmoqda" holati (maqsadli)
   useEffect(() => load(month), [month, load])
 
-  // Joriy kiritilgan narxlar bo'yicha jonli qayta hisob (kelmagan kun darslari chegiriladi, ustama qo'shiladi).
+  // Joriy kiritilgan narxlar bo'yicha jonli qayta hisob (kelmagan kun darslari chegiriladi, ustama, sertifikat/ustamalar,
+  // bonus va jarima — serverdagi bilan bir xil formula: teacherMonthPay).
   const liveTeachers = useMemo(() => {
     if (!data) return []
     const rateOf = (c: string) =>
       c === 'oliy' ? rates.oliy : c === '1' ? rates.t1 : c === '2' ? rates.t2 : c === 'mutaxasis' ? rates.mutaxasis : 0
-    return data.teachers.map((t) => {
-      const base = Math.max(0, t.monthlyLessons - t.missedLessons + (t.substitutionLessons ?? 0)) * rateOf(t.category)
-      return { ...t, monthlySalary: base * (1 + (t.bonusPct || 0) / 100) }
-    })
+    return data.teachers.map((t) => ({ ...t, monthlySalary: teacherMonthPay(t, rateOf(t.category)) }))
   }, [data, rates])
 
   const positions = useMemo(

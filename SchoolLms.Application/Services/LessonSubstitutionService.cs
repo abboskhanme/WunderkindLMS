@@ -44,11 +44,15 @@ public static class LessonSubstitutionService
     private static int Dow(DateOnly d) => ((int)d.DayOfWeek + 6) % 7;
 
     /// <summary>(quarter, week, day) of a date, or null when it is in no quarter or on a Sunday.</summary>
-    public static async Task<(int Quarter, int Week, int Day)?> PlaceAsync(IAppDbContext db, DateOnly date, CancellationToken ct = default)
+    public static async Task<(int Quarter, int Week, int Day)?> PlaceAsync(IAppDbContext db, DateOnly date, CancellationToken ct = default) =>
+        Place(await db.Quarters.AsNoTracking().ToListAsync(ct), date);
+
+    /// <summary><see cref="PlaceAsync"/> over quarters already loaded — for callers that place many dates.</summary>
+    public static (int Quarter, int Week, int Day)? Place(IReadOnlyList<QuarterPeriod> quarters, DateOnly date)
     {
         if (Dow(date) > 5) return null;
         var iso = Iso(date);
-        var quarter = (await db.Quarters.AsNoTracking().ToListAsync(ct))
+        var quarter = quarters
             .FirstOrDefault(q => string.CompareOrdinal(iso, q.StartDate) >= 0 && string.CompareOrdinal(iso, q.EndDate) <= 0);
         if (quarter is null) return null;
         var week = PortalSchedule.WeekOf(ScheduleMath.GetQuarterWeeks(quarter.StartDate, quarter.EndDate), iso);

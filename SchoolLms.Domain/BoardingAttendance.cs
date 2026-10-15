@@ -54,6 +54,31 @@ public static class BoardingSession
         session == Dorm ? "attendanceDorm" : "attendanceEvening";
 }
 
+/// <summary>
+/// Dorm commandants by gender (client, 2026-10-15: "yotoqxona o'quvchilarini o'g'il bolalar va qiz bolalarga
+/// ajratish — ayol va erkak komendant davomat qila olishi uchun"). A narrowing flag kept next to
+/// <c>attendanceDorm</c> in an access role (Boshqaruv → Rollar): its holder sees, marks and keeps the roster of
+/// only that half of the dormitory. Both flags or neither — the whole dormitory; admin and superadmin — always whole.
+/// Pupils whose gender is not on file are left to whole-dormitory holders.
+/// </summary>
+public static class DormGender
+{
+    public const string GirlsOnlyKey = "dormGirlsOnly";
+    public const string BoysOnlyKey = "dormBoysOnly";
+
+    public const string Female = "female";
+    public const string Male = "male";
+
+    public static readonly IReadOnlyList<string> Keys = [GirlsOnlyKey, BoysOnlyKey];
+
+    /// <summary>The one gender the holder is limited to, or null for the whole dormitory.</summary>
+    public static string? Of(bool girlsOnly, bool boysOnly) =>
+        girlsOnly == boysOnly ? null : girlsOnly ? Female : Male;
+
+    /// <summary>Shown in error messages and on screen.</summary>
+    public static string Label(string gender) => gender == Female ? "qizlar" : "o'g'il bolalar";
+}
+
 /// <summary>Holatlar. Kechki darsda: keldi / kelmadi / sababli; yotoqxonada: joyida / yo'q /
 /// ruxsat bilan — ma'nosi bir xil, ekrandagi yorliq sessiyaga qarab.</summary>
 public static class BoardingStatus

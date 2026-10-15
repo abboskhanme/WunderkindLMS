@@ -52,14 +52,15 @@ internal static class RoleAssignment
 
     /// <summary>
     /// Every section key of <paramref name="permissions"/> is one the caller holds at that level
-    /// (a ":view" key — full or view; a full key — full). Page grants give no server access and are skipped.
+    /// (a ":view" key — full or view; a full key — full). Page grants give no server access and are skipped,
+    /// and so are the dorm gender flags (<see cref="DormGender"/>): they only ever narrow access.
     /// </summary>
     public static bool Within(ClaimsPrincipal user, IEnumerable<string> permissions)
     {
         if (IsFullAccess(user)) return true;
         foreach (var key in permissions)
         {
-            if (key.StartsWith('/')) continue;
+            if (key.StartsWith('/') || DormGender.Keys.Contains(key)) continue;
             var held = key.EndsWith(Roles.ViewSuffix, StringComparison.Ordinal)
                 ? user.HasReadPerm(key[..^Roles.ViewSuffix.Length])
                 : user.HasPerm(key);

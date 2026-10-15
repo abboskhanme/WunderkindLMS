@@ -705,6 +705,137 @@ namespace SchoolLms.Infrastructure.Migrations
                     b.ToTable("audit_logs", (string)null);
                 });
 
+            modelBuilder.Entity("SchoolLms.Domain.AutoMessageLogEntry", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("At")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("at");
+
+                    b.Property<long?>("ChatId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("chat_id");
+
+                    b.Property<string>("Period")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)")
+                        .HasColumnName("period");
+
+                    b.Property<string>("RuleKey")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("rule_key");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("status");
+
+                    b.Property<string>("StudentId")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("student_id");
+
+                    b.Property<string>("Text")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("text");
+
+                    b.HasKey("Id")
+                        .HasName("pk_auto_message_log");
+
+                    b.HasIndex("At")
+                        .HasDatabaseName("ix_auto_message_log_at");
+
+                    b.HasIndex("StudentId")
+                        .HasDatabaseName("ix_auto_message_log_student_id");
+
+                    b.HasIndex("RuleKey", "Period", "StudentId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_auto_message_log_no_chat")
+                        .HasFilter("chat_id is null");
+
+                    b.HasIndex("RuleKey", "Period", "StudentId", "ChatId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_auto_message_log_chat")
+                        .HasFilter("chat_id is not null");
+
+                    b.ToTable("auto_message_log", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_auto_message_log_status", "status in ('sent','failed','no_telegram')");
+                        });
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.AutoMessageRule", b =>
+                {
+                    b.Property<string>("Key")
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("key");
+
+                    b.Property<int>("DayOfMonth")
+                        .HasColumnType("integer")
+                        .HasColumnName("day_of_month");
+
+                    b.Property<bool>("Enabled")
+                        .HasColumnType("boolean")
+                        .HasColumnName("enabled");
+
+                    b.Property<string>("LastPeriod")
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)")
+                        .HasColumnName("last_period");
+
+                    b.Property<DateTimeOffset?>("LastRunAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("last_run_at");
+
+                    b.Property<decimal>("MinAmount")
+                        .HasPrecision(14, 2)
+                        .HasColumnType("numeric(14,2)")
+                        .HasColumnName("min_amount");
+
+                    b.Property<string>("SendTime")
+                        .IsRequired()
+                        .HasMaxLength(5)
+                        .HasColumnType("character varying(5)")
+                        .HasColumnName("send_time");
+
+                    b.Property<string>("Text")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("text");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasColumnType("text")
+                        .HasColumnName("updated_by");
+
+                    b.HasKey("Key")
+                        .HasName("pk_auto_message_rules");
+
+                    b.ToTable("auto_message_rules", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_auto_message_rules_day", "day_of_month between 1 and 28");
+
+                            t.HasCheckConstraint("ck_auto_message_rules_key", "key in ('absence','invoice','debt','birthday')");
+
+                            t.HasCheckConstraint("ck_auto_message_rules_min", "min_amount >= 0");
+
+                            t.HasCheckConstraint("ck_auto_message_rules_time", "send_time ~ '^([01][0-9]|2[0-3]):[0-5][0-9]$'");
+                        });
+                });
+
             modelBuilder.Entity("SchoolLms.Domain.BellSchedule", b =>
                 {
                     b.Property<Guid>("Id")
@@ -2749,6 +2880,78 @@ namespace SchoolLms.Infrastructure.Migrations
                             t.HasCheckConstraint("ck_exam_attempts_finished", "(status = 'finished') = (finished_at is not null) and (finished_at is null) = (finish_reason is null)");
 
                             t.HasCheckConstraint("ck_exam_attempts_status", "status in ('in_progress','finished')");
+                        });
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.ExamAwardNotice", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("BroadcastId")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("broadcast_id");
+
+                    b.Property<int>("Delivered")
+                        .HasColumnType("integer")
+                        .HasColumnName("delivered");
+
+                    b.Property<string>("ExamId")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("exam_id");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(8)
+                        .HasColumnType("character varying(8)")
+                        .HasColumnName("kind");
+
+                    b.Property<decimal?>("Percent")
+                        .HasPrecision(5, 2)
+                        .HasColumnType("numeric(5,2)")
+                        .HasColumnName("percent");
+
+                    b.Property<int>("Rank")
+                        .HasColumnType("integer")
+                        .HasColumnName("rank");
+
+                    b.Property<DateTimeOffset>("SentAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("sent_at");
+
+                    b.Property<string>("SentBy")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("sent_by");
+
+                    b.Property<string>("StudentId")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("student_id");
+
+                    b.Property<bool>("WithDiploma")
+                        .HasColumnType("boolean")
+                        .HasColumnName("with_diploma");
+
+                    b.HasKey("Id")
+                        .HasName("pk_exam_award_notices");
+
+                    b.HasIndex("StudentId")
+                        .HasDatabaseName("ix_exam_award_notices_student_id");
+
+                    b.HasIndex("ExamId", "StudentId", "Kind")
+                        .IsUnique()
+                        .HasDatabaseName("ux_exam_award_notices_once");
+
+                    b.ToTable("exam_award_notices", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_exam_award_notices_kind", "kind in ('top','bottom')");
+
+                            t.HasCheckConstraint("ck_exam_award_notices_rank", "rank >= 1");
                         });
                 });
 
@@ -6806,6 +7009,12 @@ namespace SchoolLms.Infrastructure.Migrations
                         .HasColumnType("date")
                         .HasColumnName("closes_on");
 
+                    b.Property<bool>("CollectContact")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("collect_contact");
+
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
@@ -6828,6 +7037,17 @@ namespace SchoolLms.Infrastructure.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("opened_at");
 
+                    b.Property<bool>("PublicLink")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("public_link");
+
+                    b.Property<string>("PublicToken")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("public_token");
+
                     b.Property<string>("Status")
                         .IsRequired()
                         .HasMaxLength(20)
@@ -6843,12 +7063,18 @@ namespace SchoolLms.Infrastructure.Migrations
                     b.HasKey("Id")
                         .HasName("pk_polls");
 
+                    b.HasIndex("PublicToken")
+                        .IsUnique()
+                        .HasDatabaseName("ix_polls_public_token");
+
                     b.HasIndex("Status", "Audience")
                         .HasDatabaseName("ix_polls_status_audience");
 
                     b.ToTable("polls", null, t =>
                         {
-                            t.HasCheckConstraint("ck_polls_audience", "audience in ('parents','teachers')");
+                            t.HasCheckConstraint("ck_polls_audience", "audience in ('parents','teachers','public')");
+
+                            t.HasCheckConstraint("ck_polls_contact_not_anonymous", "not (collect_contact and anonymous)");
 
                             t.HasCheckConstraint("ck_polls_status", "status in ('draft','open','closed')");
                         });
@@ -6865,6 +7091,19 @@ namespace SchoolLms.Infrastructure.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)")
                         .HasColumnName("choice");
+
+                    b.PrimitiveCollection<List<string>>("Choices")
+                        .HasColumnType("text[]")
+                        .HasColumnName("choices");
+
+                    b.Property<DateOnly?>("Date")
+                        .HasColumnType("date")
+                        .HasColumnName("date");
+
+                    b.Property<decimal?>("Number")
+                        .HasPrecision(18, 4)
+                        .HasColumnType("numeric(18,4)")
+                        .HasColumnName("number");
 
                     b.Property<Guid>("QuestionId")
                         .HasColumnType("uuid")
@@ -6909,15 +7148,54 @@ namespace SchoolLms.Infrastructure.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
+                    b.Property<bool>("AllowOther")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("allow_other");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("description");
+
                     b.Property<string>("Kind")
                         .IsRequired()
                         .HasMaxLength(20)
                         .HasColumnType("character varying(20)")
                         .HasColumnName("kind");
 
+                    b.Property<int?>("MaxChoices")
+                        .HasColumnType("integer")
+                        .HasColumnName("max_choices");
+
+                    b.Property<string>("MaxLabel")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("max_label");
+
+                    b.Property<decimal?>("MaxValue")
+                        .HasPrecision(18, 4)
+                        .HasColumnType("numeric(18,4)")
+                        .HasColumnName("max_value");
+
+                    b.Property<int?>("MinChoices")
+                        .HasColumnType("integer")
+                        .HasColumnName("min_choices");
+
+                    b.Property<string>("MinLabel")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("min_label");
+
+                    b.Property<decimal?>("MinValue")
+                        .HasPrecision(18, 4)
+                        .HasColumnType("numeric(18,4)")
+                        .HasColumnName("min_value");
+
                     b.Property<string>("Options")
-                        .HasMaxLength(2000)
-                        .HasColumnType("character varying(2000)")
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)")
                         .HasColumnName("options");
 
                     b.Property<Guid>("PollId")
@@ -6952,7 +7230,7 @@ namespace SchoolLms.Infrastructure.Migrations
 
                     b.ToTable("poll_questions", null, t =>
                         {
-                            t.HasCheckConstraint("ck_poll_questions_kind", "kind in ('nps','stars','choice','text')");
+                            t.HasCheckConstraint("ck_poll_questions_kind", "kind in ('nps','stars','choice','text','multi','dropdown','short','scale','number','date','section')");
 
                             t.HasCheckConstraint("ck_poll_questions_target", "target in ('school','teachers','management')");
                         });
@@ -6969,6 +7247,16 @@ namespace SchoolLms.Infrastructure.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)")
                         .HasColumnName("class_name");
+
+                    b.Property<string>("ContactName")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("contact_name");
+
+                    b.Property<string>("ContactPhone")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("contact_phone");
 
                     b.Property<Guid>("PollId")
                         .HasColumnType("uuid")
@@ -6991,6 +7279,12 @@ namespace SchoolLms.Infrastructure.Migrations
                     b.Property<string>("TeacherId")
                         .HasColumnType("text")
                         .HasColumnName("teacher_id");
+
+                    b.Property<bool>("ViaLink")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("via_link");
 
                     b.HasKey("Id")
                         .HasName("pk_poll_responses");
@@ -9105,6 +9399,113 @@ namespace SchoolLms.Infrastructure.Migrations
                     b.ToTable("teachers", (string)null);
                 });
 
+            modelBuilder.Entity("SchoolLms.Domain.TeacherAllowance", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<decimal>("Amount")
+                        .HasPrecision(14, 2)
+                        .HasColumnType("numeric(14,2)")
+                        .HasColumnName("amount");
+
+                    b.Property<string>("AmountKind")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("amount_kind");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("created_by");
+
+                    b.Property<DateOnly?>("ExpiresOn")
+                        .HasColumnType("date")
+                        .HasColumnName("expires_on");
+
+                    b.Property<string>("FileUrl")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("file_url");
+
+                    b.Property<string>("FromMonth")
+                        .IsRequired()
+                        .HasMaxLength(7)
+                        .HasColumnType("character varying(7)")
+                        .HasColumnName("from_month");
+
+                    b.Property<DateOnly?>("IssuedOn")
+                        .HasColumnType("date")
+                        .HasColumnName("issued_on");
+
+                    b.Property<string>("Level")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("level");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("note");
+
+                    b.Property<string>("Number")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("number");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("source");
+
+                    b.Property<string>("TeacherId")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("teacher_id");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("title");
+
+                    b.Property<string>("ToMonth")
+                        .HasMaxLength(7)
+                        .HasColumnType("character varying(7)")
+                        .HasColumnName("to_month");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id")
+                        .HasName("pk_teacher_allowances");
+
+                    b.HasIndex("TeacherId")
+                        .HasDatabaseName("ix_teacher_allowances_teacher");
+
+                    b.ToTable("teacher_allowances", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_teacher_allowances_amount", "amount >= 0 and (amount_kind <> 'percent' or amount <= 1000)");
+
+                            t.HasCheckConstraint("ck_teacher_allowances_from", "from_month ~ '^[0-9]{4}-(0[1-9]|1[0-2])$'");
+
+                            t.HasCheckConstraint("ck_teacher_allowances_kind", "amount_kind in ('percent','fixed')");
+
+                            t.HasCheckConstraint("ck_teacher_allowances_source", "source in ('certificate','ustama')");
+
+                            t.HasCheckConstraint("ck_teacher_allowances_to", "to_month is null or (to_month ~ '^[0-9]{4}-(0[1-9]|1[0-2])$' and to_month >= from_month)");
+                        });
+                });
+
             modelBuilder.Entity("SchoolLms.Domain.TeacherAttendance", b =>
                 {
                     b.Property<string>("Id")
@@ -9741,6 +10142,16 @@ namespace SchoolLms.Infrastructure.Migrations
                         .HasConstraintName("fk_assignment_materials_assignments_assignment_id");
                 });
 
+            modelBuilder.Entity("SchoolLms.Domain.AutoMessageLogEntry", b =>
+                {
+                    b.HasOne("SchoolLms.Domain.Student", null)
+                        .WithMany()
+                        .HasForeignKey("StudentId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_auto_message_log_students_student_id");
+                });
+
             modelBuilder.Entity("SchoolLms.Domain.BellScheduleOwner", b =>
                 {
                     b.HasOne("SchoolLms.Domain.BellSchedule", null)
@@ -10148,6 +10559,23 @@ namespace SchoolLms.Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("fk_exam_attempts_exam_participants_participant_id");
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.ExamAwardNotice", b =>
+                {
+                    b.HasOne("SchoolLms.Domain.Exam", null)
+                        .WithMany()
+                        .HasForeignKey("ExamId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_exam_award_notices_exams_exam_id");
+
+                    b.HasOne("SchoolLms.Domain.Student", null)
+                        .WithMany()
+                        .HasForeignKey("StudentId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_exam_award_notices_students_student_id");
                 });
 
             modelBuilder.Entity("SchoolLms.Domain.ExamInvitation", b =>
@@ -11227,6 +11655,16 @@ namespace SchoolLms.Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_survey_submissions_surveys_survey_id");
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.TeacherAllowance", b =>
+                {
+                    b.HasOne("SchoolLms.Domain.Teacher", null)
+                        .WithMany()
+                        .HasForeignKey("TeacherId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_teacher_allowances_teachers_teacher_id");
                 });
 
             modelBuilder.Entity("SchoolLms.Domain.TelegramAccount", b =>

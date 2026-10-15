@@ -7,7 +7,11 @@ using SchoolLms.Infrastructure.Data;
 
 namespace SchoolLms.Server.Controllers;
 
-/// <summary>So'rovnomalar va NPS (client, 2026-10-07) — the admin side; Polls.cs, PollService.cs.</summary>
+/// <summary>
+/// So'rovnomalar va NPS (client, 2026-10-07) — the admin side; Polls.cs, PollService.cs. Google Forms
+/// parity (2026-10-15): "Nusxa olish", the "Javoblar" table and its Excel export
+/// (docs/modules/surveys-forms.md). The public link's endpoints live in PublicPollsController.
+/// </summary>
 [ApiController]
 [Authorize]
 [AdminPerm(PollService.Permission, GatedRead = true)]
@@ -41,6 +45,15 @@ public sealed class PollsController(AppDbContext db, TelegramService telegram, I
         return (await PollService.GetAsync(db, id, ct))!;
     }
 
+    /// <summary>"Nusxa olish" — the same form as a new draft.</summary>
+    [HttpPost("{id:guid}/duplicate")]
+    public async Task<ActionResult<PollDto>> Duplicate(Guid id, CancellationToken ct)
+    {
+        var copy = await PollService.DuplicateAsync(db, id, ActorId, ct);
+        if (copy is null) return NotFound(new { message = PollService.NotFoundMessage });
+        return (await PollService.GetAsync(db, copy.Id, ct))!;
+    }
+
     [HttpPost("{id:guid}/open")]
     public async Task<ActionResult<PollDto>> Open(Guid id, CancellationToken ct)
     {
@@ -72,6 +85,7 @@ public sealed class PollsController(AppDbContext db, TelegramService telegram, I
     {
         var poll = await db.Polls.FindAsync([id], ct);
         if (poll is null) return NotFound(new { message = "So'rovnoma topilmadi" });
+        if (poll.Audience == PollAudience.Public) return BadRequest(new { message = "Havola orqali so'rovnomani bot e'lon qilmaydi — havolani o'zingiz ulashing" });
         if (!PollService.IsAccepting(poll, AppClock.Today)) return BadRequest(new { message = "Avval so'rovnomani oching" });
         if (poll.NotifiedAt is not null) return Conflict(new { message = "E'lon allaqachon yuborilgan" });
         if (!telegram.IsConfigured) return BadRequest(new { message = "Telegram bot sozlanmagan" });
@@ -91,4 +105,20 @@ public sealed class PollsController(AppDbContext db, TelegramService telegram, I
     [HttpGet("{id:guid}/results")]
     public async Task<ActionResult<PollResultsDto>> Results(Guid id, [FromQuery] string? className, CancellationToken ct) =>
         await PollService.ResultsAsync(db, id, className, ct) is { } dto ? dto : NotFound(new { message = "So'rovnoma topilmadi" });
+
+    /// <summary>"Javoblar": one row per response, newest first.</summary>
+    [HttpGet("{id:guid}/responses")]
+    public async Task<ActionResult<PollResponsesDto>> Responses(
+        Guid id, [FromQuery] string? className, [FromQuery] int page = 1, [FromQuery] int pageSize = 20, CancellationToken ct = default) =>
+        await PollService.ResponsesAsync(db, id, className, page, pageSize, ct) is { } dto ? dto : NotFound(new { message = PollService.NotFoundMessage });
+
+    /// <summary>The same rows as an .xlsx (every page, the class filter as on screen).</summary>
+    [HttpGet("{id:guid}/responses/export")]
+    public async Task<IActionResult> ExportResponses(Guid id, [FromQuery] string? className, CancellationToken ct)
+    {
+        var xlsx = await PollService.ExportAsync(db, id, className, ct);
+        if (xlsx is null) return NotFound(new { message = PollService.NotFoundMessage });
+        return File(xlsx, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            $"sorovnoma-javoblar-{AppClock.Today:yyyy-MM-dd}.xlsx");
+    }
 }

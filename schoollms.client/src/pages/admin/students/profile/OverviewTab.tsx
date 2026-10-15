@@ -16,6 +16,7 @@ import { cn, formatDate } from '@/lib/utils'
 import { StatCard } from '@/components/ui/StatCard'
 import { ProfileEmpty, ProfileSection } from './ProfileUi'
 import { formatPhone } from '@/lib/phone'
+import { HOMEWORK_STATUSES, homeworkTallyFromCounts, percentColor, tallyCount } from '@/lib/homeworkStatus'
 
 /**
  * Kartochkaning "Umumiy" tab'i — docs/modules/students-parity.md §2.3 (S-10:
@@ -35,6 +36,12 @@ const uzMonths = [
 ]
 const monthLabel = (m: string) =>
   m && m.length >= 7 ? `${uzMonths[Number(m.slice(5, 7)) - 1] ?? m} ${m.slice(0, 4)}` : m
+
+/** Chart series of the homework statuses — "Uy vazifa: <symbol> <word>" (lib/homeworkStatus). */
+const HW_KEY: Record<number, string> = Object.fromEntries(
+  HOMEWORK_STATUSES.map((s) => [s.value, `Uy vazifa: ${s.symbol} ${s.label}`]),
+)
+const HW_FILL: Record<number, string> = { 1: '#16a34a', 3: '#f59e0b', 2: '#dc2626', 4: '#7c3aed', 5: '#94a3b8' }
 
 const evalColors = ['#1f47f5', '#16a34a', '#f59e0b', '#dc2626', '#7c3aed', '#0891b2', '#db2777', '#65a30d']
 // Har fan uchun alohida rang (statistika uslubidagi rangli nuqtalar/legend uchun)
@@ -180,17 +187,28 @@ export function OverviewTab({ data, card, showPersonal = true }: Props) {
     [data],
   )
 
+  // Uy vazifa — besh holat (homework-completion.md): ustunda bir-birining ustiga, so'z bilan.
   const marksChart = useMemo(
     () =>
       data.marksTrend.map((m) => ({
         name: `${m.quarter}-chorak`,
-        'Uy vazifa ✓': m.homeworkDone,
-        'Uy vazifa ✗': m.homeworkMissed,
+        [HW_KEY[1]]: m.homeworkDone,
+        [HW_KEY[3]]: m.homeworkPartial ?? 0,
+        [HW_KEY[2]]: m.homeworkMissed,
+        [HW_KEY[4]]: m.homeworkLate ?? 0,
+        [HW_KEY[5]]: m.homeworkAbsent ?? 0,
         'Xulq ✓': m.behaviorGood,
         'Xulq ✗': m.behaviorBad,
       })),
     [data],
   )
+  const homeworkTotals = homeworkTallyFromCounts({
+    done: data.homeworkDone,
+    partial: data.homeworkPartial ?? 0,
+    notDone: data.homeworkMissed,
+    late: data.homeworkLate ?? 0,
+    absent: data.homeworkAbsent ?? 0,
+  })
 
   return (
     <div className="space-y-6">
@@ -308,7 +326,25 @@ export function OverviewTab({ data, card, showPersonal = true }: Props) {
         </ProfileSection>
 
         {marksChart.length > 0 && (
-          <ProfileSection title="Uy vazifa va xulq (choraklik)" icon={BookOpen}>
+          <ProfileSection
+            title="Uy vazifa va xulq (choraklik)"
+            icon={BookOpen}
+            action={
+              homeworkTotals.percent != null ? (
+                <span className="text-xs text-slate-400" title="(bajardi + ½·chala + ½·kech qoldi) ÷ belgilanganlar">
+                  Bajarilish{' '}
+                  <b className={cn('text-sm', percentColor(homeworkTotals.percent))}>{homeworkTotals.percent}%</b>
+                </span>
+              ) : undefined
+            }
+          >
+            <div className="mb-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-500">
+              {HOMEWORK_STATUSES.map((s) => (
+                <span key={s.value}>
+                  <b className={s.text}>{s.symbol}</b> {s.label}: <b className="text-slate-700">{tallyCount(homeworkTotals, s.value)}</b>
+                </span>
+              ))}
+            </div>
             <ResponsiveContainer width="100%" height={280}>
               <BarChart data={marksChart} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={gridStroke} />
@@ -316,10 +352,12 @@ export function OverviewTab({ data, card, showPersonal = true }: Props) {
                 <YAxis allowDecimals={false} tickLine={false} axisLine={false} tick={axisTick} />
                 <Tooltip contentStyle={tooltipStyle} />
                 <Legend />
-                <Bar dataKey="Uy vazifa ✓" fill="#16a34a" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="Uy vazifa ✗" fill="#dc2626" radius={[4, 4, 0, 0]} />
+                {HOMEWORK_STATUSES.map((s) => (
+                  <Bar key={s.value} dataKey={HW_KEY[s.value]} stackId="hw" fill={HW_FILL[s.value]} />
+                ))}
                 <Bar dataKey="Xulq ✓" fill="#1f47f5" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="Xulq ✗" fill="#f59e0b" radius={[4, 4, 0, 0]} />
+                {/* Pink, not amber: amber is "− Chala" in the homework stack next to it. */}
+                <Bar dataKey="Xulq ✗" fill="#db2777" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </ProfileSection>

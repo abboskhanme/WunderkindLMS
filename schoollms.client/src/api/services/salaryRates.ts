@@ -16,8 +16,31 @@ export interface TeacherPayrollRow {
   bonusPct: number
   /** O'rindosh ustoz: boshqalar o'rniga o'tilgan darslar minus o'z darsi boshqaga berilgani */
   substitutionLessons?: number
-  /** Hisoblangan oylik maosh (davomatga moslangan + ustama, so'm) */
+  /** Hisoblangan oylik maosh (davomatga moslangan + ustama + sertifikat/ustamalar + bonus − jarima, so'm) */
   monthlySalary: number
+  /** Sertifikat va ustamalar — dars pulidan foiz (shu oy) */
+  allowancePct?: number
+  /** Sertifikat va ustamalar — qat'iy summa (shu oy; darssiz oyda 0) */
+  allowanceFixed?: number
+  /** Moliya → Bonus (shu oy) */
+  adjustmentBonus?: number
+  /** Moliya → Jarima (shu oy) */
+  penalty?: number
+}
+
+/**
+ * Jonli qayta hisob (narx kiritilayotganda): server bilan bir xil formula (TeacherPay).
+ * Dars puli = (reja − kelmagan + o'rindosh) × narx; ustama va foizli sertifikat/ustamalar — dars pulidan;
+ * keyin qat'iy summalar, bonus va jarima. Oy hech qachon 0 dan pastga tushmaydi.
+ */
+export function teacherMonthPay(row: TeacherPayrollRow, rate: number): number {
+  const lessonPay = Math.max(0, row.monthlyLessons - row.missedLessons + (row.substitutionLessons ?? 0)) * rate
+  const extras =
+    (lessonPay * ((row.bonusPct || 0) + (row.allowancePct ?? 0))) / 100 +
+    (row.allowanceFixed ?? 0) +
+    (row.adjustmentBonus ?? 0) -
+    (row.penalty ?? 0)
+  return Math.max(0, lessonPay + extras)
 }
 
 export interface SalaryRates {
@@ -102,6 +125,36 @@ export interface TeacherSalaryDetail {
     absentTeacherName: string
     substituteTeacherName: string
   }[]
+  /** Sertifikat va ustamalar shu oyda qo'shgan summa */
+  allowanceAmount?: number
+  allowances?: SalaryAllowanceLine[]
+  /** Moliya → Bonus (shu oy) */
+  adjustmentBonus?: number
+  /** Moliya → Jarima (shu oy) */
+  penalty?: number
+  adjustments?: SalaryAdjustmentLine[]
+}
+
+/** Shu oy oylikka qo'shilgan bitta sertifikat / ustama */
+export interface SalaryAllowanceLine {
+  id: string
+  source: 'certificate' | 'ustama'
+  title: string
+  amountKind: 'percent' | 'fixed'
+  /** Sozlama: foiz yoki so'm */
+  amount: number
+  /** Shu oyda qo'shgan summa (so'm) */
+  value: number
+}
+
+/** Shu oyning bitta bonusi yoki jarimasi (bekor qilinganlar yo'q) */
+export interface SalaryAdjustmentLine {
+  id: string
+  kind: 'bonus' | 'penalty'
+  reason: string
+  amount: number
+  comment: string | null
+  createdAt: string
 }
 
 export async function getTeacherSalaryDetail(teacherId: string, month: string): Promise<TeacherSalaryDetail> {

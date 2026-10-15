@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { NotebookText, Check, CheckCircle2, Download, Upload, ChevronRight } from 'lucide-react'
+import { NotebookText, Check, CheckCircle2, ClipboardCheck, Download, Upload, ChevronRight } from 'lucide-react'
 import { Link, useParams } from 'react-router-dom'
 import type {
   AbsenceReason,
@@ -34,6 +34,7 @@ import {
 import { quarters } from '@/config/constants'
 import { getCurrentQuarterAndWeek } from '@/lib/weeks'
 import { formatDate, cn } from '@/lib/utils'
+import { homeworkMeta } from '@/lib/homeworkStatus'
 import { Card } from '@/components/ui/Card'
 import { Loader } from '@/components/ui/Loader'
 import { Button } from '@/components/ui/Button'
@@ -548,6 +549,13 @@ export function JournalPage() {
               <span className="text-xs text-slate-400">
                 Mavzu va uy vazifani to'ldiradi — darsni "o'tilgan" qilmaydi.
               </span>
+              {/* Shu sinf+fanning uy vazifasi jadvali (homework-completion.md). */}
+              <Link
+                to={`/admin/journal-homework?ownerId=${encodeURIComponent(classId)}&subjectId=${encodeURIComponent(subjectId)}`}
+                className="ml-auto inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50"
+              >
+                <ClipboardCheck className="h-4 w-4" /> Uy vazifasi jadvali
+              </Link>
             </div>
           )}
 
@@ -896,6 +904,8 @@ function JournalRow({
         const sg = c.subGroup ?? 0
         const entry = entryFor(s.id, c.date, c.period)
         const late = entry?.reasonId ? reasonIsLate(entry.reasonId) : false
+        // Uyga vazifa belgisi — besh holat, belgisi va rangi bilan (homework-completion.md).
+        const hw = homeworkMeta(entry?.homework)
         // Katakda bitta qiymat: baho → sabab nomi → (dars o'tilgan bo'lsa) ✓ keldi.
         const content =
           entry?.grade != null ? (
@@ -920,14 +930,13 @@ function JournalRow({
             {entry?.grade != null && late && (
               <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-amber-400" title="Kech keldi" />
             )}
-            {entry?.homework ? (
+            {hw ? (
               <span
-                title={entry.homework === 1 ? 'Uy vazifa: qildi' : 'Uy vazifa: qilmadi'}
-                className={cn(
-                  'absolute bottom-1 left-1.5 h-1.5 w-1.5 rounded-sm',
-                  entry.homework === 1 ? 'bg-emerald-500' : 'bg-red-500',
-                )}
-              />
+                title={`Uy vazifa: ${hw.label}`}
+                className={cn('absolute bottom-0.5 left-1 text-[9px] font-bold leading-none', muted ? '' : hw.text)}
+              >
+                {hw.symbol}
+              </span>
             ) : null}
             {entry?.behavior ? (
               <span

@@ -189,6 +189,13 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<BoardingAttendance> BoardingAttendance => Set<BoardingAttendance>();
     // Kechki dars va yotoqxona ro'yxatlari — qo'lda, sanali (2026-10-11).
     public DbSet<BoardingRosterEntry> BoardingRosters => Set<BoardingRosterEntry>();
+    // Automatic Telegram messages to parents (auto-messages.md, 2026-10-13).
+    public DbSet<AutoMessageRule> AutoMessageRules => Set<AutoMessageRule>();
+    public DbSet<AutoMessageLogEntry> AutoMessageLog => Set<AutoMessageLogEntry>();
+    // Teacher certificates and named allowances paid with the salary (teacher-allowances.md, 2026-10-15).
+    public DbSet<TeacherAllowance> TeacherAllowances => Set<TeacherAllowance>();
+    // Thank-you / warning messages after a test (exam-awards.md, 2026-10-15).
+    public DbSet<ExamAwardNotice> ExamAwardNotices => Set<ExamAwardNotice>();
 
     // Admission, block test and seasonal assessment (admission-and-testing.md §5).
     // Configuration: ExamModel.cs — `leads.admission_status` and
@@ -502,6 +509,9 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
         LeadEnrolModel.Apply(b);
         NotificationStateModel.Apply(b);
         BoardingAttendanceModel.Apply(b);
+        AutoMessagesModel.Apply(b);
+        TeacherAllowancesModel.Apply(b);
+        ExamAwardsModel.Apply(b);
 
         // ----- Admission, block test, seasonal assessment (admission-and-testing.md §5) -----
         // Twelve tables plus `leads.admission_status` and one `school_meta` flag,

@@ -30,18 +30,10 @@ public static class SalaryLedger
 
         // Oylik maosh — dars jadvali + toifa narxidan; har oy DAVOMATga moslanadi (kelmagan kun chegiriladi).
         var meta = await db.SchoolMeta.FirstOrDefaultAsync();
-        // Faqat chorak (dars jadvali) davridagi oylar hisoblanadi — tashqaridagi oylarga maosh yo'q.
-        var quarters = await TeacherSalaryCalc.QuarterRangesAsync(db);
         var byWeekday = (await TeacherSalaryCalc.LessonsByWeekdayAsync(db)).GetValueOrDefault(teacher.Id)
                         ?? new int[6];
         var plannedMonthly = TeacherSalaryCalc.WithBonus(
             TeacherSalaryCalc.Monthly(byWeekday.Sum(), teacher.Category, meta), teacher.BonusPct);
-        // Kelmagan (absent) kunlar — oy bo'yicha guruhlangan.
-        var absentByMonth = (await db.TeacherAttendances
-                .Where(a => a.TeacherId == teacher.Id && a.Status == "absent" && a.Date.Length >= 7)
-                .Select(a => a.Date).ToListAsync())
-            .GroupBy(d => d[..7])
-            .ToDictionary(g => g.Key, g => (IEnumerable<string>)g.ToList());
 
         // O'qituvchi ishga kirgan KUN (yangi maydon yoki eski oy-01). Birinchi oy shu kundan qisman.
         var startDate = TeacherSalaryCalc.StartDateOf(teacher);
@@ -59,18 +51,18 @@ public static class SalaryLedger
             .GroupBy(p => p.Month)
             .ToDictionary(g => g.Key, g => g.Sum(x => x.Amount));
 
-        var substitutions = await LessonSubstitutionService.MonthDeltaAsync(db);
+        // One calculation with the salary table (TeacherPay): + certificates, allowances, bonuses, fines (2026-10-15).
+        var pay = await TeacherPayContext.LoadAsync(db, teacher.Id);
         var months = new List<MonthSalaryDto>();
         foreach (var month in TuitionService.MonthRange(startMonth, toMonth))
         {
-            var expected = TeacherSalaryCalc.MonthlyForMonth(
-                byWeekday, teacher.Category, meta, month, startDate,
-                absentByMonth.GetValueOrDefault(month) ?? Enumerable.Empty<string>(), teacher.BonusPct, quarters,
-                substitutions.GetValueOrDefault((teacher.Id, month)));
+            var p = pay.For(teacher, month);
+            var expected = p.Total;
             var paid = paidByMonth.GetValueOrDefault(month, 0m);
             var remaining = expected - paid;
             var status = remaining <= 0 ? "paid" : paid > 0 ? "partial" : "unpaid";
-            months.Add(new MonthSalaryDto(month, expected, paid, remaining, status));
+            months.Add(new MonthSalaryDto(month, expected, paid, remaining, status,
+                p.LessonPay, p.UstamaAmount, p.AllowanceAmount, p.Bonus, p.Penalty, p.SubstitutionLessons));
         }
 
         var totalExpected = months.Sum(m => m.Expected);
@@ -106,14 +98,19 @@ public static class SalaryLedger
             .GroupBy(p => p.Month)
             .ToDictionary(g => g.Key, g => g.Sum(x => x.Amount));
 
+        // Moliya → Bonus / Jarima go into the month they are written for (2026-10-15).
+        var adjustments = await PayrollAdjustmentTotals.ForStaffAsync(db, staff.Id);
         var months = new List<MonthSalaryDto>();
         foreach (var month in TuitionService.MonthRange(startMonth, toMonth))
         {
-            var expected = StaffSalaryCalc.MonthlyForMonth(staff.Salary, month, startDate);
+            var basePay = StaffSalaryCalc.MonthlyForMonth(staff.Salary, month, startDate);
+            var adj = adjustments.GetValueOrDefault((staff.Id, month));
+            var expected = PayrollAdjustmentTotals.Apply(basePay, adj);
             var paid = paidByMonth.GetValueOrDefault(month, 0m);
             var remaining = expected - paid;
             var status = remaining <= 0 ? "paid" : paid > 0 ? "partial" : "unpaid";
-            months.Add(new MonthSalaryDto(month, expected, paid, remaining, status));
+            months.Add(new MonthSalaryDto(month, expected, paid, remaining, status,
+                basePay, Bonus: adj.Bonus, Penalty: adj.Penalty));
         }
 
         var totalExpected = months.Sum(m => m.Expected);

@@ -98,6 +98,23 @@ export const AI_ACCESS_KEY = 'aiAccess'
  */
 export const LA_CRITERIA_KEY = 'lessonAnalysisCriteria'
 
+/**
+ * Yotoqxona komendanti jinsi bo'yicha (mijoz, 2026-10-15: "ayol va erkak komendant davomat qila olishi
+ * uchun"). Rol oynasidagi alohida tanlov — «Yotoqxona» sahifasi berilganda chiqadi. Kalit faqat TORAYTIRADI:
+ * egasi yotoqxonaning faqat qizlar yoki faqat o'g'il bolalar qismini ko'radi va belgilaydi. Server:
+ * `DormGender` (Domain). Ikkalasi ham yoki hech biri — butun yotoqxona.
+ */
+export const DORM_PAGE = '/admin/attendance/boarding?session=dorm'
+export const DORM_GIRLS_KEY = 'dormGirlsOnly'
+export const DORM_BOYS_KEY = 'dormBoysOnly'
+export type DormGender = 'all' | 'female' | 'male'
+
+export function dormGenderOf(permissions: readonly string[]): DormGender {
+  const girls = permissions.includes(DORM_GIRLS_KEY)
+  const boys = permissions.includes(DORM_BOYS_KEY)
+  return girls === boys ? 'all' : girls ? 'female' : 'male'
+}
+
 export const isPageGrant = (entry: string) => entry.startsWith('/')
 
 /** Rol/xodim ruxsatlari → sahifa → daraja. Eski shakl bo'lim kalitlaridan yoyiladi. */
@@ -210,7 +227,8 @@ export function withinUserRights(user: User | null, permissions: readonly string
   if (user.role === 'superadmin' || user.role === 'admin') return true
   const own = user.permissions ?? []
   return permissions
-    .filter((k) => !isPageGrant(k))
+    // Gender flags only narrow the dorm key — anyone who may hand out the dorm may hand them out.
+    .filter((k) => !isPageGrant(k) && k !== DORM_GIRLS_KEY && k !== DORM_BOYS_KEY)
     .every((k) =>
       k.endsWith(':view') ? sectionLevel(own, k.slice(0, -':view'.length)) !== 'none' : sectionLevel(own, k) === 'edit',
     )

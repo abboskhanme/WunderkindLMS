@@ -119,7 +119,7 @@ public sealed class AttendanceTools(McpToolContext t)
         // Only the read path (DayAsync) is used — it touches neither Telegram nor the logger,
         // so no messaging dependency is handed to a read-only tool.
         var svc = new BoardingAttendanceService(t.Db, null!, NullLogger<BoardingAttendanceService>.Instance);
-        var d = await svc.DayAsync(day, session, ct);
+        var d = await svc.DayAsync(day, session, ct: ct);
         var sections = d.Sections.Select(s => new
         {
             s.Title, s.Kind, s.Eligible, s.Marked, s.Absent,

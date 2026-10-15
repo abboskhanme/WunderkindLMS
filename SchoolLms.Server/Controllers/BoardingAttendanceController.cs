@@ -20,6 +20,8 @@ namespace SchoolLms.Server.Controllers;
 /// <para>Teachers too (2026-10-12): a teacher who is also a commandant gets the same keys through an
 /// access role on the teacher account and marks from the Mini App — one login. Every action here
 /// checks the session's key, so a teacher without the role gets 403.</para>
+/// <para>Dorm by gender (2026-10-15): a role may also carry one of the <see cref="DormGender"/> flags — its holder
+/// works with only girls or only boys, everywhere on this controller (day, save, roster, statistics).</para>
 /// </summary>
 [ApiController]
 [Authorize(Roles = "admin,superadmin,staff,teacher")]
@@ -31,7 +33,7 @@ public class BoardingAttendanceController(BoardingAttendanceService service, App
         [FromQuery] string date, [FromQuery] string session, CancellationToken ct = default)
     {
         if (Check(date, session, out var day) is { } bad) return bad;
-        return await service.DayAsync(day, session, ct);
+        return await service.DayAsync(day, session, GenderOf(session), ct);
     }
 
     [HttpPut]
@@ -40,7 +42,7 @@ public class BoardingAttendanceController(BoardingAttendanceService service, App
         if (Check(req.Date, req.Session, out var day) is { } bad) return bad;
         if (day > AppClock.Today) return BadRequest(new { message = "Kelajakdagi kunga davomat qo'yib bo'lmaydi" });
         var uid = User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "";
-        var (result, error) = await service.SaveAsync(day, req.Session, req.Marks ?? [], uid, ct);
+        var (result, error) = await service.SaveAsync(day, req.Session, req.Marks ?? [], uid, GenderOf(req.Session), ct);
         if (error is not null) return BadRequest(new { message = error });
         return result!;
     }
@@ -53,7 +55,7 @@ public class BoardingAttendanceController(BoardingAttendanceService service, App
         [FromQuery] string session, [FromQuery] string from, [FromQuery] string to, CancellationToken ct = default)
     {
         if (CheckRange(session, from, to, out var f, out var t) is { } bad) return bad;
-        return await BoardingAnalytics.BuildAsync(db, session, f, t, ct: ct);
+        return await BoardingAnalytics.BuildAsync(db, session, f, t, gender: GenderOf(session), ct: ct);
     }
 
     /// <summary>Statistika Excel'da: kunlar, guruhlar, o'quvchilar, kunlar va sabablar.</summary>
@@ -62,7 +64,7 @@ public class BoardingAttendanceController(BoardingAttendanceService service, App
         [FromQuery] string session, [FromQuery] string from, [FromQuery] string to, CancellationToken ct = default)
     {
         if (CheckRange(session, from, to, out var f, out var t) is { } bad) return bad;
-        var d = await BoardingAnalytics.BuildAsync(db, session, f, t, maxEvents: 50_000, ct: ct);
+        var d = await BoardingAnalytics.BuildAsync(db, session, f, t, maxEvents: 50_000, gender: GenderOf(session), ct: ct);
         var reasons = await db.AbsenceReasons.AsNoTracking().ToDictionaryAsync(r => r.Id, r => r.Name, ct);
         return File(BoardingAnalyticsExport.Build(d, reasons),
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -86,7 +88,7 @@ public class BoardingAttendanceController(BoardingAttendanceService service, App
     public async Task<ActionResult<List<BoardingRosterRowDto>>> Roster([FromQuery] string session, CancellationToken ct = default)
     {
         if (CheckSession(session, write: false) is { } bad) return bad;
-        return await service.RosterAsync(session, ct);
+        return await service.RosterAsync(session, GenderOf(session), ct);
     }
 
     /// <summary>Ro'yxatga qo'shish uchun nomzodlar (ro'yxatda yo'q faol o'quvchilar, qidiruv bilan).</summary>
@@ -95,7 +97,7 @@ public class BoardingAttendanceController(BoardingAttendanceService service, App
         [FromQuery] string session, [FromQuery] string? q, CancellationToken ct = default)
     {
         if (CheckSession(session, write: true) is { } bad) return bad;
-        return await service.CandidatesAsync(session, q, ct);
+        return await service.CandidatesAsync(session, q, GenderOf(session), ct);
     }
 
     /// <summary>Ro'yxatga qo'shish — bugundan.</summary>
@@ -103,7 +105,7 @@ public class BoardingAttendanceController(BoardingAttendanceService service, App
     public async Task<ActionResult<object>> AddToRoster(AddBoardingRosterRequest req, CancellationToken ct = default)
     {
         if (CheckSession(req.Session, write: true) is { } bad) return bad;
-        var (added, error) = await service.AddAsync(req.Session, req.StudentIds ?? [], Uid, ct);
+        var (added, error) = await service.AddAsync(req.Session, req.StudentIds ?? [], Uid, GenderOf(req.Session), ct);
         if (error is not null) return BadRequest(new { message = error });
         return Ok(new { added });
     }
@@ -113,12 +115,20 @@ public class BoardingAttendanceController(BoardingAttendanceService service, App
     public async Task<IActionResult> RemoveFromRoster(RemoveBoardingRosterRequest req, CancellationToken ct = default)
     {
         if (CheckSession(req.Session, write: true) is { } bad) return bad;
-        return await service.RemoveAsync(req.Session, req.StudentId, Uid, ct)
+        return await service.RemoveAsync(req.Session, req.StudentId, Uid, GenderOf(req.Session), ct)
             ? NoContent()
             : NotFound(new { message = "O'quvchi bu ro'yxatda yo'q" });
     }
 
     private string Uid => User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "";
+
+    /// <summary>The half of the dormitory this user works with (<see cref="DormGender"/>); null — all of it.</summary>
+    private string? GenderOf(string session)
+    {
+        if (session != BoardingSession.Dorm || User.IsInRole(Roles.Admin) || User.IsInRole(Roles.SuperAdmin)) return null;
+        bool Holds(string key) => User.HasClaim(AdminPermAttribute.ClaimType, key);
+        return DormGender.Of(Holds(DormGender.GirlsOnlyKey), Holds(DormGender.BoysOnlyKey));
+    }
 
     private ActionResult? CheckSession(string session, bool write)
     {

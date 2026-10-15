@@ -7,7 +7,20 @@ import {
   getAccessRoles,
   updateAccessRole,
 } from '@/api/services/accessRoles'
-import { ACCESS_CATALOG, ACCESS_PAGES, AI_ACCESS_KEY, LA_CRITERIA_KEY, encodeGrants, grantsOf, type AccessLevel } from '@/lib/access'
+import {
+  ACCESS_CATALOG,
+  ACCESS_PAGES,
+  AI_ACCESS_KEY,
+  DORM_BOYS_KEY,
+  DORM_GIRLS_KEY,
+  DORM_PAGE,
+  LA_CRITERIA_KEY,
+  dormGenderOf,
+  encodeGrants,
+  grantsOf,
+  type AccessLevel,
+  type DormGender,
+} from '@/lib/access'
 import { useAuth } from '@/context/auth-context'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/Button'
@@ -56,6 +69,8 @@ export function RolesPage() {
   const [grants, setGrants] = useState<Map<string, AccessLevel>>(new Map())
   const [aiAccess, setAiAccess] = useState(false)
   const [laCriteria, setLaCriteria] = useState(false)
+  const [dormGender, setDormGender] = useState<DormGender>('all')
+  const dormGranted = (grants.get(DORM_PAGE) ?? 'none') !== 'none'
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
@@ -74,6 +89,7 @@ export function RolesPage() {
     setGrants(grantsOf(role?.permissions ?? []))
     setAiAccess((role?.permissions ?? []).includes(AI_ACCESS_KEY))
     setLaCriteria((role?.permissions ?? []).includes(LA_CRITERIA_KEY))
+    setDormGender(dormGenderOf(role?.permissions ?? []))
     setExpanded(new Set())
     setFormError(null)
     setOpen(true)
@@ -114,6 +130,9 @@ export function RolesPage() {
         ...encodeGrants(grants),
         ...(aiAccess ? [AI_ACCESS_KEY] : []),
         ...(laCriteria ? [LA_CRITERIA_KEY] : []),
+        // + yotoqxona: faqat qizlar / faqat o'g'il bolalar (lib/access.ts DORM_*) — sahifa berilgandagina.
+        ...(dormGranted && dormGender === 'female' ? [DORM_GIRLS_KEY] : []),
+        ...(dormGranted && dormGender === 'male' ? [DORM_BOYS_KEY] : []),
       ],
     }
     try {
@@ -314,6 +333,8 @@ export function RolesPage() {
             </button>
           </div>
 
+          {dormGranted && <DormGenderRow value={dormGender} onChange={setDormGender} />}
+
           <FlagRow
             label="Dars tahlili: mezonlar"
             hint={
@@ -346,10 +367,12 @@ function rolesSummary(permissions: string[]): string {
   const grants = grantsOf(permissions)
   const ai = permissions.includes(AI_ACCESS_KEY) ? ' · AI ulanish' : ''
   const la = permissions.includes(LA_CRITERIA_KEY) ? ' · Dars tahlili mezonlari' : ''
+  const gender = dormGenderOf(permissions)
+  const dorm = gender === 'female' ? ' · Yotoqxona: qizlar' : gender === 'male' ? " · Yotoqxona: o'g'il bolalar" : ''
   if (grants.size === 0) return ai || la ? (ai + la).slice(3) : '—'
   const view = [...grants.values()].filter((l) => l === 'view').length
   const total = grants.size === ALL_PAGES.length ? 'Barcha sahifa' : `${grants.size} ta sahifa`
-  return (view > 0 ? `${total} (${view} tasi faqat ko'rish)` : total) + ai + la
+  return (view > 0 ? `${total} (${view} tasi faqat ko'rish)` : total) + dorm + ai + la
 }
 
 /** Uch holatli tanlov: Yo'q / Ko'rish / To'liq. `null` — ichidagi sahifalar har xil. */
@@ -394,6 +417,43 @@ function LevelPicker({
 }
 
 /** Rol oynasidagi alohida belgi (menyu sahifasi emas) — yorliq, izoh va yoqish/o'chirish tugmasi. */
+const DORM_GENDERS: { value: DormGender; label: string }[] = [
+  { value: 'all', label: 'Hammasi' },
+  { value: 'female', label: 'Faqat qizlar' },
+  { value: 'male', label: "Faqat o'g'il bolalar" },
+]
+
+/** «Yotoqxona» sahifasi berilgan rol uchun: komendant yotoqxonaning qaysi qismini ko'radi va belgilaydi. */
+function DormGenderRow({ value, onChange }: { value: DormGender; onChange: (value: DormGender) => void }) {
+  return (
+    <div className="space-y-2 rounded-xl border border-slate-200 px-3 py-2.5">
+      <div>
+        <p className="text-sm font-medium text-slate-700">Yotoqxona: kimni belgilaydi</p>
+        <p className="mt-0.5 text-xs text-slate-400">
+          Ayol komendantga — faqat qizlar, erkak komendantga — faqat o'g'il bolalar. Ro'yxat, davomat va statistikada
+          faqat o'sha qism ko'rinadi.
+        </p>
+      </div>
+      <div className="flex flex-wrap gap-1.5">
+        {DORM_GENDERS.map((g) => (
+          <button
+            key={g.value}
+            type="button"
+            aria-pressed={value === g.value}
+            onClick={() => onChange(g.value)}
+            className={cn(
+              'rounded-full px-3 py-1 text-xs font-medium transition-colors',
+              value === g.value ? 'bg-brand-500 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200',
+            )}
+          >
+            {g.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 function FlagRow({
   label,
   hint,

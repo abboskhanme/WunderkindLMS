@@ -98,6 +98,48 @@ public class TeacherCommandantTests(ApiFixture fixture)
         Assert.Null((await teacher.GetFromJsonAsync<TeacherProfileDto>("/api/teacher/me"))!.AccessRoleName);
     }
 
+    /// <summary>A male teacher-commandant (2026-10-15): the role's gender flag reaches the teacher and limits the dorm.</summary>
+    [Fact]
+    public async Task Erkak_komendant_oqituvchi_faqat_ogil_bolalarni_koradi()
+    {
+        using var boss = await fixture.Api.ClientAsAsync(Roles.SuperAdmin);
+        var role = await CreateRoleAsync(boss, "/admin/attendance/boarding?session=dorm|edit", "attendanceDorm", DormGender.BoysOnlyKey);
+        var (teacherId, userId, client) = await TeacherAsync();
+        using var teacher = client;
+        Assert.Equal(HttpStatusCode.OK, (await AssignAsync(boss, teacherId, role.Id)).StatusCode);
+
+        var me = (await teacher.GetFromJsonAsync<TeacherProfileDto>("/api/teacher/me"))!;
+        Assert.Equal(["attendanceDorm", DormGender.BoysOnlyKey], me.RolePermissions);
+
+        var tag = Guid.NewGuid().ToString("N")[..6];
+        Student Pupil(string gender) => new()
+        {
+            FullName = $"{gender} {tag}", LastName = gender, FirstName = tag, BirthDate = "2010-01-01",
+            Gender = gender, ClassName = "10-K", EnrollmentDate = "2025-09-01",
+        };
+        var boy = Pupil("male");
+        var girl = Pupil("female");
+        await fixture.Api.WithDbAsync(async db =>
+        {
+            db.Students.AddRange(boy, girl);
+            db.BoardingRosters.AddRange(new[] { boy, girl }.Select(s => new BoardingRosterEntry
+            {
+                Session = BoardingSession.Dorm, StudentId = s.Id, AddedOn = AppClock.Today.AddDays(-1),
+                AddedBy = userId, CreatedAt = AppClock.NowInstant,
+            }));
+            await db.SaveChangesAsync();
+        });
+
+        var day = (await teacher.GetFromJsonAsync<BoardingDayDto>($"{BoardingUrl}?date={Today}&session=dorm"))!;
+        var students = day.Sections.SelectMany(s => s.Students).ToList();
+        Assert.Contains(students, s => s.StudentId == boy.Id);
+        Assert.DoesNotContain(students, s => s.StudentId == girl.Id);
+        Assert.Equal(HttpStatusCode.BadRequest, (await teacher.PutAsJsonAsync(BoardingUrl, new SaveBoardingRequest(Today,
+            BoardingSession.Dorm, [new BoardingMarkInput(girl.Id, BoardingStatus.Present)]))).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await teacher.PutAsJsonAsync(BoardingUrl, new SaveBoardingRequest(Today,
+            BoardingSession.Dorm, [new BoardingMarkInput(boy.Id, BoardingStatus.Present)]))).StatusCode);
+    }
+
     [Fact]
     public async Task Oqituvchiga_faqat_davomat_roli_va_faqat_rol_beruvchi_beradi()
     {

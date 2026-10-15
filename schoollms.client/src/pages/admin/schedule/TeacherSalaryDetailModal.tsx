@@ -104,6 +104,22 @@ export function TeacherSalaryDetailModal({
                 color="text-emerald-600"
               />
             )}
+            {(data.allowances ?? []).map((a) => (
+              <Row
+                key={a.id}
+                label={`${a.source === 'certificate' ? 'Sertifikat' : 'Ustama'}: ${a.title} (${
+                  a.amountKind === 'percent' ? `${a.amount}%` : 'oylik'
+                })`}
+                value={a.value > 0 ? `+ ${formatMoney(a.value)}` : formatMoney(0)}
+                color={a.value > 0 ? 'text-emerald-600' : 'text-slate-400'}
+              />
+            ))}
+            {(data.adjustmentBonus ?? 0) > 0 && (
+              <Row label="Bonus" value={`+ ${formatMoney(data.adjustmentBonus ?? 0)}`} color="text-emerald-600" />
+            )}
+            {(data.penalty ?? 0) > 0 && (
+              <Row label="Jarima" value={`− ${formatMoney(data.penalty ?? 0)}`} color="text-red-600" />
+            )}
             <div className="my-2 border-t border-slate-200" />
             <div className="flex items-center justify-between">
               <span className="text-sm font-semibold text-slate-700">Jami oylik maosh</span>
@@ -126,6 +142,23 @@ export function TeacherSalaryDetailModal({
             suggested={Math.max(0, data.remaining)}
             onPaid={handlePaid}
           />
+
+          {(data.adjustments?.length ?? 0) > 0 && (
+            <div>
+              <p className="mb-2 text-sm font-medium text-slate-600">Bonus va jarimalar ({data.adjustments!.length})</p>
+              <div className="space-y-1.5">
+                {data.adjustments!.map((a) => (
+                  <div key={a.id} className="flex items-center gap-3 rounded-lg border border-slate-100 px-3 py-2 text-sm">
+                    <span className="text-slate-700">{a.reason}</span>
+                    {a.comment && <span className="truncate text-xs text-slate-400">— {a.comment}</span>}
+                    <span className={cn('ml-auto font-medium', a.kind === 'bonus' ? 'text-emerald-600' : 'text-red-600')}>
+                      {a.kind === 'bonus' ? '+' : '−'} {formatMoney(a.amount)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {(data.substitutions?.length ?? 0) > 0 && (
             <div>

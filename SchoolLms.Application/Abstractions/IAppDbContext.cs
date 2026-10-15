@@ -266,6 +266,13 @@ public interface IAppDbContext
     DbSet<BoardingAttendance> BoardingAttendance { get; }
     /// <summary>Kechki dars va yotoqxona ro'yxatlari — qo'lda, sanali (2026-10-11).</summary>
     DbSet<BoardingRosterEntry> BoardingRosters { get; }
+    /// <summary>Automatic Telegram messages to parents: rules and their log (2026-10-13).</summary>
+    DbSet<AutoMessageRule> AutoMessageRules { get; }
+    DbSet<AutoMessageLogEntry> AutoMessageLog { get; }
+    /// <summary>Teacher certificates and named allowances paid with the salary (2026-10-15).</summary>
+    DbSet<TeacherAllowance> TeacherAllowances { get; }
+    /// <summary>Thank-you / warning messages sent after a test, once per exam, pupil and kind (2026-10-15).</summary>
+    DbSet<ExamAwardNotice> ExamAwardNotices { get; }
 
     /// <summary>
     /// Admission, block test and seasonal assessment

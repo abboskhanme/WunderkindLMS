@@ -61,7 +61,7 @@ export const STAFF_CHANNEL_LABEL = 'Xodimlar'
  * Admin-section keys a teacher can hold through a role (2026-10-12: teachers who are also dorm
  * commandants) — `TeacherPermissions.RoleKeys` on the server. Each also in its ":view" form.
  */
-export const teacherRoleKeys = ['attendanceEvening', 'attendanceDorm']
+export const teacherRoleKeys = ['attendanceEvening', 'attendanceDorm', 'dormGirlsOnly', 'dormBoysOnly']
 
 /**
  * A role a teacher can be given: at least one section key, every section key a teacher role key (full

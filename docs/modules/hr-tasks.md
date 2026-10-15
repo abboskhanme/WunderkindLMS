@@ -161,6 +161,14 @@ filters and behaviour 1:1; visual language = our admin panel.
 - teacher **with an HR row** → an extra "Topshiriqlar" tab in `TeacherPanel`.
 Mobile-first, brand colours, rules of the rest of the Mini App (keyboard, safe area).
 
+### 8.1 Own tasks kept apart (2026-10-15)
+
+Client: *"Topshiriqlar bo'limida o'zimni vazifalarim bilan hodimlarni vazifalari aralashib ketgan. Alohida qilish."*
+The panel list «Topshiriqlar» now has tabs: **Xodimlar topshiriqlari** (default — everyone in scope except the
+caller) and **Men bergan** (tasks the caller created, directly or through a recurring template they made), plus a
+link to «Mening topshiriqlarim», where the caller's own tasks are done. The caller is dropped from the Xodim filter.
+API: `GET /api/admin/hr/tasks?view=staff|given` (`HrTaskViews`); without `view` the list is as before.
+
 ## 9. Data import (main session, one-time)
 
 Only **school** employees (client, 2026-09-27): Markaz employees (Muzaffar

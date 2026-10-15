@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { BellRing, ChevronUp, Mic, Paperclip, Plus, Search, X } from 'lucide-react'
-import { cancelTask, getEmployees, getTasks, hrErrorMessage } from '@/api/services/hrTasks'
-import type { HrTask, HrTaskDetail } from '@/types/hrTasks'
+import { cancelTask, getAccess, getEmployees, getTasks, hrErrorMessage } from '@/api/services/hrTasks'
+import type { HrTask, HrTaskDetail, HrTaskView } from '@/types/hrTasks'
 import { HR_DEFAULT_PAGE_SIZE, HR_MAX_PAGE_SIZE } from '@/types/hrTasks'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
@@ -48,6 +48,16 @@ type Overlay = 'edit' | 'return' | 'cancel' | null
 /** Backend `?sort=` allow-list — only the due-date column sorts. */
 type SortValue = '-due_at' | 'due_at'
 
+/** The caller's own tasks are never in this list — they live in "Mening topshiriqlarim". */
+const VIEWS: { key: HrTaskView; label: string }[] = [
+  { key: 'staff', label: 'Xodimlar topshiriqlari' },
+  { key: 'given', label: 'Men bergan' },
+]
+
+function parseView(raw: string | null): HrTaskView {
+  return raw === 'given' ? 'given' : 'staff'
+}
+
 /**
  * Tasks — the director's main screen (the old `HrTasksPage`). Filters live in the URL, so
  * a dashboard link `?employeeId=…&dateFrom=…` works directly. Default — TODAY.
@@ -58,6 +68,7 @@ export function HrTasksPage() {
   const period = usePeriodRange()
   const { params, update, range } = period
 
+  const view = parseView(params.get('view'))
   const employeeId = params.get('employeeId') ?? ''
   const statuses = hrParseStatuses(params.getAll('status'))
   const acceptedRaw = params.get('accepted') ?? ''
@@ -67,9 +78,11 @@ export function HrTasksPage() {
   const [version, setVersion] = useState(0)
 
   const employees = useLoad('employees|all', () => getEmployees({ limit: HR_MAX_PAGE_SIZE }))
-  const employeeOptions = employees.data?.items ?? []
+  const access = useLoad('hr-access', getAccess)
+  const selfId = access.data?.employeeId ?? null
+  const employeeOptions = (employees.data?.items ?? []).filter((employee) => employee.id !== selfId)
 
-  const filterKey = JSON.stringify([employeeId, statuses, acceptedRaw, range, q, sort])
+  const filterKey = JSON.stringify([view, employeeId, statuses, acceptedRaw, range, q, sort])
   const pager = useCursorStack(filterKey)
 
   const list = useLoad(`tasks|${filterKey}|${pager.cursor ?? ''}|${version}`, () =>
@@ -81,6 +94,7 @@ export function HrTasksPage() {
       dateTo: range.dateTo || null,
       accepted: hrParseAccepted(acceptedRaw),
       sort,
+      view,
       limit: HR_DEFAULT_PAGE_SIZE,
       cursor: pager.cursor,
       withTotal: true,
@@ -170,7 +184,7 @@ export function HrTasksPage() {
     <div className="min-w-0 space-y-4">
       <PageHeader
         title="Topshiriqlar"
-        description="Kim nima qilgani — bitta ro‘yxatda"
+        description="Xodimlar nima qilgani. O‘zingizning topshiriqlaringiz — «Mening topshiriqlarim»da"
         actions={
           <Link to={hrtPaths.create(employeeId || undefined)} className={primaryLinkCls}>
             <Plus className="h-4 w-4" />
@@ -178,6 +192,28 @@ export function HrTasksPage() {
           </Link>
         }
       />
+
+      <div className="flex gap-1 overflow-x-auto border-b border-slate-200">
+        {VIEWS.map((v) => (
+          <button
+            key={v.key}
+            type="button"
+            onClick={() => update({ view: v.key === 'staff' ? null : v.key })}
+            className={cn(
+              '-mb-px shrink-0 border-b-2 px-3 pb-2.5 pt-1 text-sm font-medium transition-colors',
+              view === v.key ? 'border-brand-600 text-brand-700' : 'border-transparent text-slate-500 hover:text-slate-800',
+            )}
+          >
+            {v.label}
+          </button>
+        ))}
+        <Link
+          to={hrtPaths.myTasks}
+          className="-mb-px shrink-0 border-b-2 border-transparent px-3 pb-2.5 pt-1 text-sm font-medium text-slate-500 transition-colors hover:text-slate-800"
+        >
+          Mening topshiriqlarim →
+        </Link>
+      </div>
 
       <Card className="space-y-3 p-4">
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">

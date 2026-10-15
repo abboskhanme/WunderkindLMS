@@ -86,9 +86,30 @@ public sealed partial class HrTasksService
     public async Task<HrPage<HrTaskDto>> TasksAsync(HrPanel panel, HrTaskFilter filter, HrPaging paging, CancellationToken ct = default)
     {
         var tz = (await GetOrCreateSettingsAsync(ct)).Zone;
-        var query = TaskQuery(filter, panel.Scope, tz, Now);
+        var query = ApplyView(TaskQuery(filter, panel.Scope, tz, Now), panel, filter.View);
         var (rows, hasMore, next, total) = await PageAsync(SortTasks(query, filter.Sort), query, paging, ct);
         return Page(await TaskDtosAsync(rows, ct), hasMore, next, total);
+    }
+
+    /// <summary>
+    /// Separates the caller's own tasks from the staff's: both views leave out tasks assigned to the caller.
+    /// "given" keeps only what the caller handed out (template tasks carry no creator, so the template's counts).
+    /// </summary>
+    private IQueryable<HrTask> ApplyView(IQueryable<HrTask> q, HrPanel panel, string? view)
+    {
+        if (view is not (HrTaskViews.Staff or HrTaskViews.Given)) return q;
+        if (panel.Self is { } self)
+        {
+            var selfId = self.Id;
+            q = q.Where(t => t.EmployeeId != selfId);
+        }
+        if (view == HrTaskViews.Given)
+        {
+            var userId = panel.Actor.UserId;
+            q = q.Where(t => t.CreatedBy == userId
+                || (t.TemplateId != null && db.HrTaskTemplates.Any(tpl => tpl.Id == t.TemplateId && tpl.CreatedBy == userId)));
+        }
+        return q;
     }
 
     /// <summary>The employee's OWN tasks, paged ("Mening topshiriqlarim"). The id comes from the account, never the query.</summary>

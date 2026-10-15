@@ -158,6 +158,88 @@ public class BoardingAttendanceTests(ApiFixture fixture)
     }
 
     /// <summary>
+    /// A female commandant marks girls, a male one boys (client, 2026-10-15): a role flag next to
+    /// <c>attendanceDorm</c> limits the day, saving, the roster and the statistics to that half.
+    /// </summary>
+    [Fact]
+    public async Task Ayol_komendant_faqat_qizlarni_koradi_va_belgilaydi()
+    {
+        var w = await SeedAsync();
+        var girl = new Student
+        {
+            FullName = $"Qiz {w.Tag}", LastName = "Qiz", FirstName = w.Tag, BirthDate = "2010-01-01",
+            Gender = "female", ClassName = $"10-{w.Tag}", EnrollmentDate = "2025-09-01",
+        };
+        var newGirl = new Student
+        {
+            FullName = $"Yangi qiz {w.Tag}", LastName = "Yangi", FirstName = w.Tag, BirthDate = "2010-01-01",
+            Gender = "female", ClassName = $"10-{w.Tag}", EnrollmentDate = "2025-09-01",
+        };
+        await fixture.Api.WithDbAsync(async db =>
+        {
+            db.Students.AddRange(girl, newGirl);
+            db.BoardingRosters.Add(new BoardingRosterEntry
+            {
+                Session = BoardingSession.Dorm, StudentId = girl.Id, AddedOn = AppClock.Today.AddDays(-1),
+                AddedBy = "", CreatedAt = AppClock.NowInstant,
+            });
+            await db.SaveChangesAsync();
+        });
+        using var woman = await fixture.Api.ClientAsAsync(Roles.Staff, "attendanceDorm", DormGender.GirlsOnlyKey);
+        using var admin = await fixture.Api.ClientAsAsync(Roles.Admin);
+
+        var day = (await DayAsync(woman, w.Date, BoardingSession.Dorm))!;
+        var section = Assert.Single(day.Sections);
+        Assert.Equal("gender:female", section.Key);
+        Assert.Contains(section.Students, s => s.StudentId == girl.Id);
+        Assert.DoesNotContain(section.Students, s => s.StudentId == w.Boarder);
+        Assert.Equal(section.Students.Count, day.Eligible);
+
+        // A boy is not hers to mark; her girls are.
+        var boy = await woman.PutAsJsonAsync(Url, new
+        {
+            date = w.Date, session = "dorm", marks = new[] { new { studentId = w.Boarder, status = "absent" } },
+        });
+        Assert.Equal(HttpStatusCode.BadRequest, boy.StatusCode);
+        Assert.Contains("bo'limingizda emas", await boy.Content.ReadAsStringAsync());
+        var ok = await woman.PutAsJsonAsync(Url, new
+        {
+            date = w.Date, session = "dorm", marks = section.Students.Select(s => new { studentId = s.StudentId, status = "present" }),
+        });
+        Assert.Equal(HttpStatusCode.OK, ok.StatusCode);
+
+        // Roster: only girls listed, offered and added; a boy cannot be added or removed by her.
+        var roster = (await woman.GetFromJsonAsync<List<BoardingRosterRowDto>>($"{Url}/roster?session=dorm"))!;
+        Assert.Contains(roster, r => r.StudentId == girl.Id);
+        Assert.DoesNotContain(roster, r => r.StudentId == w.Boarder);
+        var candidates = (await woman.GetFromJsonAsync<List<BoardingCandidateDto>>($"{Url}/roster/candidates?session=dorm&q={w.Tag}"))!;
+        Assert.Contains(candidates, c => c.StudentId == newGirl.Id);
+        Assert.DoesNotContain(candidates, c => c.StudentId == w.DayOnly);
+        Assert.Equal(HttpStatusCode.BadRequest, (await woman.PostAsJsonAsync($"{Url}/roster",
+            new { session = "dorm", studentIds = new[] { w.DayOnly } })).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await woman.PostAsJsonAsync($"{Url}/roster",
+            new { session = "dorm", studentIds = new[] { newGirl.Id } })).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await woman.PostAsJsonAsync($"{Url}/roster/remove",
+            new { session = "dorm", studentId = w.Boarder })).StatusCode);
+
+        // Statistics: only her half.
+        var stats = (await woman.GetFromJsonAsync<BoardingAnalyticsDto>(
+            $"{Url}/analytics?session=dorm&from={w.Date}&to={w.Date}"))!;
+        Assert.Contains(stats.Students, s => s.StudentId == girl.Id);
+        Assert.DoesNotContain(stats.Students, s => s.StudentId == w.Boarder);
+
+        // The evening session and the admin are untouched by the flag.
+        var all = (await DayAsync(admin, w.Date, BoardingSession.Dorm))!;
+        Assert.Contains(all.Sections.SelectMany(s => s.Students), s => s.StudentId == w.Boarder);
+        Assert.Contains(all.Sections.SelectMany(s => s.Students), s => s.StudentId == girl.Id);
+
+        // Both flags (or none) — the whole dormitory.
+        using var both = await fixture.Api.ClientAsAsync(Roles.Staff, "attendanceDorm", DormGender.GirlsOnlyKey, DormGender.BoysOnlyKey);
+        Assert.Contains((await DayAsync(both, w.Date, BoardingSession.Dorm))!.Sections.SelectMany(s => s.Students),
+            s => s.StudentId == w.Boarder);
+    }
+
+    /// <summary>
     /// 2026-09-26: kechki dars va yotoqxona ham K / Y + sabab. Sabab saqlanadi va qaytadi;
     /// holatga mos kelmagan sabab (keldi + yo'qlik sababi) rad etiladi.
     /// </summary>

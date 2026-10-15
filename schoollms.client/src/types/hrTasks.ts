@@ -977,10 +977,17 @@ export interface HrTaskFilters {
   q?: string
   /** `-due_at`, `due_at`, `-created_at` — oq ro‘yxat backendda. */
   sort?: string
+  /**
+   * `staff` — everyone in scope except the caller; `given` — only what the caller gave.
+   * Omitted — everything in scope (the caller's own tasks included).
+   */
+  view?: HrTaskView | null
   limit?: number
   cursor?: string | null
   withTotal?: boolean
 }
+
+export type HrTaskView = 'staff' | 'given'
 
 /**
  * `GET /hr/me/tasks` filtrlari — `HrTaskFilters` ning o‘zi, «kim» maydonlarisiz.

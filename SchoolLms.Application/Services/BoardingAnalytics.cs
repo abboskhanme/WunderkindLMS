@@ -84,7 +84,8 @@ public static class BoardingAnalytics
         : null;
 
     public static async Task<BoardingAnalyticsDto> BuildAsync(
-        IAppDbContext db, string session, DateOnly from, DateOnly to, int maxEvents = MaxEvents, CancellationToken ct = default)
+        IAppDbContext db, string session, DateOnly from, DateOnly to, int maxEvents = MaxEvents, string? gender = null,
+        CancellationToken ct = default)
     {
         var today = AppClock.Today;
         if (to > today) to = today;
@@ -100,7 +101,9 @@ public static class BoardingAnalytics
 
         var studentIds = roster.Select(r => r.StudentId).Concat(marks.Select(m => m.StudentId))
             .Distinct(StringComparer.Ordinal).ToList();
-        var students = await db.Students.AsNoTracking().Where(s => studentIds.Contains(s.Id))
+        // A gender-limited dorm commandant (DormGender): the other half is left out of every number.
+        var students = await db.Students.AsNoTracking()
+            .Where(s => studentIds.Contains(s.Id) && (gender == null || s.Gender == gender))
             .Select(s => new { s.Id, s.FullName, s.ClassName }).ToDictionaryAsync(s => s.Id, ct);
         var track = (await (from m in db.StudyGroupMembers.AsNoTracking()
                             join g in db.StudyGroups.AsNoTracking() on m.GroupId equals g.Id

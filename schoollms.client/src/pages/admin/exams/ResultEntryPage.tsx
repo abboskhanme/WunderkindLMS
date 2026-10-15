@@ -27,6 +27,7 @@ import { Link, useParams } from 'react-router-dom'
 import {
   AlertTriangle,
   ArrowLeft,
+  Award,
   Info,
   Loader2,
   RefreshCw,
@@ -56,6 +57,7 @@ import { Loader } from '@/components/ui/Loader'
 import { Toast } from '@/components/ui/Toast'
 import { cn } from '@/lib/utils'
 import { ResultImportModal } from './ResultImportModal'
+import { ExamAwardsModal } from './ExamAwardsModal'
 import {
   DASH,
   control,
@@ -149,6 +151,10 @@ export function ResultEntryPage() {
   const [refreshing, setRefreshing] = useState(false)
   const [removingId, setRemovingId] = useState<string | null>(null)
   const [importOpen, setImportOpen] = useState(false)
+  const [awardsOpen, setAwardsOpen] = useState(false)
+  // Sending reaches families: the full exams AND messages keys (the server checks the same).
+  const canSendAwards =
+    !user?.permissions || (user.permissions.includes('exams') && user.permissions.includes('messages'))
   const [notice, setNotice] = useState<Notice | null>(null)
 
   const cells = useRef(new Map<string, HTMLInputElement>())
@@ -451,8 +457,19 @@ export function ResultEntryPage() {
           </p>
         </div>
 
+        {counts.finished > 0 && !showActions && (
+          <Button variant="secondary" onClick={() => setAwardsOpen(true)}>
+            <Award className="h-4 w-4" /> Natija xabarlari
+          </Button>
+        )}
         {showActions && (
           <div className="flex flex-wrap items-center gap-2">
+            {counts.finished > 0 && (
+              <Button variant="secondary" onClick={() => setAwardsOpen(true)} disabled={dirtyCount > 0}
+                title={dirtyCount > 0 ? "Avval o'zgarishlarni saqlang" : 'Eng yaxshilarga tashakkurnoma, eng pastlarga ogohlantirish'}>
+                <Award className="h-4 w-4" /> Natija xabarlari
+              </Button>
+            )}
             <Button
               variant="secondary"
               onClick={() => setImportOpen(true)}
@@ -744,6 +761,8 @@ export function ResultEntryPage() {
           </div>
         </Card>
       )}
+
+      <ExamAwardsModal examId={current.id} open={awardsOpen} canSend={canSendAwards} onClose={() => setAwardsOpen(false)} />
 
       {importOpen && editable && (
         <ResultImportModal

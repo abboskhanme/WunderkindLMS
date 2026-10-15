@@ -100,7 +100,7 @@ public sealed class DailyAbsenceNotifier(IAppDbContext db, TelegramService teleg
     }
 
     /// <summary>Kun bo'yi kelmaganlar — sinf, sabab, Telegram va oldin yuborilganmi bilan.</summary>
-    private async Task<(List<AbsenceNoticeRowDto> Rows, Dictionary<string, string?> ReasonIdOf)> RowsAsync(
+    internal async Task<(List<AbsenceNoticeRowDto> Rows, Dictionary<string, string?> ReasonIdOf)> RowsAsync(
         DateOnly day, CancellationToken ct)
     {
         var iso = day.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);

@@ -617,6 +617,60 @@ public class TeacherPortalController(
         return NoContent();
     }
 
+    // ---------- Uy vazifasi bajarilishi (docs/modules/homework-completion.md) ----------
+    //
+    // Same table as the admin's, behind the journal's own gate: the `journal` key and a lesson of this
+    // subject in this class/group on the timetable (or a covered lesson — the substitute's rule).
+
+    /// <summary>Pupil × lesson homework statuses of the teacher's own class/group + subject.</summary>
+    [HttpGet("journal/homework")]
+    public async Task<ActionResult<HomeworkSheetDto>> HomeworkSheet(
+        [FromQuery] string ownerId, [FromQuery] string subjectId, [FromQuery] string? from,
+        [FromQuery] string? to, [FromQuery] string? ownerKind, CancellationToken ct = default)
+    {
+        if (!await Authorized(ownerId, subjectId)) return Forbid();
+        var owner = await HomeworkCompletionService.OwnerAsync(db, ownerKind, ownerId, ct);
+        if (owner is null) return NotFound(new { message = HomeworkCompletionService.OwnerNotFoundMessage });
+        var error = HomeworkCompletionService.ParseRange(from, to, out var start, out var end);
+        if (error is not null) return BadRequest(new { message = error });
+        return await HomeworkCompletionService.BuildSheetAsync(db, owner, subjectId, start, end, ct);
+    }
+
+    /// <summary>The same table as .xlsx.</summary>
+    [HttpGet("journal/homework/export")]
+    public async Task<IActionResult> HomeworkExport(
+        [FromQuery] string ownerId, [FromQuery] string subjectId, [FromQuery] string? from,
+        [FromQuery] string? to, [FromQuery] string? ownerKind, CancellationToken ct = default)
+    {
+        if (!await Authorized(ownerId, subjectId)) return Forbid();
+        var owner = await HomeworkCompletionService.OwnerAsync(db, ownerKind, ownerId, ct);
+        if (owner is null) return NotFound(new { message = HomeworkCompletionService.OwnerNotFoundMessage });
+        var error = HomeworkCompletionService.ParseRange(from, to, out var start, out var end);
+        if (error is not null) return BadRequest(new { message = error });
+        var sheet = await HomeworkCompletionService.BuildSheetAsync(db, owner, subjectId, start, end, ct);
+        return File(HomeworkCompletionService.ExportXlsx(sheet),
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", $"uy-vazifasi_{sheet.From}_{sheet.To}.xlsx");
+    }
+
+    /// <summary>
+    /// Bulk write of homework statuses. Every date must be one the teacher may write (own lesson, or a
+    /// covered lesson on that date) and not in the future — the rules of <c>PUT journal</c>.
+    /// </summary>
+    [HttpPut("journal/homework")]
+    public async Task<IActionResult> SaveHomework(SaveHomeworkMarksRequest req, CancellationToken ct = default)
+    {
+        var dates = (req.Marks ?? []).Select(m => m.Date).Distinct(StringComparer.Ordinal).ToList();
+        if (!await AuthorizedOnDates(req.OwnerId, req.SubjectId, dates)) return Forbid();
+        var today = AppClock.Now.ToString("yyyy-MM-dd");
+        if (dates.Any(d => string.CompareOrdinal(d, today) > 0))
+            return BadRequest(new { message = HomeworkCompletionService.FutureDateMessage });
+        var owner = await HomeworkCompletionService.OwnerAsync(db, req.OwnerKind, req.OwnerId, ct);
+        if (owner is null) return NotFound(new { message = HomeworkCompletionService.OwnerNotFoundMessage });
+        var error = await HomeworkCompletionService.SaveAsync(db, owner, req.SubjectId, req.Marks, ct);
+        if (error is not null) return BadRequest(new { message = error });
+        return NoContent();
+    }
+
     /// <summary>Mavzular shabloni (.xlsx) — o'qituvchi o'z sinf+fani uchun jadval kunlari bilan.</summary>
     [HttpGet("journal/topics-template")]
     public async Task<IActionResult> TopicsTemplate(
@@ -803,6 +857,21 @@ public class TeacherPortalController(
         if (await Teaches(t.Id, classId, subjectId)) return true;
         // O'rindosh ustoz (2026-10-07): the class+subject of a lesson they cover.
         return await LessonSubstitutionService.CoversAsync(db, t.Id, classId, subjectId, date);
+    }
+
+    /// <summary>
+    /// <see cref="Authorized"/> for a write spanning several dates: the teacher of the subject may write
+    /// any of them; a substitute only the dates they cover. No dates — the plain read rule.
+    /// </summary>
+    private async Task<bool> AuthorizedOnDates(string classId, string subjectId, IReadOnlyCollection<string> dates)
+    {
+        var t = await Me();
+        if (t is null || !t.Permissions.Contains(TeacherPermissions.Journal)) return false;
+        if (await Teaches(t.Id, classId, subjectId)) return true;
+        if (dates.Count == 0) return await LessonSubstitutionService.CoversAsync(db, t.Id, classId, subjectId, null);
+        foreach (var date in dates)
+            if (!await LessonSubstitutionService.CoversAsync(db, t.Id, classId, subjectId, date)) return false;
+        return true;
     }
 
     // Guruh chati o'qituvchidan butunlay olib tashlandi (mijoz, 2026-10-11) — chat faqat admin

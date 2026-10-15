@@ -8,6 +8,11 @@
  *
  * A question about "each teacher" (parents) or "each manager" (teachers) repeats for every person
  * the server listed; nobody has to rate everyone. The panel gives its own API (`list`, `submit`).
+ *
+ * Google Forms kinds (2026-10-15, docs/modules/surveys-forms.md): scale, multi (with min/max
+ * ticks), dropdown, short, number, date, a "Boshqa: ___" option on choice/multi, and sections —
+ * shown as headings in the one scrolling form. The admin SPA's public page renders the same
+ * kinds in `pages/public/PollFormFields.tsx`; this build cannot import it.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { CheckCircle2, ChevronRight, ClipboardList, Lock, Star, X } from 'lucide-react'
@@ -140,7 +145,7 @@ export function PollSheet({ api, onClose }) {
                       </div>
                     }
                     title={p.title}
-                    subtitle={`${p.questions.length} ta savol${p.closesOn ? ` · ${fmt(p.closesOn)} gacha` : ''}`}
+                    subtitle={`${p.questions.filter((x) => x.kind !== 'section').length} ta savol${p.closesOn ? ` · ${fmt(p.closesOn)} gacha` : ''}`}
                     right={
                       p.answered ? (
                         <Badge tone="success">Javob berilgan</Badge>
@@ -176,6 +181,82 @@ const fmt = (iso) => {
 /** Answer key: question id + rated person ('' for the school). */
 const keyOf = (questionId, subjectId) => `${questionId}|${subjectId ?? ''}`
 
+const OTHER = 'Boshqa'
+
+/** "12,5" → 12.5; null when empty, NaN when not a number. */
+const parseNumber = (raw) => {
+  const t = String(raw ?? '').trim().replace(',', '.')
+  if (!t) return null
+  const n = Number(t)
+  return Number.isFinite(n) ? n : NaN
+}
+
+/** The "Boshqa" text of a choice / multi answer — only while "Boshqa" is picked. */
+const otherText = (v) => (v?.otherOn ? String(v.other ?? '').trim() : '')
+
+/** Ticks plus a filled-in "Boshqa". */
+const multiCount = (v) => (v?.choices?.length ?? 0) + (otherText(v) ? 1 : 0)
+
+/**
+ * Whether a value counts as an answer. Scores are numbers; choice / dropdown / multi are
+ * `{ choice, choices, otherOn, other }`; text, short, number and date are the typed string.
+ */
+function answered(q, v) {
+  if (v === undefined || v === null) return false
+  switch (q.kind) {
+    case 'nps':
+    case 'stars':
+    case 'scale':
+      return typeof v === 'number'
+    case 'choice':
+    case 'dropdown':
+      return v.otherOn ? Boolean(otherText(v)) : Boolean(v.choice)
+    case 'multi':
+      return multiCount(v) > 0
+    case 'number':
+      return parseNumber(v) !== null
+    default:
+      return String(v).trim() !== ''
+  }
+}
+
+/** What is wrong with one given answer (ranges, tick counts) — the server checks the same. */
+function rangeProblem(q, v) {
+  if (q.kind === 'multi') {
+    const count = multiCount(v)
+    if (q.minChoices != null && count < q.minChoices) return `kamida ${q.minChoices} ta variant tanlang`
+    if (q.maxChoices != null && count > q.maxChoices) return `ko'pi bilan ${q.maxChoices} ta variant tanlang`
+  }
+  if (q.kind === 'number') {
+    const n = parseNumber(v)
+    if (Number.isNaN(n)) return 'son kiriting'
+    if (q.minValue != null && n < q.minValue) return `kamida ${q.minValue}`
+    if (q.maxValue != null && n > q.maxValue) return `ko'pi bilan ${q.maxValue}`
+  }
+  return null
+}
+
+/** The API fields of one answer. */
+function payloadOf(q, v) {
+  switch (q.kind) {
+    case 'nps':
+    case 'stars':
+    case 'scale':
+      return { score: v }
+    case 'choice':
+    case 'dropdown':
+      return v.otherOn ? { text: otherText(v) } : { choice: v.choice }
+    case 'multi':
+      return { choices: v.choices ?? [], text: otherText(v) || null }
+    case 'number':
+      return { number: parseNumber(v) }
+    case 'date':
+      return { date: v }
+    default:
+      return { text: String(v).trim() }
+  }
+}
+
 function PollForm({ poll, api, onDone }) {
   const [answers, setAnswers] = useState({})
   const [sending, setSending] = useState(false)
@@ -187,21 +268,33 @@ function PollForm({ poll, api, onDone }) {
   )
   const set = (q, subjectId, value) => setAnswers((a) => ({ ...a, [keyOf(q.id, subjectId)]: value }))
 
-  const missing = useMemo(
-    () =>
-      poll.questions.filter((q) => {
-        if (!q.required) return false
-        const subjects = subjectsOf(q)
-        if (subjects === null) return !filled(answers[keyOf(q.id, null)])
-        return subjects.length > 0 && !subjects.some((s) => filled(answers[keyOf(q.id, s.id)]))
-      }),
-    [poll, answers, subjectsOf],
-  )
+  /** Question numbers — a section is a heading, not a question. */
+  const numbers = useMemo(() => {
+    const map = {}
+    let n = 0
+    for (const q of poll.questions) if (q.kind !== 'section') map[q.id] = ++n
+    return map
+  }, [poll])
+
+  /** The first thing to fix, as a sentence; null when the sheet can go. */
+  const problem = useMemo(() => {
+    for (const q of poll.questions) {
+      if (q.kind === 'section') continue
+      const subjects = subjectsOf(q)
+      const values = (subjects ?? [null]).map((s) => answers[keyOf(q.id, s?.id ?? null)]).filter((v) => answered(q, v))
+      if (q.required && values.length === 0 && (subjects === null || subjects.length > 0)) return `«${q.text}» savoliga javob bering`
+      for (const v of values) {
+        const p = rangeProblem(q, v)
+        if (p) return `«${q.text}» — ${p}`
+      }
+    }
+    return null
+  }, [poll, answers, subjectsOf])
 
   const send = async () => {
     if (sending) return
-    if (missing.length) {
-      setError(`«${missing[0].text}» savoliga javob bering`)
+    if (problem) {
+      setError(problem)
       hapticNotify('error')
       return
     }
@@ -210,17 +303,12 @@ function PollForm({ poll, api, onDone }) {
     try {
       const list = []
       for (const q of poll.questions) {
+        if (q.kind === 'section') continue
         const subjects = subjectsOf(q) ?? [null]
         for (const s of subjects) {
           const v = answers[keyOf(q.id, s?.id ?? null)]
-          if (!filled(v)) continue
-          list.push({
-            questionId: q.id,
-            subjectId: s?.id ?? null,
-            score: q.kind === 'nps' || q.kind === 'stars' ? v : null,
-            choice: q.kind === 'choice' ? v : null,
-            text: q.kind === 'text' ? v : null,
-          })
+          if (!answered(q, v)) continue
+          list.push({ questionId: q.id, subjectId: s?.id ?? null, score: null, choice: null, text: null, ...payloadOf(q, v) })
         }
       }
       await api.submit(poll.id, list)
@@ -239,15 +327,25 @@ function PollForm({ poll, api, onDone }) {
       {poll.description && (
         <p className="whitespace-pre-line px-5 pb-3 text-[14px] leading-snug text-slate-600">{poll.description}</p>
       )}
-      {poll.questions.map((q, i) => {
+      {poll.questions.map((q) => {
+        if (q.kind === 'section')
+          return (
+            <div key={q.id} className="px-5 pb-1 pt-5">
+              <h2 className="text-[17px] font-bold text-slate-800">{q.text}</h2>
+              {q.description && <p className="mt-0.5 whitespace-pre-line text-[13px] leading-snug text-slate-500">{q.description}</p>}
+            </div>
+          )
         const subjects = subjectsOf(q)
         return (
           <Card key={q.id}>
             <div className="space-y-3 px-4 py-4">
-              <p className="text-[15px] font-semibold leading-snug text-slate-800">
-                {i + 1}. {q.text}
-                {q.required && <span className="text-red-500"> *</span>}
-              </p>
+              <div>
+                <p className="text-[15px] font-semibold leading-snug text-slate-800">
+                  {numbers[q.id]}. {q.text}
+                  {q.required && <span className="text-red-500"> *</span>}
+                </p>
+                {q.description && <p className="mt-0.5 whitespace-pre-line text-[13px] leading-snug text-slate-500">{q.description}</p>}
+              </div>
               {subjects === null ? (
                 <Answer q={q} value={answers[keyOf(q.id, null)]} onChange={(v) => set(q, null, v)} />
               ) : subjects.length === 0 ? (
@@ -288,7 +386,46 @@ function PollForm({ poll, api, onDone }) {
   )
 }
 
-const filled = (v) => v !== undefined && v !== null && String(v).trim() !== ''
+const fieldClass = 'w-full rounded-xl border border-slate-200 bg-white px-3 py-3 text-[15px]'
+
+/** A pill — the same look for single and multiple choice. */
+function Chip({ selected, onClick, children }) {
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        haptic('light')
+        onClick()
+      }}
+      className={
+        'rounded-xl px-3.5 py-2 text-[14px] font-medium ' + (selected ? 'bg-brand-ink text-brand' : 'bg-slate-100 text-slate-700')
+      }
+    >
+      {children}
+    </button>
+  )
+}
+
+function OtherInput({ value, onChange }) {
+  return (
+    <input
+      value={value ?? ''}
+      onChange={(e) => onChange(e.target.value)}
+      maxLength={500}
+      placeholder="O'z javobingiz"
+      className={fieldClass}
+    />
+  )
+}
+
+function ScaleEnds({ low, high }) {
+  return (
+    <div className="mt-1 flex justify-between gap-3 text-[11px] text-slate-400">
+      <span>{low}</span>
+      <span className="text-right">{high}</span>
+    </div>
+  )
+}
 
 function Answer({ q, value, onChange }) {
   if (q.kind === 'nps')
@@ -318,10 +455,7 @@ function Answer({ q, value, onChange }) {
             </button>
           ))}
         </div>
-        <div className="mt-1 flex justify-between text-[11px] text-slate-400">
-          <span>Umuman yo'q</span>
-          <span>Albatta</span>
-        </div>
+        <ScaleEnds low="Umuman yo'q" high="Albatta" />
       </div>
     )
   if (q.kind === 'stars')
@@ -342,26 +476,124 @@ function Answer({ q, value, onChange }) {
         ))}
       </div>
     )
-  if (q.kind === 'choice')
+  if (q.kind === 'scale') {
+    const low = q.minValue ?? 1
+    const high = q.maxValue ?? 5
     return (
-      <div className="flex flex-wrap gap-2">
-        {q.options.map((o) => (
-          <button
-            key={o}
-            type="button"
-            onClick={() => {
-              haptic('light')
-              onChange(value === o ? null : o)
-            }}
-            className={
-              'rounded-xl px-3.5 py-2 text-[14px] font-medium ' +
-              (value === o ? 'bg-brand-ink text-brand' : 'bg-slate-100 text-slate-700')
-            }
-          >
-            {o}
-          </button>
-        ))}
+      <div>
+        <div className="flex gap-1">
+          {Array.from({ length: high - low + 1 }, (_, i) => low + i).map((n) => (
+            <button
+              key={n}
+              type="button"
+              onClick={() => {
+                haptic('light')
+                onChange(n)
+              }}
+              className={
+                'h-9 flex-1 rounded-lg text-[14px] font-semibold ' + (value === n ? 'bg-brand-ink text-brand' : 'bg-slate-100 text-slate-600')
+              }
+            >
+              {n}
+            </button>
+          ))}
+        </div>
+        {(q.minLabel || q.maxLabel) && <ScaleEnds low={q.minLabel ?? ''} high={q.maxLabel ?? ''} />}
       </div>
+    )
+  }
+  if (q.kind === 'choice') {
+    const v = value ?? {}
+    return (
+      <div className="space-y-2">
+        <div className="flex flex-wrap gap-2">
+          {q.options.map((o) => (
+            <Chip key={o} selected={!v.otherOn && v.choice === o} onClick={() => onChange(!v.otherOn && v.choice === o ? null : { choice: o })}>
+              {o}
+            </Chip>
+          ))}
+          {q.allowOther && (
+            <Chip selected={Boolean(v.otherOn)} onClick={() => onChange(v.otherOn ? null : { otherOn: true, other: v.other ?? '' })}>
+              {OTHER}
+            </Chip>
+          )}
+        </div>
+        {v.otherOn && <OtherInput value={v.other} onChange={(other) => onChange({ otherOn: true, other })} />}
+      </div>
+    )
+  }
+  if (q.kind === 'multi') {
+    const v = value ?? {}
+    const picked = v.choices ?? []
+    const hint =
+      q.minChoices != null && q.maxChoices != null
+        ? q.minChoices === q.maxChoices
+          ? `${q.minChoices} ta tanlang`
+          : `${q.minChoices}–${q.maxChoices} ta tanlang`
+        : q.minChoices != null
+          ? `Kamida ${q.minChoices} ta tanlang`
+          : q.maxChoices != null
+            ? `Ko'pi bilan ${q.maxChoices} ta tanlang`
+            : 'Bir nechtasini tanlash mumkin'
+    return (
+      <div className="space-y-2">
+        <p className="text-[12px] text-slate-400">{hint}</p>
+        <div className="flex flex-wrap gap-2">
+          {q.options.map((o) => (
+            <Chip
+              key={o}
+              selected={picked.includes(o)}
+              onClick={() => onChange({ ...v, choices: picked.includes(o) ? picked.filter((x) => x !== o) : [...picked, o] })}
+            >
+              {o}
+            </Chip>
+          ))}
+          {q.allowOther && (
+            <Chip selected={Boolean(v.otherOn)} onClick={() => onChange({ ...v, otherOn: !v.otherOn })}>
+              {OTHER}
+            </Chip>
+          )}
+        </div>
+        {v.otherOn && <OtherInput value={v.other} onChange={(other) => onChange({ ...v, other })} />}
+      </div>
+    )
+  }
+  if (q.kind === 'dropdown')
+    return (
+      <select
+        value={value?.choice ?? ''}
+        onChange={(e) => onChange(e.target.value ? { choice: e.target.value } : null)}
+        className={fieldClass}
+      >
+        <option value="">Tanlang</option>
+        {q.options.map((o) => (
+          <option key={o} value={o}>
+            {o}
+          </option>
+        ))}
+      </select>
+    )
+  if (q.kind === 'number')
+    return (
+      <input
+        inputMode="decimal"
+        value={value ?? ''}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={q.minValue != null && q.maxValue != null ? `${q.minValue} – ${q.maxValue}` : 'Son'}
+        className={fieldClass}
+      />
+    )
+  if (q.kind === 'date')
+    return <input type="date" value={value ?? ''} onChange={(e) => onChange(e.target.value)} className={fieldClass} />
+  if (q.kind === 'short')
+    return (
+      <input
+        value={value ?? ''}
+        onChange={(e) => onChange(e.target.value)}
+        maxLength={500}
+        placeholder="Javobingiz"
+        className={fieldClass}
+      />
     )
   return (
     <textarea
@@ -370,7 +602,7 @@ function Answer({ q, value, onChange }) {
       rows={3}
       maxLength={2000}
       placeholder="Javobingiz"
-      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-3 text-[15px]"
+      className={fieldClass}
     />
   )
 }

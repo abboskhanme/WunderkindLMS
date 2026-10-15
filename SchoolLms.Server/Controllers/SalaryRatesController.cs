@@ -48,36 +48,19 @@ public class SalaryRatesController(AppDbContext db, AuditService audit) : Contro
     {
         var m = string.IsNullOrEmpty(month) || month.Length < 7 ? AppClock.Now.ToString("yyyy-MM") : month[..7];
 
-        var meta = await db.SchoolMeta.FirstOrDefaultAsync();
-        var byWeekdayAll = await TeacherSalaryCalc.LessonsByWeekdayAsync(db);
-        var quarters = await TeacherSalaryCalc.QuarterRangesAsync(db);
+        // One calculation for every screen (TeacherPay): lessons, absences, substitutions, ustama, certificates and
+        // named allowances, Moliya → Bonus / Jarima (2026-10-15).
+        var pay = await TeacherPayContext.LoadAsync(db);
+        var meta = pay.Meta;
         var teachers = await db.Teachers.Where(t => !t.IsArchived)
             .OrderBy(t => t.FullName).ToListAsync();
 
-        // Tanlangan oydagi kelmagan (absent) kunlar — o'qituvchi bo'yicha.
-        var absentByTeacher = (await db.TeacherAttendances
-                .Where(a => a.Status == "absent" && a.Date.StartsWith(m))
-                .Select(a => new { a.TeacherId, a.Date }).ToListAsync())
-            .GroupBy(a => a.TeacherId)
-            .ToDictionary(g => g.Key, g => (IEnumerable<string>)g.Select(x => x.Date).ToList());
-
-        var substitutions = await LessonSubstitutionService.MonthDeltaAsync(db);
         var rows = teachers.Select(t =>
         {
-            var byWeekday = byWeekdayAll.GetValueOrDefault(t.Id) ?? new int[6];
-            var weekly = byWeekday.Sum();
-            var startDate = TeacherSalaryCalc.StartDateOf(t);
-            // Tanlangan oydagi reja darslar (chorak davri + ishga kirgan oyda qisman; kelishidan oldin 0).
-            var planned = TeacherSalaryCalc.PlannedLessonsForMonth(byWeekday, m, startDate, quarters);
-            var absentRaw = absentByTeacher.GetValueOrDefault(t.Id) ?? Enumerable.Empty<string>();
-            var absent = startDate is { Length: >= 10 } && startDate[..7] == m
-                ? absentRaw.Where(d => string.CompareOrdinal(d, startDate) >= 0).ToList()
-                : absentRaw.ToList();
-            var missed = TeacherSalaryCalc.MissedLessons(byWeekday, absent, quarters);
-            var delta = substitutions.GetValueOrDefault((t.Id, m));
-            var salary = TeacherSalaryCalc.MonthlyForMonth(byWeekday, t.Category, meta, m, startDate, absent, t.BonusPct, quarters, delta);
+            var p = pay.For(t, m);
             return new TeacherPayrollRowDto(
-                t.Id, t.FullName, t.Category, weekly, planned, missed, t.BonusPct, salary, delta);
+                t.Id, t.FullName, t.Category, pay.WeekdaysOf(t.Id).Sum(), p.PlannedLessons, p.MissedLessons, t.BonusPct,
+                p.Total, p.SubstitutionLessons, p.AllowancePct, p.AllowanceFixed, p.Bonus, p.Penalty);
         }).ToList();
 
         return new SalaryRatesDto(
@@ -125,27 +108,47 @@ public class SalaryRatesController(AppDbContext db, AuditService audit) : Contro
 
         var missed = absentDays.Sum(x => x.Lessons);
         // O'rindosh ustoz (2026-10-07): covered lessons in, own lessons covered by others out.
-        var delta = (await LessonSubstitutionService.MonthDeltaAsync(db)).GetValueOrDefault((t.Id, m));
+        var pay = await TeacherPayContext.LoadAsync(db, t.Id);
+        var breakdown = pay.For(t, m);
+        var delta = breakdown.SubstitutionLessons;
         var monthFrom = new DateOnly(int.Parse(m[..4]), int.Parse(m[5..7]), 1);
         var monthSubs = await LessonSubstitutionService.ListAsync(db, monthFrom, monthFrom.AddMonths(1).AddDays(-1), t.Id);
-        var net = Math.Max(0, monthlyLessons - missed + delta);
 
         // Berilgan maosh — `expenses` dan (P1-21). Faqat jurnalga tushgan va
         // storno qilinmagan chiqim sanaladi: tasdiq kutayotgani hali berilmagan
         // pul (SPEC §4.5), uni "berilgan" deb ko'rsatish qoldiqni kam ko'rsatardi.
-        var monthStart = new DateOnly(int.Parse(m[..4]), int.Parse(m[5..7]), 1);
+        var monthStart = monthFrom;
         var paid = (await new SalaryPaymentQuery(db).ForTeacherAsync(
                 t.Id, monthStart, monthStart.AddMonths(1).AddDays(-1)))
             .Sum(x => x.Amount);
 
-        var baseSalary = net * rate;                              // davomatga moslangan, ustamasiz
-        var bonusAmount = baseSalary * t.BonusPct / 100m;         // ustama summasi
-        var netSalary = baseSalary + bonusAmount;                 // jami (ustama bilan)
+        // Certificates / named allowances and the month's bonuses and fines (2026-10-15).
+        var allowances = pay.AllowancesIn(t.Id, m)
+            .OrderBy(a => a.Source).ThenBy(a => a.Title)
+            .Select(a => new SalaryAllowanceLineDto(a.Id, a.Source, a.Title, a.AmountKind, a.Amount,
+                TeacherPayContext.ValueIn(a, breakdown)))
+            .ToList();
+        var year = (short)monthFrom.Year;
+        var monthNo = (short)monthFrom.Month;
+        var reversed = db.PayrollAdjustments.Where(x => x.ReversalOf != null).Select(x => x.ReversalOf);
+        var adjustments = await (
+                from x in db.PayrollAdjustments.AsNoTracking()
+                join r in db.AdjustmentReasons.AsNoTracking() on x.ReasonId equals r.Id
+                where x.TeacherId == t.Id && x.ReversalOf == null && !reversed.Contains(x.Id)
+                      && x.PeriodYear == year && x.PeriodMonth == monthNo
+                orderby x.CreatedAt
+                select new SalaryAdjustmentLineDto(x.Id, x.Kind, r.Name, x.Amount, x.Comment, x.CreatedAt))
+            .ToListAsync();
+
+        var baseSalary = breakdown.LessonPay;                     // davomatga moslangan, ustamasiz
+        var bonusAmount = breakdown.UstamaAmount;                 // ustama summasi
+        var netSalary = breakdown.Total;                          // jami: ustama, sertifikat, bonus, jarima bilan
         return new TeacherSalaryDetailDto(
             t.Id, t.FullName, t.Category, m, startDate ?? "", partialMonth, rate, weekly, monthlyLessons,
             monthlyLessons * rate, missed, missed * rate,
             baseSalary, t.BonusPct, bonusAmount, netSalary,
-            paid, netSalary - paid, absentDays, delta, monthSubs);
+            paid, netSalary - paid, absentDays, delta, monthSubs,
+            breakdown.AllowanceAmount, allowances, breakdown.Bonus, breakdown.Penalty, adjustments);
     }
 
     /// <summary>

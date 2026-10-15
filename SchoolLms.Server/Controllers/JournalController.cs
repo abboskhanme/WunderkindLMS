@@ -251,6 +251,52 @@ public class JournalController(AppDbContext db) : ControllerBase
         return NoContent();
     }
 
+    /* ---------- Uy vazifasi bajarilishi (docs/modules/homework-completion.md) ---------- */
+
+    /// <summary>
+    /// Pupil × lesson table of homework statuses for one owner + subject over a date range
+    /// (default: the last two weeks; at most <see cref="HomeworkCompletionService.MaxRangeDays"/> days).
+    /// </summary>
+    [HttpGet("homework")]
+    public async Task<ActionResult<HomeworkSheetDto>> HomeworkSheet(
+        [FromQuery] string ownerId, [FromQuery] string subjectId, [FromQuery] string? from,
+        [FromQuery] string? to, [FromQuery] string? ownerKind, CancellationToken ct = default)
+    {
+        var owner = await HomeworkCompletionService.OwnerAsync(db, ownerKind, ownerId, ct);
+        if (owner is null) return NotFound(new { message = HomeworkCompletionService.OwnerNotFoundMessage });
+        var error = HomeworkCompletionService.ParseRange(from, to, out var start, out var end);
+        if (error is not null) return BadRequest(new { message = error });
+        return await HomeworkCompletionService.BuildSheetAsync(db, owner, subjectId, start, end, ct);
+    }
+
+    /// <summary>The same table as .xlsx — exactly what the screen shows for these filters.</summary>
+    [HttpGet("homework/export")]
+    public async Task<IActionResult> HomeworkExport(
+        [FromQuery] string ownerId, [FromQuery] string subjectId, [FromQuery] string? from,
+        [FromQuery] string? to, [FromQuery] string? ownerKind, CancellationToken ct = default)
+    {
+        var owner = await HomeworkCompletionService.OwnerAsync(db, ownerKind, ownerId, ct);
+        if (owner is null) return NotFound(new { message = HomeworkCompletionService.OwnerNotFoundMessage });
+        var error = HomeworkCompletionService.ParseRange(from, to, out var start, out var end);
+        if (error is not null) return BadRequest(new { message = error });
+        var sheet = await HomeworkCompletionService.BuildSheetAsync(db, owner, subjectId, start, end, ct);
+        return File(HomeworkCompletionService.ExportXlsx(sheet), XlsxMime, $"uy-vazifasi_{sheet.From}_{sheet.To}.xlsx");
+    }
+
+    /// <summary>
+    /// Bulk write of homework statuses (0..5) for one owner + subject. Only the homework mark of each
+    /// cell changes; a missing cell is created. All-or-nothing.
+    /// </summary>
+    [HttpPut("homework")]
+    public async Task<IActionResult> SaveHomework(SaveHomeworkMarksRequest req, CancellationToken ct = default)
+    {
+        var owner = await HomeworkCompletionService.OwnerAsync(db, req.OwnerKind, req.OwnerId, ct);
+        if (owner is null) return NotFound(new { message = HomeworkCompletionService.OwnerNotFoundMessage });
+        var error = await HomeworkCompletionService.SaveAsync(db, owner, req.SubjectId, req.Marks, ct);
+        if (error is not null) return BadRequest(new { message = error });
+        return NoContent();
+    }
+
     /* ---------- Mavzularni Excel'dan ommaviy yuklash (mavzu + uy vazifa) ---------- */
 
     private const string XlsxMime = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";

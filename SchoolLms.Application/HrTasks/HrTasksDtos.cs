@@ -356,7 +356,20 @@ public sealed record HrTaskFilter(
     string? Branch = null,
     bool? Accepted = null,
     string? Q = null,
-    string? Sort = null);
+    string? Sort = null,
+    string? View = null);
+
+/// <summary>
+/// Panel list "view" (<c>?view=</c>): whose tasks the "Topshiriqlar" list shows. Null / unknown = everything in
+/// scope, as before. The caller's own tasks live in "Mening topshiriqlarim" (<c>/api/hr/me/tasks</c>).
+/// </summary>
+public static class HrTaskViews
+{
+    /// <summary>Everyone in scope except the caller.</summary>
+    public const string Staff = "staff";
+    /// <summary>Tasks the caller gave — directly, or through a recurring template the caller made.</summary>
+    public const string Given = "given";
+}
 
 public sealed record HrPaging(int Limit = HrPagingDefaults.Limit, string? Cursor = null, bool WithTotal = false);
 

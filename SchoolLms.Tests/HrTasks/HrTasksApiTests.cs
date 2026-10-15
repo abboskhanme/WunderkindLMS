@@ -247,6 +247,42 @@ public class HrTasksApiTests(ApiFixture fixture)
     }
 
     [Fact]
+    public async Task Royxat_view_oz_topshiriqlarimni_xodimlarnikidan_ajratadi()
+    {
+        var manager = await kit.PersonAsync(Roles.Staff, HrRoles.Manager, [HrTaskAccess.PermissionKey], name: "Rahbar View");
+        var sub = await kit.PersonAsync(Roles.Staff, name: "Xodim View");
+        await kit.ReportsToAsync(sub.Employee!.Id, manager.Employee!.Id);
+
+        var due = DateTimeOffset.UtcNow.AddDays(2);
+        var mine = await kit.TaskAsync(manager.Employee.Id, due, title: "Menga berilgan");
+        var selfAdded = await kit.TaskAsync(sub.Employee.Id, due, source: HrTaskSources.Self, title: "Xodim o'zi qo'shgan");
+        var created = await manager.Client.PostAsJsonAsync($"{Panel}/tasks",
+            new { employeeId = sub.Employee.Id, title = "Rahbar bergan", dueAt = due.ToString("o") });
+        Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+        var givenId = (await ReadAsync(created)).GetProperty("id").GetString();
+
+        async Task<List<string?>> IdsAsync(string query)
+        {
+            var page = await ReadAsync(await manager.Client.GetAsync($"{Panel}/tasks?limit=200{query}"));
+            return page.GetProperty("items").EnumerateArray().Select(t => t.GetProperty("id").GetString()).ToList();
+        }
+
+        // no view — everything in scope, as before
+        var all = await IdsAsync("");
+        Assert.Contains(mine.Id, all);
+        Assert.Contains(selfAdded.Id, all);
+        Assert.Contains(givenId, all);
+
+        var staff = await IdsAsync("&view=staff");
+        Assert.DoesNotContain(mine.Id, staff);
+        Assert.Contains(selfAdded.Id, staff);
+        Assert.Contains(givenId, staff);
+
+        var mineGiven = await IdsAsync("&view=given");
+        Assert.Equal([givenId], mineGiven);
+    }
+
+    [Fact]
     public async Task Rahbarlikda_halqa_409()
     {
         using var admin = await fixture.Api.ClientAsAsync(Roles.Admin);

@@ -25,6 +25,7 @@ import {
 } from '@/api/services/teacher'
 import { quarters } from '@/config/constants'
 import { formatDate, cn } from '@/lib/utils'
+import { homeworkMeta } from '@/lib/homeworkStatus'
 import { Card } from '@/components/ui/Card'
 import { Loader } from '@/components/ui/Loader'
 import { JournalCellModal } from '@/pages/admin/journal/JournalCellModal'
@@ -432,6 +433,7 @@ export function TeacherJournalPage() {
                             {columns.map((c) => {
                               const entry = entryFor(s.id, c.date, c.period)
                               const late = entry?.reasonId ? reasonIsLate(entry.reasonId) : false
+                              const hw = homeworkMeta(entry?.homework)
                               const future = isFuture(c.date)
                               return (
                                 <td key={`${c.date}-${c.period}`} className="px-1 py-1 text-center">
@@ -470,14 +472,13 @@ export function TeacherJournalPage() {
                                     {entry?.grade != null && late && (
                                       <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-amber-400" />
                                     )}
-                                    {entry?.homework ? (
+                                    {hw ? (
                                       <span
-                                        title={entry.homework === 1 ? 'Uy vazifa: qildi' : 'Uy vazifa: qilmadi'}
-                                        className={cn(
-                                          'absolute -bottom-0.5 -left-0.5 h-2 w-2 rounded-sm',
-                                          entry.homework === 1 ? 'bg-emerald-500' : 'bg-red-500',
-                                        )}
-                                      />
+                                        title={`Uy vazifa: ${hw.label}`}
+                                        className={cn('absolute -bottom-0.5 left-0.5 text-[9px] font-bold leading-none', hw.text)}
+                                      >
+                                        {hw.symbol}
+                                      </span>
                                     ) : null}
                                     {entry?.behavior ? (
                                       <span

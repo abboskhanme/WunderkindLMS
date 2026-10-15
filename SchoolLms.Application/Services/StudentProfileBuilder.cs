@@ -131,8 +131,13 @@ public static class StudentProfileBuilder
             }).ToList();
 
         // ---- Uy vazifa + xulq (jami + choraklik trend) ----
-        var hwDone = entries.Count(e => e.Homework == 1);
-        var hwMissed = entries.Count(e => e.Homework == 2);
+        // 1 and 2 keep their old meaning (done / not done at all); the three later statuses are
+        // counted alongside them (homework-completion.md). A derived "Kelmadi" is not counted here.
+        var hwDone = entries.Count(e => e.Homework == HomeworkStatus.Done);
+        var hwMissed = entries.Count(e => e.Homework == HomeworkStatus.NotDone);
+        var hwPartial = entries.Count(e => e.Homework == HomeworkStatus.Partial);
+        var hwLate = entries.Count(e => e.Homework == HomeworkStatus.Late);
+        var hwAbsent = entries.Count(e => e.Homework == HomeworkStatus.Absent);
         var bGood = entries.Count(e => e.Behavior == 1);
         var bBad = entries.Count(e => e.Behavior == 2);
         // Choraklik — jurnaldagidek: belgilangan choraklar (1..4) bo'yicha (sozlanmagan bo'lsa
@@ -145,8 +150,10 @@ public static class StudentProfileBuilder
         {
             var list = markByQ.GetValueOrDefault(q) ?? new List<JournalEntry>();
             return new QuarterMarksDto(q,
-                list.Count(e => e.Homework == 1), list.Count(e => e.Homework == 2),
-                list.Count(e => e.Behavior == 1), list.Count(e => e.Behavior == 2));
+                list.Count(e => e.Homework == HomeworkStatus.Done), list.Count(e => e.Homework == HomeworkStatus.NotDone),
+                list.Count(e => e.Behavior == 1), list.Count(e => e.Behavior == 2),
+                list.Count(e => e.Homework == HomeworkStatus.Partial), list.Count(e => e.Homework == HomeworkStatus.Late),
+                list.Count(e => e.Homework == HomeworkStatus.Absent));
         }).ToList();
 
         // ---- O'rtacha baho (barcha fan/chorak baholarining o'rtachasi) ----
@@ -164,6 +171,7 @@ public static class StudentProfileBuilder
             disciplineScore, plus, minus, dPoints,
             assignments,
             evalTypes, evals, evalsBySubject,
-            hwDone, hwMissed, bGood, bBad, trend);
+            hwDone, hwMissed, bGood, bBad, trend,
+            hwPartial, hwLate, hwAbsent);
     }
 }

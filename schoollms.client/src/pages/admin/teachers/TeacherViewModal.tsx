@@ -9,6 +9,9 @@ import { getTeacherCredentials, resetTeacherPassword } from '@/api/services/teac
 import { getCertificates, type Certificate } from '@/api/services/certificates'
 import { genderLabels, formatMonth, teacherCategoryLabel } from '@/config/constants'
 import { formatDate, cn } from '@/lib/utils'
+import { useAuth } from '@/context/auth-context'
+import { hasSection } from '@/lib/access'
+import { TeacherPayTab } from './TeacherPayTab'
 
 interface Props {
   teacher: Teacher | null
@@ -16,7 +19,8 @@ interface Props {
   onClose: () => void
 }
 
-type Tab = 'umumiy' | 'sertifikatlar'
+/** `sertifikatlar` — documents this teacher ISSUED to pupils; `oz` / `ustama` — the teacher's own, paid with the salary. */
+type Tab = 'umumiy' | 'oz' | 'ustama' | 'sertifikatlar'
 
 function Row({ label, value }: { label: string; value: string }) {
   return (
@@ -36,8 +40,15 @@ function Row({ label, value }: { label: string; value: string }) {
  * filtrlaydi (`CertificatesController.GetAll`), shuning uchun yangi backend yo'li
  * kerak emas — faqat shu ekran. Ro'yxat FAQAT O'QISH uchun: qo'shish/tahrirlash —
  * "Sertifikatlar" bo'limining o'zida yoki o'quvchi kartochkasida (Z-1).
+ *
+ * <b>"Sertifikatlari" va "Ustama" tab'lari</b> (mijoz, 2026-10-15) — o'qituvchining O'Z sertifikatlari va
+ * ustamalari, oylikka avtomatik qo'shiladi (TeacherPayTab). Bu PUL: faqat moliya ruxsati borlarga ko'rinadi,
+ * yozish — admin, direktor va «finance» xodim. Avvalgi tab endi «Bergan sertifikatlar» deb ataladi.
  */
 export function TeacherViewModal({ teacher, subjects, onClose }: Props) {
+  const { user } = useAuth()
+  const canSeePay = hasSection(user, 'finance')
+  const canEditPay = !!user && (!user.permissions || user.permissions.includes('finance'))
   const [credentials, setCredentials] = useState<Credentials | null>(null)
   const [tab, setTab] = useState<Tab>('umumiy')
   const [certs, setCerts] = useState<Certificate[]>([])
@@ -107,32 +118,38 @@ export function TeacherViewModal({ teacher, subjects, onClose }: Props) {
     >
       {teacher && (
         <div className="space-y-4">
-          <div className="flex gap-1 rounded-lg bg-slate-100 p-1">
-            <button
-              type="button"
-              onClick={() => setTab('umumiy')}
-              className={cn(
-                'rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
-                tab === 'umumiy' ? 'bg-white text-brand-700 shadow-sm' : 'text-slate-500 hover:text-slate-700',
-              )}
-            >
-              Umumiy
-            </button>
-            <button
-              type="button"
-              onClick={() => setTab('sertifikatlar')}
-              className={cn(
-                'rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
-                tab === 'sertifikatlar'
-                  ? 'bg-white text-brand-700 shadow-sm'
-                  : 'text-slate-500 hover:text-slate-700',
-              )}
-            >
-              Sertifikatlar
-            </button>
+          <div className="flex gap-1 overflow-x-auto rounded-lg bg-slate-100 p-1">
+            {(
+              [
+                ['umumiy', 'Umumiy'],
+                ...(canSeePay
+                  ? ([
+                      ['oz', 'Sertifikatlari'],
+                      ['ustama', 'Ustama'],
+                    ] as const)
+                  : []),
+                ['sertifikatlar', 'Bergan sertifikatlar'],
+              ] as const
+            ).map(([key, label]) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setTab(key)}
+                className={cn(
+                  'shrink-0 rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
+                  tab === key ? 'bg-white text-brand-700 shadow-sm' : 'text-slate-500 hover:text-slate-700',
+                )}
+              >
+                {label}
+              </button>
+            ))}
           </div>
 
-          {tab === 'umumiy' ? (
+          {(tab === 'oz' || tab === 'ustama') && canSeePay ? (
+            <TeacherPayTab teacherId={teacher.id} source={tab === 'oz' ? 'certificate' : 'ustama'} canEdit={canEditPay} />
+          ) : null}
+
+          {tab === 'oz' || tab === 'ustama' ? null : tab === 'umumiy' ? (
             <div>
               <Row label="F.I.SH" value={teacher.fullName} />
               <Row label="Jinsi" value={genderLabels[teacher.gender]} />

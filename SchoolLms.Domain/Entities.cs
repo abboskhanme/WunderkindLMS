@@ -461,7 +461,10 @@ public class JournalEntry
     public int Period { get; set; }
     public int? Grade { get; set; }
     public string? ReasonId { get; set; }
-    /// <summary>Uyga vazifa bajarilishi: 0 = belgilanmagan, 1 = qildi, 2 = qilmadi.</summary>
+    /// <summary>
+    /// Uyga vazifa bajarilishi: 0 = belgilanmagan, 1 = + bajardi, 2 = * umuman yo'q (eski "qilmadi"),
+    /// 3 = − chala, 4 = K kech qoldi, 5 = Y kelmadi. Qiymatlar va belgilar: <see cref="HomeworkStatus"/>.
+    /// </summary>
     public int Homework { get; set; }
     /// <summary>Xulq: 0 = belgilanmagan, 1 = yaxshi, 2 = yomon.</summary>
     public int Behavior { get; set; }

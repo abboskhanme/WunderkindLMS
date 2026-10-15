@@ -83,7 +83,12 @@ public record TeacherPayload(
 public record SalaryPaymentRequest(decimal Amount, string? Note, string? Method = null);
 public record SalaryHistoryDto(
     string TeacherId, string FullName, decimal Salary, decimal TotalPaid, List<PaymentDto> Payments);
-public record MonthSalaryDto(string Month, decimal Expected, decimal Paid, decimal Remaining, string Status);
+/// <param name="LessonPay">Teacher: lessons due × rate; staff: the month's fixed salary. The parts below add up to
+/// <paramref name="Expected"/> (2026-10-15 — fines, bonuses and allowances are in the salary).</param>
+public record MonthSalaryDto(
+    string Month, decimal Expected, decimal Paid, decimal Remaining, string Status,
+    decimal LessonPay = 0, decimal Ustama = 0, decimal Allowances = 0, decimal Bonus = 0, decimal Penalty = 0,
+    int SubstitutionLessons = 0);
 public record SalaryLedgerDto(
     string TeacherId, string FullName, decimal Salary,
     decimal TotalExpected, decimal TotalPaid, decimal Remaining,
@@ -107,9 +112,14 @@ public record SalaryRatesDto(
     decimal Oliy, decimal T1, decimal T2, decimal Mutaxasis,
     int WeeksPerMonth, string Month, List<TeacherPayrollRowDto> Teachers);
 /// <param name="SubstitutionLessons">O'rindosh ustoz: lessons covered for others minus own lessons covered by others.</param>
+/// <param name="AllowancePct">Certificates and named allowances in percent of the lesson pay (this month).</param>
+/// <param name="AllowanceFixed">Fixed-sum allowances paid this month (0 in a month without lessons).</param>
+/// <param name="AdjustmentBonus">Moliya → Bonus for this month.</param>
+/// <param name="Penalty">Moliya → Jarima for this month.</param>
 public record TeacherPayrollRowDto(
     string Id, string FullName, string Category, int WeeklyLessons, int MonthlyLessons,
-    int MissedLessons, decimal BonusPct, decimal MonthlySalary, int SubstitutionLessons = 0);
+    int MissedLessons, decimal BonusPct, decimal MonthlySalary, int SubstitutionLessons = 0,
+    decimal AllowancePct = 0, decimal AllowanceFixed = 0, decimal AdjustmentBonus = 0, decimal Penalty = 0);
 public record SalaryRatesRequest(decimal Oliy, decimal T1, decimal T2, decimal Mutaxasis);
 public record SetTeacherBonusRequest(decimal BonusPct);
 public record SetBonusBulkRequest(List<string> TeacherIds, decimal BonusPct);
@@ -122,29 +132,54 @@ public record TeacherSalaryDetailDto(
     decimal PlannedSalary, int MissedLessons, decimal Deduction,
     decimal BaseSalary, decimal BonusPct, decimal BonusAmount, decimal NetSalary,
     decimal Paid, decimal Remaining, List<AbsentDayDto> AbsentDays,
-    int SubstitutionLessons = 0, List<SchoolLms.Application.Services.SubstitutionDto>? Substitutions = null);
+    int SubstitutionLessons = 0, List<SchoolLms.Application.Services.SubstitutionDto>? Substitutions = null,
+    decimal AllowanceAmount = 0, List<SalaryAllowanceLineDto>? Allowances = null,
+    decimal AdjustmentBonus = 0, decimal Penalty = 0, List<SalaryAdjustmentLineDto>? Adjustments = null);
+
+/// <summary>One certificate / allowance in a month's salary: its setting and what it adds that month.</summary>
+public record SalaryAllowanceLineDto(Guid Id, string Source, string Title, string AmountKind, decimal Amount, decimal Value);
+
+/// <summary>One bonus or fine of the month (cancelled ones are not listed).</summary>
+public record SalaryAdjustmentLineDto(Guid Id, string Kind, string Reason, decimal Amount, string? Comment, DateTimeOffset CreatedAt);
 
 /// <summary>O'qituvchilar davomati — oylik board (o'qituvchilar + belgilangan kunlar).</summary>
 public record TeacherNameDto(string Id, string FullName, string StartDate = "");
 public record TeacherAttendanceDto(string TeacherId, string Date, string Status, string Note);
 public record DateRangeDto(string Start, string End);
+/// <summary>
+/// Board for a date range (docs/modules/teacher-attendance-range.md). <see cref="Teachers"/> — only
+/// teachers with lessons in the range or an entry in it. <see cref="From"/>..<see cref="Lessons"/>
+/// were added for the range screen; the first three fields keep the old month shape.
+/// </summary>
 public record TeacherAttendanceBoardDto(
-    List<TeacherNameDto> Teachers, List<TeacherAttendanceDto> Entries, List<DateRangeDto> Quarters);
+    List<TeacherNameDto> Teachers, List<TeacherAttendanceDto> Entries, List<DateRangeDto> Quarters,
+    string From = "", string To = "",
+    List<TeacherAttendanceDayDto>? Days = null, List<TeacherLessonCountDto>? Lessons = null);
+/// <summary>One calendar day of the board's range (Sundays included). <see cref="Teachers"/> — how many
+/// listed teachers have lessons that day.</summary>
+public record TeacherAttendanceDayDto(
+    string Date, bool IsSunday, bool IsHoliday, string HolidayName, bool InQuarter, int Teachers);
+/// <summary>Lessons a teacher teaches on a date (timetable + substitutions). 0 = every lesson that day
+/// went to a substitute; the teacher is still listed so they can be marked absent.</summary>
+public record TeacherLessonCountDto(string TeacherId, string Date, int Lessons);
 public record SetTeacherAttendanceRequest(string TeacherId, string Date, string? Status, string? Note);
-/// <summary>Bitta kun uchun BARCHA faol o'qituvchini belgilash (status bo'sh = o'sha kun tozalanadi).</summary>
+/// <summary>Marks one day for the teachers who teach that day (empty status = clears their marks).</summary>
 public record SetTeacherAttendanceDayRequest(string Date, string? Status);
 
 // ---------- Turniket/FaceID: o'qituvchilar davomati dashboard ----------
 /// <summary>Dashboard bitta o'qituvchi qatori (kunlik).</summary>
+/// <remarks><c>HasLessons</c> false — no lessons that day; listed only because an entry exists.</remarks>
 public record TeacherDashboardRowDto(
     string TeacherId, string FullName, string? PhotoUrl, string DeviceUserId,
-    string Status, string CheckIn, string CheckOut, string Expected, int LateMinutes, string Source);
+    string Status, string CheckIn, string CheckOut, string Expected, int LateMinutes, string Source,
+    bool HasLessons = true, int Lessons = 0);
 /// <summary>Kunlik davomat jamlamasi.</summary>
 public record AttendanceSummaryDto(int Total, int Present, int Late, int Absent, int NotArrived);
 /// <summary>O'qituvchilar davomati dashboard (tanlangan kun).</summary>
+/// <remarks><c>NoLessonTeachers</c> — active teachers with no lessons that day (listed only if they have an entry).</remarks>
 public record TeacherAttendanceDashboardDto(
     string Date, bool TurnstileEnabled, string LastSync, bool InTeachingPeriod,
-    AttendanceSummaryDto Summary, List<TeacherDashboardRowDto> Rows);
+    AttendanceSummaryDto Summary, List<TeacherDashboardRowDto> Rows, int NoLessonTeachers = 0);
 /// <summary>Sinxronlash natijasi.</summary>
 public record TurnstileSyncResultDto(bool Ok, string Message, int EventsFetched, int Updated, string LastSync);
 
@@ -762,8 +797,13 @@ public record StudentReportDto(
 
 /// <summary>O'quvchining bitta oydagi baholash turlari bo'yicha baholari.</summary>
 public record MonthlyEvaluationDto(string Month, Dictionary<string, int> Grades, double Avg);
-/// <summary>O'quvchining bitta chorakdagi uy vazifa/xulq jamlamasi.</summary>
-public record QuarterMarksDto(int Quarter, int HomeworkDone, int HomeworkMissed, int BehaviorGood, int BehaviorBad);
+/// <summary>
+/// O'quvchining bitta chorakdagi uy vazifa/xulq jamlamasi. <c>HomeworkMissed</c> — "umuman yo'q" (2);
+/// chala / kech qoldi / kelmadi keyin qo'shilgan (homework-completion.md, <see cref="Domain.HomeworkStatus"/>).
+/// </summary>
+public record QuarterMarksDto(
+    int Quarter, int HomeworkDone, int HomeworkMissed, int BehaviorGood, int BehaviorBad,
+    int HomeworkPartial = 0, int HomeworkLate = 0, int HomeworkAbsent = 0);
 
 /// <summary>
 /// O'quvchi shaxsiy daftari — bitta o'quvchi haqida BARCHA ma'lumot (profil, o'zlashtirish,
@@ -791,7 +831,9 @@ public record StudentNotebookDto(
     List<EvaluationTypeDto> EvaluationTypes, List<MonthlyEvaluationDto> Evaluations,
     List<SubjectEvaluationDto> EvaluationsBySubject,
     // Uy vazifa + xulq (choraklik)
-    int HomeworkDone, int HomeworkMissed, int BehaviorGood, int BehaviorBad, List<QuarterMarksDto> MarksTrend);
+    int HomeworkDone, int HomeworkMissed, int BehaviorGood, int BehaviorBad, List<QuarterMarksDto> MarksTrend,
+    // Uy vazifa — keyin qo'shilgan holatlar (homework-completion.md): chala, kech qoldi, kelmadi (saqlangan)
+    int HomeworkPartial = 0, int HomeworkLate = 0, int HomeworkAbsent = 0);
 
 /// <summary>Portal reytingidagi bitta qator (o'quvchi/parent ko'rinishi — shaxsiy ma'lumotsiz: telefon/balans/manzil yo'q).</summary>
 public record PortalRatingRowDto(

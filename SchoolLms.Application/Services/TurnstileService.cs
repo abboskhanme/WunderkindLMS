@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net;
 using System.Text;
 using System.Text.Json;
@@ -17,7 +18,11 @@ namespace SchoolLms.Application.Services;
 /// </summary>
 public class TurnstileService
 {
-    /// <summary>Tanlangan kun uchun dashboard — har o'qituvchi: holat, kelgan/ketgan vaqt, kechikish.</summary>
+    /// <summary>
+    /// Tanlangan kun uchun dashboard — har o'qituvchi: holat, kelgan/ketgan vaqt, kechikish.
+    /// Only teachers with lessons that day are listed (<see cref="TeacherDaySchedule"/>), plus anyone
+    /// who already has an entry that day (flagged as having no lessons); the rest are only counted.
+    /// </summary>
     public async Task<TeacherAttendanceDashboardDto> BuildDashboardAsync(IAppDbContext db, string date)
     {
         var meta = await db.SchoolMeta.FirstOrDefaultAsync();
@@ -29,21 +34,31 @@ public class TurnstileService
         var teachers = await db.Teachers.Where(t => !t.IsArchived).OrderBy(t => t.FullName).ToListAsync();
         var entries = (await db.TeacherAttendances.Where(a => a.Date == date).ToListAsync())
             .ToDictionary(a => a.TeacherId);
+        var scheduled = DateOnly.TryParseExact(date, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var day)
+            ? (await TeacherDaySchedule.LoadAsync(db, day, day)).TeachersOn(day)
+            : new Dictionary<string, int>();
 
         var firstStart = await FirstStartByWeekdayAsync(db);
 
         var rows = new List<TeacherDashboardRowDto>();
-        int present = 0, late = 0, absent = 0, notArrived = 0;
+        int present = 0, late = 0, absent = 0, notArrived = 0, noLessons = 0;
         foreach (var t in teachers)
         {
+            var hasLessons = scheduled.TryGetValue(t.Id, out var lessons);
+            entries.TryGetValue(t.Id, out var e);
+            if (!hasLessons)
+            {
+                noLessons++;
+                if (e is null) continue; // nobody expected them that day and nothing is recorded
+            }
+
             var start = TeacherSalaryCalc.StartDateOf(t);
             var notYet = start is not null && string.CompareOrdinal(date, start) < 0;
             var expected = ExpectedArrival(t, date, meta?.WorkStartTime ?? "", firstStart);
 
-            entries.TryGetValue(t.Id, out var e);
             var status = e?.Status ?? "";
-            // Davomat yozuvi yo'q + chorak davri + ishga kirgan + o'tgan kun → kelmadi (jonli).
-            if (status == "" && inPeriod && !notYet && isPast) status = "absent";
+            // Davomat yozuvi yo'q + darsi bor + chorak davri + ishga kirgan + o'tgan kun → kelmadi (jonli).
+            if (status == "" && hasLessons && inPeriod && !notYet && isPast) status = "absent";
 
             var lateMin = 0;
             if (status == "late" && e is not null && e.CheckIn.Length == 5 && expected.Length == 5)
@@ -54,17 +69,18 @@ public class TurnstileService
                 case "present": present++; break;
                 case "late": late++; break;
                 case "absent": absent++; break;
-                default: if (!notYet && inPeriod) notArrived++; break;
+                default: if (hasLessons && !notYet && inPeriod) notArrived++; break;
             }
 
             rows.Add(new TeacherDashboardRowDto(
                 t.Id, t.FullName, t.PhotoUrl, t.DeviceUserId,
-                status, e?.CheckIn ?? "", e?.CheckOut ?? "", expected, lateMin, e?.Source ?? ""));
+                status, e?.CheckIn ?? "", e?.CheckOut ?? "", expected, lateMin, e?.Source ?? "",
+                hasLessons, lessons));
         }
 
-        var summary = new AttendanceSummaryDto(teachers.Count, present, late, absent, notArrived);
+        var summary = new AttendanceSummaryDto(rows.Count, present, late, absent, notArrived);
         return new TeacherAttendanceDashboardDto(
-            date, meta?.TurnstileEnabled ?? false, meta?.TurnstileLastSync ?? "", inPeriod, summary, rows);
+            date, meta?.TurnstileEnabled ?? false, meta?.TurnstileLastSync ?? "", inPeriod, summary, rows, noLessons);
     }
 
     /// <summary>
@@ -179,7 +195,9 @@ public class TurnstileService
     }
 
     /// <summary>[from..to] oralig'idagi har KUN uchun davomatni hodisalardan qayta hisoblaydi
-    /// (faqat "manual" bo'lmagan yozuvlar ustiga yoziladi — admin tuzatgan yozuvlar saqlanadi).</summary>
+    /// (faqat "manual" bo'lmagan yozuvlar ustiga yoziladi — admin tuzatgan yozuvlar saqlanadi).
+    /// "Absent" is written only on a day the teacher has lessons (<see cref="TeacherDaySchedule"/>):
+    /// never on a Sunday, a holiday or a day without timetable lessons.</summary>
     public async Task<int> RecomputeAsync(IAppDbContext db, DateTime from, DateTime to)
     {
         var meta = await db.SchoolMeta.FirstOrDefaultAsync();
@@ -192,6 +210,7 @@ public class TurnstileService
 
         var fromDate = DateOnly.FromDateTime(from);
         var toDate = DateOnly.FromDateTime(to);
+        var schedule = await TeacherDaySchedule.LoadAsync(db, fromDate, toDate);
 
         // Oraliqdagi barcha hodisalar (teacherId|date → vaqtlar).
         var fromIso = fromDate.ToString("yyyy-MM-dd");
@@ -213,6 +232,7 @@ public class TurnstileService
             var date = d.ToString("yyyy-MM-dd");
             if (!TeacherSalaryCalc.InQuarter(date, quarters)) continue;
             var isPast = string.CompareOrdinal(date, today) < 0;
+            var scheduled = schedule.TeachersOn(d);
             foreach (var t in teachers)
             {
                 var start = TeacherSalaryCalc.StartDateOf(t);
@@ -232,8 +252,19 @@ public class TurnstileService
                     var grace = meta?.LateGraceMinutes ?? 0;
                     status = expected.Length == 5 && MinutesBetween(expected, checkIn) > grace ? "late" : "present";
                 }
-                else if (isPast) status = "absent"; // o'tgan kun, hodisa yo'q → kelmadi
-                else continue;                       // bugun, hali kelmadi → yozmaymiz
+                else if (isPast && scheduled.ContainsKey(t.Id)) status = "absent"; // o'tgan kun, darsi bor, hodisa yo'q → kelmadi
+                else
+                {
+                    // Today (not arrived yet) — nothing to write. A past day without lessons — nobody
+                    // expected the teacher: no "absent", and an auto-absent written before this rule
+                    // existed is dropped (only our own turnstile rows; manual ones were skipped above).
+                    if (isPast && att is { Source: "turnstile", Status: "absent" })
+                    {
+                        db.TeacherAttendances.Remove(att);
+                        updated++;
+                    }
+                    continue;
+                }
 
                 if (att is null)
                 {

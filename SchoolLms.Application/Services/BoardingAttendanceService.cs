@@ -29,21 +29,26 @@ namespace SchoolLms.Application.Services;
 public sealed class BoardingAttendanceService(
     IAppDbContext db, TelegramService telegram, ILogger<BoardingAttendanceService> logger)
 {
-    /// <summary>Shu kuni sessiya ro'yxatida turgan (arxivlanmagan) o'quvchilar.</summary>
-    public async Task<HashSet<string>> EligibleAsync(DateOnly date, string session, CancellationToken ct = default)
+    /// <summary>
+    /// Shu kuni sessiya ro'yxatida turgan (arxivlanmagan) o'quvchilar. <paramref name="gender"/> — a dorm
+    /// commandant limited to one half of the dormitory (<see cref="DormGender"/>); null — everyone.
+    /// </summary>
+    public async Task<HashSet<string>> EligibleAsync(
+        DateOnly date, string session, string? gender = null, CancellationToken ct = default)
     {
         var ids = await (
             from r in db.BoardingRosters.AsNoTracking()
             join st in db.Students.AsNoTracking() on r.StudentId equals st.Id
             where r.Session == session && r.AddedOn <= date && (r.RemovedOn == null || r.RemovedOn > date)
-                  && !st.IsArchived
+                  && !st.IsArchived && (gender == null || st.Gender == gender)
             select r.StudentId).Distinct().ToListAsync(ct);
         return ids.ToHashSet(StringComparer.Ordinal);
     }
 
-    public async Task<BoardingDayDto> DayAsync(DateOnly date, string session, CancellationToken ct = default)
+    public async Task<BoardingDayDto> DayAsync(
+        DateOnly date, string session, string? gender = null, CancellationToken ct = default)
     {
-        var eligible = await EligibleAsync(date, session, ct);
+        var eligible = await EligibleAsync(date, session, gender, ct);
         var marks = await db.BoardingAttendance.AsNoTracking()
             .Where(a => a.Date == date && a.Session == session)
             .ToDictionaryAsync(a => a.StudentId, a => (a.Status, a.ReasonId), ct);
@@ -143,7 +148,7 @@ public sealed class BoardingAttendanceService(
     /// </summary>
     public async Task<(SaveBoardingResult? Result, string? Error)> SaveAsync(
         DateOnly date, string session, IReadOnlyList<BoardingMarkInput> marks, string userId,
-        CancellationToken ct = default)
+        string? gender = null, CancellationToken ct = default)
     {
         if (marks.Count == 0) return (null, "Belgilanadigan o'quvchi yo'q");
         if (marks.Any(m => !BoardingStatus.All.Contains(m.Status)))
@@ -162,8 +167,15 @@ public sealed class BoardingAttendanceService(
                 return (null, "Sabab holatga mos emas: \"keldi\" — faqat kechikish, \"kelmadi\" — faqat yo'qlik sababi");
         }
 
-        var eligible = await EligibleAsync(date, session, ct);
+        var eligible = await EligibleAsync(date, session, gender, ct);
         var foreign = marks.Where(m => !eligible.Contains(m.StudentId)).ToList();
+        if (foreign.Count > 0 && gender is not null)
+        {
+            var everyone = await EligibleAsync(date, session, null, ct);
+            var otherHalf = foreign.Count(m => everyone.Contains(m.StudentId));
+            if (otherHalf > 0)
+                return (null, $"{otherHalf} ta o'quvchi sizning bo'limingizda emas — siz faqat {DormGender.Label(gender)}ni belgilaysiz");
+        }
         if (foreign.Count > 0)
             return (null, $"{foreign.Count} ta o'quvchi shu kuni ro'yxatda yo'q — avval ro'yxatga qo'shing");
 
@@ -200,14 +212,15 @@ public sealed class BoardingAttendanceService(
     // =================================================================
 
     /// <summary>Sessiyaning hozirgi ro'yxati — yo'nalish guruhi va kim qo'shgani bilan.</summary>
-    public async Task<List<BoardingRosterRowDto>> RosterAsync(string session, CancellationToken ct = default)
+    public async Task<List<BoardingRosterRowDto>> RosterAsync(
+        string session, string? gender = null, CancellationToken ct = default)
     {
         var today = AppClock.Today;
         var rows = await (
             from r in db.BoardingRosters.AsNoTracking()
             join st in db.Students.AsNoTracking() on r.StudentId equals st.Id
             where r.Session == session && r.AddedOn <= today && (r.RemovedOn == null || r.RemovedOn > today)
-                  && !st.IsArchived
+                  && !st.IsArchived && (gender == null || st.Gender == gender)
             select new { st.Id, st.FullName, st.ClassName, r.AddedOn, r.AddedBy }).ToListAsync(ct);
         var tracks = await TrackOfAsync([.. rows.Select(r => r.Id)], ct);
         var userIds = rows.Select(r => r.AddedBy).Distinct().ToList();
@@ -222,13 +235,15 @@ public sealed class BoardingAttendanceService(
     }
 
     /// <summary>Ro'yxatda bo'lmagan faol o'quvchilar (qidiruv bo'yicha, ko'pi bilan 100 ta).</summary>
-    public async Task<List<BoardingCandidateDto>> CandidatesAsync(string session, string? query, CancellationToken ct = default)
+    public async Task<List<BoardingCandidateDto>> CandidatesAsync(
+        string session, string? query, string? gender = null, CancellationToken ct = default)
     {
         var today = AppClock.Today;
         var inRoster = db.BoardingRosters.Where(r => r.Session == session && r.AddedOn <= today
                                                      && (r.RemovedOn == null || r.RemovedOn > today))
             .Select(r => r.StudentId);
         var q = db.Students.AsNoTracking().Where(s => !s.IsArchived && !inRoster.Contains(s.Id));
+        if (gender is not null) q = q.Where(s => s.Gender == gender);
         var needle = query?.Trim();
         if (!string.IsNullOrEmpty(needle))
         {
@@ -244,12 +259,16 @@ public sealed class BoardingAttendanceService(
     /// <summary>Ro'yxatga qo'shadi (bugundan). Allaqachon ro'yxatdagilar o'tkazib yuboriladi.</summary>
     /// <returns>Nechtasi qo'shildi; xato bo'lsa — matn.</returns>
     public async Task<(int Added, string? Error)> AddAsync(
-        string session, IReadOnlyCollection<string> studentIds, string userId, CancellationToken ct = default)
+        string session, IReadOnlyCollection<string> studentIds, string userId, string? gender = null,
+        CancellationToken ct = default)
     {
         var ids = studentIds.Where(id => !string.IsNullOrWhiteSpace(id)).Distinct(StringComparer.Ordinal).ToList();
         if (ids.Count == 0) return (0, "Hech kim tanlanmadi");
-        var found = await db.Students.Where(s => ids.Contains(s.Id) && !s.IsArchived).Select(s => s.Id).ToListAsync(ct);
+        var found = await db.Students.Where(s => ids.Contains(s.Id) && !s.IsArchived)
+            .Select(s => new { s.Id, s.Gender }).ToListAsync(ct);
         if (found.Count != ids.Count) return (0, "Tanlanganlardan biri topilmadi yoki arxivda");
+        if (gender is not null && found.Any(s => s.Gender != gender))
+            return (0, $"Siz faqat {DormGender.Label(gender)}ni qo'sha olasiz");
 
         var today = AppClock.Today;
         var active = (await db.BoardingRosters
@@ -279,11 +298,14 @@ public sealed class BoardingAttendanceService(
     /// Ro'yxatdan chiqaradi — bugundan boshlab. Bugun qo'shilgan bo'lsa qator butunlay o'chiriladi
     /// (xato qo'shilgan), o'tgan kunlardagi davomati esa joyida qoladi.
     /// </summary>
-    public async Task<bool> RemoveAsync(string session, string studentId, string userId, CancellationToken ct = default)
+    public async Task<bool> RemoveAsync(
+        string session, string studentId, string userId, string? gender = null, CancellationToken ct = default)
     {
         var row = await db.BoardingRosters
             .FirstOrDefaultAsync(r => r.Session == session && r.StudentId == studentId && r.RemovedOn == null, ct);
         if (row is null) return false;
+        // The other half of the dormitory is not this commandant's list — as if the pupil were not on it.
+        if (gender is not null && !await db.Students.AnyAsync(s => s.Id == studentId && s.Gender == gender, ct)) return false;
         var today = AppClock.Today;
         if (row.AddedOn >= today) db.BoardingRosters.Remove(row);
         else

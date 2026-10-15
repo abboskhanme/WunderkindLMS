@@ -99,21 +99,15 @@ public class FinanceController(AppDbContext db) : ControllerBase
         // Oylik maosh — dars jadvali + toifa narxidan; har oy DAVOMATga moslanadi (kelmagan kun chegiriladi).
         var meta = await db.SchoolMeta.FirstOrDefaultAsync(ct);
         var byWeekdayAll = await TeacherSalaryCalc.LessonsByWeekdayAsync(db);
-        var quarters = await TeacherSalaryCalc.QuarterRangesAsync(db);
-        var absentAll = await db.TeacherAttendances
-            .Where(a => a.Status == "absent" && a.Date.Length >= 7)
-            .Select(a => new { a.TeacherId, a.Date }).ToListAsync(ct);
-        // O'rindosh ustoz (2026-10-07): covered lessons in, lessons covered by others out.
-        var substitutions = await LessonSubstitutionService.MonthDeltaAsync(db, ct);
+        // One calculation with the salary table (TeacherPay): absences, substitutions (o'rindosh, 2026-10-07),
+        // ustama, certificates and named allowances, Moliya → Bonus / Jarima (2026-10-15).
+        var pay = await TeacherPayContext.LoadAsync(db, ct: ct);
 
         var report = teachers.Select(te =>
         {
             var byWeekday = byWeekdayAll.GetValueOrDefault(te.Id) ?? new int[6];
             var nominalMonthly = TeacherSalaryCalc.WithBonus(
                 TeacherSalaryCalc.Monthly(byWeekday.Sum(), te.Category, meta), te.BonusPct);
-            var absByMonth = absentAll.Where(a => a.TeacherId == te.Id)
-                .GroupBy(a => a.Date[..7])
-                .ToDictionary(g => g.Key, g => (IEnumerable<string>)g.Select(x => x.Date).ToList());
 
             // Oylik o'qituvchi ishga kirgan KUNdan hisoblanadi (birinchi oy qisman). Avvalgi oylar — 0.
             var startDate = TeacherSalaryCalc.StartDateOf(te);
@@ -127,10 +121,7 @@ public class FinanceController(AppDbContext db) : ControllerBase
                 .Where(p => p.TeacherId == te.Id && string.CompareOrdinal(p.Month, startMonth) >= 0)
                 .ToList();
             var totalPaid = rows.Sum(r => r.Amount);
-            var expected = monthList.Sum(mn => TeacherSalaryCalc.MonthlyForMonth(
-                byWeekday, te.Category, meta, mn, startDate,
-                absByMonth.GetValueOrDefault(mn) ?? Enumerable.Empty<string>(), te.BonusPct, quarters,
-                substitutions.GetValueOrDefault((te.Id, mn))));
+            var expected = monthList.Sum(mn => pay.For(te, mn).Total);
             return new SalaryReportRowDto(
                 te.Id, te.FullName, nominalMonthly, totalPaid, rows.Count,
                 monthList.Count, expected, expected - totalPaid,
@@ -157,6 +148,8 @@ public class FinanceController(AppDbContext db) : ControllerBase
             .OrderBy(u => u.FullName)
             .Select(u => new { u.Id, u.FullName, u.Position, u.Salary, u.SalaryStartDate })
             .ToListAsync(ct);
+        // Moliya → Bonus / Jarima go into the month they are written for (2026-10-15).
+        var adjustments = await PayrollAdjustmentTotals.ForStaffAsync(db, ct: ct);
 
         return staff.Select(u =>
         {
@@ -170,7 +163,8 @@ public class FinanceController(AppDbContext db) : ControllerBase
                 .Where(p => string.CompareOrdinal(p.Month, startMonth) >= 0)
                 .ToList();
             var totalPaid = paid.Sum(p => p.Amount);
-            var expected = monthList.Sum(mn => StaffSalaryCalc.MonthlyForMonth(u.Salary, mn, startDate));
+            var expected = monthList.Sum(mn => PayrollAdjustmentTotals.Apply(
+                StaffSalaryCalc.MonthlyForMonth(u.Salary, mn, startDate), adjustments.GetValueOrDefault((u.Id, mn))));
 
             return new SalaryReportRowDto(
                 u.Id, u.FullName, u.Salary, totalPaid, paid.Count,

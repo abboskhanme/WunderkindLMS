@@ -36,3 +36,20 @@ superadmin always). Future dates are refused.
 
 `Davomat → Kechki dars` / `Davomat → Yotoqxona` (`/admin/attendance/boarding?session=…`). The
 Davomat menu is now gated per child, so an evening/dorm keeper sees only their own entry.
+
+## Female and male commandants (2026-10-15)
+
+Client: *"Yotoqxona o'quvchilarini davomat qilish uchun o'g'il bolalar va qiz bolalarga ajratish — ayol va erkak
+komendant davomat qila olishi uchun."* The dorm day was already grouped girls / boys (2026-10-13); now a commandant
+can be limited to one half.
+
+- Boshqaruv → Rollar: when the «Yotoqxona» page is granted, "Yotoqxona: kimni belgilaydi" — Hammasi / Faqat qizlar /
+  Faqat o'g'il bolalar. It saves a narrowing flag next to `attendanceDorm`: `dormGirlsOnly` or `dormBoysOnly`
+  (`DormGender` in Domain). Both or none = the whole dorm; admin and superadmin always see the whole dorm.
+- The flag applies everywhere on `BoardingAttendanceController` for the dorm session: the day list, saving (a pupil of
+  the other half → 400 "… sizning bo'limingizda emas"), the roster and its candidates, add / remove (the other half
+  → 400 / 404), and the statistics with its Excel.
+- Teachers who are commandants get the flag through the same role (`TeacherPermissions.RoleKeys`); the Mini App
+  then shows and saves only their half without any change of its own.
+- Handing out a role with a flag needs no extra right (`RoleAssignment.Within`, client `withinUserRights`): it only
+  narrows. Pupils with no gender on file stay with whole-dorm holders.
