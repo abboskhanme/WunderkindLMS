@@ -14,16 +14,19 @@ namespace SchoolLms.Server.Controllers;
 /// "other" — mustaqil intizomiy sabablar (shu yerda CRUD); "attendance" — davomat sabablari
 /// (<see cref="AbsenceReason"/>, jurnalda ishlatiladi) — ularning balli shu yerda belgilanadi va
 /// jurnalda shu sabab bilan davomat qo'yilsa qoldiga avtomatik ta'sir qiladi. Faqat admin.
+/// Teachers record incidents through <see cref="TeacherDisciplineController"/> (2026-10-15,
+/// docs/modules/behaviour.md); editing, coverage and export stay here.
 /// </summary>
 [ApiController]
 [Authorize]
 [AdminPerm("discipline")]
 [Route("api/admin/discipline")]
 public class DisciplineController(
-    AppDbContext db, TelegramService telegram, ILogger<DisciplineParentNotifier> notifierLogger)
+    AppDbContext db, TelegramService telegram, ILogger<DisciplineParentNotifier> notifierLogger,
+    AuditService audit)
     : ControllerBase
 {
-    private const int BaseScore = 100;
+    private const int BaseScore = DisciplineIncidents.BaseScore;
     private string Uid => User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "";
 
     /// <summary>
@@ -72,10 +75,11 @@ public class DisciplineController(
     public async Task<ActionResult<DisciplineReasonDto>> CreateReason(SaveDisciplineReasonRequest req)
     {
         if (string.IsNullOrWhiteSpace(req.Name)) return BadRequest(new { message = "Sabab nomi kerak" });
+        if (TypedPoints(req, out var points) is { } typeError) return BadRequest(new { message = typeError });
         var r = new DisciplineReason
         {
             Name = req.Name.Trim(),
-            Points = req.Points,
+            Points = points,
             // Sukut bo'yicha O'CHIQ — §6.3: maktab har bir sabab uchun ataylab yoqsin.
             NotifyParent = req.NotifyParent ?? false,
             Description = Trimmed(req.Description),
@@ -91,8 +95,9 @@ public class DisciplineController(
     {
         var r = await db.DisciplineReasons.FindAsync(id);
         if (r is null) return NotFound();
+        if (TypedPoints(req, out var points) is { } typeError) return BadRequest(new { message = typeError });
         r.Name = (req.Name ?? "").Trim();
-        r.Points = req.Points;
+        r.Points = points;
         // Berilmagan maydon O'ZGARMAYDI — eski mijoz sababni tahrirlaganda xabar
         // bayrog'ini tasodifan o'chirib yubormasin.
         if (req.NotifyParent is { } notify) r.NotifyParent = notify;
@@ -104,6 +109,20 @@ public class DisciplineController(
 
     private static string? Trimmed(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    /// <summary>
+    /// The stored points of a reason form: with <c>type</c> (the "Ijobiy / Salbiy" selector) the sign
+    /// comes from the type and 0 is refused; without it (an older client) the points as sent.
+    /// </summary>
+    private static string? TypedPoints(SaveDisciplineReasonRequest req, out int points)
+    {
+        points = req.Points;
+        if (req.Type is null) return null;
+        if (!DisciplineType.IsValid(req.Type)) return "Sabab turi noto'g'ri (ijobiy yoki salbiy)";
+        if (req.Points == 0) return "Ball 0 bo'lmasin";
+        points = DisciplineType.Signed(req.Type, req.Points);
+        return null;
+    }
 
     private static DisciplineReasonDto Dto(DisciplineReason r) =>
         new(r.Id, r.Name, r.Points, "other", r.NotifyParent, r.Description, r.IsActive);
@@ -265,8 +284,14 @@ public class DisciplineController(
             Note = (req.Note ?? "").Trim(),
             CreatedAt = AppClock.Now.ToString("o"),
             CreatedBy = user?.FullName ?? "Administrator",
+            CreatedByUserId = string.IsNullOrEmpty(Uid) ? null : Uid,
         };
         db.DisciplinePoints.Add(p);
+        // EntityDisciplinePoint was defined and never written until 2026-10-15 (audit-log.md).
+        audit.Record(AuditService.EntityDisciplinePoint, p.Id, "create",
+            $"Intizomiy ball: {student.FullName} — {name} ({Signed(pts)})"
+            + (p.Note.Length > 0 ? $": \"{p.Note}\"" : ""),
+            after: PointView(p), studentId: student.Id);
         await db.SaveChangesAsync(ct);
 
         // Xabar YOZUVDAN KEYIN: yuborish muvaffaqiyatsiz bo'lsa ham ball saqlanib qolsin.
@@ -274,7 +299,7 @@ public class DisciplineController(
         var notified = dr is null ? 0 : await Notifier.NotifyAsync(student, dr, p, ct);
 
         return new DisciplinePointDto(
-            p.Id, p.StudentId, name, pts, p.Note, p.CreatedAt, p.CreatedBy, "manual", notified);
+            p.Id, p.StudentId, name, pts, p.Note, p.CreatedAt, p.CreatedBy, "manual", notified, p.ReasonId);
     }
 
     /// <summary>
@@ -320,9 +345,14 @@ public class DisciplineController(
                 Note = note,
                 CreatedAt = AppClock.Now.ToString("o"),
                 CreatedBy = author,
+                CreatedByUserId = string.IsNullOrEmpty(Uid) ? null : Uid,
             };
             db.DisciplinePoints.Add(p);
             pairs.Add((student, p));
+            audit.Record(AuditService.EntityDisciplinePoint, p.Id, "create",
+                $"Intizomiy ball (sinf {cls.Name}): {student.FullName} — {dr.Name} ({Signed(dr.Points)})"
+                + (note.Length > 0 ? $": \"{note}\"" : ""),
+                after: PointView(p), studentId: student.Id);
         }
         await db.SaveChangesAsync(ct);
 
@@ -334,7 +364,7 @@ public class DisciplineController(
             var notified = await Notifier.NotifyAsync(student, dr, p, ct);
             notifiedTotal += notified;
             items.Add(new DisciplinePointDto(
-                p.Id, p.StudentId, dr.Name, dr.Points, p.Note, p.CreatedAt, p.CreatedBy, "manual", notified));
+                p.Id, p.StudentId, dr.Name, dr.Points, p.Note, p.CreatedAt, p.CreatedBy, "manual", notified, p.ReasonId));
         }
 
         return new ClassDisciplinePointResultDto(items.Count, notifiedTotal, items);
@@ -351,7 +381,7 @@ public class DisciplineController(
         var result = manual.Select(p => new DisciplinePointDto(
             p.Id, p.StudentId,
             string.IsNullOrEmpty(p.ReasonName) ? drNames.GetValueOrDefault(p.ReasonId, "—") : p.ReasonName,
-            p.Points, p.Note, p.CreatedAt, p.CreatedBy, "manual")).ToList();
+            p.Points, p.Note, p.CreatedAt, p.CreatedBy, "manual", 0, p.ReasonId, p.UpdatedAt, p.UpdatedBy)).ToList();
 
         // Jurnal davomati — sabab balli != 0 bo'lganlari (qoldiga ta'sir qilgani uchun ko'rsatamiz).
         // Bitta kun + bitta sabab = bitta qator (AttendanceDisciplineDays), nechta darsligi izohda.
@@ -398,14 +428,78 @@ public class DisciplineController(
         [FromQuery] string? source, [FromQuery] string? search,
         [FromQuery] int page = 1, [FromQuery] int pageSize = DefaultPageSize)
     {
-        if (!TryDay(from, out var fromDay)) return BadRequest(new { message = "Davr boshi noto'g'ri (YYYY-MM-DD)" });
-        if (!TryDay(to, out var toDay)) return BadRequest(new { message = "Davr oxiri noto'g'ri (YYYY-MM-DD)" });
-        if (fromDay is not null && toDay is not null && toDay < fromDay)
-            return BadRequest(new { message = "Davr oxiri boshidan oldin bo'lishi mumkin emas" });
-        if (fromDay is null && toDay is null) fromDay = AppClock.Today.AddDays(-DefaultWindowDays);
+        var (feed, error) = await BuildFeedAsync(new FeedFilters(from, to, className, reasonId, author, sign, source, search));
+        if (error is not null) return BadRequest(new { message = error });
+        var (ordered, classNames) = feed;
 
         page = Math.Max(page, 1);
         pageSize = Math.Clamp(pageSize, 1, MaxPageSize);
+
+        var authors = (await db.DisciplinePoints.AsNoTracking()
+                .Select(p => p.CreatedBy).Distinct().ToListAsync())
+            .Where(a => !string.IsNullOrWhiteSpace(a))
+            .OrderBy(a => a, StringComparer.OrdinalIgnoreCase).ToList();
+
+        return new DisciplineFeedDto(
+            ordered.Skip((page - 1) * pageSize).Take(pageSize).ToList(),
+            ordered.Count, page, pageSize,
+            ordered.Count(r => r.Points > 0), ordered.Count(r => r.Points < 0), ordered.Sum(r => r.Points),
+            authors, classNames);
+    }
+
+    /// <summary>
+    /// "Harakatlar" as .xlsx — every row of the feed under the SAME filters (no paging), newest first,
+    /// so the file matches the screen (docs/modules/behaviour.md).
+    /// </summary>
+    [HttpGet("feed/export")]
+    public async Task<IActionResult> ExportFeed(
+        [FromQuery] string? from, [FromQuery] string? to, [FromQuery] string? className,
+        [FromQuery] string? reasonId, [FromQuery] string? author, [FromQuery] string? sign,
+        [FromQuery] string? source, [FromQuery] string? search)
+    {
+        var (feed, error) = await BuildFeedAsync(new FeedFilters(from, to, className, reasonId, author, sign, source, search));
+        if (error is not null) return BadRequest(new { message = error });
+
+        var headers = new[] { "Sana", "F.I.SH.", "Sinf", "Turi", "Sabab", "Ball", "Izoh", "Kim qo'ydi", "Manba" };
+        var cells = feed.Rows.Select(r => (IReadOnlyList<string>)new[]
+        {
+            ExportTime(r.CreatedAt), r.FullName, r.ClassName,
+            r.Points < 0 ? "Salbiy" : "Ijobiy", r.ReasonName,
+            Signed(r.Points), r.Note, r.CreatedBy,
+            r.Source == "attendance" ? "Jurnal davomati" : "Qo'lda",
+        });
+
+        var bytes = ExcelExport.Build("Harakatlar", headers, cells);
+        return File(bytes,
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            $"harakatlar_{AppClock.Now:yyyy-MM-dd}.xlsx");
+    }
+
+    /// <summary>"2026-10-15T10:12:00.000" → "15.10.2026 10:12"; a journal day stays a day.</summary>
+    private static string ExportTime(string iso)
+    {
+        if (iso.Length < 10 || !DateOnly.TryParseExact(iso[..10], "yyyy-MM-dd", out var day)) return iso;
+        var text = day.ToString("dd.MM.yyyy");
+        return iso.Length >= 16 && iso[10] == 'T' ? $"{text} {iso.Substring(11, 5)}" : text;
+    }
+
+    /// <summary>The feed's query string, shared by the page and its export.</summary>
+    private sealed record FeedFilters(
+        string? From, string? To, string? ClassName, string? ReasonId, string? Author,
+        string? Sign, string? Source, string? Search);
+
+    /// <summary>
+    /// Every feed row matching the filters, newest first, plus the class list for the filter. The rules
+    /// are described on <see cref="GetFeed"/>; the error is a 400 message (bad or reversed dates).
+    /// </summary>
+    private async Task<((List<DisciplineFeedRowDto> Rows, List<string> ClassNames) Feed, string? Error)> BuildFeedAsync(
+        FeedFilters f)
+    {
+        if (!TryDay(f.From, out var fromDay)) return (default, "Davr boshi noto'g'ri (YYYY-MM-DD)");
+        if (!TryDay(f.To, out var toDay)) return (default, "Davr oxiri noto'g'ri (YYYY-MM-DD)");
+        if (fromDay is not null && toDay is not null && toDay < fromDay)
+            return (default, "Davr oxiri boshidan oldin bo'lishi mumkin emas");
+        if (fromDay is null && toDay is null) fromDay = AppClock.Today.AddDays(-DefaultWindowDays);
 
         var fromText = fromDay?.ToString("yyyy-MM-dd");
         var toText = toDay?.ToString("yyyy-MM-dd");
@@ -417,8 +511,9 @@ public class DisciplineController(
             .Select(s => new { s.Id, s.FullName, s.ClassName, s.IsArchived }).ToListAsync();
         var byStudent = students.ToDictionary(s => s.Id);
 
-        var wantClass = string.IsNullOrWhiteSpace(className) || className == "all" ? null : className.Trim();
-        var term = (search ?? "").Trim();
+        var wantClass = string.IsNullOrWhiteSpace(f.ClassName) || f.ClassName == "all" ? null : f.ClassName.Trim();
+        var term = (f.Search ?? "").Trim();
+        var (reasonId, author, sign, source) = (f.ReasonId, f.Author, f.Sign, f.Source);
 
         // Arxivlangan o'quvchi ham chiqadi: uning yozuvi TARIX, va u sinfdan ketgani bilan
         // o'sha kuni bo'lgan voqea bo'lmagan bo'lib qolmaydi.
@@ -435,8 +530,8 @@ public class DisciplineController(
         if (source != "attendance")
         {
             var q = db.DisciplinePoints.AsNoTracking().AsQueryable();
-            if (fromText is { } f) q = q.Where(p => string.Compare(p.CreatedAt, f) >= 0);
-            if (toExclusive is { } t) q = q.Where(p => string.Compare(p.CreatedAt, t) < 0);
+            if (fromText is { } start) q = q.Where(p => string.Compare(p.CreatedAt, start) >= 0);
+            if (toExclusive is { } end) q = q.Where(p => string.Compare(p.CreatedAt, end) < 0);
             if (!string.IsNullOrWhiteSpace(reasonId)) q = q.Where(p => p.ReasonId == reasonId);
             if (!string.IsNullOrWhiteSpace(author)) q = q.Where(p => p.CreatedBy == author);
             if (sign == "positive") q = q.Where(p => p.Points > 0);
@@ -449,7 +544,7 @@ public class DisciplineController(
                 rows.Add(new DisciplineFeedRowDto(
                     p.Id, p.StudentId, s.FullName, s.ClassName,
                     string.IsNullOrEmpty(p.ReasonName) ? drNames.GetValueOrDefault(p.ReasonId, "—") : p.ReasonName,
-                    p.Points, p.Note, p.CreatedAt, p.CreatedBy, "manual"));
+                    p.Points, p.Note, p.CreatedAt, p.CreatedBy, "manual", p.ReasonId, p.UpdatedAt, p.UpdatedBy));
             }
         }
 
@@ -460,8 +555,8 @@ public class DisciplineController(
             var absReasons = await db.AbsenceReasons.AsNoTracking()
                 .ToDictionaryAsync(r => r.Id, r => new { r.Name, r.Points });
             var q = db.JournalEntries.AsNoTracking().Where(e => e.ReasonId != null);
-            if (fromText is { } f) q = q.Where(e => string.Compare(e.Date, f) >= 0);
-            if (toText is { } t) q = q.Where(e => string.Compare(e.Date, t) <= 0);
+            if (fromText is { } start) q = q.Where(e => string.Compare(e.Date, start) >= 0);
+            if (toText is { } end) q = q.Where(e => string.Compare(e.Date, end) <= 0);
             if (!string.IsNullOrWhiteSpace(reasonId)) q = q.Where(e => e.ReasonId == reasonId);
 
             // Bitta o'quvchi, bitta kun, bitta sabab — lentada bitta qator (AttendanceDisciplineDays).
@@ -485,20 +580,12 @@ public class DisciplineController(
             .ThenBy(r => r.Id, StringComparer.Ordinal)
             .ToList();
 
-        var authors = (await db.DisciplinePoints.AsNoTracking()
-                .Select(p => p.CreatedBy).Distinct().ToListAsync())
-            .Where(a => !string.IsNullOrWhiteSpace(a))
-            .OrderBy(a => a, StringComparer.OrdinalIgnoreCase).ToList();
         var classNames = students
             .Where(s => !s.IsArchived && !string.IsNullOrWhiteSpace(s.ClassName))
             .Select(s => s.ClassName).Distinct()
             .OrderBy(c => c, StringComparer.OrdinalIgnoreCase).ToList();
 
-        return new DisciplineFeedDto(
-            ordered.Skip((page - 1) * pageSize).Take(pageSize).ToList(),
-            ordered.Count, page, pageSize,
-            ordered.Count(r => r.Points > 0), ordered.Count(r => r.Points < 0), ordered.Sum(r => r.Points),
-            authors, classNames);
+        return ((ordered, classNames), null);
     }
 
     private static bool TryDay(string? value, out DateOnly? day)
@@ -510,12 +597,145 @@ public class DisciplineController(
         return true;
     }
 
-    /// <summary>Qo'lda kiritilgan ball yozuvini o'chiradi (jurnal davomatini emas).</summary>
+    // ---------- Harakatni tahrirlash (EduSchool editBehaviorIncidents) ----------
+
+    /// <summary>
+    /// Edits one manual incident — reason and note (<see cref="UpdateDisciplinePointRequest"/>). Points
+    /// follow the reason: a different reason re-snapshots its name and points and must be active; the
+    /// same reason keeps the stored snapshot. No parent message on an edit — the parent heard about the
+    /// incident when it was recorded. Audited (before / after) on the pupil's activity history.
+    /// </summary>
+    [HttpPut("points/{id}")]
+    public async Task<ActionResult<DisciplinePointDto>> UpdatePoint(
+        string id, UpdateDisciplinePointRequest req, CancellationToken ct = default)
+    {
+        var p = await db.DisciplinePoints.FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (p is null) return NotFound(new { message = "Yozuv topilmadi" });
+
+        var archived = await ArchivedStudents.NamesAsync(db, [p.StudentId], ct);
+        if (archived.Count > 0)
+            return Conflict(new { code = ArchivedStudents.Code, message = ArchivedStudents.Message(archived) });
+
+        var reasonId = (req.ReasonId ?? "").Trim();
+        if (reasonId.Length == 0) return BadRequest(new { message = "Sabab tanlanmadi" });
+
+        var before = new { p.ReasonId, p.ReasonName, p.Points, p.Note };
+        if (reasonId != p.ReasonId)
+        {
+            var dr = await db.DisciplineReasons.FindAsync([reasonId], ct);
+            if (dr is not null)
+            {
+                if (!dr.IsActive) return BadRequest(new { message = "Bu sabab faol emas" });
+                (p.ReasonName, p.Points) = (dr.Name, dr.Points);
+            }
+            else
+            {
+                var ar = await db.AbsenceReasons.FindAsync([reasonId], ct);
+                if (ar is null) return BadRequest(new { message = "Sabab tanlanmadi" });
+                (p.ReasonName, p.Points) = (ar.Name, ar.Points);
+            }
+            p.ReasonId = reasonId;
+        }
+        p.Note = (req.Note ?? "").Trim();
+
+        if (before.ReasonId != p.ReasonId || before.Note != p.Note)
+        {
+            var user = await db.Users.FindAsync([Uid], ct);
+            p.UpdatedAt = AppClock.Now.ToString("o");
+            p.UpdatedBy = user?.FullName ?? "Administrator";
+            audit.Record(AuditService.EntityDisciplinePoint, p.Id, "update",
+                $"Xulq-atvor yozuvi tahrirlandi: {p.ReasonName} ({Signed(p.Points)}) — {await StudentNameAsync(p.StudentId, ct)}",
+                before: before, after: new { p.ReasonId, p.ReasonName, p.Points, p.Note },
+                studentId: p.StudentId);
+            await db.SaveChangesAsync(ct);
+        }
+
+        return new DisciplinePointDto(
+            p.Id, p.StudentId, p.ReasonName, p.Points, p.Note, p.CreatedAt, p.CreatedBy, "manual", 0,
+            p.ReasonId, p.UpdatedAt, p.UpdatedBy);
+    }
+
+    /// <summary>Qo'lda kiritilgan ball yozuvini o'chiradi (jurnal davomatini emas). Audited.</summary>
     [HttpDelete("points/{id}")]
     public async Task<IActionResult> DeletePoint(string id)
     {
         var p = await db.DisciplinePoints.FindAsync(id);
-        if (p is not null) { db.DisciplinePoints.Remove(p); await db.SaveChangesAsync(); }
+        if (p is not null)
+        {
+            audit.Record(AuditService.EntityDisciplinePoint, p.Id, "delete",
+                $"Xulq-atvor yozuvi o'chirildi: {p.ReasonName} ({Signed(p.Points)}) — {await StudentNameAsync(p.StudentId)}",
+                before: new { p.ReasonId, p.ReasonName, p.Points, p.Note, p.CreatedAt, p.CreatedBy },
+                studentId: p.StudentId);
+            db.DisciplinePoints.Remove(p);
+            await db.SaveChangesAsync();
+        }
         return NoContent();
     }
+
+    private async Task<string> StudentNameAsync(string studentId, CancellationToken ct = default) =>
+        await db.Students.AsNoTracking().Where(s => s.Id == studentId)
+            .Select(s => s.FullName).FirstOrDefaultAsync(ct) ?? studentId;
+
+    private static string Signed(int points) => points > 0 ? $"+{points}" : points.ToString();
+
+    // ---------- Belgilanmagan sinflar (EduSchool getNotAssignedClasses) ----------
+
+    /// <summary>
+    /// Coverage: for every class with active pupils, how many manual incidents they got in the period
+    /// (both days included; default — from the 1st of the current month to today). Classes with none —
+    /// "belgilanmagan sinflar" — come first. Attendance-reason points do not count: they come from the
+    /// nurse's roll-call, not from someone recording behaviour. A pupil counts in their current class.
+    /// </summary>
+    [HttpGet("coverage")]
+    public async Task<ActionResult<DisciplineCoverageDto>> Coverage(
+        [FromQuery] string? from, [FromQuery] string? to, CancellationToken ct = default)
+    {
+        if (!TryDay(from, out var fromDay)) return BadRequest(new { message = "Davr boshi noto'g'ri (YYYY-MM-DD)" });
+        if (!TryDay(to, out var toDay)) return BadRequest(new { message = "Davr oxiri noto'g'ri (YYYY-MM-DD)" });
+        var last = toDay ?? AppClock.Today;
+        var first = fromDay ?? new DateOnly(last.Year, last.Month, 1);
+        if (last < first) return BadRequest(new { message = "Davr oxiri boshidan oldin bo'lishi mumkin emas" });
+
+        var fromText = first.ToString("yyyy-MM-dd");
+        var toExclusive = last.AddDays(1).ToString("yyyy-MM-dd");
+
+        var classes = await db.Classes.AsNoTracking().Where(c => !c.IsArchived)
+            .Select(c => new { c.Id, c.Name, c.Grade }).ToListAsync(ct);
+        var students = await db.Students.AsNoTracking()
+            .Where(s => !s.IsArchived && s.ClassName != "")
+            .Select(s => new { s.Id, s.ClassName }).ToListAsync(ct);
+        var classOf = students.ToDictionary(s => s.Id, s => s.ClassName, StringComparer.Ordinal);
+        var pupils = students.GroupBy(s => s.ClassName).ToDictionary(g => g.Key, g => g.Count());
+
+        var points = await db.DisciplinePoints.AsNoTracking()
+            .Where(p => string.Compare(p.CreatedAt, fromText) >= 0 && string.Compare(p.CreatedAt, toExclusive) < 0)
+            .Select(p => new { p.StudentId, p.Points, p.CreatedAt }).ToListAsync(ct);
+        var byClass = points
+            .Where(p => classOf.ContainsKey(p.StudentId))
+            .GroupBy(p => classOf[p.StudentId])
+            .ToDictionary(g => g.Key, g => g.ToList());
+
+        var rows = classes
+            .Where(c => pupils.ContainsKey(c.Name))
+            .Select(c =>
+            {
+                var list = byClass.GetValueOrDefault(c.Name) ?? [];
+                return new DisciplineCoverageRowDto(
+                    c.Id, c.Name, c.Grade, pupils[c.Name], list.Count,
+                    list.Count(p => p.Points > 0), list.Count(p => p.Points < 0),
+                    list.Count == 0 ? null : list.Max(p => p.CreatedAt));
+            })
+            .OrderBy(r => r.Incidents == 0 ? 0 : 1)
+            .ThenBy(r => r.Grade).ThenBy(r => r.ClassName, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        return new DisciplineCoverageDto(
+            fromText, last.ToString("yyyy-MM-dd"), rows.Count, rows.Count(r => r.Incidents == 0), rows);
+    }
+
+    /// <summary>A point as the audit shows it (Uzbek keys, audit-log.md).</summary>
+    private static Dictionary<string, object?> PointView(DisciplinePoint p) => new()
+    {
+        ["Sabab"] = p.ReasonName, ["Ball"] = p.Points, ["Izoh"] = p.Note, ["Qo'ygan"] = p.CreatedBy,
+    };
 }

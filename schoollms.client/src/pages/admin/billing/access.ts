@@ -103,6 +103,11 @@ export interface BillingAccess {
    */
   canManageTransactionTypes: boolean
   /**
+   * Mini-magazin katalogini (mahsulot, narx) boshqarish — `canManageTransactionTypes` bilan bir xil
+   * daraja (server: `FinanceAction.ManageShopProducts`). Kassir katalogni faqat o'qiydi.
+   */
+  canManageShopProducts: boolean
+  /**
    * Joriy foydalanuvchi direktormi. Ichkarida chegirma/chiqim tasdig'i uchun
    * ishlatilgan hisob shu yerda ham ochiladi — F14.01 moliya sozlamalari
    * sahifasi chiqim chegarasini faqat direktorga tahrirlanadigan qiladi.
@@ -143,6 +148,7 @@ export function useBillingAccess(): BillingAccess {
     canManageBillingSettings: canOpen,
     canManageExpenseTemplates: canOpen,
     canManageTransactionTypes: canOpen,
+    canManageShopProducts: canOpen,
     isDirector,
     canGrantDiscount: canOpen,
     canApproveDiscount: isDirector,

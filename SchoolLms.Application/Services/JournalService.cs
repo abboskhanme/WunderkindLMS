@@ -112,7 +112,15 @@ public static class JournalService
     /// <c>null</c> — yozildi. Aks holda foydalanuvchiga ko'rsatiladigan xato matni
     /// (§5.5 <c>make_attendance_reason_required</c>) — chaqiruvchi uni 400 bilan qaytaradi.
     /// </returns>
-    public static async Task<string?> SetEntryAsync(IAppDbContext db, SetJournalEntryRequest req)
+    /// <param name="keepStoredReason">
+    /// A teacher's write while teachers do not mark attendance (<c>teachers_mark_attendance</c> off,
+    /// 2026-10-15): the request's <c>ReasonId</c> is IGNORED and the cell keeps the reason it already
+    /// has (none for a new cell) — the nurse's mark survives a teacher saving a grade. Never an error:
+    /// the grade and homework of the same request still go in, and the reason-required gate is
+    /// skipped (the teacher is not the one choosing a reason).
+    /// </param>
+    public static async Task<string?> SetEntryAsync(
+        IAppDbContext db, SetJournalEntryRequest req, bool keepStoredReason = false)
     {
         // Homework status 0..5 (homework-completion.md); the column has no CHECK constraint.
         if (!HomeworkStatus.IsValid(req.Homework)) return HomeworkStatus.InvalidMessage;
@@ -124,7 +132,7 @@ public static class JournalService
         var flags = await JournalSettingsGuard.FlagsAsync(db);
 
         // §5.5 — sababsiz yo'qlik yozilmaydi: id bo'sh yoki katalogda yo'q bo'lsa rad.
-        if (flags.AttendanceReasonRequired
+        if (flags.AttendanceReasonRequired && !keepStoredReason
             && !await JournalSettingsGuard.ReasonIsUsableAsync(db, req.ReasonId))
             return JournalSettingsGuard.ReasonRequiredMessage;
 
@@ -143,6 +151,22 @@ public static class JournalService
         var student = await db.Students.FindAsync(req.StudentId);
         var subGroup = owner?.IsGroup == true ? 0 : student?.SubGroup ?? 0;
 
+        // A kept reason is the nurse's, not this write's — it does not close the lesson by itself.
+        var touched = req.Grade.HasValue || (!keepStoredReason && req.ReasonId is not null)
+            || req.Homework != 0 || req.Behavior != 0 || req.Mastery.HasValue;
+
+        // With the reason kept, a request that carries nothing else leaves nothing to store: no
+        // empty row is created (the nurse may have cleared hers meanwhile), an emptied one goes.
+        if (keepStoredReason && !touched && entry?.ReasonId is null)
+        {
+            if (entry is not null)
+            {
+                db.JournalEntries.Remove(entry);
+                await db.SaveChangesAsync();
+            }
+            return null;
+        }
+
         if (entry is null)
         {
             entry = new JournalEntry
@@ -159,14 +183,11 @@ public static class JournalService
             db.JournalEntries.Add(entry);
         }
         entry.Grade = req.Grade;
-        entry.ReasonId = req.ReasonId;
+        if (!keepStoredReason) entry.ReasonId = req.ReasonId;
         entry.Homework = req.Homework;
         entry.Behavior = req.Behavior;
         entry.Mastery = req.Mastery;
         entry.SubGroup = subGroup;
-
-        var touched = req.Grade.HasValue || req.ReasonId is not null
-            || req.Homework != 0 || req.Behavior != 0 || req.Mastery.HasValue;
 
         // Katakning O'ZI avval yoziladi — quyidagi "baholar to'liqmi" tekshiruvi ayni shu
         // bahoni ham hisobga olishi kerak, EF so'rovi esa saqlanmagan o'zgarishni ko'rmaydi.
@@ -225,16 +246,34 @@ public static class JournalService
         }
     }
 
+    /// <param name="keepReason">
+    /// A teacher's clear while teachers do not mark attendance (2026-10-15): a row carrying an
+    /// attendance reason (the nurse's) is KEPT with only its grade, homework, behaviour and mastery
+    /// emptied; a row without one is deleted as before.
+    /// </param>
     public static async Task ClearEntryAsync(
         IAppDbContext db, string classId, string subjectId, int quarter,
-        string studentId, string date, int period)
+        string studentId, string date, int period, bool keepReason = false)
     {
         var kind = await OwnerKindAsync(db, classId);
-        var entries = db.JournalEntries.Where(e =>
+        var entries = await db.JournalEntries.Where(e =>
             e.ClassId == classId && e.SubjectId == subjectId && e.Quarter == quarter &&
             e.StudentId == studentId && e.Date == date && e.Period == period &&
-            (kind == null || e.OwnerKind == kind));
-        db.JournalEntries.RemoveRange(entries);
+            (kind == null || e.OwnerKind == kind)).ToListAsync();
+        foreach (var e in entries)
+        {
+            if (keepReason && e.ReasonId is not null)
+            {
+                e.Grade = null;
+                e.Homework = HomeworkStatus.None;
+                e.Behavior = 0;
+                e.Mastery = null;
+            }
+            else
+            {
+                db.JournalEntries.Remove(e);
+            }
+        }
         await db.SaveChangesAsync();
     }
 

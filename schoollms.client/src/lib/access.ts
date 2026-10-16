@@ -65,6 +65,8 @@ export const ACCESS_PAGES: AccessPage[] = ACCESS_CATALOG.flatMap((m) => m.pages)
  */
 const PAGE_EXTRA_SECTIONS: Record<string, readonly string[]> = {
   '/admin/boshqaruv/staff': ['teachers'],
+  // Qizil ro'yxat (2026-10-15): the page reads attendance; "To'liq" also works the queue.
+  '/admin/attendance/red-list': ['attendanceCases'],
 }
 
 /** Every server section a page grant carries: its own plus {@link PAGE_EXTRA_SECTIONS}. */

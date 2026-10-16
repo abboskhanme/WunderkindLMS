@@ -45,6 +45,12 @@ const flagRows: { key: keyof GeneralSettings; title: string; hint: string }[] = 
     hint: "Jurnalda yo'qlik faqat ro'yxatdagi haqiqiy sabab bilan saqlanadi — bo'sh yoki o'chirilgan sabab rad etiladi.",
   },
   {
+    // Client, 2026-10-15: the nurse takes the roll-call; a teacher's save overwrote her marks.
+    key: 'teachersMarkAttendance',
+    title: "O'qituvchilar o'quvchilar davomatini oladi",
+    hint: "O'chiq bo'lsa davomatni faqat hamshira oladi: o'qituvchi ilovasida \"Hammasi keldi\" va sabab tugmalari yo'q, hamshira belgisi faqat ko'rinadi va o'qituvchi baho saqlaganda o'zgarmaydi. Yoqilsa o'qituvchilar ham davomat qiladi va ularning belgisi hamshiranikini almashtiradi.",
+  },
+  {
     key: 'isStudentGradeRequired',
     title: 'Baholarsiz darsni yopib bo\'lmaydi',
     hint: "\"Dars o'tildi\" belgisi darsda qatnashgan har bir o'quvchiga baho qo'yilgandan keyingina qo'yiladi. Kelmagan o'quvchidan baho kutilmaydi.",

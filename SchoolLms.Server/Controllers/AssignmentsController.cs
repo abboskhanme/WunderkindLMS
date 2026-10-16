@@ -57,6 +57,8 @@ public class AssignmentsController(AppDbContext db, IWebHostEnvironment env) : C
             var noun = req.OwnerKind == LessonOwnerKind.Group ? "guruh" : "sinf";
             return BadRequest(new { message = $"Kamida bitta {noun} tanlang" });
         }
+        if (AssignmentService.CheckQuestions(req.Format, req.Questions).Problem is { } problem)
+            return BadRequest(new { message = problem });
         return await AssignmentService.CreateAsync(db, Uid, req);
     }
 
@@ -65,8 +67,25 @@ public class AssignmentsController(AppDbContext db, IWebHostEnvironment env) : C
     public async Task<IActionResult> Update(string id, SaveAssignmentRequest req)
     {
         if (string.IsNullOrWhiteSpace(req.Title)) return BadRequest(new { message = "Topshiriq nomi kerak" });
+        if (AssignmentService.CheckQuestions(req.Format, req.Questions).Problem is { } problem)
+            return BadRequest(new { message = problem });
         return await AssignmentService.UpdateAsync(db, id, req) ? NoContent() : NotFound();
     }
+
+    /// <summary>
+    /// Reads test questions from text, Word, Excel or JSON — the twin of the teacher portal's
+    /// endpoint (docs/modules/test-import.md); nothing is written.
+    /// </summary>
+    [HttpPost("questions/parse")]
+    [RequestSizeLimit(AssignmentQuestionImport.MaxRequestBytes)]
+    public Task<ActionResult<AssignmentQuestionParseResultDto>> ParseQuestions(CancellationToken ct)
+        => AssignmentQuestionParsing.ParseAsync(Request, ct);
+
+    /// <summary>The Excel template — <c>test_savollari_shablon.xlsx</c>.</summary>
+    [HttpGet("questions/template")]
+    public IActionResult QuestionsTemplate()
+        => File(AssignmentQuestionImport.Template(), QuestionImportService.XlsxMime,
+            AssignmentQuestionImport.TemplateFileName);
 
     /// <summary>Topshiriqni o'chirish (istalganini).</summary>
     [HttpDelete("{id}")]

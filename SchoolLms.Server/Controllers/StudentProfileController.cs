@@ -1,6 +1,4 @@
 using System.Globalization;
-using System.Text.Json;
-using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -63,42 +61,9 @@ public class StudentProfileController(AppDbContext db, AuditService audit) : Con
     /// <summary>Faoliyat tarixida bir so'rovda qaytariladigan eng ko'p qator.</summary>
     private const int MaxActivity = 200;
 
-    /// <summary>
-    /// MOLIYAVIY audit turlari. Moliya huquqi bo'lmagan xodim kartochkaning
-    /// "Faoliyat tarixi" tab'ida bularni umuman ko'rmaydi — pul faqat moliya
-    /// ekranlarida.
-    /// </summary>
-    private static readonly HashSet<string> FinanceEntities = new(StringComparer.Ordinal)
-    {
-        AuditService.EntityFinanceTransaction,
-        AuditService.EntityTeacherSalary,
-        AuditService.EntityClassFee,
-        AuditService.EntityStudentDiscount,
-        AuditService.EntityLedgerEntry,
-        AuditService.EntityPayment,
-        AuditService.EntityExpense,
-        AuditService.EntityInvoice,
-        AuditService.EntityAnomalyFlag,
-        AuditService.EntityDebtorAction,
-        AuditService.EntityDebtorStatus,
-        AuditService.EntityCashHandover,
-        AuditService.EntityExpenseAttachment,
-    };
-
-    /// <summary>
-    /// Pul ko'rsatadigan maydon nomlari — moliya huquqisiz `before`/`after`
-    /// dan olib tashlanadi. Moliyaviy BO'LMAGAN yozuv ham summa olib yurishi
-    /// mumkin (masalan import yakuni), shuning uchun tur bo'yicha filtr
-    /// yetarli emas.
-    /// </summary>
-    private static readonly HashSet<string> MoneyKeys = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "amount", "balance", "salary", "monthlyFee", "fee", "price", "sum", "total",
-        "paid", "debt", "credit", "discount", "discountAmount", "discountPct",
-        "remaining", "charged", "cash",
-    };
-
-    private bool CanSeeMoney => FinanceMatrix.IsAllowed(FinanceAction.ViewBillingReports, User);
+    // The money rule of the activity tab — which rows are finance, which fields are money and who
+    // may see them — is shared with the audit screen: AuditAccess / AuditCatalog (2026-10-15).
+    private bool CanSeeMoney => User.CanSeeMoney();
 
     // =====================================================================
     //  1. Kartochkaning chap paneli
@@ -340,20 +305,13 @@ public class StudentProfileController(AppDbContext db, AuditService audit) : Con
         var take = Math.Clamp(limit ?? 100, 1, MaxActivity);
         var money = CanSeeMoney;
 
-        var q = db.AuditLogs.AsNoTracking().Where(a => a.StudentId == id);
-        if (!money) q = q.Where(a => !FinanceEntities.Contains(a.EntityType));
+        var q = AuditAccess.Apply(db.AuditLogs.AsNoTracking(), new AuditFilter(StudentId: id), money);
 
-        var rows = await q
-            .OrderByDescending(a => a.Timestamp).ThenByDescending(a => a.Id)
+        var rows = await AuditAccess.Newest(q)
             .Take(take)
             .ToListAsync(ct);
 
-        return rows.Select(a => new AuditLogDto(
-            a.Id, a.EntityType, a.EntityId, a.Action, a.Timestamp,
-            a.ActorName, a.Summary,
-            money ? a.Before : Redact(a.Before),
-            money ? a.After : Redact(a.After),
-            a.StudentId, a.TeacherId)).ToList();
+        return rows.Select(a => AuditAccess.ToLogDto(a, money)).ToList();
     }
 
     // =====================================================================
@@ -614,26 +572,5 @@ public class StudentProfileController(AppDbContext db, AuditService audit) : Con
         if (string.IsNullOrWhiteSpace(value)) return (true, null);
         return TimeOnly.TryParseExact(value.Trim(), "HH:mm", CultureInfo.InvariantCulture,
             DateTimeStyles.None, out var t) ? (true, t) : (false, null);
-    }
-
-    /// <summary>
-    /// `before`/`after` JSON'idan pul maydonlarini olib tashlaydi. Yaroqsiz
-    /// JSON bo'lsa — butunlay tashlanadi (ko'rsatilmagan ma'lumot sizib
-    /// chiqqanidan yaxshiroq).
-    /// </summary>
-    private static string? Redact(string? json)
-    {
-        if (string.IsNullOrEmpty(json)) return json;
-        try
-        {
-            if (JsonNode.Parse(json) is not JsonObject obj) return null;
-            foreach (var key in obj.Select(p => p.Key).Where(MoneyKeys.Contains).ToList())
-                obj.Remove(key);
-            return obj.ToJsonString();
-        }
-        catch (JsonException)
-        {
-            return null;
-        }
     }
 }

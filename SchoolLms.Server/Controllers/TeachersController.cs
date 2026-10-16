@@ -106,6 +106,9 @@ public class TeachersController(AppDbContext db, AuditService audit, IExpenseSer
         if (await UnknownClassAsync(homeroomIds) is { } bad) return bad;
         await HomeroomDirectory.SetForTeacherAsync(db, teacher.Id, homeroomIds);
 
+        audit.Record(AuditService.EntityTeacher, teacher.Id, "create",
+            $"O'qituvchi qo'shildi ({teacher.FullName})", teacherId: teacher.Id);
+
         await db.SaveChangesAsync();
         teacher.HomeroomClass = await HomeroomDirectory.LabelAsync(db, teacher.Id);
         return teacher;
@@ -128,6 +131,7 @@ public class TeachersController(AppDbContext db, AuditService audit, IExpenseSer
 
         var oldCategory = teacher.Category;
         var oldStart = teacher.SalaryStartMonth;
+        var cardBefore = await CardSnapshotAsync(teacher, passwordSet: false);
         teacher.FullName = p.FullName;
         teacher.BirthDate = p.BirthDate;
         teacher.Address = p.Address;
@@ -163,6 +167,12 @@ public class TeachersController(AppDbContext db, AuditService audit, IExpenseSer
         }
         if (user is not null) user.FullName = teacher.FullName;
 
+        // Audit (2026-10-15): the card's own fields, changed ones only. Category and salary start
+        // keep their salary row below (TeacherSalary — a money section).
+        audit.RecordChanges(AuditService.EntityTeacher, teacher.Id, $"O'qituvchi ma'lumoti o'zgardi ({teacher.FullName})",
+            cardBefore, await CardSnapshotAsync(teacher, passwordSet: !string.IsNullOrWhiteSpace(p.NewPassword), p.HomeroomClassIds),
+            CardLabels, teacherId: teacher.Id);
+
         if (oldCategory != teacher.Category || oldStart != teacher.SalaryStartMonth)
         {
             var parts = new List<string>();
@@ -181,6 +191,47 @@ public class TeachersController(AppDbContext db, AuditService audit, IExpenseSer
         await db.SaveChangesAsync();
         teacher.HomeroomClass = await HomeroomDirectory.LabelAsync(db, teacher.Id);
         return teacher;
+    }
+
+    /// <summary>Uzbek names of the teacher card's fields — the audit row's keys and summary (audit-log.md).</summary>
+    private static readonly IReadOnlyDictionary<string, string> CardLabels = new Dictionary<string, string>
+    {
+        ["FullName"] = "F.I.SH",
+        ["BirthDate"] = "Tug'ilgan sana",
+        ["Address"] = "Manzil",
+        ["Gender"] = "Jinsi",
+        ["Phone"] = "Telefon",
+        ["Photo"] = "Rasm",
+        ["Subjects"] = "Fanlar",
+        ["Homeroom"] = "Sinf rahbarligi",
+        ["Permissions"] = "Panel bo'limlari",
+        ["Password"] = "Parol",
+    };
+
+    /// <summary>
+    /// The teacher card as the audit sees it: subject names, homeroom classes; a password only as
+    /// "set". <paramref name="homeroomClassIds"/> — the classes being saved (the links are not in the
+    /// database yet); null — the saved ones.
+    /// </summary>
+    private async Task<object> CardSnapshotAsync(Teacher t, bool passwordSet, IReadOnlyList<string>? homeroomClassIds = null)
+    {
+        var subjectIds = t.SubjectIds ?? new();
+        var subjects = subjectIds.Count == 0 ? new List<string>() : await db.Subjects.AsNoTracking()
+            .Where(s => subjectIds.Contains(s.Id)).OrderBy(s => s.Name).Select(s => s.Name).ToListAsync();
+        var homeroom = homeroomClassIds is not null
+            ? await db.Classes.AsNoTracking().Where(c => homeroomClassIds.Contains(c.Id))
+                .OrderBy(c => c.Name).Select(c => c.Name).ToListAsync()
+            : await db.ClassHomeroomTeachers.AsNoTracking().Where(h => h.TeacherId == t.Id)
+                .Join(db.Classes.AsNoTracking(), h => h.ClassId, c => c.Id, (_, c) => c.Name)
+                .OrderBy(n => n).ToListAsync();
+        return new
+        {
+            t.FullName, t.BirthDate, t.Address, t.Gender, t.Phone, Photo = t.PhotoUrl,
+            Subjects = string.Join(", ", subjects),
+            Homeroom = string.Join(", ", homeroom),
+            Permissions = string.Join(", ", (t.Permissions ?? new()).OrderBy(p => p, StringComparer.Ordinal)),
+            Password = passwordSet ? "yangilandi" : null,
+        };
     }
 
     /* ---------- Access role (2026-10-12: "o'qituvchi profilida role berish mumkin bo'lsin") ---------- */
@@ -223,8 +274,18 @@ public class TeachersController(AppDbContext db, AuditService audit, IExpenseSer
             if (!RoleAssignment.Within(User, role.Permissions))
                 return StatusCode(403, new { message = RoleAssignment.WiderMessage });
         }
+        var oldRoleId = user.AccessRoleId;
         user.AccessRoleId = role?.Id;
         user.Permissions = role is null ? new() : [.. role.Permissions];
+        if (oldRoleId != user.AccessRoleId)
+        {
+            var oldName = oldRoleId is { } rid
+                ? await db.AccessRoles.AsNoTracking().Where(r => r.Id == rid).Select(r => r.Name).FirstOrDefaultAsync()
+                : null;
+            audit.Record(AuditService.EntityRoleAssignment, user.Id, "update",
+                $"O'qituvchi roli: {teacher.FullName} — {oldName ?? "rolsiz"} → {role?.Name ?? "rolsiz"}",
+                before: new { Rol = oldName }, after: new { Rol = role?.Name }, teacherId: teacher.Id);
+        }
         await db.SaveChangesAsync();
         return new TeacherRoleDto(teacher.Id, role?.Id, role?.Name);
     }
@@ -239,6 +300,10 @@ public class TeachersController(AppDbContext db, AuditService audit, IExpenseSer
         if (teacher.UserId is not null
             && !await SchoolLms.Application.HrTasks.HrTasksService.ReleaseUnusedEmployeeAsync(db, teacher.UserId))
             return Conflict(new { message = StaffController.HrEmployeeDeleteMessage });
+        audit.Record(AuditService.EntityTeacher, teacher.Id, "delete",
+            $"O'qituvchi o'chirildi ({teacher.FullName})",
+            before: new Dictionary<string, object?> { ["F.I.SH"] = teacher.FullName, ["Telefon"] = teacher.Phone },
+            teacherId: teacher.Id);
         // Biriktirilgan tizim akkauntini ham o'chiramiz.
         if (teacher.UserId is not null)
         {
@@ -274,7 +339,8 @@ public class TeachersController(AppDbContext db, AuditService audit, IExpenseSer
             if (user is not null) user.BlockLogin();
         }
 
-        audit.Record(AuditService.EntityTeacherSalary, teacher.Id, "update",
+        // Under the teacher now (it used to be "TeacherSalary", a salary type).
+        audit.Record(AuditService.EntityTeacher, teacher.Id, "archive",
             $"O'qituvchi arxivga ko'chirildi ({teacher.FullName})"
                 + (string.IsNullOrWhiteSpace(teacher.ArchiveReason) ? "" : $": \"{teacher.ArchiveReason}\""),
             teacherId: teacher.Id);
@@ -308,7 +374,7 @@ public class TeachersController(AppDbContext db, AuditService audit, IExpenseSer
             user.SetInitialPassword(newPwd);
         }
 
-        audit.Record(AuditService.EntityTeacherSalary, teacher.Id, "update",
+        audit.Record(AuditService.EntityTeacher, teacher.Id, "restore",
             $"O'qituvchi arxivdan qaytarildi ({teacher.FullName})", teacherId: teacher.Id);
 
         await db.SaveChangesAsync();
@@ -349,6 +415,8 @@ public class TeachersController(AppDbContext db, AuditService audit, IExpenseSer
         }
         var pwd = AccountFactory.GeneratePassword();
         user.PasswordHash = PasswordHasher.Hash(pwd);
+        audit.Record(AuditService.EntityTeacher, teacher.Id, "password",
+            $"O'qituvchiga yangi parol berildi ({teacher.FullName})", teacherId: teacher.Id);
         await db.SaveChangesAsync();
         return new CredentialsDto(user.Email, pwd, user.Role);
     }

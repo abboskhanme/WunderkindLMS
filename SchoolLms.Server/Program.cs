@@ -373,6 +373,8 @@ builder.Services.AddScoped<SchoolLms.Application.Billing.IReceiptService,
 builder.Services.AddHostedService<SchoolLms.Application.Billing.BillingAccrualService>();
 // Automatic Telegram messages to parents — every rule ships switched off (auto-messages.md, 2026-10-13).
 builder.Services.AddHostedService<SchoolLms.Application.Services.AutoMessageScheduler>();
+// Attendance red list: scans at 13:00 and 18:00 on school days, notices to teachers (attendance-red-list.md).
+builder.Services.AddHostedService<SchoolLms.Application.Services.AttendanceRedListScheduler>();
 
 // Kamera (videokuzatuv) media-shlyuzi (MediaMTX) bilan ishlash
 builder.Services.AddHttpClient<SchoolLms.Application.Services.CameraGateway>();

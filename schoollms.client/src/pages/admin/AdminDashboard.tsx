@@ -44,6 +44,8 @@ import {
   TodayMoneyStat,
 } from './DashboardExtraWidgets'
 import { WidgetPickerDrawer } from './WidgetPickerDrawer'
+import { StudentFlowCard } from './StudentFlowCard'
+import { hasSection } from '@/lib/access'
 import { DashboardPeriodBar } from './DashboardPeriodBar'
 import { displayDate, useDashboardPeriod } from './dashboardPeriod'
 
@@ -51,7 +53,12 @@ export function AdminDashboard() {
   const { user } = useAuth()
   const billing = useBillingAccess()
   const canLeads = !user?.permissions || user.permissions.includes('leads')
-  const access = useMemo(() => ({ finance: billing.canOpen, leads: canLeads }), [billing.canOpen, canLeads])
+  // The student flow report is read gated on `students` (full or view).
+  const canStudents = hasSection(user, 'students')
+  const access = useMemo(
+    () => ({ finance: billing.canOpen, leads: canLeads, students: canStudents }),
+    [billing.canOpen, canLeads, canStudents],
+  )
   const widgets = useDashboardWidgets(user?.id ?? 'anon', access)
   const [pickerOpen, setPickerOpen] = useState(false)
   // Davr filtri butun sahifa uchun bitta (mijoz, 2026-10-08) — dashboardPeriod.ts.
@@ -292,6 +299,7 @@ export function AdminDashboard() {
     on('leadFunnel') && <LeadFunnelCard key="leadFunnel" />,
     on('bonusPenalty') && <BonusPenaltyCard key="bonusPenalty" period={period} />,
     on('contingent') && <ContingentCard key="contingent" stats={stats} classes={classHeadcounts} />,
+    on('studentFlow') && <StudentFlowCard key="studentFlow" period={period} />,
     on('gender') && <GenderCard key="gender" stats={stats} classes={classHeadcounts} />,
     on('classBreakdown') && <ClassBreakdownCard key="classBreakdown" classes={classHeadcounts} />,
   ].filter(Boolean)

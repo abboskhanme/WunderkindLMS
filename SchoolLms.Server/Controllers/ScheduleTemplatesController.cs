@@ -32,7 +32,7 @@ namespace SchoolLms.Server.Controllers;
 [Authorize]
 [AdminPerm("schedule")]
 [Route("api/admin/classes/{classId}/schedule-templates")]
-public class ScheduleTemplatesController(AppDbContext db) : ControllerBase
+public class ScheduleTemplatesController(AppDbContext db, AuditService audit) : ControllerBase
 {
     private static ScheduleTemplateDto ToDto(ScheduleTemplate t) => new(
         t.Id, t.ClassId, t.Name,
@@ -74,6 +74,8 @@ public class ScheduleTemplatesController(AppDbContext db) : ControllerBase
 
         var tpl = new ScheduleTemplate { ClassId = classId, Name = req.Name, OwnerKind = owner.Kind };
         db.ScheduleTemplates.Add(tpl);
+        audit.Record(AuditService.EntityScheduleTemplate, tpl.Id, "create",
+            $"Dars jadvali yaratildi: {owner.Name} — «{tpl.Name}»");
         await db.SaveChangesAsync(ct);
         return ToDto(tpl);
     }
@@ -84,6 +86,11 @@ public class ScheduleTemplatesController(AppDbContext db) : ControllerBase
     {
         var tpl = await FindAsync(classId, templateId, ct);
         if (tpl is null) return NotFound();
+        if (tpl.Name != req.Name)
+            audit.Record(AuditService.EntityScheduleTemplate, tpl.Id, "update",
+                $"Dars jadvali nomi o'zgardi: {await OwnerNameAsync(classId, ct)} — «{tpl.Name}» → «{req.Name}»",
+                before: new Dictionary<string, object?> { ["Nomi"] = tpl.Name },
+                after: new Dictionary<string, object?> { ["Nomi"] = req.Name });
         tpl.Name = req.Name;
         await db.SaveChangesAsync(ct);
         return NoContent();
@@ -104,6 +111,8 @@ public class ScheduleTemplatesController(AppDbContext db) : ControllerBase
                           + "tayanadi, shuning uchun o'chirilmaydi.",
             });
         db.ScheduleTemplates.Remove(tpl);
+        audit.Record(AuditService.EntityScheduleTemplate, tpl.Id, "delete",
+            $"Dars jadvali o'chirildi: {await OwnerNameAsync(classId, ct)} — «{tpl.Name}» ({tpl.Lessons.Count} ta dars)");
         await db.SaveChangesAsync(ct);
         return NoContent();
     }
@@ -128,6 +137,8 @@ public class ScheduleTemplatesController(AppDbContext db) : ControllerBase
         if (clash.Count > 0) return Conflict(new { message = ScheduleConflicts.Message(clash) });
 
         var existing = tpl.Lessons.Where(l => l.Day == day && l.Period == period).ToList();
+        await RecordCellsAsync(owner.Name, tpl, existing,
+            [lesson with { Day = day, Period = period }], [(day, period)], ct);
         db.RemoveRange(existing);
         tpl.Lessons.Add(new ScheduleLesson
         {
@@ -151,6 +162,7 @@ public class ScheduleTemplatesController(AppDbContext db) : ControllerBase
         if (tpl is null) return NotFound();
 
         var existing = tpl.Lessons.Where(l => l.Day == day && l.Period == period).ToList();
+        await RecordCellsAsync(await OwnerNameAsync(classId, ct), tpl, existing, [], [(day, period)], ct);
         db.RemoveRange(existing);
         await db.SaveChangesAsync(ct);
         return NoContent();
@@ -188,6 +200,7 @@ public class ScheduleTemplatesController(AppDbContext db) : ControllerBase
         }
 
         var existing = tpl.Lessons.Where(l => l.Day == req.Day && l.Period == req.Period).ToList();
+        await RecordCellsAsync(owner.Name, tpl, existing, lessons, [(req.Day, req.Period)], ct);
         db.RemoveRange(existing);
         foreach (var l in lessons)
         {
@@ -252,6 +265,10 @@ public class ScheduleTemplatesController(AppDbContext db) : ControllerBase
             if (clash.Count > 0) return Conflict(new { message = ScheduleConflicts.Message(clash) });
         }
 
+        await RecordCellsAsync(owner.Name, edited,
+            [.. edited.Lessons.Where(l => cells.Any(c => c.Day == l.Day && c.Period == l.Period))],
+            [.. cells.SelectMany(c => c.Lessons ?? [])], [.. cells.Select(c => (c.Day, c.Period))], ct,
+            archivedName: target.Archived?.Name);
         foreach (var cell in cells)
         {
             db.RemoveRange(edited.Lessons.Where(l => l.Day == cell.Day && l.Period == cell.Period).ToList());
@@ -284,6 +301,57 @@ public class ScheduleTemplatesController(AppDbContext db) : ControllerBase
             return "Guruh darsida sinf ichidagi 1/2-guruhga bo'linish bo'lmaydi — "
                    + "guruhning o'zi allaqachon tanlangan o'quvchilar ro'yxati.";
         return null;
+    }
+
+    // ----- Audit (docs/modules/audit-log.md): one row per save, changed cells only -----
+
+    private static readonly string[] DayNames = ["Dushanba", "Seshanba", "Chorshanba", "Payshanba", "Juma", "Shanba", "Yakshanba"];
+
+    private async Task<string> OwnerNameAsync(string ownerId, CancellationToken ct) =>
+        (await OwnerAsync(ownerId, ct))?.Name ?? ownerId;
+
+    /// <summary>
+    /// One audit row for a save of timetable cells: each changed cell as "Dushanba, 2-dars" →
+    /// "Matematika — Aliyev A." before and after. Cells saved unchanged are left out; nothing
+    /// changed — no row. Names come from two queries for the whole save.
+    /// </summary>
+    private async Task RecordCellsAsync(
+        string ownerName, ScheduleTemplate tpl, IReadOnlyCollection<ScheduleLesson> before,
+        IReadOnlyCollection<ScheduleLessonDto> after, IReadOnlyCollection<(int Day, int Period)> cells,
+        CancellationToken ct, string? archivedName = null)
+    {
+        var subjectIds = before.Select(l => l.SubjectId).Concat(after.Select(l => l.SubjectId)).Distinct().ToList();
+        var teacherIds = before.Select(l => l.TeacherId).Concat(after.Select(l => l.TeacherId)).Distinct().ToList();
+        var subjects = await db.Subjects.AsNoTracking().Where(s => subjectIds.Contains(s.Id)).ToDictionaryAsync(s => s.Id, s => s.Name, ct);
+        var teachers = await db.Teachers.AsNoTracking().Where(t => teacherIds.Contains(t.Id)).ToDictionaryAsync(t => t.Id, t => t.FullName, ct);
+
+        string Describe(IEnumerable<(int SubGroup, string SubjectId, string TeacherId)> lessons)
+        {
+            var parts = lessons.OrderBy(l => l.SubGroup).Select(l =>
+                (l.SubGroup > 0 ? $"{l.SubGroup}-guruh: " : "")
+                + subjects.GetValueOrDefault(l.SubjectId, "?")
+                + (string.IsNullOrEmpty(l.TeacherId) ? "" : " — " + teachers.GetValueOrDefault(l.TeacherId, "?")))
+                .ToList();
+            return parts.Count == 0 ? "—" : string.Join("; ", parts);
+        }
+
+        var was = new Dictionary<string, object?>();
+        var now = new Dictionary<string, object?>();
+        foreach (var (day, period) in cells.Distinct().OrderBy(c => c.Day).ThenBy(c => c.Period))
+        {
+            var b = Describe(before.Where(l => l.Day == day && l.Period == period).Select(l => (l.SubGroup, l.SubjectId, l.TeacherId)));
+            var a = Describe(after.Where(l => l.Day == day && l.Period == period).Select(l => (l.SubGroup, l.SubjectId, l.TeacherId)));
+            if (a == b) continue;
+            var key = $"{(day >= 0 && day < DayNames.Length ? DayNames[day] : $"{day}-kun")}, {period}-dars";
+            was[key] = b;
+            now[key] = a;
+        }
+        if (now.Count == 0) return;
+
+        audit.Record(AuditService.EntityScheduleTemplate, tpl.Id, "update",
+            $"Dars jadvali o'zgardi: {ownerName} — «{tpl.Name}»: {string.Join(", ", now.Keys)}"
+            + (archivedName is null ? "" : $" (eski versiya «{archivedName}» bo'lib qoldi)"),
+            before: was, after: now);
     }
 
     private Task<ScheduleTemplate?> FindAsync(string classId, string templateId, CancellationToken ct) =>

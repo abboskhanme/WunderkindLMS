@@ -1,20 +1,15 @@
 import { useEffect, useState } from 'react'
 import { ChevronDown, Clock } from 'lucide-react'
-import type { AuditAction, AuditLog } from '@/types'
+import type { AuditLog } from '@/types'
 import { getAuditLogs, type AuditFilters } from '@/api/services/audit'
 import { Loader } from '@/components/ui/Loader'
 import { formatDate, formatMoney, cn } from '@/lib/utils'
+import { auditBadge } from './auditActions'
 
 interface Props {
   filters: AuditFilters
   /** Bo'sh bo'lganda ko'rsatiladigan matn */
   emptyLabel?: string
-}
-
-const actionConfig: Record<AuditAction, { label: string; cls: string }> = {
-  create: { label: "Qo'shildi", cls: 'bg-emerald-50 text-emerald-700' },
-  update: { label: 'Tahrirlandi', cls: 'bg-amber-50 text-amber-700' },
-  delete: { label: "O'chirildi", cls: 'bg-red-50 text-red-700' },
 }
 
 /** "yyyy-MM-ddTHH:mm:ss" -> "21.05.2026 09:57" */
@@ -133,7 +128,8 @@ export function AuditHistoryList({ filters, emptyLabel = "O'zgarishlar tarixi yo
   return (
     <ul className="space-y-2">
       {logs.map((log) => {
-        const cfg = actionConfig[log.action]
+        // Any action (storno, cancel, approve…) has a badge — an unknown one is a change.
+        const cfg = auditBadge(log.action)
         const hasDetail = !!(log.before || log.after)
         const open = openId === log.id
         return (

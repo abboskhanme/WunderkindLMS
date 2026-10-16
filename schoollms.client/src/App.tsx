@@ -24,6 +24,8 @@ import { StudentsPage } from '@/pages/admin/students/StudentsPage'
 import { StudentEvaluationPage } from '@/pages/admin/students/StudentEvaluationPage'
 import { EvaluationTypesPage } from '@/pages/admin/students/EvaluationTypesPage'
 import { StudentDetailPage } from '@/pages/admin/students/StudentDetailPage'
+import { StudentFlowPage } from '@/pages/admin/students/StudentFlowPage'
+import { AuditLogPage } from '@/pages/admin/audit/AuditLogPage'
 import { StudentTurnstilePage } from '@/pages/admin/students/StudentTurnstilePage'
 import { TeacherAttendancePage } from '@/pages/admin/teachers/TeacherAttendancePage'
 import { SubstitutionsPage } from '@/pages/admin/teachers/SubstitutionsPage'
@@ -114,6 +116,7 @@ import { HarakatlarPage } from '@/pages/admin/discipline/HarakatlarPage'
 import { AttendanceAnalyticsPage } from '@/pages/admin/attendance/AttendanceAnalyticsPage'
 import { AttendanceAnalytics2Page } from '@/pages/admin/attendance/AttendanceAnalytics2Page'
 import { DailyMarkingPage } from '@/pages/admin/attendance/DailyMarkingPage'
+import { AttendanceRedListPage } from '@/pages/admin/attendance/AttendanceRedListPage'
 import { TurnstileAnalyticsPage } from '@/pages/admin/turnstile/TurnstileAnalyticsPage'
 import { TurnstileFlowPage } from '@/pages/admin/turnstile/TurnstileFlowPage'
 import { DailyAttendanceReportPage } from '@/pages/admin/turnstile/DailyAttendanceReportPage'
@@ -181,6 +184,8 @@ export default function App() {
           <Route path="students/turniket/analitika" element={<RequirePerm perm="students"><TurnstileAnalyticsPage /></RequirePerm>} />
           <Route path="students/turniket/kirish-chiqish" element={<RequirePerm perm="students"><TurnstileFlowPage /></RequirePerm>} />
           <Route path="students/turniket/kunlik-davomat" element={<RequirePerm perm="students"><DailyAttendanceReportPage /></RequirePerm>} />
+          {/* O'quvchilar oqimi — kelgan, ketgan, qaytgan o'quvchilar (student-flow.md). */}
+          <Route path="students/oqim" element={<RequirePerm perm="students"><StudentFlowPage /></RequirePerm>} />
           <Route path="students/:id" element={<RequirePerm perm="students"><StudentDetailPage /></RequirePerm>} />
           {/* O'qituvchilar ro'yxati Boshqaruv → Xodimlar ga qo'shildi (2026-09-26). Eski manzil
               (dashboard, global qidiruv `?q=&tab=`) o'sha sahifaga `?position=teacher` bilan o'tadi. */}
@@ -243,6 +248,8 @@ export default function App() {
           <Route path="attendance/analytics" element={<RequirePerm perm="attendance"><AttendanceAnalyticsPage /></RequirePerm>} />
           {/* Davomat analitikasi 2.0 — kunduzgi + kechki dars + yotoqxona (mijoz, 2026-10-11). */}
           <Route path="attendance/analytics-2" element={<RequirePerm perm="attendance"><AttendanceAnalytics2Page /></RequirePerm>} />
+          {/* Qizil ro'yxat (2026-10-15): ko'rish — `attendance`, navbatda ishlash — `attendanceCases`. */}
+          <Route path="attendance/red-list" element={<RequirePerm perm={['attendance', 'attendanceCases']}><AttendanceRedListPage /></RequirePerm>} />
           {/* Davomat BELGILASH — mas'ul xodim ekrani (mijoz, 2026-09-18).
               Ruxsat o'sha `attendance`: xodimga shu bitta ruxsat beriladi. */}
           <Route path="attendance/mark" element={<RequirePerm perm="attendanceMark"><DailyMarkingPage /></RequirePerm>} />
@@ -331,6 +338,8 @@ export default function App() {
           <Route path="hr/topshiriqlar/sozlamalar" element={<RequirePerm perm="hrTasks"><HrSettingsPage /></RequirePerm>} />
           {/* Rollar — alohida sahifa (ruxsatlar rolga beriladi) */}
           <Route path="boshqaruv/roles" element={<RequirePerm perm="staff"><RolesPage /></RequirePerm>} />
+          {/* O'zgarishlar tarixi (audit-log.md) — own key, read gated on the server too. */}
+          <Route path="audit" element={<RequirePerm perm="audit"><AuditLogPage /></RequirePerm>} />
           <Route element={<ProtectedRoute role="superadmin" />}>
             <Route path="boshqaruv/branches" element={<BranchesPage />} />
             <Route path="boshqaruv/ai" element={<AiConnectionsPage />} />

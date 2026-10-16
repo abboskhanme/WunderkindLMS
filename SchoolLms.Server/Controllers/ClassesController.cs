@@ -240,7 +240,8 @@ public class ClassesController(AppDbContext db, AuditService audit) : Controller
             }
         }
 
-        audit.Record(AuditService.EntityStudentClass, classId, "update",
+        // Under the class itself now (it used to be "StudentClass" — a pupil's class change).
+        audit.Record(AuditService.EntitySchoolClass, classId, "update",
             $"Sinf nomi o'zgartirildi: {oldName} → {newName} — {students.Count} ta o'quvchi, " +
             $"{teachers.Count} ta sinf rahbari, {messages} ta chat xabari, {broadcasts} ta e'lon, " +
             $"{pickups} ta olib ketish so'rovi yangi nomga o'tkazildi",
@@ -304,33 +305,49 @@ public class ClassesController(AppDbContext db, AuditService audit) : Controller
     /// Sinfni arxivlash — <c>IsArchived=true</c>. Unga bog'langan FAOL o'quvchilar ham arxivlanadi
     /// (login bloklanadi, lekin parol saqlanadi — chiqarganda tiklanadi) va <c>ArchivedWithClass=true</c>
     /// bilan belgilanadi. Avval alohida arxivlangan o'quvchilar tegilmaydi.
+    ///
+    /// <para>
+    /// Leave reason (student-flow.md, 2026-10-15): the body is optional — a catalog reason and a note
+    /// for the pupils' departure; without one the note is "Sinf arxivlandi (…)" as before. Each pupil
+    /// gets a departure in the class (<see cref="StudentFlowRecorder"/>).
+    /// </para>
     /// </summary>
     [HttpPost("{id}/archive")]
-    public async Task<IActionResult> Archive(string id)
+    public async Task<IActionResult> Archive(
+        string id, [FromBody(EmptyBodyBehavior = Microsoft.AspNetCore.Mvc.ModelBinding.EmptyBodyBehavior.Allow)] ArchiveClassRequest? req = null)
     {
         var cls = await db.Classes.FindAsync(id);
         if (cls is null) return NotFound();
         if (cls.IsArchived) return BadRequest(new { message = "Sinf allaqachon arxivda" });
+
+        var archive = new StudentArchiveService(db);
+        if (!await archive.ReasonIsUsableAsync(req?.ArchiveReasonId))
+            return BadRequest(new { message = StudentArchiveService.ReasonNotFoundMessage });
+        var note = (req?.Reason ?? "").Trim();
+        var reasonText = note.Length > 0 ? note : $"Sinf arxivlandi ({cls.Name})";
 
         var today = AppClock.Today.ToString("yyyy-MM-dd");
         cls.IsArchived = true;
         cls.ArchivedAt = today;
 
         var students = await db.Students.Where(s => s.ClassName == cls.Name && !s.IsArchived).ToListAsync();
-        var archive = new StudentArchiveService(db);
+        var flow = new StudentFlowRecorder(db, StudentEventActor.From(User));
         foreach (var s in students)
         {
             s.IsArchived = true;
             s.ArchivedAt = today;
-            s.ArchiveReason = $"Sinf arxivlandi ({cls.Name})";
+            s.ArchiveReason = reasonText;
+            s.ArchiveReasonId = req?.ArchiveReasonId;
             s.ArchivedWithClass = true;
             // Arxivdagi o'quvchi sinfda qolmaydi — a'zolik yopiladi, sinfni qaytarish shu
             // yopilgan a'zolikdan qaytaradi (pastdagi Unarchive).
             await archive.LeaveClassAndGroupsAsync(s, $"Sinf arxivlandi ({cls.Name})");
+            await flow.LeftAsync(s, cls.Name, req?.ArchiveReasonId, reasonText, StudentEventSource.ClassArchive, classId: cls.Id);
         }
 
-        audit.Record(AuditService.EntityClassFee, cls.Id, "update",
-            $"Sinf arxivlandi ({cls.Name}) — {students.Count} ta o'quvchi bilan");
+        audit.Record(AuditService.EntitySchoolClass, cls.Id, "archive",
+            $"Sinf arxivlandi ({cls.Name}) — {students.Count} ta o'quvchi bilan"
+            + (note.Length > 0 ? $": \"{note}\"" : ""));
         await db.SaveChangesAsync();
         return Ok(new { archivedStudents = students.Count });
     }
@@ -366,12 +383,16 @@ public class ClassesController(AppDbContext db, AuditService audit) : Controller
                 .Select(m => m.StudentId).ToListAsync())
             .ToHashSet(StringComparer.Ordinal);
         var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        var flow = new StudentFlowRecorder(db, StudentEventActor.From(User));
         foreach (var s in students)
         {
             s.IsArchived = false;
             s.ArchivedAt = null;
             s.ArchiveReason = null;
+            // The catalog link goes too, as on a single restore (StudentsController.Restore).
+            s.ArchiveReasonId = null;
             s.ArchivedWithClass = false;
+            await flow.ReturnedAsync(s, cls.Name, StudentEventSource.ClassArchive, classId: cls.Id);
             s.ClassName = cls.Name;
             s.TargetGrade = null;
             if (!openIds.Contains(s.Id))
@@ -382,7 +403,7 @@ public class ClassesController(AppDbContext db, AuditService audit) : Controller
                 });
         }
 
-        audit.Record(AuditService.EntityClassFee, cls.Id, "update",
+        audit.Record(AuditService.EntitySchoolClass, cls.Id, "restore",
             $"Sinf arxivdan chiqarildi ({cls.Name}) — {students.Count} ta o'quvchi bilan");
         await db.SaveChangesAsync();
         return Ok(new { restoredStudents = students.Count });
@@ -436,7 +457,7 @@ public class ClassesController(AppDbContext db, AuditService audit) : Controller
         var toClear = removed.Select(id => new { FullName = nameById.GetValueOrDefault(id, id) }).ToList();
 
         if (toClear.Count > 0 || toAssign.Count > 0)
-            audit.Record(AuditService.EntityStudentClass, cls.Id, "update",
+            audit.Record(AuditService.EntitySchoolClass, cls.Id, "update",
                 $"Sinf rahbari(lari) o'zgartirildi ({cls.Name}): "
                 + $"+{string.Join(", ", toAssign.Select(t => t.FullName))} "
                 + $"−{string.Join(", ", toClear.Select(t => t.FullName))}",

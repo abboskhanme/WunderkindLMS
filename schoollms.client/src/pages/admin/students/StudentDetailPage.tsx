@@ -124,6 +124,9 @@ export function StudentDetailPage() {
   const visiblePrimary = primaryTabs.filter((t) => t.id !== 'subscriptions' || canManageSubscriptions)
   // Balans — faqat moliya huquqi bor xodimga (server ham shu chegarada). Boshqalarda qator yo'q.
   const canSeeBalance = hasFinanceAccess(user)
+  // Behaviour incidents: add / edit / delete need the FULL discipline key (the server's AdminPerm).
+  // Roles without a permission list (admin, director) hold every section.
+  const canEditDiscipline = !!user && (!user.permissions || user.permissions.includes('discipline'))
   const [balance, setBalance] = useState<number | null>(null)
 
   const load = useCallback(() => {
@@ -323,7 +326,15 @@ export function StudentDetailPage() {
 
       {tab === 'comments' && <CommentsTab studentId={data.id} />}
 
-      {tab === 'discipline' && <DisciplineTab points={data.disciplinePoints} />}
+      {tab === 'discipline' && (
+        <DisciplineTab
+          points={data.disciplinePoints}
+          score={data.disciplineScore}
+          student={{ id: data.id, fullName: data.fullName, className: data.className }}
+          canEdit={canEditDiscipline}
+          onChanged={load}
+        />
+      )}
 
       {tab === 'location' &&
         (card ? (

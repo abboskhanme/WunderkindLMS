@@ -73,6 +73,9 @@ function JournalGridBody({ classId, className, subjectId, subjectName, quarter, 
   const [sheetCell, setSheetCell] = useState(null) // { student, col }
 
   const studentsQ = useFetch(() => api.journalStudents(classId), [classId])
+  // 2026-10-15: teachers mark attendance only when the school allows it (default: the nurse does).
+  const profileQ = useFetch(() => api.profile(), [])
+  const canMark = profileQ.data?.canMarkAttendance === true
   const columnsQ = useFetch(() => api.journalColumns(classId, subjectId, quarter), [classId, subjectId, quarter])
   const entriesQ = useFetch(() => api.journalEntries(classId, subjectId, quarter), [classId, subjectId, quarter])
 
@@ -144,6 +147,7 @@ function JournalGridBody({ classId, className, subjectId, subjectName, quarter, 
         cell={sheetCell}
         existing={sheetCell ? entryMap[cellKey(sheetCell.student.id, sheetCell.col.date, sheetCell.col.period)] : null}
         reasons={meta?.absenceReasons || []}
+        canMark={canMark}
         onClose={() => setSheetCell(null)}
         onSaved={() => { entriesQ.reload(); setSheetCell(null) }}
         ctx={{ classId, subjectId, quarter }}
@@ -601,7 +605,7 @@ function QuarterTab({ classId, subjectId, quarter, students }) {
   )
 }
 
-function GradeEntrySheet({ cell, existing, reasons, onClose, onSaved, ctx }) {
+function GradeEntrySheet({ cell, existing, reasons, canMark, onClose, onSaved, ctx }) {
   const [grade, setGrade] = useState(null)
   const [reasonId, setReasonId] = useState(null)
   const [homework, setHomework] = useState(0)
@@ -705,8 +709,14 @@ function GradeEntrySheet({ cell, existing, reasons, onClose, onSaved, ctx }) {
             })}
           </div>
 
-          <p className="mt-5 text-[12px] font-bold text-muted tracking-wide">DAVOMAT</p>
-          <div className="mt-2.5 flex flex-wrap gap-2">
+          {/* Without the right the nurse's mark is shown, not editable — and saved back unchanged. */}
+          {!canMark && reasonId && (
+            <p className="mt-5 text-[12px] font-bold text-muted tracking-wide">
+              DAVOMAT (HAMSHIRA): {reasons.find((r) => r.id === reasonId)?.name ?? "Yo'q"}
+            </p>
+          )}
+          {canMark && <p className="mt-5 text-[12px] font-bold text-muted tracking-wide">DAVOMAT</p>}
+          {canMark && <div className="mt-2.5 flex flex-wrap gap-2">
             {reasons.map((r) => {
               const on = reasonId === r.id
               return (
@@ -721,7 +731,7 @@ function GradeEntrySheet({ cell, existing, reasons, onClose, onSaved, ctx }) {
                 </button>
               )
             })}
-          </div>
+          </div>}
 
           <p className="mt-5 text-[12px] font-bold text-muted tracking-wide">UY VAZIFA</p>
           <div className="mt-2.5 flex gap-2">

@@ -106,6 +106,8 @@ public partial class StudentStatusesController(AppDbContext db, AuditService aud
             IsActive = req.IsActive ?? true,
         };
         db.StudentStatuses.Add(row);
+        audit.Record(AuditEntity, row.Id.ToString(), "create", $"O'quvchi holati qo'shildi: «{row.Name}»",
+            after: CatalogView(row));
         await db.SaveChangesAsync(ct);
         return ToDto(row, 0);
     }
@@ -122,6 +124,8 @@ public partial class StudentStatusesController(AppDbContext db, AuditService aud
         if (name.Length == 0) return BadRequest(new { message = NameRequiredMessage });
         if (await db.StudentStatuses.AnyAsync(s => s.Name == name && s.Id != id, ct))
             return BadRequest(new { message = NameTakenMessage });
+
+        var before = CatalogView(row);
 
         // Rang: berilmasa tegilmaydi; bo'sh satr berilsa TOZALANADI (neytral).
         if (req.Color is not null)
@@ -143,6 +147,7 @@ public partial class StudentStatusesController(AppDbContext db, AuditService aud
         }
         if (req.IsActive is { } active) row.IsActive = active;
 
+        audit.RecordChanges(AuditEntity, row.Id.ToString(), $"O'quvchi holati o'zgardi: «{row.Name}»", before, CatalogView(row));
         await db.SaveChangesAsync(ct);
         var used = await db.Students.CountAsync(s => s.StatusId == id, ct);
         return ToDto(row, used);
@@ -164,9 +169,17 @@ public partial class StudentStatusesController(AppDbContext db, AuditService aud
             });
 
         db.StudentStatuses.Remove(row);
+        audit.Record(AuditEntity, row.Id.ToString(), "delete", $"O'quvchi holati o'chirildi: «{row.Name}»",
+            before: CatalogView(row));
         await db.SaveChangesAsync(ct);
         return NoContent();
     }
+
+    /// <summary>A catalog row as the audit shows it (Uzbek keys, audit-log.md).</summary>
+    private static Dictionary<string, object?> CatalogView(StudentStatus s) => new()
+    {
+        ["Nomi"] = s.Name, ["Rang"] = s.Color, ["Tartib"] = s.Position, ["Faol"] = s.IsActive,
+    };
 
     /// <summary>
     /// O'quvchiga holat qo'yish yoki olib tashlash (<c>statusId: null</c>) —

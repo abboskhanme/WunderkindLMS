@@ -35,6 +35,7 @@
  * kirim), na hisob-faktura, na FIFO taqsimotni biladi.
  */
 import type { PaymentMethod } from '@/types'
+import type { ShopSaleLine } from './shop'
 import { api } from '../client'
 
 /* ========================================================================
@@ -110,6 +111,11 @@ export interface CashBoxInPayload {
    * yo'q (`CashBoxPayInRequest.Date`).
    */
   date?: string
+  /**
+   * Mini-magazin sale (2026-10-15, `shop.ts`): products and quantities only — the server prices them from
+   * the catalogue and requires `amount` to equal their total (400 `sale_amount_mismatch` otherwise).
+   */
+  lines?: { productId: string; quantity: number }[]
 }
 
 export interface CashBoxOutPayload {
@@ -216,6 +222,10 @@ export interface CashBoxTransactionRow {
   boxName?: string | null
   /** Faqat ko'chirishda — qabul qiluvchi kassa. */
   toBoxName?: string | null
+  /** Kirimda — pul kimdan kelgani, kassir o'quvchini tanlagan bo'lsa (2026-10-15). */
+  studentName?: string | null
+  /** Mini-magazin sotuvi — sotilgan mahsulotlar (stornoda — bekor qilinganlari). Boshqa qatorlarda `null`. */
+  lines?: ShopSaleLine[] | null
 }
 
 export interface CashBoxTransactionsResult {

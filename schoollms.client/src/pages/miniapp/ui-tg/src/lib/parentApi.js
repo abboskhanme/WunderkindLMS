@@ -229,6 +229,12 @@ export function sendFeedback(childId, formData) {
   return api.form('/student/feedback', formData)
 }
 
+/**
+ * Xulq-atvor (2026-10-15): `{ remaining, plus, minus, items }` — 100 dan boshlanadigan ball va yozuvlar
+ * (`source`: manual — o'qituvchi/maktab, attendance — davomat sababi), yangisi tepada.
+ */
+export const getDiscipline = (childId) => api.get('/student/discipline' + forChild(childId))
+
 /** Sertifikatlar (ball / daraja), yangisi tepada — "hozircha necha balli" (mijoz, 2026-10-07). */
 export const getCertificates = (childId) => api.get('/student/certificates' + forChild(childId))
 

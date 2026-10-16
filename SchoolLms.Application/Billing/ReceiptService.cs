@@ -79,7 +79,18 @@ public sealed class ReceiptService(
     }
 
     /// <inheritdoc />
-    public async Task<bool> SendToGuardianAsync(Guid paymentId, CancellationToken ct = default)
+    public Task<bool> SendToGuardianAsync(Guid paymentId, CancellationToken ct = default) =>
+        SendCoreAsync(paymentId, null, ct);
+
+    /// <inheritdoc />
+    public Task<bool> SendToGuardianAsync(Guid paymentId, string? sentBy, CancellationToken ct = default) =>
+        SendCoreAsync(paymentId, sentBy, ct);
+
+    /// <summary>Telegram's limit for a document caption, characters of visible text.</summary>
+    internal const int CaptionLimit = 1024;
+
+    /// <param name="sentBy">null — automatic (right after the payment); users.id — a manual resend.</param>
+    private async Task<bool> SendCoreAsync(Guid paymentId, string? sentBy, CancellationToken ct)
     {
         // BUTUN metod himoyalangan. P1-11 buni to'lov oqimidan chaqiradi;
         // bu yerdan chiqqan istisno chaqiruvchining tranzaksiyasini orqaga
@@ -92,19 +103,22 @@ public sealed class ReceiptService(
             // Ota-ona -> chat: TelegramRegistration.StudentId -> ChatId.
             // Bir o'quvchida bir nechta ro'yxat bo'lishi mumkin (ota va ona) —
             // hammasiga yuboriladi.
-            var chatIds = await db.TelegramRegistrations.AsNoTracking()
-                .Where(r => r.StudentId == payment.StudentId)
-                .Select(r => r.ChatId)
-                .Distinct()
-                .ToListAsync(ct);
+            var chats = (await db.TelegramRegistrations.AsNoTracking()
+                    .Where(r => r.StudentId == payment.StudentId)
+                    .Select(r => new { r.ChatId, r.ParentName })
+                    .ToListAsync(ct))
+                .DistinctBy(r => r.ChatId)
+                .ToList();
 
-            if (chatIds.Count == 0)
+            if (chats.Count == 0)
             {
                 // KUTILGAN holat, xato emas (P1-12 qabul mezoni): ota-ona hali
                 // botga ulanmagan. Kassir chekni qog'ozda beradi.
                 logger.LogWarning(
                     "Chek № {ReceiptNo}: o'quvchi {StudentId} bo'yicha Telegram ro'yxati yo'q — yuborilmadi.",
                     payment.ReceiptNo, payment.StudentId);
+                await LogDeliveriesAsync(payment, sentBy,
+                    [new Delivery(null, BroadcastDelivery.NoTelegram, "", 0, null)], ct);
                 return false;
             }
 
@@ -122,11 +136,58 @@ public sealed class ReceiptService(
             var pdf = await RenderThermalPdfAsync(paymentId, ct);
             var fileName = ReceiptText.FileName(payment.ReceiptNo);
             var caption = Caption(payment, model);
+            // The payment auto-message (2026-10-15): when switched on, its template is the caption.
+            // Never for a cancellation receipt, and never instead of the PDF — the PDF always goes.
+            string? template = null;
+            Dictionary<string, string>? values = null;
+            try
+            {
+                template = model.CancelledAt is null ? await PaymentTemplateAsync(ct) : null;
+                values = template is null ? null : await PaymentValuesAsync(payment, template, ct);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                // The template is a courtesy; the receipt goes with its usual caption.
+                logger.LogWarning(ex, "Chek № {ReceiptNo}: to'lov xabari shabloni tayyorlanmadi — odatiy izoh bilan yuboriladi.",
+                    payment.ReceiptNo);
+                template = null;
+            }
 
             var delivered = false;
-            foreach (var chatId in chatIds)
-                delivered |= await SendWithOneRetryAsync(chatId, pdf, fileName, caption, payment.ReceiptNo, ct);
+            var log = new List<Delivery>();
+            foreach (var chat in chats)
+            {
+                string? html = null;
+                if (template is not null && values is not null)
+                {
+                    values["{ota_ona}"] = string.IsNullOrWhiteSpace(chat.ParentName) ? "Ota-ona" : chat.ParentName;
+                    html = AutoMessageService.Render(template, values);
+                    if (string.IsNullOrWhiteSpace(TelegramHtml.ToPlain(html))) html = null;
+                }
 
+                bool ok, textOk = true;
+                int attempts;
+                if (html is null)
+                    (ok, attempts) = await SendWithOneRetryAsync(chat.ChatId, payment.ReceiptNo,
+                        () => telegram.SendDocumentAsync(chat.ChatId, pdf, fileName, caption, ct), ct);
+                else if (TelegramHtml.ToPlain(html).Length <= CaptionLimit)
+                    (ok, attempts) = await SendWithOneRetryAsync(chat.ChatId, payment.ReceiptNo,
+                        () => telegram.SendDocumentHtmlAsync(chat.ChatId, pdf, fileName, html, ct), ct);
+                else
+                {
+                    // Too long for a caption: the receipt with its usual caption, then the text.
+                    (ok, attempts) = await SendWithOneRetryAsync(chat.ChatId, payment.ReceiptNo,
+                        () => telegram.SendDocumentAsync(chat.ChatId, pdf, fileName, caption, ct), ct);
+                    textOk = ok && await telegram.SendRichAsync(chat.ChatId, html, ct);
+                }
+                delivered |= ok;
+                log.Add(new Delivery(chat.ChatId,
+                    ok && textOk ? BroadcastDelivery.Sent : BroadcastDelivery.Failed,
+                    html ?? TelegramHtml.Escape(caption), attempts,
+                    !ok ? "Telegram chekni qabul qilmadi" : !textOk ? "Chek yetdi, alohida matn yetmadi" : null));
+            }
+
+            await LogDeliveriesAsync(payment, sentBy, log, ct);
             return delivered;
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -152,28 +213,102 @@ public sealed class ReceiptService(
     /// (P1-12 qabul mezoni). Ko'proq urinish bu yerda ma'nosiz: chaqiruv
     /// kassir kutib turgan so'rov ichida bo'lishi mumkin.
     /// </summary>
-    private async Task<bool> SendWithOneRetryAsync(
-        long chatId, byte[] pdf, string fileName, string caption, long receiptNo, CancellationToken ct)
+    private async Task<(bool Ok, int Attempts)> SendWithOneRetryAsync(
+        long chatId, long receiptNo, Func<Task<bool>> send, CancellationToken ct)
     {
-        if (await telegram.SendDocumentAsync(chatId, pdf, fileName, caption, ct))
-            return true;
+        if (await send())
+            return (true, 1);
 
         logger.LogWarning(
             "Chek № {ReceiptNo}: {ChatId} chatiga yuborilmadi, qayta urinilmoqda.", receiptNo, chatId);
 
         await Task.Delay(RetryDelay, ct);
 
-        if (await telegram.SendDocumentAsync(chatId, pdf, fileName, caption, ct))
+        if (await send())
         {
             logger.LogInformation(
                 "Chek № {ReceiptNo}: {ChatId} chatiga ikkinchi urinishda yuborildi.", receiptNo, chatId);
-            return true;
+            return (true, 2);
         }
 
         logger.LogError(
             "Chek № {ReceiptNo}: {ChatId} chatiga IKKI urinishdan keyin ham yuborilmadi. "
             + "To'lov kuchda — chekni qo'lda qayta yuborish kerak.", receiptNo, chatId);
-        return false;
+        return (false, 2);
+    }
+
+    /// <summary>One chat's outcome for the delivery log.</summary>
+    private sealed record Delivery(long? ChatId, string Status, string Text, int Attempts, string? Error);
+
+    /// <summary>The payment rule's text when it is switched on, else null.</summary>
+    private async Task<string?> PaymentTemplateAsync(CancellationToken ct)
+    {
+        var rule = await db.AutoMessageRules.AsNoTracking()
+            .FirstOrDefaultAsync(r => r.Key == AutoMessageKind.Payment, ct);
+        return rule is { Enabled: true } && !string.IsNullOrWhiteSpace(rule.Text) ? rule.Text : null;
+    }
+
+    /// <summary>The payment rule's token values (plain text; escaped when rendered).</summary>
+    private async Task<Dictionary<string, string>> PaymentValuesAsync(PaymentDto payment, string template, CancellationToken ct)
+    {
+        var student = await db.Students.AsNoTracking().Where(s => s.Id == payment.StudentId)
+            .Select(s => new { s.FullName, s.FirstName, s.ClassName }).FirstOrDefaultAsync(ct);
+        var fullName = student?.FullName ?? payment.StudentName;
+        var values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["{fish}"] = fullName,
+            ["{ism}"] = AutoMessageService.FirstNameOf(fullName, student?.FirstName),
+            ["{sinf}"] = student?.ClassName ?? "",
+            ["{summa}"] = AutoMessageService.Money(payment.Amount),
+            ["{sana}"] = ReceiptText.Date(payment.ReceivedAt),
+            ["{vaqt}"] = AppClock.ToLocal(payment.ReceivedAt).ToString("HH:mm", System.Globalization.CultureInfo.InvariantCulture),
+            ["{chek}"] = payment.ReceiptNo.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            ["{usul}"] = ReceiptText.MethodLabel(payment.Method),
+        };
+        // The debt after this payment — the "Qarzdorlar" report's number; asked only when the text uses it.
+        if (template.Contains("{qarzdorlik}", StringComparison.OrdinalIgnoreCase))
+        {
+            var debt = (await new FinanceReportQueries(db).DebtorsAsync(
+                    new DebtorReportQuery(IncludeArchived: true, StudentIds: [payment.StudentId]), ct))
+                .Sum(d => d.Debt);
+            values["{qarzdorlik}"] = AutoMessageService.Money(debt);
+        }
+        return values;
+    }
+
+    /// <summary>
+    /// Every receipt send, per chat, goes into the automatic message log (rule "payment", ref = the
+    /// receipt number), whether the payment rule is on or off. Logging never affects the send:
+    /// a failure here is only written to the application log.
+    /// </summary>
+    private async Task LogDeliveriesAsync(PaymentDto payment, string? sentBy, List<Delivery> deliveries, CancellationToken ct)
+    {
+        var added = new List<AutoMessageLogEntry>();
+        try
+        {
+            if (!await db.Students.AsNoTracking().AnyAsync(s => s.Id == payment.StudentId, ct)) return;
+            var now = AppClock.NowInstant;
+            var period = AppClock.Today.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
+            foreach (var d in deliveries)
+            {
+                var entry = new AutoMessageLogEntry
+                {
+                    RuleKey = AutoMessageKind.Payment, Period = period, StudentId = payment.StudentId, ChatId = d.ChatId,
+                    RefId = payment.ReceiptNo.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                    Status = d.Status, Text = d.Text, Attempts = d.Attempts, Error = d.Error, At = now,
+                    Source = sentBy is null ? AutoMessageSource.Auto : AutoMessageSource.Manual, SentBy = sentBy,
+                };
+                db.AutoMessageLog.Add(entry);
+                added.Add(entry);
+            }
+            await db.SaveChangesAsync(ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            foreach (var entry in added) db.AutoMessageLog.Entry(entry).State = EntityState.Detached;
+            logger.LogWarning(ex, "Chek № {ReceiptNo}: yetkazish jurnaliga yozilmadi (chek yuborilishiga ta'sir qilmaydi).",
+                payment.ReceiptNo);
+        }
     }
 
     /// <summary>Telegramdagi fayl ostidagi izoh — ota-ona xabarni ochmasdan ham tushunsin.</summary>

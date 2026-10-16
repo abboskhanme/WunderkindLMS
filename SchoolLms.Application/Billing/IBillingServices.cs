@@ -297,4 +297,12 @@ public interface IReceiptService
     /// o'tmagan bo'lsa false qaytadi — bu xato emas, kutilgan holat.
     /// </summary>
     Task<bool> SendToGuardianAsync(Guid paymentId, CancellationToken ct = default);
+
+    /// <summary>
+    /// The same, sent by a staff member pressing "qayta yuborish" (<paramref name="sentBy"/> =
+    /// users.id) — the delivery log marks it manual (auto-messages.md, 2026-10-15). An
+    /// implementation without a log just sends.
+    /// </summary>
+    Task<bool> SendToGuardianAsync(Guid paymentId, string? sentBy, CancellationToken ct = default) =>
+        SendToGuardianAsync(paymentId, ct);
 }

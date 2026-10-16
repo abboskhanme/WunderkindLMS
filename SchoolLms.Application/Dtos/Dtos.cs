@@ -587,9 +587,14 @@ public record DisciplineReasonDto(
 /// Sababni yaratish/tahrirlash. Yangi maydonlar NULL bo'lishi mumkin — eski mijoz
 /// (yoki eski test) ularni yubormasa, sukut qiymat qo'llanadi: xabar O'CHIQ, sabab FAOL.
 /// </summary>
+/// <param name="Type">
+/// <c>positive | negative</c> (<c>DisciplineType</c>, docs/modules/behaviour.md). Given — the
+/// stored points are <c>|Points|</c> with the type's sign and 0 is refused; missing (an older client) —
+/// <c>Points</c> is stored as sent, as before.
+/// </param>
 public record SaveDisciplineReasonRequest(
     string Name, int Points,
-    bool? NotifyParent = null, string? Description = null, bool? IsActive = null);
+    bool? NotifyParent = null, string? Description = null, bool? IsActive = null, string? Type = null);
 /// <summary>Davomat sababiga ball belgilash so'rovi.</summary>
 public record SetReasonPointsRequest(int Points);
 
@@ -656,9 +661,13 @@ public record ClassDisciplinePointResultDto(int Applied, int NotifiedParents, Li
 /// Shu ball haqida ota-onaga HAQIQATAN yuborilgan Telegram xabarlari soni (§6.3, 4-qadam).
 /// Faqat yangi ball qo'yilganda ma'noga ega; tarixni o'qiyotganda har doim 0.
 /// </param>
+/// <param name="ReasonId">The reason row (manual entries) — the edit form preselects it. Null for attendance.</param>
+/// <param name="UpdatedAt">Last edit (ISO), null when never edited.</param>
+/// <param name="UpdatedBy">Who edited last, null when never edited.</param>
 public record DisciplinePointDto(
     string Id, string StudentId, string ReasonName, int Points, string Note, string CreatedAt,
-    string CreatedBy, string Source, int NotifiedParents = 0);
+    string CreatedBy, string Source, int NotifiedParents = 0,
+    string? ReasonId = null, string? UpdatedAt = null, string? UpdatedBy = null);
 /// <summary>O'quvchi/ota-ona ilovasi uchun intizomiy ball: qoldi + plus/minus + tarix (100 dan boshlanadi).</summary>
 public record StudentDisciplineDto(int Remaining, int Plus, int Minus, List<DisciplinePointDto> Items);
 
@@ -670,7 +679,8 @@ public record StudentDisciplineDto(int Remaining, int Plus, int Minus, List<Disc
 /// </summary>
 public record DisciplineFeedRowDto(
     string Id, string StudentId, string FullName, string ClassName, string ReasonName, int Points,
-    string Note, string CreatedAt, string CreatedBy, string Source);
+    string Note, string CreatedAt, string CreatedBy, string Source,
+    string? ReasonId = null, string? UpdatedAt = null, string? UpdatedBy = null);
 
 /// <summary>
 /// "Harakatlar" lentasi: bitta sahifa + filtrlangan to'plamning jamlamasi + filtr ro'yxatlari.
@@ -682,6 +692,47 @@ public record DisciplineFeedDto(
     int Total, int Page, int PageSize,
     int PlusCount, int MinusCount, int PointsSum,
     IReadOnlyList<string> Authors, IReadOnlyList<string> ClassNames);
+
+/// <summary>
+/// Editing one manual incident (<c>PUT /api/admin/discipline/points/{id}</c>). Points follow the
+/// reason, as in EduSchool: a NEW reason re-snapshots its name and points (it must be active); the same
+/// reason keeps the stored snapshot and only the note changes.
+/// </summary>
+public record UpdateDisciplinePointRequest(string ReasonId, string? Note);
+
+/// <summary>
+/// One class in the behaviour coverage check (EduSchool <c>getNotAssignedClasses</c>): how many
+/// manual incidents its active pupils got in the period. <c>Incidents == 0</c> — a "belgilanmagan" class.
+/// </summary>
+public record DisciplineCoverageRowDto(
+    string ClassId, string ClassName, int Grade, int Students, int Incidents, int Positive, int Negative,
+    string? LastAt);
+
+/// <summary>Coverage for a period (both days included): every class, the uncovered ones first.</summary>
+public record DisciplineCoverageDto(
+    string From, string To, int TotalClasses, int NotAssigned, IReadOnlyList<DisciplineCoverageRowDto> Classes);
+
+/* ---------- Xulq-atvor — teacher side (docs/modules/behaviour.md §Teachers) ---------- */
+
+/// <summary>An active behaviour reason as a teacher picks it: <c>Type</c> = positive | negative.</summary>
+public record TeacherDisciplineReasonDto(
+    string Id, string Name, int Points, string Type, string? Description, bool NotifyParent);
+
+/// <summary>One pupil of a lesson roster: the 100-based score and today's manual points (all authors).</summary>
+public record TeacherDisciplineScoreDto(string StudentId, int Remaining, int Today);
+
+/// <summary>
+/// One history line on the teacher's sheet. <c>CanDelete</c> — the teacher's own manual entry made
+/// today (the only kind they may take back).
+/// </summary>
+public record TeacherDisciplinePointDto(
+    string Id, string ReasonName, int Points, string Note, string CreatedAt, string CreatedBy,
+    string Source, bool CanDelete, int NotifiedParents = 0);
+
+/// <summary>A pupil's behaviour for the teacher: score, today's points and the recent history.</summary>
+public record TeacherStudentDisciplineDto(
+    string StudentId, string FullName, int Remaining, int Plus, int Minus, int Today,
+    IReadOnlyList<TeacherDisciplinePointDto> Items);
 /// <summary>O'quvchini arxivdan qaytarish — ixtiyoriy yangi parol (arxivlanganda parol bloklangan edi).</summary>
 public record RestoreStudentRequest(string? NewPassword);
 
@@ -939,10 +990,14 @@ public record AuditLogDto(
 /// <summary>O'qituvchining o'z profili (ilovada ko'rsatish uchun).</summary>
 /// <param name="AccessRoleName">Access role on the teacher account (e.g. "Komendant"), null when none.</param>
 /// <param name="RolePermissions">The role's keys a teacher can use (<c>TeacherPermissions.RoleKeys</c>, full or ":view").</param>
+/// <param name="CanMarkAttendance">
+/// <c>school_meta.teachers_mark_attendance</c> (2026-10-15). False — the lesson screen shows the
+/// nurse's marks read-only; the server keeps them whatever a teacher sends.
+/// </param>
 public record TeacherProfileDto(
     string Id, string FullName, string Email, string HomeroomClass, List<SubjectDto> Subjects,
     List<string> Permissions, string? PhotoUrl = null, string? AccessRoleName = null,
-    List<string>? RolePermissions = null);
+    List<string>? RolePermissions = null, bool CanMarkAttendance = false);
 /// <summary>
 /// O'qituvchi yetadigan bitta EGA — sinf yoki o'quv guruhi (qaysi fanlarni
 /// o'qitadi va sinf rahbarimi / guruhga biriktirilganmi).
@@ -1233,6 +1288,38 @@ public record SaveAssignmentRequest(
     string? OwnerKind = null);
 /// <summary>Yuklangan fayl haqida ma'lumot (upload javobida).</summary>
 public record UploadedFileDto(string Name, string Url, long Size, string ContentType);
+
+/// <summary>
+/// <c>POST …/assignments/questions/parse</c> with a JSON body — pasted text (the AI format,
+/// or a JSON array pasted as text). A file goes as multipart instead.
+/// docs/modules/test-import.md.
+/// </summary>
+public record ParseQuestionsRequest(string? Text);
+
+/// <summary>
+/// The parsed questions of a bulk import — nothing is saved; the form appends or
+/// replaces its questions with <see cref="Questions"/> and saves the assignment as usual.
+/// </summary>
+/// <param name="Unit">
+/// What the numbers in <see cref="Errors"/> count: <c>row</c> — Excel sheet rows including
+/// the header (as in the question-bank import); <c>question</c> — the 1-based position of
+/// the question in the text, Word file or JSON array.
+/// </param>
+/// <param name="TotalRows">Questions found (rows / blocks / array items), valid or not.</param>
+/// <param name="ValidCount">Questions without any error — the length of <see cref="Questions"/>.</param>
+/// <param name="ErrorCount">Questions with at least one error — each is left out whole.</param>
+/// <param name="Questions">Ready to save: text, 2–6 options, the 0-based correct index.</param>
+/// <param name="Errors">
+/// Grouped by reason (<see cref="Services.AssignmentQuestionReason.All"/>, in that order);
+/// a question with two problems is listed under both.
+/// </param>
+public record AssignmentQuestionParseResultDto(
+    string Unit,
+    int TotalRows,
+    int ValidCount,
+    int ErrorCount,
+    List<QuestionInput> Questions,
+    IReadOnlyList<QuestionImportErrorDto> Errors);
 
 /* ---------- Shartnomalar ---------- */
 

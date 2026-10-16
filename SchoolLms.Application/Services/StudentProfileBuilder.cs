@@ -78,7 +78,7 @@ public static class StudentProfileBuilder
 
         var dPoints = manual.Select(p => new DisciplinePointDto(
             p.Id, p.StudentId, string.IsNullOrEmpty(p.ReasonName) ? "—" : p.ReasonName,
-            p.Points, p.Note, p.CreatedAt, p.CreatedBy, "manual")).ToList();
+            p.Points, p.Note, p.CreatedAt, p.CreatedBy, "manual", 0, p.ReasonId, p.UpdatedAt, p.UpdatedBy)).ToList();
         foreach (var d in markDays)
             if (reasonMap.TryGetValue(d.ReasonId, out var r) && r.Points != 0)
                 dPoints.Add(new DisciplinePointDto(d.Id, st.Id, r.Name, r.Points, AttendanceDisciplineDays.Note(d.Lessons), d.Date, "", "attendance"));

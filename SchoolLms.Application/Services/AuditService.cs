@@ -4,6 +4,7 @@ using SchoolLms.Domain;
 using System.Globalization;
 using System.Security.Claims;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 
 namespace SchoolLms.Application.Services;
 
@@ -99,6 +100,81 @@ public class AuditService(IAppDbContext db, IHttpContextAccessor http)
 
     /// <summary>Maktab yangiligi (docs/modules/sales-marketing.md §5.4).</summary>
     public const string EntityNews = "News";
+
+    // ----- The audit screen (docs/modules/audit-log.md, 2026-10-15) -----
+    // Archive / restore / rename used to be written under money types (StudentDiscount,
+    // TeacherSalary, ClassFee). From now on they go under the record they are about;
+    // AuditCatalog still files the old rows correctly.
+
+    /// <summary>The pupil's own card: create, field changes, archive, restore, password.</summary>
+    public const string EntityStudent = "Student";
+    /// <summary>The class itself: archive, restore, rename, homeroom teachers.</summary>
+    public const string EntitySchoolClass = "SchoolClass";
+    /// <summary>The teacher's card (not the salary): create, field changes, archive, restore, password.</summary>
+    public const string EntityTeacher = "Teacher";
+    /// <summary>A non-teacher employee's card (not the salary).</summary>
+    public const string EntityStaff = "Staff";
+    /// <summary>A guardian and their links to pupils.</summary>
+    public const string EntityGuardian = "Guardian";
+    /// <summary>A pupil's arrival / departure record (student-flow.md) — a later reason edit.</summary>
+    public const string EntityStudentEvent = "StudentEvent";
+    /// <summary>Access role (Boshqaruv → Rollar): create, permission changes, delete.</summary>
+    public const string EntityAccessRole = "AccessRole";
+    /// <summary>A role (or hand-picked permissions) given to a staff member or teacher.</summary>
+    public const string EntityRoleAssignment = "RoleAssignment";
+    /// <summary>Timetable template: create, rename, delete, cells.</summary>
+    public const string EntityScheduleTemplate = "ScheduleTemplate";
+    /// <summary>Which template runs in which week.</summary>
+    public const string EntityWeekAssignment = "WeekAssignment";
+    /// <summary>A substitute teacher named for a lesson, or cancelled.</summary>
+    public const string EntitySubstitution = "Substitution";
+    /// <summary>A school holiday.</summary>
+    public const string EntityHoliday = "Holiday";
+    /// <summary>Contract templates and sent contracts (Shartnomalar).</summary>
+    public const string EntityContract = "Contract";
+
+    /// <summary>
+    /// Changed fields only: <paramref name="before"/> and <paramref name="after"/> are flattened
+    /// to JSON objects and the keys whose values differ are returned, each side with its own
+    /// value. <c>null</c> — nothing changed (the caller writes no row).
+    /// </summary>
+    public static (Dictionary<string, JsonNode?> Before, Dictionary<string, JsonNode?> After)? Diff(object before, object after)
+    {
+        var b = JsonSerializer.SerializeToNode(before) as JsonObject ?? [];
+        var a = JsonSerializer.SerializeToNode(after) as JsonObject ?? [];
+        var changedBefore = new Dictionary<string, JsonNode?>(StringComparer.Ordinal);
+        var changedAfter = new Dictionary<string, JsonNode?>(StringComparer.Ordinal);
+        foreach (var key in b.Select(p => p.Key).Union(a.Select(p => p.Key)))
+        {
+            var ov = b[key];
+            var nv = a[key];
+            if (JsonNode.DeepEquals(ov, nv)) continue;
+            changedBefore[key] = ov?.DeepClone();
+            changedAfter[key] = nv?.DeepClone();
+        }
+        return changedBefore.Count == 0 ? null : (changedBefore, changedAfter);
+    }
+
+    /// <summary>
+    /// One row with the changed fields only (<see cref="Diff"/>). Keys are written under their
+    /// Uzbek <paramref name="labels"/> (the screens show the key as it is), and the summary is
+    /// <paramref name="summary"/> followed by them, e.g.
+    /// "O'quvchi ma'lumoti o'zgardi (Aliyev Vali): Telefon, Manzil". Nothing changed — no row,
+    /// returns false.
+    /// </summary>
+    public bool RecordChanges(
+        string entityType, string entityId, string summary, object before, object after,
+        IReadOnlyDictionary<string, string>? labels = null,
+        string? studentId = null, string? teacherId = null)
+    {
+        if (Diff(before, after) is not ({ } b, { } a)) return false;
+        string Label(string key) => labels?.GetValueOrDefault(key) ?? key;
+        var labelledBefore = b.ToDictionary(kv => Label(kv.Key), kv => kv.Value, StringComparer.Ordinal);
+        var labelledAfter = a.ToDictionary(kv => Label(kv.Key), kv => kv.Value, StringComparer.Ordinal);
+        Record(entityType, entityId, "update", $"{summary}: {string.Join(", ", labelledBefore.Keys)}",
+            before: labelledBefore, after: labelledAfter, studentId: studentId, teacherId: teacherId);
+        return true;
+    }
 
     /// <summary>Audit yozuvini joriy DbContext'ga qo'shadi (hali SaveChanges qilinmaydi).</summary>
     public void Record(

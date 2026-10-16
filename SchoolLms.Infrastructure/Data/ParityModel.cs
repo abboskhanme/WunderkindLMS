@@ -253,6 +253,10 @@ internal static class ParityModel
             // Bugun ota-onalar o'zlashtirishni KO'RISHADI — migratsiya buni
             // o'zgartirmaydi.
             e.Property(x => x.ShowLearningProgressInParentDashboard).HasDefaultValue(true);
+
+            // Client, 2026-10-15: the nurse takes attendance, teachers do not — the migration
+            // switches the existing school over at once (`ADD COLUMN ... DEFAULT false`).
+            e.Property(x => x.TeachersMarkAttendance).HasDefaultValue(false);
         });
     }
 }

@@ -1,6 +1,12 @@
-import { useEffect, useState } from 'react'
-import type { DisciplineReason } from '@/types'
-import { addClassDisciplinePoint, getDisciplineReasons } from '@/api/services/discipline'
+import { useEffect, useMemo, useState } from 'react'
+import type { DisciplineReason, DisciplineType } from '@/types'
+import {
+  addClassDisciplinePoint,
+  disciplineTypeLabel,
+  disciplineTypeOf,
+  getDisciplineReasons,
+} from '@/api/services/discipline'
+import { cn } from '@/lib/utils'
 import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
 import { Select, Textarea } from '@/components/ui/Input'
@@ -22,9 +28,13 @@ interface Props {
  * Sabab bo'yicha xabar bayrog'i (`notifyParent`) yoqilgan bo'lsa, ota-onaga Telegram
  * xabari HAR BIR o'quvchi uchun alohida ketadi (§6.3) — serverdagi bir xil qoida, faqat
  * bitta so'rovda ko'p marta.
+ *
+ * EduSchool tartibi (2026-10-15, docs/modules/behaviour.md): avval TURI (Ijobiy / Salbiy), keyin
+ * faqat o'sha turdagi sabablar.
  */
 export function ClassPointsModal({ open, classId, className, onClose, onDone }: Props) {
   const [reasons, setReasons] = useState<DisciplineReason[]>([])
+  const [type, setType] = useState<DisciplineType>('negative')
   const [reasonId, setReasonId] = useState('')
   const [note, setNote] = useState('')
   const [busy, setBusy] = useState(false)
@@ -35,18 +45,27 @@ export function ClassPointsModal({ open, classId, className, onClose, onDone }: 
     // eslint-disable-next-line react-hooks/set-state-in-effect -- oyna ochilganda oldingi tanlov tozalanadi (maqsadli, loyihadagi mavjud naqsh)
     setNote('')
     setError(null)
+    setType('negative')
+    setReasonId('')
     getDisciplineReasons().then((all) => {
-      const other = all.filter((r) => r.kind === 'other' && r.isActive)
-      setReasons(other)
-      setReasonId(other[0]?.id ?? '')
+      setReasons(all.filter((r) => r.kind === 'other' && r.isActive))
     })
   }, [open])
 
+  const ofType = useMemo(
+    () => reasons.filter((r) => disciplineTypeOf(r.points) === type).sort((a, b) => a.name.localeCompare(b.name)),
+    [reasons, type],
+  )
   const reasonLabel = (r: DisciplineReason) => `${r.name} (${r.points > 0 ? '+' : ''}${r.points})`
-  const selected = reasons.find((r) => r.id === reasonId)
+  const selected = ofType.find((r) => r.id === reasonId)
+
+  const pickType = (next: DisciplineType) => {
+    setType(next)
+    setReasonId('')
+  }
 
   const handleSubmit = async () => {
-    if (!reasonId || busy) return
+    if (!selected || busy) return
     setBusy(true)
     setError(null)
     try {
@@ -77,7 +96,7 @@ export function ClassPointsModal({ open, classId, className, onClose, onDone }: 
           <Button variant="secondary" onClick={onClose} disabled={busy}>
             Bekor qilish
           </Button>
-          <Button onClick={handleSubmit} disabled={busy || !reasonId}>
+          <Button onClick={handleSubmit} disabled={busy || !selected}>
             {busy ? 'Bajarilmoqda...' : 'Kiritish'}
           </Button>
         </>
@@ -88,9 +107,34 @@ export function ClassPointsModal({ open, classId, className, onClose, onDone }: 
           Sinfning <b>har bir faol o'quvchisiga</b> shu sabab bilan alohida yozuv qo'shiladi.
         </div>
 
-        {reasons.length === 0 ? (
+        <div>
+          <span className="mb-1 block text-sm font-medium text-slate-700">Turi</span>
+          <div className="grid grid-cols-2 gap-2">
+            {(['positive', 'negative'] as const).map((t) => (
+              <button
+                key={t}
+                type="button"
+                onClick={() => pickType(t)}
+                className={cn(
+                  'rounded-lg border px-3 py-2 text-sm font-semibold transition-colors',
+                  type === t
+                    ? t === 'positive'
+                      ? 'border-emerald-300 bg-emerald-50 text-emerald-700'
+                      : 'border-red-300 bg-red-50 text-red-600'
+                    : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50',
+                )}
+              >
+                {disciplineTypeLabel[t]}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {ofType.length === 0 ? (
           <p className="text-sm text-amber-600">
-            Avval "Ball sabablar" bo'limida mustaqil sabab qo'shing.
+            {reasons.length === 0
+              ? 'Avval "Ball sabablar" bo\'limida mustaqil sabab qo\'shing.'
+              : `${disciplineTypeLabel[type]} faol sabab yo'q — "Ball sabablar" bo'limida qo'shing.`}
           </p>
         ) : (
           <Select
@@ -99,7 +143,8 @@ export function ClassPointsModal({ open, classId, className, onClose, onDone }: 
             value={reasonId}
             onChange={(e) => setReasonId(e.target.value)}
           >
-            {reasons.map((r) => (
+            <option value="">— tanlang —</option>
+            {ofType.map((r) => (
               <option key={r.id} value={r.id}>
                 {reasonLabel(r)}
               </option>

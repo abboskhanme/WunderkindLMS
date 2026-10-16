@@ -1,9 +1,11 @@
 import type {
+  DisciplineCoverage,
   DisciplineReason,
   DisciplineScoreRow,
   DisciplinePoint,
   DisciplineFeed,
   DisciplineFeedFilters,
+  DisciplineType,
 } from '@/types'
 import { api, USE_MOCK } from '../client'
 
@@ -21,10 +23,21 @@ export async function getDisciplineReasons(): Promise<DisciplineReason[]> {
  */
 export interface SaveDisciplineReasonInput {
   name: string
+  /** With `type` — the magnitude (the server applies the type's sign). */
   points: number
   notifyParent: boolean
   description: string | null
   isActive: boolean
+  /** "Ijobiy / Salbiy" (docs/modules/behaviour.md). Omitted — `points` is stored as sent. */
+  type?: DisciplineType
+}
+
+/** The type of a reason or an entry — the sign of its points. */
+export const disciplineTypeOf = (points: number): DisciplineType => (points < 0 ? 'negative' : 'positive')
+
+export const disciplineTypeLabel: Record<DisciplineType, string> = {
+  positive: 'Ijobiy',
+  negative: 'Salbiy',
 }
 
 export async function createDisciplineReason(input: SaveDisciplineReasonInput): Promise<DisciplineReason> {
@@ -109,6 +122,27 @@ export async function deleteDisciplinePoint(id: string): Promise<void> {
   await api.delete(`/admin/discipline/points/${id}`)
 }
 
+/**
+ * Edits one manual incident (EduSchool "Harakatni tahrirlash"): points follow the reason — a new
+ * reason takes its current points, the same reason keeps the recorded ones. Audited on the server.
+ */
+export async function updateDisciplinePoint(
+  id: string,
+  reasonId: string,
+  note: string,
+): Promise<DisciplinePoint> {
+  const { data } = await api.put<DisciplinePoint>(`/admin/discipline/points/${id}`, { reasonId, note })
+  return data
+}
+
+/** "Belgilanmagan sinflar": every class with pupils and its incident count in the period. */
+export async function getDisciplineCoverage(from?: string, to?: string): Promise<DisciplineCoverage> {
+  const { data } = await api.get<DisciplineCoverage>('/admin/discipline/coverage', {
+    params: clean({ from, to }),
+  })
+  return data
+}
+
 /* ---------- Harakatlar (maktab bo'ylab lenta) ---------- */
 
 const EMPTY_FEED: DisciplineFeed = {
@@ -142,6 +176,20 @@ export async function getDisciplineFeed(filters: DisciplineFeedFilters = {}): Pr
   return data
 }
 
+/** "Harakatlar" as Excel — every row under the screen's filters (no paging). */
+export async function downloadDisciplineFeed(filters: DisciplineFeedFilters = {}): Promise<void> {
+  if (USE_MOCK) {
+    alert('Eksport faqat real serverda ishlaydi (VITE_USE_MOCK=false).')
+    return
+  }
+  const res = await api.get('/admin/discipline/feed/export', {
+    params: clean({ ...filters, page: undefined, pageSize: undefined }),
+    responseType: 'blob',
+  })
+  saveBlob(res.data as Blob, res.headers['content-disposition'] as string | undefined,
+    `harakatlar_${new Date().toISOString().slice(0, 10)}.xlsx`)
+}
+
 /** Ballar nazorati filtrlari (eksport serverda xuddi shu filtrlarni takrorlaydi). */
 export interface DisciplineScoreFilters {
   className?: string
@@ -167,6 +215,19 @@ export async function downloadDisciplineScores(filters: DisciplineScoreFilters =
   const cd = (res.headers['content-disposition'] as string | undefined) ?? ''
   const m = cd.match(/filename="?([^"]+)"?/)
   a.download = m?.[1] ?? `ballar_nazorati_${new Date().toISOString().slice(0, 10)}.xlsx`
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  URL.revokeObjectURL(url)
+}
+
+/** Saves a downloaded file under the server's name (`content-disposition`) or the fallback. */
+function saveBlob(blob: Blob, contentDisposition: string | undefined, fallback: string) {
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  const m = (contentDisposition ?? '').match(/filename="?([^";]+)"?/)
+  a.download = m?.[1] ?? fallback
   document.body.appendChild(a)
   a.click()
   a.remove()

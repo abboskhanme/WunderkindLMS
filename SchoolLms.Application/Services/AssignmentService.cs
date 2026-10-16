@@ -381,6 +381,73 @@ public static class AssignmentService
 
     private static string? Empty(string? s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();
 
+    // ---------- Test questions — the save rule (docs/modules/test-import.md, "Save rule") ----------
+
+    /// <summary>Questions per test — the bulk import stops at the same number.</summary>
+    public const int MaxQuestions = 200;
+
+    /// <summary>Options per question — the same A–F as the question bank.</summary>
+    public const int MinOptions = QuestionBankService.MinOptions;
+    public const int MaxOptions = QuestionBankService.MaxOptions;
+
+    /// <summary>
+    /// Checks and cleans the test questions of a save request. EVERY save path (admin,
+    /// teacher portal, Mini App) goes through it: the controllers answer 400 with the
+    /// message, and <see cref="Apply"/> refuses to write an unchecked request.
+    ///
+    /// <list type="bullet">
+    ///   <item>Format other than "test" — questions are ignored (as before).</item>
+    ///   <item>Options are trimmed; blank options are dropped and the correct index moves
+    ///     with its text — what the Mini App form (<c>cleanQuestions</c>) already did, while
+    ///     the admin wizard used to store blanks.</item>
+    ///   <item>An entirely blank question (no text, no option) is skipped — the form's
+    ///     untouched card, as before. Options without text is an error.</item>
+    ///   <item>2–6 options, the correct one among them, at most <see cref="MaxQuestions"/> questions.</item>
+    /// </list>
+    /// The problem is the first broken rule, in Uzbek, naming the question by its 1-based
+    /// position in the request.
+    /// </summary>
+    public static (List<QuestionInput>? Questions, string? Problem) CheckQuestions(
+        string? format, IReadOnlyList<QuestionInput?>? input)
+    {
+        if (format != "test") return ([], null);
+
+        var result = new List<QuestionInput>();
+        var list = input ?? [];
+        for (var i = 0; i < list.Count; i++)
+        {
+            var q = list[i];
+            var number = i + 1;
+            var text = (q?.Text ?? "").Trim();
+
+            var options = new List<string>();
+            var correct = -1;
+            var raw = q?.Options ?? [];
+            for (var k = 0; k < raw.Count; k++)
+            {
+                var option = (raw[k] ?? "").Trim();
+                if (option.Length == 0) continue;
+                if (k == q!.CorrectIndex) correct = options.Count;
+                options.Add(option);
+            }
+
+            if (text.Length == 0)
+            {
+                if (options.Count == 0) continue;
+                return (null, $"{number}-savol: savol matnini yozing");
+            }
+            if (options.Count < MinOptions) return (null, $"{number}-savol: kamida {MinOptions} ta variant bo'lsin");
+            if (options.Count > MaxOptions) return (null, $"{number}-savol: ko'pi bilan {MaxOptions} ta variant bo'lishi mumkin");
+            if (correct < 0) return (null, $"{number}-savol: to'g'ri javob belgilanmagan yoki bo'sh variantda");
+
+            result.Add(new QuestionInput(text, options, correct));
+        }
+
+        if (result.Count > MaxQuestions)
+            return (null, $"Bitta testda ko'pi bilan {MaxQuestions} ta savol bo'lishi mumkin (hozir {result.Count} ta)");
+        return (result, null);
+    }
+
     /// <summary>So'rovdagi material va savollarni topshiriqqa qo'shadi.</summary>
     private static void Apply(Assignment a, SaveAssignmentRequest req)
     {
@@ -394,21 +461,22 @@ public static class AssignmentService
                 ContentType = m.ContentType,
             });
 
-        if (a.Format == "test")
+        // The controllers call CheckQuestions first and answer 400; an invalid request that
+        // still gets here comes from a caller that skipped the check — it is not written.
+        var (questions, problem) = CheckQuestions(a.Format, req.Questions);
+        if (problem is not null) throw new InvalidOperationException(problem);
+
+        var order = 0;
+        foreach (var q in questions!)
         {
-            var order = 0;
-            foreach (var q in req.Questions ?? new())
+            a.Questions.Add(new TestQuestion
             {
-                if (string.IsNullOrWhiteSpace(q.Text)) continue;
-                a.Questions.Add(new TestQuestion
-                {
-                    AssignmentId = a.Id,
-                    Text = q.Text.Trim(),
-                    Options = (q.Options ?? new()).Select(o => o ?? "").ToList(),
-                    CorrectIndex = q.CorrectIndex,
-                    Order = order++,
-                });
-            }
+                AssignmentId = a.Id,
+                Text = q.Text,
+                Options = q.Options,
+                CorrectIndex = q.CorrectIndex,
+                Order = order++,
+            });
         }
     }
 

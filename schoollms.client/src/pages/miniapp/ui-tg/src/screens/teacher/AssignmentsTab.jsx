@@ -10,7 +10,7 @@
  */
 import { useEffect, useRef, useState } from 'react'
 import {
-  Check, ChevronLeft, ChevronRight, ClipboardList, Download, Paperclip, Pencil, Plus, Trash2, X,
+  Check, ChevronLeft, ChevronRight, ClipboardList, Download, Paperclip, Pencil, Plus, Trash2, Upload, X,
 } from 'lucide-react'
 import { Badge, Card, EmptyState, Hero, HeroProgress, Row, Screen } from '../../components/ui'
 import { useAsync } from '../../lib/useAsync'
@@ -18,8 +18,11 @@ import { teacherApi } from '../../lib/teacherApi'
 import { fullDate, dateTime } from '../../lib/format'
 import { todayISO } from '../../lib/weeks'
 import { haptic, hapticNotify, showBackButton, useKeyboardOpen } from '../../lib/telegram'
-import { FORMATS, daysLeft, dueInfo, fileNameOf, formatOf, isoDay, safeHref } from '../../lib/assignments'
+import {
+  FORMATS, MAX_TEST_QUESTIONS, daysLeft, dueInfo, fileNameOf, formatOf, gradeOf, isoDay, safeHref,
+} from '../../lib/assignments'
 import { AsyncBlock } from './shared'
+import { QuestionImportSheet } from './QuestionImportSheet'
 
 export function AssignmentsTab() {
   const list = useAsync(() => teacherApi.assignments(), [])
@@ -461,6 +464,16 @@ const INPUT =
 
 const emptyQuestion = () => ({ text: '', options: ['', '', '', ''], correctIndex: 0 })
 
+/** A question card of the form — at least 4 option inputs (a 5–6 option question shows them all). */
+const toFormQuestion = (x) => ({
+  text: x.text,
+  options: [...x.options, '', '', '', ''].slice(0, Math.max(4, x.options.length)),
+  correctIndex: x.correctIndex,
+})
+
+/** A card with nothing typed — the bulk import takes its place. */
+const isBlankQuestion = (x) => !x.text.trim() && x.options.every((o) => !o.trim())
+
 function Field({ label, children }) {
   return (
     <label className="block">
@@ -511,14 +524,14 @@ function AssignmentForm({ item, onCancel, onSaved }) {
   )
   const [questions, setQuestions] = useState(
     item?.questions?.length
-      ? [...item.questions]
-          .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
-          .map((x) => ({ text: x.text, options: [...x.options, '', '', '', ''].slice(0, Math.max(4, x.options.length)), correctIndex: x.correctIndex }))
+      ? [...item.questions].sort((a, b) => (a.order ?? 0) - (b.order ?? 0)).map(toFormQuestion)
       : [emptyQuestion()],
   )
   const [uploading, setUploading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
+  const [importOpen, setImportOpen] = useState(false)
+  const [importNote, setImportNote] = useState(null)
 
   const all = owners.data ?? []
   const subjectMap = new Map(all.flatMap((o) => o.subjects || []).map((s) => [s.id, s]))
@@ -568,6 +581,19 @@ function AssignmentForm({ item, onCancel, onSaved }) {
     }
   }
 
+  /** Questions from the bulk import: appended, or written in place of the form's questions. */
+  const filledQuestions = questions.filter((x) => !isBlankQuestion(x))
+  const applyImport = (imported, mode) => {
+    const incoming = imported.map(toFormQuestion)
+    setQuestions(mode === 'replace' ? incoming : [...filledQuestions, ...incoming])
+    setImportOpen(false)
+    setError(null)
+    setImportNote(
+      `${imported.length} ta savol ${mode === 'replace' ? 'formaga yozildi' : "qo'shildi"}. Ko'rib chiqing va «${item ? 'Saqlash' : 'Vazifani berish'}» tugmasini bosing.`,
+    )
+    hapticNotify('success')
+  }
+
   const setQuestion = (i, patch) => setQuestions((prev) => prev.map((x, j) => (j === i ? { ...x, ...patch } : x)))
   const setOption = (i, k, value) =>
     setQuestions((prev) => prev.map((x, j) => (j === i ? { ...x, options: x.options.map((o, n) => (n === k ? value : o)) } : x)))
@@ -584,6 +610,7 @@ function AssignmentForm({ item, onCancel, onSaved }) {
       out.push({ text: x.text.trim(), options: kept.map((v) => v.o), correctIndex: correct })
     }
     if (out.length === 0) return 'Testga kamida bitta savol yozing.'
+    if (out.length > MAX_TEST_QUESTIONS) return `Bitta testda ko'pi bilan ${MAX_TEST_QUESTIONS} ta savol bo'lishi mumkin.`
     return out
   }
 
@@ -771,8 +798,33 @@ function AssignmentForm({ item, onCancel, onSaved }) {
       </Card>
 
       {format === 'test' && (
-        <Card title="Savollar">
+        <Card
+          title={filledQuestions.length > 0 ? `Savollar · ${filledQuestions.length}` : 'Savollar'}
+          action={
+            <button
+              type="button"
+              onClick={() => {
+                haptic('light')
+                setImportNote(null)
+                setImportOpen(true)
+              }}
+              className="flex h-8 shrink-0 items-center gap-1 rounded-full bg-brand/25 px-3 text-[13px] font-semibold text-brand-ink"
+            >
+              <Upload className="h-4 w-4" />
+              Ommaviy yuklash
+            </button>
+          }
+        >
           <div className="space-y-3 px-4 pb-4 pt-2">
+            {importNote ? (
+              <p className="rounded-xl bg-emerald-50 px-3 py-2 text-[13px] font-medium text-emerald-700">{importNote}</p>
+            ) : (
+              filledQuestions.length === 0 && (
+                <p className="text-[12px] text-slate-400">
+                  Savollar ko'p bo'lsa — «Ommaviy yuklash»: matnni joylang (AI javobini ham), Word yoki Excel faylni tanlang.
+                </p>
+              )
+            )}
             {questions.map((x, i) => (
               <div key={i} className="rounded-2xl border border-slate-200 p-3">
                 <div className="mb-2 flex items-center gap-2">
@@ -818,6 +870,16 @@ function AssignmentForm({ item, onCancel, onSaved }) {
             </button>
           </div>
         </Card>
+      )}
+
+      {importOpen && (
+        <QuestionImportSheet
+          existing={filledQuestions.length}
+          subject={subjects.find((s) => s.id === subjectId)?.name ?? ''}
+          grade={gradeOf(all.find((o) => o.classId === ownerIds[0])?.className)}
+          onApply={applyImport}
+          onClose={() => setImportOpen(false)}
+        />
       )}
 
       {error && <p className="mx-6 mt-3 text-[13px] font-medium text-red-600">{error}</p>}

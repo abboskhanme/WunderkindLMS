@@ -126,7 +126,7 @@ public class ClassRenameTests(ApiFixture fixture)
             Assert.Equal(new[] { neighbourName, newName }.OrderBy(c => c), reads);
 
             var audit = await db.AuditLogs.AsNoTracking()
-                .Where(a => a.EntityType == AuditService.EntityStudentClass && a.EntityId == cls.Id)
+                .Where(a => a.EntityType == AuditService.EntitySchoolClass && a.EntityId == cls.Id)
                 .ToListAsync();
             var row = Assert.Single(audit);
             Assert.Contains(oldName, row.Summary);
@@ -254,7 +254,7 @@ public class ClassRenameTests(ApiFixture fixture)
             Assert.Equal("7", reloaded.Room);
             Assert.Equal(cls.Name, (await db.Students.AsNoTracking().SingleAsync(s => s.Id == pupil.Id)).ClassName);
             Assert.False(await db.AuditLogs.AsNoTracking().AnyAsync(
-                a => a.EntityType == AuditService.EntityStudentClass && a.EntityId == cls.Id));
+                a => a.EntityType == AuditService.EntitySchoolClass && a.EntityId == cls.Id));
         });
     }
 

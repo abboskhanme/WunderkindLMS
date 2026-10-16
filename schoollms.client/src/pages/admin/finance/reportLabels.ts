@@ -29,6 +29,7 @@ const accountNames: Record<string, string> = {
   'revenue:dormitory': 'Yotoqxona',
   'revenue:meals': 'Ovqatlanish',
   'revenue:other': 'Boshqa daromad',
+  'revenue:sales': 'Mahsulot savdosi',
 
   'expense:salary': 'Maosh',
   'expense:rent': 'Ijara',

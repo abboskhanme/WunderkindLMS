@@ -1,11 +1,17 @@
 import { useEffect, useRef, useState } from 'react'
-import { Plus, Trash2, Upload, Check, FileText, PenLine, ListChecks, Video } from 'lucide-react'
+import { Plus, Trash2, Upload, Check, FileText, PenLine, ListChecks, Video, FileUp } from 'lucide-react'
 import type { Assignment, AssignmentFormat, Subject } from '@/types'
-import type { MaterialInput, SaveAssignmentInput } from '@/api/services/assignments'
+import type {
+  AssignmentQuestionParseResult,
+  MaterialInput,
+  QuestionInput,
+  SaveAssignmentInput,
+} from '@/api/services/assignments'
 import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
 import { Input, Select, Textarea } from '@/components/ui/Input'
 import { cn } from '@/lib/utils'
+import { MAX_TEST_QUESTIONS, QuestionBulkImport } from './QuestionBulkImport'
 
 /** Wizard sinf/guruh tanlovi — admin (barcha sinf) va o'qituvchi (dars beradigan sinflar) ikkalasi uchun. */
 export interface WizardClass {
@@ -37,6 +43,35 @@ interface Props {
   onSubmit: (input: SaveAssignmentInput, id: string | null) => Promise<void>
   /** Material faylini yuklash — admin/o'qituvchi o'z upload endpointini beradi. */
   onUpload: (file: File) => Promise<MaterialInput>
+  /**
+   * Bulk import of test questions (docs/modules/test-import.md) — when given, an "Ommaviy
+   * yuklash" button appears next to "Test savollari"; without it the wizard is unchanged.
+   */
+  onParseQuestions?: (input: File | string) => Promise<AssignmentQuestionParseResult>
+  /** Downloads the Excel template — given together with `onParseQuestions`. */
+  onDownloadQuestionTemplate?: () => Promise<void>
+}
+
+/** A question with nothing typed — the import takes its place, saving skips it. */
+const isBlankQuestion = (q: QForm) => !q.text.trim() && q.options.every((o) => !o.trim())
+
+/**
+ * The server's `AssignmentService.CheckQuestions` rule with the screen's numbers: blank options
+ * are dropped, 2–6 options, the correct one filled, at most 200 questions.
+ */
+function questionsProblem(questions: QForm[]): string | null {
+  let count = 0
+  for (const [i, q] of questions.entries()) {
+    if (isBlankQuestion(q)) continue
+    const filled = q.options.filter((o) => o.trim())
+    if (!q.text.trim()) return `${i + 1}-savol: savol matnini yozing`
+    if (filled.length < 2) return `${i + 1}-savol: kamida 2 ta variant bo'lsin`
+    if (filled.length > 6) return `${i + 1}-savol: ko'pi bilan 6 ta variant bo'lishi mumkin`
+    if (!q.options[q.correctIndex]?.trim()) return `${i + 1}-savol: to'g'ri javob belgilanmagan yoki bo'sh variantda`
+    count++
+  }
+  if (count > MAX_TEST_QUESTIONS) return `Bitta testda ko'pi bilan ${MAX_TEST_QUESTIONS} ta savol bo'lishi mumkin`
+  return null
 }
 
 const formats: { key: AssignmentFormat; label: string; desc: string; icon: typeof FileText }[] = [
@@ -67,6 +102,8 @@ export function AssignmentWizard({
   initial,
   onSubmit,
   onUpload,
+  onParseQuestions,
+  onDownloadQuestionTemplate,
 }: Props) {
   const [step, setStep] = useState(0)
   const [title, setTitle] = useState('')
@@ -85,6 +122,8 @@ export function AssignmentWizard({
   const [questions, setQuestions] = useState<QForm[]>([])
   const [uploading, setUploading] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [importOpen, setImportOpen] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -109,6 +148,8 @@ export function AssignmentWizard({
         ? initial.questions.map((q) => ({ text: q.text, options: [...q.options], correctIndex: q.correctIndex }))
         : [],
     )
+    setError(null)
+    setImportOpen(false)
     /* eslint-enable react-hooks/set-state-in-effect */
   }, [open, initial, subjects])
 
@@ -164,12 +205,28 @@ export function AssignmentWizard({
   const setCorrect = (i: number, j: number) =>
     setQuestions((prev) => prev.map((q, idx) => (idx === i ? { ...q, correctIndex: j } : q)))
 
+  // Bulk import: append, or replace the form's questions (blank cards are dropped either way).
+  const filledQuestions = questions.filter((q) => !isBlankQuestion(q))
+  const applyImport = (imported: QuestionInput[], mode: 'append' | 'replace') => {
+    const incoming = imported.map((q) => ({ text: q.text, options: [...q.options], correctIndex: q.correctIndex }))
+    setQuestions(mode === 'replace' ? incoming : [...filledQuestions, ...incoming])
+    setImportOpen(false)
+    setError(null)
+  }
+
   const step0Valid = title.trim() && subjectId && format
   const canSave = step0Valid && classIds.length > 0
 
   const handleSave = async () => {
     if (!canSave || saving) return
+    const problem = format === 'test' ? questionsProblem(questions) : null
+    if (problem) {
+      setError(problem)
+      setStep(1)
+      return
+    }
     setSaving(true)
+    setError(null)
     const input: SaveAssignmentInput = {
       subjectId,
       title: title.trim(),
@@ -184,17 +241,21 @@ export function AssignmentWizard({
       maxScore,
       autoGrade,
       materials,
+      // Everything is sent (the server drops blank options and blank cards) so that the
+      // question number in a server message matches the screen.
       questions:
         format === 'test'
-          ? questions
-              .filter((q) => q.text.trim())
-              .map((q) => ({ text: q.text.trim(), options: q.options, correctIndex: q.correctIndex }))
+          ? questions.map((q) => ({ text: q.text.trim(), options: q.options, correctIndex: q.correctIndex }))
           : [],
     }
     try {
       await onSubmit(input, initial?.id ?? null)
       onSaved()
       onClose()
+    } catch (err) {
+      setError(
+        (err as { response?: { data?: { message?: string } } })?.response?.data?.message ?? "Saqlab bo'lmadi",
+      )
     } finally {
       setSaving(false)
     }
@@ -249,6 +310,8 @@ export function AssignmentWizard({
           </button>
         ))}
       </div>
+
+      {error && <p className="mb-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>}
 
       {/* Qadam 1: Asosiy */}
       {step === 0 && (
@@ -356,15 +419,37 @@ export function AssignmentWizard({
           {/* Test savollari */}
           {format === 'test' && (
             <div className="border-t border-slate-100 pt-4">
-              <div className="mb-2 flex items-center justify-between">
-                <span className="text-sm font-medium text-slate-600">Test savollari</span>
-                <Button type="button" variant="secondary" onClick={addQuestion}>
-                  <Plus className="h-4 w-4" /> Savol
-                </Button>
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <span className="text-sm font-medium text-slate-600">
+                  Test savollari{filledQuestions.length > 0 ? ` · ${filledQuestions.length}` : ''}
+                </span>
+                <div className="flex gap-2">
+                  {onParseQuestions && onDownloadQuestionTemplate && !importOpen && (
+                    <Button type="button" variant="secondary" onClick={() => setImportOpen(true)}>
+                      <FileUp className="h-4 w-4" /> Ommaviy yuklash
+                    </Button>
+                  )}
+                  <Button type="button" variant="secondary" onClick={addQuestion}>
+                    <Plus className="h-4 w-4" /> Savol
+                  </Button>
+                </div>
               </div>
+              {importOpen && onParseQuestions && onDownloadQuestionTemplate && (
+                <QuestionBulkImport
+                  existing={filledQuestions.length}
+                  subjectName={subjects.find((s) => s.id === subjectId)?.name ?? ''}
+                  onParse={onParseQuestions}
+                  onDownloadTemplate={onDownloadQuestionTemplate}
+                  onApply={applyImport}
+                  onClose={() => setImportOpen(false)}
+                />
+              )}
               <div className="space-y-3">
                 {questions.length === 0 && (
-                  <p className="text-xs text-slate-400">Savol qo'shing (to'g'ri javobni belgilang)</p>
+                  <p className="text-xs text-slate-400">
+                    Savol qo'shing (to'g'ri javobni belgilang)
+                    {onParseQuestions ? " yoki «Ommaviy yuklash» bilan matn, Word yoki Excel'dan birdaniga kiriting" : ''}
+                  </p>
                 )}
                 {questions.map((q, i) => (
                   <div key={i} className="rounded-xl border border-slate-100 p-3">

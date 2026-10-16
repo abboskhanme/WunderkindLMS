@@ -85,6 +85,61 @@ export async function uploadAdminFile(file: File): Promise<MaterialInput> {
   return data
 }
 
+/* ---------- Bulk import of test questions (docs/modules/test-import.md) ---------- */
+
+/** Why a question was left out — the server's `AssignmentQuestionReason` (a closed list). */
+export type AssignmentImportReason =
+  | 'emptyText'
+  | 'tooFewOptions'
+  | 'tooManyOptions'
+  | 'noCorrect'
+  | 'badCorrect'
+  | 'manyCorrect'
+  | 'duplicateOption'
+
+/**
+ * `POST /admin/assignments/questions/parse` — the server writes NOTHING: the questions go
+ * into the form and the assignment is saved as usual.
+ */
+export interface AssignmentQuestionParseResult {
+  /** `row` — Excel sheet row (header = 1); `question` — position in the text / Word / JSON. */
+  unit: 'row' | 'question'
+  totalRows: number
+  validCount: number
+  errorCount: number
+  questions: QuestionInput[]
+  errors: { reason: AssignmentImportReason; rows: number[] }[]
+}
+
+/** Admin: reads questions from text (an AI answer or the template format) or a file (.xlsx/.docx/.txt/.json). */
+export async function parseAdminQuestions(input: File | string): Promise<AssignmentQuestionParseResult> {
+  if (typeof input === 'string') {
+    const { data } = await api.post<AssignmentQuestionParseResult>('/admin/assignments/questions/parse', {
+      text: input,
+    })
+    return data
+  }
+  const fd = new FormData()
+  fd.append('file', input)
+  const { data } = await api.post<AssignmentQuestionParseResult>('/admin/assignments/questions/parse', fd, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  })
+  return data
+}
+
+/** Admin: the Excel template — `test_savollari_shablon.xlsx`. */
+export async function downloadAdminQuestionTemplate(): Promise<void> {
+  const res = await api.get('/admin/assignments/questions/template', { responseType: 'blob' })
+  const url = URL.createObjectURL(res.data as Blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = 'test_savollari_shablon.xlsx'
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  URL.revokeObjectURL(url)
+}
+
 /** Admin: o'quvchining bajarish holatini va ballini belgilash (baholash) */
 export async function setAdminSubmission(
   id: string,

@@ -65,6 +65,13 @@ public static class JournalSettingsGuard
     }
 
     /// <summary>
+    /// <c>teachers_mark_attendance</c> (client, 2026-10-15): do teachers mark attendance in their
+    /// journal? No row — false, the entity default: the nurse takes the roll-call.
+    /// </summary>
+    public static async Task<bool> TeachersMarkAttendanceAsync(IAppDbContext db, CancellationToken ct = default) =>
+        await db.SchoolMeta.AsNoTracking().Select(m => (bool?)m.TeachersMarkAttendance).FirstOrDefaultAsync(ct) ?? false;
+
+    /// <summary>
     /// Berilgan sabab id'si haqiqiy katalog qatorimi. <c>null</c> — "keldi", ya'ni
     /// tekshiriladigan narsa yo'q; bo'sh satr yoki topilmagan id — yo'q.
     /// </summary>

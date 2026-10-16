@@ -229,8 +229,13 @@ public static class QuestionImportService
     /// after it by one — the same limitation the pupil import has. The fix
     /// belongs in <c>ExcelImport</c> (return <c>Row.RowIndex</c>), a shared file.
     /// </para>
+    /// <para>
+    /// <paramref name="ignoreImage"/> — the assignment import (docs/modules/test-import.md)
+    /// reads the same sheet, but a test question there has no image: column I is then
+    /// neither checked nor kept, so a bank file with images still imports.
+    /// </para>
     /// </summary>
-    public static QuestionImportPlan Read(Stream xlsx)
+    public static QuestionImportPlan Read(Stream xlsx, bool ignoreImage = false)
     {
         List<string[]> rows;
         try
@@ -256,7 +261,7 @@ public static class QuestionImportService
             if (IsBlank(rows[i])) continue;
             var sheetRow = i + 1; // 1-based, header is row 1
 
-            var (question, reasons) = CheckRow(rows[i]);
+            var (question, reasons) = CheckRow(rows[i], ignoreImage);
             if (question is null) plan.AddInvalid(sheetRow, reasons);
             else plan.AddValid(new ImportedQuestion(sheetRow, question));
         }
@@ -283,7 +288,7 @@ public static class QuestionImportService
     /// not one of the seven reasons.
     /// </para>
     /// </summary>
-    private static (CheckedQuestion? Question, List<string> Reasons) CheckRow(string[] cells)
+    private static (CheckedQuestion? Question, List<string> Reasons) CheckRow(string[] cells, bool ignoreImage)
     {
         var reasons = new List<string>();
 
@@ -308,7 +313,7 @@ public static class QuestionImportService
         else if (correctLetter is null || options.All(o => o.Letter != correctLetter))
             reasons.Add(QuestionImportReason.BadCorrect);
 
-        var image = cells[ImageColumn].Trim();
+        var image = ignoreImage ? "" : cells[ImageColumn].Trim();
         if (image.Length > 0 && !IsUploadUrl(image)) reasons.Add(QuestionImportReason.BadImageUrl);
 
         if (reasons.Count > 0) return (null, reasons);

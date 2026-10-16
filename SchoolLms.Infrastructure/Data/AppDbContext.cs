@@ -176,6 +176,10 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
     // sozlamalari ekrani. Konfiguratsiya: TransactionTypeModel.cs.
     public DbSet<TransactionType> TransactionTypes => Set<TransactionType>();
 
+    // Mini-magazin (shop.md, 2026-10-15): catalogue + insert-only sale lines. Configuration: ShopModel.cs.
+    public DbSet<ShopProduct> ShopProducts => Set<ShopProduct>();
+    public DbSet<ShopSaleLine> ShopSaleLines => Set<ShopSaleLine>();
+
     // Savdo va marketing (sales-marketing.md §4): ommaviy ariza formasi va
     // yangiliklar. Konfiguratsiya: SalesMarketingModel.cs — `Lead` ning uchta
     // yangi ustuni ham o'sha yerda.
@@ -192,10 +196,17 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
     // Automatic Telegram messages to parents (auto-messages.md, 2026-10-13).
     public DbSet<AutoMessageRule> AutoMessageRules => Set<AutoMessageRule>();
     public DbSet<AutoMessageLogEntry> AutoMessageLog => Set<AutoMessageLogEntry>();
+    public DbSet<AutoMessageRun> AutoMessageRuns => Set<AutoMessageRun>();
     // Teacher certificates and named allowances paid with the salary (teacher-allowances.md, 2026-10-15).
     public DbSet<TeacherAllowance> TeacherAllowances => Set<TeacherAllowance>();
     // Thank-you / warning messages after a test (exam-awards.md, 2026-10-15).
     public DbSet<ExamAwardNotice> ExamAwardNotices => Set<ExamAwardNotice>();
+    // Attendance red list: follow-up cases with parents (attendance-red-list.md, 2026-10-15).
+    public DbSet<AttendanceCase> AttendanceCases => Set<AttendanceCase>();
+    public DbSet<AttendanceCaseAction> AttendanceCaseActions => Set<AttendanceCaseAction>();
+    public DbSet<AttendanceRedListSettings> AttendanceRedListSettings => Set<AttendanceRedListSettings>();
+    // Pupils' arrivals, departures and returns (student-flow.md, 2026-10-15).
+    public DbSet<StudentEvent> StudentEvents => Set<StudentEvent>();
 
     // Admission, block test and seasonal assessment (admission-and-testing.md §5).
     // Configuration: ExamModel.cs — `leads.admission_status` and
@@ -512,6 +523,11 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
         AutoMessagesModel.Apply(b);
         TeacherAllowancesModel.Apply(b);
         ExamAwardsModel.Apply(b);
+        AttendanceRedListModel.Apply(b);
+        // Audit screen indexes + student_events (audit-log.md, student-flow.md, 2026-10-15).
+        AuditAndStudentFlowModel.Apply(b);
+        // Mini-magazin: shop_products, shop_sale_lines (shop.md, 2026-10-15).
+        ShopModel.Apply(b);
 
         // ----- Admission, block test, seasonal assessment (admission-and-testing.md §5) -----
         // Twelve tables plus `leads.admission_status` and one `school_meta` flag,

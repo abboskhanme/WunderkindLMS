@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Plus, Pencil, Trash2, CalendarCheck, Send } from 'lucide-react'
-import type { DisciplineReason } from '@/types'
+import type { DisciplineReason, DisciplineType } from '@/types'
 import {
   getDisciplineReasons,
   createDisciplineReason,
   updateDisciplineReason,
   deleteDisciplineReason,
   setAttendanceReasonPoints,
+  disciplineTypeLabel,
+  disciplineTypeOf,
 } from '@/api/services/discipline'
 import { cn } from '@/lib/utils'
 import { Card } from '@/components/ui/Card'
@@ -21,7 +23,11 @@ export function BallSabablarPage() {
   const [open, setOpen] = useState(false)
   const [editing, setEditing] = useState<DisciplineReason | null>(null)
   const [name, setName] = useState('')
+  // Behaviour reasons: a positive number + the type (EduSchool "Ijobiy / Salbiy"); the server signs it.
+  // Attendance reasons keep the signed number (0 = no effect is valid there).
   const [points, setPoints] = useState(0)
+  const [type, setType] = useState<DisciplineType>('negative')
+  const [typeFilter, setTypeFilter] = useState<'all' | DisciplineType>('all')
   // §6.3, 4–5-qadam: ota-onaga xabar (sukut — O'CHIQ), izoh va faollik.
   const [notifyParent, setNotifyParent] = useState(false)
   const [description, setDescription] = useState('')
@@ -34,12 +40,19 @@ export function BallSabablarPage() {
   }, [])
 
   const attendance = useMemo(() => reasons.filter((r) => r.kind === 'attendance'), [reasons])
-  const other = useMemo(() => reasons.filter((r) => r.kind === 'other'), [reasons])
+  const other = useMemo(
+    () =>
+      reasons.filter(
+        (r) => r.kind === 'other' && (typeFilter === 'all' || disciplineTypeOf(r.points) === typeFilter),
+      ),
+    [reasons, typeFilter],
+  )
 
   const openCreate = () => {
     setEditing(null)
     setName('')
     setPoints(0)
+    setType(typeFilter === 'positive' ? 'positive' : 'negative')
     setNotifyParent(false)
     setDescription('')
     setIsActive(true)
@@ -48,7 +61,8 @@ export function BallSabablarPage() {
   const openEdit = (r: DisciplineReason) => {
     setEditing(r)
     setName(r.name)
-    setPoints(r.points)
+    setPoints(r.kind === 'attendance' ? r.points : Math.abs(r.points))
+    setType(disciplineTypeOf(r.points))
     setNotifyParent(r.notifyParent)
     setDescription(r.description ?? '')
     setIsActive(r.isActive)
@@ -59,7 +73,14 @@ export function BallSabablarPage() {
     e.preventDefault()
     const isAttendance = editing?.kind === 'attendance'
     if (!isAttendance && (!name.trim() || points === 0)) return
-    const input = { name: name.trim(), points, notifyParent, description: description.trim(), isActive }
+    const input = {
+      name: name.trim(),
+      points: Math.abs(points),
+      type,
+      notifyParent,
+      description: description.trim(),
+      isActive,
+    }
     let saved: DisciplineReason
     if (editing) {
       saved = isAttendance
@@ -93,13 +114,24 @@ export function BallSabablarPage() {
     </span>
   )
 
+  const TypeBadge = ({ t }: { t: DisciplineType }) => (
+    <span
+      className={cn(
+        'rounded-md px-2 py-0.5 text-xs font-medium',
+        t === 'negative' ? 'bg-red-50 text-red-600' : 'bg-emerald-50 text-emerald-600',
+      )}
+    >
+      {disciplineTypeLabel[t]}
+    </span>
+  )
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold text-slate-800">Ball sabablar</h1>
           <p className="text-sm text-slate-400">
-            Intizomiy ball sabablari — har biriga ball (manfiy = jazo, musbat = rag'bat)
+            Xulq-atvor sabablari — har biri ijobiy (ball qo'shiladi) yoki salbiy (ball ayriladi)
           </p>
         </div>
         <Button onClick={openCreate}>
@@ -170,9 +202,26 @@ export function BallSabablarPage() {
 
           {/* Boshqa intizomiy sabablar */}
           <Card className="p-0">
-            <div className="border-b border-slate-100 p-4">
-              <p className="font-semibold text-slate-800">Boshqa intizomiy sabablar</p>
-              <span className="text-xs text-slate-400">— qo'lda kiritiladigan sabablar (janjal, rag'bat va h.k.)</span>
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 p-4">
+              <div>
+                <p className="font-semibold text-slate-800">Boshqa intizomiy sabablar</p>
+                <span className="text-xs text-slate-400">— qo'lda kiritiladigan sabablar (janjal, rag'bat va h.k.)</span>
+              </div>
+              <div className="flex rounded-lg bg-slate-100 p-0.5">
+                {(['all', 'positive', 'negative'] as const).map((t) => (
+                  <button
+                    key={t}
+                    type="button"
+                    onClick={() => setTypeFilter(t)}
+                    className={cn(
+                      'rounded-md px-3 py-1 text-xs font-medium transition-colors',
+                      typeFilter === t ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700',
+                    )}
+                  >
+                    {t === 'all' ? 'Barchasi' : disciplineTypeLabel[t]}
+                  </button>
+                ))}
+              </div>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-left text-sm">
@@ -180,6 +229,7 @@ export function BallSabablarPage() {
                   <tr>
                     <th className="w-10 px-4 py-3">#</th>
                     <th className="px-4 py-3">Sabab</th>
+                    <th className="px-4 py-3">Turi</th>
                     <th className="px-4 py-3">Ball</th>
                     <th className="px-4 py-3 text-right">Amallar</th>
                   </tr>
@@ -210,6 +260,9 @@ export function BallSabablarPage() {
                         {r.description && <p className="mt-0.5 text-xs text-slate-400">{r.description}</p>}
                       </td>
                       <td className="px-4 py-3">
+                        <TypeBadge t={disciplineTypeOf(r.points)} />
+                      </td>
+                      <td className="px-4 py-3">
                         <PointsBadge p={r.points} />
                       </td>
                       <td className="px-4 py-3">
@@ -236,8 +289,10 @@ export function BallSabablarPage() {
                   ))}
                   {other.length === 0 && (
                     <tr>
-                      <td colSpan={4} className="px-4 py-8 text-center text-slate-400">
-                        Hali sabab qo'shilmagan — "Yangi sabab" tugmasi orqali qo'shing
+                      <td colSpan={5} className="px-4 py-8 text-center text-slate-400">
+                        {typeFilter === 'all'
+                          ? 'Hali sabab qo\'shilmagan — "Yangi sabab" tugmasi orqali qo\'shing'
+                          : `${disciplineTypeLabel[typeFilter]} sabab yo'q`}
                       </td>
                     </tr>
                   )}
@@ -283,12 +338,46 @@ export function BallSabablarPage() {
             disabled={editing?.kind === 'attendance'}
             onChange={(e) => setName(e.target.value)}
           />
-          <Input
-            label="Ball (manfiy = jazo, musbat = rag'bat)"
-            type="number"
-            value={points}
-            onChange={(e) => setPoints(Number(e.target.value) || 0)}
-          />
+          {editing?.kind === 'attendance' ? (
+            <Input
+              label="Ball (manfiy = jazo, musbat = rag'bat)"
+              type="number"
+              value={points}
+              onChange={(e) => setPoints(Number(e.target.value) || 0)}
+            />
+          ) : (
+            <>
+              <div>
+                <span className="mb-1 block text-sm font-medium text-slate-700">Turi</span>
+                <div className="grid grid-cols-2 gap-2">
+                  {(['positive', 'negative'] as const).map((t) => (
+                    <button
+                      key={t}
+                      type="button"
+                      onClick={() => setType(t)}
+                      className={cn(
+                        'rounded-lg border px-3 py-2 text-sm font-semibold transition-colors',
+                        type === t
+                          ? t === 'positive'
+                            ? 'border-emerald-300 bg-emerald-50 text-emerald-700'
+                            : 'border-red-300 bg-red-50 text-red-600'
+                          : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50',
+                      )}
+                    >
+                      {disciplineTypeLabel[t]}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <Input
+                label={type === 'positive' ? "Ball (qo'shiladi)" : 'Ball (ayriladi)'}
+                type="number"
+                min={1}
+                value={points === 0 ? '' : Math.abs(points)}
+                onChange={(e) => setPoints(Math.abs(Number(e.target.value) || 0))}
+              />
+            </>
+          )}
           {editing?.kind !== 'attendance' && (
             <>
               <Textarea
@@ -337,7 +426,8 @@ export function BallSabablarPage() {
             </p>
           ) : (
             <p className="text-xs text-slate-400">
-              Masalan: −5 (kech qoldi), −10 (janjal), +3 (faol ishtirok). 0 bo'lmasin.
+              Masalan: Salbiy 5 (kech qoldi), Salbiy 10 (janjal), Ijobiy 3 (faol ishtirok). Ball musbat son
+              yoziladi, ishorasi turidan olinadi. 0 bo'lmasin.
             </p>
           )}
         </form>

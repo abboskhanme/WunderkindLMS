@@ -154,6 +154,14 @@ public enum FinanceAction
     /// yerga kirmaydi — u faqat ISHLATADI (<see cref="OperateCashBox"/>).
     /// </summary>
     ManageTransactionTypes,
+
+    /// <summary>
+    /// Mini-magazin catalogue (docs/modules/shop.md, 2026-10-15): add products, change prices, switch
+    /// them off. The <see cref="ManageTransactionTypes"/> level — a price decides what the cashier
+    /// collects, so the cashier only READS the catalogue (<see cref="ViewCashBoxes"/>) and sells from it
+    /// (<see cref="OperateCashBox"/>).
+    /// </summary>
+    ManageShopProducts,
 }
 
 /// <summary>
@@ -274,6 +282,10 @@ public static class FinanceMatrix
         // `OperateCashBox` orqali ISHLATADI).
         new(FinanceAction.ManageTransactionTypes, AdminAndDirector,
             "Tranzaksiya turi katalogini (Kirim/Chiqim) boshqarish"),
+
+        // Mini-magazin catalogue — a price is what the cashier collects, so not the cashier's to set.
+        new(FinanceAction.ManageShopProducts, AdminAndDirector,
+            "Mahsulotlar katalogini (nom, turi, narx) boshqarish"),
     ];
 
     /// <summary>

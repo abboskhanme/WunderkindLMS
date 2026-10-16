@@ -101,7 +101,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { ArrowLeftRight, CalendarClock, Check, Layers, Settings, ShieldCheck, Tag, Ticket, Users } from 'lucide-react'
+import { ArrowLeftRight, CalendarClock, Check, Layers, Package, Settings, ShieldCheck, Tag, Ticket, Users } from 'lucide-react'
 import type { BillingSettingsInput } from '@/api/services/billingCatalog'
 import { getBillingSettings, updateBillingSettings } from '@/api/services/billingCatalog'
 import { billingErrorMessage } from '@/api/services/billingError'
@@ -118,6 +118,7 @@ import { DiscountsPage } from './DiscountsPage'
 import { DebtorStatusesPage } from '../finance/DebtorStatusesPage'
 import { ExpenseTemplatesPage } from './ExpenseTemplatesPage'
 import { TransactionTypesPage } from './TransactionTypesPage'
+import { ShopProductsPage } from './ShopProductsPage'
 
 type SectionKey =
   | 'settings'
@@ -128,6 +129,7 @@ type SectionKey =
   | 'debtor-statuses'
   | 'expense-templates'
   | 'transaction-types'
+  | 'products'
 
 /**
  * Chap ustun — tartib ataylab shunday: `settings` BIRINCHI, chunki bu
@@ -149,6 +151,9 @@ const SECTIONS: Array<{ key: SectionKey; label: string; icon: typeof Layers }> =
   { key: 'debtor-statuses', label: 'Qarzdor holatlari', icon: Tag },
   { key: 'expense-templates', label: 'Rejalashtirilgan chiqimlar', icon: CalendarClock },
   { key: 'transaction-types', label: 'Tranzaksiya turi', icon: ArrowLeftRight },
+  // Mini-magazin catalogue (client, 2026-10-15; docs/modules/shop.md) — right after the Kirim types it
+  // is sold under. A tab here, not a Moliya menu entry (navigation.ts: "YANGI YOZUV QO'SHMANG").
+  { key: 'products', label: 'Mahsulotlar', icon: Package },
 ]
 
 /**
@@ -218,6 +223,7 @@ function BillingSettingsHub() {
         {active === 'debtor-statuses' && <DebtorStatusesPage />}
         {active === 'expense-templates' && <ExpenseTemplatesPage />}
         {active === 'transaction-types' && <TransactionTypesPage />}
+        {active === 'products' && <ShopProductsPage />}
       </div>
     </div>
   )

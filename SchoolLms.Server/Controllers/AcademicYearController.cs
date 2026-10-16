@@ -319,6 +319,11 @@ public class AcademicYearController(AppDbContext db, AuditService audit) : Contr
                 .GroupBy(x => x.StudentId)
                 .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.Ordinal);
 
+            // Graduates leave the school (student-flow.md): one departure each, in their class,
+            // with the catalog's "Maktabni bitirdi" reason — also for those deleted below.
+            var flow = new StudentFlowRecorder(db, StudentEventActor.From(User));
+            var graduationReasonId = await flow.GraduationReasonIdAsync();
+
             foreach (var cls in classes.OrderByDescending(c => c.Grade))
             {
                 var newGrade = cls.Grade + 1;
@@ -335,11 +340,17 @@ public class AcademicYearController(AppDbContext db, AuditService audit) : Contr
                     // yo'q o'quvchi avvalgidek butunlay o'chadi.
                     foreach (var s in clsStudents)
                     {
+                        // Already archived pupils left earlier — their archive wrote the departure.
+                        if (!s.IsArchived)
+                            await flow.LeftAsync(s, cls.Name, graduationReasonId, "Bitirdi",
+                                StudentEventSource.Graduation, classId: cls.Id);
+
                         if (studentsWithMoney.Contains(s.Id))
                         {
                             s.IsArchived = true;
                             s.ArchivedAt = AppClock.Today.ToString("yyyy-MM-dd");
                             s.ArchiveReason = "Bitirdi";
+                            s.ArchiveReasonId ??= graduationReasonId;
                             // Login bloklanadi, akkaunt o'chmaydi: to'lov qatorining
                             // `cashier_id` / audit havolalari tirik qolishi kerak.
                             if (s.UserId is not null)

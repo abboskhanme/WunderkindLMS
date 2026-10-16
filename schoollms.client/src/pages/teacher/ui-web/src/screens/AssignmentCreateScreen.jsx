@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
-import { X, CheckCircle, Edit3, Paperclip, Video, Check, ArrowRight, Plus, Trash2, Loader2 } from 'lucide-react'
+import { X, CheckCircle, Edit3, Paperclip, Video, Check, ArrowRight, Plus, Trash2, Loader2, ClipboardPaste } from 'lucide-react'
 import { FieldLabel } from '../components/ui'
 import AppButton from '../components/AppButton'
 import { Loading, ErrorState } from '../components/State'
@@ -389,12 +389,96 @@ function ToggleRow({ title, sub, value, onChange }) {
     </div>
   )
 }
+const IMPORT_REASONS = {
+  emptyText: "Savol matni bo'sh",
+  tooFewOptions: 'Variant 2 tadan kam',
+  tooManyOptions: "Variant 6 tadan ko'p",
+  noCorrect: "To'g'ri javob belgilanmagan",
+  badCorrect: "To'g'ri javob variantlarda yo'q",
+  manyCorrect: "Bir nechta to'g'ri javob",
+  duplicateOption: 'Bir xil variant',
+}
+
+/**
+ * "Matndan yuklash" (2026-10-15, docs/modules/test-import.md) — an AI answer or the teacher's own
+ * text ("1. Savol / A) … / *B) to'g'ri …"). The server only reads; the questions are appended.
+ * Files and the Excel template live in the Telegram Mini App and the admin panel.
+ */
+function TextImport({ questions, setQuestions }) {
+  const [open, setOpen] = useState(false)
+  const [text, setText] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [msg, setMsg] = useState(null)
+
+  const run = async () => {
+    if (!text.trim() || busy) return
+    setBusy(true)
+    setMsg(null)
+    try {
+      const r = await api.parseQuestionsText(text)
+      const kept = questions.filter((q) => q.text.trim() || q.options.some((o) => o.trim()))
+      const errors = r.errors.map((e) => `${IMPORT_REASONS[e.reason] ?? e.reason}: ${e.rows.join(', ')}`).join(' · ')
+      if (kept.length + r.validCount > 200) {
+        setMsg({ ok: false, text: `Bitta testda ko'pi bilan 200 ta savol bo'lishi mumkin (hozir ${kept.length} ta bor).` })
+      } else if (r.validCount === 0) {
+        setMsg({ ok: false, text: errors ? `Savol o'qilmadi — ${errors}` : 'Savol topilmadi — ko\'rinishni tekshiring.' })
+      } else {
+        const incoming = r.questions.map((q) => ({
+          text: q.text,
+          options: [...q.options, '', '', '', ''].slice(0, Math.max(4, q.options.length)),
+          correctIndex: q.correctIndex,
+        }))
+        setQuestions([...kept, ...incoming])
+        setText('')
+        setOpen(false)
+        setMsg({
+          ok: r.errorCount === 0,
+          text: `${r.validCount} ta savol qo'shildi.${r.errorCount ? ` ${r.errorCount} tasi xato, olinmadi (savol raqami) — ${errors}` : ''}`,
+        })
+      }
+    } catch (err) {
+      setMsg({ ok: false, text: err?.message || "O'qib bo'lmadi" })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="p-4 rounded-4xl bg-surface border border-border">
+      <button onClick={() => setOpen((v) => !v)} className="w-full flex items-center gap-2.5 text-left">
+        <ClipboardPaste size={18} className="text-primary shrink-0" />
+        <span className="flex-1">
+          <span className="block text-[14px] font-bold text-text">Matndan yuklash</span>
+          <span className="block text-[12px] text-muted">AI javobini yoki tayyor testni joylang — hammasi birdaniga</span>
+        </span>
+      </button>
+      {open && (
+        <div className="mt-3 space-y-2.5">
+          <textarea
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            rows={8}
+            placeholder={"1. Savol matni\nA) variant\n*B) to'g'ri variant\nC) variant\nD) variant"}
+            className="w-full p-3 rounded-xl bg-surface2 border border-border outline-none font-mono text-[13px] text-text placeholder:text-faint focus:border-primary resize-y"
+          />
+          <p className="text-[12px] text-muted">To'g'ri variant oldiga * qo'ying yoki pastiga «Javob: B» deb yozing. Savollar orasida bo'sh qator qoldiring.</p>
+          <AppButton label={busy ? 'Tekshirilmoqda…' : 'Savollarga qo\'shish'} expand loading={busy} onClick={run} />
+        </div>
+      )}
+      {msg && (
+        <p className={'mt-2.5 text-[12px] font-semibold ' + (msg.ok ? 'text-primary' : 'text-danger')}>{msg.text}</p>
+      )}
+    </div>
+  )
+}
+
 function QuestionEditor({ questions, setQuestions }) {
   const update = (i, patch) => setQuestions((p) => p.map((q, j) => (j === i ? { ...q, ...patch } : q)))
   const updateOption = (i, oi, val) =>
     setQuestions((p) => p.map((q, j) => (j === i ? { ...q, options: q.options.map((o, k) => (k === oi ? val : o)) } : q)))
   return (
     <div className="space-y-3">
+      <TextImport questions={questions} setQuestions={setQuestions} />
       {questions.map((q, i) => (
         <div key={i} className="p-4 rounded-4xl bg-surface border border-border">
           <div className="flex items-center gap-2.5">

@@ -40,6 +40,13 @@ public static class Accounts
     /// <summary>Boshqa daromad. Admin qo'shgan nostandart toifalar ham shu yerga tushadi.</summary>
     public const string RevenueOther = "revenue:other";
 
+    /// <summary>
+    /// "Mahsulot savdosi" — books, uniforms, club accessories sold at the cash desk (mini-magazin,
+    /// docs/modules/shop.md, 2026-10-15). Only a Kirim transaction type can choose it; no
+    /// <c>fee_categories</c> code maps here.
+    /// </summary>
+    public const string RevenueSales = "revenue:sales";
+
     // ----- Chiqimlar (toifalar bo'yicha) -----
     //
     //  Bittasi = `expenses.category` ning bitta qiymati. Ro'yxat mijoz javobidan
@@ -80,6 +87,8 @@ public static class Accounts
         RevenueTuition, RevenueBus, RevenueDormitory, RevenueMeals, RevenueOther,
         ExpenseSalary, ExpenseUtilities, ExpenseSupplies, ExpenseRent, ExpenseRepair, ExpenseOther,
         ExpenseFood, ExpenseTransport, ExpenseDormitory, ExpenseMarketing, ExpenseTaxes,
+        // Mini-magazin sales (2026-10-15) — chosen only by a Kirim transaction type, as the five Chiqim ones above are.
+        RevenueSales,
     ];
 
     /// <summary>Accounts a Chiqim transaction type may post to (<see cref="ForTransactionType"/>).</summary>
@@ -92,7 +101,7 @@ public static class Accounts
     /// <summary>Accounts a Kirim transaction type may post to.</summary>
     public static readonly IReadOnlyList<string> TransactionTypeRevenueAccounts =
     [
-        RevenueTuition, RevenueBus, RevenueDormitory, RevenueMeals, RevenueOther,
+        RevenueTuition, RevenueBus, RevenueDormitory, RevenueMeals, RevenueSales, RevenueOther,
     ];
 
     private static readonly HashSet<string> Known = new(All, StringComparer.Ordinal);
@@ -217,6 +226,8 @@ public static class Accounts
                 : Has("avtobus", "автобус", "transport", "транспорт") ? RevenueBus
                 : Has("yotoqxona", "ётоқхона", "ётокхона") ? RevenueDormitory
                 : Has("ovqat", "oshxona", "oshhona", "овқат", "ошхона") ? RevenueMeals
+                : StartsWord(n, "kitob", "forma", "do'ppi", "doppi", "kiyim", "китоб", "форма", "дўппи", "кийим")
+                    ? RevenueSales
                 : RevenueOther;
 
         // Loans repaid from salaries mention "иш хаки" — they are not salary, so they go first.
@@ -234,5 +245,22 @@ public static class Accounts
             return ExpenseSupplies;
         if (Has("ta'mir", "remont", "таъмир")) return ExpenseRepair;
         return ExpenseOther;
+    }
+
+    /// <summary>
+    /// Does a word of <paramref name="text"/> start with one of <paramref name="stems"/>? A plain
+    /// substring would send "Informatika to'garagi" to sales because of "forma".
+    /// </summary>
+    private static bool StartsWord(string text, params string[] stems)
+    {
+        foreach (var stem in stems)
+        {
+            for (var at = text.IndexOf(stem, StringComparison.Ordinal); at >= 0;
+                 at = text.IndexOf(stem, at + 1, StringComparison.Ordinal))
+            {
+                if (at == 0 || !char.IsLetter(text[at - 1])) return true;
+            }
+        }
+        return false;
     }
 }

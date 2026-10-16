@@ -1042,6 +1042,9 @@ not be in the build.
 
 ## 6. Xulq-atvor
 
+> 2026-10-15: built 1:1 (typed reasons, edit/delete/export, coverage, teacher recording from the Mini
+> App, profile tab, parent card) — see `behaviour.md`.
+
 ### 6.1 What they have **[bundle]**
 
 Menu `BEHAVIOR` (permission `getBehaviors`), gated by the general-settings flag

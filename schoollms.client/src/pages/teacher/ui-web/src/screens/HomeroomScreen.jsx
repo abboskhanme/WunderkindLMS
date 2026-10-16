@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { BellRing, CheckCircle2, FileSpreadsheet, Users2, Wallet } from 'lucide-react'
+import { BellRing, CheckCircle2, FileSpreadsheet, Siren, Users2, Wallet } from 'lucide-react'
 import { ScreenHeader } from '../components/ui'
 import Avatar from '../components/Avatar'
 import AppButton from '../components/AppButton'
@@ -22,6 +22,17 @@ export default function HomeroomScreen({ onBack }) {
   const debts = useFetch(() => api.homeroomDebts().catch(() => null), [])
   const debtById = {}
   for (const p of debts.data?.pupils || []) debtById[p.studentId] = p
+  // Qizil ro'yxat (2026-10-15) — faqat ko'rish; holatni Telegram ilovasida (Bugun → Qizil ro'yxat) belgilaydi.
+  const redList = useFetch(() => api.homeroomRedList().catch(() => null), [])
+  const redById = {}
+  for (const item of redList.data?.cases || []) redById[item.case.studentId] = item.case
+  const redCount = redList.data?.cases?.length || 0
+  const redReason = (c) => {
+    const what = redList.data.countExcused ? 'kelmadi' : 'sababsiz kelmadi'
+    return c.trigger === 'consecutive'
+      ? `${c.streak} kun ketma-ket ${what}`
+      : `${redList.data.windowDays} kunda ${c.windowCount} kun ${what}`
+  }
   const [excelBusy, setExcelBusy] = useState(false)
   const downloadExcel = async () => {
     setExcelBusy(true)
@@ -106,6 +117,17 @@ export default function HomeroomScreen({ onBack }) {
               </div>
             </div>
 
+            {redCount > 0 && (
+              <div className="px-4 pb-2">
+                <div className="px-3 py-2.5 rounded-xl flex items-start gap-2.5" style={{ background: '#EF44441A' }}>
+                  <Siren size={18} className="shrink-0 mt-0.5 text-danger" />
+                  <span className="text-[12.5px] font-medium leading-snug" style={{ color: '#EF4444' }}>
+                    {`Qizil ro'yxat: ${redCount} ta o'quvchi — ota-ona bilan bog'lanish kerak. Natijani Telegram ilovasida belgilang (Bugun → Qizil ro'yxat).`}
+                  </span>
+                </div>
+              </div>
+            )}
+
             {debts.data && debts.data.groups.length > 0 && (
               <div className="px-4 pb-2">
                 <div
@@ -164,6 +186,11 @@ export default function HomeroomScreen({ onBack }) {
                         <p className="text-[12.5px] text-muted">Topshirilgan</p>
                       ) : (
                         <p className="text-[12.5px] text-muted">Kutilmoqda emas</p>
+                      )}
+                      {redById[s.studentId] && (
+                        <p className="text-[12.5px] font-semibold text-danger mt-0.5">
+                          Qizil ro'yxat: {redReason(redById[s.studentId])}
+                        </p>
                       )}
                       {debtById[s.studentId]?.debt > 0 && (
                         <p className="text-[12.5px] font-semibold text-danger mt-0.5">

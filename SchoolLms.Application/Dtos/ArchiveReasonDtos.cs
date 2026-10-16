@@ -45,3 +45,9 @@ public record BulkArchiveResultDto(
     IReadOnlyList<ArchiveBlockedStudentDto> Blocked,
     bool CanOverride,
     string? Message = null);
+
+/// <summary>
+/// Archiving a class (student-flow.md, 2026-10-15) — optional body: the pupils' leave reason from
+/// the catalog and a note. Both empty — the note is "Sinf arxivlandi (…)" as before.
+/// </summary>
+public record ArchiveClassRequest(Guid? ArchiveReasonId = null, string? Reason = null);

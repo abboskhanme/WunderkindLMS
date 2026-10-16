@@ -92,9 +92,15 @@ public record UpdateCashBoxRequest(
 /// (<c>date_too_old</c> — "2026" o'rniga "2025" terib yuborishdan himoya).
 /// Orqaga yozilgan qator auditda alohida belgilanadi.
 /// </param>
+/// <param name="Lines">
+/// Mini-magazin sale (docs/modules/shop.md, 2026-10-15): the products sold, as product + quantity. Prices
+/// come from the catalogue; every product must be active and sold under <paramref name="TransactionTypeId"/>,
+/// and <paramref name="Amount"/> must equal the lines' total (<c>ShopSales.cs</c>). Null or empty — a plain Kirim.
+/// </param>
 public record CashBoxPayInRequest(
     decimal Amount, string Method, string? Note = null, string? StudentId = null,
-    Guid? TransactionTypeId = null, DateOnly? Date = null);
+    Guid? TransactionTypeId = null, DateOnly? Date = null,
+    IReadOnlyList<CashBoxSaleLineRequest>? Lines = null);
 
 /// <summary>Chiqim (Chiqim tugmasi).</summary>
 /// <param name="TransactionTypeId">
@@ -185,12 +191,18 @@ public record IncomingCashBoxTransferDto(
 /// <param name="CashierName">Who recorded the row — the cashier, never the pupil (the "Kassir" column; 2026-10-12).</param>
 /// <param name="BoxName">The cash box the row belongs to; for a transfer, the sending box.</param>
 /// <param name="ToBoxName">Transfer only: the receiving box.</param>
+/// <param name="StudentName">Kirim only: the pupil the money came from, when the cashier named one (2026-10-15).</param>
+/// <param name="Lines">
+/// Mini-magazin sale only: the products the Kirim sold (on its storno row — the products it cancelled).
+/// Null for every other row. docs/modules/shop.md.
+/// </param>
 public record CashBoxTransactionRowDto(
     Guid Id, int No, DateOnly Date, string Who, string? ContractNo,
     decimal Amount, string Kind, string Method, string Status,
     string? TransactionTypeName, string? Note = null, string? CancelReason = null,
     DateTimeOffset CreatedAt = default, long? ReceiptNo = null, string? RecipientName = null,
-    string? CashierName = null, string? BoxName = null, string? ToBoxName = null);
+    string? CashierName = null, string? BoxName = null, string? ToBoxName = null,
+    string? StudentName = null, IReadOnlyList<CashBoxSaleLineDto>? Lines = null);
 
 /// <summary>Kassa harakatlari ro'yxati uchun filtr.</summary>
 public record CashBoxTransactionsQuery(
@@ -510,12 +522,19 @@ public sealed class CashBoxService(IAppDbContext db) : ICashBoxService
             ? await RequireTransactionTypeAsync(typeId, TransactionTypeKind.In, ct)
             : null;
 
+        // Mini-magazin sale: the lines' shape now, their prices under the lock (`ShopSales.cs`).
+        var saleRequest = ShopSales.RequireShape(request.Lines, transactionType);
+
         // Sana — ixtiyoriy, `null` bo'lsa hozir (izoh: `CashBoxPayInRequest.Date`).
         var createdAt = ResolveEntryInstant(request.Date);
 
         await using var tx = await db.BeginTransactionAsync(ct);
         await LockBoxAsync(boxId, ct);
         await RequireActiveBoxAsync(boxId, ct);
+
+        var saleLines = saleRequest is null
+            ? null
+            : await ShopSales.PriceAsync(db, saleRequest, transactionType!, amount, ct);
 
         var row = new CashBoxTransaction
         {
@@ -532,13 +551,27 @@ public sealed class CashBoxService(IAppDbContext db) : ICashBoxService
         };
         db.CashBoxTransactions.Add(row);
 
+        // The sold products, in the same transaction as the Kirim — both land or neither does.
+        if (saleLines is not null)
+        {
+            foreach (var line in saleLines)
+            {
+                line.CashBoxTransactionId = row.Id;
+                db.ShopSaleLines.Add(line);
+            }
+        }
+
         db.AuditLogs.Add(AuditService.Entry(
             AuditEntityCashBoxTransaction, row.Id.ToString("D"), "create",
             $"Kassaga kirim: {AuditService.Money(amount)} so'm ({method})"
             + (transactionType is null ? "" : $" — {transactionType.Name}")
+            + (saleLines is null ? "" : $" — {saleLines.Count} ta mahsulot")
             + BackdateNote(createdAt)
             + (note is null ? "" : $" — {note}"),
-            actorId: actorId, actorName: await actors.OfAsync(actorId, ct), after: Snapshot(row)));
+            actorId: actorId, actorName: await actors.OfAsync(actorId, ct),
+            after: saleLines is null
+                ? Snapshot(row)
+                : new { Row = Snapshot(row), Lines = saleLines.Select(ShopSales.ToDto).ToList() }));
 
         // Turi bor kirim — jurnalga ham (P&L, 2026-10-08; `CashBoxLedgerSync.cs`).
         if (transactionType is not null)
@@ -1155,6 +1188,8 @@ public sealed class CashBoxService(IAppDbContext db) : ICashBoxService
     /// </summary>
     private static bool Matches(CashBoxTransactionRowDto row, string needle) =>
         row.Who.Contains(needle, StringComparison.OrdinalIgnoreCase)
+        || (row.StudentName is not null
+            && row.StudentName.Contains(needle, StringComparison.OrdinalIgnoreCase))
         || (row.ContractNo is not null
             && row.ContractNo.Contains(needle, StringComparison.OrdinalIgnoreCase))
         || (row.ReceiptNo is not null
@@ -1317,6 +1352,15 @@ public sealed class CashBoxService(IAppDbContext db) : ICashBoxService
         var contractNos = studentIds.Count == 0
             ? new Dictionary<string, string?>(StringComparer.Ordinal)
             : await LatestContractNumbersAsync(db, studentIds, ct);
+        var studentNames = studentIds.Count == 0
+            ? new Dictionary<string, string>(StringComparer.Ordinal)
+            : await db.Students.AsNoTracking().Where(s => studentIds.Contains(s.Id))
+                .Select(s => new { s.Id, s.FullName })
+                .ToDictionaryAsync(s => s.Id, s => s.FullName, StringComparer.Ordinal, ct);
+
+        // Mini-magazin: what each Kirim sold — a storno row shows the lines of the Kirim it cancels.
+        var saleLines = await ShopSales.LinesOfAsync(db,
+            [.. rows.Where(r => r.Kind == CashBoxTransactionKind.PayIn).Select(r => r.ReversalOf ?? r.Id).Distinct()], ct);
 
         // Tranzaksiya turi nomi — `Who`/`ContractNo` kabi, id emas, HAL
         // QILINGAN qiymat ko'rsatiladi (fayl boshidagi `CashBoxTransactionRowDto` izohi).
@@ -1396,7 +1440,9 @@ public sealed class CashBoxService(IAppDbContext db) : ICashBoxService
                 : null,
             CashierName: names.GetValueOrDefault(r.CreatedBy, "—"),
             BoxName: boxNames.GetValueOrDefault(r.CashBoxId),
-            ToBoxName: r.TransferToBoxId is { } to ? boxNames.GetValueOrDefault(to) : null))];
+            ToBoxName: r.TransferToBoxId is { } to ? boxNames.GetValueOrDefault(to) : null,
+            StudentName: r.StudentId is null ? null : studentNames.GetValueOrDefault(r.StudentId),
+            Lines: r.Kind == CashBoxTransactionKind.PayIn ? saleLines.GetValueOrDefault(r.ReversalOf ?? r.Id) : null))];
     }
 
     /// <summary>

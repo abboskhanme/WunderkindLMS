@@ -460,7 +460,7 @@ internal static class SchoolMetaFlags
     public static async Task WithAsync(ApiFactory api, Action<SchoolMeta> set, Func<Task> body)
     {
         string? createdId = null;
-        (bool Archive, bool Reason, bool Grade, bool Progress) before = default;
+        (bool Archive, bool Reason, bool Grade, bool Progress, bool TeachersMark) before = default;
 
         await api.WithDbAsync(async db =>
         {
@@ -475,7 +475,8 @@ internal static class SchoolMetaFlags
                 createdId = meta.Id;
             }
             before = (meta.ArchiveOnlyNonDebtorStudents, meta.MakeAttendanceReasonRequired,
-                meta.IsStudentGradeRequired, meta.ShowLearningProgressInParentDashboard);
+                meta.IsStudentGradeRequired, meta.ShowLearningProgressInParentDashboard,
+                meta.TeachersMarkAttendance);
             set(meta);
             await db.SaveChangesAsync();
         });
@@ -498,6 +499,7 @@ internal static class SchoolMetaFlags
                 meta.MakeAttendanceReasonRequired = before.Reason;
                 meta.IsStudentGradeRequired = before.Grade;
                 meta.ShowLearningProgressInParentDashboard = before.Progress;
+                meta.TeachersMarkAttendance = before.TeachersMark;
                 await db.SaveChangesAsync();
             });
         }

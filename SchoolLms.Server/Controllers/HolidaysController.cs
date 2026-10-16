@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using SchoolLms.Infrastructure.Data;
 using SchoolLms.Application.Dtos;
+using SchoolLms.Application.Services;
 using SchoolLms.Domain;
 
 namespace SchoolLms.Server.Controllers;
@@ -16,7 +17,7 @@ namespace SchoolLms.Server.Controllers;
 [Authorize]
 [AdminPerm("schedule")]
 [Route("api/admin/holidays")]
-public class HolidaysController(AppDbContext db) : ControllerBase
+public class HolidaysController(AppDbContext db, AuditService audit) : ControllerBase
 {
     /// <summary>Barcha bayram kunlari (ixtiyoriy ?year=2026 bo'yicha filtr).</summary>
     [HttpGet]
@@ -35,12 +36,19 @@ public class HolidaysController(AppDbContext db) : ControllerBase
         var date = (req.Date ?? "").Trim();
         if (date.Length != 10) return BadRequest(new { message = "Sana 'YYYY-MM-DD' formatida bo'lsin" });
         var h = await db.Holidays.FirstOrDefaultAsync(x => x.Date == date);
+        var name = (req.Name ?? "").Trim();
         if (h is null)
         {
             h = new Holiday { Date = date };
             db.Holidays.Add(h);
+            audit.Record(AuditService.EntityHoliday, date, "create", $"Bayram kuni qo'shildi: {date} — {name}");
         }
-        h.Name = (req.Name ?? "").Trim();
+        else if (h.Name != name)
+        {
+            audit.Record(AuditService.EntityHoliday, date, "update", $"Bayram kuni nomi o'zgardi: {date} — {h.Name} → {name}",
+                before: new Dictionary<string, object?> { ["Nomi"] = h.Name }, after: new Dictionary<string, object?> { ["Nomi"] = name });
+        }
+        h.Name = name;
         await db.SaveChangesAsync();
         return new HolidayDto(h.Date, h.Name);
     }
@@ -53,6 +61,7 @@ public class HolidaysController(AppDbContext db) : ControllerBase
         if (h is not null)
         {
             db.Holidays.Remove(h);
+            audit.Record(AuditService.EntityHoliday, h.Date, "delete", $"Bayram kuni olib tashlandi: {h.Date} — {h.Name}");
             await db.SaveChangesAsync();
         }
         return NoContent();

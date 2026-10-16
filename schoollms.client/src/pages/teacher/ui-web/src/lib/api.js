@@ -118,6 +118,8 @@ export const api = {
   handover: (studentId) => POST('/teacher/homeroom/handover', { studentId }),
   // Rahbarlikdagi o'quvchilar qarzi (2026-10-12) — admin "Qarzdorlar" bilan bir xil raqam.
   homeroomDebts: () => GET('/teacher/homeroom/debts'),
+  // Qizil ro'yxat (2026-10-15) — ketma-ket / sababsiz kelmaganlar; amal Telegram ilovasida yoziladi.
+  homeroomRedList: () => GET('/teacher/homeroom/red-list'),
   // Qarzdorlar Excel'da (2026-10-12) — `group` bo'sh = hamma sinf/guruh, `all` — qarzi yo'qlar ham.
   downloadHomeroomDebts: async ({ group, all } = {}) => {
     const t = tokenStore.get()
@@ -188,6 +190,8 @@ export const api = {
   deleteAssignment: (id) => DEL(`/teacher/assignments/${id}`),
   assignmentResults: (id) => GET(`/teacher/assignments/${id}/results`),
   setSubmission: (id, studentId, body) => PUT(`/teacher/assignments/${id}/submissions/${studentId}`, body),
+  // Reads test questions from pasted text (docs/modules/test-import.md) — nothing is saved.
+  parseQuestionsText: (text) => POST('/teacher/assignments/questions/parse', { text }),
   assignmentTypes: () => GET('/teacher/assignment-types'),
   upload: (file) => {
     const fd = new FormData()

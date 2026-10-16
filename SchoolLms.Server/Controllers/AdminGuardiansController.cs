@@ -31,7 +31,7 @@ namespace SchoolLms.Server.Controllers;
 [Authorize]
 [AdminPerm("app")]
 [Route("api/admin/guardians")]
-public sealed class AdminGuardiansController(AppDbContext db) : ControllerBase
+public sealed class AdminGuardiansController(AppDbContext db, AuditService audit) : ControllerBase
 {
     /// <summary>Ro'yxat uzunligining yuqori chegarasi — qidiruvsiz butun jadval tortilmasin.</summary>
     private const int PageLimit = 200;
@@ -104,6 +104,8 @@ public sealed class AdminGuardiansController(AppDbContext db) : ControllerBase
             // PhoneKey YOZILMAYDI — u generated stored column.
         };
         db.Guardians.Add(guardian);
+        audit.Record(AuditService.EntityGuardian, guardian.Id, "create", $"Vasiy qo'shildi: {guardian.FullName}",
+            after: new Dictionary<string, object?> { ["F.I.SH"] = guardian.FullName, ["Telefon"] = guardian.Phone });
         await db.SaveChangesAsync(ct);
 
         return (await ToDtosAsync([guardian], ct))[0];
@@ -126,10 +128,13 @@ public sealed class AdminGuardiansController(AppDbContext db) : ControllerBase
         var taken = await db.Guardians.AnyAsync(g => g.PhoneKey == key && g.Id != id, ct);
         if (taken) return BadRequest(new { message = "Bu telefon raqami boshqa vasiyga tegishli" });
 
+        var before = new Dictionary<string, object?> { ["F.I.SH"] = guardian.FullName, ["Telefon"] = guardian.Phone, ["Rasm"] = guardian.PassportUrl };
         guardian.FullName = name;
         guardian.Phone = phone;
         if (req.PassportUrl is not null)
             guardian.PassportUrl = string.IsNullOrWhiteSpace(req.PassportUrl) ? null : req.PassportUrl.Trim();
+        audit.RecordChanges(AuditService.EntityGuardian, guardian.Id, $"Vasiy ma'lumoti o'zgardi ({guardian.FullName})", before,
+            new Dictionary<string, object?> { ["F.I.SH"] = guardian.FullName, ["Telefon"] = guardian.Phone, ["Rasm"] = guardian.PassportUrl });
         await db.SaveChangesAsync(ct);
 
         return (await ToDtosAsync([guardian], ct))[0];
@@ -171,6 +176,10 @@ public sealed class AdminGuardiansController(AppDbContext db) : ControllerBase
         }
         link.IsPrimary = req.IsPrimary;
 
+        audit.Record(AuditService.EntityGuardian, guardian.Id, "update",
+            $"Vasiyga farzand biriktirildi: {guardian.FullName} → {student.FullName}",
+            after: new Dictionary<string, object?> { ["Vasiylik turi"] = relation, ["Asosiy"] = req.IsPrimary },
+            studentId: student.Id);
         await db.SaveChangesAsync(ct);
         return (await ToDtosAsync([guardian], ct))[0];
     }
@@ -184,6 +193,11 @@ public sealed class AdminGuardiansController(AppDbContext db) : ControllerBase
         if (link is null) return NotFound();
 
         db.StudentGuardians.Remove(link);
+        var names = await (from g in db.Guardians.AsNoTracking().Where(g => g.Id == id)
+                           from s in db.Students.AsNoTracking().Where(s => s.Id == studentId)
+                           select new { Guardian = g.FullName, Student = s.FullName }).FirstOrDefaultAsync(ct);
+        audit.Record(AuditService.EntityGuardian, id, "remove",
+            $"Farzand vasiydan uzildi: {names?.Guardian} ← {names?.Student}", studentId: studentId);
         await db.SaveChangesAsync(ct);
         return NoContent();
     }
@@ -237,6 +251,8 @@ public sealed class AdminGuardiansController(AppDbContext db) : ControllerBase
         user.FullName = guardian.FullName;
         user.SetInitialPassword(password);
         guardian.UserId = user.Id;
+        audit.Record(AuditService.EntityGuardian, guardian.Id, "password",
+            $"Vasiyga akkaunt / yangi parol berildi: {guardian.FullName} (login {login})");
         await db.SaveChangesAsync(ct);
 
         return new CredentialsDto(user.Email, password, user.Role);

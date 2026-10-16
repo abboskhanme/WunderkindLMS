@@ -345,7 +345,8 @@ public sealed class TelegramAuthController(
                 var (roleName, rolePermissions) = await TeacherRoleAccess.OfAsync(db, user, ct);
                 teacher = new TeacherProfileDto(
                     t.Id, t.FullName, user.Email, await HomeroomDirectory.LabelAsync(db, t.Id, ct), subjects,
-                    t.Permissions, t.PhotoUrl, roleName, rolePermissions);
+                    t.Permissions, t.PhotoUrl, roleName, rolePermissions,
+                    await JournalSettingsGuard.TeachersMarkAttendanceAsync(db, ct));
             }
         }
 

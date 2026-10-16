@@ -21,9 +21,17 @@
  * Uy vazifasi bajarilishi ham shu ro'yxatda (mijoz, 2026-10-15; homework-completion.md): har
  * o'quvchida bir teginishli besh belgi (+ − * K Y) va "Hammasi bajardi". U o'sha jurnal katagining
  * `homework` maydoni, shuning uchun baho va davomat bilan BITTA so'rovda saqlanadi.
+ *
+ * O'QITUVCHI DAVOMAT OLMAYDI (mijoz, 2026-10-15; teacher-attendance-off.md): davomatni hamshira oladi.
+ * `profile.canMarkAttendance` false bo'lsa — "Hammasi keldi", qator teginishi va sabab tugmalari yo'q;
+ * hamshiraning belgisi faqat ko'rinadi ("Yo'q" / "Kech"), saqlashda o'sha sabab o'zgarmasdan qaytadi
+ * (server ham uni saqlab qoladi). Baho va vazifa — hamshira "yo'q" demagan o'quvchilarga.
+ *
+ * XULQ (mijoz, 2026-10-15; behaviour.md): har qatorda "Xulq" — pastdan chiqadigan oynada Ijobiy /
+ * Salbiy, sabab va izoh; DARHOL saqlanadi. Tugmada bugungi ballar va joriy ball (100 dan).
  */
 import { useEffect, useMemo, useState } from 'react'
-import { CalendarOff, Check, ChevronLeft, UserX } from 'lucide-react'
+import { CalendarOff, Check, ChevronLeft, ShieldCheck, UserX } from 'lucide-react'
 import {
   Badge, Card, DateChip, EmptyState, ErrorState, Hero, Loader, Row, Screen,
 } from '../../components/ui'
@@ -34,12 +42,17 @@ import { fullDate, todayIndex, weekdayName } from '../../lib/format'
 import { haptic, showBackButton } from '../../lib/telegram'
 import { AsyncBlock, lessonKey, lessonOwnerTitle, lessonPairs } from './shared'
 import { HOMEWORK_STATUSES, HW_DONE } from '../../lib/homework'
+import { BehaviourSheet, signedPoints } from './BehaviourSheet'
 
 export function AttendanceTab({ profile, meta, focusLesson, onClearFocus }) {
   const quarter = meta.currentQuarter
   const week = meta.currentWeek
   const date = todayISO()
   const [selected, setSelected] = useState(focusLesson ?? null)
+  // The school decides whether teachers mark attendance (default: no — the nurse does).
+  const canMark = profile?.canMarkAttendance === true
+  // The behaviour sheet has its own Telegram back button; the lesson's steps aside meanwhile.
+  const [sheetOpen, setSheetOpen] = useState(false)
 
   // "Bugun" tabidan dars bilan kirilganda — o'sha darsni ochamiz.
   useEffect(() => {
@@ -53,10 +66,10 @@ export function AttendanceTab({ profile, meta, focusLesson, onClearFocus }) {
 
   // Telegramning o'z "orqaga" tugmasi ro'yxatga qaytaradi.
   useEffect(() => {
-    if (!selected) return undefined
+    if (!selected || sheetOpen) return undefined
     return showBackButton(close)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selected])
+  }, [selected, sheetOpen])
 
   const q = useAsync(async () => {
     const schedule = await teacherApi.schedule(quarter, week)
@@ -84,6 +97,8 @@ export function AttendanceTab({ profile, meta, focusLesson, onClearFocus }) {
         quarter={quarter}
         date={date}
         reasons={meta.absenceReasons || []}
+        canMark={canMark}
+        onSheetChange={setSheetOpen}
         onBack={close}
         onSaved={q.reload}
       />
@@ -92,7 +107,7 @@ export function AttendanceTab({ profile, meta, focusLesson, onClearFocus }) {
 
   return (
     <Screen>
-      <Hero title="Davomat va baho" subtitle={fullDate(date)} />
+      <Hero title={canMark ? 'Davomat va baho' : 'Baho va vazifa'} subtitle={fullDate(date)} />
       <AsyncBlock query={q} loadingLabel="Bugungi darslar yuklanmoqda…">
         {(data) => (
           <>
@@ -120,7 +135,9 @@ export function AttendanceTab({ profile, meta, focusLesson, onClearFocus }) {
                       title={lessonOwnerTitle(l)}
                       subtitle={`${l.subjectName} · ${l.startTime}–${l.endTime}`}
                       right={
-                        <Badge tone={done ? 'success' : 'neutral'}>{done ? 'Olingan' : 'Olinmagan'}</Badge>
+                        <Badge tone={done ? 'success' : 'neutral'}>
+                          {canMark ? (done ? 'Olingan' : 'Olinmagan') : done ? "O'tildi" : "O'tilmagan"}
+                        </Badge>
                       }
                       onClick={() => {
                         haptic()
@@ -132,8 +149,9 @@ export function AttendanceTab({ profile, meta, focusLesson, onClearFocus }) {
               )}
             </Card>
             <p className="mx-6 mt-3 text-[12px] leading-relaxed text-slate-400">
-              Davomat saqlanganda dars avtomatik "o'tildi" deb belgilanadi va o'sha sinf yoki
-              guruh jurnalida ko'rinadi.
+              {canMark
+                ? "Davomat saqlanganda dars avtomatik \"o'tildi\" deb belgilanadi va o'sha sinf yoki guruh jurnalida ko'rinadi."
+                : "Saqlanganda dars avtomatik \"o'tildi\" deb belgilanadi. Davomatni hamshira oladi — uning belgisi ro'yxatda ko'rinadi."}
             </p>
             <div className="h-4" />
           </>
@@ -145,7 +163,7 @@ export function AttendanceTab({ profile, meta, focusLesson, onClearFocus }) {
 
 /* ------------------------------------------------------- bitta darsning ro'yxati */
 
-function LessonAttendance({ lesson, quarter, date, reasons, onBack, onSaved }) {
+function LessonAttendance({ lesson, quarter, date, reasons, canMark, onSheetChange, onBack, onSaved }) {
   const { classId, subjectId, period } = lesson
   // `classId` — darsning EGASI: sinf yoki o'quv guruhi (§2.1.4). Server ro'yxatni
   // o'zi yechadi, shuning uchun bu yerda sinf nomi bo'yicha filtr yo'q.
@@ -172,6 +190,29 @@ function LessonAttendance({ lesson, quarter, date, reasons, onBack, onSaved }) {
     const note = notes.find((n) => n.date === date && n.period === period) || null
     return { roster, todayEntries, note }
   }, [classId, subjectId, quarter, period, date])
+
+  // Xulq — loaded beside the roster and never in its way: a failure only hides the "Xulq" buttons.
+  const behaviourReasons = useAsync(() => teacherApi.disciplineReasons().catch(() => null), [])
+  const behaviourScores = useAsync(
+    () => teacherApi.disciplineScores(classId).catch(() => []),
+    [classId],
+  )
+  const scoreOf = useMemo(
+    () => new Map((behaviourScores.data || []).map((r) => [r.studentId, r])),
+    [behaviourScores.data],
+  )
+  const [sheetStudent, setSheetStudent] = useState(null)
+  const openSheet = (student) => {
+    haptic()
+    setSheetStudent(student)
+    onSheetChange?.(true)
+  }
+  const closeSheet = () => {
+    setSheetStudent(null)
+    onSheetChange?.(false)
+  }
+  // Leaving the lesson with the sheet open must give the back button back.
+  useEffect(() => () => onSheetChange?.(false), [onSheetChange])
 
   // Belgilar: { [studentId]: reasonId } — sababi yo'q o'quvchi "keldi".
   const [marks, setMarks] = useState(null)
@@ -210,7 +251,7 @@ function LessonAttendance({ lesson, quarter, date, reasons, onBack, onSaved }) {
   if (q.loading && q.data === null) {
     return (
       <Screen>
-        <LessonHero lesson={lesson} date={date} conducted={false} onBack={onBack} />
+        <LessonHero lesson={lesson} date={date} conducted={false} canMark={canMark} onBack={onBack} />
         <Loader label="O'quvchilar yuklanmoqda…" />
       </Screen>
     )
@@ -218,7 +259,7 @@ function LessonAttendance({ lesson, quarter, date, reasons, onBack, onSaved }) {
   if (q.error) {
     return (
       <Screen>
-        <LessonHero lesson={lesson} date={date} conducted={false} onBack={onBack} />
+        <LessonHero lesson={lesson} date={date} conducted={false} canMark={canMark} onBack={onBack} />
         <ErrorState message={q.error} onRetry={q.reload} />
       </Screen>
     )
@@ -231,6 +272,8 @@ function LessonAttendance({ lesson, quarter, date, reasons, onBack, onSaved }) {
   // Kechikkan o'quvchi darsda bo'lgan — uy vazifasi undan ham so'raladi; kelmaganidan esa yo'q.
   const lateIds = new Set(reasons.filter((r) => r.isLate).map((r) => r.id))
   const inClass = (studentId) => !current[studentId] || lateIds.has(current[studentId])
+  const lateCount = roster.filter((s) => current[s.id] && lateIds.has(current[s.id])).length
+  const reasonById = new Map(reasons.map((r) => [r.id, r]))
   const homeworkCount = roster.filter((s) => currentHomework[s.id]).length
   const homeworkEmpty = roster.filter((s) => inClass(s.id) && !currentHomework[s.id]).length
   // Faqat SHU ro'yxatdagilarni sanaymiz: bo'lingan darsda jurnalda boshqa
@@ -377,9 +420,9 @@ function LessonAttendance({ lesson, quarter, date, reasons, onBack, onSaved }) {
 
   return (
     <Screen>
-      <LessonHero lesson={lesson} date={date} conducted={conducted} onBack={onBack} />
+      <LessonHero lesson={lesson} date={date} conducted={conducted} canMark={canMark} onBack={onBack} />
 
-      {reasons.length === 0 ? (
+      {canMark && reasons.length === 0 ? (
         <Card>
           <EmptyState
             title="Davomat sabablari sozlanmagan"
@@ -439,22 +482,42 @@ function LessonAttendance({ lesson, quarter, date, reasons, onBack, onSaved }) {
           <Card
             title="O'quvchilar"
             action={
-              <button
-                type="button"
-                onClick={markAllPresent}
-                className="rounded-full bg-slate-100 px-3 py-1.5 text-[12px] font-semibold text-slate-600"
-              >
-                Hammasi keldi
-              </button>
+              canMark ? (
+                <button
+                  type="button"
+                  onClick={markAllPresent}
+                  className="rounded-full bg-slate-100 px-3 py-1.5 text-[12px] font-semibold text-slate-600"
+                >
+                  Hammasi keldi
+                </button>
+              ) : null
             }
           >
             <div className="px-4 pb-2 pt-1">
               <p className="text-[13px] text-slate-500">
-                <span className="font-bold text-emerald-600">{presentCount} keldi</span>
-                {' · '}
-                <span className={absentCount ? 'font-bold text-red-600' : ''}>
-                  {absentCount} kelmadi
-                </span>
+                {canMark ? (
+                  <>
+                    <span className="font-bold text-emerald-600">{presentCount} keldi</span>
+                    {' · '}
+                    <span className={absentCount ? 'font-bold text-red-600' : ''}>
+                      {absentCount} kelmadi
+                    </span>
+                  </>
+                ) : (
+                  // The nurse's roll-call, read-only: absent (not late) and late.
+                  <>
+                    <span className={absentCount - lateCount ? 'font-bold text-red-600' : ''}>
+                      {absentCount - lateCount} yo'q
+                    </span>
+                    {lateCount > 0 && (
+                      <>
+                        {' · '}
+                        <span className="font-bold text-amber-600">{lateCount} kech</span>
+                      </>
+                    )}
+                    <span className="text-slate-400"> (hamshira)</span>
+                  </>
+                )}
                 {' · '}
                 {roster.length} ta jami
                 {' · '}
@@ -489,6 +552,11 @@ function LessonAttendance({ lesson, quarter, date, reasons, onBack, onSaved }) {
                 student={s}
                 reasonId={current[s.id] || null}
                 reasons={reasons}
+                canMark={canMark}
+                nurseMark={current[s.id] ? reasonById.get(current[s.id]) || { name: "Yo'q", isLate: false } : null}
+                showGrades={canMark ? !current[s.id] : inClass(s.id)}
+                behaviour={behaviourReasons.data ? scoreOf.get(s.id) || { remaining: null, today: 0 } : null}
+                onBehaviour={() => openSheet(s)}
                 grade={currentGrades[s.id] ?? null}
                 homework={currentHomework[s.id] ?? 0}
                 // Kelmaganda yashirin — lekin oldin qo'yilgan belgi bo'lsa, ko'rinib turadi (yashirin qiymat qolmasin).
@@ -503,6 +571,15 @@ function LessonAttendance({ lesson, quarter, date, reasons, onBack, onSaved }) {
 
           {saveError && (
             <p className="mx-6 mt-3 text-[13px] font-medium text-red-600">{saveError}</p>
+          )}
+
+          {sheetStudent && behaviourReasons.data && (
+            <BehaviourSheet
+              student={sheetStudent}
+              reasons={behaviourReasons.data}
+              onClose={closeSheet}
+              onChanged={behaviourScores.reload}
+            />
           )}
 
           {/* Yopishqoq panel tab panelining ustida turadi — ro'yxat uzun bo'lsa ham
@@ -534,7 +611,7 @@ function LessonAttendance({ lesson, quarter, date, reasons, onBack, onSaved }) {
 
 /* -------------------------------------------------------------- yordamchilar */
 
-function LessonHero({ lesson, date, conducted, onBack }) {
+function LessonHero({ lesson, date, conducted, canMark = true, onBack }) {
   return (
     <Hero
       title={lessonOwnerTitle(lesson)}
@@ -553,7 +630,9 @@ function LessonHero({ lesson, date, conducted, onBack }) {
     >
       <div className="flex items-center gap-2">
         <Badge tone={conducted ? 'success' : 'neutral'}>
-          {conducted ? 'Davomat olingan' : 'Davomat olinmagan'}
+          {canMark
+            ? conducted ? 'Davomat olingan' : 'Davomat olinmagan'
+            : conducted ? "Dars o'tildi" : "Dars o'tilmagan"}
         </Badge>
         <span className="text-[13px] opacity-70">{fullDate(date)}</span>
       </div>
@@ -569,30 +648,80 @@ const GRADES = [1, 2, 3, 4, 5]
  * Kelgan o'quvchida baho tugmalari (1–5), kelmaganida sabab tugmalari (sukut: sababsiz).
  * Kelmagan o'quvchining oldin qo'yilgan bahosi o'chirilmaydi — faqat tugmalari yashirinadi.
  * Darsda bo'lgan (kelgan yoki kechikkan) o'quvchida — uy vazifasi belgilari (+ − * K Y).
+ *
+ * `canMark` false (davomatni hamshira oladi): qator teginilmaydi, sabab tugmalari yo'q — faqat
+ * hamshira belgisi (`nurseMark`) kichik nishon bo'lib ko'rinadi. `behaviour` — "Xulq" tugmasi
+ * (joriy ball va bugungi ballar); null bo'lsa tugma yo'q.
  */
 function StudentRow({
-  index, student, reasonId, reasons, grade, homework, showHomework, onToggle, onReason, onGrade, onHomework,
+  index, student, reasonId, reasons, canMark = true, nurseMark, showGrades, behaviour, onBehaviour,
+  grade, homework, showHomework, onToggle, onReason, onGrade, onHomework,
 }) {
   // Sabab bor = kelmagan. Sabablar ro'yxati bo'sh bo'lganda bu ekranga umuman
   // kirilmaydi (yuqorida tekshiriladi), shuning uchun bu yerda shart yetarli.
   const absent = Boolean(reasonId)
 
-  return (
-    <div className="border-t border-slate-100 px-4 py-2.5 first:border-t-0">
-      <button type="button" onClick={onToggle} className="flex w-full items-center gap-3 text-left">
-        <span className="w-5 shrink-0 text-[12px] font-bold text-slate-300">{index}</span>
-        <span className="min-w-0 flex-1 truncate text-[15px] font-semibold">{student.fullName}</span>
+  const xulq = behaviour && (
+    <button
+      type="button"
+      onClick={onBehaviour}
+      aria-label={`${student.fullName} — xulq`}
+      className="flex shrink-0 items-center gap-1 rounded-full bg-slate-100 px-2.5 py-1.5 text-[12px] font-semibold text-slate-600"
+    >
+      <ShieldCheck className="h-3.5 w-3.5" />
+      Xulq
+      {behaviour.remaining != null && <span className="font-normal text-slate-400">{behaviour.remaining}</span>}
+      {behaviour.today !== 0 && (
         <span
           className={
-            'shrink-0 rounded-full px-3 py-1.5 text-[13px] font-bold ' +
-            (absent ? 'bg-red-50 text-red-600' : 'bg-emerald-50 text-emerald-700')
+            'rounded-full px-1.5 text-[11px] font-bold ' +
+            (behaviour.today < 0 ? 'bg-red-100 text-red-600' : 'bg-emerald-100 text-emerald-700')
           }
         >
-          {absent ? "Yo'q" : 'Keldi'}
+          {signedPoints(behaviour.today)}
         </span>
-      </button>
+      )}
+    </button>
+  )
 
-      {!absent && (
+  return (
+    <div className="border-t border-slate-100 px-4 py-2.5 first:border-t-0">
+      {canMark ? (
+        <div className="flex items-center gap-2">
+          <button type="button" onClick={onToggle} className="flex min-w-0 flex-1 items-center gap-3 text-left">
+            <span className="w-5 shrink-0 text-[12px] font-bold text-slate-300">{index}</span>
+            <span className="min-w-0 flex-1 truncate text-[15px] font-semibold">{student.fullName}</span>
+            <span
+              className={
+                'shrink-0 rounded-full px-3 py-1.5 text-[13px] font-bold ' +
+                (absent ? 'bg-red-50 text-red-600' : 'bg-emerald-50 text-emerald-700')
+              }
+            >
+              {absent ? "Yo'q" : 'Keldi'}
+            </span>
+          </button>
+          {xulq}
+        </div>
+      ) : (
+        <div className="flex items-center gap-2">
+          <span className="w-5 shrink-0 text-[12px] font-bold text-slate-300">{index}</span>
+          <span className="min-w-0 flex-1 truncate text-[15px] font-semibold">{student.fullName}</span>
+          {nurseMark && (
+            <span
+              title={nurseMark.name}
+              className={
+                'shrink-0 rounded-full px-2.5 py-1 text-[12px] font-bold ' +
+                (nurseMark.isLate ? 'bg-amber-50 text-amber-700' : 'bg-red-50 text-red-600')
+              }
+            >
+              {nurseMark.isLate ? 'Kech' : "Yo'q"}
+            </span>
+          )}
+          {xulq}
+        </div>
+      )}
+
+      {(showGrades ?? !absent) && (
         <div className="mt-2 flex gap-1.5 pl-8" role="group" aria-label={`${student.fullName} — baho`}>
           {GRADES.map((g) => {
             const on = g === grade
@@ -639,7 +768,7 @@ function StudentRow({
         </div>
       )}
 
-      {absent && (
+      {canMark && absent && (
         <div className="mt-2 flex flex-wrap gap-1.5 pl-8">
           {reasons.map((r) => {
             const on = r.id === reasonId

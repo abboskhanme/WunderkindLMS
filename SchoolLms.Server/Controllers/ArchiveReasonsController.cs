@@ -40,11 +40,7 @@ public class ArchiveReasonsController(AppDbContext db) : ControllerBase
 
         // "Nechta o'quvchida ishlatilgan" — o'chirish tugmasini ko'rsatish/yashirish uchun
         // va §2.2 ning butun maqsadi (guruhlab ko'rish) shu sondan boshlanadi.
-        var used = await db.Students.AsNoTracking()
-            .Where(s => s.ArchiveReasonId != null)
-            .GroupBy(s => s.ArchiveReasonId!.Value)
-            .Select(g => new { ReasonId = g.Key, Count = g.Count() })
-            .ToDictionaryAsync(x => x.ReasonId, x => x.Count, ct);
+        var used = await UsedByAsync(null, ct);
 
         return rows
             .Select(r => new StudentArchiveReasonDto(
@@ -96,7 +92,7 @@ public class ArchiveReasonsController(AppDbContext db) : ControllerBase
         }
         await db.SaveChangesAsync(ct);
 
-        var used = await db.Students.CountAsync(s => s.ArchiveReasonId == id, ct);
+        var used = (await UsedByAsync(id, ct)).GetValueOrDefault(id);
         return new StudentArchiveReasonDto(row.Id, row.Name, row.IsActive, row.Position, used);
     }
 
@@ -112,7 +108,7 @@ public class ArchiveReasonsController(AppDbContext db) : ControllerBase
         var row = await db.StudentArchiveReasons.FirstOrDefaultAsync(r => r.Id == id, ct);
         if (row is null) return NoContent();
 
-        var used = await db.Students.CountAsync(s => s.ArchiveReasonId == id, ct);
+        var used = (await UsedByAsync(id, ct)).GetValueOrDefault(id);
         if (used > 0)
             return BadRequest(new
             {
@@ -123,5 +119,27 @@ public class ArchiveReasonsController(AppDbContext db) : ControllerBase
         db.StudentArchiveReasons.Remove(row);
         await db.SaveChangesAsync(ct);
         return NoContent();
+    }
+
+    /// <summary>
+    /// Pupils per reason: archived with it now, or who left with it earlier (student_events —
+    /// docs/modules/student-flow.md; a restored pupil's departure still names the reason, and its
+    /// FK is RESTRICT). Each pupil once per reason. <paramref name="only"/> — one reason; null — all.
+    /// </summary>
+    private async Task<Dictionary<Guid, int>> UsedByAsync(Guid? only, CancellationToken ct)
+    {
+        var students = await db.Students.AsNoTracking()
+            .Where(s => s.ArchiveReasonId != null && (only == null || s.ArchiveReasonId == only))
+            .Select(s => new { ReasonId = s.ArchiveReasonId!.Value, StudentId = s.Id })
+            .ToListAsync(ct);
+        var departures = await db.StudentEvents.AsNoTracking()
+            .Where(e => e.ReasonId != null && (only == null || e.ReasonId == only))
+            .Select(e => new { ReasonId = e.ReasonId!.Value, e.StudentId })
+            .Distinct()
+            .ToListAsync(ct);
+        return students.Concat(departures)
+            .Distinct()
+            .GroupBy(x => x.ReasonId)
+            .ToDictionary(g => g.Key, g => g.Count());
     }
 }

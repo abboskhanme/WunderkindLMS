@@ -114,6 +114,40 @@ public class TelegramService(
     }
 
     /// <summary>
+    /// <see cref="SendDocumentAsync"/> with a formatted caption (<c>parse_mode=HTML</c>, the payment
+    /// auto-message, 2026-10-15). If Telegram cannot parse the formatting, the same file goes again
+    /// with the caption as plain text — the document must not be lost over a tag.
+    /// </summary>
+    public async Task<bool> SendDocumentHtmlAsync(
+        long chatId, byte[] bytes, string fileName, string captionHtml, CancellationToken ct = default)
+    {
+        if (!IsConfigured) return false;
+        try
+        {
+            using var form = new MultipartFormDataContent();
+            form.Add(new StringContent(chatId.ToString()), "chat_id");
+            form.Add(new StringContent(captionHtml), "caption");
+            form.Add(new StringContent("HTML"), "parse_mode");
+            var fileContent = new ByteArrayContent(bytes);
+            fileContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+            form.Add(fileContent, "document", fileName);
+            using var resp = await Client().PostAsync($"{ApiBase}/sendDocument", form, ct);
+            if (resp.IsSuccessStatusCode) return true;
+            if (resp.StatusCode != System.Net.HttpStatusCode.BadRequest) return false;
+            var body = await resp.Content.ReadAsStringAsync(ct);
+            if (!body.Contains("parse entities", StringComparison.OrdinalIgnoreCase)) return false;
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Telegram sendDocument (formatlangan) xatosi");
+            return false;
+        }
+        logger.LogWarning("Telegram fayl izohini o'qiy olmadi — oddiy matn bilan qayta yuborilmoqda");
+        return await SendDocumentAsync(chatId, bytes, fileName, TelegramHtml.ToPlain(captionHtml), ct);
+    }
+
+    /// <summary>
     /// <c>sendMessage</c> with <c>parse_mode=HTML</c> (HR topshiriqlari — the old WunderkindHR texts use
     /// <c>&lt;b&gt;</c>). The caller escapes user text. Success — true; not configured — false.
     /// </summary>

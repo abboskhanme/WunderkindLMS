@@ -632,6 +632,265 @@ namespace SchoolLms.Infrastructure.Migrations
                     b.ToTable("assignment_types", (string)null);
                 });
 
+            modelBuilder.Entity("SchoolLms.Domain.AttendanceCase", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.PrimitiveCollection<List<DateOnly>>("AbsentDates")
+                        .IsRequired()
+                        .HasColumnType("date[]")
+                        .HasColumnName("absent_dates");
+
+                    b.Property<DateOnly?>("CallbackOn")
+                        .HasColumnType("date")
+                        .HasColumnName("callback_on");
+
+                    b.Property<DateTimeOffset?>("ClosedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("closed_at");
+
+                    b.Property<string>("ClosedBy")
+                        .HasColumnType("text")
+                        .HasColumnName("closed_by");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<DateOnly?>("LastAbsentOn")
+                        .HasColumnType("date")
+                        .HasColumnName("last_absent_on");
+
+                    b.Property<DateTimeOffset?>("LastActionAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("last_action_at");
+
+                    b.Property<DateOnly?>("LastPresentOn")
+                        .HasColumnType("date")
+                        .HasColumnName("last_present_on");
+
+                    b.Property<DateTimeOffset?>("NotifiedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("notified_at");
+
+                    b.Property<DateOnly>("OpenedOn")
+                        .HasColumnType("date")
+                        .HasColumnName("opened_on");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("status");
+
+                    b.Property<int>("Streak")
+                        .HasColumnType("integer")
+                        .HasColumnName("streak");
+
+                    b.Property<string>("StudentId")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("student_id");
+
+                    b.Property<string>("Trigger")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("trigger");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<int>("WindowCount")
+                        .HasColumnType("integer")
+                        .HasColumnName("window_count");
+
+                    b.HasKey("Id")
+                        .HasName("pk_attendance_cases");
+
+                    b.HasIndex("ClosedAt")
+                        .HasDatabaseName("ix_attendance_cases_closed_at");
+
+                    b.HasIndex("StudentId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_attendance_cases_open")
+                        .HasFilter("closed_at is null");
+
+                    b.HasIndex("StudentId", "OpenedOn")
+                        .HasDatabaseName("ix_attendance_cases_student");
+
+                    b.ToTable("attendance_cases", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_attendance_cases_closed", "(status = 'hal_boldi') = (closed_at is not null)");
+
+                            t.HasCheckConstraint("ck_attendance_cases_counts", "streak >= 0 and window_count >= 0");
+
+                            t.HasCheckConstraint("ck_attendance_cases_status", "status in ('aloqa_kerak','qayta_qongiroq','boglanib_bolmadi','hal_boldi')");
+
+                            t.HasCheckConstraint("ck_attendance_cases_trigger", "trigger in ('consecutive','window')");
+                        });
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.AttendanceCaseAction", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("ActorId")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("actor_id");
+
+                    b.Property<string>("ActorName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("actor_name");
+
+                    b.Property<string>("ActorType")
+                        .IsRequired()
+                        .HasMaxLength(8)
+                        .HasColumnType("character varying(8)")
+                        .HasColumnName("actor_type");
+
+                    b.Property<DateOnly?>("CallbackOn")
+                        .HasColumnType("date")
+                        .HasColumnName("callback_on");
+
+                    b.Property<Guid>("CaseId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("case_id");
+
+                    b.Property<string>("Comment")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("comment");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("deleted_at");
+
+                    b.Property<string>("DeletedBy")
+                        .HasColumnType("text")
+                        .HasColumnName("deleted_by");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("status");
+
+                    b.HasKey("Id")
+                        .HasName("pk_attendance_case_actions");
+
+                    b.HasIndex("CaseId", "CreatedAt")
+                        .HasDatabaseName("ix_attendance_case_actions_case");
+
+                    b.ToTable("attendance_case_actions", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_attendance_case_actions_actor_type", "actor_type in ('teacher','staff')");
+
+                            t.HasCheckConstraint("ck_attendance_case_actions_comment", "length(btrim(comment)) > 0");
+
+                            t.HasCheckConstraint("ck_attendance_case_actions_status", "status in ('aloqa_kerak','qayta_qongiroq','boglanib_bolmadi','hal_boldi')");
+                        });
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.AttendanceRedListSettings", b =>
+                {
+                    b.Property<int>("Id")
+                        .HasColumnType("integer")
+                        .HasColumnName("id");
+
+                    b.Property<int>("ConsecutiveDays")
+                        .HasColumnType("integer")
+                        .HasColumnName("consecutive_days");
+
+                    b.Property<bool>("CountExcused")
+                        .HasColumnType("boolean")
+                        .HasColumnName("count_excused");
+
+                    b.Property<int>("EscalateAfterDays")
+                        .HasColumnType("integer")
+                        .HasColumnName("escalate_after_days");
+
+                    b.Property<DateOnly?>("LastDigestOn")
+                        .HasColumnType("date")
+                        .HasColumnName("last_digest_on");
+
+                    b.Property<DateTimeOffset?>("LastScanAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("last_scan_at");
+
+                    b.Property<string>("LastScanSlot")
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("last_scan_slot");
+
+                    b.Property<bool>("NotifyManagement")
+                        .HasColumnType("boolean")
+                        .HasColumnName("notify_management");
+
+                    b.Property<bool>("NotifyTeachers")
+                        .HasColumnType("boolean")
+                        .HasColumnName("notify_teachers");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasColumnType("text")
+                        .HasColumnName("updated_by");
+
+                    b.Property<int>("WindowDays")
+                        .HasColumnType("integer")
+                        .HasColumnName("window_days");
+
+                    b.Property<int>("WindowUnexcused")
+                        .HasColumnType("integer")
+                        .HasColumnName("window_unexcused");
+
+                    b.HasKey("Id")
+                        .HasName("pk_attendance_red_list_settings");
+
+                    b.ToTable("attendance_red_list_settings", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_attendance_red_list_settings_consecutive", "consecutive_days between 2 and 10");
+
+                            t.HasCheckConstraint("ck_attendance_red_list_settings_escalate", "escalate_after_days between 1 and 14");
+
+                            t.HasCheckConstraint("ck_attendance_red_list_settings_single", "id = 1");
+
+                            t.HasCheckConstraint("ck_attendance_red_list_settings_window", "window_days between 3 and 60 and window_unexcused between 2 and 30 and window_unexcused <= window_days");
+                        });
+
+                    b.HasData(
+                        new
+                        {
+                            Id = 1,
+                            ConsecutiveDays = 3,
+                            CountExcused = false,
+                            EscalateAfterDays = 2,
+                            NotifyManagement = false,
+                            NotifyTeachers = false,
+                            UpdatedAt = new DateTimeOffset(new DateTime(2026, 10, 15, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            WindowDays = 14,
+                            WindowUnexcused = 5
+                        });
+                });
+
             modelBuilder.Entity("SchoolLms.Domain.AuditLog", b =>
                 {
                     b.Property<string>("Id")
@@ -699,8 +958,14 @@ namespace SchoolLms.Infrastructure.Migrations
                     b.HasIndex("Timestamp")
                         .HasDatabaseName("ix_audit_logs_timestamp");
 
+                    b.HasIndex("ActorId", "Timestamp")
+                        .HasDatabaseName("ix_audit_logs_actor_id_timestamp");
+
                     b.HasIndex("EntityType", "EntityId")
                         .HasDatabaseName("ix_audit_logs_entity_type_entity_id");
+
+                    b.HasIndex("EntityType", "Timestamp")
+                        .HasDatabaseName("ix_audit_logs_entity_type_timestamp");
 
                     b.ToTable("audit_logs", (string)null);
                 });
@@ -716,9 +981,18 @@ namespace SchoolLms.Infrastructure.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("at");
 
+                    b.Property<int>("Attempts")
+                        .HasColumnType("integer")
+                        .HasColumnName("attempts");
+
                     b.Property<long?>("ChatId")
                         .HasColumnType("bigint")
                         .HasColumnName("chat_id");
+
+                    b.Property<string>("Error")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("error");
 
                     b.Property<string>("Period")
                         .IsRequired()
@@ -726,11 +1000,36 @@ namespace SchoolLms.Infrastructure.Migrations
                         .HasColumnType("character varying(10)")
                         .HasColumnName("period");
 
+                    b.Property<DateTimeOffset?>("PlannedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("planned_at");
+
+                    b.Property<string>("RefId")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("ref_id");
+
                     b.Property<string>("RuleKey")
                         .IsRequired()
                         .HasMaxLength(16)
                         .HasColumnType("character varying(16)")
                         .HasColumnName("rule_key");
+
+                    b.Property<Guid?>("RunId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("run_id");
+
+                    b.Property<string>("SentBy")
+                        .HasColumnType("text")
+                        .HasColumnName("sent_by");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(8)
+                        .HasColumnType("character varying(8)")
+                        .HasDefaultValue("auto")
+                        .HasColumnName("source");
 
                     b.Property<string>("Status")
                         .IsRequired()
@@ -754,22 +1053,27 @@ namespace SchoolLms.Infrastructure.Migrations
                     b.HasIndex("At")
                         .HasDatabaseName("ix_auto_message_log_at");
 
+                    b.HasIndex("RunId")
+                        .HasDatabaseName("ix_auto_message_log_run_id");
+
                     b.HasIndex("StudentId")
                         .HasDatabaseName("ix_auto_message_log_student_id");
 
                     b.HasIndex("RuleKey", "Period", "StudentId")
                         .IsUnique()
                         .HasDatabaseName("ux_auto_message_log_no_chat")
-                        .HasFilter("chat_id is null");
+                        .HasFilter("chat_id is null and rule_key <> 'payment'");
 
                     b.HasIndex("RuleKey", "Period", "StudentId", "ChatId")
                         .IsUnique()
                         .HasDatabaseName("ux_auto_message_log_chat")
-                        .HasFilter("chat_id is not null");
+                        .HasFilter("chat_id is not null and rule_key <> 'payment'");
 
                     b.ToTable("auto_message_log", null, t =>
                         {
-                            t.HasCheckConstraint("ck_auto_message_log_status", "status in ('sent','failed','no_telegram')");
+                            t.HasCheckConstraint("ck_auto_message_log_source", "source in ('auto','manual')");
+
+                            t.HasCheckConstraint("ck_auto_message_log_status", "status in ('sent','failed','no_telegram','scheduled','pending_approval','cancelled')");
                         });
                 });
 
@@ -779,6 +1083,11 @@ namespace SchoolLms.Infrastructure.Migrations
                         .HasMaxLength(16)
                         .HasColumnType("character varying(16)")
                         .HasColumnName("key");
+
+                    b.Property<string>("CutoffTime")
+                        .HasMaxLength(5)
+                        .HasColumnType("character varying(5)")
+                        .HasColumnName("cutoff_time");
 
                     b.Property<int>("DayOfMonth")
                         .HasColumnType("integer")
@@ -801,6 +1110,10 @@ namespace SchoolLms.Infrastructure.Migrations
                         .HasPrecision(14, 2)
                         .HasColumnType("numeric(14,2)")
                         .HasColumnName("min_amount");
+
+                    b.Property<bool>("RequiresApproval")
+                        .HasColumnType("boolean")
+                        .HasColumnName("requires_approval");
 
                     b.Property<string>("SendTime")
                         .IsRequired()
@@ -826,13 +1139,117 @@ namespace SchoolLms.Infrastructure.Migrations
 
                     b.ToTable("auto_message_rules", null, t =>
                         {
+                            t.HasCheckConstraint("ck_auto_message_rules_cutoff", "cutoff_time is null or cutoff_time ~ '^([01][0-9]|2[0-3]):[0-5][0-9]$'");
+
                             t.HasCheckConstraint("ck_auto_message_rules_day", "day_of_month between 1 and 28");
 
-                            t.HasCheckConstraint("ck_auto_message_rules_key", "key in ('absence','invoice','debt','birthday')");
+                            t.HasCheckConstraint("ck_auto_message_rules_key", "key in ('absence','invoice','debt','birthday','payment')");
 
                             t.HasCheckConstraint("ck_auto_message_rules_min", "min_amount >= 0");
 
                             t.HasCheckConstraint("ck_auto_message_rules_time", "send_time ~ '^([01][0-9]|2[0-3]):[0-5][0-9]$'");
+                        });
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.AutoMessageRun", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset?>("ApprovedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("approved_at");
+
+                    b.Property<string>("ApprovedBy")
+                        .HasColumnType("text")
+                        .HasColumnName("approved_by");
+
+                    b.Property<int>("Cancelled")
+                        .HasColumnType("integer")
+                        .HasColumnName("cancelled");
+
+                    b.Property<DateTimeOffset?>("CancelledAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("cancelled_at");
+
+                    b.Property<string>("CancelledBy")
+                        .HasColumnType("text")
+                        .HasColumnName("cancelled_by");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<int>("Failed")
+                        .HasColumnType("integer")
+                        .HasColumnName("failed");
+
+                    b.Property<DateTimeOffset?>("FinishedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("finished_at");
+
+                    b.Property<int>("NoTelegram")
+                        .HasColumnType("integer")
+                        .HasColumnName("no_telegram");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("note");
+
+                    b.Property<int>("Pending")
+                        .HasColumnType("integer")
+                        .HasColumnName("pending");
+
+                    b.Property<string>("Period")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)")
+                        .HasColumnName("period");
+
+                    b.Property<DateTimeOffset>("PlannedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("planned_at");
+
+                    b.Property<int>("Pupils")
+                        .HasColumnType("integer")
+                        .HasColumnName("pupils");
+
+                    b.Property<string>("RuleKey")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("rule_key");
+
+                    b.Property<int>("Sent")
+                        .HasColumnType("integer")
+                        .HasColumnName("sent");
+
+                    b.Property<DateTimeOffset?>("StartedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("started_at");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("status");
+
+                    b.HasKey("Id")
+                        .HasName("pk_auto_message_runs");
+
+                    b.HasIndex("PlannedAt")
+                        .HasDatabaseName("ix_auto_message_runs_planned_at");
+
+                    b.HasIndex("RuleKey", "Period")
+                        .IsUnique()
+                        .HasDatabaseName("ux_auto_message_runs_rule_period");
+
+                    b.ToTable("auto_message_runs", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_auto_message_runs_status", "status in ('scheduled','pending_approval','sending','done','cancelled')");
                         });
                 });
 
@@ -2307,6 +2724,10 @@ namespace SchoolLms.Infrastructure.Migrations
                         .HasColumnType("text")
                         .HasColumnName("created_by");
 
+                    b.Property<string>("CreatedByUserId")
+                        .HasColumnType("text")
+                        .HasColumnName("created_by_user_id");
+
                     b.Property<string>("Note")
                         .IsRequired()
                         .HasColumnType("text")
@@ -2330,6 +2751,14 @@ namespace SchoolLms.Infrastructure.Migrations
                         .IsRequired()
                         .HasColumnType("text")
                         .HasColumnName("student_id");
+
+                    b.Property<string>("UpdatedAt")
+                        .HasColumnType("text")
+                        .HasColumnName("updated_at");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasColumnType("text")
+                        .HasColumnName("updated_by");
 
                     b.HasKey("Id")
                         .HasName("pk_discipline_points");
@@ -7844,6 +8273,12 @@ namespace SchoolLms.Infrastructure.Migrations
                         .HasDefaultValue(true)
                         .HasColumnName("show_learning_progress_in_parent_dashboard");
 
+                    b.Property<bool>("TeachersMarkAttendance")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("teachers_mark_attendance");
+
                     b.Property<string>("TelegramBotName")
                         .IsRequired()
                         .HasColumnType("text")
@@ -8053,6 +8488,135 @@ namespace SchoolLms.Infrastructure.Migrations
                             t.HasCheckConstraint("ck_seasonal_marks_score", "score is null or (score >= 0 and score <= 100)");
 
                             t.HasCheckConstraint("ck_seasonal_marks_year", "year between 2000 and 2100");
+                        });
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.ShopProduct", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<bool>("IsActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("is_active");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("kind");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("name");
+
+                    b.Property<int>("Position")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("position");
+
+                    b.Property<decimal>("Price")
+                        .HasPrecision(14, 2)
+                        .HasColumnType("numeric(14,2)")
+                        .HasColumnName("price");
+
+                    b.Property<Guid>("TransactionTypeId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("transaction_type_id");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id")
+                        .HasName("pk_shop_products");
+
+                    b.HasIndex("Name")
+                        .IsUnique()
+                        .HasDatabaseName("ix_shop_products_name");
+
+                    b.HasIndex("TransactionTypeId", "IsActive", "Position")
+                        .HasDatabaseName("ix_shop_products_transaction_type_id_is_active_position");
+
+                    b.ToTable("shop_products", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_shop_products_kind", "kind in ('book','uniform','club','other')");
+
+                            t.HasCheckConstraint("ck_shop_products_name", "btrim(name) <> ''");
+
+                            t.HasCheckConstraint("ck_shop_products_price", "price >= 0");
+                        });
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.ShopSaleLine", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<Guid>("CashBoxTransactionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("cash_box_transaction_id");
+
+                    b.Property<decimal>("LineTotal")
+                        .HasPrecision(14, 2)
+                        .HasColumnType("numeric(14,2)")
+                        .HasColumnName("line_total");
+
+                    b.Property<Guid>("ProductId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("product_id");
+
+                    b.Property<string>("ProductName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("product_name");
+
+                    b.Property<int>("Quantity")
+                        .HasColumnType("integer")
+                        .HasColumnName("quantity");
+
+                    b.Property<decimal>("UnitPrice")
+                        .HasPrecision(14, 2)
+                        .HasColumnType("numeric(14,2)")
+                        .HasColumnName("unit_price");
+
+                    b.HasKey("Id")
+                        .HasName("pk_shop_sale_lines");
+
+                    b.HasIndex("ProductId")
+                        .HasDatabaseName("ix_shop_sale_lines_product_id");
+
+                    b.HasIndex("CashBoxTransactionId", "ProductId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_shop_sale_lines_cash_box_transaction_id_product_id");
+
+                    b.ToTable("shop_sale_lines", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_shop_sale_lines_line_total", "line_total = unit_price * quantity");
+
+                            t.HasCheckConstraint("ck_shop_sale_lines_product_name", "btrim(product_name) <> ''");
+
+                            t.HasCheckConstraint("ck_shop_sale_lines_quantity", "quantity > 0");
+
+                            t.HasCheckConstraint("ck_shop_sale_lines_unit_price", "unit_price >= 0");
                         });
                 });
 
@@ -8405,6 +8969,96 @@ namespace SchoolLms.Infrastructure.Migrations
                             t.HasCheckConstraint("ck_student_contracts_period", "ends_on is null or signed_on is null or ends_on >= signed_on");
 
                             t.HasCheckConstraint("ck_student_contracts_source", "source in ('generated','uploaded')");
+                        });
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.StudentEvent", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("ActorId")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("actor_id");
+
+                    b.Property<string>("ActorName")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .HasColumnName("actor_name");
+
+                    b.Property<string>("ClassId")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("class_id");
+
+                    b.Property<string>("ClassName")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("class_name");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("kind");
+
+                    b.Property<DateOnly>("OnDate")
+                        .HasColumnType("date")
+                        .HasColumnName("on_date");
+
+                    b.Property<Guid?>("ReasonId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("reason_id");
+
+                    b.Property<string>("ReasonText")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("reason_text");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("source");
+
+                    b.Property<string>("StudentId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("student_id");
+
+                    b.Property<string>("StudentName")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .HasColumnName("student_name");
+
+                    b.HasKey("Id")
+                        .HasName("pk_student_events");
+
+                    b.HasIndex("ReasonId")
+                        .HasDatabaseName("ix_student_events_reason_id");
+
+                    b.HasIndex("Kind", "OnDate")
+                        .HasDatabaseName("ix_student_events_kind_on_date");
+
+                    b.HasIndex("StudentId", "OnDate")
+                        .HasDatabaseName("ix_student_events_student_id_on_date");
+
+                    b.ToTable("student_events", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_student_events_kind", "kind in ('enrolled','left','returned')");
+
+                            t.HasCheckConstraint("ck_student_events_reason", "kind = 'left' or (reason_id is null and reason_text is null)");
+
+                            t.HasCheckConstraint("ck_student_events_source", "source in ('manual','bulk','class_archive','graduation','delete','import','lead','backfill')");
                         });
                 });
 
@@ -10142,14 +10796,50 @@ namespace SchoolLms.Infrastructure.Migrations
                         .HasConstraintName("fk_assignment_materials_assignments_assignment_id");
                 });
 
-            modelBuilder.Entity("SchoolLms.Domain.AutoMessageLogEntry", b =>
+            modelBuilder.Entity("SchoolLms.Domain.AttendanceCase", b =>
                 {
                     b.HasOne("SchoolLms.Domain.Student", null)
                         .WithMany()
                         .HasForeignKey("StudentId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
+                        .HasConstraintName("fk_attendance_cases_students_student_id");
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.AttendanceCaseAction", b =>
+                {
+                    b.HasOne("SchoolLms.Domain.AttendanceCase", null)
+                        .WithMany()
+                        .HasForeignKey("CaseId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_attendance_case_actions_attendance_cases_case_id");
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.AutoMessageLogEntry", b =>
+                {
+                    b.HasOne("SchoolLms.Domain.AutoMessageRun", null)
+                        .WithMany()
+                        .HasForeignKey("RunId")
+                        .OnDelete(DeleteBehavior.SetNull)
+                        .HasConstraintName("fk_auto_message_log_auto_message_runs_run_id");
+
+                    b.HasOne("SchoolLms.Domain.Student", null)
+                        .WithMany()
+                        .HasForeignKey("StudentId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
                         .HasConstraintName("fk_auto_message_log_students_student_id");
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.AutoMessageRun", b =>
+                {
+                    b.HasOne("SchoolLms.Domain.AutoMessageRule", null)
+                        .WithMany()
+                        .HasForeignKey("RuleKey")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_auto_message_runs_auto_message_rules_rule_key");
                 });
 
             modelBuilder.Entity("SchoolLms.Domain.BellScheduleOwner", b =>
@@ -11371,6 +12061,33 @@ namespace SchoolLms.Infrastructure.Migrations
                         .HasConstraintName("fk_seasonal_marks_subjects_subject_id");
                 });
 
+            modelBuilder.Entity("SchoolLms.Domain.ShopProduct", b =>
+                {
+                    b.HasOne("SchoolLms.Domain.TransactionType", null)
+                        .WithMany()
+                        .HasForeignKey("TransactionTypeId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_shop_products_transaction_types_transaction_type_id");
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.ShopSaleLine", b =>
+                {
+                    b.HasOne("SchoolLms.Domain.CashBoxTransaction", null)
+                        .WithMany()
+                        .HasForeignKey("CashBoxTransactionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_shop_sale_lines_cash_box_transactions_cash_box_transaction_");
+
+                    b.HasOne("SchoolLms.Domain.ShopProduct", null)
+                        .WithMany()
+                        .HasForeignKey("ProductId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_shop_sale_lines_shop_products_product_id");
+                });
+
             modelBuilder.Entity("SchoolLms.Domain.Student", b =>
                 {
                     b.HasOne("SchoolLms.Domain.StudentArchiveReason", null)
@@ -11424,6 +12141,15 @@ namespace SchoolLms.Infrastructure.Migrations
                         .HasForeignKey("TemplateId")
                         .OnDelete(DeleteBehavior.SetNull)
                         .HasConstraintName("fk_student_contracts_contract_templates_template_id");
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.StudentEvent", b =>
+                {
+                    b.HasOne("SchoolLms.Domain.StudentArchiveReason", null)
+                        .WithMany()
+                        .HasForeignKey("ReasonId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_student_events_student_archive_reasons_reason_id");
                 });
 
             modelBuilder.Entity("SchoolLms.Domain.StudentGuardian", b =>

@@ -10,6 +10,7 @@ import {
 } from 'recharts'
 import { Users, UserCheck, UserX, HelpCircle, Clock, FileSpreadsheet } from 'lucide-react'
 import { getLessonOwners, type LessonOwnerItem } from '@/api/services/lessonOwners'
+import { getOpenRedListCases } from '@/api/services/attendanceRedList'
 import {
   downloadAttendanceAnalytics,
   getAttendanceAnalytics,
@@ -94,6 +95,14 @@ export function AttendanceAnalyticsPage() {
     getLessonOwners()
       .then((list) => setClasses(list.filter((o) => o.kind === 'class' || o.isTrack)))
       .catch(() => setClasses([]))
+  }, [])
+
+  // Qizil ro'yxatdagi o'quvchilar (2026-10-15) — "Dars qoldirayotganlar" qatorida havola.
+  const [openCases, setOpenCases] = useState<ReadonlyMap<string, string>>(new Map())
+  useEffect(() => {
+    getOpenRedListCases()
+      .then((list) => setOpenCases(new Map(list.map((c) => [c.studentId, c.caseId]))))
+      .catch(() => setOpenCases(new Map()))
   }, [])
 
   useEffect(() => {
@@ -257,6 +266,7 @@ export function AttendanceAnalyticsPage() {
             rows={data.students ?? []}
             days={daysIn(data.from, data.to)}
             onPick={(studentId) => showEvents({ filter: 'all', studentId })}
+            openCases={openCases}
           />
 
           {/* Trend */}

@@ -163,6 +163,12 @@ public sealed class TransactionTypeService(IAppDbContext db, AuditService audit)
                 "Bu tur allaqachon kassa tranzaksiyasida ishlatilgan — o'chirib bo'lmaydi, "
                 + "buning o'rniga faolsizlantiring.");
 
+        // Mini-magazin products sold under this type hold it too (`shop_products.transaction_type_id`,
+        // RESTRICT) — the same readable 409 instead of a raw 23503.
+        if (await db.ShopProducts.AsNoTracking().AnyAsync(p => p.TransactionTypeId == id, ct))
+            throw BillingRuleException.Conflict("transaction_type_has_products",
+                "Bu turga mahsulotlar bog'langan — avval ularni boshqa turga o'tkazing yoki o'chiring.");
+
         audit.Record(AuditEntity, type.Id.ToString("D"), "delete",
             $"Tranzaksiya turi o'chirildi: {type.Name} ({KindLabel(type.Kind)})",
             before: Snapshot(type));

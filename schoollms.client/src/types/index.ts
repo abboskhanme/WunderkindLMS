@@ -600,7 +600,11 @@ export interface StudentLedger {
 
 /* ---------- O'zgarishlar tarixi (audit) ---------- */
 
-export type AuditAction = 'create' | 'update' | 'delete'
+/**
+ * Server actions: create / update / delete and many more (reverse, cancel, approve, archive…).
+ * Render with `auditBadge` (components/audit/auditActions.ts), never by indexing a 3-key map.
+ */
+export type AuditAction = 'create' | 'update' | 'delete' | (string & {})
 
 export interface AuditLog {
   id: string
@@ -620,6 +624,111 @@ export interface AuditLog {
   after?: string
   studentId?: string
   teacherId?: string
+}
+
+/** One row of the audit screen (`GET /admin/audit/log`, docs/modules/audit-log.md). */
+export interface AuditEntry {
+  id: string
+  entityType: string
+  entityId: string
+  action: string
+  /** create | update | delete — "Yaratdi" / "Tahrirladi" / "O'chirdi". */
+  kind: 'create' | 'update' | 'delete'
+  /** Storno, Tasdiqladi, Arxivladi… — null for plain create/update/delete. */
+  actionLabel: string | null
+  section: string
+  sectionLabel: string
+  /** ISO "yyyy-MM-ddTHH:mm:ss" (school time) */
+  timestamp: string
+  actorId: string | null
+  actorName: string | null
+  summary: string
+  before: string | null
+  after: string | null
+  studentId: string | null
+  /** Set when the pupil still exists — the row links to the card. */
+  studentName: string | null
+  teacherId: string | null
+  teacherName: string | null
+}
+
+export interface AuditPage {
+  items: AuditEntry[]
+  /** Rows matching the filters, all pages. */
+  total: number
+  /** Pass back as `cursor`; null — last page. */
+  nextCursor: string | null
+}
+
+export interface AuditActor {
+  /** users.id, or "system" for rows nobody wrote by hand. */
+  id: string
+  name: string
+  count: number
+}
+
+export interface AuditSectionOption {
+  key: string
+  label: string
+}
+
+/* ---------- O'quvchilar oqimi (docs/modules/student-flow.md) ---------- */
+
+export interface StudentFlowTotals {
+  new: number
+  /** First payment ever falls in the period. */
+  activated: number
+  left: number
+  returned: number
+  net: number
+  headcountStart: number
+  headcountEnd: number
+}
+
+export interface StudentFlowReason {
+  reasonId: string | null
+  name: string
+  count: number
+  percent: number
+}
+
+export interface StudentFlowClass {
+  classId: string | null
+  className: string
+  new: number
+  left: number
+  returned: number
+  net: number
+}
+
+export interface StudentFlowRow {
+  /** null for "Faollashganlar" (that list comes from payments). */
+  eventId: string | null
+  studentId: string
+  studentName: string
+  className: string | null
+  date: string
+  reasonId: string | null
+  reason: string | null
+  reasonText: string | null
+  source: string
+  actorName: string | null
+  /** false — the pupil was deleted for good. */
+  studentExists: boolean
+}
+
+export interface StudentFlowReport {
+  from: string
+  to: string
+  classId: string | null
+  className: string | null
+  totals: StudentFlowTotals
+  byReason: StudentFlowReason[]
+  byClass: StudentFlowClass[]
+  newList: StudentFlowRow[]
+  activatedList: StudentFlowRow[]
+  leftList: StudentFlowRow[]
+  returnedList: StudentFlowRow[]
 }
 
 /* ---------- O'qituvchilar ---------- */
@@ -1100,6 +1209,11 @@ export interface DisciplinePoint {
    * Faqat yangi ball qo'yilganda ma'noli; tarixda har doim 0.
    */
   notifiedParents?: number
+  /** The reason row of a manual entry (the edit form preselects it). */
+  reasonId?: string | null
+  /** Last edit (ISO) and who made it — null when never edited. */
+  updatedAt?: string | null
+  updatedBy?: string | null
 }
 
 /** Maktab bo'ylab "Harakatlar" lentasidagi bitta qator (o'quvchi va sinf bilan) */
@@ -1116,6 +1230,34 @@ export interface DisciplineFeedRow {
   createdBy: string
   /** "manual" — qo'lda kiritilgan, "attendance" — jurnal davomatidan */
   source: 'manual' | 'attendance'
+  /** The reason row of a manual entry (for editing). */
+  reasonId?: string | null
+  updatedAt?: string | null
+  updatedBy?: string | null
+}
+
+/** EduSchool reason type — the sign of the points (docs/modules/behaviour.md). */
+export type DisciplineType = 'positive' | 'negative'
+
+/** One class in the "Belgilanmagan sinflar" coverage check. */
+export interface DisciplineCoverageRow {
+  classId: string
+  className: string
+  grade: number
+  students: number
+  /** Manual incidents of its active pupils in the period; 0 = belgilanmagan. */
+  incidents: number
+  positive: number
+  negative: number
+  lastAt: string | null
+}
+
+export interface DisciplineCoverage {
+  from: string
+  to: string
+  totalClasses: number
+  notAssigned: number
+  classes: DisciplineCoverageRow[]
 }
 
 /** "Harakatlar" lentasi: bitta sahifa + butun filtrlangan to'plamning jamlamasi */

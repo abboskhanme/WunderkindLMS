@@ -61,7 +61,8 @@ public class TeacherPortalController(
             .OrderBy(s => s.Name, StringComparer.OrdinalIgnoreCase).ToList();
         var (roleName, rolePermissions) = await TeacherRoleAccess.OfAsync(db, user);
         return new TeacherProfileDto(t.Id, t.FullName, user?.Email ?? "", await HomeroomDirectory.LabelAsync(db, t.Id),
-            names, t.Permissions, t.PhotoUrl, roleName, rolePermissions);
+            names, t.Permissions, t.PhotoUrl, roleName, rolePermissions,
+            await JournalSettingsGuard.TeachersMarkAttendanceAsync(db));
     }
 
     [HttpGet("meta")]
@@ -585,7 +586,11 @@ public class TeacherPortalController(
         // Hali o'tilmagan (sanasi kelmagan) darsga baho/jurnal kiritib bo'lmaydi.
         if (string.CompareOrdinal(req.Date, AppClock.Now.ToString("yyyy-MM-dd")) > 0)
             return BadRequest(new { message = "Dars hali o'tilmagan — kelajakdagi sanaga baho qo'yib bo'lmaydi" });
-        var error = await JournalService.SetEntryAsync(db, req);
+        // Teachers no longer mark attendance unless the school turns it back on (client, 2026-10-15):
+        // the nurse's reason stays whatever this request carries — never a 400, the grade and
+        // homework of the same request still go in.
+        var keepReason = !await JournalSettingsGuard.TeachersMarkAttendanceAsync(db);
+        var error = await JournalService.SetEntryAsync(db, req, keepReason);
         if (error is not null) return BadRequest(new { message = error });
         return NoContent();
     }
@@ -596,7 +601,9 @@ public class TeacherPortalController(
         [FromQuery] string studentId, [FromQuery] string date, [FromQuery] int period)
     {
         if (!await Authorized(classId, subjectId, date)) return Forbid();
-        await JournalService.ClearEntryAsync(db, classId, subjectId, quarter, studentId, date, period);
+        // Same rule as the write: a row with the nurse's reason survives a teacher's clear.
+        var keepReason = !await JournalSettingsGuard.TeachersMarkAttendanceAsync(db);
+        await JournalService.ClearEntryAsync(db, classId, subjectId, quarter, studentId, date, period, keepReason);
         return NoContent();
     }
 
@@ -895,6 +902,8 @@ public class TeacherPortalController(
         if (string.IsNullOrWhiteSpace(req.Title)) return BadRequest(new { message = "Topshiriq nomi kerak" });
         if (req.ClassIds is null || req.ClassIds.Count == 0)
             return BadRequest(new { message = "Kamida bitta sinf tanlang" });
+        if (AssignmentService.CheckQuestions(req.Format, req.Questions).Problem is { } problem)
+            return BadRequest(new { message = problem });
         var uid = User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "";
         return await AssignmentService.CreateAsync(db, uid, req);
     }
@@ -908,8 +917,75 @@ public class TeacherPortalController(
         if (a is null) return NotFound();
         if (a.CreatedByUserId != uid) return Forbid(); // faqat o'zinikini tahrirlaydi
         if (string.IsNullOrWhiteSpace(req.Title)) return BadRequest(new { message = "Topshiriq nomi kerak" });
+        if (AssignmentService.CheckQuestions(req.Format, req.Questions).Problem is { } problem)
+            return BadRequest(new { message = problem });
         await AssignmentService.UpdateAsync(db, id, req);
         return NoContent();
+    }
+
+    // ---------- Bulk import of test questions (docs/modules/test-import.md) ----------
+
+    /// <summary>
+    /// Reads test questions from text, Word, Excel or JSON and returns them to the form —
+    /// NOTHING is written; the teacher checks them and saves the assignment as usual.
+    /// Multipart <c>file</c> (.xlsx/.docx/.txt/.json, ≤ 10 MB) or JSON <c>{ text }</c>.
+    /// </summary>
+    [HttpPost("assignments/questions/parse")]
+    [RequestSizeLimit(AssignmentQuestionImport.MaxRequestBytes)]
+    public async Task<ActionResult<AssignmentQuestionParseResultDto>> ParseAssignmentQuestions(CancellationToken ct)
+    {
+        if (!await HasPerm(TeacherPermissions.Assignments)) return Forbid();
+        return await AssignmentQuestionParsing.ParseAsync(Request, ct);
+    }
+
+    /// <summary>The Excel template (<c>test_savollari_shablon.xlsx</c>) — for the web portal and a browser.</summary>
+    [HttpGet("assignments/questions/template")]
+    public async Task<IActionResult> AssignmentQuestionsTemplate()
+    {
+        if (!await HasPerm(TeacherPermissions.Assignments)) return Forbid();
+        return File(AssignmentQuestionImport.Template(), QuestionImportService.XlsxMime,
+            AssignmentQuestionImport.TemplateFileName);
+    }
+
+    /// <summary>
+    /// The same template to the teacher's own Telegram chat (Mini App) — downloads inside
+    /// Telegram are unreliable. Same route and answers as <see cref="HomeroomDebtsToTelegram"/>:
+    /// 409 — Telegram not linked; 503 — bot not configured; 502 — Telegram refused the file.
+    /// </summary>
+    [HttpPost("assignments/questions/template/telegram")]
+    [EnableRateLimiting("telegram")]
+    public async Task<IActionResult> AssignmentQuestionsTemplateToTelegram(CancellationToken ct = default)
+    {
+        var t = await Me();
+        if (t is null || !t.Permissions.Contains(TeacherPermissions.Assignments)) return Forbid();
+
+        var chats = await PenaltyNotifier.RecipientsAsync(db, EmployeeKind.Teacher, t.Id, ct);
+        if (chats.Count == 0)
+            return Conflict(new
+            {
+                code = "telegram_not_linked",
+                message = "Telegram hisobingiz ulanmagan. Ilovani Telegram ichidan oching.",
+            });
+        if (!telegram.IsConfigured)
+            return StatusCode(StatusCodes.Status503ServiceUnavailable, new
+            {
+                code = "telegram_not_configured",
+                message = "Telegram bot sozlanmagan. Maktab ma'muriyatiga murojaat qiling.",
+            });
+
+        var bytes = AssignmentQuestionImport.Template();
+        const string caption = "Test savollari shabloni — to'ldirib, «Vazifalar» → «Ommaviy yuklash» orqali yuklang.";
+        var delivered = false;
+        foreach (var chat in chats)
+            delivered |= await telegram.SendDocumentAsync(chat, bytes, AssignmentQuestionImport.TemplateFileName, caption, ct);
+
+        return delivered
+            ? Ok(new { sent = true })
+            : StatusCode(StatusCodes.Status502BadGateway, new
+            {
+                code = "telegram_send_failed",
+                message = "Telegram faylni qabul qilmadi. Botga /start yozib, qayta urinib ko'ring.",
+            });
     }
 
     [HttpDelete("assignments/{id}")]

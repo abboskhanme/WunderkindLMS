@@ -130,6 +130,11 @@ export interface GeneralSettings {
   isStudentGradeRequired: boolean
   /** Ota-ona kabinetida o'zlashtirish (baholar) ko'rinadimi. */
   showLearningProgressInParentDashboard: boolean
+  /**
+   * Teachers mark pupils' attendance in their journal (2026-10-15, default false — the nurse does).
+   * The server leaves it unchanged when a save omits it.
+   */
+  teachersMarkAttendance: boolean
 }
 
 export async function getGeneralSettings(): Promise<GeneralSettings> {

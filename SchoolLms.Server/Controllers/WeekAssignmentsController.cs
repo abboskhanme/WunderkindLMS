@@ -23,7 +23,7 @@ namespace SchoolLms.Server.Controllers;
 [Authorize]
 [AdminPerm("schedule")]
 [Route("api/admin/classes/{classId}/week-assignments")]
-public class WeekAssignmentsController(AppDbContext db) : ControllerBase
+public class WeekAssignmentsController(AppDbContext db, AuditService audit) : ControllerBase
 {
     /// <summary>
     /// Eganing shu chorakdagi hafta biriktirishlari.
@@ -81,8 +81,9 @@ public class WeekAssignmentsController(AppDbContext db) : ControllerBase
             db, owner, req.Quarter, [.. wanted.Select(a => (a.Week, a.TemplateId))], ct);
         if (clash.Count > 0) return Conflict(new { message = ScheduleConflicts.Message(clash) });
 
-        var existing = db.WeekAssignments.Where(
-            a => a.ClassId == classId && a.Quarter == req.Quarter && a.OwnerKind == owner.Kind);
+        var existing = await db.WeekAssignments.Where(
+            a => a.ClassId == classId && a.Quarter == req.Quarter && a.OwnerKind == owner.Kind).ToListAsync(ct);
+        await RecordAsync(owner, req.Quarter, existing, wanted, ct);
         db.WeekAssignments.RemoveRange(existing);
         db.WeekAssignments.AddRange(wanted.Select(a => new WeekAssignment
         {
@@ -94,5 +95,24 @@ public class WeekAssignmentsController(AppDbContext db) : ControllerBase
         }));
         await db.SaveChangesAsync(ct);
         return NoContent();
+    }
+
+    /// <summary>One audit row per save: the weeks whose template changed, by template name (audit-log.md).</summary>
+    private async Task RecordAsync(
+        LessonOwner owner, int quarter, List<WeekAssignment> before, IReadOnlyList<WeekAssignmentDto> after, CancellationToken ct)
+    {
+        var was = before.GroupBy(a => a.Week).ToDictionary(g => g.Key, g => (string?)g.First().TemplateId);
+        var now = after.GroupBy(a => a.Week).ToDictionary(g => g.Key, g => g.First().TemplateId);
+        var weeks = was.Keys.Union(now.Keys).Where(w => was.GetValueOrDefault(w) != now.GetValueOrDefault(w)).Order().ToList();
+        if (weeks.Count == 0) return;
+
+        var ids = was.Values.Concat(now.Values).Where(id => id != null).Distinct().ToList();
+        var names = await db.ScheduleTemplates.AsNoTracking().Where(t => ids.Contains(t.Id)).ToDictionaryAsync(t => t.Id, t => t.Name, ct);
+        string Name(string? id) => id is null ? "—" : names.GetValueOrDefault(id, "?");
+
+        audit.Record(AuditService.EntityWeekAssignment, $"{owner.Id}:{quarter}", "update",
+            $"Haftalarga jadval biriktirildi: {owner.Name}, {quarter}-chorak — {weeks.Count} ta hafta",
+            before: weeks.ToDictionary(w => $"{w}-hafta", w => Name(was.GetValueOrDefault(w))),
+            after: weeks.ToDictionary(w => $"{w}-hafta", w => Name(now.GetValueOrDefault(w))));
     }
 }

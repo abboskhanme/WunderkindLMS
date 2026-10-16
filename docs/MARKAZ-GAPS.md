@@ -32,20 +32,20 @@ Size: S ≈ ½–1 day, M ≈ 2–4 days, L ≈ a week or more.
 
 | # | Item | What is missing today | Size | Decision needed |
 |---|---|---|---|---|
-| 1 | Debt reminder on a schedule | Only a manual broadcast with `OnlyDebtors`; no job sends it | M | Day of month, minimum debt, message text |
-| 2 | "New monthly invoice" message | `BillingAccrualService` issues invoices silently | S | Send at all? Text |
-| 3 | Absence message without a button | `DailyAbsenceNotifier` runs only when staff press the button; single-lesson absence is never sent | S | Fixed time (e.g. 10:00) or keep manual; lesson-level or full-day only |
+| 1 | Debt reminder on a schedule — **built** (`debt` rule, `docs/modules/auto-messages.md`) | Only a manual broadcast with `OnlyDebtors`; no job sends it | M | Day of month, minimum debt, message text |
+| 2 | "New monthly invoice" message — **built** (`invoice` rule) | `BillingAccrualService` issues invoices silently | S | Send at all? Text |
+| 3 | Absence message without a button — **built** (`absence` rule, full day up to a lesson cut-off such as 11:30) | `DailyAbsenceNotifier` runs only when staff press the button; single-lesson absence is never sent | S | Fixed time (e.g. 10:00) or keep manual; lesson-level or full-day only |
 | 4 | Rating by month / quarter / year, TOP and BOTTOM lists | `RatingService` uses journal average + attendance only; tests and seasonal marks are not in it | M | Formula weights (journal / tests / attendance) |
-| 5 | Attendance "red list" and follow-up queue | `AbsenteesCard` counts unexcused days, not consecutive ones; no "Bog'lanish kerak" queue (debtors have one: `DebtorWorkflowService`) | M | Threshold (e.g. 3 consecutive unexcused days); who follows up |
+| 5 | Attendance "red list" and follow-up queue | **Built 2026-10-15** — `docs/modules/attendance-red-list.md` (3 consecutive / 5 in 14 unexcused days, homeroom teacher in the Mini App, management on Davomat → Qizil ro'yxat). Was: `AbsenteesCard` counts unexcused days, not consecutive ones; no "Bog'lanish kerak" queue | M | — (defaults editable on the page) |
 | 6 | Attendance taken late / not taken, per teacher | `MarkedAt` and "Unchecked" lessons exist; no deadline rule, no report, fines are manual | S | Deadline (end of lesson? end of day); fine automatically or only report |
 | 7 | "Qabul qildim" button for parents | The bot handles no button presses (`callback_query`) | M | Which messages need acknowledgement |
-| 8 | One log of every automatic Telegram message | Receipts, discipline, pickup and penalty messages leave no record; broadcasts, absence and news each have their own | M | — |
-| 9 | Birthday greeting | Admin bell shows birthdays; nothing is sent | S | To pupil, parent or both; text |
+| 8 | One log of every automatic Telegram message — **partly built**: the rules, every receipt send (automatic and resend) and the nurse's absence button share `auto_message_log` (statuses, statistics, Excel) | Receipts, discipline, pickup and penalty messages leave no record; broadcasts, absence and news each have their own. Still open: discipline, pickup and penalty messages; broadcasts and news keep their own reports | M | — |
+| 9 | Birthday greeting — **built** (`birthday` rule, to parents) | Admin bell shows birthdays; nothing is sent | S | To pupil, parent or both; text |
 | 10 | Certificate expiry reminder | Filter exists, no message | S | Days before expiry; to whom |
 | 11 | Leads: manager, trial lesson, stage history | `Lead` has no manager field, no trial-lesson date; stage moves are not stored | M | — (board design is protected: data and screens only) |
 | 12 | Rooms in the timetable | `ScheduleLesson` has no room; no room clash, no free-slot suggestion | L | Are rooms shared between classes at all? |
 | 13 | HR tasks as a kanban board | `HrTasksPage.tsx` is a table only | S | — |
-| 14 | Audit for journal, attendance and timetable edits; one audit screen | These edits are not logged; history is per screen | M | — |
+| 14 | ~~Audit for journal, attendance and timetable edits; one audit screen~~ **Built 2026-10-15** (`docs/modules/audit-log.md`): Boshqaruv → O'zgarishlar tarixi, timetable / pupil / role / staff edits logged | Journal and attendance cells still not logged (cell-by-cell saves from four paths) | M | — |
 | 15 | External receipt / bank number on a payment | Only free-text `Note` | S | — |
 | 16 | Fines deducted from salary | `PayrollAdjustments` are recorded but `SalaryLedger` / `TeacherSalaryCalc` never read them (waits for the payroll module, HR-09) | L | Deduct now, or wait for payroll |
 | 17 | Book sales and warehouse | Specification only (`docs/modules/warehouse.md`) | L | Is it wanted this year? |

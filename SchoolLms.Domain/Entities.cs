@@ -653,6 +653,26 @@ public class DisciplineReason
 }
 
 /// <summary>
+/// EduSchool's reason type (<c>positive | negative</c>, docs/modules/behaviour.md). There is no
+/// column: the type IS the sign of <see cref="DisciplineReason.Points"/>, so every existing reason
+/// already has one and the two can never disagree. Screens ask for the type and a positive number;
+/// <see cref="Signed"/> turns that into the stored value.
+/// </summary>
+public static class DisciplineType
+{
+    public const string Positive = "positive";
+    public const string Negative = "negative";
+
+    public static bool IsValid(string? value) => value is Positive or Negative;
+
+    /// <summary>The type of stored points (0 counts as positive — such a reason cannot be saved typed).</summary>
+    public static string Of(int points) => points < 0 ? Negative : Positive;
+
+    /// <summary>Stored points for a type and a magnitude — the sign comes from the type.</summary>
+    public static int Signed(string type, int points) => type == Negative ? -Math.Abs(points) : Math.Abs(points);
+}
+
+/// <summary>
 /// O'quvchiga qo'yilgan bitta intizomiy ball yozuvi. Har o'quvchi 100 balldan boshlaydi;
 /// qoldi = 100 + barcha yozuvlar ballari yig'indisi.
 /// </summary>
@@ -670,6 +690,21 @@ public class DisciplinePoint
     public string CreatedAt { get; set; } = string.Empty;
     /// <summary>Kim qo'ygani (admin F.I.SH yoki login).</summary>
     public string CreatedBy { get; set; } = string.Empty;
+
+    // ----- Behaviour 1:1 with EduSchool (docs/modules/behaviour.md, 2026-10-15) -----
+
+    /// <summary>
+    /// The author's <c>users.id</c> — set on every new entry (admin or teacher). It is what limits a
+    /// teacher to deleting their OWN entries; <see cref="CreatedBy"/> stays the display name. Null on
+    /// rows written before the column existed (nobody owns those as a teacher).
+    /// </summary>
+    public string? CreatedByUserId { get; set; }
+
+    /// <summary>Last edit time (ISO, school time) — null when never edited.</summary>
+    public string? UpdatedAt { get; set; }
+
+    /// <summary>Who edited last (full name) — null when never edited.</summary>
+    public string? UpdatedBy { get; set; }
 }
 
 /// <summary>
@@ -957,6 +992,19 @@ public class SchoolMeta
     /// </para>
     /// </summary>
     public bool ShowLearningProgressInParentDashboard { get; set; } = true;
+
+    /// <summary>
+    /// Whether teachers mark pupils' attendance in their journal (client, 2026-10-15: the nurse takes
+    /// the whole roll-call now, and a teacher's save overwrote her marks).
+    ///
+    /// <para>
+    /// Default <b>false</b> — teachers do NOT mark attendance. A teacher's journal write then keeps the
+    /// stored attendance reason whatever the request says, and a teacher's "clear" keeps a row that
+    /// carries one (<c>JournalService.SetEntryAsync</c> / <c>ClearEntryAsync</c>, called from
+    /// <c>TeacherPortalController</c>). The admin journal and the nurse's screen are not affected.
+    /// </para>
+    /// </summary>
+    public bool TeachersMarkAttendance { get; set; }
 
     // =======================================================================
     //  O'quv guruhlari — students-parity.md §2.1.4, §4.3 (cut-over).

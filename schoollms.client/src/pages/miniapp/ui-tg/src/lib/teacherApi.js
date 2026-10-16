@@ -58,6 +58,15 @@ export const teacherApi = {
   homeroomDebtsToTelegram: ({ group, all } = {}) =>
     api.post(`${BASE}/homeroom/debts/telegram${qs({ group, all: all || undefined })}`),
 
+  /**
+   * Qizil ro'yxat (2026-10-15): rahbarlikdagi o'quvchilarning ochiq holatlari — ketma-ket / sababsiz
+   * kelmaganlar, ota-ona telefonlari va amallar tarixi. Rahbar bo'lmasa — bo'sh.
+   */
+  homeroomRedList: () => api.get(`${BASE}/homeroom/red-list`),
+  /** Holatga amal: `{ status, comment, callbackOn }` — yangilangan holatni qaytaradi. */
+  addRedListAction: (caseId, body) =>
+    api.post(`${BASE}/homeroom/red-list/${encodeURIComponent(caseId)}/actions`, body),
+
   /** Telegramdan tashqarida (brauzerda) — o'sha Excel to'g'ridan-to'g'ri yuklab olinadi. */
   downloadHomeroomDebts: async ({ group, all } = {}) => {
     const token = tokenStore.get()
@@ -101,6 +110,19 @@ export const teacherApi = {
    * o'qituvchi kiritgan mavzu o'chib ketadi.
    */
   setJournalNote: (body) => api.put(`${BASE}/journal/notes`, body),
+
+  /* ---------- xulq-atvor (2026-10-15, docs/modules/behaviour.md) ---------- */
+
+  /** Faol sabablar: `{ id, name, points, type: 'positive' | 'negative', description, notifyParent }`. */
+  disciplineReasons: () => api.get(`${BASE}/discipline/reasons`),
+  /** Dars ro'yxatidagi har o'quvchi: `{ studentId, remaining, today }` (100 dan boshlanadigan ball). */
+  disciplineScores: (ownerId) => api.get(`${BASE}/discipline/scores${qs({ ownerId })}`),
+  /** Bitta o'quvchi: ball, bugungi ballar va oxirgi yozuvlar (`canDelete` — o'zim bugun qo'yganim). */
+  disciplinePoints: (studentId) => api.get(`${BASE}/discipline/points${qs({ studentId })}`),
+  /** Darhol saqlanadi — darsning "Saqlash" tugmasiga bog'liq emas. */
+  addDisciplinePoint: (body) => api.post(`${BASE}/discipline/points`, body),
+  /** Faqat o'zim bugun qo'ygan yozuv. */
+  deleteDisciplinePoint: (id) => api.del(`${BASE}/discipline/points/${encodeURIComponent(id)}`),
 
   /* ---------- yangiliklar ---------- */
 
@@ -182,5 +204,36 @@ export const teacherApi = {
     const form = new FormData()
     form.append('file', file)
     return api.form(`${BASE}/uploads`, form)
+  },
+
+  /* ---------- bulk import of test questions (2026-10-15, docs/modules/test-import.md) ---------- */
+
+  // Nothing is saved by these: the server reads the questions and the form receives them.
+  /** Pasted text (an AI answer or the template format) — `{ unit, totalRows, validCount, errorCount, questions, errors }`. */
+  parseQuestionsText: (text) => api.post(`${BASE}/assignments/questions/parse`, { text }),
+  /** A file: .xlsx (the template), .docx, .txt or .json, up to 10 MB — the same answer. */
+  parseQuestionsFile: (file) => {
+    const form = new FormData()
+    form.append('file', file)
+    return api.form(`${BASE}/assignments/questions/parse`, form)
+  },
+  /** The Excel template to the teacher's own Telegram chat (downloads inside Telegram are unreliable). */
+  questionTemplateToTelegram: () => api.post(`${BASE}/assignments/questions/template/telegram`),
+  /** Outside Telegram (a browser) — the template is downloaded directly. */
+  downloadQuestionTemplate: async () => {
+    const token = tokenStore.get()
+    const res = await fetch(`/api${BASE}/assignments/questions/template`, {
+      headers: token ? { Authorization: 'Bearer ' + token } : {},
+    })
+    if (!res.ok) throw new ApiError(res.status, { message: "Shablonni olib bo'lmadi" })
+    const blob = await res.blob()
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'test_savollari_shablon.xlsx'
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
   },
 }

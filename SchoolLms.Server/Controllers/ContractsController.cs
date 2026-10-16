@@ -18,7 +18,7 @@ namespace SchoolLms.Server.Controllers;
 [Authorize]
 [AdminPerm("contracts")]
 [Route("api/admin/contracts")]
-public class ContractsController(AppDbContext db, ContractService contracts, TelegramService telegram)
+public class ContractsController(AppDbContext db, ContractService contracts, TelegramService telegram, AuditService audit)
     : ControllerBase
 {
     // ---------- Andozalar ----------
@@ -44,6 +44,8 @@ public class ContractsController(AppDbContext db, ContractService contracts, Tel
             FileName = req.FileName ?? "",
         };
         db.ContractTemplates.Add(tpl);
+        audit.Record(AuditService.EntityContract, tpl.Id, "create",
+            $"Shartnoma andozasi yuklandi: «{tpl.Name}» ({(tpl.Target == "staff" ? "xodimlar" : "ota-onalar")} uchun)");
         await db.SaveChangesAsync();
         return ToDto(tpl);
     }
@@ -54,6 +56,7 @@ public class ContractsController(AppDbContext db, ContractService contracts, Tel
         var tpl = await db.ContractTemplates.FindAsync(id);
         if (tpl is null) return NotFound();
         db.ContractTemplates.Remove(tpl);
+        audit.Record(AuditService.EntityContract, tpl.Id, "delete", $"Shartnoma andozasi o'chirildi: «{tpl.Name}»");
         await db.SaveChangesAsync();
         return NoContent();
     }
@@ -161,6 +164,14 @@ public class ContractsController(AppDbContext db, ContractService contracts, Tel
                 results.Add(new(key, ok, number, ok ? "Yuborildi" : "Yuborilmadi"));
             }
         }
+
+        // One audit row per sending (audit-log.md): template, audience, numbers, delivered count.
+        var numbered = results.Where(r => r.Number is not null).Select(r => r.Number!.Value).ToList();
+        if (numbered.Count > 0)
+            audit.Record(AuditService.EntityContract, tpl.Id, "send",
+                $"Shartnoma yuborildi: «{tpl.Name}» — {numbered.Count} ta "
+                + $"{(req.Target == "staff" ? "xodim" : "ota-ona")}, {results.Count(r => r.Ok)} tasiga yetkazildi"
+                + $" (№{numbered.Min()}–{numbered.Max()})");
 
         await db.SaveChangesAsync();
         return results;

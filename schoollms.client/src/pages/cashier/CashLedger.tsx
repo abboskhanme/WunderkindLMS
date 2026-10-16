@@ -330,6 +330,16 @@ function ledgerColumns(
         <span className="text-slate-600">
           {row.transactionTypeName ?? '—'}
           {row.recipientName && <span className="text-slate-400"> · {row.recipientName}</span>}
+          {row.studentName && <span className="text-slate-400"> · {row.studentName}</span>}
+          {/* Mini-magazin sale (2026-10-15): the products, in short; the receipt has the prices. */}
+          {row.lines && row.lines.length > 0 && (
+            <span
+              className="block max-w-[16rem] truncate text-xs text-slate-400"
+              title={row.lines.map((l) => `${l.productName} × ${l.quantity}`).join(', ')}
+            >
+              {row.lines.map((l) => `${l.productName} × ${l.quantity}`).join(', ')}
+            </span>
+          )}
         </span>
       ),
     },

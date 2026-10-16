@@ -6,41 +6,44 @@ using SchoolLms.Application.Dtos;
 
 namespace SchoolLms.Server.Controllers;
 
-/// <summary>O'zgarishlar tarixi (audit). Moliyaga oid yozuvlar bo'yicha tarixni qaytaradi.</summary>
+/// <summary>
+/// O'zgarishlar tarixi — one record's or one person's history, for the screens that show it in place
+/// (payment history, salary detail, seasonal mark, Moliya → Tarix). The whole log with paging,
+/// people and Excel is the audit screen: <see cref="AuditLogController"/>.
+/// </summary>
 [ApiController]
 // Faqat o'qish (GET). Xodim ham ko'radi: ruxsat bor bo'limdagi tarix chiqmay qolmasin (2026-09-26).
+// Money rule (2026-10-15): without the finance right finance and salary rows are not returned and
+// amounts are stripped from before/after — the same rule as the pupil card (AuditAccess).
 [Authorize(Roles = "admin,superadmin,staff")]
 [Route("api/admin/audit")]
 public class AuditController(AppDbContext db) : ControllerBase
 {
+    /// <summary>Rows returned when the caller gives no <c>limit</c> — the call used to load the whole table.</summary>
+    public const int DefaultLimit = 100;
+    public const int MaxLimit = 500;
+
     /// <summary>
     /// O'zgarishlar tarixi. Filtrlar: entityType+entityId (bitta yozuv), studentId, teacherId,
-    /// entityType, action, davr (from/to). Hammasi ixtiyoriy — vaqt bo'yicha kamayish tartibida.
+    /// action, davr (from/to), actorId, section, kind, q. Hammasi ixtiyoriy — vaqt bo'yicha kamayish
+    /// tartibida, ko'pi bilan <c>limit</c> (sukut bo'yicha 100, eng ko'pi 500) qator.
     /// </summary>
     [HttpGet]
     public async Task<ActionResult<IEnumerable<AuditLogDto>>> Get(
         [FromQuery] string? entityType, [FromQuery] string? entityId,
         [FromQuery] string? studentId, [FromQuery] string? teacherId,
         [FromQuery] string? action, [FromQuery] string? from, [FromQuery] string? to,
-        [FromQuery] int? limit)
+        [FromQuery] int? limit,
+        [FromQuery] string? actorId = null, [FromQuery] string? section = null,
+        [FromQuery] string? kind = null, [FromQuery] string? q = null)
     {
-        var q = db.AuditLogs.AsQueryable();
+        var money = User.CanSeeMoney();
+        var filter = new AuditFilter(entityType, entityId, studentId, teacherId, action, from, to, actorId, section, kind, q);
+        var take = Math.Clamp(limit is > 0 ? limit.Value : DefaultLimit, 1, MaxLimit);
 
-        if (!string.IsNullOrEmpty(entityType)) q = q.Where(a => a.EntityType == entityType);
-        if (!string.IsNullOrEmpty(entityId)) q = q.Where(a => a.EntityId == entityId);
-        if (!string.IsNullOrEmpty(studentId)) q = q.Where(a => a.StudentId == studentId);
-        if (!string.IsNullOrEmpty(teacherId)) q = q.Where(a => a.TeacherId == teacherId);
-        if (!string.IsNullOrEmpty(action)) q = q.Where(a => a.Action == action);
-        if (!string.IsNullOrEmpty(from)) q = q.Where(a => string.Compare(a.Timestamp, from) >= 0);
-        if (!string.IsNullOrEmpty(to)) q = q.Where(a => string.Compare(a.Timestamp, to) <= 0);
-
-        q = q.OrderByDescending(a => a.Timestamp).ThenByDescending(a => a.Id);
-        if (limit is > 0) q = q.Take(limit.Value);
-
-        var list = await q.ToListAsync();
-        return list.Select(a => new AuditLogDto(
-            a.Id, a.EntityType, a.EntityId, a.Action, a.Timestamp,
-            a.ActorName, a.Summary, a.Before, a.After,
-            a.StudentId, a.TeacherId)).ToList();
+        var rows = await AuditAccess.Newest(AuditAccess.Apply(db.AuditLogs.AsNoTracking(), filter, money))
+            .Take(take)
+            .ToListAsync();
+        return rows.Select(a => AuditAccess.ToLogDto(a, money)).ToList();
     }
 }

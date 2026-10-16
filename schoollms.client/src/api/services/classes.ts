@@ -91,9 +91,15 @@ export async function getArchivedClasses(): Promise<SchoolClass[]> {
   return data
 }
 
-/** Sinfni arxivlash — o'quvchilari ham arxivlanadi. */
-export async function archiveClass(id: string): Promise<{ archivedStudents: number }> {
-  const { data } = await api.post<{ archivedStudents: number }>(`/admin/classes/${id}/archive`)
+/**
+ * Sinfni arxivlash — o'quvchilari ham arxivlanadi. `body` ixtiyoriy: o'quvchilarning ketish sababi
+ * (katalog) va izohi — "O'quvchilar oqimi" hisobotiga tushadi (student-flow.md).
+ */
+export async function archiveClass(
+  id: string,
+  body?: { archiveReasonId?: string | null; reason?: string | null },
+): Promise<{ archivedStudents: number }> {
+  const { data } = await api.post<{ archivedStudents: number }>(`/admin/classes/${id}/archive`, body ?? {})
   return data
 }
 

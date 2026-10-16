@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { ChevronDown, History } from 'lucide-react'
-import type { AuditAction, AuditLog } from '@/types'
+import type { AuditLog } from '@/types'
+import { auditBadge } from '@/components/audit/auditActions'
 import { getStudentActivity } from '@/api/services/studentProfile'
 import { Loader } from '@/components/ui/Loader'
 import { cn, formatDate } from '@/lib/utils'
@@ -18,12 +19,6 @@ import { ProfileEmpty, ProfileError, ProfileSection } from './ProfileUi'
  * olib tashlangan bo'ladi — bu yerda filtr yo'q, chunki brauzerdagi filtr
  * himoya emas.
  */
-
-const actionConfig: Record<AuditAction, { label: string; cls: string }> = {
-  create: { label: "Qo'shildi", cls: 'bg-emerald-50 text-emerald-700' },
-  update: { label: 'Tahrirlandi', cls: 'bg-amber-50 text-amber-700' },
-  delete: { label: "O'chirildi", cls: 'bg-red-50 text-red-700' },
-}
 
 /** "yyyy-MM-ddTHH:mm:ss" -> "21.05.2026 09:57" */
 function formatDateTime(ts: string): string {
@@ -126,7 +121,7 @@ export function ActivityTab({ studentId }: { studentId: string }) {
       ) : (
         <ul className="space-y-2">
           {rows.map((log) => {
-            const cfg = actionConfig[log.action]
+            const cfg = auditBadge(log.action)
             const hasDetail = !!(log.before || log.after)
             const open = openId === log.id
             return (

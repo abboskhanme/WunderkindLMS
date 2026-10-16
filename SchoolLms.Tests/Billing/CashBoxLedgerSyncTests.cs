@@ -175,7 +175,12 @@ public class CashBoxLedgerSyncTests(ApiFixture fixture) : IAsyncLifetime
     [Theory]
     [InlineData("O'quvchi oylik to'lovi", Accounts.RevenueTuition)]
     [InlineData("Transport 5-10sinflar", Accounts.RevenueBus)]
-    [InlineData("Do'ppi uchun", Accounts.RevenueOther)]
+    // Shop goods (2026-10-15, docs/modules/shop.md) — a word starting with kitob/forma/do'ppi/kiyim.
+    [InlineData("Do'ppi uchun", Accounts.RevenueSales)]
+    [InlineData("Kitob uchun to'lov", Accounts.RevenueSales)]
+    [InlineData("Maktab formasi", Accounts.RevenueSales)]
+    [InlineData("Informatika to'garagi", Accounts.RevenueOther)]
+    [InlineData("Mock uchun to'lov", Accounts.RevenueOther)]
     public void Kirim_turi_nomidan_hisob_taxmin_qilinadi(string name, string account) =>
         Assert.Equal(account, Accounts.GuessForTransactionType(TransactionTypeKind.In, name));
 

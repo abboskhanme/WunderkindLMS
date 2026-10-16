@@ -114,6 +114,8 @@ public class StudentImportController(AppDbContext db, AuditService audit) : Cont
 
         var today = AppClock.Today.ToString("yyyy-MM-dd");
         var touched = new List<Student>(plan.Items.Count);
+        // New pupils arrive in the flow report on their enrolment day (student-flow.md).
+        var flow = new StudentFlowRecorder(db, StudentEventActor.From(User));
 
         // G-19: mavjud o'quvchilarning bugungi FAOL a'zoliklari — bitta
         // partiyada (qator boshiga so'rov yo'q), toki "guruhlarga qo'shish"
@@ -159,6 +161,7 @@ public class StudentImportController(AppDbContext db, AuditService audit) : Cont
 
                 var account = AccountFactory.CreateAccountFor(db, "student", student.FullName);
                 student.UserId = account.Id;
+                await flow.EnrolledAsync(student, StudentEventSource.Import, ct);
             }
             else
             {

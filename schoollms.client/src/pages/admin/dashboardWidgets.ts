@@ -29,7 +29,7 @@ export type WidgetGroup =
   | 'contingent'
   | 'ours'
 
-export type WidgetAccess = 'finance' | 'leads'
+export type WidgetAccess = 'finance' | 'leads' | 'students'
 
 export interface WidgetDef {
   id: string
@@ -96,6 +96,9 @@ export const WIDGETS: WidgetDef[] = [
   { id: 'contingent', label: 'Kontingent tarkibi', group: 'contingent', defaultOn: false },
   { id: 'gender', label: "Jins bo'yicha", group: 'contingent', defaultOn: false },
   { id: 'classBreakdown', label: 'Sinflar kesimi', group: 'contingent', defaultOn: false },
+  // Kelgan / faollashgan / ketgan o'quvchilar va ketish sabablari, davr bo'yicha (client, 2026-10-15:
+  // "umumiy dashboardda aks etishi lozim" — so on by default). Needs the pupils' section (read gated).
+  { id: 'studentFlow', label: "O'quvchilar oqimi", group: 'contingent', defaultOn: true, requires: 'students' },
 
   // Bizning bosh sahifada ilgaridan bor bloklar — standart holatda o'z joyida.
   // "Davomat analitikasi" va "Dars qoldirayotgan o'quvchilar" Davomat → Davomat analitikasiga

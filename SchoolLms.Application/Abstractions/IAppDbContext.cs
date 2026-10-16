@@ -246,6 +246,13 @@ public interface IAppDbContext
     DbSet<TransactionType> TransactionTypes { get; }
 
     /// <summary>
+    /// Mini-magazin (<c>docs/modules/shop.md</c>, 2026-10-15): the product catalogue (plain CRUD) and
+    /// the lines a cash-box Kirim sold — insert-only (<c>Migrations/Sql/shop_guards.sql</c>).
+    /// </summary>
+    DbSet<ShopProduct> ShopProducts { get; }
+    DbSet<ShopSaleLine> ShopSaleLines { get; }
+
+    /// <summary>
     /// Savdo va marketing (<c>docs/modules/sales-marketing.md</c> §4) — ommaviy
     /// ariza formasi va yangiliklar lentasi. Moliyaviy EMAS: to'liq CRUD,
     /// birorta <c>REVOKE</c> yo'q (<c>sales_marketing_guards.sql</c>).
@@ -269,10 +276,18 @@ public interface IAppDbContext
     /// <summary>Automatic Telegram messages to parents: rules and their log (2026-10-13).</summary>
     DbSet<AutoMessageRule> AutoMessageRules { get; }
     DbSet<AutoMessageLogEntry> AutoMessageLog { get; }
+    /// <summary>One rule's run per period: status, approval, counts (2026-10-15).</summary>
+    DbSet<AutoMessageRun> AutoMessageRuns { get; }
     /// <summary>Teacher certificates and named allowances paid with the salary (2026-10-15).</summary>
     DbSet<TeacherAllowance> TeacherAllowances { get; }
     /// <summary>Thank-you / warning messages sent after a test, once per exam, pupil and kind (2026-10-15).</summary>
     DbSet<ExamAwardNotice> ExamAwardNotices { get; }
+    /// <summary>Attendance red list: follow-up cases, their actions and the criteria row (2026-10-15).</summary>
+    DbSet<AttendanceCase> AttendanceCases { get; }
+    DbSet<AttendanceCaseAction> AttendanceCaseActions { get; }
+    DbSet<AttendanceRedListSettings> AttendanceRedListSettings { get; }
+    /// <summary>Pupils' arrivals, departures and returns — the student flow report (2026-10-15).</summary>
+    DbSet<StudentEvent> StudentEvents { get; }
 
     /// <summary>
     /// Admission, block test and seasonal assessment

@@ -1,5 +1,6 @@
 import { Clock } from 'lucide-react'
-import type { AuditAction, AuditLog } from '@/types'
+import type { AuditLog } from '@/types'
+import { auditKind, type AuditKind } from '@/components/audit/auditActions'
 import { getAuditLogs } from '@/api/services/audit'
 import { seasonalError, type SeasonalMarkRowDto } from '@/api/services/seasonalMarks'
 import { Loader } from '@/components/ui/Loader'
@@ -31,7 +32,7 @@ export function MarkHistoryModal({ mark, onClose }: MarkHistoryModalProps) {
   )
 }
 
-const actionConfig: Record<AuditAction, { label: string; cls: string }> = {
+const actionConfig: Record<AuditKind, { label: string; cls: string }> = {
   create: { label: "Qo'yildi", cls: 'bg-emerald-50 text-emerald-700' },
   update: { label: "O'zgartirildi", cls: 'bg-amber-50 text-amber-700' },
   delete: { label: "O'chirildi", cls: 'bg-red-50 text-red-700' },
@@ -134,7 +135,7 @@ function HistoryBody({ mark }: { mark: SeasonalMarkRowDto }) {
       ) : (
         <ul className="space-y-2">
           {history.data.map((log) => {
-            const cfg = actionConfig[log.action]
+            const cfg = actionConfig[auditKind(log.action)]
             return (
               <li key={log.id} className="rounded-lg border border-slate-100 px-3 py-2">
                 <div className="flex flex-wrap items-center gap-2">

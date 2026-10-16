@@ -20,7 +20,6 @@ import {
   updateClass,
   deleteClass,
   getArchivedClasses,
-  archiveClass,
   unarchiveClass,
   downloadClasses,
   setHomeroomTeachers,
@@ -37,6 +36,7 @@ import { Loader } from '@/components/ui/Loader'
 import { ClassFormModal } from './ClassFormModal'
 import { ClassGroupsModal } from './ClassGroupsModal'
 import { ClassPointsModal } from './ClassPointsModal'
+import { ArchiveClassModal } from './ArchiveClassModal'
 
 export function ClassesPage() {
   const navigate = useNavigate()
@@ -49,6 +49,8 @@ export function ClassesPage() {
   const [groupsFor, setGroupsFor] = useState<SchoolClass | null>(null)
   /** Sinfga ball qo'yish oynasi (C-6) */
   const [pointsFor, setPointsFor] = useState<SchoolClass | null>(null)
+  /** Sinfni arxivlash oynasi — ketish sababi bilan (student-flow.md) */
+  const [archiveFor, setArchiveFor] = useState<SchoolClass | null>(null)
   /** Arxivlangan sinflar ro'yxati + arxiv ko'rinishi yoqilganmi */
   const [archived, setArchived] = useState<SchoolClass[]>([])
   const [showArchived, setShowArchived] = useState(false)
@@ -138,16 +140,14 @@ export function ClassesPage() {
       .catch((e) => alert(e?.response?.data?.message ?? "Sinfni o'chirib bo'lmadi"))
   }
 
-  const handleArchive = (c: SchoolClass) => {
-    if (!confirm(`"${c.name}" sinfini arxivlaysizmi?\nSinfdagi barcha o'quvchilar ham arxivlanadi (login bloklanadi).`))
-      return
-    archiveClass(c.id)
-      .then((r) => {
-        setClasses((prev) => prev.filter((x) => x.id !== c.id))
-        setArchived((prev) => [{ ...c, isArchived: true }, ...prev])
-        alert(`"${c.name}" arxivlandi — ${r.archivedStudents} ta o'quvchi ham arxivlandi.`)
-      })
-      .catch((e) => alert(e?.response?.data?.message ?? 'Arxivlashda xatolik'))
+  // The confirm became a dialog: the pupils' leave reason is chosen there (student-flow.md).
+  const handleArchive = (c: SchoolClass) => setArchiveFor(c)
+
+  const onArchived = (c: SchoolClass, archivedStudents: number) => {
+    setArchiveFor(null)
+    setClasses((prev) => prev.filter((x) => x.id !== c.id))
+    setArchived((prev) => [{ ...c, isArchived: true }, ...prev])
+    alert(`"${c.name}" arxivlandi — ${archivedStudents} ta o'quvchi ham arxivlandi.`)
   }
 
   const handleUnarchive = (c: SchoolClass) => {
@@ -452,6 +452,8 @@ export function ClassesPage() {
         onClose={() => setPointsFor(null)}
         onDone={() => setPointsFor(null)}
       />
+
+      <ArchiveClassModal cls={archiveFor} onClose={() => setArchiveFor(null)} onArchived={onArchived} />
     </div>
   )
 }

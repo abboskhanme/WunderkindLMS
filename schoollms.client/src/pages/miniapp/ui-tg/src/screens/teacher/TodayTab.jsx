@@ -25,6 +25,7 @@ import { NewsCard } from './NewsCard'
 import { PenaltiesCard } from './PenaltiesCard'
 import { FeedbackCard } from './FeedbackCard'
 import { HomeroomDebtsCard } from './HomeroomDebtsCard'
+import { RedListCard } from './RedListCard'
 import { PollsCard } from '../../components/PollSheet'
 
 // So'rovnomalar (2026-10-07): the teacher's open polls.
@@ -39,6 +40,8 @@ export function TodayTab({ profile, meta, onOpenAttendance, onOpenBoarding }) {
   const perms = profile.permissions || []
   const canSchedule = perms.includes('schedule')
   const canJournal = perms.includes('journal')
+  // 2026-10-15: the nurse takes attendance unless the school lets teachers do it — the labels follow.
+  const canMark = profile.canMarkAttendance === true
   const quarter = meta.currentQuarter
   const week = meta.currentWeek
 
@@ -109,11 +112,15 @@ export function TodayTab({ profile, meta, onOpenAttendance, onOpenBoarding }) {
               conducted={data.conducted}
               canJournal={canJournal}
               canSchedule={canSchedule}
+              canMark={canMark}
               onOpenAttendance={onOpenAttendance}
             />
 
             {/* Komendant (2026-10-12) — faqat roli bor o'qituvchida. */}
             {hasBoarding && <CommandantCard profile={profile} onOpen={onOpenBoarding} />}
+
+            {/* Qizil ro'yxat (2026-10-15): ota-ona bilan bog'lanish kerak bo'lgan o'quvchilar — faqat holat bo'lsa. */}
+            {profile.homeroomClass && <RedListCard />}
 
             {/* Sinf rahbari: o'quvchilari va qarzi (2026-10-12) — faqat rahbarlik bor o'qituvchida. */}
             {profile.homeroomClass && <HomeroomDebtsCard />}
@@ -126,7 +133,7 @@ export function TodayTab({ profile, meta, onOpenAttendance, onOpenBoarding }) {
                   note: weekdayName(todayIndex()),
                 },
                 {
-                  label: 'Davomat olindi',
+                  label: canMark ? 'Davomat olindi' : "Dars o'tildi",
                   value: `${done}/${total}`,
                   note: total - done > 0 ? `${total - done} ta qoldi` : 'hammasi tayyor',
                 },
@@ -266,7 +273,7 @@ function CommandantCard({ profile, onOpen }) {
  * Kunning eng muhim kartochkasi. Qorong'i fon ATAYLAB tanlangan: qolgan hamma
  * kartochka oq, shuning uchun ko'z avval shu yerga tushadi.
  */
-function FocusLesson({ lessons, conducted, canJournal, canSchedule, onOpenAttendance }) {
+function FocusLesson({ lessons, conducted, canJournal, canSchedule, canMark, onOpenAttendance }) {
   // The same dark card for every teacher (2026-10-07) — also on a day without lessons.
   if (!canSchedule || lessons.length === 0)
     return (
@@ -350,7 +357,7 @@ function FocusLesson({ lessons, conducted, canJournal, canSchedule, onOpenAttend
             onClick={() => onOpenAttendance(lesson)}
             className="mt-4 flex w-full items-center justify-center gap-1.5 rounded-2xl bg-brand py-3 text-[15px] font-bold text-brand-ink"
           >
-            {isConducted ? "Davomat va baholar" : 'Davomat va baho'}
+            {canMark ? (isConducted ? 'Davomat va baholar' : 'Davomat va baho') : 'Baho va vazifa'}
             <ChevronRight className="h-4 w-4" />
           </button>
         )}

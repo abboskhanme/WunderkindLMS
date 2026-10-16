@@ -54,7 +54,9 @@ export function ProfileSidebar({
   onStatusChange, onPay, onContract, onEdit, onPassword, onArchive, onRestore, onWithdraw,
 }: Props) {
   const archived = card?.student.isArchived ?? false
-  const odob = data.disciplinePoints.reduce((sum, p) => sum + p.points, 0)
+  // The 100-based score — the same number as the overview tab and Ballar nazorati (it used to show
+  // the raw sum of the history here, e.g. "-5" next to "95" on the overview).
+  const odob = data.disciplineScore
 
   return (
     <Card className="relative space-y-5">
@@ -110,7 +112,7 @@ export function ProfileSidebar({
         {balance !== null && (
           <Metric icon={Wallet} label="Balans" value={formatMoney(balance)} tone={balance < 0 ? 'bad' : balance > 0 ? 'good' : 'plain'} />
         )}
-        <Metric icon={ShieldCheck} label="Odob (intizom)" value={odob > 0 ? `+${odob}` : String(odob)} tone={odob < 0 ? 'bad' : 'plain'} />
+        <Metric icon={ShieldCheck} label="Odob (intizom)" value={String(odob)} tone={odob < 100 ? 'bad' : odob > 100 ? 'good' : 'plain'} />
         {card && <Metric icon={Hourglass} label="Maktabda" value={`${card.activeDays} kun`} tone="plain" />}
       </div>
 

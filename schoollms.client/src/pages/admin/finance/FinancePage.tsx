@@ -168,9 +168,13 @@ export function FinancePage({ initialTab }: { initialTab?: Tab } = {}) {
             {initialTab ? tabHeadings[initialTab].subtitle : 'Hisobotlar va xodimlar maoshi'}
           </p>
         </div>
+        {/* Finance and salary rows only, the latest 200 — empty filters used to load the whole log
+            (every section). The full history with filters is Boshqaruv → O'zgarishlar tarixi. */}
         <Button
           variant="secondary"
-          onClick={() => setAudit({ filters: {}, title: "Moliya o'zgarishlar tarixi" })}
+          onClick={() =>
+            setAudit({ filters: { section: 'finance,salary', limit: 200 }, title: "Moliya o'zgarishlar tarixi" })
+          }
         >
           <History className="h-4 w-4" /> Tarix
         </Button>

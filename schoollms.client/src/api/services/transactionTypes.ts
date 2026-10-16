@@ -63,6 +63,7 @@ export const revenueLedgerAccounts = [
   'revenue:bus',
   'revenue:dormitory',
   'revenue:meals',
+  'revenue:sales',
   'revenue:other',
 ] as const
 

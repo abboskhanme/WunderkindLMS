@@ -69,13 +69,39 @@ public sealed class DailyAbsenceNotifier(IAppDbContext db, TelegramService teleg
             .GroupBy(x => x.StudentId, StringComparer.Ordinal)
             .ToDictionary(g => g.Key, g => g.Select(x => x.ChatId).Distinct().ToList(), StringComparer.Ordinal);
 
+        // One delivery log with the automatic messages (auto-messages.md, 2026-10-15): every chat the
+        // button tries is a row of the absence rule for that day, marked "manual" with the staff member.
+        var period = day.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+        var noTelegramIds = rows.Where(r => !r.Telegram && r.SentAt is null).Select(r => r.StudentId).ToList();
+        var logIds = ids.Concat(noTelegramIds).ToList();
+        var logged = await db.AutoMessageLog
+            .Where(l => l.RuleKey == AutoMessageKind.Absence && l.Period == period && logIds.Contains(l.StudentId))
+            .ToListAsync(ct);
+
         int sent = 0, failed = 0;
         foreach (var row in pending)
         {
             var text = BuildMessage(row.FullName, day, row.ReasonName);
             var delivered = 0;
             foreach (var chat in chats.GetValueOrDefault(row.StudentId) ?? [])
-                if (await telegram.SendMessageAsync(chat, text, ct: ct)) delivered++;
+            {
+                var ok = await telegram.SendMessageAsync(chat, text, ct: ct);
+                if (ok) delivered++;
+                var entry = logged.FirstOrDefault(l => l.StudentId == row.StudentId && l.ChatId == chat);
+                if (entry is null)
+                {
+                    entry = new AutoMessageLogEntry { RuleKey = AutoMessageKind.Absence, Period = period, StudentId = row.StudentId, ChatId = chat };
+                    db.AutoMessageLog.Add(entry);
+                    logged.Add(entry);
+                }
+                entry.Status = ok ? BroadcastDelivery.Sent : BroadcastDelivery.Failed;
+                entry.Text = TelegramHtml.Escape(text);
+                entry.Source = AutoMessageSource.Manual;
+                entry.SentBy = userId;
+                entry.Attempts++;
+                entry.Error = ok ? null : "Telegram xabarni qabul qilmadi";
+                entry.At = AppClock.NowInstant;
+            }
             if (delivered == 0) { failed++; continue; }
             db.AbsenceNotices.Add(new AbsenceNotice
             {
@@ -84,7 +110,14 @@ public sealed class DailyAbsenceNotifier(IAppDbContext db, TelegramService teleg
             });
             sent++;
         }
-        if (sent > 0) await db.SaveChangesAsync(ct);
+        foreach (var id in noTelegramIds.Where(id => !logged.Any(l => l.StudentId == id && l.ChatId == null)))
+            db.AutoMessageLog.Add(new AutoMessageLogEntry
+            {
+                RuleKey = AutoMessageKind.Absence, Period = period, StudentId = id, ChatId = null,
+                Status = BroadcastDelivery.NoTelegram, Source = AutoMessageSource.Manual, SentBy = userId,
+                At = AppClock.NowInstant,
+            });
+        await db.SaveChangesAsync(ct);
         logger.LogInformation("Kelmaganlik xabari: {Date}, yuborildi={Sent}, oldin={Already}, ulanmagan={NoTelegram}, xato={Failed}",
             date, sent, rows.Count(r => r.SentAt is not null), rows.Count(r => !r.Telegram && r.SentAt is null), failed);
         return new AbsenceNoticeResultDto(
@@ -100,11 +133,12 @@ public sealed class DailyAbsenceNotifier(IAppDbContext db, TelegramService teleg
     }
 
     /// <summary>Kun bo'yi kelmaganlar — sinf, sabab, Telegram va oldin yuborilganmi bilan.</summary>
+    /// <param name="periods">Faqat shu dars raqamlari hisoblanadi (avto-xabarning kesish vaqti); null — hammasi.</param>
     internal async Task<(List<AbsenceNoticeRowDto> Rows, Dictionary<string, string?> ReasonIdOf)> RowsAsync(
-        DateOnly day, CancellationToken ct)
+        DateOnly day, CancellationToken ct, IReadOnlySet<int>? periods = null)
     {
         var iso = day.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
-        var report = await AttendanceAnalytics.BuildAsync(db, null, iso, iso, iso, AttendanceAnalyticsExport.MaxEvents);
+        var report = await AttendanceAnalytics.BuildAsync(db, null, iso, iso, iso, AttendanceAnalyticsExport.MaxEvents, periods: periods);
         var absent = (report.Events ?? []).Where(e => e.Status == StudentDay.Absent && e.Date == iso).ToList();
         var ids = absent.Select(e => e.StudentId).ToList();
 

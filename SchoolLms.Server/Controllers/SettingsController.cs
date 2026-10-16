@@ -129,12 +129,15 @@ public class SettingsController(
         // Qator umuman yo'q bo'lsa — entity sukutlari (ParityModel.cs dagi DEFAULT'lar
         // bilan bir xil): ikkita darvoza o'chiq, ikkitasi yoqiq.
         m ??= new SchoolMeta();
-        return new GeneralSettingsDto(
-            m.ArchiveOnlyNonDebtorStudents,
-            m.MakeAttendanceReasonRequired,
-            m.IsStudentGradeRequired,
-            m.ShowLearningProgressInParentDashboard);
+        return GeneralDto(m);
     }
+
+    private static GeneralSettingsDto GeneralDto(SchoolMeta m) => new(
+        m.ArchiveOnlyNonDebtorStudents,
+        m.MakeAttendanceReasonRequired,
+        m.IsStudentGradeRequired,
+        m.ShowLearningProgressInParentDashboard,
+        m.TeachersMarkAttendance);
 
     [HttpPut("general")]
     public async Task<ActionResult<GeneralSettingsDto>> SaveGeneral(
@@ -156,13 +159,11 @@ public class SettingsController(
         m.MakeAttendanceReasonRequired = req.MakeAttendanceReasonRequired;
         m.IsStudentGradeRequired = req.IsStudentGradeRequired;
         m.ShowLearningProgressInParentDashboard = req.ShowLearningProgressInParentDashboard;
+        // Missing = unchanged: a client older than the flag (2026-10-15) does not send it.
+        if (req.TeachersMarkAttendance is { } teachersMark) m.TeachersMarkAttendance = teachersMark;
         await db.SaveChangesAsync(ct);
 
-        return new GeneralSettingsDto(
-            m.ArchiveOnlyNonDebtorStudents,
-            m.MakeAttendanceReasonRequired,
-            m.IsStudentGradeRequired,
-            m.ShowLearningProgressInParentDashboard);
+        return GeneralDto(m);
     }
 
     // ---------- Telegram bot ----------

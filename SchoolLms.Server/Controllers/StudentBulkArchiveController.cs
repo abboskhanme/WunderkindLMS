@@ -72,17 +72,22 @@ public class StudentBulkArchiveController(AppDbContext db, AuditService audit) :
                         : StudentArchiveService.DebtorBlockedMessage));
         }
 
+        var flow = new StudentFlowRecorder(db, StudentEventActor.From(User));
+        var source = students.Count > 1 ? StudentEventSource.Bulk : StudentEventSource.Manual;
         foreach (var student in students)
         {
+            // The class BEFORE archiving blanks it — the departure is recorded in it.
+            var classBefore = student.ClassName;
             // Login bloklash — bitta arxivlash bilan bir xil (StudentsController.Archive).
             (await archive.ApplyAsync(student, reason, req.ArchiveReasonId, ct))?.BlockLogin();
             // Bitta o'quvchi ham shu endpoint orqali kelishi mumkin (ekran xato javobini
             // bitta shaklda olishi uchun) — audit matni shunga qarab o'zgaradi.
             var what = students.Count > 1 ? "ommaviy arxivlandi" : "arxivga ko'chirildi";
-            audit.Record(AuditService.EntityStudentDiscount, student.Id, "update",
+            audit.Record(AuditService.EntityStudent, student.Id, "archive",
                 $"O'quvchi {what} ({student.FullName}): \"{reason}\""
                     + (isSuperAdmin && req.Force ? " — qarzdorlik to'sig'i chetlab o'tildi" : ""),
                 studentId: student.Id);
+            await flow.LeftAsync(student, classBefore, req.ArchiveReasonId, reason, source, ct);
         }
 
         await db.SaveChangesAsync(ct);

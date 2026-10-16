@@ -16,7 +16,8 @@ namespace SchoolLms.Server.Controllers;
 [Authorize]
 [AdminPerm("teachers")]
 [Route("api/admin/substitutions")]
-public sealed class SubstitutionsController(AppDbContext db, TelegramService telegram, ILogger<SubstitutionNotifier> notifierLogger)
+public sealed class SubstitutionsController(
+    AppDbContext db, TelegramService telegram, ILogger<SubstitutionNotifier> notifierLogger, AuditService audit)
     : ControllerBase
 {
     private SubstitutionNotifier Notifier => new(db, telegram, notifierLogger);
@@ -50,9 +51,11 @@ public sealed class SubstitutionsController(AppDbContext db, TelegramService tel
         await using var tx = await db.Database.BeginTransactionAsync(ct);
         var (error, created) = await LessonSubstitutionService.CreateAsync(db, req, ActorId, ct);
         if (error is not null) return BadRequest(new { message = error });
+        // Names are read before the save — the rows are in the context already.
+        var dtos = await LessonSubstitutionService.ToDtosAsync(db, created, ct);
+        foreach (var d in dtos) Record(d, "create", "O'rindosh tayinlandi");
         await db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
-        var dtos = await LessonSubstitutionService.ToDtosAsync(db, created, ct);
         await Notifier.AssignedAsync(dtos, ct);
         return dtos;
     }
@@ -62,8 +65,21 @@ public sealed class SubstitutionsController(AppDbContext db, TelegramService tel
     {
         var row = await LessonSubstitutionService.CancelAsync(db, id, ActorId, ct);
         if (row is null) return NotFound(new { message = "O'rindosh dars topilmadi" });
+        var dtos = await LessonSubstitutionService.ToDtosAsync(db, [row], ct);
+        foreach (var d in dtos) Record(d, "cancel", "O'rindosh bekor qilindi");
         await db.SaveChangesAsync(ct);
-        await Notifier.CancelledAsync(await LessonSubstitutionService.ToDtosAsync(db, [row], ct), ct);
+        await Notifier.CancelledAsync(dtos, ct);
         return NoContent();
     }
+
+    /// <summary>One audit row per substituted lesson (audit-log.md) — under the absent teacher.</summary>
+    private void Record(SubstitutionDto d, string action, string what) =>
+        audit.Record(AuditService.EntitySubstitution, d.Id.ToString(), action,
+            $"{what}: {d.Date}, {d.Period}-dars, {d.OwnerName} ({d.SubjectName}) — {d.AbsentTeacherName} o'rniga {d.SubstituteTeacherName}",
+            after: new Dictionary<string, object?>
+            {
+                ["Sana"] = d.Date, ["Dars"] = d.Period, ["Sinf"] = d.OwnerName, ["Fan"] = d.SubjectName,
+                ["Kelmagan"] = d.AbsentTeacherName, ["O'rindosh"] = d.SubstituteTeacherName, ["Sabab"] = d.Reason,
+            },
+            teacherId: d.AbsentTeacherId);
 }

@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using SchoolLms.Application.Dtos;
+using SchoolLms.Application.Services;
 using SchoolLms.Domain;
 using SchoolLms.Infrastructure.Data;
 
@@ -31,7 +32,7 @@ namespace SchoolLms.Server.Controllers;
 [Authorize]
 [AdminPerm("staff")]
 [Route("api/admin/roles")]
-public class AccessRolesController(AppDbContext db) : ControllerBase
+public class AccessRolesController(AppDbContext db, AuditService audit) : ControllerBase
 {
     private const int MaxNameLength = 100;
     private const int MaxDescriptionLength = 500;
@@ -67,6 +68,9 @@ public class AccessRolesController(AppDbContext db) : ControllerBase
             Permissions = Clean(p.Permissions),
         };
         db.AccessRoles.Add(role);
+        audit.Record(AuditService.EntityAccessRole, role.Id.ToString(), "create",
+            $"Rol yaratildi: «{role.Name}» — {role.Permissions.Count} ta ruxsat",
+            after: new Dictionary<string, object> { ["Nomi"] = role.Name, ["Ruxsatlar"] = role.Permissions });
         await db.SaveChangesAsync();
         return ToDto(role, 0);
     }
@@ -82,9 +86,13 @@ public class AccessRolesController(AppDbContext db) : ControllerBase
         if (await db.AccessRoles.AnyAsync(r => r.Name == name && r.Id != id))
             return Conflict(new { message = $"\"{name}\" nomli rol allaqachon bor" });
 
+        var oldName = role.Name;
+        var oldDescription = role.Description;
+        var oldPermissions = role.Permissions.ToList();
         role.Name = name;
         role.Description = (p.Description ?? "").Trim();
         role.Permissions = Clean(p.Permissions);
+        RecordChange(role, oldName, oldDescription, oldPermissions);
 
         // Members get the new permission set in the same save.
         var members = await db.Users
@@ -107,8 +115,31 @@ public class AccessRolesController(AppDbContext db) : ControllerBase
             return Conflict(new { message = $"Bu rolda {members} ta xodim bor. Avval ularga boshqa rol bering." });
 
         db.AccessRoles.Remove(role);
+        audit.Record(AuditService.EntityAccessRole, role.Id.ToString(), "delete", $"Rol o'chirildi: «{role.Name}»",
+            before: new Dictionary<string, object> { ["Nomi"] = role.Name, ["Ruxsatlar"] = role.Permissions });
         await db.SaveChangesAsync();
         return NoContent();
+    }
+
+    /// <summary>
+    /// One row per save: name / description before and after, and the permission keys added and
+    /// removed (the full lists of page grants are long and say less). Nothing changed — no row.
+    /// </summary>
+    private void RecordChange(AccessRole role, string oldName, string oldDescription, List<string> oldPermissions)
+    {
+        var added = role.Permissions.Except(oldPermissions, StringComparer.Ordinal).ToList();
+        var removed = oldPermissions.Except(role.Permissions, StringComparer.Ordinal).ToList();
+        var before = new Dictionary<string, object>();
+        var after = new Dictionary<string, object>();
+        if (oldName != role.Name) { before["Nomi"] = oldName; after["Nomi"] = role.Name; }
+        if (oldDescription != role.Description) { before["Izoh"] = oldDescription; after["Izoh"] = role.Description; }
+        if (added.Count > 0) after["Qo'shildi"] = added;
+        if (removed.Count > 0) after["Olindi"] = removed;
+        if (after.Count == 0) return;
+        audit.Record(AuditService.EntityAccessRole, role.Id.ToString(), "update",
+            $"Rol o'zgardi: «{role.Name}»"
+            + (added.Count + removed.Count > 0 ? $" — +{added.Count} / −{removed.Count} ruxsat" : ""),
+            before: before.Count == 0 ? null : before, after: after);
     }
 
     private static string? Validate(AccessRolePayload p)

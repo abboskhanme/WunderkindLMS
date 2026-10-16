@@ -8,7 +8,7 @@
  *
  * HAMMADA BIR XIL EKRAN (mijoz, 2026-10-07: "o'quvchilar profillari ham hammada har xil
  * chiqyapti"). Kartochkalar tartibi qat'iy — bugun, raqamlar, pul, darslar, so'rovnomalar,
- * sertifikatlar, olib ketish, e'lonlar, yangiliklar, murojaat — va hech biri ma'lumot yo'qligi
+ * sertifikatlar, xulq-atvor, olib ketish, e'lonlar, yangiliklar, murojaat — va hech biri ma'lumot yo'qligi
  * uchun yashirilmaydi: bo'sh bo'lsa "yo'q" deb turadi. Qarz pul kartochkasining RANGI va
  * mazmuni bilan ko'rinadi, joyi bilan emas (ilgari qarzi borlarda u darslardan oldin, yo'qlarida
  * keyin turardi — ekran ikki xil bo'lib qolardi).
@@ -32,6 +32,7 @@ import {
 import { AsyncBlock, balanceShort, gradeTone, monthLabel } from './shared'
 import { NewsCard } from './NewsCard'
 import { CertificatesCard } from './CertificatesCard'
+import { BehaviourCard } from './BehaviourCard'
 import { PollsCard } from '../../components/PollSheet'
 import { AssignmentsCard } from './AssignmentsCard'
 import { todayISO } from '../../lib/weeks'
@@ -111,6 +112,9 @@ export function HomeTab({ child, onOpenTab, showGrades = true, onOpenFeedback, c
 
             {/* Certificates and the current results (client, 2026-10-07). Loads itself; "yo'q" when empty. */}
             <CertificatesCard childId={child.id} />
+
+            {/* Behaviour score and the latest incidents (client, 2026-10-15). Loads itself; never hidden. */}
+            <BehaviourCard childId={child.id} />
 
             {pickup.error ? (
               <FailedCard title="Farzandni olib ketish" message={pickup.error} />

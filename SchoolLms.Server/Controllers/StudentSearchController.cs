@@ -192,8 +192,14 @@ public class StudentSearchController(AppDbContext db, AuditService audit) : Cont
                 "Moliyaviy yozuvi bor o'quvchini o'chirib bo'lmaydi — uni arxivda qoldiring. "
                 + "Hech kim o'chirilmadi."));
 
+        var flow = new StudentFlowRecorder(db, StudentEventActor.From(User));
         foreach (var student in students)
         {
+            // An archived pupil has already left (their archive wrote the departure); for the rest
+            // the deletion is the departure — the class is read before the row goes.
+            if (!student.IsArchived)
+                await flow.LeftAsync(student, student.ClassName, null, "O'chirildi", StudentEventSource.Delete, ct);
+
             // Audit qatori o'quvchidan OLDIN yoziladi: `audit_logs.student_id`
             // da FK yo'q (AppDbContext.cs — faqat indeks), ya'ni iz o'quvchi
             // o'chgandan keyin ham qoladi. Butunlay o'chirishning yagona izi

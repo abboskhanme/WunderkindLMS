@@ -108,8 +108,17 @@ public static class AttendanceAnalytics
     /// <param name="to">Davr oxiri "yyyy-MM-dd".</param>
     /// <param name="day">Dars soatlari kesimi uchun kun; berilmasa — davrning oxirgi kuni.</param>
     /// <param name="maxEvents">"Kim, qaysi kuni" ro'yxatining chegarasi; Excel eksporti kattaroq oladi.</param>
+    /// <param name="onStudentDay">
+    /// Optional: called once for every (student, date, day) the report counts — the red-list scan
+    /// (<c>AttendanceRedListService</c>) reads the same pupil-days instead of a second definition.
+    /// </param>
+    /// <param name="periods">
+    /// Only these lesson numbers count (the absence auto-message's cut-off, "11:30 gacha", 2026-10-15);
+    /// null — every lesson.
+    /// </param>
     public static async Task<AttendanceAnalyticsDto> BuildAsync(
-        IAppDbContext db, string? classId, string? from, string? to, string? day, int maxEvents = MaxEvents)
+        IAppDbContext db, string? classId, string? from, string? to, string? day, int maxEvents = MaxEvents,
+        Action<string, string, StudentDay>? onStudentDay = null, IReadOnlySet<int>? periods = null)
     {
         var (fromDate, toDate) = NormalizeRange(from, to);
         var dayIso = IsIso(day) && string.CompareOrdinal(day!, fromDate) >= 0
@@ -192,6 +201,7 @@ public static class AttendanceAnalytics
         // Plus the timetable's lessons nobody held or marked (2026-10-07): their students are
         // "tekshirilmagan" — a class without attendance no longer drops out of the report.
         var notes = await HeldLessons.ForReportAsync(db, ownerIds, fromDate, toDate);
+        if (periods is not null) notes = [.. notes.Where(n => periods.Contains(n.Period))];
 
         var entries = await db.JournalEntries.AsNoTracking()
             .Where(e => ownerIds.Contains(e.ClassId)
@@ -299,6 +309,7 @@ public static class AttendanceAnalytics
         var events = new List<(string Date, string StudentId, string Row, StudentDay Day, string Status)>();
         foreach (var ((studentId, date), (studentDay, row)) in days)
         {
+            onStudentDay?.Invoke(studentId, date, studentDay);
             Get(byStudent, studentId).AddDay(studentDay, unexcusedIds);
             if (wantClass is not null)
             {

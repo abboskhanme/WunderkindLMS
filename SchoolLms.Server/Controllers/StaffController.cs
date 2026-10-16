@@ -69,6 +69,8 @@ public class StaffController(AppDbContext db, AuditService audit) : ControllerBa
                 return BadRequest(new { message = WeakPasswordMessage });
             user.SetInitialPassword(p.NewPassword.Trim());
         }
+        audit.Record(AuditService.EntityStaff, user.Id, "create",
+            $"Xodim qo'shildi ({user.FullName}" + (user.Position.Length > 0 ? $", {user.Position})" : ")"));
         if (user.Salary != 0 || user.SalaryStartDate.Length > 0)
             audit.Record(AuditService.EntityStaffSalary, user.Id, "create",
                 $"Oylik belgilandi: {user.FullName} — {AuditService.Money(user.Salary)} so'm"
@@ -85,6 +87,7 @@ public class StaffController(AppDbContext db, AuditService audit) : ControllerBa
         if (user is null) return denied!;
         if (ValidateSalary(p) is { } salaryError) return BadRequest(new { message = salaryError });
         var before = new { user.Salary, user.SalaryStartDate };
+        var cardBefore = CardSnapshot(user, passwordSet: false);
         user.FullName = p.FullName.Trim();
         user.Position = (p.Position ?? "").Trim();
         ApplySalary(user, p);
@@ -95,6 +98,9 @@ public class StaffController(AppDbContext db, AuditService audit) : ControllerBa
                 return BadRequest(new { message = WeakPasswordMessage });
             user.SetInitialPassword(p.NewPassword.Trim());
         }
+        // Audit (2026-10-15): the card's own fields, changed ones only; the salary keeps its own row below.
+        audit.RecordChanges(AuditService.EntityStaff, user.Id, $"Xodim ma'lumoti o'zgardi ({user.FullName})",
+            cardBefore, CardSnapshot(user, passwordSet: !string.IsNullOrWhiteSpace(p.NewPassword)), CardLabels);
         if (before.Salary != user.Salary || before.SalaryStartDate != user.SalaryStartDate)
             audit.Record(AuditService.EntityStaffSalary, user.Id, "update",
                 $"Oylik o'zgardi: {user.FullName} — {AuditService.Money(before.Salary)} → "
@@ -120,6 +126,8 @@ public class StaffController(AppDbContext db, AuditService audit) : ControllerBa
         // Every employee has an HR row now (auto-sync); only one WITH history blocks the delete.
         if (!await SchoolLms.Application.HrTasks.HrTasksService.ReleaseUnusedEmployeeAsync(db, id))
             return Conflict(new { message = HrEmployeeDeleteMessage });
+        audit.Record(AuditService.EntityStaff, user.Id, "delete", $"Xodim o'chirildi ({user.FullName})",
+            before: new Dictionary<string, object?> { ["F.I.SH"] = user.FullName, ["Lavozim"] = user.Position, ["Login"] = user.Email });
         db.Users.Remove(user);
         await db.SaveChangesAsync();
         return NoContent();
@@ -144,6 +152,7 @@ public class StaffController(AppDbContext db, AuditService audit) : ControllerBa
         if (user is null) return denied!;
         var pwd = AccountFactory.GeneratePassword();
         user.SetInitialPassword(pwd);
+        audit.Record(AuditService.EntityStaff, user.Id, "password", $"Xodimga yangi parol berildi ({user.FullName})");
         await db.SaveChangesAsync();
         return new CredentialsDto(user.Email, pwd, user.Role);
     }
@@ -156,9 +165,11 @@ public class StaffController(AppDbContext db, AuditService audit) : ControllerBa
         var user = await db.Users.FindAsync(id);
         if (user is not null && IsOwner(user)) return BadRequest(new { message = OwnerAccessMessage });
         if (user is null || user.Role != Roles.Staff) return NotFound();
+        var oldPermissions = user.Permissions.ToList();
         user.Permissions = req.Permissions ?? new();
         // Hand-picked permissions no longer follow a role.
         user.AccessRoleId = null;
+        RecordPermissionChange(user, $"Xodimga ruxsatlar qo'lda berildi ({user.FullName})", oldPermissions, user.Permissions);
         await db.SaveChangesAsync();
         return ToDto(user, await RoleNamesAsync());
     }
@@ -180,6 +191,8 @@ public class StaffController(AppDbContext db, AuditService audit) : ControllerBa
         if (!RoleAssignment.Within(User, user.Permissions))
             return StatusCode(403, new { message = RoleAssignment.WiderMessage });
 
+        var roleNames = await RoleNamesAsync();
+        var oldRoleId = user.AccessRoleId;
         if (req.AccessRoleId is { } roleId)
         {
             var role = await db.AccessRoles.AsNoTracking().FirstOrDefaultAsync(r => r.Id == roleId);
@@ -195,11 +208,46 @@ public class StaffController(AppDbContext db, AuditService audit) : ControllerBa
             user.Permissions = new();
         }
 
+        if (oldRoleId != user.AccessRoleId)
+        {
+            string NameOf(Guid? id) => id is { } r ? roleNames.GetValueOrDefault(r, "?") : "rolsiz";
+            audit.Record(AuditService.EntityRoleAssignment, user.Id, "update",
+                $"Xodim roli: {user.FullName} — {NameOf(oldRoleId)} → {NameOf(user.AccessRoleId)}",
+                before: new { Rol = NameOf(oldRoleId) }, after: new { Rol = NameOf(user.AccessRoleId) });
+        }
+
         await db.SaveChangesAsync();
         return ToDto(user, await RoleNamesAsync());
     }
 
     private static bool IsOwner(AppUser u) => u.Role == Roles.SuperAdmin;
+
+    /// <summary>Uzbek names of the staff card's fields — the audit row's keys and summary (audit-log.md).</summary>
+    private static readonly IReadOnlyDictionary<string, string> CardLabels = new Dictionary<string, string>
+    {
+        ["FullName"] = "F.I.SH",
+        ["Position"] = "Lavozim",
+        ["Phone"] = "Telefon",
+        ["Avatar"] = "Rasm",
+        ["Password"] = "Parol",
+    };
+
+    /// <summary>The staff card without the salary (that has its own StaffSalary row); a password only as "set".</summary>
+    private static object CardSnapshot(AppUser u, bool passwordSet) => new
+    {
+        u.FullName, u.Position, u.Phone, Avatar = u.AvatarUrl,
+        Password = passwordSet ? "yangilandi" : null,
+    };
+
+    /// <summary>One row naming the permission keys added and removed (nothing changed — no row).</summary>
+    private void RecordPermissionChange(AppUser user, string summary, IReadOnlyCollection<string> before, IReadOnlyCollection<string> after)
+    {
+        var added = after.Except(before, StringComparer.Ordinal).ToList();
+        var removed = before.Except(after, StringComparer.Ordinal).ToList();
+        if (added.Count == 0 && removed.Count == 0) return;
+        audit.Record(AuditService.EntityRoleAssignment, user.Id, "update", summary,
+            after: new Dictionary<string, List<string>> { ["Qo'shildi"] = added, ["Olindi"] = removed });
+    }
 
     /// <summary>
     /// A listed account the caller may change or open: a staff member, or an owner — the owner's row

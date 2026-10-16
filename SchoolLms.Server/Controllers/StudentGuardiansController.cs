@@ -42,7 +42,7 @@ namespace SchoolLms.Server.Controllers;
 [Authorize]
 [AdminPerm("students")]
 [Route("api/admin/students")]
-public sealed class StudentGuardiansController(AppDbContext db) : ControllerBase
+public sealed class StudentGuardiansController(AppDbContext db, AuditService audit) : ControllerBase
 {
     public const string PhoneRequiredMessage = "Telefon raqami noto'g'ri";
     public const string NameRequiredMessage = "F.I.SH kerak";
@@ -97,7 +97,13 @@ public sealed class StudentGuardiansController(AppDbContext db) : ControllerBase
         var key = PhoneUtil.Key(input.Phone!);
         var saved = (await RowsAsync(studentId, ct))
             .FirstOrDefault(r => PhoneUtil.Key(r.Phone) == key);
-        return saved is null ? NotFound() : saved;
+        if (saved is null) return NotFound();
+
+        audit.Record(AuditService.EntityGuardian, saved.GuardianId, "create",
+            $"Vasiy biriktirildi: {saved.FullName} → {student.FullName}",
+            after: GuardianView(saved.FullName, saved.Phone, saved.Relation, saved.IsPrimary), studentId: studentId);
+        await db.SaveChangesAsync(ct);
+        return saved;
     }
 
     /// <summary>Vasiy ma'lumotini va bog'lanish turini tahrirlash.</summary>
@@ -123,6 +129,8 @@ public sealed class StudentGuardiansController(AppDbContext db) : ControllerBase
         if (await db.Guardians.AnyAsync(g => g.PhoneKey == key && g.Id != guardianId, ct))
             return BadRequest(new { message = PhoneTakenMessage });
 
+        var before = GuardianView(guardian.FullName, guardian.Phone, link.Relation, link.IsPrimary);
+
         guardian.FullName = input.FullName!.Trim();
         guardian.Phone = phone;
         if (input.PassportUrl is not null)
@@ -134,6 +142,10 @@ public sealed class StudentGuardiansController(AppDbContext db) : ControllerBase
         link.RelationNote = link.Relation == GuardianRelation.Other
             ? (string.IsNullOrWhiteSpace(input.RelationNote) ? null : input.RelationNote.Trim())
             : null;
+
+        audit.RecordChanges(AuditService.EntityGuardian, guardianId, $"Vasiy ma'lumoti o'zgardi ({guardian.FullName}, {student.FullName})",
+            before, GuardianView(guardian.FullName, guardian.Phone, link.Relation, link.IsPrimary || input.IsPrimary),
+            studentId: studentId);
 
         await db.SaveChangesAsync(ct);
 
@@ -157,6 +169,9 @@ public sealed class StudentGuardiansController(AppDbContext db) : ControllerBase
             .AnyAsync(l => l.StudentId == studentId && l.GuardianId == guardianId, ct);
         if (!exists) return NotFound();
 
+        var name = await db.Guardians.AsNoTracking().Where(g => g.Id == guardianId).Select(g => g.FullName).FirstOrDefaultAsync(ct);
+        audit.Record(AuditService.EntityGuardian, guardianId, "update",
+            $"Asosiy vasiy: {name} ({student.FullName})", studentId: studentId);
         await GuardianSync.SetPrimaryAsync(db, studentId, guardianId, ct);
         await MirrorAsync(student, ct);
         return NoContent();
@@ -186,6 +201,9 @@ public sealed class StudentGuardiansController(AppDbContext db) : ControllerBase
 
         var wasPrimary = link.IsPrimary;
         db.StudentGuardians.Remove(link);
+        var guardianName = await db.Guardians.AsNoTracking().Where(g => g.Id == guardianId).Select(g => g.FullName).FirstOrDefaultAsync(ct);
+        audit.Record(AuditService.EntityGuardian, guardianId, "remove",
+            $"Vasiy uzildi: {guardianName} ← {student.FullName}", studentId: studentId);
         await db.SaveChangesAsync(ct);
 
         if (wasPrimary)
@@ -206,6 +224,15 @@ public sealed class StudentGuardiansController(AppDbContext db) : ControllerBase
     // ------------------------------------------------------------------
 
     /// <summary>Asosiy vasiydan o'quvchi qatorini tekislaydi va saqlaydi.</summary>
+    /// <summary>Guardian fields as the audit shows them (Uzbek keys, audit-log.md).</summary>
+    private static Dictionary<string, object?> GuardianView(string fullName, string phone, string? relation, bool isPrimary) => new()
+    {
+        ["F.I.SH"] = fullName,
+        ["Telefon"] = phone,
+        ["Vasiylik turi"] = relation,
+        ["Asosiy"] = isPrimary,
+    };
+
     private async Task MirrorAsync(Student student, CancellationToken ct)
     {
         await GuardianSync.MirrorPrimaryFromDbAsync(db, student, ct);

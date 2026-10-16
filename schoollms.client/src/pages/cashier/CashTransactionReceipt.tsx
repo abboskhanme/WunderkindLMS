@@ -84,6 +84,7 @@ export function CashTransactionReceipt({ row, boxName, onClose }: Props) {
           <Line label="Kassir" value={row.who} />
           <Line label="Tranzaksiya turi" value={row.transactionTypeName ?? '—'} />
           <Line label="To'lov usuli" value={methodLabels[row.method] ?? row.method} />
+          {row.studentName && <Line label="O'quvchi" value={row.studentName} />}
           {row.contractNo && <Line label="Shartnoma raqami" value={row.contractNo} />}
           {row.note && <Line label="Izoh" value={row.note} />}
           {row.status !== 'posted' && (
@@ -91,6 +92,35 @@ export function CashTransactionReceipt({ row, boxName, onClose }: Props) {
           )}
           {row.cancelReason && <Line label="Sabab" value={row.cancelReason} />}
         </dl>
+
+        {/* Mini-magazin sale (2026-10-15): what was bought, at the price it was sold for. */}
+        {row.lines && row.lines.length > 0 && (
+          <>
+            <div className="my-4 border-t border-dashed border-slate-200" />
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-xs text-slate-400">
+                  <th className="pb-1 font-normal">Mahsulot</th>
+                  <th className="pb-1 text-right font-normal">Soni × narx</th>
+                  <th className="pb-1 text-right font-normal">Jami</th>
+                </tr>
+              </thead>
+              <tbody>
+                {row.lines.map((line) => (
+                  <tr key={line.productId} className="align-top">
+                    <td className="py-0.5 pr-2 text-slate-700">{line.productName}</td>
+                    <td className="whitespace-nowrap py-0.5 text-right tabular-nums text-slate-500">
+                      {line.quantity} × {formatSum(line.unitPrice)}
+                    </td>
+                    <td className="whitespace-nowrap py-0.5 pl-2 text-right font-medium tabular-nums text-slate-700">
+                      {formatSum(line.lineTotal)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </>
+        )}
 
         <div className="my-4 border-t border-dashed border-slate-200" />
 

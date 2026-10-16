@@ -1,18 +1,16 @@
 /**
  * Avtomatik xabarlar — ota-onalarga qoida bo'yicha Telegram xabari (docs/modules/auto-messages.md,
- * 2026-10-13): yo'qlik, yangi oylik hisob, qarz eslatmasi, tug'ilgan kun. Har qoida O'CHIQ holda
- * keladi — maktab matnni tasdiqlagach shu yerda yoqiladi. Pastda: nima ketgani (jurnal).
+ * 2026-10-13): yo'qlik, yangi oylik hisob, qarz eslatmasi, tug'ilgan kun, to'lov qabul qilinganda.
+ * Har qoida O'CHIQ holda keladi — maktab matnni tasdiqlagach shu yerda yoqiladi.
+ * 2026-10-15: ikkinchi bo'lim "Tarix va statistika" (AutoMessagesHistory) — yuborishlar, tasdiqlash,
+ * yetkazish jurnali va statistika.
  */
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { AlertTriangle, CalendarClock, Eye, RotateCcw, Save } from 'lucide-react'
-import type { AxiosError } from 'axios'
 import {
-  getAutoMessageLog,
   getAutoMessageRules,
   previewAutoMessage,
   saveAutoMessageRule,
-  type AutoMessageKey,
-  type AutoMessageLogRow,
   type AutoMessagePreview,
   type AutoMessageRule,
 } from '@/api/services/autoMessages'
@@ -20,52 +18,22 @@ import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Loader } from '@/components/ui/Loader'
 import { Input, Select, Time24Input } from '@/components/ui/Input'
-import { DatePicker } from '@/components/ui/DatePicker'
 import { FormatToolbar } from '@/components/ui/FormatToolbar'
 import { RichText } from '@/components/ui/RichText'
 import { Switch } from '@/components/hr-tasks/ui'
 import { cn } from '@/lib/utils'
+import { AutoMessagesHistory } from './AutoMessagesHistory'
+import { TITLES, errorText, fmtDateTime } from './autoMessageLabels'
 
-const TITLES: Record<AutoMessageKey, { title: string; hint: string }> = {
-  absence: {
-    title: "Kelmaganlik xabari",
-    hint: "Kun bo'yi kelmagan o'quvchining ota-onasiga — hamshira belgilagan davomat bo'yicha. Tugma bilan yuborilganlarga qayta ketmaydi.",
-  },
-  invoice: {
-    title: 'Yangi oylik hisob',
-    hint: "Oy hisob-fakturasi chiqqach — shu oy summasi va jami to'lanmagan. Hisob hali chiqmagan bo'lsa, keyingi 2 kun ichida qayta urinadi.",
-  },
-  debt: {
-    title: "Qarz eslatmasi",
-    hint: "Har oy belgilangan kuni — muddati o'tgan qarzi eng kam summadan ko'p bo'lganlarga (\"Qarzdorlar\" hisobotidagi raqam).",
-  },
-  birthday: {
-    title: "Tug'ilgan kun tabrigi",
-    hint: "Tug'ilgan kuni o'quvchining ota-onasiga. 29-fevralda tug'ilganlar boshqa yillari 28-fevralda tabriklanadi.",
-  },
-}
-
-const STATUS: Record<AutoMessageLogRow['status'], { label: string; cls: string }> = {
-  sent: { label: 'Yetdi', cls: 'bg-emerald-50 text-emerald-700' },
-  failed: { label: 'Yetmadi', cls: 'bg-red-50 text-red-700' },
-  no_telegram: { label: 'Telegram yo\'q', cls: 'bg-slate-100 text-slate-500' },
-}
-
-function errorText(err: unknown, fallback: string): string {
-  return (err as AxiosError<{ message?: string }>)?.response?.data?.message ?? fallback
-}
-
-function fmtDateTime(iso: string | null): string {
-  if (!iso) return '—'
-  return new Date(iso).toLocaleString('uz-UZ', {
-    timeZone: 'Asia/Tashkent', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit',
-  })
-}
+const VIEWS = [
+  { key: 'rules', label: 'Qoidalar va shablonlar' },
+  { key: 'history', label: 'Tarix va statistika' },
+] as const
 
 export function AutoMessagesPanel() {
+  const [view, setView] = useState<(typeof VIEWS)[number]['key']>('rules')
   const [rules, setRules] = useState<AutoMessageRule[] | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [logReload, setLogReload] = useState(0)
 
   useEffect(() => {
     getAutoMessageRules()
@@ -73,29 +41,51 @@ export function AutoMessagesPanel() {
       .catch((e) => setError(errorText(e, "Qoidalarni yuklab bo'lmadi.")))
   }, [])
 
-  if (error) return <p className="text-sm text-red-600">{error}</p>
-  if (!rules) return <Loader label="Yuklanmoqda..." />
-
   return (
     <div className="space-y-6">
-      <p className="flex items-start gap-2 rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-800">
-        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-        Yoqilgan qoida ota-onalarga o'zi xabar yuboradi. Avval matnni maktab bilan kelishib oling va "Namuna"
-        tugmasi bilan kimga ketishini ko'ring.
-      </p>
-      <div className="grid gap-4 xl:grid-cols-2">
-        {rules.map((r) => (
-          <RuleCard
-            key={r.key}
-            rule={r}
-            onSaved={(next) => {
-              setRules((list) => list?.map((x) => (x.key === next.key ? { ...x, ...next } : x)) ?? null)
-              setLogReload((n) => n + 1)
-            }}
-          />
+      <div className="flex gap-1 border-b border-slate-200 text-sm font-medium">
+        {VIEWS.map((v) => (
+          <button
+            key={v.key}
+            type="button"
+            onClick={() => setView(v.key)}
+            className={cn(
+              '-mb-px border-b-2 px-3 py-2 transition-colors',
+              view === v.key ? 'border-brand-500 text-slate-800' : 'border-transparent text-slate-500 hover:text-slate-700',
+            )}
+          >
+            {v.label}
+          </button>
         ))}
       </div>
-      <LogCard reloadKey={logReload} />
+
+      {view === 'history' ? (
+        <AutoMessagesHistory />
+      ) : error ? (
+        <p className="text-sm text-red-600">{error}</p>
+      ) : !rules ? (
+        <Loader label="Yuklanmoqda..." />
+      ) : (
+        <>
+          <p className="flex items-start gap-2 rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+            Yoqilgan qoida ota-onalarga o'zi xabar yuboradi. Avval matnni maktab bilan kelishib oling va "Namuna"
+            tugmasi bilan kimga ketishini ko'ring. "Tasdiq bilan" yoqilsa, xabarlar tayyorlanadi va "Tarix va
+            statistika" bo'limida tasdiqlangandan keyingina ketadi.
+          </p>
+          <div className="grid gap-4 xl:grid-cols-2">
+            {rules.map((r) => (
+              <RuleCard
+                key={r.key}
+                rule={r}
+                onSaved={(next) =>
+                  setRules((list) => list?.map((x) => (x.key === next.key ? { ...x, ...next } : x)) ?? null)
+                }
+              />
+            ))}
+          </div>
+        </>
+      )}
     </div>
   )
 }
@@ -106,19 +96,24 @@ function RuleCard({ rule, onSaved }: { rule: AutoMessageRule; onSaved: (r: AutoM
   const [day, setDay] = useState(rule.dayOfMonth)
   const [minAmount, setMinAmount] = useState(String(rule.minAmount))
   const [text, setText] = useState(rule.text)
+  const [approval, setApproval] = useState(rule.requiresApproval)
+  const [cutoff, setCutoff] = useState(rule.cutoffTime ?? '')
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null)
   const [preview, setPreview] = useState<AutoMessagePreview | null>(null)
   const [previewBusy, setPreviewBusy] = useState(false)
   const textRef = useRef<HTMLTextAreaElement>(null)
   const meta = TITLES[rule.key]
+  const isAbsence = rule.key === 'absence'
 
   const dirty =
     enabled !== rule.enabled ||
     sendTime !== rule.sendTime ||
     (rule.monthly && day !== rule.dayOfMonth) ||
     (rule.key === 'debt' && Number(minAmount || 0) !== rule.minAmount) ||
-    text !== rule.text
+    text !== rule.text ||
+    (!rule.eventDriven && approval !== rule.requiresApproval) ||
+    (isAbsence && cutoff !== (rule.cutoffTime ?? ''))
 
   const save = async (nextEnabled = enabled) => {
     setBusy(true)
@@ -130,6 +125,8 @@ function RuleCard({ rule, onSaved }: { rule: AutoMessageRule; onSaved: (r: AutoM
         dayOfMonth: day,
         minAmount: Number(minAmount || 0),
         text,
+        requiresApproval: rule.eventDriven ? undefined : approval,
+        cutoffTime: isAbsence ? cutoff || null : undefined,
       })
       setEnabled(saved.enabled)
       onSaved(saved)
@@ -186,35 +183,65 @@ function RuleCard({ rule, onSaved }: { rule: AutoMessageRule; onSaved: (r: AutoM
         />
       </div>
 
-      <div className="flex flex-wrap items-end gap-4">
-        <div>
-          <span className="mb-1 block text-sm font-medium text-slate-600">Vaqti</span>
-          <Time24Input value={sendTime} onChange={setSendTime} />
+      {!rule.eventDriven && (
+        <div className="flex flex-wrap items-end gap-4">
+          <div>
+            <span className="mb-1 block text-sm font-medium text-slate-600">Vaqti</span>
+            <Time24Input value={sendTime} onChange={setSendTime} />
+          </div>
+          {isAbsence && (
+            <div>
+              <span className="mb-1 block text-sm font-medium text-slate-600">Qaysi darsgacha</span>
+              <div className="flex items-center gap-2">
+                <Time24Input value={cutoff || sendTime} onChange={setCutoff} />
+                {cutoff && cutoff !== sendTime && (
+                  <button
+                    type="button"
+                    onClick={() => setCutoff('')}
+                    className="text-xs text-slate-400 hover:text-slate-600"
+                    title="Yuborish vaqti bilan bir xil"
+                  >
+                    <RotateCcw className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+          {rule.monthly && (
+            <Select
+              label="Oyning kuni"
+              value={String(day)}
+              onChange={(e) => setDay(Number(e.target.value))}
+              className="w-24"
+            >
+              {Array.from({ length: 28 }, (_, i) => i + 1).map((d) => (
+                <option key={d} value={d}>
+                  {d}
+                </option>
+              ))}
+            </Select>
+          )}
+          {rule.key === 'debt' && (
+            <Input
+              label="Eng kam qarz, so'm"
+              inputMode="numeric"
+              value={minAmount}
+              onChange={(e) => setMinAmount(e.target.value.replace(/\D/g, ''))}
+              className="w-40"
+            />
+          )}
+          <label className="flex items-center gap-2 pb-2 text-sm text-slate-600">
+            <Switch checked={approval} disabled={busy} ariaLabel="Tasdiq bilan yuborish" onChange={setApproval} />
+            Tasdiq bilan
+          </label>
         </div>
-        {rule.monthly && (
-          <Select
-            label="Oyning kuni"
-            value={String(day)}
-            onChange={(e) => setDay(Number(e.target.value))}
-            className="w-24"
-          >
-            {Array.from({ length: 28 }, (_, i) => i + 1).map((d) => (
-              <option key={d} value={d}>
-                {d}
-              </option>
-            ))}
-          </Select>
-        )}
-        {rule.key === 'debt' && (
-          <Input
-            label="Eng kam qarz, so'm"
-            inputMode="numeric"
-            value={minAmount}
-            onChange={(e) => setMinAmount(e.target.value.replace(/\D/g, ''))}
-            className="w-40"
-          />
-        )}
-      </div>
+      )}
+      {isAbsence && (
+        <p className="-mt-2 text-xs text-slate-400">
+          {cutoff || sendTime} gacha boshlangan darslar hisoblanadi; shu darslarning davomati to'liq olinmagan sinfga
+          xabar ketmaydi.
+        </p>
+      )}
 
       <div>
         <FormatToolbar textareaRef={textRef} value={text} onChange={setText} className="mb-1.5" />
@@ -233,7 +260,13 @@ function RuleCard({ rule, onSaved }: { rule: AutoMessageRule; onSaved: (r: AutoM
               onClick={() => insertToken(t.token)}
               className="rounded-md bg-slate-100 px-2 py-1 text-xs font-medium text-slate-600 transition-colors hover:bg-brand-50 hover:text-brand-700"
             >
-              {t.token}
+              {t.label ? (
+                <>
+                  {t.label} <span className="font-normal text-slate-400">{t.token}</span>
+                </>
+              ) : (
+                t.token
+              )}
             </button>
           ))}
           {text !== rule.defaultText && (
@@ -250,14 +283,20 @@ function RuleCard({ rule, onSaved }: { rule: AutoMessageRule; onSaved: (r: AutoM
 
       {preview && (
         <div className="rounded-lg bg-slate-50 px-3 py-2 text-sm">
-          <p className="mb-1 text-xs text-slate-500">
-            Hozir ishga tushsa: <b className="text-slate-700">{preview.pupils}</b> o'quvchi, ota-onasi Telegramda —{' '}
-            <b className="text-slate-700">{preview.withTelegram}</b>
-            {preview.alreadySent > 0 && <>, allaqachon yuborilgan — {preview.alreadySent}</>}.
-          </p>
+          {rule.eventDriven ? (
+            <p className="mb-1 text-xs text-slate-500">Namuna — to'qima qiymatlar bilan, chek ostida shunday chiqadi:</p>
+          ) : (
+            <p className="mb-1 text-xs text-slate-500">
+              Hozir ishga tushsa: <b className="text-slate-700">{preview.pupils}</b> o'quvchi, ota-onasi Telegramda —{' '}
+              <b className="text-slate-700">{preview.withTelegram}</b>
+              {preview.alreadySent > 0 && <>, allaqachon yuborilgan — {preview.alreadySent}</>}.
+            </p>
+          )}
           {preview.sample ? (
             <>
-              <p className="mb-1 text-xs font-medium text-slate-400">Namuna ({preview.sampleFor}):</p>
+              {!rule.eventDriven && (
+                <p className="mb-1 text-xs font-medium text-slate-400">Namuna ({preview.sampleFor}):</p>
+              )}
               <RichText html={preview.sample} className="text-slate-700" />
             </>
           ) : (
@@ -269,7 +308,9 @@ function RuleCard({ rule, onSaved }: { rule: AutoMessageRule; onSaved: (r: AutoM
       <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-3">
         <p className="flex items-center gap-1.5 text-xs text-slate-400">
           <CalendarClock className="h-3.5 w-3.5" />
-          {rule.lastRunAt ? (
+          {rule.eventDriven ? (
+            "Har to'lovda — natijasi \"Tarix va statistika\" bo'limida"
+          ) : rule.lastRunAt ? (
             <>
               Oxirgi: {fmtDateTime(rule.lastRunAt)} — yetdi {rule.lastSent}
               {rule.lastFailed > 0 && `, yetmadi ${rule.lastFailed}`}
@@ -289,111 +330,6 @@ function RuleCard({ rule, onSaved }: { rule: AutoMessageRule; onSaved: (r: AutoM
         </div>
       </div>
       {msg && <p className={cn('text-sm', msg.ok ? 'text-emerald-700' : 'text-red-600')}>{msg.text}</p>}
-    </Card>
-  )
-}
-
-function today(): string {
-  return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Tashkent' })
-}
-
-function LogCard({ reloadKey }: { reloadKey: number }) {
-  const [rule, setRule] = useState('')
-  const [status, setStatus] = useState('')
-  const [from, setFrom] = useState(() => {
-    const d = new Date(Date.now() - 6 * 86_400_000)
-    return d.toLocaleDateString('en-CA', { timeZone: 'Asia/Tashkent' })
-  })
-  const [to, setTo] = useState(today())
-  const [rows, setRows] = useState<AutoMessageLogRow[] | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const [open, setOpen] = useState<string | null>(null)
-
-  const load = useCallback(() => {
-    setError(null)
-    getAutoMessageLog({ rule: rule || undefined, status: status || undefined, from, to })
-      .then(setRows)
-      .catch((e) => setError(errorText(e, "Jurnalni yuklab bo'lmadi.")))
-  }, [rule, status, from, to])
-
-  useEffect(() => {
-    load()
-  }, [load, reloadKey])
-
-  return (
-    <Card className="p-0">
-      <div className="flex flex-wrap items-end justify-between gap-3 border-b border-slate-100 px-5 py-4">
-        <div>
-          <h3 className="font-semibold text-slate-800">Jurnal</h3>
-          <p className="text-xs text-slate-400">Avtomatik yuborilgan xabarlar — har ota-ona chati alohida qator.</p>
-        </div>
-        <div className="flex flex-wrap items-end gap-2">
-          <Select value={rule} onChange={(e) => setRule(e.target.value)} className="w-48">
-            <option value="">Barcha qoidalar</option>
-            {(Object.keys(TITLES) as AutoMessageKey[]).map((k) => (
-              <option key={k} value={k}>
-                {TITLES[k].title}
-              </option>
-            ))}
-          </Select>
-          <Select value={status} onChange={(e) => setStatus(e.target.value)} className="w-40">
-            <option value="">Barcha holat</option>
-            {Object.entries(STATUS).map(([k, v]) => (
-              <option key={k} value={k}>
-                {v.label}
-              </option>
-            ))}
-          </Select>
-          <DatePicker value={from} onChange={setFrom} ariaLabel="Davr boshi" className="w-36" />
-          <DatePicker value={to} onChange={setTo} ariaLabel="Davr oxiri" className="w-36" />
-        </div>
-      </div>
-      {error ? (
-        <p className="px-5 py-6 text-sm text-red-600">{error}</p>
-      ) : !rows ? (
-        <Loader label="Yuklanmoqda..." />
-      ) : rows.length === 0 ? (
-        <p className="px-5 py-10 text-center text-sm text-slate-400">Bu davrda avtomatik xabar yo'q.</p>
-      ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-400">
-              <tr>
-                <th className="px-5 py-2 font-medium">Vaqt</th>
-                <th className="px-3 py-2 font-medium">Qoida</th>
-                <th className="px-3 py-2 font-medium">O'quvchi</th>
-                <th className="px-3 py-2 font-medium">Ota-ona</th>
-                <th className="px-3 py-2 font-medium">Holat</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((r) => (
-                <tr
-                  key={r.id}
-                  onClick={() => setOpen(open === r.id ? null : r.id)}
-                  className="cursor-pointer border-t border-slate-100 align-top hover:bg-slate-50/60"
-                >
-                  <td className="whitespace-nowrap px-5 py-2 text-slate-500">{fmtDateTime(r.at)}</td>
-                  <td className="px-3 py-2 text-slate-600">{TITLES[r.ruleKey]?.title ?? r.ruleKey}</td>
-                  <td className="px-3 py-2">
-                    <span className="font-medium text-slate-800">{r.fullName}</span>
-                    <span className="text-slate-400"> · {r.className}</span>
-                    {open === r.id && r.text && (
-                      <RichText html={r.text} className="mt-2 rounded-lg bg-slate-50 px-3 py-2 text-slate-700" />
-                    )}
-                  </td>
-                  <td className="px-3 py-2 text-slate-600">{r.parentName ?? '—'}</td>
-                  <td className="px-3 py-2">
-                    <span className={cn('rounded-full px-2 py-0.5 text-xs font-medium', STATUS[r.status].cls)}>
-                      {STATUS[r.status].label}
-                    </span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
     </Card>
   )
 }

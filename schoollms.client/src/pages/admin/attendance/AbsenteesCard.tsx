@@ -7,6 +7,7 @@
  * pastdagi "Kim, qaysi kuni" ro'yxatida.
  */
 import { useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { ChevronRight } from 'lucide-react'
 import type { AttendanceStudentRow } from '@/api/services/attendanceAnalytics'
 import { Card } from '@/components/ui/Card'
@@ -24,11 +25,14 @@ export function AbsenteesCard({
   rows,
   days,
   onPick,
+  openCases,
 }: {
   rows: AttendanceStudentRow[]
   /** Davrdagi kunlar soni — davrga sig'maydigan chegara ("5+" 3 kunlik davrda) ko'rsatilmaydi. */
   days: number
   onPick: (studentId: string) => void
+  /** O'quvchi → ochiq "Qizil ro'yxat" holati (2026-10-15); qatorda havola bo'lib chiqadi. */
+  openCases?: ReadonlyMap<string, string>
 }) {
   const [filter, setFilter] = useState<(typeof MISS_FILTERS)[number]['key']>('all')
   const [pageSize, setPageSize] = useState<number>(PAGE_SIZES[0])
@@ -123,6 +127,16 @@ export function AbsenteesCard({
                       <span className="block truncate font-medium" title={r.fullName}>
                         {r.fullName}
                       </span>
+                      {openCases?.has(r.studentId) && (
+                        <Link
+                          to={`/admin/attendance/red-list?case=${openCases.get(r.studentId)}`}
+                          onClick={(e) => e.stopPropagation()}
+                          className="mt-0.5 inline-flex rounded-full bg-red-50 px-2 py-0.5 text-xs font-medium text-red-700 hover:bg-red-100"
+                          title="Ota-ona bilan aloqa holati"
+                        >
+                          Qizil ro'yxatda
+                        </Link>
+                      )}
                     </td>
                     <td className="truncate px-3 py-2.5 text-slate-500">{r.rowName || '—'}</td>
                     <td className="px-3 py-2.5 font-semibold text-red-600">{r.tally.unexcused} kun</td>

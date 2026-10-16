@@ -182,6 +182,8 @@ public class LedgerServiceTests(ApiFixture fixture)
                 "expense:rent", "expense:repair", "expense:other",
                 // Cash-box Chiqim types (2026-10-08) — not `expenses.category` values.
                 "expense:food", "expense:transport", "expense:dormitory", "expense:marketing", "expense:taxes",
+                // Mini-magazin sales (2026-10-15) — a Kirim transaction type's account.
+                "revenue:sales",
             ],
             Accounts.All);
 

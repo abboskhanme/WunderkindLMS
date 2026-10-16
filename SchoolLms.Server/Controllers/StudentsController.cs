@@ -186,6 +186,11 @@ public class StudentsController(AppDbContext db, AuditService audit) : Controlle
         // `parent_*` ustunlariga ko'chadi — shu ikkovi hech qachon
         // ayrilmasligi kerak (ota-ona portali telefon bo'yicha topadi).
         GuardianSync.MirrorPrimaryInput(student, p.Guardians);
+        audit.Record(AuditService.EntityStudent, student.Id, "create",
+            $"O'quvchi qo'shildi ({student.FullName}, "
+            + (string.IsNullOrWhiteSpace(student.ClassName) ? "sinfsiz" : student.ClassName) + ")",
+            after: Labelled(ProfileSnapshot(student, passwordSet: false)), studentId: student.Id);
+        await Flow.EnrolledAsync(student, StudentEventSource.Manual);
         await db.SaveChangesAsync();
         // SPEC §3.2: ota-ona raqamidan vasiy qatorini va bog'lanishni chiqaramiz.
         // Busiz bugun qo'shilgan o'quvchining ota-onasi Telegram Mini App'da
@@ -244,6 +249,7 @@ public class StudentsController(AppDbContext db, AuditService audit) : Controlle
             $"Lid o'quvchiga aylantirildi va lidlardan o'chirildi → "
             + (string.IsNullOrWhiteSpace(student.ClassName) ? "sinfsiz" : student.ClassName),
             studentId: student.Id);
+        await Flow.EnrolledAsync(student, StudentEventSource.Lead);
         await db.SaveChangesAsync();
 
         // Create bilan bir xil: vasiy qatori va bog'lanish (Mini App shu orqali ko'radi).
@@ -375,6 +381,8 @@ public class StudentsController(AppDbContext db, AuditService audit) : Controlle
             return BadRequest(new { message = ClassOrTargetGradeMessage });
 
         var oldClassName = student.ClassName;
+        var profileBefore = ProfileSnapshot(student, passwordSet: false);
+        var oldEnrollment = student.EnrollmentDate;
 
         // O'quvchi FISH — parts berilsa ulardan FullName yig'iladi.
         if (p.LastName is not null || p.FirstName is not null || p.MiddleName is not null)
@@ -439,6 +447,17 @@ public class StudentsController(AppDbContext db, AuditService audit) : Controlle
         }
         if (user is not null) user.FullName = student.FullName;
 
+        // Audit (2026-10-15): the card's fields, changed ones only, one row per save. The class
+        // keeps its own row below (StudentClass) — memberships and old screens read it.
+        audit.RecordChanges(AuditService.EntityStudent, student.Id,
+            $"O'quvchi ma'lumoti o'zgardi ({student.FullName})",
+            profileBefore, ProfileSnapshot(student, passwordSet: !string.IsNullOrWhiteSpace(p.NewPassword)),
+            ProfileLabels, studentId: student.Id);
+
+        // The enrolment day on the card moved — the pupil's arrival in the flow report moves with it.
+        if (!string.Equals(oldEnrollment, student.EnrollmentDate, StringComparison.Ordinal))
+            await StudentFlowReport.MoveEnrolmentAsync(db, student.Id, StudentFlowRecorder.EnrollmentDay(student));
+
         // Sinf o'zgarishi PULGA TEGMAYDI (P1-21): narx `student_subscriptions`
         // da, uni "Moliya → Obunalar" ekrani boshqaradi. Sinfni o'zgartirish
         // narxni jimgina qayta yozib yuborsa, obunadagi kelishilgan summa
@@ -493,6 +512,45 @@ public class StudentsController(AppDbContext db, AuditService audit) : Controlle
     private string? CurrentUserId =>
         User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
         ?? User.FindFirst("sub")?.Value;
+
+    /// <summary>Arrivals and departures of this request (docs/modules/student-flow.md).</summary>
+    private StudentFlowRecorder Flow => _flow ??= new StudentFlowRecorder(db, StudentEventActor.From(User));
+    private StudentFlowRecorder? _flow;
+
+    /// <summary>Uzbek names of the card's fields — the audit row's keys and summary (audit-log.md).</summary>
+    private static readonly IReadOnlyDictionary<string, string> ProfileLabels = new Dictionary<string, string>
+    {
+        ["FullName"] = "F.I.SH",
+        ["BirthDate"] = "Tug'ilgan sana",
+        ["Address"] = "Manzil",
+        ["Gender"] = "Jinsi",
+        ["ParentFullName"] = "Ota-ona",
+        ["ParentPhone"] = "Ota-ona telefoni",
+        ["EnrollmentDate"] = "Qabul sanasi",
+        ["Phone"] = "Telefon",
+        ["Language"] = "O'qish tili",
+        ["Photo"] = "Rasm",
+        ["ParentPhoto"] = "Ota-ona rasmi",
+        ["Document"] = "Hujjat",
+        ["TargetGrade"] = "Mo'ljal sinf",
+        ["Password"] = "Parol",
+    };
+
+    /// <summary>The card's fields as the audit sees them. A password is never written — only that it was set.</summary>
+    private static object ProfileSnapshot(Student s, bool passwordSet) => new
+    {
+        s.FullName, s.BirthDate, s.Address, s.Gender, s.ParentFullName, s.ParentPhone, s.EnrollmentDate,
+        s.Phone, s.Language,
+        Photo = s.BirthCertificateUrl, ParentPhoto = s.ParentPassportUrl, Document = s.DocumentUrl,
+        s.TargetGrade,
+        Password = passwordSet ? "yangilandi" : null,
+    };
+
+    /// <summary>A create row's "after": the same fields under their Uzbek names, empty ones left out.</summary>
+    private static Dictionary<string, object?> Labelled(object snapshot) =>
+        System.Text.Json.JsonSerializer.SerializeToNode(snapshot)!.AsObject()
+            .Where(kv => kv.Value is not null && kv.Value.ToString().Length > 0)
+            .ToDictionary(kv => ProfileLabels.GetValueOrDefault(kv.Key, kv.Key), kv => (object?)kv.Value!.DeepClone());
 
     /// <summary>
     /// O'quvchi kartochkasining <b>"Sinf va guruhlar"</b> tab'i (G-10, §2.1.6).
@@ -591,6 +649,16 @@ public class StudentsController(AppDbContext db, AuditService audit) : Controlle
                           + "bo'lmaydi — uni arxivga ko'chiring.",
             });
 
+        // The only trace of a pupil deleted for good (no FK on audit_logs.student_id / student_events):
+        // written before the row goes, like delete-many (StudentSearchController.DeleteMany).
+        audit.Record(AuditService.EntityStudentDelete, student.Id, "delete",
+            $"O'quvchi butunlay o'chirildi ({student.FullName}, {student.ClassName})",
+            before: new { student.FullName, student.ClassName, student.IsArchived },
+            studentId: student.Id);
+        // An archived pupil has already left (their archive wrote the departure).
+        if (!student.IsArchived)
+            await Flow.LeftAsync(student, student.ClassName, null, "O'chirildi", StudentEventSource.Delete);
+
         // Biriktirilgan tizim akkauntini ham o'chiramiz.
         if (student.UserId is not null)
         {
@@ -644,13 +712,18 @@ public class StudentsController(AppDbContext db, AuditService audit) : Controlle
                         : StudentArchiveService.DebtorBlockedMessage));
         }
 
+        // The class BEFORE archiving blanks it — the departure is recorded in it.
+        var classBefore = student.ClassName;
+
         // Login bloklash — PasswordHash bo'shaltiriladi (akkaunt qatori qoladi).
         (await archive.ApplyAsync(student, reason, req.ArchiveReasonId, ct))?.BlockLogin();
 
-        audit.Record(AuditService.EntityStudentDiscount, student.Id, "update",
+        // Under the pupil now (it used to be "StudentDiscount", a finance type — non-finance staff never saw it).
+        audit.Record(AuditService.EntityStudent, student.Id, "archive",
             $"O'quvchi arxivga ko'chirildi ({student.FullName}): \"{reason}\""
                 + (isSuperAdmin && req.Force ? " — qarzdorlik to'sig'i chetlab o'tildi" : ""),
             studentId: student.Id);
+        await Flow.LeftAsync(student, classBefore, req.ArchiveReasonId, reason, StudentEventSource.Manual, ct);
 
         await db.SaveChangesAsync(ct);
         return NoContent();
@@ -692,9 +765,11 @@ public class StudentsController(AppDbContext db, AuditService audit) : Controlle
             }
         }
 
-        audit.Record(AuditService.EntityStudentDiscount, student.Id, "update",
+        audit.Record(AuditService.EntityStudent, student.Id, "restore",
             $"O'quvchi arxivdan qaytarildi ({student.FullName})",
             studentId: student.Id);
+        // Archiving emptied the class, so the pupil comes back without one (placed later).
+        await Flow.ReturnedAsync(student, student.ClassName, StudentEventSource.Manual);
 
         await db.SaveChangesAsync();
         return NoContent();
@@ -737,6 +812,8 @@ public class StudentsController(AppDbContext db, AuditService audit) : Controlle
         }
         var pwd = AccountFactory.GeneratePassword();
         user.SetInitialPassword(pwd);
+        audit.Record(AuditService.EntityStudent, student.Id, "password",
+            $"O'quvchiga yangi parol berildi ({student.FullName})", studentId: student.Id);
         await db.SaveChangesAsync();
         return new CredentialsDto(user.Email, pwd, user.Role);
     }
@@ -891,6 +968,9 @@ public class StudentsController(AppDbContext db, AuditService audit) : Controlle
 
         if (created > 0)
         {
+            foreach (var pupil in imported) await Flow.EnrolledAsync(pupil, StudentEventSource.Import);
+            audit.Record(AuditService.EntityStudentImport, file.FileName, "import",
+                $"Excel'dan import: {created} ta yangi o'quvchi (fayl: {file.FileName})");
             await db.SaveChangesAsync();
             // Butun partiya uchun BITTA marta (SPEC §3.2). `EnsureManyAsync` ikkita
             // so'rov yuboradi — importdagi har qator uchun alohida emas.

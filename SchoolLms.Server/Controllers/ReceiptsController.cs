@@ -137,7 +137,8 @@ public class ReceiptsController(
     {
         if (await ForbiddenForOtherCashierAsync(paymentId, ct) is { } forbidden) return forbidden;
 
-        var delivered = await receipts.SendToGuardianAsync(paymentId, ct);
+        // A manual resend: the delivery log (auto-messages.md) shows who pressed it.
+        var delivered = await receipts.SendToGuardianAsync(paymentId, FinanceActor.RequireUserId(User), ct);
 
         return new ReceiptDeliveryDto(
             delivered,

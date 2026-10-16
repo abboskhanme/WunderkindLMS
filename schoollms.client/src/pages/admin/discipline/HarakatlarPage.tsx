@@ -1,21 +1,43 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
+  AlertTriangle,
   ArrowDownCircle,
   ArrowUpCircle,
   ChevronLeft,
   ChevronRight,
   ClipboardList,
+  Download,
+  Pencil,
+  Plus,
   RotateCcw,
   Scale,
   Search,
+  Trash2,
 } from 'lucide-react'
-import type { DisciplineFeed, DisciplineFeedRow, DisciplineReason } from '@/types'
-import { getDisciplineFeed, getDisciplineReasons } from '@/api/services/discipline'
+import type {
+  DisciplineCoverage,
+  DisciplineFeed,
+  DisciplineFeedFilters,
+  DisciplineFeedRow,
+  DisciplineReason,
+} from '@/types'
+import {
+  deleteDisciplinePoint,
+  downloadDisciplineFeed,
+  getDisciplineCoverage,
+  getDisciplineFeed,
+  getDisciplineReasons,
+} from '@/api/services/discipline'
 import { cn } from '@/lib/utils'
+import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { Loader } from '@/components/ui/Loader'
 import { StatCard } from '@/components/ui/StatCard'
 import { DatePicker } from '@/components/ui/DatePicker'
+import { IncidentFormModal, type IncidentEditing } from './IncidentFormModal'
+
+const errorText = (e: unknown, fallback: string) =>
+  (e as { response?: { data?: { message?: string } } })?.response?.data?.message ?? fallback
 
 const control =
   'rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-brand-400'
@@ -83,6 +105,14 @@ export function HarakatlarPage() {
   const [searchInput, setSearchInput] = useState('')
   const [page, setPage] = useState(1)
   const [loading, setLoading] = useState(true)
+  // Add / edit (EduSchool "Harakat qo'shish" / "tahrirlash"); `reloadKey` refetches after a change.
+  const [formOpen, setFormOpen] = useState(false)
+  const [editing, setEditing] = useState<IncidentEditing | null>(null)
+  const [reloadKey, setReloadKey] = useState(0)
+  const [notice, setNotice] = useState<string | null>(null)
+  const [exporting, setExporting] = useState(false)
+  const [coverage, setCoverage] = useState<DisciplineCoverage | null>(null)
+  const [coverageOpen, setCoverageOpen] = useState(false)
 
   useEffect(() => {
     getDisciplineReasons().then(setReasons)
@@ -98,11 +128,9 @@ export function HarakatlarPage() {
     return () => clearTimeout(timer)
   }, [searchInput, filters.search])
 
-  useEffect(() => {
-    let cancelled = false
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- filtr o'zgarganda lentani qayta yuklash (maqsadli, loyihadagi mavjud naqsh)
-    setLoading(true)
-    getDisciplineFeed({
+  /** The screen's filters as the API takes them — shared by the feed and its Excel. */
+  const query = useMemo<DisciplineFeedFilters>(
+    () => ({
       from: filters.from || undefined,
       to: filters.to || undefined,
       className: filters.className === 'all' ? undefined : filters.className,
@@ -111,9 +139,15 @@ export function HarakatlarPage() {
       sign: filters.sign === 'all' ? undefined : (filters.sign as 'positive' | 'negative'),
       source: filters.source === 'all' ? undefined : (filters.source as 'manual' | 'attendance'),
       search: filters.search.trim() || undefined,
-      page,
-      pageSize: PAGE_SIZE,
-    })
+    }),
+    [filters],
+  )
+
+  useEffect(() => {
+    let cancelled = false
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- filtr o'zgarganda lentani qayta yuklash (maqsadli, loyihadagi mavjud naqsh)
+    setLoading(true)
+    getDisciplineFeed({ ...query, page, pageSize: PAGE_SIZE })
       .then((data) => {
         if (!cancelled) setFeed(data)
       })
@@ -123,7 +157,79 @@ export function HarakatlarPage() {
     return () => {
       cancelled = true
     }
-  }, [filters, page])
+  }, [query, page, reloadKey])
+
+  // "Belgilanmagan sinflar" — over the same period as the feed.
+  useEffect(() => {
+    let cancelled = false
+    getDisciplineCoverage(filters.from || undefined, filters.to || undefined)
+      .then((data) => {
+        if (!cancelled) setCoverage(data)
+      })
+      .catch(() => {
+        if (!cancelled) setCoverage(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [filters.from, filters.to, reloadKey])
+
+  const openAdd = () => {
+    setEditing(null)
+    setFormOpen(true)
+  }
+
+  const openEdit = (row: DisciplineFeedRow) => {
+    setEditing({
+      id: row.id,
+      reasonId: row.reasonId,
+      reasonName: row.reasonName,
+      points: row.points,
+      note: row.note,
+      studentName: `${row.fullName}${row.className ? ` (${row.className})` : ''}`,
+    })
+    setFormOpen(true)
+  }
+
+  const closeForm = () => {
+    setFormOpen(false)
+    setEditing(null)
+  }
+
+  const saved = (notified: number) => {
+    setNotice(
+      editing
+        ? 'Harakat tahrirlandi'
+        : notified > 0
+          ? `Harakat qo'shildi — ${notified} ta ota-onaga Telegram xabari ketdi`
+          : "Harakat qo'shildi",
+    )
+    closeForm()
+    setReloadKey((k) => k + 1)
+  }
+
+  const remove = async (row: DisciplineFeedRow) => {
+    const pts = row.points > 0 ? `+${row.points}` : String(row.points)
+    if (!confirm(`${row.fullName}: "${row.reasonName}" (${pts}) yozuvini o'chirasizmi?`)) return
+    try {
+      await deleteDisciplinePoint(row.id)
+      setNotice("Harakat o'chirildi")
+      setReloadKey((k) => k + 1)
+    } catch (e) {
+      alert(errorText(e, "O'chirib bo'lmadi"))
+    }
+  }
+
+  const exportXlsx = async () => {
+    setExporting(true)
+    try {
+      await downloadDisciplineFeed(query)
+    } catch (e) {
+      alert(errorText(e, "Excel faylni olib bo'lmadi"))
+    } finally {
+      setExporting(false)
+    }
+  }
 
   // Filtr o'zgarsa — birinchi sahifaga qaytamiz, aks holda 3-sahifada "bo'sh" ko'rinardi.
   const set = (patch: Partial<Filters>) => {
@@ -150,25 +256,48 @@ export function HarakatlarPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-xl font-semibold text-slate-800">Harakatlar</h1>
-        <p className="text-sm text-slate-400">
-          Maktab bo'ylab intizomiy yozuvlar — qo'lda kiritilgan ballar va jurnal davomatidan
-          kelgan ballar bir ro'yxatda.
-        </p>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-semibold text-slate-800">Harakatlar</h1>
+          <p className="text-sm text-slate-400">
+            Maktab bo'ylab xulq-atvor yozuvlari — qo'lda kiritilgan (xodimlar va o'qituvchilar) va jurnal
+            davomatidan kelgan ballar bir ro'yxatda.
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button variant="secondary" onClick={exportXlsx} disabled={exporting}>
+            <Download className="h-4 w-4" /> {exporting ? 'Yuklanmoqda...' : 'Excel'}
+          </Button>
+          <Button onClick={openAdd}>
+            <Plus className="h-4 w-4" /> Harakat qo'shish
+          </Button>
+        </div>
       </div>
+
+      {notice && (
+        <div className="flex items-center justify-between gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm text-emerald-800">
+          {notice}
+          <button
+            type="button"
+            onClick={() => setNotice(null)}
+            className="text-xs font-medium text-emerald-700 hover:underline"
+          >
+            Yopish
+          </button>
+        </div>
+      )}
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <StatCard label="Yozuvlar" value={feed.total} icon={ClipboardList} />
         <StatCard
-          label="Rag'bat"
+          label="Ijobiy"
           value={feed.plusCount}
           icon={ArrowUpCircle}
           iconBg="bg-emerald-50"
           iconColor="text-emerald-600"
         />
         <StatCard
-          label="Jazo"
+          label="Salbiy"
           value={feed.minusCount}
           icon={ArrowDownCircle}
           iconBg="bg-red-50"
@@ -183,6 +312,48 @@ export function HarakatlarPage() {
           hint="Tanlangan davr bo'yicha"
         />
       </div>
+
+      {coverage && coverage.totalClasses > 0 && (
+        <Card className={cn('p-4', coverage.notAssigned > 0 && 'border-amber-200')}>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <AlertTriangle
+                className={cn('h-4 w-4', coverage.notAssigned > 0 ? 'text-amber-500' : 'text-emerald-500')}
+              />
+              <p className="text-sm font-semibold text-slate-800">
+                Belgilanmagan sinflar: {coverage.notAssigned} / {coverage.totalClasses}
+              </p>
+              <span className="text-xs text-slate-400">
+                — tanlangan davrda bironta ham harakat yozilmagan sinflar
+              </span>
+            </div>
+            {coverage.notAssigned > 0 && (
+              <button
+                type="button"
+                onClick={() => setCoverageOpen((v) => !v)}
+                className="text-xs font-medium text-brand-600 hover:underline"
+              >
+                {coverageOpen ? 'Yashirish' : "Ro'yxatni ko'rish"}
+              </button>
+            )}
+          </div>
+          {coverageOpen && coverage.notAssigned > 0 && (
+            <div className="mt-3 flex flex-wrap gap-1.5">
+              {coverage.classes
+                .filter((c) => c.incidents === 0)
+                .map((c) => (
+                  <span
+                    key={c.classId}
+                    title={`${c.students} o'quvchi`}
+                    className="rounded-md bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700"
+                  >
+                    {c.className}
+                  </span>
+                ))}
+            </div>
+          )}
+        </Card>
+      )}
 
       <Card className="p-0">
         {/* Filtrlar */}
@@ -277,9 +448,9 @@ export function HarakatlarPage() {
               onChange={(e) => set({ sign: e.target.value })}
               className={control}
             >
-              <option value="all">Rag'bat va jazo</option>
-              <option value="positive">Faqat rag'bat (+)</option>
-              <option value="negative">Faqat jazo (−)</option>
+              <option value="all">Ijobiy va salbiy</option>
+              <option value="positive">Faqat ijobiy (+)</option>
+              <option value="negative">Faqat salbiy (−)</option>
             </select>
             <select
               value={filters.source}
@@ -307,6 +478,7 @@ export function HarakatlarPage() {
                   <th className="px-4 py-3 text-center">Ball</th>
                   <th className="px-4 py-3">Izoh</th>
                   <th className="px-4 py-3">Kim</th>
+                  <th className="px-4 py-3 text-right">Amallar</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -349,14 +521,42 @@ export function HarakatlarPage() {
                           jurnal
                         </span>
                       ) : (
-                        <span className="text-slate-500">{row.createdBy || '—'}</span>
+                        <span
+                          className="text-slate-500"
+                          title={row.updatedBy ? `Tahrirladi: ${row.updatedBy}` : undefined}
+                        >
+                          {row.createdBy || '—'}
+                          {row.updatedAt && <span className="ml-1 text-[10px] text-slate-400">(tahrirlangan)</span>}
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
+                      {row.source === 'manual' && (
+                        <div className="flex items-center justify-end gap-0.5">
+                          <button
+                            type="button"
+                            title="Tahrirlash"
+                            onClick={() => openEdit(row)}
+                            className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700"
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </button>
+                          <button
+                            type="button"
+                            title="O'chirish"
+                            onClick={() => remove(row)}
+                            className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-red-50 hover:text-red-600"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </div>
                       )}
                     </td>
                   </tr>
                 ))}
                 {feed.items.length === 0 && (
                   <tr>
-                    <td colSpan={7} className="px-4 py-12 text-center text-slate-400">
+                    <td colSpan={8} className="px-4 py-12 text-center text-slate-400">
                       Tanlangan davrda yozuv yo'q
                     </td>
                   </tr>
@@ -394,6 +594,8 @@ export function HarakatlarPage() {
           </div>
         </div>
       </Card>
+
+      <IncidentFormModal open={formOpen} editing={editing} onClose={closeForm} onSaved={saved} />
     </div>
   )
 }

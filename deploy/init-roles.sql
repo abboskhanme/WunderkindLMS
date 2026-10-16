@@ -212,7 +212,30 @@ FROM (VALUES
         ('invoice_adjustments'),
         -- docs/modules/mcp-readonly.md — what an AI client read is audited;
         -- the audit row can never be edited or deleted afterwards.
-        ('mcp_audit')
+        ('mcp_audit'),
+        -- docs/modules/shop.md — what a cash-box Kirim sold (shop_guards.sql).
+        -- Append-only; a wrong sale is cancelled by storno of its Kirim.
+        ('shop_sale_lines'),
+        -- Cash-box money rows and transfer decisions (cash_boxes_guards.sql,
+        -- cash_box_transfer_decisions_guards.sql). Missing from this list until
+        -- 2026-10-16, so every run of this file had handed UPDATE/DELETE on them
+        -- back to app_rw (found open on prod that day).
+        ('cash_box_transactions'),
+        ('cash_box_transfer_decisions')
+     ) AS t(name)
+WHERE to_regclass('public.' || quote_ident(t.name)) IS NOT NULL
+\gexec
+
+
+-- ---------------------------------------------------------------------------
+-- 5a) DELETE-only locks — catalogue-like tables that may be edited but whose
+--     rows are an audit trail (cash_boxes_guards.sql, guardian_guards.sql).
+--     Same reason as step 5: step 4 re-grants DELETE on every run.
+-- ---------------------------------------------------------------------------
+SELECT format('REVOKE DELETE ON public.%I FROM app_rw', t.name)
+FROM (VALUES
+        ('cash_boxes'),
+        ('telegram_link_codes')
      ) AS t(name)
 WHERE to_regclass('public.' || quote_ident(t.name)) IS NOT NULL
 \gexec

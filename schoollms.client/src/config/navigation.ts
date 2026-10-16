@@ -174,6 +174,8 @@ export const navByRole: Record<Role, NavItem[]> = {
         { label: 'Xonalar', to: '/admin/rooms', perm: 'students', group: "O'QUV JARAYONI" },
         { label: "O'quvchilar", to: '/admin/students', end: true, perm: 'students', group: "O'QUVCHILAR" },
         { label: "Arxiv o'quvchilar", to: '/admin/students/arxiv', perm: 'students', group: "O'QUVCHILAR" },
+        // Kelgan / ketgan o'quvchilar va ketish sabablari (client, 2026-10-15; student-flow.md).
+        { label: "O'quvchilar oqimi", to: '/admin/students/oqim', perm: 'students', group: "O'QUVCHILAR" },
         // Manzil va Ota-onalar `app` ("Ilova") dan `students` ga KO'CHDI —
         // menyu, marshrut va controller bir vaqtda. `app` mobil ilova davridan
         // qolgan kalit edi; ikkala ekran endi O'quv bo'limida turibdi, shuning
@@ -222,6 +224,9 @@ export const navByRole: Record<Role, NavItem[]> = {
         { label: 'Davomat analitikasi', to: '/admin/attendance/analytics', perm: 'attendance', group: 'DAVOMAT' },
         // Kechki dars va yotoqxona statistikasi bilan (mijoz, 2026-10-11).
         { label: 'Davomat analitikasi 2.0', to: '/admin/attendance/analytics-2', perm: 'attendance', group: 'DAVOMAT' },
+        // Ketma-ket / sababsiz qoldirganlar va ota-ona bilan aloqa navbati (mijoz, 2026-10-15). Ko'rish —
+        // `attendance`; amal yozish — `attendanceCases` (access.ts PAGE_EXTRA_SECTIONS).
+        { label: "Qizil ro'yxat", to: '/admin/attendance/red-list', perm: 'attendance', group: 'DAVOMAT' },
         { label: 'Kechki dars', to: '/admin/attendance/boarding?session=evening', perm: 'attendanceEvening', group: 'KECHKI' },
         { label: 'Yotoqxona', to: '/admin/attendance/boarding?session=dorm', perm: 'attendanceDorm', group: 'KECHKI' },
       ],
@@ -302,6 +307,9 @@ export const navByRole: Record<Role, NavItem[]> = {
         { label: 'AI ulanishlar', to: '/admin/boshqaruv/ai', roles: ['superadmin'], group: 'TASHKILOT' },
         { label: 'Avtobus-gps', to: '/admin/boshqaruv/gps', perm: 'gps', group: 'KUZATUV' },
         { label: 'Kameralar', to: '/admin/boshqaruv/cameras', perm: 'cameras', group: 'KUZATUV' },
+        // Kim, qachon, nimani o'zgartirdi — butun maktab bo'yicha (client, 2026-10-15; audit-log.md).
+        // Own key `audit`: the whole history is not a page every staff member may read.
+        { label: "O'zgarishlar tarixi", to: '/admin/audit', perm: 'audit', group: 'KUZATUV' },
         { label: 'Taklif va shikoyatlar', to: '/admin/boshqaruv/feedback', perm: 'feedback', group: 'FIKR' },
         // So'rovnomalar va NPS, KPI (client, 2026-10-07).
         { label: "So'rovnomalar va NPS", to: '/admin/boshqaruv/polls', perm: 'polls', group: 'FIKR' },

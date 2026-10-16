@@ -98,6 +98,8 @@ export const adminPermissions: { key: string; label: string }[] = [
   { key: 'attendance', label: "Davomat (ko'rish va analitika)" },
   // Belgilash alohida (2026-10-11): "kunduzgi davomat faqat hamshirada" — rahbarlar ko'radi, hamshira belgilaydi.
   { key: 'attendanceMark', label: 'Davomat belgilash (kunduzgi)' },
+  // Qizil ro'yxat navbatida ishlash (2026-10-15): amal yozish, mezonlar, "Hozir tekshirish". Ko'rish — `attendance`.
+  { key: 'attendanceCases', label: "Qizil ro'yxat (ota-ona bilan aloqa)" },
   { key: 'attendanceEvening', label: 'Kechki dars davomati' },
   { key: 'attendanceDorm', label: 'Yotoqxona davomati' },
   { key: 'schedule', label: 'Dars jadvali' },
@@ -121,6 +123,8 @@ export const adminPermissions: { key: string; label: string }[] = [
   { key: 'lessonAnalysis', label: 'Dars tahlili' },
   { key: 'hrTasks', label: 'HR topshiriqlari' },
   { key: 'recruitment', label: 'Ishga qabul' },
+  // Boshqaruv → O'zgarishlar tarixi (docs/modules/audit-log.md). Finance rows also need `finance`.
+  { key: 'audit', label: "O'zgarishlar tarixi" },
 ]
 
 /**
@@ -131,10 +135,10 @@ export const adminPermissionGroups: { label: string; keys: string[] }[] = [
   { label: 'Asosiy', keys: ['dashboard', 'leads', 'marketing', 'admission'] },
   { label: 'Moliya', keys: ['finance', 'contracts'] },
   { label: "O'quv bo'limi", keys: ['students', 'classes', 'teachers', 'journal', 'schedule'] },
-  { label: 'Davomat', keys: ['attendance', 'attendanceMark', 'attendanceEvening', 'attendanceDorm'] },
+  { label: 'Davomat', keys: ['attendance', 'attendanceMark', 'attendanceCases', 'attendanceEvening', 'attendanceDorm'] },
   { label: 'Baholash', keys: ['exams', 'seasonalMarks', 'gradesReport', 'teacherReports', 'discipline'] },
   { label: 'Aloqa va ilova', keys: ['messages', 'app', 'feedback', 'polls'] },
-  { label: 'Boshqaruv', keys: ['staff', 'gps', 'cameras', 'lessonAnalysis', 'kpi'] },
+  { label: 'Boshqaruv', keys: ['staff', 'gps', 'cameras', 'lessonAnalysis', 'kpi', 'audit'] },
   { label: 'HR', keys: ['hrTasks', 'recruitment'] },
   { label: 'Sozlamalar', keys: ['settings', 'academicYear'] },
 ]

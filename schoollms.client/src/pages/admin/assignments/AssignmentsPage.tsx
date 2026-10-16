@@ -21,6 +21,8 @@ import {
   deleteAssignment,
   uploadAdminFile,
   setAdminSubmission,
+  parseAdminQuestions,
+  downloadAdminQuestionTemplate,
 } from '@/api/services/assignments'
 import { formatDate } from '@/lib/utils'
 import { Card } from '@/components/ui/Card'
@@ -239,6 +241,8 @@ export function AssignmentsPage() {
           else await createAssignment(input)
         }}
         onUpload={uploadAdminFile}
+        onParseQuestions={parseAdminQuestions}
+        onDownloadQuestionTemplate={downloadAdminQuestionTemplate}
       />
 
       <SubmissionsModal

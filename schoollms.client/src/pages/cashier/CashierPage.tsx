@@ -9,6 +9,7 @@ import {
   RefreshCw,
   Search,
   ShieldOff,
+  ShoppingBag,
   Thermometer,
   Wallet,
 } from 'lucide-react'
@@ -17,6 +18,7 @@ import type { CashierStudent } from '@/api/services/cashier'
 import {
   MIN_SEARCH_LENGTH,
   PROBE_AMOUNT,
+  financeErrorCode,
   financeErrorMessage,
   isAborted,
   searchStudents,
@@ -32,6 +34,8 @@ import {
 } from '@/api/services/cashBoxes'
 import type { TransactionType } from '@/api/services/transactionTypes'
 import { getTransactionTypes } from '@/api/services/transactionTypes'
+import type { ShopProduct } from '@/api/services/shop'
+import { getShopProducts } from '@/api/services/shop'
 import type { StudentContract } from '@/api/services/studentContracts'
 import { searchStudentContracts } from '@/api/services/studentContracts'
 import { getClasses } from '@/api/services/classes'
@@ -53,6 +57,10 @@ import type { CashBoxActionMode } from './CashBoxCard'
 import { CashLedger } from './CashLedger'
 import { CashTransactionReceipt } from './CashTransactionReceipt'
 import { IncomingTransfers } from './IncomingTransfers'
+import { SaleLines } from './SaleLines'
+import { ShopSalesReport } from './ShopSalesReport'
+import type { SaleRow } from './saleMath'
+import { filledRows, newSaleRow, parseQuantity, saleTotal } from './saleMath'
 import { SickDiscountModal } from './SickDiscountModal'
 import { SickDiscountNotices } from './SickDiscountNotices'
 import { canUseCashDesk } from './cashDeskRoles'
@@ -485,6 +493,8 @@ export function CashierPage() {
 
   const [exporting, setExporting] = useState(false)
   const [exportError, setExportError] = useState<string | null>(null)
+  /** "Savdo hisoboti" — mini-magazin sales by product (2026-10-15, docs/modules/shop.md). */
+  const [salesReportOpen, setSalesReportOpen] = useState(false)
 
   /**
    * Ekranda TURGAN qatorlar (tanlangan bo'lsa — faqat ular), ekrandagi tartibda — haqiqiy .xlsx,
@@ -614,6 +624,9 @@ export function CashierPage() {
             disabled={filteredRows.length === 0 || exporting}
           >
             <Download className="h-4 w-4" /> {exporting ? 'Tayyorlanmoqda…' : 'Excel'}
+          </Button>
+          <Button variant="secondary" onClick={() => setSalesReportOpen(true)}>
+            <ShoppingBag className="h-4 w-4" /> Savdo hisoboti
           </Button>
         </div>
       </header>
@@ -927,6 +940,14 @@ export function CashierPage() {
         />
       )}
 
+      {salesReportOpen && (
+        <ShopSalesReport
+          boxes={boxes}
+          initialBoxId={ledgerBoxId}
+          onClose={() => setSalesReportOpen(false)}
+        />
+      )}
+
       {receiptRow && (
         <CashTransactionReceipt
           row={receiptRow}
@@ -1231,6 +1252,11 @@ interface IncomeFormProps {
  * Ikki server yo'li bir-biriga aylantirilmagan — ular tubdan har xil, faqat
  * ularga kiradigan ekran bitta.
  *
+ * MINI-MAGAZIN (2026-10-15, docs/modules/shop.md): oddiy kirim turining faol
+ * mahsulotlari bo'lsa, mahsulot qatorlari chiqadi (`SaleLines`) va summa ularning
+ * jami bo'ladi; har qanday oddiy kirimga o'quvchini ixtiyoriy belgilash mumkin
+ * (`studentId`). Ikkalasi ham o'sha `cashBoxIn` orqali ketadi.
+ *
  * TUR O'QUVCHI TO'LOVIDA JO'NATILMAYDI: `acceptPayment` so'rovida bunday
  * maydon yo'q (`cashier.ts`, `AcceptPaymentPayload`) — u yerda yozuvning
  * mazmuni hisob-faktura toifasidan keladi. Bu yerda tur — YO'LNI TANLAYDIGAN
@@ -1294,6 +1320,35 @@ export function IncomeForm({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  /* Mini-magazin (2026-10-15, docs/modules/shop.md): the chosen Kirim type's active products become
+     sale lines; the amount is their total. `productsReload` refetches after the server refused a sale
+     because a price or a product changed meanwhile. */
+  const [products, setProducts] = useState<ShopProduct[]>([])
+  const [productsReload, setProductsReload] = useState(0)
+  const [saleRows, setSaleRows] = useState<SaleRow[]>([])
+  /* Any typed Kirim may name the pupil the money came from (books, uniform, ...) — optional, and
+     separate from the tuition path's `student`, which allocates to invoices. */
+  const [payer, setPayer] = useState<CashierStudent | null>(null)
+  const [payerSearchOpen, setPayerSearchOpen] = useState(false)
+
+  useEffect(() => {
+    let alive = true
+    getShopProducts({ activeOnly: true })
+      .then((rows) => {
+        if (!alive) return
+        setProducts(rows)
+        // A product switched off or deleted meanwhile drops out of the lines it was chosen in.
+        setSaleRows((prev) =>
+          prev.map((r) => (r.productId === '' || rows.some((p) => p.id === r.productId) ? r : { ...r, productId: '' })),
+        )
+      })
+      // No catalogue — the form stays a plain Kirim; nothing to block.
+      .catch(() => undefined)
+    return () => {
+      alive = false
+    }
+  }, [productsReload])
+
   useEffect(() => {
     let alive = true
     // eslint-disable-next-line react-hooks/set-state-in-effect -- katalogni bir marta yuklaymiz, yuklanish holati shu yerda boshlanadi (maqsadli)
@@ -1321,16 +1376,28 @@ export function IncomeForm({
 
   const selectedType = types.find((t) => t.id === transactionTypeId)
   const studentMode = isStudentTuitionType(selectedType)
+  const typeProducts = studentMode ? [] : products.filter((p) => p.transactionTypeId === transactionTypeId)
+  /** Lines are being sold: the amount is their total, not typed. */
+  const saleMode = typeProducts.length > 0 && filledRows(saleRows).length > 0
+  const total = saleMode ? saleTotal(saleRows, typeProducts) : null
 
   /** Tur o'zgarganda o'quvchi yo'li yopilsa, tanlangan o'quvchi ham tushadi. */
   const changeType = (nextId: string) => {
     setTransactionTypeId(nextId)
-    if (!isStudentTuitionType(types.find((t) => t.id === nextId))) onClearStudent()
+    const nextType = types.find((t) => t.id === nextId)
+    if (!isStudentTuitionType(nextType)) onClearStudent()
+    else setPayer(null)
+    // Lines belong to one type — a new type starts with one empty line if it has products.
+    const hasProducts = !isStudentTuitionType(nextType) && products.some((p) => p.transactionTypeId === nextId)
+    setSaleRows(hasProducts ? [newSaleRow()] : [])
   }
 
   // Debt cleared to 0 → an empty field (nothing to take), not a "0" that reads as an input error.
-  const amountText =
-    student !== null && amountFollowsDebtOf === student.id
+  const amountText = saleMode
+    ? total === null
+      ? ''
+      : String(total)
+    : student !== null && amountFollowsDebtOf === student.id
       ? debt > 0
         ? String(debt)
         : ''
@@ -1364,8 +1431,10 @@ export function IncomeForm({
   const today = todayStr()
   const earliest = MIN_ENTRY_DATE()
   const dateValid = date !== '' && date <= today && date >= earliest
+  const saleValid =
+    !saleMode || (total !== null && filledRows(saleRows).every((r) => parseQuantity(r.quantity) !== null))
   const canSubmit =
-    amountValid && dateValid && transactionTypeId !== '' && (!studentMode || student !== null)
+    amountValid && dateValid && saleValid && transactionTypeId !== '' && (!studentMode || student !== null)
 
   const submit = async () => {
     if (!canSubmit || amount === null || busy) return
@@ -1386,10 +1455,17 @@ export function IncomeForm({
         note: note.trim() || undefined,
         transactionTypeId,
         date,
+        studentId: payer?.id,
+        lines: saleMode
+          ? filledRows(saleRows).map((r) => ({ productId: r.productId, quantity: parseQuantity(r.quantity) ?? 0 }))
+          : undefined,
       })
       onDone()
     } catch (err) {
       setError(financeErrorMessage(err, "Kirimni yozib bo'lmadi."))
+      // A price or a product changed since the form opened — show the catalogue as it is now.
+      const code = financeErrorCode(err)
+      if (code?.startsWith('product_') || code === 'sale_amount_mismatch') setProductsReload((n) => n + 1)
     } finally {
       setBusy(false)
     }
@@ -1468,14 +1544,63 @@ export function IncomeForm({
           </div>
         )}
 
+        {/* --- O'quvchi (ixtiyoriy) — any other typed Kirim may say whose money it is (2026-10-15):
+            it goes on the cash row and the receipt; nothing is allocated to invoices. --- */}
+        {!studentMode && transactionTypeId !== '' && (
+          <div className="mt-4">
+            {payer ? (
+              <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-2.5">
+                <div className="min-w-0">
+                  <p className="truncate font-medium text-slate-800">{payer.fullName}</p>
+                  <p className="truncate text-xs text-slate-500">
+                    {payer.className}
+                    {payer.parentFullName ? ` · ${payer.parentFullName}` : ''}
+                  </p>
+                </div>
+                <Button variant="ghost" type="button" onClick={() => setPayer(null)} disabled={busy}>
+                  Olib tashlash
+                </Button>
+              </div>
+            ) : payerSearchOpen ? (
+              <StudentSearch
+                bare
+                selectedId={null}
+                onSelect={(s) => {
+                  setPayer(s)
+                  setPayerSearchOpen(false)
+                }}
+              />
+            ) : (
+              <button
+                type="button"
+                onClick={() => setPayerSearchOpen(true)}
+                className="text-sm font-medium text-brand-600 hover:underline"
+              >
+                + O'quvchini belgilash (ixtiyoriy)
+              </button>
+            )}
+          </div>
+        )}
+
+        {typeProducts.length > 0 && (
+          <SaleLines products={typeProducts} rows={saleRows} onChange={setSaleRows} disabled={busy} />
+        )}
+
         <div className="mt-4 grid gap-4 sm:grid-cols-2">
           <MoneyInput
             label="Summa (so'm)"
             value={amountText}
             onValueChange={changeAmount}
             placeholder="0"
+            disabled={saleMode}
             invalid={amountText.length > 0 && !amountValid}
-            hint={amountText.length > 0 && !amountValid ? "Summa noldan katta bo'lishi kerak." : undefined}
+            hint={
+              saleMode
+                ? 'Mahsulotlar jami — narx katalogdan.'
+                : amountText.length > 0 && !amountValid
+                  ? "Summa noldan katta bo'lishi kerak."
+                  : undefined
+            }
           />
           <Select label="To'lov usuli" value={method} onChange={(e) => setMethod(e.target.value as PaymentMethod)}>
             {METHODS.map((m) => (
