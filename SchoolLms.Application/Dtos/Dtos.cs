@@ -313,6 +313,21 @@ public record DishPayload(string Name, string Ingredients, string? ImageUrl);
 public record DishDto(string Id, string Name, string Ingredients, string? ImageUrl);
 public record DayMenuDto(string Date, Dictionary<string, List<DishDto>> Meals);
 
+/// <summary>
+/// <c>POST /api/admin/canteen/menu/copy-week</c> (docs/modules/canteen.md). Both dates are
+/// Mondays ("yyyy-MM-dd"). <see cref="Weeks"/> — how many consecutive weeks, starting at
+/// <see cref="ToWeekStart"/>, receive the copy (1..8, <c>CanteenWeekCopy.MaxWeeks</c>).
+/// </summary>
+public record CanteenCopyWeekPayload(string FromWeekStart, string ToWeekStart, bool Overwrite = false, int Weeks = 1);
+
+/// <param name="Copied">Dishes created across all target weeks.</param>
+/// <param name="Skipped">Source dishes the menu cannot show (unknown meal, blank name, unreadable date) — not copied; counted once, not per week.</param>
+/// <param name="Replaced">Dishes removed from target days by <c>overwrite</c>.</param>
+/// <param name="TargetWeeks">Monday of every week that received the copy.</param>
+/// <param name="Days">Every target date that was written.</param>
+public record CanteenCopyWeekResultDto(
+    int Copied, int Skipped, int Replaced, List<string> TargetWeeks, List<string> Days);
+
 /* ---------- Journal ---------- */
 /// <summary>
 /// Jurnal ustuni — bir dars (sana + dars raqami + guruh). SubGroup: 0 = butun sinf,

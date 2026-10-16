@@ -60,6 +60,22 @@ public class CanteenController(AppDbContext db) : ControllerBase
         return new DishDto(dish.Id, dish.Name, dish.Ingredients, dish.ImageUrl);
     }
 
+    /// <summary>
+    /// Copy a week's menu (Mon..Sun) onto the next <c>weeks</c> weeks starting at <c>toWeekStart</c>.
+    /// 409 names the target days that already have a menu unless <c>overwrite</c> is set.
+    /// The literal route outranks <c>{date}/{meal}</c> above. See docs/modules/canteen.md.
+    /// </summary>
+    [HttpPost("menu/copy-week")]
+    public async Task<ActionResult<CanteenCopyWeekResultDto>> CopyWeek(CanteenCopyWeekPayload p, CancellationToken ct)
+    {
+        var outcome = await CanteenWeekCopy.RunAsync(db, p, ct);
+        if (outcome.Status == CanteenWeekCopy.Status.Invalid)
+            return BadRequest(new { message = outcome.Message });
+        if (outcome.Status == CanteenWeekCopy.Status.Conflict)
+            return Conflict(new { message = outcome.Message, days = outcome.ConflictDates });
+        return outcome.Result!;
+    }
+
     [HttpPut("{date}/{meal}/{dishId}")]
     public async Task<IActionResult> Update(string date, string meal, string dishId, DishPayload p)
     {

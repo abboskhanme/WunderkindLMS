@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { Plus, Pencil, Trash2, ChevronLeft, ChevronRight, Utensils } from 'lucide-react'
+import { useCallback, useEffect, useState } from 'react'
+import { Plus, Pencil, Trash2, ChevronLeft, ChevronRight, Utensils, Copy } from 'lucide-react'
 import type { DayMenu, Dish, MealType } from '@/types'
 import {
   getDayMenu,
@@ -7,6 +7,7 @@ import {
   createDish,
   updateDish,
   deleteDish,
+  type CopyWeekResult,
   type DishPayload,
 } from '@/api/services/canteen'
 import { mealOrder, mealLabels } from '@/config/constants'
@@ -15,7 +16,9 @@ import { addDaysISO, mondayOfISO } from '@/lib/weeks'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Loader } from '@/components/ui/Loader'
+import { Toast } from '@/components/ui/Toast'
 import { DishFormModal } from './DishFormModal'
+import { CopyWeekModal } from './CopyWeekModal'
 
 type View = 'daily' | 'weekly' | 'monthly'
 
@@ -60,6 +63,9 @@ export function CanteenPage() {
   const [menus, setMenus] = useState<DayMenu[]>([])
   const [loading, setLoading] = useState(true)
   const [form, setForm] = useState<{ meal: MealType; dish: Dish | null } | null>(null)
+  const [copyOpen, setCopyOpen] = useState(false)
+  const [toast, setToast] = useState<string | null>(null)
+  const closeToast = useCallback(() => setToast(null), [])
 
   useEffect(() => {
     let active = true
@@ -124,6 +130,16 @@ export function CanteenPage() {
     deleteDish(anchor, meal, dish.id).then(refreshDaily)
   }
 
+  // After a copy the page moves to the (first) target week, so the result is on screen.
+  const handleCopied = (r: CopyWeekResult) => {
+    setCopyOpen(false)
+    const parts = [`Menyu ko'chirildi: ${r.copied} taom, ${r.targetWeeks.length} hafta`]
+    if (r.replaced > 0) parts.push(`${r.replaced} ta eski taom almashtirildi`)
+    if (r.skipped > 0) parts.push(`${r.skipped} ta taom o'tkazib yuborildi (ovqat turi yoki nomi yo'q)`)
+    setToast(parts.join('. '))
+    if (r.targetWeeks[0]) setAnchor(r.targetWeeks[0])
+  }
+
   const day = menus[0] ?? {
     date: anchor,
     meals: { breakfast: [], lunch: [], dinner: [] },
@@ -170,6 +186,11 @@ export function CanteenPage() {
         >
           <ChevronRight className="h-4 w-4" />
         </button>
+        {view === 'weekly' && (
+          <Button variant="secondary" className="ml-auto" onClick={() => setCopyOpen(true)}>
+            <Copy className="h-4 w-4" /> Haftani ko'chirish
+          </Button>
+        )}
       </div>
 
       {loading ? (
@@ -280,6 +301,13 @@ export function CanteenPage() {
         onClose={() => setForm(null)}
         onSubmit={handleSubmit}
       />
+      <CopyWeekModal
+        open={copyOpen}
+        sourceWeek={mondayOfISO(anchor)}
+        onClose={() => setCopyOpen(false)}
+        onCopied={handleCopied}
+      />
+      <Toast message={toast} onClose={closeToast} duration={5000} />
     </div>
   )
 }
