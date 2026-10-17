@@ -76,6 +76,26 @@ journal's rule for the owner.
 
 ## Not done here
 
-- Importing this year's EduSchool incidents needs an EduSchool read of `behavior-incidents` and a
-  mapping of reasons — a separate task for the client to approve (EduSchool is read-only for us).
+- ~~Importing EduSchool incidents~~ — **done 2026-10-17**, see "EduSchool import" below.
 - The per-lesson `journal_entries.behavior` flag (0/1/2) stays as it is; it does not move the score.
+
+## EduSchool import (2026-10-17)
+
+Client: "xulq atvorni o'ziniyam sabablariniyam eduschooldan ko'chirish kerak". Read-only GETs through the
+Chrome extension (`moderator-api/behaviors/pagin`, `behavior-incidents/pagin`, `behavior-rating/pagin`, both
+academic years); nothing was written to EduSchool.
+
+- EduSchool's 2026–2027 year has **no** incidents; 2025–2026 has 11 254 (06.03.2026 – 07.06.2026), all
+  entered by teachers.
+- **Reasons:** 73 = the 44 current ones (`is_active = true`) + 29 deleted ones still referenced by old incidents
+  (`is_active = false`). Type → sign of `points`; `notify_parent = false` everywhere.
+- **Incidents:** 11 221 copied to `discipline_points` for 525 pupils — `points` is EduSchool's `pointsAwarded`
+  with the reason's sign, `note` its `notes`, `created_at` the Tashkent wall time, `created_by` the teacher's
+  name, `created_by_user_id` the LMS user when the name matched (40 of 51 authors). Pupils matched by full
+  name (524 exact + one EduSchool typo by hand); 33 incidents of 3 pupils not in LMS (one a test record) skipped.
+- **Score:** EduSchool keeps a pupil's points into the new year, and its 2025–2026 `lifePoints` = 100 + Σ
+  incidents for 734 of 738 pupils — our formula. After the import our score equals EduSchool's year-end
+  score for 511 of 515 matched pupils (the 4 others disagree inside EduSchool too).
+- Ids are uuid5 of the EduSchool ids (namespace `5d1f3c8a-7b2e-4f60-9a4d-e2c81b7f0a35`; generator in the git-ignored `docs/import/behaviour_2026_10_17/`), every
+  insert `ON CONFLICT DO NOTHING` — a re-run adds nothing. Undo = delete those ids. Backup before the run:
+  `/backups/pre-behaviour-import_20261017-091709.dump` in the prod DB container.
