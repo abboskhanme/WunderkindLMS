@@ -228,7 +228,7 @@ public class CanteenWeekCopyTests(ApiFixture fixture)
     }
 
     // ------------------------------------------------------------------
-    //  RBAC — the controller's [AdminPerm("app")] gate
+    //  RBAC — the controller's [AdminPerm("app", AlsoPerm = "settings")] gate
     // ------------------------------------------------------------------
 
     [Fact]
@@ -271,6 +271,38 @@ public class CanteenWeekCopyTests(ApiFixture fixture)
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal("Palov", Assert.Single(await DishesAsync(from.AddDays(7), from.AddDays(13))).Name);
+    }
+
+    /// <summary>
+    /// The menu sits in Sozlamalar → Umumiy sozlamalar, which the role editor grants as `settings`
+    /// (client, 2026-10-18: a staff member given that page could not see or edit the menu).
+    /// </summary>
+    [Fact]
+    public async Task Sozlamalar_ruxsatli_xodim_kochiradi()
+    {
+        var from = NextBlock();
+        await SeedAsync(Dish(from, "lunch", "Palov"));
+        using var staff = await fixture.Api.ClientAsAsync(Roles.Staff, "settings");
+
+        var response = await staff.PostAsJsonAsync(Url,
+            new { fromWeekStart = Iso(from), toWeekStart = Iso(from.AddDays(7)) });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("Palov", Assert.Single(await DishesAsync(from.AddDays(7), from.AddDays(13))).Name);
+    }
+
+    [Fact]
+    public async Task Sozlamalar_faqat_korish_xodim_403()
+    {
+        var from = NextBlock();
+        await SeedAsync(Dish(from, "lunch", "Palov"));
+        using var staff = await fixture.Api.ClientAsAsync(Roles.Staff, "settings" + Roles.ViewSuffix);
+
+        var response = await staff.PostAsJsonAsync(Url,
+            new { fromWeekStart = Iso(from), toWeekStart = Iso(from.AddDays(7)) });
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Empty(await DishesAsync(from.AddDays(7), from.AddDays(13)));
     }
 
     // ------------------------------------------------------------------

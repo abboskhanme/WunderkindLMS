@@ -45,6 +45,14 @@ public sealed class AdminPermAttribute(string perm) : Attribute, IAuthorizationF
     /// </summary>
     public bool GatedRead { get; set; }
 
+    /// <summary>
+    /// A second section key that passes the gate as well (either one is enough). Default
+    /// <c>null</c>: only the constructor key. Used where a screen moved under another section's
+    /// page — the canteen menu sits inside Sozlamalar → Umumiy sozlamalar, so <c>settings</c>
+    /// opens it next to the historical <c>app</c>.
+    /// </summary>
+    public string? AlsoPerm { get; set; }
+
     public void OnAuthorization(AuthorizationFilterContext context)
     {
         var user = context.HttpContext.User;
@@ -63,8 +71,11 @@ public sealed class AdminPermAttribute(string perm) : Attribute, IAuthorizationF
         if (isRead && !GatedRead) return;
 
         // Gated read: "faqat ko'rish" (perm:view) ham o'qiy oladi. Yozish — faqat to'liq ruxsat.
-        var has = user.Claims.Any(c => c.Type == ClaimType
-            && (c.Value == _perm || (isRead && c.Value == _perm + Roles.ViewSuffix)));
+        var has = user.Claims.Any(c => c.Type == ClaimType && (Grants(_perm, c.Value, isRead)
+            || (AlsoPerm is not null && Grants(AlsoPerm, c.Value, isRead))));
         if (!has) context.Result = new ForbidResult();
     }
+
+    private static bool Grants(string perm, string claim, bool isRead) =>
+        claim == perm || (isRead && claim == perm + Roles.ViewSuffix);
 }

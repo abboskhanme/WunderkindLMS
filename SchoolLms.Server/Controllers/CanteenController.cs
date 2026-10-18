@@ -10,7 +10,9 @@ namespace SchoolLms.Server.Controllers;
 
 [ApiController]
 [Authorize]
-[AdminPerm("app")]
+// The menu lives in Sozlamalar → Umumiy sozlamalar (client, 2026-10-07), and the role editor grants
+// that page as `settings`; `app` is the historical key and keeps working (client, 2026-10-18).
+[AdminPerm("app", AlsoPerm = "settings")]
 [Route("api/admin/canteen")]
 public class CanteenController(AppDbContext db) : ControllerBase
 {

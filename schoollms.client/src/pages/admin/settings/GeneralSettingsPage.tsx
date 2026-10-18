@@ -22,8 +22,10 @@ const sections = [
   { key: 'lesson-times', label: 'Dars vaqtlari' },
   { key: 'reasons', label: 'Davomat sabablari' },
   { key: 'holidays', label: 'Bayram kunlari' },
-  // Its API sits behind `app` (CanteenController), so the section shows only to who holds it.
-  { key: 'canteen', label: 'Oshxona menyusi', perm: 'app' },
+  // Shown to whoever opens this page (the role editor grants it as `settings`); the API takes
+  // `settings` or the historical `app` (CanteenController). Before 2026-10-18 it needed `app`,
+  // which no role could carry — its pages sit under the hidden Future menu.
+  { key: 'canteen', label: 'Oshxona menyusi', perm: ['settings', 'app'] },
 ] as const
 
 /**
@@ -41,7 +43,7 @@ const sections = [
  */
 export function GeneralSettingsPage() {
   const { user } = useAuth()
-  const visible = sections.filter((s) => !('perm' in s) || hasSection(user, s.perm))
+  const visible = sections.filter((s) => !('perm' in s) || s.perm.some((p) => hasSection(user, p)))
   const [active, setActive] = useState<(typeof sections)[number]['key']>(sections[0].key)
 
   return (

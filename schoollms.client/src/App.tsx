@@ -256,7 +256,8 @@ export default function App() {
           <Route path="locations" element={<RequirePerm perm="students"><LocationPage /></RequirePerm>} />
           <Route path="parents" element={<RequirePerm perm="students"><ParentsPage /></RequirePerm>} />
           <Route path="app/teachers" element={<RequirePerm perm="app"><TeacherAppPage /></RequirePerm>} />
-          <Route path="canteen" element={<RequirePerm perm="app"><CanteenPage /></RequirePerm>} />
+          {/* Oshxona menyusi Umumiy sozlamalar ichida — `settings` ham ochadi (server: CanteenController). */}
+          <Route path="canteen" element={<RequirePerm perm={['app', 'settings']}><CanteenPage /></RequirePerm>} />
           <Route path="finance" element={<RequirePerm perm="finance"><FinancePage key="finance" /></RequirePerm>} />
           {/* Rol tekshiruvi sahifaning ichida (SPEC §4.3: faqat admin/direktor) */}
           <Route path="finance/money-flow" element={<Suspense fallback={<Loader label="Yuklanmoqda…" />}><MoneyFlowPage /></Suspense>} />

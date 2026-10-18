@@ -1,8 +1,10 @@
 # Canteen menu
 
 The canteen menu is one per school: dishes (`dishes`) are free-text rows on a date and a meal
-(`breakfast` / `lunch` / `dinner`). Admins edit it under Sozlamalar → Oshxona menyusi (also
-`/admin/canteen`, `CanteenController`, gate `[AdminPerm("app")]`); parents and pupils read it in the
+(`breakfast` / `lunch` / `dinner`). Admins edit it under Sozlamalar → Umumiy sozlamalar → Oshxona
+menyusi (also `/admin/canteen`, `CanteenController`, gate `[AdminPerm("app", AlsoPerm = "settings")]`):
+a staff role given the "Umumiy sozlamalar" page (`settings`) edits it, `settings:view` only reads it,
+and the historical `app` key still works; parents and pupils read it in the
 Mini App's Ovqat tab and the portal (`GET /api/student/canteen`), Monday to Sunday.
 
 ## Copy a week
@@ -36,7 +38,7 @@ After a copy the page moves to the first target week and a toast reports what ha
 | the source week has nothing to copy | 400 |
 | a target day that would be written already has dishes, `overwrite` off | 409 `{ message, days }` — nothing written |
 | same, `overwrite` on | those days' dishes removed and replaced |
-| staff without `app` / teacher / pupil / parent | 403 |
+| staff without `app` or `settings` (or with `settings:view` only) / teacher / pupil / parent | 403 |
 | no token | 401 |
 
 ### Rules
