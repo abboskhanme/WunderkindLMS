@@ -1554,6 +1554,11 @@ namespace SchoolLms.Infrastructure.Migrations
                         .HasColumnType("timestamp without time zone")
                         .HasColumnName("created_at");
 
+                    b.PrimitiveCollection<List<string>>("ImageUrls")
+                        .IsRequired()
+                        .HasColumnType("text[]")
+                        .HasColumnName("image_urls");
+
                     b.Property<int>("RecipientCount")
                         .HasColumnType("integer")
                         .HasColumnName("recipient_count");

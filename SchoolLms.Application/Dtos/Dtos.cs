@@ -1214,9 +1214,11 @@ public record ChatChannelDto(string Key, string Label, string Kind);
 /// <summary>Yuborilgan e'lon (Telegram). CreatedAt — ISO 8601.</summary>
 /// <param name="Students">Maqsadli o'quvchilar soni (2026-10-11 dan; oldingilarda null).</param>
 /// <param name="NoTelegram">Ulardan Telegramga ulanmaganlari (null — ro'yxat saqlanmagan).</param>
+/// <param name="ImageUrls">E'lon rasmlari (<c>/uploads/…</c>); bo'sh — faqat matn.</param>
 public record BroadcastDto(
     string Id, string ClassName, string Text, string SenderName, string CreatedAt,
-    int RecipientCount, int SentCount, int? Students = null, int? NoTelegram = null);
+    int RecipientCount, int SentCount, int? Students = null, int? NoTelegram = null,
+    List<string>? ImageUrls = null);
 
 /// <summary>E'lonning bitta oluvchisi: o'quvchi, ota-ona chati va holati (sent / failed / no_telegram).</summary>
 public record BroadcastRecipientDto(
@@ -1247,7 +1249,10 @@ public record SendBroadcastRequest(
     // ekranidagi JORIY filtr shu yerdan keladi; qamrov `StudentListQuery`
     // orqali hisoblanadi, ya'ni ekran nechta o'quvchini ko'rsatsa, xabar ham
     // AYNAN o'shalarga boradi (tanlangan qatorlardan mustaqil).
-    StudentListFilter? Filter = null);
+    StudentListFilter? Filter = null,
+    // Rasmlar (2026-10-24) — avval `/api/admin/uploads` ga yuklangan fayllar URL'i
+    // (`/uploads/<guid>.jpg`), ko'pi bilan 10 ta. Berilmasa e'lon faqat matn.
+    List<string>? ImageUrls = null);
 
 /// <summary>
 /// Telegramda ro'yxatdan o'tgan ota-ona. ChatId string (JS aniqligi uchun).

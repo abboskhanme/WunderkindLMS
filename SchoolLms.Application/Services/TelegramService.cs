@@ -210,6 +210,131 @@ public class TelegramService(
         return await SendMessageAsync(chatId, TelegramHtml.ToPlain(html), ct: ct);
     }
 
+    /// <summary>Telegram's limit on a photo caption, in visible characters (after the tags are parsed).</summary>
+    public const int CaptionLimit = 1024;
+
+    /// <summary>Pictures in one album (<c>sendMediaGroup</c>): Telegram allows 2–10.</summary>
+    public const int MaxPhotos = 10;
+
+    /// <summary>
+    /// Pictures plus a formatted text (announcement with images, 2026-10-24). The text fits a caption
+    /// (<see cref="CaptionLimit"/>) → one message, the text under the pictures; longer → the pictures
+    /// first and the text right after them. Success — everything reached the chat.
+    /// </summary>
+    public async Task<bool> SendPhotosWithTextAsync(
+        long chatId, IReadOnlyList<TelegramPhoto> photos, string html, CancellationToken ct = default)
+    {
+        if (TelegramHtml.ToPlain(html).Length <= CaptionLimit) return await SendPhotosAsync(chatId, photos, html, ct);
+        return await SendPhotosAsync(chatId, photos, null, ct) && await SendRichAsync(chatId, html, ct);
+    }
+
+    /// <summary>
+    /// One picture → <c>sendPhoto</c>, 2–10 → <c>sendMediaGroup</c> (an album, the caption under the
+    /// first one). The caller keeps <paramref name="captionHtml"/> within <see cref="CaptionLimit"/>.
+    /// A caption Telegram cannot parse goes again as plain text, as in <see cref="SendRichAsync"/>.
+    /// On success the photos' <see cref="TelegramPhoto.FileId"/> are filled, so the next chat gets
+    /// Telegram's id instead of the file again.
+    /// </summary>
+    public async Task<bool> SendPhotosAsync(
+        long chatId, IReadOnlyList<TelegramPhoto> photos, string? captionHtml, CancellationToken ct = default)
+    {
+        if (!IsConfigured || photos.Count is 0 or > MaxPhotos) return false;
+        var sent = await PostPhotosAsync(chatId, photos, captionHtml, html: true, ct);
+        if (sent != PhotoSend.ParseError) return sent == PhotoSend.Ok;
+        logger.LogWarning("Telegram rasm izohini o'qiy olmadi — oddiy matn bilan qayta yuborilmoqda");
+        return await PostPhotosAsync(chatId, photos, TelegramHtml.ToPlain(captionHtml), html: false, ct) == PhotoSend.Ok;
+    }
+
+    private enum PhotoSend { Ok, ParseError, Failed }
+
+    private async Task<PhotoSend> PostPhotosAsync(
+        long chatId, IReadOnlyList<TelegramPhoto> photos, string? caption, bool html, CancellationToken ct)
+    {
+        try
+        {
+            using var form = new MultipartFormDataContent();
+            form.Add(new StringContent(chatId.ToString()), "chat_id");
+            var hasCaption = !string.IsNullOrWhiteSpace(caption);
+            string method;
+            if (photos.Count == 1)
+            {
+                method = "sendPhoto";
+                var photo = photos[0];
+                if (photo.FileId is { } id) form.Add(new StringContent(id), "photo");
+                else AddPhotoFile(form, photo, "photo");
+                if (hasCaption)
+                {
+                    form.Add(new StringContent(caption!), "caption");
+                    if (html) form.Add(new StringContent("HTML"), "parse_mode");
+                }
+            }
+            else
+            {
+                method = "sendMediaGroup";
+                var media = new List<Dictionary<string, object?>>(photos.Count);
+                for (var i = 0; i < photos.Count; i++)
+                {
+                    var item = new Dictionary<string, object?> { ["type"] = "photo", ["media"] = photos[i].FileId ?? $"attach://p{i}" };
+                    if (photos[i].FileId is null) AddPhotoFile(form, photos[i], $"p{i}");
+                    if (i == 0 && hasCaption)
+                    {
+                        item["caption"] = caption;
+                        if (html) item["parse_mode"] = "HTML";
+                    }
+                    media.Add(item);
+                }
+                form.Add(new StringContent(JsonSerializer.Serialize(media)), "media");
+            }
+            using var resp = await Client().PostAsync($"{ApiBase}/{method}", form, ct);
+            var body = await resp.Content.ReadAsStringAsync(ct);
+            if (resp.IsSuccessStatusCode)
+            {
+                RememberFileIds(photos, body);
+                return PhotoSend.Ok;
+            }
+            return resp.StatusCode == System.Net.HttpStatusCode.BadRequest
+                && body.Contains("parse entities", StringComparison.OrdinalIgnoreCase)
+                ? PhotoSend.ParseError : PhotoSend.Failed;
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Telegram rasm yuborish xatosi");
+            return PhotoSend.Failed;
+        }
+    }
+
+    private static void AddPhotoFile(MultipartFormDataContent form, TelegramPhoto photo, string name)
+    {
+        var file = new ByteArrayContent(photo.Bytes);
+        file.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(photo.ContentType);
+        form.Add(file, name, photo.FileName);
+    }
+
+    /// <summary>
+    /// <c>result</c> is one message (<c>sendPhoto</c>) or an array of them (<c>sendMediaGroup</c>);
+    /// each carries the picture in several sizes, the last one the largest.
+    /// </summary>
+    private static void RememberFileIds(IReadOnlyList<TelegramPhoto> photos, string body)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(body);
+            if (!doc.RootElement.TryGetProperty("result", out var result)) return;
+            var messages = result.ValueKind == JsonValueKind.Array ? result.EnumerateArray().ToList() : [result];
+            for (var i = 0; i < photos.Count && i < messages.Count; i++)
+            {
+                if (photos[i].FileId is not null || messages[i].ValueKind != JsonValueKind.Object) continue;
+                if (!messages[i].TryGetProperty("photo", out var sizes) || sizes.ValueKind != JsonValueKind.Array) continue;
+                var count = sizes.GetArrayLength();
+                if (count > 0 && sizes[count - 1].TryGetProperty("file_id", out var id)) photos[i].FileId = id.GetString();
+            }
+        }
+        catch (JsonException)
+        {
+            // The send itself succeeded; the next chat simply gets the file again.
+        }
+    }
+
     /// <summary>
     /// <c>sendVoice</c> (multipart) — a manager's voice note on an HR task. Telegram accepts
     /// OGG/OPUS, MP3 and M4A here; anything else is refused by Telegram and we return false.
@@ -273,4 +398,17 @@ public class TelegramService(
         using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: ct);
         return doc.RootElement.TryGetProperty("result", out var result) ? result.Clone() : null;
     }
+}
+
+/// <summary>
+/// One picture for <see cref="TelegramService.SendPhotosAsync"/>. The first successful send uploads
+/// <see cref="Bytes"/>; Telegram's <see cref="FileId"/> is kept, and every next chat gets the id —
+/// the file travels once per announcement, not once per parent.
+/// </summary>
+public sealed class TelegramPhoto(string fileName, string contentType, byte[] bytes)
+{
+    public string FileName { get; } = fileName;
+    public string ContentType { get; } = contentType;
+    public byte[] Bytes { get; } = bytes;
+    public string? FileId { get; set; }
 }

@@ -82,7 +82,18 @@ export function BroadcastDetailModal({ id, onClose }: { id: string | null; onClo
               {b.sentCount}/{b.recipientCount} chatga yetkazildi
             </span>
           </div>
-          <RichText html={data.html} className="rounded-xl bg-slate-50 px-4 py-3 text-sm text-slate-700" />
+          {b.imageUrls && b.imageUrls.length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              {b.imageUrls.map((url, i) => (
+                <a key={`${url}-${i}`} href={url} target="_blank" rel="noreferrer" title="To'liq o'lchamda ochish">
+                  <img src={url} alt="" className="h-24 w-24 rounded-lg object-cover transition-opacity hover:opacity-90" />
+                </a>
+              ))}
+            </div>
+          )}
+          {data.html && (
+            <RichText html={data.html} className="rounded-xl bg-slate-50 px-4 py-3 text-sm text-slate-700" />
+          )}
 
           {!data.hasDetails ? (
             <p className="rounded-lg bg-slate-50 px-3 py-3 text-sm text-slate-500">

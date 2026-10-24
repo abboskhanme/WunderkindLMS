@@ -25,6 +25,7 @@ import { escapeHtml, markupToHtml } from '@/lib/telegramMarkup'
 import { FormatToolbar } from '@/components/ui/FormatToolbar'
 import { RichText } from '@/components/ui/RichText'
 import { BroadcastDetailModal } from './BroadcastDetailModal'
+import { BroadcastImagePicker } from './BroadcastImagePicker'
 
 type Scope = 'class' | 'group' | 'all' | 'selected'
 
@@ -60,6 +61,9 @@ export function BroadcastPanel({ classes }: { classes: MessageClass[] }) {
   const [onlyDebtors, setOnlyDebtors] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [text, setText] = useState('')
+  /** E'lon rasmlari (`/uploads/...`) — 2026-10-24. */
+  const [images, setImages] = useState<string[]>([])
+  const [uploadingImages, setUploadingImages] = useState(false)
   const [search, setSearch] = useState('')
 
   // O'quv guruhlari (G-8): guruhni bir nechta sinf boqadi, shuning uchun
@@ -74,6 +78,7 @@ export function BroadcastPanel({ classes }: { classes: MessageClass[] }) {
   const [loading, setLoading] = useState(true)
   const [sending, setSending] = useState(false)
   const [result, setResult] = useState<string | null>(null)
+  const [sendError, setSendError] = useState<string | null>(null)
   /** Batafsil ochilgan e'lon (2026-10-11: "kimga"). */
   const [detailId, setDetailId] = useState<string | null>(null)
 
@@ -150,12 +155,13 @@ export function BroadcastPanel({ classes }: { classes: MessageClass[] }) {
 
   const handleSend = async () => {
     const t = text.trim()
-    if (!t || sending) return
+    if ((!t && images.length === 0) || sending || uploadingImages) return
     if (scope === 'class' && !className) return setResult('Sinf tanlang.')
     if (scope === 'group' && !groupId) return setResult('Guruh tanlang.')
     if (scope === 'selected' && selectedIds.size === 0) return setResult('Hech kim tanlanmadi.')
     setSending(true)
     setResult(null)
+    setSendError(null)
     try {
       const req: SendBroadcastReq = {
         scope,
@@ -164,6 +170,7 @@ export function BroadcastPanel({ classes }: { classes: MessageClass[] }) {
         onlyDebtors: scope !== 'selected' && onlyDebtors,
         studentIds: scope === 'selected' ? [...selectedIds] : undefined,
         text: t,
+        imageUrls: images.length > 0 ? images : undefined,
       }
       const b = await sendBroadcast(req)
       setBroadcasts((prev) => [b, ...prev])
@@ -172,6 +179,11 @@ export function BroadcastPanel({ classes }: { classes: MessageClass[] }) {
           ? "Mos keluvchi ro'yxatdagi ota-ona topilmadi — e'lon saqlandi, lekin hech kimga yuborilmadi."
           : `E'lon yuborildi: ${b.sentCount}/${b.recipientCount} ota-onaga yetkazildi` +
               (b.noTelegram ? ` · ${b.noTelegram} o'quvchining ota-onasi Telegramga ulanmagan.` : '.'),
+      )
+    } catch (err) {
+      setSendError(
+        (err as { response?: { data?: { message?: string } } })?.response?.data?.message ??
+          "E'lonni yuborib bo'lmadi — qaytadan urinib ko'ring.",
       )
     } finally {
       setSending(false)
@@ -189,7 +201,9 @@ export function BroadcastPanel({ classes }: { classes: MessageClass[] }) {
     )
   }, [parents, search])
 
-  const preview = recipients[0] ? fill(text, recipients[0]) : null
+  const preview = recipients[0] && (text.trim() || images.length > 0) ? fill(text, recipients[0]) : null
+  // Telegram rasm izohi 1024 belgigacha: uzunroq matn rasmlardan keyin alohida xabar bo'lib boradi.
+  const captionTooLong = images.length > 0 && !!preview && preview.replace(/<[^>]+>/g, '').length > 1000
 
   return (
     <div className="space-y-4">
@@ -330,22 +344,42 @@ export function BroadcastPanel({ classes }: { classes: MessageClass[] }) {
             </div>
           </div>
 
+          <BroadcastImagePicker value={images} onChange={setImages} onBusyChange={setUploadingImages} />
+
           {/* Preview */}
-          {preview && (
+          {preview !== null && (
             <div className="mt-3 rounded-lg bg-slate-50 px-3 py-2">
               <p className="mb-1 text-xs font-medium text-slate-400">
                 Namuna ({recipients[0].studentName}):
               </p>
-              <RichText html={`📢 <b>Maktab e'loni</b>\n\n${preview}`} className="text-sm text-slate-700" />
+              {images.length > 0 && (
+                <div className="mb-2 flex flex-wrap gap-1">
+                  {images.map((url, i) => (
+                    <img key={`${url}-${i}`} src={url} alt="" className="h-14 w-14 rounded-md object-cover" />
+                  ))}
+                </div>
+              )}
+              <RichText
+                html={`📢 <b>Maktab e'loni</b>${preview ? `\n\n${preview}` : ''}`}
+                className="text-sm text-slate-700"
+              />
+              {captionTooLong && (
+                <p className="mt-1 text-xs text-slate-400">
+                  Matn uzun — Telegramda avval rasmlar, keyin matn alohida xabar bo'lib boradi.
+                </p>
+              )}
             </div>
           )}
 
           <div className="mt-3 flex items-center justify-between gap-3">
             {result && <p className="text-sm font-medium text-emerald-700">{result}</p>}
+            {sendError && <p className="text-sm font-medium text-red-600">{sendError}</p>}
             <Button
               className="ml-auto"
               onClick={handleSend}
-              disabled={!text.trim() || sending || recipients.length === 0}
+              disabled={
+                (!text.trim() && images.length === 0) || uploadingImages || sending || recipients.length === 0
+              }
             >
               <Send className="h-4 w-4" /> {sending ? 'Yuborilmoqda...' : 'Yuborish'}
             </Button>
@@ -448,6 +482,18 @@ export function BroadcastPanel({ classes }: { classes: MessageClass[] }) {
                         Batafsil <ChevronRight className="h-3.5 w-3.5" />
                       </span>
                     </div>
+                    {b.imageUrls && b.imageUrls.length > 0 && (
+                      <div className="mb-1.5 flex gap-1">
+                        {b.imageUrls.slice(0, 4).map((url, i) => (
+                          <img key={`${url}-${i}`} src={url} alt="" className="h-12 w-12 rounded-md object-cover" />
+                        ))}
+                        {b.imageUrls.length > 4 && (
+                          <span className="flex h-12 w-12 items-center justify-center rounded-md bg-slate-100 text-xs font-medium text-slate-500">
+                            +{b.imageUrls.length - 4}
+                          </span>
+                        )}
+                      </div>
+                    )}
                     <RichText markup={b.text} className="line-clamp-4 text-sm text-slate-700" />
                     <div className="mt-1.5 flex items-center justify-between gap-2 text-xs text-slate-400">
                       <span>
