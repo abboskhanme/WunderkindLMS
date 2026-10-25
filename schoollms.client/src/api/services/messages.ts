@@ -103,6 +103,11 @@ export interface SendBroadcastReq {
    */
   filter?: StudentListFilter
   text: string
+  /**
+   * Rasmlar (2026-10-24) — avval `uploadAdminFile` bilan yuklangan `/uploads/...`
+   * URL'lari, 10 tagacha. Rasm bo'lsa matn ixtiyoriy.
+   */
+  imageUrls?: string[]
 }
 
 /** Ota-onalarga Telegram bot orqali e'lon yuborish (har o'quvchiga moslab) */

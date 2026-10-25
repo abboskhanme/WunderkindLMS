@@ -1074,6 +1074,8 @@ export interface Broadcast {
   students?: number | null
   /** Ulardan Telegramga ulanmaganlari */
   noTelegram?: number | null
+  /** E'lon rasmlari (`/uploads/...`, 2026-10-24); bo'sh — faqat matn */
+  imageUrls?: string[] | null
 }
 
 /** E'lonning bitta oluvchisi. `status`: sent — yetkazildi, failed — yetmadi, no_telegram — ulanmagan. */

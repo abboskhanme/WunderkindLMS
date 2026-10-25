@@ -18,7 +18,8 @@ namespace SchoolLms.Server.Controllers;
 [Authorize]
 [AdminPerm("messages")]
 [Route("api/admin/messages")]
-public class MessagesController(AppDbContext db, ChatService chat, TelegramService telegram) : ControllerBase
+public class MessagesController(
+    AppDbContext db, ChatService chat, TelegramService telegram, IWebHostEnvironment env) : ControllerBase
 {
     private string Uid => User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "";
 
@@ -133,7 +134,8 @@ public class MessagesController(AppDbContext db, ChatService chat, TelegramServi
             b.Id, b.ClassName, b.Text, b.SenderName, b.CreatedAt.ToString("o"),
             b.RecipientCount, b.SentCount,
             stats.TryGetValue(b.Id, out var st) ? st.Students : null,
-            stats.TryGetValue(b.Id, out var st2) ? st2.NoTelegram : null)).ToList();
+            stats.TryGetValue(b.Id, out var st2) ? st2.NoTelegram : null,
+            b.ImageUrls)).ToList();
     }
 
     /// <summary>
@@ -164,7 +166,8 @@ public class MessagesController(AppDbContext db, ChatService chat, TelegramServi
         return new BroadcastDetailDto(
             new BroadcastDto(b.Id, b.ClassName, b.Text, b.SenderName, b.CreatedAt.ToString("o"),
                 b.RecipientCount, b.SentCount, rows.Count > 0 ? studentIds.Count : null,
-                rows.Count > 0 ? rows.Count(r => r.Status == BroadcastDelivery.NoTelegram) : null),
+                rows.Count > 0 ? rows.Count(r => r.Status == BroadcastDelivery.NoTelegram) : null,
+                b.ImageUrls),
             TelegramHtml.FromMarkup(b.Text), recipients, rows.Count > 0);
     }
 
@@ -191,7 +194,13 @@ public class MessagesController(AppDbContext db, ChatService chat, TelegramServi
         // Formatlangan matn (**qalin**, __kursiv__ …, 2026-10-11): yozilgani saqlanadi, Telegramga
         // esa HTML qismi bo'lib ketadi (TelegramHtml.FromMarkup — avval hammasi ekranlanadi).
         var text = req.Text?.Trim() ?? "";
-        if (TelegramHtml.MarkupToPlain(text).Trim().Length == 0) return BadRequest(new { message = "Xabar matni kerak" });
+        // Rasmlar (2026-10-24): fayllar shu yerda, yuborishdan OLDIN o'qiladi — yaroqsiz rasm
+        // e'lonni yarim yo'lda to'xtatmasin. Rasm bo'lsa matn ixtiyoriy.
+        var imageUrls = (req.ImageUrls ?? []).Select(u => (u ?? "").Trim()).Where(u => u.Length > 0).ToList();
+        var (photos, imageError) = await BroadcastImages.LoadAsync(env, imageUrls, HttpContext.RequestAborted);
+        if (imageError is not null) return BadRequest(new { message = imageError });
+        if (photos.Count == 0 && TelegramHtml.MarkupToPlain(text).Trim().Length == 0)
+            return BadRequest(new { message = "Xabar matni kerak" });
         var html = TelegramHtml.FromMarkup(text);
         var scope = (req.Scope ?? "class").Trim().ToLowerInvariant();
 
@@ -280,8 +289,13 @@ public class MessagesController(AppDbContext db, ChatService chat, TelegramServi
         foreach (var r in regs)
         {
             if (!byId.TryGetValue(r.StudentId, out var s)) continue;
-            var message = $"📢 <b>Maktab e'loni</b>\n\n{Personalize(html, s, r, balances.GetValueOrDefault(s.Id))}";
-            var ok = await telegram.SendRichAsync(r.ChatId, message);
+            var message = html.Length == 0
+                ? "📢 <b>Maktab e'loni</b>"
+                : $"📢 <b>Maktab e'loni</b>\n\n{Personalize(html, s, r, balances.GetValueOrDefault(s.Id))}";
+            // Rasmli e'lon: birinchi chatga fayl, keyingilariga Telegram'ning file_id'si ketadi.
+            var ok = photos.Count == 0
+                ? await telegram.SendRichAsync(r.ChatId, message)
+                : await telegram.SendPhotosWithTextAsync(r.ChatId, photos, message);
             if (ok) sent++;
             delivery.Add(new BroadcastRecipient
             {
@@ -304,6 +318,7 @@ public class MessagesController(AppDbContext db, ChatService chat, TelegramServi
             CreatedAt = AppClock.Now,
             RecipientCount = regs.Count,
             SentCount = sent,
+            ImageUrls = imageUrls,
         };
         db.Broadcasts.Add(bc);
         foreach (var d in delivery) d.BroadcastId = bc.Id;
@@ -312,7 +327,7 @@ public class MessagesController(AppDbContext db, ChatService chat, TelegramServi
 
         return new BroadcastDto(bc.Id, bc.ClassName, bc.Text, bc.SenderName,
             bc.CreatedAt.ToString("o"), bc.RecipientCount, bc.SentCount,
-            students.Count, delivery.Count(d => d.Status == BroadcastDelivery.NoTelegram));
+            students.Count, delivery.Count(d => d.Status == BroadcastDelivery.NoTelegram), bc.ImageUrls);
     }
 
     /// <summary>

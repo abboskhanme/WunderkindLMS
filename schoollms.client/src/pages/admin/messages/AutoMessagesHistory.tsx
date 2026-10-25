@@ -373,6 +373,16 @@ function RunModal({
           <RunActions run={run} busy={busy === run.id} act={(x, k) => void act(x, k)} />
         </div>
         {run.note && <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">{run.note}</p>}
+        {(run.imageUrls?.length ?? 0) > 0 && (
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="text-xs text-slate-500">Rasmlar:</span>
+            {run.imageUrls!.map((url, i) => (
+              <a key={`${url}-${i}`} href={url} target="_blank" rel="noreferrer">
+                <img src={url} alt="" className="h-12 w-12 rounded-md object-cover" />
+              </a>
+            ))}
+          </div>
+        )}
         {(actionError || error) && <p className="text-sm text-red-600">{actionError ?? error}</p>}
         {!data ? (
           <Loader label="Yuklanmoqda..." />

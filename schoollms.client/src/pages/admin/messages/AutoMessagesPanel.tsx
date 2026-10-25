@@ -4,6 +4,8 @@
  * Har qoida O'CHIQ holda keladi — maktab matnni tasdiqlagach shu yerda yoqiladi.
  * 2026-10-15: ikkinchi bo'lim "Tarix va statistika" (AutoMessagesHistory) — yuborishlar, tasdiqlash,
  * yetkazish jurnali va statistika.
+ * 2026-10-25: qoidaga rasm qo'shiladi (e'londagi kabi, 10 tagacha) — to'lov qoidasidan tashqari,
+ * u chek PDF'i bilan ketadi.
  */
 import { useEffect, useRef, useState } from 'react'
 import { AlertTriangle, CalendarClock, Eye, RotateCcw, Save } from 'lucide-react'
@@ -23,6 +25,7 @@ import { RichText } from '@/components/ui/RichText'
 import { Switch } from '@/components/hr-tasks/ui'
 import { cn } from '@/lib/utils'
 import { AutoMessagesHistory } from './AutoMessagesHistory'
+import { BroadcastImagePicker } from './BroadcastImagePicker'
 import { TITLES, errorText, fmtDateTime } from './autoMessageLabels'
 
 const VIEWS = [
@@ -98,6 +101,8 @@ function RuleCard({ rule, onSaved }: { rule: AutoMessageRule; onSaved: (r: AutoM
   const [text, setText] = useState(rule.text)
   const [approval, setApproval] = useState(rule.requiresApproval)
   const [cutoff, setCutoff] = useState(rule.cutoffTime ?? '')
+  const [images, setImages] = useState<string[]>(rule.imageUrls ?? [])
+  const [uploading, setUploading] = useState(false)
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null)
   const [preview, setPreview] = useState<AutoMessagePreview | null>(null)
@@ -113,7 +118,8 @@ function RuleCard({ rule, onSaved }: { rule: AutoMessageRule; onSaved: (r: AutoM
     (rule.key === 'debt' && Number(minAmount || 0) !== rule.minAmount) ||
     text !== rule.text ||
     (!rule.eventDriven && approval !== rule.requiresApproval) ||
-    (isAbsence && cutoff !== (rule.cutoffTime ?? ''))
+    (isAbsence && cutoff !== (rule.cutoffTime ?? '')) ||
+    (!rule.eventDriven && images.join('\n') !== (rule.imageUrls ?? []).join('\n'))
 
   const save = async (nextEnabled = enabled) => {
     setBusy(true)
@@ -127,6 +133,7 @@ function RuleCard({ rule, onSaved }: { rule: AutoMessageRule; onSaved: (r: AutoM
         text,
         requiresApproval: rule.eventDriven ? undefined : approval,
         cutoffTime: isAbsence ? cutoff || null : undefined,
+        imageUrls: rule.eventDriven ? undefined : images,
       })
       setEnabled(saved.enabled)
       onSaved(saved)
@@ -281,6 +288,10 @@ function RuleCard({ rule, onSaved }: { rule: AutoMessageRule; onSaved: (r: AutoM
         </div>
       </div>
 
+      {!rule.eventDriven && (
+        <BroadcastImagePicker value={images} onChange={setImages} onBusyChange={setUploading} />
+      )}
+
       {preview && (
         <div className="rounded-lg bg-slate-50 px-3 py-2 text-sm">
           {rule.eventDriven ? (
@@ -296,6 +307,13 @@ function RuleCard({ rule, onSaved }: { rule: AutoMessageRule; onSaved: (r: AutoM
             <>
               {!rule.eventDriven && (
                 <p className="mb-1 text-xs font-medium text-slate-400">Namuna ({preview.sampleFor}):</p>
+              )}
+              {!rule.eventDriven && images.length > 0 && (
+                <div className="mb-2 flex flex-wrap gap-1.5">
+                  {images.map((url, i) => (
+                    <img key={`${url}-${i}`} src={url} alt="" className="h-16 w-16 rounded-md object-cover" />
+                  ))}
+                </div>
               )}
               <RichText html={preview.sample} className="text-slate-700" />
             </>
@@ -324,7 +342,7 @@ function RuleCard({ rule, onSaved }: { rule: AutoMessageRule; onSaved: (r: AutoM
           <Button variant="secondary" onClick={() => void runPreview()} disabled={previewBusy}>
             <Eye className="h-4 w-4" /> {previewBusy ? 'Tekshirilmoqda…' : 'Namuna'}
           </Button>
-          <Button onClick={() => void save()} disabled={busy || !dirty}>
+          <Button onClick={() => void save()} disabled={busy || uploading || !dirty}>
             <Save className="h-4 w-4" /> Saqlash
           </Button>
         </div>

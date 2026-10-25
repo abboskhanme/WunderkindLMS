@@ -40,6 +40,13 @@ public class AutoMessageRule
     /// </summary>
     public string? CutoffTime { get; set; }
 
+    /// <summary>
+    /// Pictures sent with the message (<c>/uploads/…</c>, in order, ≤ 10; 2026-10-25): one → a photo,
+    /// more → an album, the text under them. Empty — text only. Never used by
+    /// <see cref="AutoMessageKind.Payment"/>, whose message is the receipt PDF's caption.
+    /// </summary>
+    public List<string> ImageUrls { get; set; } = new();
+
     /// <summary>The last period this rule finished ("2026-10-13" or "2026-10").</summary>
     public string? LastPeriod { get; set; }
 
@@ -136,6 +143,12 @@ public class AutoMessageRun
 
     /// <summary>What the run left out and why (absence: classes whose attendance was not finished).</summary>
     public string? Note { get; set; }
+
+    /// <summary>
+    /// The rule's pictures when the run prepared its messages (2026-10-25) — like the rows' text, what
+    /// was approved is what goes, and a retry sends the same pictures.
+    /// </summary>
+    public List<string> ImageUrls { get; set; } = new();
 
     /// <summary>users.id of the approver.</summary>
     public string? ApprovedBy { get; set; }

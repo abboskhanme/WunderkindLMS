@@ -1155,6 +1155,10 @@ public class Broadcast
     public int RecipientCount { get; set; }
     /// <summary>Telegram orqali muvaffaqiyatli yetkazilganlar soni.</summary>
     public int SentCount { get; set; }
+    /// <summary>
+    /// E'longa qo'shilgan rasmlar (<c>/uploads/…</c>, tartibi bilan; 2026-10-24). Bo'sh — faqat matn.
+    /// </summary>
+    public List<string> ImageUrls { get; set; } = new();
 }
 
 /// <summary>
