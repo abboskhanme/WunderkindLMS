@@ -3,6 +3,7 @@
  * 2026-10-13). Har qoida alohida yoqiladi; har biri sukut bo'yicha O'CHIQ.
  * 2026-10-15: yuborishlar (rejalashtirilgan / tasdiq kutmoqda / yuborildi / to'xtatilgan),
  * tasdiqlash, yetkazish jurnali (sahifalab, Excel) va statistika; to'lov qoidasi.
+ * 2026-10-25: qoidaga rasm (10 tagacha) — matn rasm ostida ketadi; to'lov qoidasidan tashqari.
  */
 import { api, USE_MOCK } from '../client'
 
@@ -36,6 +37,8 @@ export interface AutoMessageRule {
   cutoffTime: string | null
   /** To'lov qoidasi: chek bilan birga ketadi, o'z vaqti yo'q. */
   eventDriven: boolean
+  /** Xabar bilan ketadigan rasmlar (`/uploads/…`); bo'sh — faqat matn. */
+  imageUrls?: string[] | null
 }
 
 export interface SaveAutoMessageRule {
@@ -46,6 +49,8 @@ export interface SaveAutoMessageRule {
   text: string
   requiresApproval?: boolean
   cutoffTime?: string | null
+  /** Berilmasa — o'zgarmaydi; bo'sh ro'yxat — rasmsiz. To'lov qoidasida e'tiborga olinmaydi. */
+  imageUrls?: string[]
 }
 
 export interface AutoMessagePreview {
@@ -118,6 +123,8 @@ export interface AutoMessageRun {
   cancelledAt: string | null
   startedAt: string | null
   finishedAt: string | null
+  /** Yuborish tayyorlangandagi qoida rasmlari — aynan shular ketadi. */
+  imageUrls?: string[] | null
 }
 
 export interface AutoMessageStatsCell {

@@ -28,7 +28,8 @@ public sealed class AutoMessageScheduler(IServiceProvider services, ILogger<Auto
                 var service = new AutoMessageService(
                     scope.ServiceProvider.GetRequiredService<IAppDbContext>(),
                     scope.ServiceProvider.GetRequiredService<TelegramService>(),
-                    scope.ServiceProvider.GetRequiredService<ILogger<AutoMessageService>>());
+                    scope.ServiceProvider.GetRequiredService<ILogger<AutoMessageService>>(),
+                    scope.ServiceProvider.GetService<IWebHostEnvironment>());
                 await service.RunDueAsync(AppClock.Now, stoppingToken);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)

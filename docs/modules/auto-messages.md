@@ -3,6 +3,7 @@
 Status: batch 1 of `docs/MARKAZ-GAPS.md` (items #1, #2, #3, #9 and the log of #8), 2026-10-13.
 Extended 2026-10-15: runs with statuses and approval, retries, the absence cut-off, the payment
 rule, one delivery log for automatic and manual sends, history and statistics.
+Extended 2026-10-25: pictures on the scheduled rules (as on announcements since 2026-10-24).
 
 ## Why
 
@@ -37,6 +38,25 @@ Text is the broadcast markup (`**bold**`, `__italic__`), sent as Telegram HTML; 
 A line whose token has no value is dropped ("Sabab: {sabab}" disappears without a reason).
 Recipients are the parent chats in `telegram_registrations` (`teacher_id is null`), as for
 broadcasts and the absence button. Archived pupils never get anything.
+
+### Pictures (2026-10-25)
+
+Announcements got pictures on 2026-10-24; the client noticed the automatic rules had not. Now the
+four scheduled rules (absence, invoice, debt, birthday) take the same picker:
+
+- Up to 10 JPG/PNG/WEBP pictures of ≤ 10 MB (`auto_message_rules.image_urls`, `text[]`, in order),
+  uploaded first through `POST /api/admin/uploads`; `PUT {key}` checks them exactly as a broadcast
+  does (`BroadcastImages`: our upload names only, files must exist). `imageUrls` omitted — unchanged;
+  `[]` — no pictures. The text stays required.
+- One picture → `sendPhoto`, more → `sendMediaGroup` (album). Text ≤ 1024 visible characters is the
+  caption; longer text follows the pictures as its own message (`TelegramService.SendPhotosWithTextAsync`).
+  The file is uploaded to Telegram for the first chat of a send and its `file_id` reused after that.
+- A run takes the rule's pictures when it prepares its messages (`auto_message_runs.image_urls`), like
+  the rows' text: an approved run sends the pictures that were approved, and retries send the same.
+  The run's drill-down shows them.
+- A picture that can no longer be read (deleted from `uploads/`) does not hold a message back — the
+  text goes alone and the reason is logged.
+- **Not the payment rule**: its message is the receipt PDF's caption; `imageUrls` is ignored for it.
 
 ### Absence cut-off ("11:30 gacha")
 
@@ -119,7 +139,8 @@ apart (under Telegram's ~30/s).
 
 - `GET  /api/admin/auto-messages` — the rules with last run and last period counts.
 - `PUT  /api/admin/auto-messages/{key}` — enabled, send time, day of month, minimum, text,
-  `requiresApproval` (not for payment), `cutoffTime` (absence). Audited. Switching off stops open runs.
+  `requiresApproval` (not for payment), `cutoffTime` (absence), `imageUrls` (not for payment). Audited.
+  Switching off stops open runs.
 - `POST /api/admin/auto-messages/{key}/preview` — how many pupils it would reach now and a sample
   text (payment: a sample with made-up values). Sends nothing.
 - `GET  /api/admin/auto-messages/log?rule=&from=&to=&status=` — the log, newest first, ≤ 500 rows.
@@ -137,7 +158,8 @@ apart (under Telegram's ~30/s).
 Xabarlar → "Avtomatik xabarlar":
 
 - **Qoidalar va shablonlar** — a card per rule: switch, time, day, minimum, "Tasdiq bilan",
-  "Qaysi darsgacha" (absence), text with token chips (client's word + token), preview.
+  "Qaysi darsgacha" (absence), text with token chips (client's word + token), pictures (not on the
+  payment card), preview.
 - **Tarix va statistika** — period and rule filter; status tiles (Rejalashtirilgan, Tasdiq kutmoqda,
   Yuborildi, Xatolik with "Telegram yo'q", To'xtatilgan) and a rule × status table; "Yuborishlar"
   (runs: status, planned/finished time, counts, who approved or stopped, note; Tasdiqlash /
@@ -146,5 +168,6 @@ Xabarlar → "Avtomatik xabarlar":
 
 ## Tests
 
-`SchoolLms.Tests/AutoMessagesTests.cs`, `SchoolLms.Tests/AutoMessageRunsTests.cs` — every Telegram call
+`SchoolLms.Tests/AutoMessagesTests.cs`, `SchoolLms.Tests/AutoMessageRunsTests.cs`,
+`SchoolLms.Tests/AutoMessageImagesTests.cs` — every Telegram call
 goes to a recording `HttpMessageHandler`; nothing leaves the machine.

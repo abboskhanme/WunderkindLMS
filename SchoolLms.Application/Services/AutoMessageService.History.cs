@@ -106,7 +106,7 @@ public sealed partial class AutoMessageService
         r.Cancelled, r.Note,
         r.ApprovedBy is { } a ? users.GetValueOrDefault(a, a) : null, r.ApprovedAt,
         r.CancelledBy is { } c ? users.GetValueOrDefault(c, c) : null, r.CancelledAt,
-        r.StartedAt, r.FinishedAt);
+        r.StartedAt, r.FinishedAt, r.ImageUrls);
 
     /// <summary>Counts per status, per rule × status, and per day × rule × status (by the row's time).</summary>
     public async Task<AutoMessageStatsDto> StatsAsync(DateOnly from, DateOnly to, CancellationToken ct = default)

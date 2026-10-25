@@ -15,7 +15,7 @@ namespace SchoolLms.Server.Controllers;
 //
 //    GET  /api/admin/auto-messages                    — the rules
 //    PUT  /api/admin/auto-messages/{key}              — switch on/off, time, day, minimum, text,
-//                                                       approval, cut-off (audited)
+//                                                       approval, cut-off, pictures (audited)
 //    POST /api/admin/auto-messages/{key}/preview      — who it would reach now, sample text (sends nothing)
 //    GET  /api/admin/auto-messages/log                — the delivery log, newest first, ≤ 500 rows
 //    GET  /api/admin/auto-messages/log/paged          — the same, paged, with pupil / run / source filters
@@ -34,7 +34,8 @@ namespace SchoolLms.Server.Controllers;
 [Authorize]
 [AdminPerm("messages")]
 [Route("api/admin/auto-messages")]
-public class AutoMessagesController(AppDbContext db, TelegramService telegram, AuditService audit) : ControllerBase
+public class AutoMessagesController(
+    AppDbContext db, TelegramService telegram, AuditService audit, IWebHostEnvironment env) : ControllerBase
 {
     private const int MaxTextLength = 3500;
     private const int MaxLogRows = 500;
@@ -62,7 +63,7 @@ public class AutoMessagesController(AppDbContext db, TelegramService telegram, A
         [AutoMessageStatus.Cancelled] = "To'xtatilgan",
     };
 
-    private AutoMessageService Service => new(db, telegram);
+    private AutoMessageService Service => new(db, telegram, env: env);
 
     [HttpGet]
     public async Task<ActionResult<List<AutoMessageRuleDto>>> List(CancellationToken ct)
@@ -109,8 +110,12 @@ public class AutoMessagesController(AppDbContext db, TelegramService telegram, A
         if (cutoff is not null
             && !TimeOnly.TryParseExact(cutoff, "HH:mm", CultureInfo.InvariantCulture, DateTimeStyles.None, out _))
             return BadRequest(new { message = "Kesish vaqti SS:dd ko'rinishida bo'lsin (masalan 11:30)" });
+        // Pictures (2026-10-25), checked as an announcement's are; the payment message is the receipt's caption.
+        var images = req.ImageUrls is null || AutoMessageKind.IsEventDriven(key) ? null : BroadcastImages.Clean(req.ImageUrls);
+        if (images is not null && BroadcastImages.Check(env, images) is { } imageError)
+            return BadRequest(new { message = imageError });
 
-        var before = new { rule.Enabled, rule.SendTime, rule.DayOfMonth, rule.MinAmount, rule.Text, rule.RequiresApproval, rule.CutoffTime };
+        var before = new { rule.Enabled, rule.SendTime, rule.DayOfMonth, rule.MinAmount, rule.Text, rule.RequiresApproval, rule.CutoffTime, Images = rule.ImageUrls.ToList() };
         var switchedOff = rule.Enabled && !req.Enabled;
         rule.Enabled = req.Enabled;
         rule.SendTime = req.SendTime!;
@@ -120,9 +125,10 @@ public class AutoMessagesController(AppDbContext db, TelegramService telegram, A
         // Approval never holds a receipt back: the payment rule cannot require it.
         if (req.RequiresApproval is { } approval && !AutoMessageKind.IsEventDriven(key)) rule.RequiresApproval = approval;
         if (key == AutoMessageKind.Absence) rule.CutoffTime = cutoff;
+        if (images is not null) rule.ImageUrls = images;
         rule.UpdatedBy = CurrentUserId();
         rule.UpdatedAt = AppClock.NowInstant;
-        var after = new { rule.Enabled, rule.SendTime, rule.DayOfMonth, rule.MinAmount, rule.Text, rule.RequiresApproval, rule.CutoffTime };
+        var after = new { rule.Enabled, rule.SendTime, rule.DayOfMonth, rule.MinAmount, rule.Text, rule.RequiresApproval, rule.CutoffTime, Images = rule.ImageUrls.ToList() };
         audit.Record("AutoMessageRule", key, "update",
             $"Avtomatik xabar \"{key}\": {(rule.Enabled ? "yoqilgan" : "o'chirilgan")}, {rule.SendTime}", before, after);
         await db.SaveChangesAsync(ct);
@@ -305,7 +311,7 @@ public class AutoMessagesController(AppDbContext db, TelegramService telegram, A
         r.Key, r.Enabled, r.SendTime, r.DayOfMonth, r.MinAmount, r.Text, AutoMessageKind.IsMonthly(r.Key),
         AutoMessageService.TokensOf(r.Key), AutoMessageService.DefaultText.GetValueOrDefault(r.Key, ""),
         r.LastPeriod, r.LastRunAt, sent, failed, noTelegram, r.UpdatedAt, editor,
-        r.RequiresApproval, r.CutoffTime, AutoMessageKind.IsEventDriven(r.Key));
+        r.RequiresApproval, r.CutoffTime, AutoMessageKind.IsEventDriven(r.Key), r.ImageUrls);
 
     private string CurrentUserId() =>
         User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? User.FindFirst("sub")?.Value ?? "";

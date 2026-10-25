@@ -41,7 +41,9 @@ public sealed record AutoMessagePreviewDto(
 /// <summary>A token the rule's text may use, with what it becomes and the client's word for it.</summary>
 public sealed record AutoMessageTokenDto(string Token, string Meaning, string? Label = null);
 
-public sealed partial class AutoMessageService(IAppDbContext db, TelegramService telegram, ILogger<AutoMessageService>? logger = null)
+/// <param name="env">Where <c>uploads/</c> lives — the rules' pictures are read from there; null — text only.</param>
+public sealed partial class AutoMessageService(
+    IAppDbContext db, TelegramService telegram, ILogger<AutoMessageService>? logger = null, IWebHostEnvironment? env = null)
 {
     /// <summary><c>absence_notices.sent_by</c> / <c>cancelled_by</c> for what the system did itself.</summary>
     public const string SystemUser = "auto";
@@ -309,6 +311,8 @@ public sealed partial class AutoMessageService(IAppDbContext db, TelegramService
             return new AutoMessageRunResult(rule.Key, period, 0, 0, 0, 0, 0, Closed: true, Note: run.Note, RunId: run.Id);
 
         run.Note = source.Note;
+        // The pictures are taken with the text: an approved run sends what was approved (2026-10-25).
+        run.ImageUrls = [.. rule.ImageUrls];
         var awaitApproval = rule.RequiresApproval && run.ApprovedAt is null;
         var (already, noTelegram) = await MaterializeAsync(
             rule, run, source.Items, awaitApproval ? AutoMessageStatus.PendingApproval : AutoMessageStatus.Scheduled, ct);
@@ -826,6 +830,8 @@ public sealed partial class AutoMessageService(IAppDbContext db, TelegramService
             .ToListAsync(ct);
         var isAbsence = rule.Key == AutoMessageKind.Absence;
         var day = isAbsence ? DayOf(run.Period) : default;
+        // Read once per send: the first chat uploads the files, every next one gets Telegram's file_id.
+        var photos = rows.Count > 0 ? await PhotosAsync(run, ct) : [];
 
         int sent = 0, failed = 0;
         foreach (var pupil in rows.GroupBy(r => r.StudentId, StringComparer.Ordinal))
@@ -856,7 +862,9 @@ public sealed partial class AutoMessageService(IAppDbContext db, TelegramService
             var delivered = 0;
             foreach (var row in pupil)
             {
-                var ok = await telegram.SendRichAsync(row.ChatId!.Value, row.Text, ct);
+                var ok = photos.Count == 0
+                    ? await telegram.SendRichAsync(row.ChatId!.Value, row.Text, ct)
+                    : await telegram.SendPhotosWithTextAsync(row.ChatId!.Value, photos, row.Text, ct);
                 row.Attempts++;
                 row.Status = ok ? BroadcastDelivery.Sent : BroadcastDelivery.Failed;
                 row.Error = ok ? null : RejectedByTelegram;
@@ -878,6 +886,24 @@ public sealed partial class AutoMessageService(IAppDbContext db, TelegramService
             await db.SaveChangesAsync(ct);
         }
         return (sent, failed);
+    }
+
+    /// <summary>
+    /// The run's pictures. One that can no longer be read (deleted from <c>uploads/</c>) does not hold
+    /// the message back: the text goes alone and the reason is logged.
+    /// </summary>
+    private async Task<List<TelegramPhoto>> PhotosAsync(AutoMessageRun run, CancellationToken ct)
+    {
+        if (run.ImageUrls.Count == 0) return [];
+        if (env is null)
+        {
+            log.LogWarning("Avtomatik xabar ({Rule}, {Period}): rasmlar o'qilmadi — faqat matn ketadi", run.RuleKey, run.Period);
+            return [];
+        }
+        var (photos, error) = await BroadcastImages.LoadAsync(env, run.ImageUrls, ct);
+        if (error is null) return photos;
+        log.LogWarning("Avtomatik xabar ({Rule}, {Period}): {Error} — faqat matn ketadi", run.RuleKey, run.Period, error);
+        return [];
     }
 
     /// <summary>The reason most of the pupil's absent lessons that day carry (late reasons aside).</summary>

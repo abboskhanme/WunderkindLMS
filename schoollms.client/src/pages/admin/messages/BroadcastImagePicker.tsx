@@ -1,5 +1,6 @@
 /**
- * E'lon rasmlari (mijoz, 2026-10-24: "e'lon jo'natish qismida xabarlarga rasm qo'shib jo'natish").
+ * E'lon rasmlari (mijoz, 2026-10-24: "e'lon jo'natish qismida xabarlarga rasm qo'shib jo'natish");
+ * 2026-10-25 dan avtomatik xabar qoidalarida ham.
  * Har rasm tanlanishi bilan `/admin/uploads` ga yuklanadi; e'lon bilan faqat URL'lar ketadi.
  * Telegram cheklovlari: bitta e'longa 10 tagacha rasm, har biri 10 MB gacha, JPG / PNG / WEBP.
  */
@@ -34,7 +35,7 @@ export function BroadcastImagePicker({
     if (accepted.length < files.length) {
       setError(
         files.length > room
-          ? `Bitta e'longa ko'pi bilan ${MAX_BROADCAST_IMAGES} ta rasm qo'shiladi.`
+          ? `Bitta xabarga ko'pi bilan ${MAX_BROADCAST_IMAGES} ta rasm qo'shiladi.`
           : "Faqat JPG, PNG yoki WEBP rasm, har biri 10 MB gacha.",
       )
     }

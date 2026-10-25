@@ -1097,6 +1097,11 @@ namespace SchoolLms.Infrastructure.Migrations
                         .HasColumnType("boolean")
                         .HasColumnName("enabled");
 
+                    b.PrimitiveCollection<List<string>>("ImageUrls")
+                        .IsRequired()
+                        .HasColumnType("text[]")
+                        .HasColumnName("image_urls");
+
                     b.Property<string>("LastPeriod")
                         .HasMaxLength(10)
                         .HasColumnType("character varying(10)")
@@ -1189,6 +1194,11 @@ namespace SchoolLms.Infrastructure.Migrations
                     b.Property<DateTimeOffset?>("FinishedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("finished_at");
+
+                    b.PrimitiveCollection<List<string>>("ImageUrls")
+                        .IsRequired()
+                        .HasColumnType("text[]")
+                        .HasColumnName("image_urls");
 
                     b.Property<int>("NoTelegram")
                         .HasColumnType("integer")
