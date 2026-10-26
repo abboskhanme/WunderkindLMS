@@ -29,25 +29,44 @@
  *
  * XULQ (mijoz, 2026-10-15; behaviour.md): har qatorda "Xulq" — pastdan chiqadigan oynada Ijobiy /
  * Salbiy, sabab va izoh; DARHOL saqlanadi. Tugmada bugungi ballar va joriy ball (100 dan).
+ *
+ * O'TGAN KUNLAR (mijoz, 2026-10-26): o'qituvchi oldingi sanaga qaytib, qo'yilgan bahoni o'zgartira
+ * yoki qo'yilmaganini qo'ya oladi. Tepada kun o'tkagichi — bugundan orqaga, o'quv yili boshigacha;
+ * kelajakka o'tib bo'lmaydi (server ham rad etadi). Sananing choragi va haftasi `weekAxis` dan
+ * olinadi, shuning uchun o'sha kungi jadval va o'sha chorak jurnali ochiladi. Xulq — faqat bugun:
+ * u o'tgan sanaga emas, yozilgan paytiga tushadi.
  */
 import { useEffect, useMemo, useState } from 'react'
 import { CalendarOff, Check, ChevronLeft, ShieldCheck, UserX } from 'lucide-react'
 import {
-  Badge, Card, DateChip, EmptyState, ErrorState, Hero, Loader, Row, Screen,
+  Badge, Card, DateChip, EmptyState, ErrorState, Hero, Loader, Row, Screen, Stepper,
 } from '../../components/ui'
 import { useAsync } from '../../lib/useAsync'
 import { teacherApi } from '../../lib/teacherApi'
-import { todayISO } from '../../lib/weeks'
-import { fullDate, todayIndex, weekdayName } from '../../lib/format'
+import { addDays, todayISO, weekAxis } from '../../lib/weeks'
+import { dayMonth, fullDate, weekdayName } from '../../lib/format'
 import { haptic, showBackButton } from '../../lib/telegram'
 import { AsyncBlock, lessonKey, lessonOwnerTitle, lessonPairs } from './shared'
 import { HOMEWORK_STATUSES, HW_DONE } from '../../lib/homework'
 import { BehaviourSheet, signedPoints } from './BehaviourSheet'
 
 export function AttendanceTab({ profile, meta, focusLesson, onClearFocus }) {
-  const quarter = meta.currentQuarter
-  const week = meta.currentWeek
-  const date = todayISO()
+  const today = todayISO()
+  const [date, setDate] = useState(today)
+  const isToday = date === today
+  // O'quv yilining haftalari — sana qaysi chorak/haftaga tushishi shu o'qdan (server bilan bir xil).
+  const axis = useMemo(() => weekAxis(meta.quarters), [meta.quarters])
+  const spot = axis.find((a) => a.startISO <= date && date <= a.endISO) || null
+  const quarter = spot?.quarter ?? (isToday ? meta.currentQuarter : null)
+  const week = spot?.week ?? (isToday ? meta.currentWeek : null)
+  const day = (new Date(`${date}T00:00:00`).getDay() + 6) % 7
+  // Orqaga — o'quv yili boshigacha, oldinga — bugungacha.
+  const firstDay = axis[0]?.startISO ?? today
+  const shiftDay = (n) => {
+    haptic()
+    const next = addDays(date, n)
+    setDate(next > today ? today : next)
+  }
   const [selected, setSelected] = useState(focusLesson ?? null)
   // The school decides whether teachers mark attendance (default: no — the nurse does).
   const canMark = profile?.canMarkAttendance === true
@@ -56,7 +75,10 @@ export function AttendanceTab({ profile, meta, focusLesson, onClearFocus }) {
 
   // "Bugun" tabidan dars bilan kirilganda — o'sha darsni ochamiz.
   useEffect(() => {
-    if (focusLesson) setSelected(focusLesson)
+    if (!focusLesson) return
+    // "Bugun" tabidagi dars — doim bugungi sana.
+    setDate(todayISO())
+    setSelected(focusLesson)
   }, [focusLesson])
 
   const close = () => {
@@ -72,8 +94,10 @@ export function AttendanceTab({ profile, meta, focusLesson, onClearFocus }) {
   }, [selected, sheetOpen])
 
   const q = useAsync(async () => {
+    // Sana hech bir chorak haftasiga tushmaydi (ta'til, yakshanba) — dars yo'q.
+    if (quarter == null || week == null) return { lessons: [], conducted: new Set() }
     const schedule = await teacherApi.schedule(quarter, week)
-    const lessons = schedule.filter((l) => l.day === todayIndex()).sort((a, b) => a.period - b.period)
+    const lessons = schedule.filter((l) => l.day === day).sort((a, b) => a.period - b.period)
 
     const pairs = lessonPairs(lessons)
     // Bitta darsning qaydlari yiqilsa ro'yxat baribir ochilsin — o'sha dars
@@ -88,7 +112,7 @@ export function AttendanceTab({ profile, meta, focusLesson, onClearFocus }) {
       }
     })
     return { lessons, conducted }
-  }, [quarter, week])
+  }, [quarter, week, day, date])
 
   if (selected) {
     return (
@@ -96,6 +120,7 @@ export function AttendanceTab({ profile, meta, focusLesson, onClearFocus }) {
         lesson={selected}
         quarter={quarter}
         date={date}
+        isToday={isToday}
         reasons={meta.absenceReasons || []}
         canMark={canMark}
         onSheetChange={setSheetOpen}
@@ -107,8 +132,28 @@ export function AttendanceTab({ profile, meta, focusLesson, onClearFocus }) {
 
   return (
     <Screen>
-      <Hero title={canMark ? 'Davomat va baho' : 'Baho va vazifa'} subtitle={fullDate(date)} />
-      <AsyncBlock query={q} loadingLabel="Bugungi darslar yuklanmoqda…">
+      <Hero title={canMark ? 'Davomat va baho' : 'Baho va vazifa'} subtitle={fullDate(date)}>
+        <Stepper
+          label={isToday ? `Bugun · ${dayMonth(date)}` : `${weekdayName(day)} · ${dayMonth(date)}`}
+          onPrev={() => shiftDay(-1)}
+          onNext={() => shiftDay(1)}
+          disabledPrev={date <= firstDay}
+          disabledNext={isToday}
+        />
+        {!isToday && (
+          <button
+            type="button"
+            onClick={() => {
+              haptic()
+              setDate(today)
+            }}
+            className="mt-1 block w-full text-center text-[13px] font-semibold underline opacity-70"
+          >
+            Bugungi kunga qaytish
+          </button>
+        )}
+      </Hero>
+      <AsyncBlock query={q} loadingLabel="Darslar yuklanmoqda…">
         {(data) => (
           <>
             <Card
@@ -122,8 +167,12 @@ export function AttendanceTab({ profile, meta, focusLesson, onClearFocus }) {
               {data.lessons.length === 0 ? (
                 <EmptyState
                   icon={<CalendarOff className="h-9 w-9" />}
-                  title="Bugun dars yo'q"
-                  note={`${weekdayName(todayIndex())} kuniga jadvalda sizga dars biriktirilmagan, shuning uchun davomat olinadigan dars ham yo'q.`}
+                  title={isToday ? "Bugun dars yo'q" : "Bu kunda dars yo'q"}
+                  note={
+                    quarter == null
+                      ? "Bu sana hech bir chorakka tushmaydi (ta'til yoki dam olish kuni)."
+                      : `${weekdayName(day)} kuniga jadvalda sizga dars biriktirilmagan, shuning uchun davomat olinadigan dars ham yo'q.`
+                  }
                 />
               ) : (
                 data.lessons.map((l) => {
@@ -163,7 +212,7 @@ export function AttendanceTab({ profile, meta, focusLesson, onClearFocus }) {
 
 /* ------------------------------------------------------- bitta darsning ro'yxati */
 
-function LessonAttendance({ lesson, quarter, date, reasons, canMark, onSheetChange, onBack, onSaved }) {
+function LessonAttendance({ lesson, quarter, date, isToday = true, reasons, canMark, onSheetChange, onBack, onSaved }) {
   const { classId, subjectId, period } = lesson
   // `classId` — darsning EGASI: sinf yoki o'quv guruhi (§2.1.4). Server ro'yxatni
   // o'zi yechadi, shuning uchun bu yerda sinf nomi bo'yicha filtr yo'q.
@@ -228,7 +277,7 @@ function LessonAttendance({ lesson, quarter, date, reasons, canMark, onSheetChan
   const [homeworkText, setHomeworkText] = useState('')
 
   // Server javobi kelganda belgilarni bir marta serverdagi holatdan to'ldiramiz.
-  const loadedKey = q.data ? `${classId}|${period}|${q.data.todayEntries.length}` : null
+  const loadedKey = q.data ? `${classId}|${date}|${period}|${q.data.todayEntries.length}` : null
   const [seededKey, setSeededKey] = useState(null)
   if (q.data && seededKey !== loadedKey) {
     const seed = {}
@@ -555,7 +604,8 @@ function LessonAttendance({ lesson, quarter, date, reasons, canMark, onSheetChan
                 canMark={canMark}
                 nurseMark={current[s.id] ? reasonById.get(current[s.id]) || { name: "Yo'q", isLate: false } : null}
                 showGrades={canMark ? !current[s.id] : inClass(s.id)}
-                behaviour={behaviourReasons.data ? scoreOf.get(s.id) || { remaining: null, today: 0 } : null}
+                // Xulq o'tgan sanaga yozilmaydi — faqat bugungi darsda.
+                behaviour={isToday && behaviourReasons.data ? scoreOf.get(s.id) || { remaining: null, today: 0 } : null}
                 onBehaviour={() => openSheet(s)}
                 grade={currentGrades[s.id] ?? null}
                 homework={currentHomework[s.id] ?? 0}

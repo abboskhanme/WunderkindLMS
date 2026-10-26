@@ -1,12 +1,23 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { AlertTriangle, BellRing, CheckCircle2, ClipboardList, Download, Repeat, XCircle } from 'lucide-react'
+import { AlertTriangle, BellRing, CheckCircle2, ClipboardList, Download, Repeat, Search, XCircle } from 'lucide-react'
 import { downloadReportCsv, getEmployeeReport, getSummaryReport, getTasks, hrErrorMessage } from '@/api/services/hrTasks'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
-import { EmptyState, Notice, PageHeader, SectionTitle, Skeleton, StatTile, primaryLinkCls, secondaryLinkCls } from '@/components/hr-tasks/ui'
+import {
+  EmptyState,
+  Notice,
+  PageHeader,
+  SectionTitle,
+  Skeleton,
+  StatTile,
+  inputCls,
+  primaryLinkCls,
+  secondaryLinkCls,
+} from '@/components/hr-tasks/ui'
 import { useToast } from '@/components/hr-tasks/hooks'
 import { useLoad } from '@/components/hr-tasks/useLoad'
+import { cn } from '@/lib/utils'
 import {
   HR_PERIOD_LABEL,
   hrFormatNumber,
@@ -40,6 +51,10 @@ export function HrDashboardPage() {
 
   const stats = summary.data
   const rows = report.data?.items ?? report.previous?.items ?? []
+  const [search, setSearch] = useState('')
+  const needle = search.trim().toLowerCase()
+  // Client-side: the report already holds every employee of the period.
+  const visibleRows = needle === '' ? rows : rows.filter((row) => row.fullName.toLowerCase().includes(needle))
   const isToday = !period.isCustom && period.preset === 'today'
 
   const tasksLink = (employeeId?: string, extra: Record<string, string> = {}) =>
@@ -164,15 +179,47 @@ export function HrDashboardPage() {
       </div>
 
       <section>
-        <SectionTitle hint="Qatorni bosing — o‘sha xodimning shu davrdagi topshiriqlari ochiladi">
-          Xodimlar kesimida
-        </SectionTitle>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+          <SectionTitle hint="Qatorni bosing — o‘sha xodimning shu davrdagi topshiriqlari ochiladi">
+            Xodimlar kesimida
+          </SectionTitle>
+          {rows.length > 0 && (
+            <div className="relative mb-3 w-full sm:w-72">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+              <input
+                type="search"
+                className={cn(inputCls, 'pl-9')}
+                placeholder="Ism yoki familiya bo‘yicha qidirish"
+                aria-label="Xodimni ism yoki familiya bo‘yicha qidirish"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
+            </div>
+          )}
+        </div>
         <EmployeeReportTable
-          rows={rows}
+          rows={visibleRows}
           loading={report.loading}
           dimmed={report.loading && rows.length > 0}
           linkTo={(row) => tasksLink(row.employeeId)}
-          empty={reportEmpty}
+          empty={
+            rows.length > 0 ? (
+              <Card>
+                <EmptyState
+                  icon={<Search className="h-5 w-5" />}
+                  title="Xodim topilmadi"
+                  hint={`«${search.trim()}» bo‘yicha hech kim topilmadi. Ism yoki familiyani tekshiring.`}
+                  action={
+                    <Button variant="secondary" onClick={() => setSearch('')}>
+                      Qidiruvni tozalash
+                    </Button>
+                  }
+                />
+              </Card>
+            ) : (
+              reportEmpty
+            )
+          }
         />
       </section>
 

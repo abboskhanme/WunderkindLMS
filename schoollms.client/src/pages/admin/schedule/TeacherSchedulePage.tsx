@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { Search } from 'lucide-react'
 import type {
   LessonOwnerKind,
   ScheduleTemplate,
@@ -86,6 +87,9 @@ interface OwnerSchedule {
 /** grid[period][day] => shu katakdagi darslar */
 type Grid = Record<number, Record<number, CellLesson[]>>
 
+/** Qidiruv uchun: kichik harf, o'zbekcha apostrof turlari bitta ko'rinishga. */
+const normalizeName = (s: string) => s.toLocaleLowerCase('uz').replace(/[ʻʼ‘’`´]/g, "'")
+
 export function TeacherSchedulePage() {
   const [teachers, setTeachers] = useState<Teacher[]>([])
   const [subjects, setSubjects] = useState<Subject[]>([])
@@ -98,6 +102,8 @@ export function TeacherSchedulePage() {
   const [weekKey, setWeekKey] = useState('')
   const [data, setData] = useState<Map<string, OwnerSchedule>>(new Map())
   const [dataLoading, setDataLoading] = useState(false)
+  /** Ism-familiya bo'yicha qidiruv — faqat ko'rinishni filtrlaydi, yuklashga ta'sir qilmaydi. */
+  const [search, setSearch] = useState('')
 
   useEffect(() => {
     Promise.all([
@@ -233,6 +239,16 @@ export function TeacherSchedulePage() {
     return result
   }, [owners, data, selected, subjects, settings, periodTimes])
 
+  /** Qidiruvdagi har bir so'z ismda bo'lishi kerak — "Aliyev Vali" ham, "vali ali" ham topadi. */
+  const visibleTeachers = useMemo(() => {
+    const words = normalizeName(search).split(/\s+/).filter(Boolean)
+    if (words.length === 0) return teachers
+    return teachers.filter((t) => {
+      const name = normalizeName(t.fullName)
+      return words.every((w) => name.includes(w))
+    })
+  }, [teachers, search])
+
   const countOf = (grid: Grid | undefined) =>
     grid
       ? Object.values(grid).reduce(
@@ -267,7 +283,7 @@ export function TeacherSchedulePage() {
         </Card>
       ) : (
         <>
-          {/* Yagona tanlov — HAFTA. O'qituvchi ham, chorak ham tanlanmaydi. */}
+          {/* Asosiy tanlov — HAFTA (chorak tanlanmaydi), yonida ism bo'yicha qidiruv. */}
           <Card className="flex flex-wrap items-center gap-3 p-3">
             <span className="text-sm font-medium text-slate-600">Hafta</span>
             <select
@@ -281,12 +297,30 @@ export function TeacherSchedulePage() {
                 </option>
               ))}
             </select>
+            <div className="relative min-w-[220px] flex-1 sm:max-w-xs">
+              <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+              <input
+                type="search"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="O'qituvchi ism-familiyasi..."
+                className={cn(control, 'w-full pl-9')}
+              />
+            </div>
             <span className="text-sm text-slate-400">
-              {teachers.length} ta o'qituvchi · {dataLoading ? 'yuklanmoqda...' : 'tayyor'}
+              {search.trim() ? `${visibleTeachers.length} / ${teachers.length}` : teachers.length} ta o'qituvchi · {dataLoading ? 'yuklanmoqda...' : 'tayyor'}
             </span>
           </Card>
 
-          {teachers.map((t) => {
+          {visibleTeachers.length === 0 && (
+            <Card>
+              <p className="py-8 text-center text-sm text-slate-400">
+                "{search.trim()}" bo'yicha o'qituvchi topilmadi
+              </p>
+            </Card>
+          )}
+
+          {visibleTeachers.map((t) => {
             const grid = gridByTeacher.get(t.id)
             const count = countOf(grid)
             return (
