@@ -18,7 +18,7 @@ namespace SchoolLms.Infrastructure.Migrations
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .HasAnnotation("ProductVersion", "10.0.14")
+                .HasAnnotation("ProductVersion", "10.0.12")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
@@ -7307,6 +7307,10 @@ namespace SchoolLms.Infrastructure.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("payment_id");
 
+                    b.Property<Guid?>("RemovalGroupId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("removal_group_id");
+
                     b.Property<Guid?>("WithdrawalId")
                         .HasColumnType("uuid")
                         .HasColumnName("withdrawal_id");
@@ -7320,12 +7324,16 @@ namespace SchoolLms.Infrastructure.Migrations
                     b.HasIndex("PaymentId")
                         .HasDatabaseName("ix_payment_allocations_payment_id");
 
+                    b.HasIndex("RemovalGroupId")
+                        .HasDatabaseName("ix_payment_allocations_removal_group_id")
+                        .HasFilter("removal_group_id is not null");
+
                     b.HasIndex("WithdrawalId")
                         .HasDatabaseName("ix_payment_allocations_withdrawal_id");
 
                     b.ToTable("payment_allocations", null, t =>
                         {
-                            t.HasCheckConstraint("ck_payment_allocations_amount", "(kind = 'normal' and amount > 0) or (kind = 'release' and amount < 0 and withdrawal_id is not null)");
+                            t.HasCheckConstraint("ck_payment_allocations_amount", "(kind = 'normal' and amount > 0) or (kind = 'release' and amount < 0 and (withdrawal_id is not null or removal_group_id is not null))");
                         });
                 });
 

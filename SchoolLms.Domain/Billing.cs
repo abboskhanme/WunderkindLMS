@@ -458,6 +458,11 @@ public class PaymentAllocation
     public string Kind { get; set; } = PaymentAllocationKind.Normal;
     /// <summary>Bo'shatish qatori qaysi "chiqib ketdi" amaliga tegishli.</summary>
     public Guid? WithdrawalId { get; set; }
+    /// <summary>
+    /// A release made by "Oylarni o'chirish" with the payment going back to the balance — the action's
+    /// group id (billing-plans.md §10.5). A release carries this or <see cref="WithdrawalId"/>.
+    /// </summary>
+    public Guid? RemovalGroupId { get; set; }
 }
 
 /// <summary>

@@ -300,6 +300,8 @@ export function SubscriptionsTab({ studentId, studentName, className, onChanged,
             `${r.months} ta oy o'chirildi` +
               (r.reversedPaid > 0 ? `, ${formatMoney(r.reversedPaid)} to'lov hisobdan chiqdi (cheklar arxivda)` : '') +
               (r.paymentsReissued > 0 ? `, ${r.paymentsReissued} ta chek qayta rasmiylashtirildi` : '') +
+              (r.released > 0 ? `, ${formatMoney(r.released)} to'lov o'quvchi balansiga qaytdi` : '') +
+              (r.rebilled + r.alsoBilled > 0 ? `, abonement bo'yicha qayta yozildi: ${formatMoney(r.rebilled + r.alsoBilled)}` : '') +
               (r.subscriptionDeleted ? ', abonement o\'chirildi' : '') +
               '.',
           )

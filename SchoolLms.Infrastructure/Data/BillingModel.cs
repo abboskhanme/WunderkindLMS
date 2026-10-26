@@ -319,9 +319,12 @@ internal static class BillingModel
             e.Property(x => x.Kind).HasMaxLength(16).HasDefaultValue(PaymentAllocationKind.Normal);
             e.HasOne<StudentWithdrawal>().WithMany().HasForeignKey(x => x.WithdrawalId)
                 .OnDelete(DeleteBehavior.Restrict);
-            // Oddiy taqsimot musbat; bo'shatish (`release`) manfiy va doim "chiqib ketdi" amaliga bog'langan.
+            // Oddiy taqsimot musbat; bo'shatish (`release`) manfiy va doim amalga bog'langan: "chiqib ketdi"
+            // yoki "Oylarni o'chirish" — to'lov balansga (billing-plans.md §10.5).
+            e.HasIndex(x => x.RemovalGroupId).HasFilter("removal_group_id is not null");
             e.ToTable(t => t.HasCheckConstraint("ck_payment_allocations_amount",
-                "(kind = 'normal' and amount > 0) or (kind = 'release' and amount < 0 and withdrawal_id is not null)"));
+                "(kind = 'normal' and amount > 0) or (kind = 'release' and amount < 0 "
+                + "and (withdrawal_id is not null or removal_group_id is not null))"));
         });
     }
 

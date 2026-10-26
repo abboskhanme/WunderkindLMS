@@ -219,6 +219,35 @@ o'qigan kuniga qarab hisoblashi kerak edi"* — replaces Q12 for the **start** m
   Bayramlar). Prod got the official days off for 2026/27 on 2026-10-07; Ramazon and Qurbon hayit are
   added by the school once their dates are announced.
 
+## 10.5 Removing a month — the payment goes back to the balance (client, 2026-10-26)
+
+*"abonimentni tranzaksiyalarini o'chirish funksiyasini qo'shish kerak yani bekor qilib o'chirilganda
+to'langani ham balansga qaytarilishi kerak … tepadagi ishlarni qo'lda to'g'rilash mumkin bo'lishi uchun"*.
+The tepadagi ish: the imported September "O'qish to'lovi" carries EduSchool's whole September charge
+(tuition + bus / dorm / evening, §10.1) — 206 pupils hold another abonement inside it, 25 an EduSchool
+extra no LMS abonement backs. Staff fix them one by one in the existing "Oylarni o'chirish" window
+(`MonthRemovalService`, §10.3 / 2026-10-07), which gets three choices:
+
+- **`paidTo`** — where the paid share of the removed months goes:
+  - `balance` (the window's default now): every payment's net share on the month is released —
+    negative `payment_allocations` rows, kind `release`, `removal_group_id` = the action's group id
+    (the check constraint accepts a release with a withdrawal **or** a removal group). The cash, the
+    receipts and the ledger's payment batches are untouched: the money is the pupil's advance and
+    `AdvanceAllocator` closes the oldest open months with it (same priority as a payment). No receipt
+    is reversed, so the two-person rule (own receipt) does not apply.
+  - `storno` — the 2026-10-07 behaviour, unchanged: the receipts are reversed and leave the accounts.
+- **`rebill`** — the removed months are billed again right away from the abonement's own terms
+  (`LessonDays.MonthCharge` over the category's subscriptions covering the month, approved discounts
+  as in accrual, new accrual batch on the month). 2 170 000 → 1 690 000.
+- **`alsoBill`** — other abonements of the pupil whose `accrue_from` skipped the month (the lump held
+  their money): the month is billed for them too and their `accrue_from` moves back to that month
+  (`null` when it is the start month). An abonement ended on its start day (cancelled) is not offered.
+
+Order inside the ONE transaction: release (or storno) → adjustments reversed, accrual reversed, void +
+`removed_at` → re-bill → also-bill → `AdvanceAllocator`. The removed row stays as the archive; the new
+rows are ordinary invoices (the unique index skips void rows). Standing adjustments of a removed month
+(sick, discount) are reversed with it and are NOT carried to the new invoice — the window warns.
+
 ## 11. API
 
 - `GET/POST discount-types`, `PUT discount-types/{id}` (`{ name, percent, amount, isActive }` →
