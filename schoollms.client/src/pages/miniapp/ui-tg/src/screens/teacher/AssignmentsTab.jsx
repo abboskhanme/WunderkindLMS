@@ -884,20 +884,26 @@ function AssignmentForm({ item, onCancel, onSaved }) {
 
       {error && <p className="mx-6 mt-3 text-[13px] font-medium text-red-600">{error}</p>}
 
-      {/* Yopishqoq panel tab panelining ustida; yozayotganda (klaviatura ochiq) yashirinadi. */}
-      <div className="h-28" />
-      {!keyboardOpen && (
-        <div className="fixed inset-x-0 bottom-[calc(76px+var(--tg-safe-bottom))] z-10 border-t border-slate-200 bg-white px-4 py-3">
-          <button
-            type="button"
-            onClick={save}
-            disabled={saving || uploading}
-            className="w-full rounded-2xl bg-brand py-3.5 text-[16px] font-bold text-brand-ink disabled:opacity-50"
-          >
-            {saving ? 'Saqlanmoqda…' : item ? 'Saqlash' : 'Vazifani berish'}
-          </button>
-        </div>
-      )}
+      {/* Yopishqoq panel tab panelining ustida. Yozayotganda (klaviatura ochiq) u klaviatura ustiga
+          chiqmasin deb forma OXIRIGA tushadi — lekin hech qachon yo'qolmaydi: klaviatura yopilib, fokus
+          maydonda qolsa ham (Android) tugma shu yerda turadi (mijoz, 2026-10-26: tahrirda "Saqlash" yo'qolardi). */}
+      <div
+        className={
+          keyboardOpen
+            ? 'mx-4 mt-4 pb-[calc(16px+var(--tg-safe-bottom))]'
+            : 'fixed inset-x-0 bottom-[calc(76px+var(--tg-safe-bottom))] z-10 border-t border-slate-200 bg-white px-4 py-3'
+        }
+      >
+        <button
+          type="button"
+          onClick={save}
+          disabled={saving || uploading}
+          className="w-full rounded-2xl bg-brand py-3.5 text-[16px] font-bold text-brand-ink disabled:opacity-50"
+        >
+          {saving ? 'Saqlanmoqda…' : item ? 'Saqlash' : 'Vazifani berish'}
+        </button>
+      </div>
+      {!keyboardOpen && <div className="h-28" />}
     </Screen>
   )
 }
