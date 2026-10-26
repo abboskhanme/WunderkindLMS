@@ -47,6 +47,37 @@ public class AutoMessageRule
     /// </summary>
     public List<string> ImageUrls { get; set; } = new();
 
+    // --- Templates staff create themselves (2026-10-26) ---
+    // Client: "kelajakda qo'shimcha avtomatik habar yaratish kerak bo'ladigan bo'lsa kod kiritmasdan".
+    // A template is a rule with key "c_…": it goes by the calendar only (no event of its own) to the
+    // parents of every pupil, or of the pupils in the chosen classes. Null / empty on the built-in rules.
+
+    /// <summary>The template's name as staff typed it; null on the built-in rules (the screen names those).</summary>
+    public string? Title { get; set; }
+
+    /// <summary><see cref="AutoMessageSchedule"/>: once | daily | weekly | monthly; null on the built-in rules.</summary>
+    public string? Schedule { get; set; }
+
+    /// <summary>Once: the day it goes, "yyyy-MM-dd".</summary>
+    public string? SendDate { get; set; }
+
+    /// <summary>Weekly: the days it goes, 1 = Monday … 7 = Sunday.</summary>
+    public List<int> WeekDays { get; set; } = new();
+
+    /// <summary>
+    /// Who gets it: classes.id of the chosen classes; empty — every pupil. A chosen class that has since
+    /// been archived or deleted reaches nobody (never "everyone").
+    /// </summary>
+    public List<string> ClassIds { get; set; } = new();
+
+    /// <summary>
+    /// A deleted template: never runs and is not shown, but its row stays so the history keeps its name
+    /// and its runs.
+    /// </summary>
+    public bool IsArchived { get; set; }
+
+    public DateTimeOffset? CreatedAt { get; set; }
+
     /// <summary>The last period this rule finished ("2026-10-13" or "2026-10").</summary>
     public string? LastPeriod { get; set; }
 
@@ -72,14 +103,54 @@ public static class AutoMessageKind
     /// <summary>Payment received: the receipt's caption (event-driven, never scheduled).</summary>
     public const string Payment = "payment";
 
+    /// <summary>The built-in rules, in the screen's order.</summary>
     public static readonly IReadOnlyList<string> All = [Absence, Invoice, Debt, Birthday, Payment];
+
+    /// <summary>Key prefix of a template staff created (2026-10-26): "c_" and 8 hex digits.</summary>
+    public const string CustomPrefix = "c_";
+
+    public static bool IsCustom(string key) => key.StartsWith(CustomPrefix, StringComparison.Ordinal);
 
     /// <summary>Monthly rules run on <see cref="AutoMessageRule.DayOfMonth"/>; the others every day.</summary>
     public static bool IsMonthly(string key) => key is Invoice or Debt;
 
+    /// <summary>Like <see cref="IsMonthly(string)"/>, and a template whose schedule is monthly.</summary>
+    public static bool IsMonthly(AutoMessageRule rule) =>
+        IsMonthly(rule.Key) || (IsCustom(rule.Key) && rule.Schedule == AutoMessageSchedule.Monthly);
+
+    /// <summary>
+    /// A rule that runs by the day (not monthly) goes on <paramref name="day"/>: always for the built-in
+    /// ones and daily templates; a once template on its date; a weekly one on its week days.
+    /// </summary>
+    public static bool RunsOn(AutoMessageRule rule, DateOnly day)
+    {
+        if (!IsCustom(rule.Key)) return true;
+        return rule.Schedule switch
+        {
+            AutoMessageSchedule.Once => rule.SendDate == day.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
+            AutoMessageSchedule.Weekly => rule.WeekDays.Contains(day.DayOfWeek == DayOfWeek.Sunday ? 7 : (int)day.DayOfWeek),
+            AutoMessageSchedule.Daily => true,
+            _ => false,
+        };
+    }
+
     /// <summary>Sent when something happens (a payment), never by the scheduler.</summary>
     /// <remarks>Compared as text on purpose: <c>key is Payment</c> would bind to the <see cref="Domain.Payment"/> type.</remarks>
     public static bool IsEventDriven(string key) => string.Equals(key, Payment, StringComparison.Ordinal);
+}
+
+/// <summary>When a template staff created goes (<see cref="AutoMessageRule.Schedule"/>).</summary>
+public static class AutoMessageSchedule
+{
+    /// <summary>On one day (<see cref="AutoMessageRule.SendDate"/>).</summary>
+    public const string Once = "once";
+    public const string Daily = "daily";
+    /// <summary>On the chosen week days (<see cref="AutoMessageRule.WeekDays"/>).</summary>
+    public const string Weekly = "weekly";
+    /// <summary>On <see cref="AutoMessageRule.DayOfMonth"/>.</summary>
+    public const string Monthly = "monthly";
+
+    public static readonly IReadOnlyList<string> All = [Once, Daily, Weekly, Monthly];
 }
 
 /// <summary>Statuses of a run and of a log row.</summary>

@@ -8,22 +8,34 @@ namespace SchoolLms.Application.Dtos;
 /// <param name="CutoffTime">Absence: only lessons starting before it count; null — the send time.</param>
 /// <param name="EventDriven">Payment: sent with the receipt, has no time of its own.</param>
 /// <param name="ImageUrls">Pictures sent with the text (<c>/uploads/…</c>, 2026-10-25); empty — text only.</param>
+/// <param name="Custom">A template staff created (2026-10-26); the fields after it are its own.</param>
+/// <param name="ClassIds">Who gets a template: classes.id; empty — every pupil.</param>
+/// <param name="Archived">A deleted template, listed only so the history can name it.</param>
 public record AutoMessageRuleDto(
     string Key, bool Enabled, string SendTime, int DayOfMonth, decimal MinAmount, string Text,
     bool Monthly, IReadOnlyList<AutoMessageTokenDto> Tokens, string DefaultText,
     string? LastPeriod, DateTimeOffset? LastRunAt, int LastSent, int LastFailed, int LastNoTelegram,
     DateTimeOffset UpdatedAt, string? UpdatedByName,
     bool RequiresApproval = false, string? CutoffTime = null, bool EventDriven = false,
-    List<string>? ImageUrls = null);
+    List<string>? ImageUrls = null,
+    bool Custom = false, string? Title = null, string? Schedule = null, string? SendDate = null,
+    List<int>? WeekDays = null, List<string>? ClassIds = null, bool Archived = false);
 
 /// <summary>
 /// Saving a rule. <paramref name="RequiresApproval"/> null — unchanged; <paramref name="CutoffTime"/> empty — the
 /// send time; <paramref name="ImageUrls"/> null — unchanged, empty — no pictures (uploaded first through
 /// <c>/api/admin/uploads</c>, ≤ 10; ignored for the payment rule).
+/// The template fields (2026-10-26) are read only for a template, and null leaves each unchanged; creating
+/// a template (<c>POST</c>) needs <paramref name="Title"/> and <paramref name="Schedule"/>.
 /// </summary>
 public record SaveAutoMessageRuleRequest(
     bool Enabled, string SendTime, int DayOfMonth, decimal MinAmount, string Text,
-    bool? RequiresApproval = null, string? CutoffTime = null, List<string>? ImageUrls = null);
+    bool? RequiresApproval = null, string? CutoffTime = null, List<string>? ImageUrls = null,
+    string? Title = null, string? Schedule = null, string? SendDate = null,
+    List<int>? WeekDays = null, List<string>? ClassIds = null);
+
+/// <summary>A class a template can be sent to.</summary>
+public record AutoMessageClassDto(string Id, string Name, int Grade);
 
 /// <summary>Preview with a text not saved yet (null — the saved text).</summary>
 public record PreviewAutoMessageRequest(string? Text);

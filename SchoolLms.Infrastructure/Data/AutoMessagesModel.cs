@@ -17,7 +17,14 @@ internal static class AutoMessagesModel
         {
             e.ToTable("auto_message_rules", t =>
             {
-                t.HasCheckConstraint("ck_auto_message_rules_key", "key in ('absence','invoice','debt','birthday','payment')");
+                // Templates staff create (2026-10-26) are "c_" and 8 hex digits, with a schedule;
+                // the built-in rules have none.
+                t.HasCheckConstraint("ck_auto_message_rules_key",
+                    "key in ('absence','invoice','debt','birthday','payment') or key ~ '^c_[0-9a-f]{8}$'");
+                t.HasCheckConstraint("ck_auto_message_rules_schedule",
+                    "(key ~ '^c_' and schedule in ('once','daily','weekly','monthly')) or (key !~ '^c_' and schedule is null)");
+                t.HasCheckConstraint("ck_auto_message_rules_send_date",
+                    "send_date is null or send_date ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'");
                 t.HasCheckConstraint("ck_auto_message_rules_day", "day_of_month between 1 and 28");
                 t.HasCheckConstraint("ck_auto_message_rules_time", $"send_time ~ {TimePattern}");
                 t.HasCheckConstraint("ck_auto_message_rules_cutoff", $"cutoff_time is null or cutoff_time ~ {TimePattern}");
@@ -29,6 +36,9 @@ internal static class AutoMessagesModel
             e.Property(x => x.CutoffTime).HasMaxLength(5);
             e.Property(x => x.MinAmount).HasPrecision(14, 2);
             e.Property(x => x.LastPeriod).HasMaxLength(10);
+            e.Property(x => x.Title).HasMaxLength(100);
+            e.Property(x => x.Schedule).HasMaxLength(8);
+            e.Property(x => x.SendDate).HasMaxLength(10);
         });
 
         b.Entity<AutoMessageRun>(e =>

@@ -4,6 +4,7 @@ Status: batch 1 of `docs/MARKAZ-GAPS.md` (items #1, #2, #3, #9 and the log of #8
 Extended 2026-10-15: runs with statuses and approval, retries, the absence cut-off, the payment
 rule, one delivery log for automatic and manual sends, history and statistics.
 Extended 2026-10-25: pictures on the scheduled rules (as on announcements since 2026-10-24).
+Extended 2026-10-26: templates staff create themselves, without a code change.
 
 ## Why
 
@@ -57,6 +58,28 @@ four scheduled rules (absence, invoice, debt, birthday) take the same picker:
 - A picture that can no longer be read (deleted from `uploads/`) does not hold a message back — the
   text goes alone and the reason is logged.
 - **Not the payment rule**: its message is the receipt PDF's caption; `imageUrls` is ignored for it.
+
+### Templates staff create (2026-10-26)
+
+Client: *"kelajakda qo'shimcha avtomatik habar yaratish kerak bo'ladigan bo'lsa kod kiritmasdan faqat
+shu yerni o'zida shablon yaratish tugmasini qo'shib ber"*. The "Yangi shablon" button adds a rule row
+with key `c_` + 8 hex digits; it then behaves like a built-in scheduled rule — runs, approval,
+pictures, preview, retries, history.
+
+- **When — the calendar only.** `schedule`: `once` (`send_date`), `daily`, `weekly` (`week_days`,
+  1 = Monday … 7 = Sunday) or `monthly` (`day_of_month` 1–28, the same two-day catch-up window as the
+  monthly rules), at `send_time`. Period: the day, or the month for `monthly`. A template cannot be
+  "when something happens" — an event needs code to know the event and its values.
+- **Who.** `class_ids` — the parents of every non-archived pupil (empty), or of the pupils in the chosen
+  classes. Ids, not names, so a class rename keeps the audience; a chosen class that has since been
+  archived or deleted reaches nobody, never everyone.
+- **Tokens.** `{fish}` `{ism}` `{sinf}` `{ota_ona}` `{sana}` (the run's day) `{vaqt}`.
+- Created **switched off**, like every rule. `title` ≤ 100 characters, text required.
+- **Deleting** (`DELETE {key}`) archives it: `is_archived`, switched off, open runs cancelled. It never
+  runs again and the screen hides it, but its row stays so the history and the Excel export keep its
+  name. The five built-in rules cannot be deleted — only switched off.
+- `ck_auto_message_rules_key` admits the built-in keys and `^c_[0-9a-f]{8}$`;
+  `ck_auto_message_rules_schedule` — a template has a schedule, a built-in rule has none.
 
 ### Absence cut-off ("11:30 gacha")
 
@@ -137,10 +160,16 @@ apart (under Telegram's ~30/s).
 
 ## API (`[AdminPerm("messages")]` — staff read, only `messages` acts)
 
-- `GET  /api/admin/auto-messages` — the rules with last run and last period counts.
+- `GET  /api/admin/auto-messages` — the rules with last run and last period counts: the built-in ones,
+  then the templates (oldest first; a deleted one with `archived: true`, for the history's names).
+- `GET  /api/admin/auto-messages/classes` — the classes a template can be sent to.
+- `POST /api/admin/auto-messages` — a new template: `title`, `schedule`, `sendDate` / `weekDays` /
+  `dayOfMonth`, `classIds`, `sendTime`, `text`, `imageUrls`, `requiresApproval`. Always created off. Audited.
 - `PUT  /api/admin/auto-messages/{key}` — enabled, send time, day of month, minimum, text,
-  `requiresApproval` (not for payment), `cutoffTime` (absence), `imageUrls` (not for payment). Audited.
+  `requiresApproval` (not for payment), `cutoffTime` (absence), `imageUrls` (not for payment); a
+  template's `title`, `schedule`, `sendDate`, `weekDays`, `classIds` (null — unchanged). Audited.
   Switching off stops open runs.
+- `DELETE /api/admin/auto-messages/{key}` — templates only: archived, open runs stopped. Audited.
 - `POST /api/admin/auto-messages/{key}/preview` — how many pupils it would reach now and a sample
   text (payment: a sample with made-up values). Sends nothing.
 - `GET  /api/admin/auto-messages/log?rule=&from=&to=&status=` — the log, newest first, ≤ 500 rows.
@@ -159,7 +188,8 @@ Xabarlar → "Avtomatik xabarlar":
 
 - **Qoidalar va shablonlar** — a card per rule: switch, time, day, minimum, "Tasdiq bilan",
   "Qaysi darsgacha" (absence), text with token chips (client's word + token), pictures (not on the
-  payment card), preview.
+  payment card), preview. **"Yangi shablon"** opens the template dialog (name, when, to whom, time,
+  text); a template's card adds "sozlash" (name, when, to whom) and "o'chirish".
 - **Tarix va statistika** — period and rule filter; status tiles (Rejalashtirilgan, Tasdiq kutmoqda,
   Yuborildi, Xatolik with "Telegram yo'q", To'xtatilgan) and a rule × status table; "Yuborishlar"
   (runs: status, planned/finished time, counts, who approved or stopped, note; Tasdiqlash /
@@ -169,5 +199,5 @@ Xabarlar → "Avtomatik xabarlar":
 ## Tests
 
 `SchoolLms.Tests/AutoMessagesTests.cs`, `SchoolLms.Tests/AutoMessageRunsTests.cs`,
-`SchoolLms.Tests/AutoMessageImagesTests.cs` — every Telegram call
+`SchoolLms.Tests/AutoMessageImagesTests.cs`, `SchoolLms.Tests/CustomAutoMessageTemplatesTests.cs` — every Telegram call
 goes to a recording `HttpMessageHandler`; nothing leaves the machine.
