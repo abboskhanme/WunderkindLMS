@@ -146,7 +146,7 @@ public sealed partial class AutoMessageService(
             var rules = await db.AutoMessageRules.OrderBy(r => r.Key).ToListAsync(ct);
             await CloseStaleRunsAsync(rules, localNow, ct);
 
-            foreach (var rule in rules.Where(r => r.Enabled && !AutoMessageKind.IsEventDriven(r.Key)))
+            foreach (var rule in rules.Where(r => r.Enabled && !r.IsArchived && !AutoMessageKind.IsEventDriven(r.Key)))
             {
                 try
                 {
@@ -200,8 +200,8 @@ public sealed partial class AutoMessageService(
         if (!TryTime(rule.SendTime, out var at)) return null;
         var today = DateOnly.FromDateTime(localNow);
         var timeReached = TimeOnly.FromDateTime(localNow) >= at;
-        if (!AutoMessageKind.IsMonthly(rule.Key))
-            return timeReached ? Iso(today) : null;
+        if (!AutoMessageKind.IsMonthly(rule))
+            return timeReached && AutoMessageKind.RunsOn(rule, today) ? Iso(today) : null;
 
         var due = DueDay(rule, today);
         var inWindow = (today == due && timeReached) || (today > due && today <= due.AddDays(2));
@@ -216,7 +216,8 @@ public sealed partial class AutoMessageService(
     {
         if (AutoMessageKind.IsEventDriven(rule.Key) || !TryTime(rule.SendTime, out var at)) return null;
         var today = DateOnly.FromDateTime(localNow);
-        if (!AutoMessageKind.IsMonthly(rule.Key)) return (Iso(today), today.ToDateTime(at));
+        if (!AutoMessageKind.IsMonthly(rule))
+            return AutoMessageKind.RunsOn(rule, today) ? (Iso(today), today.ToDateTime(at)) : null;
         var due = DueDay(rule, today);
         if (today < due || today > due.AddDays(2)) return null;
         return (today.ToString("yyyy-MM", CultureInfo.InvariantCulture), due.ToDateTime(at));
@@ -257,7 +258,7 @@ public sealed partial class AutoMessageService(
         foreach (var run in open)
         {
             var rule = rules.FirstOrDefault(r => r.Key == run.RuleKey);
-            var why = rule is null || !rule.Enabled ? "Qoida o'chirilgan"
+            var why = rule is null || !rule.Enabled || rule.IsArchived ? "Qoida o'chirilgan"
                 : !PeriodOver(rule, run.Period, localNow) ? null
                 : run.Status == AutoMessageStatus.PendingApproval ? "Tasdiqlanmadi — muddati tugadi"
                 : "Vaqti o'tdi";
@@ -537,6 +538,7 @@ public sealed partial class AutoMessageService(
             AutoMessageKind.Birthday => new Source(await BirthdayItemsAsync(DayOf(period), ct)),
             AutoMessageKind.Invoice => await InvoiceItemsAsync(MonthOf(period), ct) is { } invoices ? new Source(invoices) : null,
             AutoMessageKind.Debt => new Source(await DebtItemsAsync(rule.MinAmount, ct)),
+            var key when AutoMessageKind.IsCustom(key) => new Source(await AudienceItemsAsync(rule.ClassIds, ct)),
             _ => new Source([]),
         };
         if (source is null) return null;
@@ -707,6 +709,25 @@ public sealed partial class AutoMessageService(
             ["{oylar}"] = string.Join(", ", months.GetValueOrDefault(d.StudentId, [])
                 .OrderBy(m => m.Month).Select(m => MonthNames[m.Month.Month - 1])),
         })))];
+    }
+
+    /// <summary>
+    /// A template's pupils (2026-10-26): every pupil who is not archived, or only those in the chosen
+    /// classes. A chosen class that no longer exists reaches nobody — never "everyone".
+    /// </summary>
+    private async Task<List<Item>> AudienceItemsAsync(List<string> classIds, CancellationToken ct)
+    {
+        var pupils = db.Students.AsNoTracking().Where(s => !s.IsArchived);
+        if (classIds.Count > 0)
+        {
+            var classNames = await db.Classes.AsNoTracking()
+                .Where(c => classIds.Contains(c.Id) && !c.IsArchived)
+                .Select(c => c.Name).ToListAsync(ct);
+            pupils = pupils.Where(s => s.ClassName != null && classNames.Contains(s.ClassName));
+        }
+        var ids = await pupils.OrderBy(s => s.ClassName).ThenBy(s => s.FullName).Select(s => s.Id).ToListAsync(ct);
+        var names = await NamesAsync(ids, ct);
+        return [.. ids.Select(id => new Item(id, Values(names, id, new())))];
     }
 
     private sealed record Names(string FullName, string FirstName, string ClassName);
@@ -944,7 +965,7 @@ public sealed partial class AutoMessageService(
     public async Task<AutoMessagePreviewDto> PreviewAsync(AutoMessageRule rule, string? text, DateTime localNow, CancellationToken ct = default)
     {
         var today = DateOnly.FromDateTime(localNow);
-        var period = AutoMessageKind.IsMonthly(rule.Key) ? today.ToString("yyyy-MM", CultureInfo.InvariantCulture) : Iso(today);
+        var period = AutoMessageKind.IsMonthly(rule) ? today.ToString("yyyy-MM", CultureInfo.InvariantCulture) : Iso(today);
         var items = (await ItemsAsync(rule, period, localNow, ct))?.Items ?? [];
         var ids = items.Select(i => i.StudentId).ToList();
         var withChat = (await db.TelegramRegistrations.AsNoTracking()

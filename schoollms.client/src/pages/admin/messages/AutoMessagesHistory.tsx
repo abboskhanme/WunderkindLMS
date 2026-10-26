@@ -9,7 +9,7 @@
  *  · "Yetkazish jurnali" — barcha xabarlar (avtomatik va qo'lda: hamshira tugmasi, chekni qayta
  *    yuborish), sahifalab, filtr va Excel bilan.
  */
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Ban, CheckCircle2, ChevronRight, Download, RefreshCw, Search, UserMinus } from 'lucide-react'
 import {
   approveAutoMessageRun,
@@ -18,11 +18,13 @@ import {
   excludeFromAutoMessageRun,
   getAutoMessageLogPage,
   getAutoMessageRuns,
+  getAutoMessageRules,
   getAutoMessageStats,
   type AutoMessageKey,
   type AutoMessageLogFilters,
   type AutoMessageLogPage,
   type AutoMessageLogStatus,
+  type AutoMessageRule,
   type AutoMessageRun,
   type AutoMessageStats,
 } from '@/api/services/autoMessages'
@@ -35,10 +37,20 @@ import { Modal } from '@/components/ui/Modal'
 import { Pager } from '@/components/ui/Pager'
 import { RichText } from '@/components/ui/RichText'
 import { cn } from '@/lib/utils'
-import { LOG_STATUS, RUN_STATUS, TITLES, errorText, fmtDateTime, fmtPeriod, isoDay } from './autoMessageLabels'
+import { LOG_STATUS, RUN_STATUS, TITLES, errorText, fmtDateTime, fmtPeriod, isoDay, titleOfKey } from './autoMessageLabels'
 
-const RULE_KEYS = Object.keys(TITLES) as AutoMessageKey[]
 const STAT_COLUMNS: AutoMessageLogStatus[] = ['scheduled', 'pending_approval', 'sent', 'failed', 'no_telegram', 'cancelled']
+
+/**
+ * Qoidalar ro'yxati (2026-10-26 dan xodim yaratgan shablonlar ham, o'chirilganlari bilan) — tarixdagi
+ * har qatorga nom shundan olinadi.
+ */
+const RulesContext = createContext<AutoMessageRule[] | null>(null)
+
+function useRuleTitle() {
+  const rules = useContext(RulesContext)
+  return useCallback((key: string) => titleOfKey(key, rules), [rules])
+}
 
 export function AutoMessagesHistory() {
   const [from, setFrom] = useState(() => isoDay(6))
@@ -46,19 +58,28 @@ export function AutoMessagesHistory() {
   const [rule, setRule] = useState('')
   const [reload, setReload] = useState(0)
   const [openRun, setOpenRun] = useState<AutoMessageRun | null>(null)
+  const [rules, setRules] = useState<AutoMessageRule[] | null>(null)
 
   const refresh = useCallback(() => setReload((n) => n + 1), [])
+  const titleOf = useCallback((key: string) => titleOfKey(key, rules), [rules])
+  const ruleKeys: AutoMessageKey[] = rules?.map((r) => r.key) ?? (Object.keys(TITLES) as AutoMessageKey[])
+
+  useEffect(() => {
+    // Nomlarsiz ham ishlaydi — asosiy qoidalar nomi shu faylda.
+    getAutoMessageRules().then(setRules).catch(() => setRules(null))
+  }, [])
 
   return (
+    <RulesContext.Provider value={rules}>
     <div className="space-y-6">
       <div className="flex flex-wrap items-end gap-2">
         <DatePicker value={from} onChange={setFrom} ariaLabel="Davr boshi" className="w-36" />
         <DatePicker value={to} onChange={setTo} ariaLabel="Davr oxiri" className="w-36" />
         <Select value={rule} onChange={(e) => setRule(e.target.value)} className="w-56">
           <option value="">Barcha xabar turlari</option>
-          {RULE_KEYS.map((k) => (
+          {ruleKeys.map((k) => (
             <option key={k} value={k}>
-              {TITLES[k].title}
+              {titleOf(k)}
             </option>
           ))}
         </Select>
@@ -82,6 +103,7 @@ export function AutoMessagesHistory() {
         />
       )}
     </div>
+    </RulesContext.Provider>
   )
 }
 
@@ -90,6 +112,7 @@ export function AutoMessagesHistory() {
 // ---------------------------------------------------------------------------
 
 function StatsBlock({ from, to, rule, reloadKey }: { from: string; to: string; rule: string; reloadKey: number }) {
+  const titleOf = useRuleTitle()
   const [stats, setStats] = useState<AutoMessageStats | null>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -104,7 +127,9 @@ function StatsBlock({ from, to, rule, reloadKey }: { from: string; to: string; r
     if (!stats) return null
     const cells = rule ? stats.byRule.filter((c) => c.ruleKey === rule) : stats.byRule
     const total = (s: AutoMessageLogStatus) => cells.filter((c) => c.status === s).reduce((n, c) => n + c.count, 0)
-    const byRule = RULE_KEYS.filter((k) => !rule || k === rule)
+    // Server tartibida: avval asosiy qoidalar, keyin shablonlar.
+    const keys = [...new Set(stats.byRule.map((c) => c.ruleKey))]
+    const byRule = keys.filter((k) => !rule || k === rule)
       .map((k) => ({
         key: k,
         counts: Object.fromEntries(
@@ -155,7 +180,7 @@ function StatsBlock({ from, to, rule, reloadKey }: { from: string; to: string; r
             <tbody>
               {view.byRule.map((r) => (
                 <tr key={r.key} className="border-t border-slate-100">
-                  <td className="px-5 py-2 text-slate-700">{TITLES[r.key].title}</td>
+                  <td className="px-5 py-2 text-slate-700">{titleOf(r.key)}</td>
                   {STAT_COLUMNS.map((s) => (
                     <td key={s} className={cn('px-3 py-2 text-right tabular-nums', r.counts[s] ? 'text-slate-700' : 'text-slate-300')}>
                       {r.counts[s]}
@@ -176,14 +201,15 @@ function StatsBlock({ from, to, rule, reloadKey }: { from: string; to: string; r
 // ---------------------------------------------------------------------------
 
 function useRunActions(onDone: (run: AutoMessageRun) => void) {
+  const titleOf = useRuleTitle()
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   const act = async (run: AutoMessageRun, kind: 'approve' | 'cancel') => {
     const question =
       kind === 'approve'
-        ? `"${TITLES[run.ruleKey].title}" (${fmtPeriod(run.period)}) — ${run.pending} ta xabar hozir ota-onalarga yuboriladi. Tasdiqlaysizmi?`
-        : `"${TITLES[run.ruleKey].title}" (${fmtPeriod(run.period)}) to'xtatilsinmi? Hali ketmagan xabarlar yuborilmaydi.`
+        ? `"${titleOf(run.ruleKey)}" (${fmtPeriod(run.period)}) — ${run.pending} ta xabar hozir ota-onalarga yuboriladi. Tasdiqlaysizmi?`
+        : `"${titleOf(run.ruleKey)}" (${fmtPeriod(run.period)}) to'xtatilsinmi? Hali ketmagan xabarlar yuborilmaydi.`
     if (!window.confirm(question)) return
     setBusy(run.id)
     setError(null)
@@ -230,6 +256,7 @@ function RunsCard({
   onOpen: (run: AutoMessageRun) => void
   onChanged: () => void
 }) {
+  const titleOf = useRuleTitle()
   const [runs, setRuns] = useState<AutoMessageRun[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const { busy, error: actionError, act } = useRunActions(() => onChanged())
@@ -283,7 +310,7 @@ function RunsCard({
                   className="cursor-pointer border-t border-slate-100 align-top hover:bg-slate-50/60"
                 >
                   <td className="px-5 py-2">
-                    <span className="font-medium text-slate-800">{TITLES[r.ruleKey]?.title ?? r.ruleKey}</span>
+                    <span className="font-medium text-slate-800">{titleOf(r.ruleKey)}</span>
                     {r.note && <p className="mt-0.5 max-w-xs text-xs text-amber-700">{r.note}</p>}
                   </td>
                   <td className="whitespace-nowrap px-3 py-2 text-slate-600">{fmtPeriod(r.period)}</td>
@@ -332,6 +359,7 @@ function RunModal({
   onClose: () => void
   onChanged: (run: AutoMessageRun) => void
 }) {
+  const titleOf = useRuleTitle()
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(50)
   const [data, setData] = useState<AutoMessageLogPage | null>(null)
@@ -359,7 +387,7 @@ function RunModal({
   }
 
   return (
-    <Modal open onClose={onClose} size="xl" title={`${TITLES[run.ruleKey].title} — ${fmtPeriod(run.period)}`}>
+    <Modal open onClose={onClose} size="xl" title={`${titleOf(run.ruleKey)} — ${fmtPeriod(run.period)}`}>
       <div className="space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-2 text-sm text-slate-600">
@@ -440,6 +468,7 @@ function DeliveryTable({
   rows: AutoMessageLogPage['rows']
   action?: (row: AutoMessageLogPage['rows'][number]) => ReactNode
 }) {
+  const titleOf = useRuleTitle()
   const [open, setOpen] = useState<string | null>(null)
   return (
     <div className="overflow-x-auto">
@@ -464,7 +493,7 @@ function DeliveryTable({
             >
               <td className="whitespace-nowrap px-5 py-2 text-slate-500">{fmtDateTime(r.at)}</td>
               <td className="px-3 py-2 text-slate-600">
-                {TITLES[r.ruleKey]?.title ?? r.ruleKey}
+                {titleOf(r.ruleKey)}
                 {r.refId && <span className="block text-xs text-slate-400">Chek № {r.refId}</span>}
               </td>
               <td className="px-3 py-2">

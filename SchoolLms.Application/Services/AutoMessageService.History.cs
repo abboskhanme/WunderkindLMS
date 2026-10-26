@@ -120,16 +120,23 @@ public sealed partial class AutoMessageService
         var totals = rows.GroupBy(r => r.Status, StringComparer.Ordinal)
             .ToDictionary(g => g.Key, g => g.Count(), StringComparer.Ordinal);
         var byRule = rows.GroupBy(r => (r.RuleKey, r.Status))
-            .OrderBy(g => AutoMessageKind.All.ToList().IndexOf(g.Key.RuleKey)).ThenBy(g => g.Key.Status, StringComparer.Ordinal)
+            .OrderBy(g => RuleOrder(g.Key.RuleKey)).ThenBy(g => g.Key.RuleKey, StringComparer.Ordinal).ThenBy(g => g.Key.Status, StringComparer.Ordinal)
             .Select(g => new AutoMessageStatsCellDto("", g.Key.RuleKey, g.Key.Status, g.Count())).ToList();
         var cells = rows
             .GroupBy(r => (Day: AppClock.LocalDateOf(r.At).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), r.RuleKey, r.Status))
             .OrderByDescending(g => g.Key.Day, StringComparer.Ordinal)
-            .ThenBy(g => AutoMessageKind.All.ToList().IndexOf(g.Key.RuleKey)).ThenBy(g => g.Key.Status, StringComparer.Ordinal)
+            .ThenBy(g => RuleOrder(g.Key.RuleKey)).ThenBy(g => g.Key.RuleKey, StringComparer.Ordinal).ThenBy(g => g.Key.Status, StringComparer.Ordinal)
             .Select(g => new AutoMessageStatsCellDto(g.Key.Day, g.Key.RuleKey, g.Key.Status, g.Count())).ToList();
         return new AutoMessageStatsDto(
             from.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), to.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
             totals, byRule, cells);
+    }
+
+    /// <summary>The built-in rules in their screen order, then the templates staff created.</summary>
+    private static int RuleOrder(string key)
+    {
+        var i = AutoMessageKind.All.ToList().IndexOf(key);
+        return i < 0 ? int.MaxValue : i;
     }
 
     /// <summary>users.id → full name; "auto" → "Tizim".</summary>

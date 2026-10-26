@@ -3,9 +3,16 @@
  * (qoidalar va "Tarix va statistika" bir xil so'zlarni ishlatsin).
  */
 import type { AxiosError } from 'axios'
-import type { AutoMessageKey, AutoMessageLogStatus, AutoMessageRunStatus } from '@/api/services/autoMessages'
+import type {
+  AutoMessageClass,
+  AutoMessageLogStatus,
+  AutoMessageRule,
+  AutoMessageRunStatus,
+  AutoMessageSchedule,
+  BuiltInAutoMessageKey,
+} from '@/api/services/autoMessages'
 
-export const TITLES: Record<AutoMessageKey, { title: string; hint: string }> = {
+export const TITLES: Record<BuiltInAutoMessageKey, { title: string; hint: string }> = {
   absence: {
     title: 'Kelmaganlik xabari',
     hint: "Kelmagan o'quvchining ota-onasiga — hamshira belgilagan davomat bo'yicha. Faqat kesish vaqtigacha boshlangan darslar hisoblanadi; davomati to'liq olinmagan sinf o'tkazib yuboriladi. Tugma bilan yuborilganlarga qayta ketmaydi.",
@@ -26,6 +33,53 @@ export const TITLES: Record<AutoMessageKey, { title: string; hint: string }> = {
     title: "To'lov qabul qilinganda",
     hint: "Kassada to'lov qabul qilinganda chek (PDF) bilan birga. Yoqilsa, chek ostidagi matn shu shablondan olinadi (1024 belgidan uzun bo'lsa — chekdan keyin alohida xabar). O'chiq bo'lsa ham chek doim yuboriladi.",
   },
+}
+
+export const SCHEDULES: { key: AutoMessageSchedule; label: string }[] = [
+  { key: 'once', label: 'Bir marta' },
+  { key: 'daily', label: 'Har kuni' },
+  { key: 'weekly', label: 'Har hafta' },
+  { key: 'monthly', label: 'Har oy' },
+]
+
+/** 1 = Dushanba … 7 = Yakshanba (serverdagi bilan bir xil). */
+export const WEEK_DAYS = [
+  { day: 1, short: 'Du' },
+  { day: 2, short: 'Se' },
+  { day: 3, short: 'Ch' },
+  { day: 4, short: 'Pa' },
+  { day: 5, short: 'Ju' },
+  { day: 6, short: 'Sh' },
+  { day: 7, short: 'Ya' },
+]
+
+/** Qoida nomi: asosiy qoidalar — shu fayldagi nom, shablon — xodim yozgan nom. */
+export function ruleTitle(rule: Pick<AutoMessageRule, 'key' | 'title'>): string {
+  return TITLES[rule.key as BuiltInAutoMessageKey]?.title ?? rule.title ?? rule.key
+}
+
+/** Kalit bo'yicha nom — tarix ekrani qoidalar ro'yxatidan qidiradi (o'chirilgan shablon ham bor). */
+export function titleOfKey(key: string, rules: AutoMessageRule[] | null): string {
+  const rule = rules?.find((r) => r.key === key)
+  return rule ? ruleTitle(rule) : (TITLES[key as BuiltInAutoMessageKey]?.title ?? key)
+}
+
+/** Shablon kartasidagi izoh: qachon va kimga ketadi. */
+export function templateHint(rule: AutoMessageRule, classes: AutoMessageClass[]): string {
+  const when =
+    rule.schedule === 'once'
+      ? `Bir marta — ${rule.sendDate ? fmtPeriod(rule.sendDate) : '—'}`
+      : rule.schedule === 'weekly'
+        ? `Har hafta — ${WEEK_DAYS.filter((d) => rule.weekDays?.includes(d.day)).map((d) => d.short).join(', ')}`
+        : rule.schedule === 'monthly'
+          ? `Har oyning ${rule.dayOfMonth}-kuni`
+          : 'Har kuni'
+  const ids = rule.classIds ?? []
+  const who =
+    ids.length === 0
+      ? "barcha o'quvchilarning ota-onalariga"
+      : `${classes.filter((c) => ids.includes(c.id)).map((c) => c.name).join(', ') || 'tanlangan sinflar'} ota-onalariga`
+  return `${when}, ${who}. Siz yaratgan shablon.`
 }
 
 export const LOG_STATUS: Record<AutoMessageLogStatus, { label: string; cls: string }> = {

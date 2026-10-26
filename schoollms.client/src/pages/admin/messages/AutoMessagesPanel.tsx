@@ -6,15 +6,21 @@
  * yetkazish jurnali va statistika.
  * 2026-10-25: qoidaga rasm qo'shiladi (e'londagi kabi, 10 tagacha) — to'lov qoidasidan tashqari,
  * u chek PDF'i bilan ketadi.
+ * 2026-10-26: "Yangi shablon" — xodim kod kiritmasdan o'zi avtomatik xabar qo'shadi
+ * (AutoMessageTemplateModal); shablon kartasida sozlash va o'chirish tugmalari bor.
  */
 import { useEffect, useRef, useState } from 'react'
-import { AlertTriangle, CalendarClock, Eye, RotateCcw, Save } from 'lucide-react'
+import { AlertTriangle, CalendarClock, Eye, Plus, RotateCcw, Save, Settings2, Trash2 } from 'lucide-react'
 import {
+  deleteAutoMessageRule,
+  getAutoMessageClasses,
   getAutoMessageRules,
   previewAutoMessage,
   saveAutoMessageRule,
+  type AutoMessageClass,
   type AutoMessagePreview,
   type AutoMessageRule,
+  type BuiltInAutoMessageKey,
 } from '@/api/services/autoMessages'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
@@ -26,7 +32,8 @@ import { Switch } from '@/components/hr-tasks/ui'
 import { cn } from '@/lib/utils'
 import { AutoMessagesHistory } from './AutoMessagesHistory'
 import { BroadcastImagePicker } from './BroadcastImagePicker'
-import { TITLES, errorText, fmtDateTime } from './autoMessageLabels'
+import { AutoMessageTemplateModal } from './AutoMessageTemplateModal'
+import { TITLES, errorText, fmtDateTime, ruleTitle, templateHint } from './autoMessageLabels'
 
 const VIEWS = [
   { key: 'rules', label: 'Qoidalar va shablonlar' },
@@ -37,12 +44,20 @@ export function AutoMessagesPanel() {
   const [view, setView] = useState<(typeof VIEWS)[number]['key']>('rules')
   const [rules, setRules] = useState<AutoMessageRule[] | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [classes, setClasses] = useState<AutoMessageClass[]>([])
+  /** undefined — yopiq, null — yangi shablon, qoida — shu shablonni sozlash. */
+  const [editing, setEditing] = useState<AutoMessageRule | null | undefined>(undefined)
 
   useEffect(() => {
     getAutoMessageRules()
       .then(setRules)
       .catch((e) => setError(errorText(e, "Qoidalarni yuklab bo'lmadi.")))
+    // Sinflar faqat shablon uchun kerak — yuklanmasa ham qoidalar ishlaydi.
+    getAutoMessageClasses().then(setClasses).catch(() => setClasses([]))
   }, [])
+
+  const replace = (next: AutoMessageRule) =>
+    setRules((list) => list?.map((x) => (x.key === next.key ? { ...x, ...next } : x)) ?? null)
 
   return (
     <div className="space-y-6">
@@ -76,24 +91,63 @@ export function AutoMessagesPanel() {
             tugmasi bilan kimga ketishini ko'ring. "Tasdiq bilan" yoqilsa, xabarlar tayyorlanadi va "Tarix va
             statistika" bo'limida tasdiqlangandan keyingina ketadi.
           </p>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <p className="text-sm text-slate-500">
+              Kerakli xabar ro'yxatda bo'lmasa — o'zingiz shablon yarating: nomi, matni, qachon va kimga ketishi.
+            </p>
+            <Button onClick={() => setEditing(null)}>
+              <Plus className="h-4 w-4" /> Yangi shablon
+            </Button>
+          </div>
           <div className="grid gap-4 xl:grid-cols-2">
-            {rules.map((r) => (
-              <RuleCard
-                key={r.key}
-                rule={r}
-                onSaved={(next) =>
-                  setRules((list) => list?.map((x) => (x.key === next.key ? { ...x, ...next } : x)) ?? null)
-                }
-              />
-            ))}
+            {rules
+              .filter((r) => !r.archived)
+              .map((r) => (
+                <RuleCard
+                  key={r.key}
+                  rule={r}
+                  classes={classes}
+                  onSaved={replace}
+                  onEdit={() => setEditing(r)}
+                  onDeleted={() => setRules((list) => list?.filter((x) => x.key !== r.key) ?? null)}
+                />
+              ))}
           </div>
         </>
+      )}
+
+      {editing !== undefined && (
+        <AutoMessageTemplateModal
+          rule={editing}
+          classes={classes}
+          onClose={() => setEditing(undefined)}
+          onSaved={(saved) => {
+            setRules((list) =>
+              list?.some((x) => x.key === saved.key)
+                ? list.map((x) => (x.key === saved.key ? { ...x, ...saved } : x))
+                : [...(list ?? []), saved],
+            )
+            setEditing(undefined)
+          }}
+        />
       )}
     </div>
   )
 }
 
-function RuleCard({ rule, onSaved }: { rule: AutoMessageRule; onSaved: (r: AutoMessageRule) => void }) {
+function RuleCard({
+  rule,
+  classes,
+  onSaved,
+  onEdit,
+  onDeleted,
+}: {
+  rule: AutoMessageRule
+  classes: AutoMessageClass[]
+  onSaved: (r: AutoMessageRule) => void
+  onEdit: () => void
+  onDeleted: () => void
+}) {
   const [enabled, setEnabled] = useState(rule.enabled)
   const [sendTime, setSendTime] = useState(rule.sendTime)
   const [day, setDay] = useState(rule.dayOfMonth)
@@ -108,8 +162,27 @@ function RuleCard({ rule, onSaved }: { rule: AutoMessageRule; onSaved: (r: AutoM
   const [preview, setPreview] = useState<AutoMessagePreview | null>(null)
   const [previewBusy, setPreviewBusy] = useState(false)
   const textRef = useRef<HTMLTextAreaElement>(null)
-  const meta = TITLES[rule.key]
+  const meta = rule.custom
+    ? { title: ruleTitle(rule), hint: templateHint(rule, classes) }
+    : TITLES[rule.key as BuiltInAutoMessageKey]
   const isAbsence = rule.key === 'absence'
+
+  // Shablon oynasida oyning kuni o'zgarsa, karta ham shuni ko'rsatsin (eskisini qayta saqlamasin).
+  useEffect(() => setDay(rule.dayOfMonth), [rule.dayOfMonth])
+
+  const remove = async () => {
+    if (!window.confirm(`"${meta.title}" shabloni o'chirilsinmi? Rejalashtirilgan xabarlari to'xtatiladi, tarixi saqlanadi.`))
+      return
+    setBusy(true)
+    setMsg(null)
+    try {
+      await deleteAutoMessageRule(rule.key)
+      onDeleted()
+    } catch (e) {
+      setMsg({ ok: false, text: errorText(e, "O'chirib bo'lmadi.") })
+      setBusy(false)
+    }
+  }
 
   const dirty =
     enabled !== rule.enabled ||
@@ -179,6 +252,29 @@ function RuleCard({ rule, onSaved }: { rule: AutoMessageRule; onSaved: (r: AutoM
           <h3 className="font-semibold text-slate-800">{meta.title}</h3>
           <p className="mt-0.5 text-xs text-slate-400">{meta.hint}</p>
         </div>
+        <div className="flex shrink-0 items-center gap-1">
+          {rule.custom && (
+            <>
+              <button
+                type="button"
+                onClick={onEdit}
+                disabled={busy}
+                title="Nomi, qachon va kimga"
+                className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
+              >
+                <Settings2 className="h-4 w-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => void remove()}
+                disabled={busy}
+                title="Shablonni o'chirish"
+                className="mr-1 rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-red-50 hover:text-red-600"
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
+            </>
+          )}
         <Switch
           checked={enabled}
           disabled={busy}
@@ -188,6 +284,7 @@ function RuleCard({ rule, onSaved }: { rule: AutoMessageRule; onSaved: (r: AutoM
             void save(next)
           }}
         />
+        </div>
       </div>
 
       {!rule.eventDriven && (
@@ -276,7 +373,7 @@ function RuleCard({ rule, onSaved }: { rule: AutoMessageRule; onSaved: (r: AutoM
               )}
             </button>
           ))}
-          {text !== rule.defaultText && (
+          {!rule.custom && text !== rule.defaultText && (
             <button
               type="button"
               onClick={() => setText(rule.defaultText)}

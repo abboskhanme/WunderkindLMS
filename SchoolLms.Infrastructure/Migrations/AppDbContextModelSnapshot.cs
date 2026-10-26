@@ -18,7 +18,7 @@ namespace SchoolLms.Infrastructure.Migrations
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .HasAnnotation("ProductVersion", "10.0.12")
+                .HasAnnotation("ProductVersion", "10.0.14")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
@@ -1084,6 +1084,15 @@ namespace SchoolLms.Infrastructure.Migrations
                         .HasColumnType("character varying(16)")
                         .HasColumnName("key");
 
+                    b.PrimitiveCollection<List<string>>("ClassIds")
+                        .IsRequired()
+                        .HasColumnType("text[]")
+                        .HasColumnName("class_ids");
+
+                    b.Property<DateTimeOffset?>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
                     b.Property<string>("CutoffTime")
                         .HasMaxLength(5)
                         .HasColumnType("character varying(5)")
@@ -1101,6 +1110,10 @@ namespace SchoolLms.Infrastructure.Migrations
                         .IsRequired()
                         .HasColumnType("text[]")
                         .HasColumnName("image_urls");
+
+                    b.Property<bool>("IsArchived")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_archived");
 
                     b.Property<string>("LastPeriod")
                         .HasMaxLength(10)
@@ -1120,6 +1133,16 @@ namespace SchoolLms.Infrastructure.Migrations
                         .HasColumnType("boolean")
                         .HasColumnName("requires_approval");
 
+                    b.Property<string>("Schedule")
+                        .HasMaxLength(8)
+                        .HasColumnType("character varying(8)")
+                        .HasColumnName("schedule");
+
+                    b.Property<string>("SendDate")
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)")
+                        .HasColumnName("send_date");
+
                     b.Property<string>("SendTime")
                         .IsRequired()
                         .HasMaxLength(5)
@@ -1131,6 +1154,11 @@ namespace SchoolLms.Infrastructure.Migrations
                         .HasColumnType("text")
                         .HasColumnName("text");
 
+                    b.Property<string>("Title")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("title");
+
                     b.Property<DateTimeOffset>("UpdatedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("updated_at");
@@ -1138,6 +1166,11 @@ namespace SchoolLms.Infrastructure.Migrations
                     b.Property<string>("UpdatedBy")
                         .HasColumnType("text")
                         .HasColumnName("updated_by");
+
+                    b.PrimitiveCollection<List<int>>("WeekDays")
+                        .IsRequired()
+                        .HasColumnType("integer[]")
+                        .HasColumnName("week_days");
 
                     b.HasKey("Key")
                         .HasName("pk_auto_message_rules");
@@ -1148,9 +1181,13 @@ namespace SchoolLms.Infrastructure.Migrations
 
                             t.HasCheckConstraint("ck_auto_message_rules_day", "day_of_month between 1 and 28");
 
-                            t.HasCheckConstraint("ck_auto_message_rules_key", "key in ('absence','invoice','debt','birthday','payment')");
+                            t.HasCheckConstraint("ck_auto_message_rules_key", "key in ('absence','invoice','debt','birthday','payment') or key ~ '^c_[0-9a-f]{8}$'");
 
                             t.HasCheckConstraint("ck_auto_message_rules_min", "min_amount >= 0");
+
+                            t.HasCheckConstraint("ck_auto_message_rules_schedule", "(key ~ '^c_' and schedule in ('once','daily','weekly','monthly')) or (key !~ '^c_' and schedule is null)");
+
+                            t.HasCheckConstraint("ck_auto_message_rules_send_date", "send_date is null or send_date ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'");
 
                             t.HasCheckConstraint("ck_auto_message_rules_time", "send_time ~ '^([01][0-9]|2[0-3]):[0-5][0-9]$'");
                         });
