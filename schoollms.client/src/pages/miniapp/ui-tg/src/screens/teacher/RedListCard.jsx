@@ -11,14 +11,14 @@
  * Faqat rahbarning o'z o'quvchilari (rahbarlikdagi sinf va yo'nalish guruhi) — server tekshiradi
  * (`GET /api/teacher/homeroom/red-list`). Ota-onaga hech narsa yuborilmaydi: qo'ng'iroqni ustoz qiladi.
  */
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { AlertTriangle, CalendarClock, ChevronRight, Phone, Siren, X } from 'lucide-react'
 import { Card, EmptyState, Hero, Row } from '../../components/ui'
 import { useAsync } from '../../lib/useAsync'
 import { teacherApi } from '../../lib/teacherApi'
 import { dateTime, dayMonth } from '../../lib/format'
 import { todayISO } from '../../lib/weeks'
-import { haptic, hapticNotify, showBackButton } from '../../lib/telegram'
+import { haptic, hapticNotify, showBackButton, useKeyboardOpen } from '../../lib/telegram'
 
 const STATUSES = [
   { key: 'aloqa_kerak', label: 'Aloqa kerak', cls: 'bg-red-50 text-red-700', dot: 'bg-red-500' },
@@ -118,6 +118,7 @@ export function RedListCard() {
 export function RedListSheet({ onClose }) {
   const q = useAsync(() => teacherApi.homeroomRedList(), [])
   const [selectedId, setSelectedId] = useState(null)
+  const keyboardOpen = useKeyboardOpen()
 
   const back = useCallback(() => (selectedId ? setSelectedId(null) : onClose()), [selectedId, onClose])
   useEffect(() => showBackButton(back), [back])
@@ -211,6 +212,9 @@ export function RedListSheet({ onClose }) {
             </p>
           </>
         )}
+        {/* Izoh yozilayotganda klaviatura pastni yopadi — "Saqlash" uning ustiga surila olishi uchun joy
+            (mijoz, 2026-10-26: sinf rahbari izohni saqlay olmasdi). */}
+        {keyboardOpen && <div aria-hidden="true" className="h-[50vh]" />}
       </div>
     </div>
   )
@@ -226,7 +230,12 @@ function CaseView({ item, list, onSaved }) {
   const [callbackOn, setCallbackOn] = useState(addDays(today, 1))
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
+  const saveRef = useRef(null)
   const late = overdueText(c)
+
+  // Klaviatura ochilib bo'lgach "Saqlash" ko'rinadigan joyga suriladi.
+  const revealSave = () =>
+    window.setTimeout(() => saveRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' }), 350)
 
   const save = async () => {
     if (busy) return
@@ -352,6 +361,7 @@ function CaseView({ item, list, onSaved }) {
           <textarea
             value={comment}
             onChange={(e) => setComment(e.target.value)}
+            onFocus={revealSave}
             rows={3}
             maxLength={1000}
             placeholder="Kim bilan gaplashdingiz, nima kelishildi?"
@@ -359,6 +369,7 @@ function CaseView({ item, list, onSaved }) {
           />
           {error && <p className="text-[13px] text-red-600">{error}</p>}
           <button
+            ref={saveRef}
             type="button"
             onClick={save}
             disabled={busy}

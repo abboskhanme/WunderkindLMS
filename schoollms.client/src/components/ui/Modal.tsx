@@ -32,8 +32,14 @@ export function Modal({ open, onClose, title, children, footer, size = 'md' }: M
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={onClose} />
-      <div className={cn('relative z-10 w-full rounded-2xl bg-white shadow-xl', sizes[size])}>
-        <header className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+      {/* Oyna ekrandan baland bo'lmaydi: past ekranda ham sarlavha va footer (Saqlash) doim ko'rinadi, faqat tana suriladi. */}
+      <div
+        className={cn(
+          'relative z-10 flex max-h-[calc(100dvh-2rem)] w-full flex-col rounded-2xl bg-white shadow-xl',
+          sizes[size],
+        )}
+      >
+        <header className="flex shrink-0 items-center justify-between border-b border-slate-100 px-5 py-4">
           <h3 className="font-semibold text-slate-800">{title}</h3>
           <button
             onClick={onClose}
@@ -43,9 +49,9 @@ export function Modal({ open, onClose, title, children, footer, size = 'md' }: M
           </button>
         </header>
         {/* Balandroq: modal tik cho'zilsin, kontent erta kesilmasin. */}
-        <div className="max-h-[80vh] overflow-y-auto px-5 py-4">{children}</div>
+        <div className="max-h-[80vh] min-h-0 flex-1 overflow-y-auto px-5 py-4">{children}</div>
         {footer && (
-          <footer className="flex justify-end gap-2 border-t border-slate-100 px-5 py-3">
+          <footer className="flex shrink-0 justify-end gap-2 border-t border-slate-100 px-5 py-3">
             {footer}
           </footer>
         )}
