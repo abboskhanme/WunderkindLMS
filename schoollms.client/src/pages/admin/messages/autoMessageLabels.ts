@@ -75,11 +75,17 @@ export function templateHint(rule: AutoMessageRule, classes: AutoMessageClass[])
           ? `Har oyning ${rule.dayOfMonth}-kuni`
           : 'Har kuni'
   const ids = rule.classIds ?? []
+  const audience = rule.audience ?? (ids.length > 0 ? 'class' : 'all')
   const who =
-    ids.length === 0
-      ? "barcha o'quvchilarning ota-onalariga"
-      : `${classes.filter((c) => ids.includes(c.id)).map((c) => c.name).join(', ') || 'tanlangan sinflar'} ota-onalariga`
-  return `${when}, ${who}. Siz yaratgan shablon.`
+    audience === 'group'
+      ? "guruh a'zolarining ota-onalariga"
+      : audience === 'selected'
+        ? `tanlangan ${rule.studentIds?.length ?? 0} o'quvchining ota-onalariga`
+        : audience === 'class'
+          ? `${classes.filter((c) => ids.includes(c.id)).map((c) => c.name).join(', ') || 'tanlangan sinf'} ota-onalariga`
+          : 'barcha ota-onalarga'
+  const debtors = rule.onlyDebtors && audience !== 'selected' ? ' (faqat qarzdorlar)' : ''
+  return `${when}, ${who}${debtors}. Siz yaratgan shablon.`
 }
 
 export const LOG_STATUS: Record<AutoMessageLogStatus, { label: string; cls: string }> = {

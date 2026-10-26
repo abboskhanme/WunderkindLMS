@@ -119,6 +119,14 @@ public sealed partial class AutoMessageService(
             new("{chek}", "Chek raqami", "Chek №"), new("{usul}", "To'lov usuli (Naqd pul, Bank kartasi)", "To'lov usuli"),
             new("{qarzdorlik}", "To'lovdan keyin qolgan qarz, so'm", "Qarzdorlik"),
         ],
+        // Templates staff create (2026-10-26) also take the announcement's money and phone tokens.
+        _ when AutoMessageKind.IsCustom(key) =>
+        [
+            .. Common, SendDay, SendClock,
+            new("{qarzdorlik}", "Qarz, so'm bilan (qarz bo'lmasa — 0 so'm)", "Qarzdorlik"),
+            new("{balans}", "Hisobdagi qoldiq, so'm bilan (manfiy — qarz)", "Balans"),
+            new("{telefon}", "Botga ulangan ota-onaning telefoni", "Telefon"),
+        ],
         _ => [.. Common, SendDay, SendClock],
     };
 
@@ -538,7 +546,7 @@ public sealed partial class AutoMessageService(
             AutoMessageKind.Birthday => new Source(await BirthdayItemsAsync(DayOf(period), ct)),
             AutoMessageKind.Invoice => await InvoiceItemsAsync(MonthOf(period), ct) is { } invoices ? new Source(invoices) : null,
             AutoMessageKind.Debt => new Source(await DebtItemsAsync(rule.MinAmount, ct)),
-            var key when AutoMessageKind.IsCustom(key) => new Source(await AudienceItemsAsync(rule.ClassIds, ct)),
+            var key when AutoMessageKind.IsCustom(key) => new Source(await AudienceItemsAsync(rule, ct)),
             _ => new Source([]),
         };
         if (source is null) return null;
@@ -712,22 +720,54 @@ public sealed partial class AutoMessageService(
     }
 
     /// <summary>
-    /// A template's pupils (2026-10-26): every pupil who is not archived, or only those in the chosen
-    /// classes. A chosen class that no longer exists reaches nobody — never "everyone".
+    /// A template's pupils (2026-10-26), chosen as an announcement's are: every pupil who is not archived,
+    /// a class, a study group's current members, or pupils picked one by one — and, unless picked, only
+    /// those who owe money when <see cref="AutoMessageRule.OnlyDebtors"/>. A chosen class or group that no
+    /// longer exists reaches nobody — never "everyone". The money tokens read like an announcement's.
     /// </summary>
-    private async Task<List<Item>> AudienceItemsAsync(List<string> classIds, CancellationToken ct)
+    private async Task<List<Item>> AudienceItemsAsync(AutoMessageRule rule, CancellationToken ct)
     {
         var pupils = db.Students.AsNoTracking().Where(s => !s.IsArchived);
-        if (classIds.Count > 0)
+        // A template saved before the audience existed: its classes, or everyone (as the migration sets it).
+        var audience = rule.Audience ?? (rule.ClassIds.Count > 0 ? AutoMessageAudience.Class : AutoMessageAudience.All);
+        switch (audience)
         {
-            var classNames = await db.Classes.AsNoTracking()
-                .Where(c => classIds.Contains(c.Id) && !c.IsArchived)
-                .Select(c => c.Name).ToListAsync(ct);
-            pupils = pupils.Where(s => s.ClassName != null && classNames.Contains(s.ClassName));
+            case AutoMessageAudience.Class:
+                var classIds = rule.ClassIds;
+                var classNames = await db.Classes.AsNoTracking()
+                    .Where(c => classIds.Contains(c.Id) && !c.IsArchived)
+                    .Select(c => c.Name).ToListAsync(ct);
+                pupils = pupils.Where(s => s.ClassName != null && classNames.Contains(s.ClassName));
+                break;
+            case AutoMessageAudience.Group:
+                var groupId = rule.GroupId;
+                var members = db.StudyGroupMembers.AsNoTracking()
+                    .Where(m => m.GroupId == groupId && m.LeftOn == null).Select(m => m.StudentId);
+                pupils = pupils.Where(s => members.Contains(s.Id));
+                break;
+            case AutoMessageAudience.Selected:
+                var picked = rule.StudentIds;
+                pupils = pupils.Where(s => picked.Contains(s.Id));
+                break;
+            case AutoMessageAudience.All:
+                break;
+            default:
+                return [];
         }
         var ids = await pupils.OrderBy(s => s.ClassName).ThenBy(s => s.FullName).Select(s => s.Id).ToListAsync(ct);
+        var balances = await new StudentBalanceQuery(db).ForManyAsync(ids, ct);
+        if (rule.OnlyDebtors && audience != AutoMessageAudience.Selected)
+            ids = [.. ids.Where(id => balances.GetValueOrDefault(id) < 0m)];
         var names = await NamesAsync(ids, ct);
-        return [.. ids.Select(id => new Item(id, Values(names, id, new())))];
+        return [.. ids.Select(id =>
+        {
+            var balance = balances.GetValueOrDefault(id);
+            return new Item(id, Values(names, id, new()
+            {
+                ["{qarzdorlik}"] = Money(balance < 0 ? -balance : 0m) + " so'm",
+                ["{balans}"] = (balance < 0 ? "-" : "") + Money(Math.Abs(balance)) + " so'm",
+            }));
+        })];
     }
 
     private sealed record Names(string FullName, string FirstName, string ClassName);
@@ -807,9 +847,13 @@ public sealed partial class AutoMessageService(
                         || (row.Status == BroadcastDelivery.Failed && row.Attempts >= MaxAttempts)))
                     continue;
 
+                var parent = string.IsNullOrWhiteSpace(reg.ParentName) ? "Ota-ona" : reg.ParentName;
                 var values = new Dictionary<string, string>(item.Values, StringComparer.OrdinalIgnoreCase)
                 {
-                    ["{ota_ona}"] = string.IsNullOrWhiteSpace(reg.ParentName) ? "Ota-ona" : reg.ParentName,
+                    ["{ota_ona}"] = parent,
+                    // The announcement's spellings (templates, 2026-10-26).
+                    ["{ota-ona}"] = parent,
+                    ["{telefon}"] = reg.Phone,
                 };
                 if (row is null)
                 {
@@ -980,7 +1024,7 @@ public sealed partial class AutoMessageService(
         string? sample = null, sampleFor = null;
         if (first is not null)
         {
-            var values = new Dictionary<string, string>(first.Values, StringComparer.OrdinalIgnoreCase) { ["{ota_ona}"] = "Ota-ona" };
+            var values = new Dictionary<string, string>(first.Values, StringComparer.OrdinalIgnoreCase) { ["{ota_ona}"] = "Ota-ona", ["{ota-ona}"] = "Ota-ona", ["{telefon}"] = "998901234567" };
             sample = Render(text ?? rule.Text, values);
             sampleFor = first.Values.GetValueOrDefault("{fish}");
         }

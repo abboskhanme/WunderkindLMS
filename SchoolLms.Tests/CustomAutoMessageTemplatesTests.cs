@@ -86,6 +86,20 @@ public class CustomAutoMessageTemplatesTests(ApiFixture fixture) : IAsyncLifetim
             Assert.Equal(HttpStatusCode.BadRequest, (await admin.PostAsJsonAsync(Url, Body(weekDays: [8]))).StatusCode);
             Assert.Equal(HttpStatusCode.BadRequest, (await admin.PostAsJsonAsync(Url, Body(classIds: ["no-such-class"]))).StatusCode);
             Assert.Equal(HttpStatusCode.BadRequest, (await admin.PostAsJsonAsync(Url, Body(text: " "))).StatusCode);
+            // The announcement-like audience: each kind needs its own choice.
+            object WithAudience(string audience, object? extra = null) => new
+            {
+                enabled = false, sendTime = "18:00", dayOfMonth = 1, minAmount = 0, text = "Salom", title = "Kimga",
+                schedule = "daily", audience,
+                groupId = extra is Guid g ? g.ToString() : null,
+                studentIds = extra as string[],
+            };
+            Assert.Equal(HttpStatusCode.BadRequest, (await admin.PostAsJsonAsync(Url, WithAudience("everyone"))).StatusCode);
+            Assert.Equal(HttpStatusCode.BadRequest, (await admin.PostAsJsonAsync(Url, WithAudience("class"))).StatusCode);
+            Assert.Equal(HttpStatusCode.BadRequest, (await admin.PostAsJsonAsync(Url, WithAudience("group"))).StatusCode);
+            Assert.Equal(HttpStatusCode.BadRequest, (await admin.PostAsJsonAsync(Url, WithAudience("group", Guid.NewGuid()))).StatusCode);
+            Assert.Equal(HttpStatusCode.BadRequest, (await admin.PostAsJsonAsync(Url, WithAudience("selected", Array.Empty<string>()))).StatusCode);
+            Assert.Equal(HttpStatusCode.BadRequest, (await admin.PostAsJsonAsync(Url, WithAudience("selected", new[] { "no-such-pupil" }))).StatusCode);
 
             var res = await admin.PostAsJsonAsync(Url, Body());
             var rule = await res.Content.ReadFromJsonAsync<JsonElement>();
@@ -172,7 +186,7 @@ public class CustomAutoMessageTemplatesTests(ApiFixture fixture) : IAsyncLifetim
         db.AutoMessageRules.Add(new AutoMessageRule
         {
             Key = "c_0000a001", Title = "Kutubxona kuni", Schedule = AutoMessageSchedule.Weekly, WeekDays = [2],
-            ClassIds = [fiveA.Id], Enabled = true, SendTime = "08:00",
+            Audience = AutoMessageAudience.Class, ClassIds = [fiveA.Id], Enabled = true, SendTime = "08:00",
             Text = "{ota_ona}, {sinf} — {ism} bugun ({sana}) kitobini olib kelsin.",
             CreatedAt = AppClock.NowInstant, UpdatedAt = AppClock.NowInstant,
         });
@@ -233,6 +247,59 @@ public class CustomAutoMessageTemplatesTests(ApiFixture fixture) : IAsyncLifetim
 
         Assert.DoesNotContain(await service.RunDueAsync(Tuesday.AddDays(1)), r => r.Key == "c_0000b001");
         Assert.Equal(2, handler.Texts.Count);
+    }
+
+    [Fact]
+    public async Task Elon_kabi_guruh_va_tanlab_eloning_orinbosarlari_bilan()
+    {
+        var db = await FreshAsync("am_tpl_audience");
+        var ali = Pupil("Aliyev Ali", "5-A");
+        var vali = Pupil("Valiyev Vali", "5-A");
+        var sami = Pupil("Samiyev Sami", "6-B");
+        var left = Pupil("Ketgan Bola", "6-B");
+        db.Students.AddRange(ali, vali, sami, left);
+        var creator = new AppUser { FullName = "Admin", Role = Roles.Admin, Email = "admin.tpl" };
+        db.Users.Add(creator);
+        var track = new StudyGroup { Name = "Aniq fanlar", IsTrack = true, CreatedBy = creator.Id, CreatedAt = AppClock.NowInstant };
+        db.StudyGroups.Add(track);
+        await db.SaveChangesAsync();
+        db.StudyGroupMembers.AddRange(
+            new StudyGroupMember { GroupId = track.Id, StudentId = ali.Id, JoinedOn = new DateOnly(2025, 9, 1), CreatedBy = creator.Id, CreatedAt = AppClock.NowInstant },
+            new StudyGroupMember { GroupId = track.Id, StudentId = sami.Id, JoinedOn = new DateOnly(2025, 9, 1), CreatedBy = creator.Id, CreatedAt = AppClock.NowInstant },
+            // Left the group: no longer reached.
+            new StudyGroupMember { GroupId = track.Id, StudentId = left.Id, JoinedOn = new DateOnly(2025, 9, 1), LeftOn = new DateOnly(2026, 1, 1), CreatedBy = creator.Id, CreatedAt = AppClock.NowInstant });
+        db.TelegramRegistrations.AddRange(
+            new TelegramRegistration { StudentId = ali.Id, ChatId = 901, ParentName = "Karim aka", Phone = "998901112233" },
+            new TelegramRegistration { StudentId = vali.Id, ChatId = 902 },
+            new TelegramRegistration { StudentId = sami.Id, ChatId = 903, ParentName = "Nodira opa", Phone = "998907778899" },
+            new TelegramRegistration { StudentId = left.Id, ChatId = 904 });
+        db.AutoMessageRules.AddRange(
+            new AutoMessageRule
+            {
+                Key = "c_0000c001", Title = "Guruh", Schedule = AutoMessageSchedule.Daily, Audience = AutoMessageAudience.Group,
+                GroupId = track.Id, Enabled = true, SendTime = "08:00",
+                Text = "{ota-ona}: {fish} ({sinf}), qarz {qarzdorlik}, balans {balans}, tel {telefon}",
+                CreatedAt = AppClock.NowInstant, UpdatedAt = AppClock.NowInstant,
+            },
+            new AutoMessageRule
+            {
+                Key = "c_0000c002", Title = "Tanlab", Schedule = AutoMessageSchedule.Daily, Audience = AutoMessageAudience.Selected,
+                StudentIds = [vali.Id], Enabled = true, SendTime = "08:00", Text = "Tanlangan: {ism}",
+                CreatedAt = AppClock.NowInstant, UpdatedAt = AppClock.NowInstant,
+            });
+        await db.SaveChangesAsync();
+
+        var handler = new RecordingHandler();
+        var runs = await new AutoMessageService(db, ConfiguredTelegram(handler)).RunDueAsync(Tuesday);
+        Assert.Equal(2, runs.Single(r => r.Key == "c_0000c001").Sent);
+        Assert.Equal(1, runs.Single(r => r.Key == "c_0000c002").Sent);
+        Assert.Equal(
+            [
+                "Karim aka: Aliyev Ali (5-A), qarz 0 so'm, balans 0 so'm, tel 998901112233",
+                "Nodira opa: Samiyev Sami (6-B), qarz 0 so'm, balans 0 so'm, tel 998907778899",
+                "Tanlangan: Vali",
+            ],
+            handler.Texts.Order());
     }
 
     // =====================================================================

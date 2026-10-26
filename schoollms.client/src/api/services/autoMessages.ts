@@ -15,6 +15,9 @@ export type AutoMessageKey = BuiltInAutoMessageKey | `c_${string}`
 
 export type AutoMessageSchedule = 'once' | 'daily' | 'weekly' | 'monthly'
 
+/** E'londagi "Kimga yuborish" bilan bir xil. */
+export type AutoMessageAudience = 'all' | 'class' | 'group' | 'selected'
+
 export interface AutoMessageClass {
   id: string
   name: string
@@ -59,8 +62,16 @@ export interface AutoMessageRule {
   sendDate?: string | null
   /** Har hafta: 1 = Dushanba … 7 = Yakshanba. */
   weekDays?: number[] | null
-  /** Kimga: sinflar id'si; bo'sh — barcha o'quvchilar. */
+  /** Kimga — e'londagi kabi: barcha ota-onalar, sinf, guruh yoki tanlab. */
+  audience?: AutoMessageAudience | null
+  /** "Sinf bo'yicha": sinflar id'si. */
   classIds?: string[] | null
+  /** "Guruh bo'yicha": o'quv guruhi id'si. */
+  groupId?: string | null
+  /** "Tanlab": o'quvchilar id'si. */
+  studentIds?: string[] | null
+  /** Faqat qarzdorlar ("Tanlab"da emas). */
+  onlyDebtors?: boolean
   /** O'chirilgan shablon — faqat tarixda nomi ko'rinishi uchun keladi. */
   archived?: boolean
 }
@@ -80,7 +91,11 @@ export interface SaveAutoMessageRule {
   schedule?: AutoMessageSchedule
   sendDate?: string | null
   weekDays?: number[]
+  audience?: AutoMessageAudience
   classIds?: string[]
+  groupId?: string | null
+  studentIds?: string[]
+  onlyDebtors?: boolean
 }
 
 export interface AutoMessagePreview {

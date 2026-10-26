@@ -1084,6 +1084,11 @@ namespace SchoolLms.Infrastructure.Migrations
                         .HasColumnType("character varying(16)")
                         .HasColumnName("key");
 
+                    b.Property<string>("Audience")
+                        .HasMaxLength(8)
+                        .HasColumnType("character varying(8)")
+                        .HasColumnName("audience");
+
                     b.PrimitiveCollection<List<string>>("ClassIds")
                         .IsRequired()
                         .HasColumnType("text[]")
@@ -1105,6 +1110,10 @@ namespace SchoolLms.Infrastructure.Migrations
                     b.Property<bool>("Enabled")
                         .HasColumnType("boolean")
                         .HasColumnName("enabled");
+
+                    b.Property<Guid?>("GroupId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("group_id");
 
                     b.PrimitiveCollection<List<string>>("ImageUrls")
                         .IsRequired()
@@ -1129,6 +1138,10 @@ namespace SchoolLms.Infrastructure.Migrations
                         .HasColumnType("numeric(14,2)")
                         .HasColumnName("min_amount");
 
+                    b.Property<bool>("OnlyDebtors")
+                        .HasColumnType("boolean")
+                        .HasColumnName("only_debtors");
+
                     b.Property<bool>("RequiresApproval")
                         .HasColumnType("boolean")
                         .HasColumnName("requires_approval");
@@ -1148,6 +1161,11 @@ namespace SchoolLms.Infrastructure.Migrations
                         .HasMaxLength(5)
                         .HasColumnType("character varying(5)")
                         .HasColumnName("send_time");
+
+                    b.PrimitiveCollection<List<string>>("StudentIds")
+                        .IsRequired()
+                        .HasColumnType("text[]")
+                        .HasColumnName("student_ids");
 
                     b.Property<string>("Text")
                         .IsRequired()
@@ -1177,6 +1195,8 @@ namespace SchoolLms.Infrastructure.Migrations
 
                     b.ToTable("auto_message_rules", null, t =>
                         {
+                            t.HasCheckConstraint("ck_auto_message_rules_audience", "audience is null or audience in ('all','class','group','selected')");
+
                             t.HasCheckConstraint("ck_auto_message_rules_cutoff", "cutoff_time is null or cutoff_time ~ '^([01][0-9]|2[0-3]):[0-5][0-9]$'");
 
                             t.HasCheckConstraint("ck_auto_message_rules_day", "day_of_month between 1 and 28");

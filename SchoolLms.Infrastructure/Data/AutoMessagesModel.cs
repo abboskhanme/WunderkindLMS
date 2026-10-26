@@ -23,6 +23,8 @@ internal static class AutoMessagesModel
                     "key in ('absence','invoice','debt','birthday','payment') or key ~ '^c_[0-9a-f]{8}$'");
                 t.HasCheckConstraint("ck_auto_message_rules_schedule",
                     "(key ~ '^c_' and schedule in ('once','daily','weekly','monthly')) or (key !~ '^c_' and schedule is null)");
+                t.HasCheckConstraint("ck_auto_message_rules_audience",
+                    "audience is null or audience in ('all','class','group','selected')");
                 t.HasCheckConstraint("ck_auto_message_rules_send_date",
                     "send_date is null or send_date ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'");
                 t.HasCheckConstraint("ck_auto_message_rules_day", "day_of_month between 1 and 28");
@@ -39,6 +41,7 @@ internal static class AutoMessagesModel
             e.Property(x => x.Title).HasMaxLength(100);
             e.Property(x => x.Schedule).HasMaxLength(8);
             e.Property(x => x.SendDate).HasMaxLength(10);
+            e.Property(x => x.Audience).HasMaxLength(8);
         });
 
         b.Entity<AutoMessageRun>(e =>

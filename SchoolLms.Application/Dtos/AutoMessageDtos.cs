@@ -9,7 +9,8 @@ namespace SchoolLms.Application.Dtos;
 /// <param name="EventDriven">Payment: sent with the receipt, has no time of its own.</param>
 /// <param name="ImageUrls">Pictures sent with the text (<c>/uploads/…</c>, 2026-10-25); empty — text only.</param>
 /// <param name="Custom">A template staff created (2026-10-26); the fields after it are its own.</param>
-/// <param name="ClassIds">Who gets a template: classes.id; empty — every pupil.</param>
+/// <param name="Audience">Who gets a template: all | class | group | selected (as an announcement).</param>
+/// <param name="ClassIds">Audience "class": classes.id.</param>
 /// <param name="Archived">A deleted template, listed only so the history can name it.</param>
 public record AutoMessageRuleDto(
     string Key, bool Enabled, string SendTime, int DayOfMonth, decimal MinAmount, string Text,
@@ -19,7 +20,8 @@ public record AutoMessageRuleDto(
     bool RequiresApproval = false, string? CutoffTime = null, bool EventDriven = false,
     List<string>? ImageUrls = null,
     bool Custom = false, string? Title = null, string? Schedule = null, string? SendDate = null,
-    List<int>? WeekDays = null, List<string>? ClassIds = null, bool Archived = false);
+    List<int>? WeekDays = null, List<string>? ClassIds = null, bool Archived = false,
+    string? Audience = null, string? GroupId = null, List<string>? StudentIds = null, bool OnlyDebtors = false);
 
 /// <summary>
 /// Saving a rule. <paramref name="RequiresApproval"/> null — unchanged; <paramref name="CutoffTime"/> empty — the
@@ -32,7 +34,8 @@ public record SaveAutoMessageRuleRequest(
     bool Enabled, string SendTime, int DayOfMonth, decimal MinAmount, string Text,
     bool? RequiresApproval = null, string? CutoffTime = null, List<string>? ImageUrls = null,
     string? Title = null, string? Schedule = null, string? SendDate = null,
-    List<int>? WeekDays = null, List<string>? ClassIds = null);
+    List<int>? WeekDays = null, List<string>? ClassIds = null,
+    string? Audience = null, string? GroupId = null, List<string>? StudentIds = null, bool? OnlyDebtors = null);
 
 /// <summary>A class a template can be sent to.</summary>
 public record AutoMessageClassDto(string Id, string Name, int Grade);

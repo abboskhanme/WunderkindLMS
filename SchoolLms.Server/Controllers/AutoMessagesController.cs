@@ -219,11 +219,31 @@ public class AutoMessagesController(
             var weekDays = req.WeekDays ?? rule.WeekDays;
             if (schedule == AutoMessageSchedule.Weekly && (weekDays.Count == 0 || weekDays.Any(d => d is < 1 or > 7)))
                 return ("Haftaning kamida bitta kunini tanlang", null);
-            if (req.ClassIds is { Count: > 0 } classIds)
+            // Who — as an announcement's "Kimga yuborish" (2026-10-26).
+            var audience = AudienceOf(rule, req);
+            if (!AutoMessageAudience.Values.Contains(audience)) return ("Kimga yuborilishini tanlang", null);
+            switch (audience)
             {
-                var ids = classIds.Distinct(StringComparer.Ordinal).ToList();
-                var known = await db.Classes.AsNoTracking().CountAsync(c => ids.Contains(c.Id) && !c.IsArchived, ct);
-                if (known != ids.Count) return ("Tanlangan sinf topilmadi — sahifani yangilang", null);
+                case AutoMessageAudience.Class:
+                    var classIds = (req.ClassIds ?? rule.ClassIds).Distinct(StringComparer.Ordinal).ToList();
+                    if (classIds.Count == 0) return ("Sinf tanlang", null);
+                    var knownClasses = await db.Classes.AsNoTracking().CountAsync(c => classIds.Contains(c.Id) && !c.IsArchived, ct);
+                    if (req.ClassIds is not null && knownClasses != classIds.Count)
+                        return ("Tanlangan sinf topilmadi — sahifani yangilang", null);
+                    break;
+                case AutoMessageAudience.Group:
+                    var groupText = req.GroupId ?? rule.GroupId?.ToString();
+                    if (!Guid.TryParse(groupText, out var groupId)) return ("Guruh tanlang", null);
+                    if (req.GroupId is not null && !await db.StudyGroups.AsNoTracking().AnyAsync(g => g.Id == groupId, ct))
+                        return ("Guruh topilmadi — sahifani yangilang", null);
+                    break;
+                case AutoMessageAudience.Selected:
+                    var studentIds = (req.StudentIds ?? rule.StudentIds).Distinct(StringComparer.Ordinal).ToList();
+                    if (studentIds.Count == 0) return ("Hech kim tanlanmadi", null);
+                    if (req.StudentIds is not null
+                        && await db.Students.AsNoTracking().CountAsync(s => studentIds.Contains(s.Id), ct) != studentIds.Count)
+                        return ("Tanlangan o'quvchi topilmadi — sahifani yangilang", null);
+                    break;
             }
         }
 
@@ -246,10 +266,19 @@ public class AutoMessagesController(
             if (req.Schedule is not null) rule.Schedule = req.Schedule;
             if (req.SendDate is not null) rule.SendDate = req.SendDate;
             if (req.WeekDays is not null) rule.WeekDays = [.. req.WeekDays.Distinct().Order()];
+            rule.Audience = AudienceOf(rule, req);
             if (req.ClassIds is not null) rule.ClassIds = [.. req.ClassIds.Distinct(StringComparer.Ordinal)];
-            // Only what the schedule uses is kept, so the screen never shows a stale date or week day.
+            if (req.GroupId is not null) rule.GroupId = Guid.TryParse(req.GroupId, out var groupId) ? groupId : null;
+            if (req.StudentIds is not null) rule.StudentIds = [.. req.StudentIds.Distinct(StringComparer.Ordinal)];
+            if (req.OnlyDebtors is { } onlyDebtors) rule.OnlyDebtors = onlyDebtors;
+            // Only what the schedule and the audience use is kept, so the screen never shows a stale value.
             if (rule.Schedule != AutoMessageSchedule.Once) rule.SendDate = null;
             if (rule.Schedule != AutoMessageSchedule.Weekly) rule.WeekDays = [];
+            if (rule.Audience != AutoMessageAudience.Class) rule.ClassIds = [];
+            if (rule.Audience != AutoMessageAudience.Group) rule.GroupId = null;
+            if (rule.Audience != AutoMessageAudience.Selected) rule.StudentIds = [];
+            // As on an announcement: pupils picked one by one are sent to whatever they owe.
+            if (rule.Audience == AutoMessageAudience.Selected) rule.OnlyDebtors = false;
         }
         if (AutoMessageKind.IsMonthly(rule)) rule.DayOfMonth = req.DayOfMonth;
         if (key == AutoMessageKind.Debt) rule.MinAmount = req.MinAmount;
@@ -262,11 +291,20 @@ public class AutoMessagesController(
         rule.UpdatedAt = AppClock.NowInstant;
     }
 
+    /// <summary>
+    /// A template's audience after a save: the one asked for, else the saved one; a request without one
+    /// (the first API shape) means the chosen classes, or everyone when none were chosen.
+    /// </summary>
+    private static string AudienceOf(AutoMessageRule rule, SaveAutoMessageRuleRequest req) =>
+        req.Audience ?? rule.Audience
+        ?? ((req.ClassIds ?? rule.ClassIds).Count > 0 ? AutoMessageAudience.Class : AutoMessageAudience.All);
+
     private static object Snapshot(AutoMessageRule r) => new
     {
         r.Enabled, r.SendTime, r.DayOfMonth, r.MinAmount, r.Text, r.RequiresApproval, r.CutoffTime,
         Images = r.ImageUrls.ToList(), r.Title, r.Schedule, r.SendDate, WeekDays = r.WeekDays.ToList(),
-        ClassIds = r.ClassIds.ToList(), r.IsArchived,
+        r.Audience, ClassIds = r.ClassIds.ToList(), r.GroupId, StudentIds = r.StudentIds.ToList(), r.OnlyDebtors,
+        r.IsArchived,
     };
 
     [HttpPost("{key}/preview")]
@@ -446,7 +484,8 @@ public class AutoMessagesController(
         AutoMessageService.TokensOf(r.Key), AutoMessageService.DefaultText.GetValueOrDefault(r.Key, ""),
         r.LastPeriod, r.LastRunAt, sent, failed, noTelegram, r.UpdatedAt, editor,
         r.RequiresApproval, r.CutoffTime, AutoMessageKind.IsEventDriven(r.Key), r.ImageUrls,
-        AutoMessageKind.IsCustom(r.Key), r.Title, r.Schedule, r.SendDate, r.WeekDays, r.ClassIds, r.IsArchived);
+        AutoMessageKind.IsCustom(r.Key), r.Title, r.Schedule, r.SendDate, r.WeekDays, r.ClassIds, r.IsArchived,
+        r.Audience, r.GroupId?.ToString(), r.StudentIds, r.OnlyDebtors);
 
     private string CurrentUserId() =>
         User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? User.FindFirst("sub")?.Value ?? "";

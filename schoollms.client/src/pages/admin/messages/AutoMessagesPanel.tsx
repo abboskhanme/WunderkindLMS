@@ -7,7 +7,8 @@
  * 2026-10-25: qoidaga rasm qo'shiladi (e'londagi kabi, 10 tagacha) — to'lov qoidasidan tashqari,
  * u chek PDF'i bilan ketadi.
  * 2026-10-26: "Yangi shablon" — xodim kod kiritmasdan o'zi avtomatik xabar qo'shadi
- * (AutoMessageTemplateModal); shablon kartasida sozlash va o'chirish tugmalari bor.
+ * (AutoMessageTemplateEditor — e'lon paneli kabi: kimga, matn, o'rinbosarlar, rasm, qachon); shablon
+ * kartasida sozlash (shu muharrir) va o'chirish tugmalari bor.
  */
 import { useEffect, useRef, useState } from 'react'
 import { AlertTriangle, CalendarClock, Eye, Plus, RotateCcw, Save, Settings2, Trash2 } from 'lucide-react'
@@ -32,7 +33,7 @@ import { Switch } from '@/components/hr-tasks/ui'
 import { cn } from '@/lib/utils'
 import { AutoMessagesHistory } from './AutoMessagesHistory'
 import { BroadcastImagePicker } from './BroadcastImagePicker'
-import { AutoMessageTemplateModal } from './AutoMessageTemplateModal'
+import { AutoMessageTemplateEditor } from './AutoMessageTemplateEditor'
 import { TITLES, errorText, fmtDateTime, ruleTitle, templateHint } from './autoMessageLabels'
 
 const VIEWS = [
@@ -47,6 +48,8 @@ export function AutoMessagesPanel() {
   const [classes, setClasses] = useState<AutoMessageClass[]>([])
   /** undefined — yopiq, null — yangi shablon, qoida — shu shablonni sozlash. */
   const [editing, setEditing] = useState<AutoMessageRule | null | undefined>(undefined)
+  /** Muharrirda saqlangan shablonning kartasi yangi qiymatlardan qayta tuzilsin (kalitga qo'shiladi). */
+  const [revisions, setRevisions] = useState<Record<string, number>>({})
 
   useEffect(() => {
     getAutoMessageRules()
@@ -79,6 +82,21 @@ export function AutoMessagesPanel() {
 
       {view === 'history' ? (
         <AutoMessagesHistory />
+      ) : editing !== undefined ? (
+        <AutoMessageTemplateEditor
+          rule={editing}
+          classes={classes}
+          onClose={() => setEditing(undefined)}
+          onSaved={(saved) => {
+            setRules((list) =>
+              list?.some((x) => x.key === saved.key)
+                ? list.map((x) => (x.key === saved.key ? { ...x, ...saved } : x))
+                : [...(list ?? []), saved],
+            )
+            setRevisions((r) => ({ ...r, [saved.key]: (r[saved.key] ?? 0) + 1 }))
+            setEditing(undefined)
+          }}
+        />
       ) : error ? (
         <p className="text-sm text-red-600">{error}</p>
       ) : !rules ? (
@@ -104,7 +122,7 @@ export function AutoMessagesPanel() {
               .filter((r) => !r.archived)
               .map((r) => (
                 <RuleCard
-                  key={r.key}
+                  key={`${r.key}-${revisions[r.key] ?? 0}`}
                   rule={r}
                   classes={classes}
                   onSaved={replace}
@@ -114,22 +132,6 @@ export function AutoMessagesPanel() {
               ))}
           </div>
         </>
-      )}
-
-      {editing !== undefined && (
-        <AutoMessageTemplateModal
-          rule={editing}
-          classes={classes}
-          onClose={() => setEditing(undefined)}
-          onSaved={(saved) => {
-            setRules((list) =>
-              list?.some((x) => x.key === saved.key)
-                ? list.map((x) => (x.key === saved.key ? { ...x, ...saved } : x))
-                : [...(list ?? []), saved],
-            )
-            setEditing(undefined)
-          }}
-        />
       )}
     </div>
   )

@@ -516,7 +516,8 @@ export function BroadcastPanel({ classes }: { classes: MessageClass[] }) {
   )
 }
 
-function ScopeButton({
+/** Qamrov tugmasi — avtomatik xabar shabloni muharriri ham shuni ishlatadi (bir xil ko'rinsin). */
+export function ScopeButton({
   active,
   onClick,
   children,

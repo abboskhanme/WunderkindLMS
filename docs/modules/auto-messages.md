@@ -70,10 +70,19 @@ pictures, preview, retries, history.
   1 = Monday … 7 = Sunday) or `monthly` (`day_of_month` 1–28, the same two-day catch-up window as the
   monthly rules), at `send_time`. Period: the day, or the month for `monthly`. A template cannot be
   "when something happens" — an event needs code to know the event and its values.
-- **Who.** `class_ids` — the parents of every non-archived pupil (empty), or of the pupils in the chosen
-  classes. Ids, not names, so a class rename keeps the audience; a chosen class that has since been
-  archived or deleted reaches nobody, never everyone.
-- **Tokens.** `{fish}` `{ism}` `{sinf}` `{ota_ona}` `{sana}` (the run's day) `{vaqt}`.
+- **Who — as an announcement's "Kimga yuborish"** (client: *"huddi shu e'lonlar kabi qilib ber"*).
+  `audience`: `all` (every non-archived pupil), `class` (`class_ids`), `group` (`group_id` — the study
+  group's current members) or `selected` (`student_ids`), plus `only_debtors` (computed balance below
+  zero, as the announcement's "Faqat qarzdorlar"; not with `selected`). Class ids, not names, so a
+  rename keeps the audience; a chosen class or group that no longer exists reaches nobody, never
+  everyone. The audience is worked out again at every run (a new pupil in the class is reached).
+- **Tokens.** `{fish}` `{ism}` `{sinf}` `{ota_ona}` / `{ota-ona}` `{sana}` (the run's day) `{vaqt}`, and the
+  announcement's `{qarzdorlik}` / `{balans}` (with "so'm", as on an announcement) and `{telefon}` (the
+  parent's phone on the bot). A line whose token is empty is dropped, as on every rule.
+- **Screen.** "Yangi shablon" and a template's "sozlash" open the template editor, laid out like the
+  announcement panel: "Kimga yuborish" with the live recipient count, the text with the announcement's
+  ready-made texts, formatting, token chips, pictures and a sample; "Qachon yuboriladi" (schedule, time,
+  "Tasdiq bilan") where the announcement has "Yuborish"; "Saqlash".
 - Created **switched off**, like every rule. `title` ≤ 100 characters, text required.
 - **Deleting** (`DELETE {key}`) archives it: `is_archived`, switched off, open runs cancelled. It never
   runs again and the screen hides it, but its row stays so the history and the Excel export keep its
@@ -164,7 +173,8 @@ apart (under Telegram's ~30/s).
   then the templates (oldest first; a deleted one with `archived: true`, for the history's names).
 - `GET  /api/admin/auto-messages/classes` — the classes a template can be sent to.
 - `POST /api/admin/auto-messages` — a new template: `title`, `schedule`, `sendDate` / `weekDays` /
-  `dayOfMonth`, `classIds`, `sendTime`, `text`, `imageUrls`, `requiresApproval`. Always created off. Audited.
+  `dayOfMonth`, `audience` + `classIds` / `groupId` / `studentIds`, `onlyDebtors`, `sendTime`, `text`,
+  `imageUrls`, `requiresApproval`. Always created off. Audited.
 - `PUT  /api/admin/auto-messages/{key}` — enabled, send time, day of month, minimum, text,
   `requiresApproval` (not for payment), `cutoffTime` (absence), `imageUrls` (not for payment); a
   template's `title`, `schedule`, `sendDate`, `weekDays`, `classIds` (null — unchanged). Audited.

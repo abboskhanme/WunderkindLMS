@@ -65,10 +65,25 @@ public class AutoMessageRule
     public List<int> WeekDays { get; set; } = new();
 
     /// <summary>
-    /// Who gets it: classes.id of the chosen classes; empty — every pupil. A chosen class that has since
-    /// been archived or deleted reaches nobody (never "everyone").
+    /// Who gets a template — <see cref="AutoMessageAudience"/>: all | class | group | selected, as on an
+    /// announcement's "Kimga yuborish" (2026-10-26). Null on the built-in rules.
+    /// </summary>
+    public string? Audience { get; set; }
+
+    /// <summary>
+    /// Audience "class": classes.id of the chosen classes. A chosen class that has since been archived or
+    /// deleted reaches nobody (never "everyone").
     /// </summary>
     public List<string> ClassIds { get; set; } = new();
+
+    /// <summary>Audience "group": the study group whose current members get it.</summary>
+    public Guid? GroupId { get; set; }
+
+    /// <summary>Audience "selected": the pupils chosen one by one (students.id).</summary>
+    public List<string> StudentIds { get; set; } = new();
+
+    /// <summary>Only pupils who owe money (computed balance below zero); not with "selected".</summary>
+    public bool OnlyDebtors { get; set; }
 
     /// <summary>
     /// A deleted template: never runs and is not shown, but its row stays so the history keeps its name
@@ -151,6 +166,21 @@ public static class AutoMessageSchedule
     public const string Monthly = "monthly";
 
     public static readonly IReadOnlyList<string> All = [Once, Daily, Weekly, Monthly];
+}
+
+/// <summary>Who a template staff created reaches (<see cref="AutoMessageRule.Audience"/>), as an announcement does.</summary>
+public static class AutoMessageAudience
+{
+    /// <summary>Every pupil who is not archived.</summary>
+    public const string All = "all";
+    /// <summary>The pupils of <see cref="AutoMessageRule.ClassIds"/>.</summary>
+    public const string Class = "class";
+    /// <summary>The current members of <see cref="AutoMessageRule.GroupId"/>.</summary>
+    public const string Group = "group";
+    /// <summary><see cref="AutoMessageRule.StudentIds"/>.</summary>
+    public const string Selected = "selected";
+
+    public static readonly IReadOnlyList<string> Values = [All, Class, Group, Selected];
 }
 
 /// <summary>Statuses of a run and of a log row.</summary>
