@@ -2973,7 +2973,7 @@ namespace SchoolLms.Infrastructure.Migrations
 
                             t.HasCheckConstraint("ck_discounts_period", "ends_on is null or ends_on >= starts_on");
 
-                            t.HasCheckConstraint("ck_discounts_status", "status in ('pending','approved','rejected')");
+                            t.HasCheckConstraint("ck_discounts_status", "status in ('pending','approved','rejected','deleted')");
                         });
                 });
 
@@ -5445,7 +5445,7 @@ namespace SchoolLms.Infrastructure.Migrations
 
                             t.HasCheckConstraint("ck_invoice_adjustments_days", "sick_days is null or sick_days > 0");
 
-                            t.HasCheckConstraint("ck_invoice_adjustments_kind", "kind in ('sick','discount','withdrawal','late_start')");
+                            t.HasCheckConstraint("ck_invoice_adjustments_kind", "kind in ('sick','discount','withdrawal','late_start','discount_undo')");
                         });
                 });
 

@@ -188,6 +188,66 @@ public class DiscountCatalogTests(ApiFixture fixture) : IAsyncLifetime
         }
     }
 
+    [Fact]
+    public async Task Ochirilgan_chegirma_tuzatgan_oy_qarzi_qaytadi()
+    {
+        var (db, _) = await NewDbAsync();
+        await using var _db = db;
+        var (actor, student, tuition) = await SeedAsync(db);
+        var invoice = await InvoiceAsync(db, student, tuition.Id, new DateOnly(2030, 5, 1), 1_000_000m);
+        var type = await Catalog(db).CreateAsync(new CreateDiscountTypeRequest("Xodim farzandi", 0m, 200_000m, null), actor);
+        var attached = await Catalog(db).AttachAsync(
+            new AttachDiscountRequest(student.Id, type.Id, new DateOnly(2030, 5, 1), null), actor);
+
+        var result = await Catalog(db).DeleteAsync(attached.Discount.Id, actor);
+
+        Assert.Equal((1, 200_000m), (result.RestoredInvoices, result.RestoredTotal));
+        await using var check = PostgresFixture.NewContext(_connectionStrings[^1]);
+        Assert.Equal(0m, (await check.Invoices.SingleAsync(i => i.Id == invoice.Id)).Discount);
+        var reversal = await check.InvoiceAdjustments.SingleAsync(a => a.ReversalOf != null);
+        var lines = await check.LedgerEntries.Where(e => e.RefType == LedgerRefType.InvoiceAdjustment && e.RefId == reversal.Id).ToListAsync();
+        Assert.Contains(lines, l => l.Account == Accounts.Receivable && l.Direction == LedgerDirection.Debit && l.Amount == 200_000m);
+        Assert.Equal(DiscountStatus.Deleted, (await check.Discounts.SingleAsync()).Status);
+        Assert.Empty(await new DiscountService(db, Audit(db)).ListAsync(new DiscountQuery(student.Id, null, null)));
+
+        var again = await Assert.ThrowsAsync<BillingRuleException>(() => Catalog(db).DeleteAsync(attached.Discount.Id, actor));
+        Assert.Equal("discount_deleted", again.Code);
+        // deleted, so the same type can be attached over the same period again
+        await Catalog(db).AttachAsync(new AttachDiscountRequest(student.Id, type.Id, new DateOnly(2030, 5, 1), null), actor);
+    }
+
+    [Fact]
+    public async Task Ochirilgan_chegirma_hisoblashda_yozilgani_qaytadi_va_keyingisi_qollanadi()
+    {
+        var (db, _) = await NewDbAsync();
+        await using var _db = db;
+        var (actor, student, tuition) = await SeedAsync(db);
+        var month = new DateOnly(2030, 6, 1);
+        db.StudentSubscriptions.Add(Subscription(student, tuition.Id, 1_000_000m, month, actor));
+        await db.SaveChangesAsync();
+        var specific = await Catalog(db).CreateAsync(new CreateDiscountTypeRequest("Yotoqli", 0m, 300_000m, tuition.Id), actor);
+        var general = await Catalog(db).CreateAsync(new CreateDiscountTypeRequest("Umumiy", 0m, 100_000m, null), actor);
+        var winner = await Catalog(db).AttachAsync(new AttachDiscountRequest(student.Id, specific.Id, month, null), actor);
+        await Catalog(db).AttachAsync(new AttachDiscountRequest(student.Id, general.Id, month, null), actor);
+        await Invoices(db).AccrueMonthAsync(month, actor);
+        // accrual: the category-specific one wins, the two are not summed
+        Assert.Equal(300_000m, (await db.Invoices.AsNoTracking().SingleAsync(i => i.StudentId == student.Id)).Discount);
+
+        var result = await Catalog(db).DeleteAsync(winner.Discount.Id, actor);
+
+        // 300 000 back on the debt, the general 100 000 takes over: net +200 000
+        Assert.Equal((1, 200_000m), (result.RestoredInvoices, result.RestoredTotal));
+        await using var check = PostgresFixture.NewContext(_connectionStrings[^1]);
+        Assert.Equal(100_000m, (await check.Invoices.SingleAsync(i => i.StudentId == student.Id)).Discount);
+        var undo = await check.InvoiceAdjustments.SingleAsync(a => a.Kind == InvoiceAdjustmentKind.DiscountUndo);
+        Assert.Equal((300_000m, winner.Discount.Id), (undo.Amount, undo.DiscountId));
+        var lines = await check.LedgerEntries.Where(e => e.RefType == LedgerRefType.InvoiceAdjustment && e.RefId == undo.Id).ToListAsync();
+        Assert.Contains(lines, l => l.Account == Accounts.Receivable && l.Direction == LedgerDirection.Debit && l.Amount == 300_000m);
+        Assert.Contains(lines, l => l.Account == Accounts.RevenueFor(FeeCategoryCode.Tuition) && l.Direction == LedgerDirection.Credit && l.Amount == 300_000m);
+        var takeover = await check.InvoiceAdjustments.SingleAsync(a => a.Kind == InvoiceAdjustmentKind.Discount);
+        Assert.Equal(100_000m, takeover.Amount);
+    }
+
     // ---------------------------------------------------------------- yordamchilar
 
     private static AuditService Audit(AppDbContext db) => new(db, new HttpContextAccessor());

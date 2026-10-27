@@ -233,6 +233,15 @@ public class BillingCatalogController(
     public async Task<ActionResult<DiscountDto>> EndDiscount(Guid id, EndDiscountRequest request) =>
         await DiscountCatalog.EndAsync(id, request, Actor(), HttpContext.RequestAborted);
 
+    /// <summary>
+    /// Chegirmani butunlay o'chiradi (mijoz, 2026-10-27): u kamaytirgan oylar qarzi qaytadi,
+    /// ro'yxatdan yo'qoladi. Katalogdan ham, qo'lda yozilgan ham.
+    /// </summary>
+    [HttpDelete("discounts/{id:guid}")]
+    [FinanceRole(FinanceAction.ManageSubscriptions)]
+    public async Task<ActionResult<DeleteDiscountResult>> DeleteDiscount(Guid id) =>
+        await DiscountCatalog.DeleteAsync(id, Actor(), HttpContext.RequestAborted);
+
     /// <summary>Obunalar ro'yxati (o'quvchi / toifa / abonement / faqat faollar bo'yicha filtr).</summary>
     [HttpGet("subscriptions")]
     public async Task<ActionResult<IEnumerable<StudentSubscriptionDto>>> GetSubscriptions(

@@ -116,14 +116,18 @@ public sealed class InvoiceAdjustmentService(IAppDbContext db, AuditService audi
     {
         if (original.InvoiceId != invoice.Id)
             throw new InvalidOperationException("The adjustment belongs to another invoice.");
-        if (invoice.Discount < original.Amount)
+        // An undo raised the debt, so its reversal lowers it again — never below what is paid.
+        var undo = original.Kind == InvoiceAdjustmentKind.DiscountUndo;
+        if (undo ? Remaining(invoice, paid) < original.Amount : invoice.Discount < original.Amount)
             throw BillingRuleException.Conflict("adjustment_not_reversible",
-                "Hisob-fakturadagi chegirma bu summadan kam — bekor qilib bo'lmaydi.");
+                undo
+                    ? "Hisob-fakturaning to'lanmagan qismi bu summadan kam — bekor qilib bo'lmaydi."
+                    : "Hisob-fakturadagi chegirma bu summadan kam — bekor qilib bo'lmaydi.");
 
         var code = await db.FeeCategories.AsNoTracking()
             .Where(c => c.Id == invoice.CategoryId).Select(c => c.Code).FirstOrDefaultAsync(ct);
         var before = new { invoice.Amount, invoice.Discount, invoice.Status };
-        invoice.Discount -= original.Amount;
+        invoice.Discount += undo ? original.Amount : -original.Amount;
         invoice.Status = InvoiceService.StatusFor(invoice.Amount - invoice.Discount, paid.GetValueOrDefault(invoice.Id));
 
         var row = new InvoiceAdjustment
@@ -148,14 +152,75 @@ public sealed class InvoiceAdjustmentService(IAppDbContext db, AuditService audi
             studentId: invoice.StudentId);
 
         var memo = $"{what} bekor qilindi, {invoice.PeriodMonth:yyyy-MM}";
-        await new LedgerService(db).PostAsync(
-        [
-            new LedgerPosting(Accounts.Receivable, LedgerDirection.Debit, original.Amount,
-                LedgerRefType.InvoiceAdjustment, row.Id, AppClock.Today, memo),
-            new LedgerPosting(Accounts.RevenueFor(code), LedgerDirection.Credit, original.Amount,
-                LedgerRefType.InvoiceAdjustment, row.Id, AppClock.Today, memo),
-        ], actorId, ct);
+        await PostAsync(code, debtUp: !undo, original.Amount, row.Id, memo, actorId, ct);
     }
+
+    /// <summary>
+    /// Takes <paramref name="amount"/> of the discount accrual wrote into a locked, tracked invoice
+    /// back (<see cref="InvoiceAdjustmentKind.DiscountUndo"/>): the discount down, the debt up, the
+    /// ledger batch the mirror of <see cref="ApplyAsync"/>. The debt only grows, so paid money is
+    /// never stranded.
+    /// </summary>
+    public async Task UndoDiscountAsync(
+        Invoice invoice, IReadOnlyDictionary<Guid, decimal> paid, decimal amount, Guid discountId,
+        string? note, Guid groupId, string actorId, CancellationToken ct)
+    {
+        amount = decimal.Round(Math.Min(amount, invoice.Discount), MoneyScale);
+        if (amount <= 0m) return;
+
+        var code = await db.FeeCategories.AsNoTracking()
+            .Where(c => c.Id == invoice.CategoryId).Select(c => c.Code).FirstOrDefaultAsync(ct);
+        var before = new { invoice.Amount, invoice.Discount, invoice.Status };
+        invoice.Discount -= amount;
+        invoice.Status = InvoiceService.StatusFor(invoice.Amount - invoice.Discount, paid.GetValueOrDefault(invoice.Id));
+
+        var row = new InvoiceAdjustment
+        {
+            InvoiceId = invoice.Id,
+            Kind = InvoiceAdjustmentKind.DiscountUndo,
+            Amount = amount,
+            DiscountId = discountId,
+            Note = Clip(note),
+            GroupId = groupId,
+            CreatedBy = actorId,
+            CreatedAt = AppClock.NowInstant,
+        };
+        db.InvoiceAdjustments.Add(row);
+
+        audit.Record(AuditService.EntityInvoice, invoice.Id.ToString(), "adjust_cancel",
+            $"{invoice.PeriodMonth:yyyy-MM} hisobidagi chegirma olib tashlandi: {AuditService.Money(amount)} so'm qaytdi",
+            before: before, after: new { invoice.Amount, invoice.Discount, invoice.Status },
+            studentId: invoice.StudentId);
+
+        await PostAsync(code, debtUp: true, amount, row.Id,
+            $"chegirma o'chirildi, {invoice.PeriodMonth:yyyy-MM}", actorId, ct);
+    }
+
+    /// <summary>
+    /// What the adjustments on each invoice took off in total (applied minus cancelled, an undo
+    /// counting against) — <see cref="Invoice.Discount"/> minus this is what accrual wrote.
+    /// </summary>
+    public async Task<Dictionary<Guid, decimal>> AdjustedNetAsync(IReadOnlyCollection<Guid> invoiceIds, CancellationToken ct)
+    {
+        if (invoiceIds.Count == 0) return [];
+        var rows = await db.InvoiceAdjustments.AsNoTracking()
+            .Where(a => invoiceIds.Contains(a.InvoiceId))
+            .Select(a => new { a.InvoiceId, a.Amount, Reversal = a.ReversalOf != null, Undo = a.Kind == InvoiceAdjustmentKind.DiscountUndo })
+            .ToListAsync(ct);
+        return rows
+            .GroupBy(r => r.InvoiceId)
+            .ToDictionary(g => g.Key, g => g.Sum(r => r.Reversal != r.Undo ? -r.Amount : r.Amount));
+    }
+
+    /// <summary>Debt up: DEBIT receivable / CREDIT revenue. Debt down: the other way round.</summary>
+    private Task PostAsync(string? code, bool debtUp, decimal amount, Guid rowId, string memo, string actorId, CancellationToken ct) =>
+        new LedgerService(db).PostAsync(
+        [
+            new LedgerPosting(debtUp ? Accounts.Receivable : Accounts.RevenueFor(code), LedgerDirection.Debit, amount,
+                LedgerRefType.InvoiceAdjustment, rowId, AppClock.Today, memo),
+            new LedgerPosting(debtUp ? Accounts.RevenueFor(code) : Accounts.Receivable, LedgerDirection.Credit, amount,
+                LedgerRefType.InvoiceAdjustment, rowId, AppClock.Today, memo),
+        ], actorId, ct);
 
     /// <summary>
     /// Sickness discount still standing on each invoice (applied minus cancelled) — the part of
@@ -182,6 +247,7 @@ public sealed class InvoiceAdjustmentService(IAppDbContext db, AuditService audi
         InvoiceAdjustmentKind.Sick => $"kasallik chegirmasi ({sickDays} kun)",
         InvoiceAdjustmentKind.Withdrawal => "chiqib ketish (o'qilmagan kunlar)",
         InvoiceAdjustmentKind.LateStart => "kech boshlangan (o'qilmagan kunlar)",
+        InvoiceAdjustmentKind.DiscountUndo => "o'chirilgan chegirma qaytarilishi",
         _ => "chegirma",
     };
 

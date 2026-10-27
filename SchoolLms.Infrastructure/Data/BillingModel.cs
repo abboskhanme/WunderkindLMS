@@ -148,7 +148,7 @@ internal static class BillingModel
             e.ToTable(t =>
             {
                 t.HasCheckConstraint("ck_invoice_adjustments_amount", "amount > 0");
-                t.HasCheckConstraint("ck_invoice_adjustments_kind", "kind in ('sick','discount','withdrawal','late_start')");
+                t.HasCheckConstraint("ck_invoice_adjustments_kind", "kind in ('sick','discount','withdrawal','late_start','discount_undo')");
                 t.HasCheckConstraint("ck_invoice_adjustments_days", "sick_days is null or sick_days > 0");
             });
         });
@@ -207,7 +207,7 @@ internal static class BillingModel
                 t.HasCheckConstraint("ck_discounts_percent", "percent >= 0 and percent <= 100");
                 t.HasCheckConstraint("ck_discounts_amount", "amount >= 0");
                 t.HasCheckConstraint("ck_discounts_period", "ends_on is null or ends_on >= starts_on");
-                t.HasCheckConstraint("ck_discounts_status", "status in ('pending','approved','rejected')");
+                t.HasCheckConstraint("ck_discounts_status", "status in ('pending','approved','rejected','deleted')");
                 // SPEC §4.5 — ikki qavatli nazorat. Ilova tekshiruvi chetlab o'tilsa ham baza to'xtatadi.
                 t.HasCheckConstraint("ck_discounts_approver_differs", "approved_by is null or approved_by <> created_by");
                 // Mijoz javobi (SPEC §8.1 Q5): tasdiqlangan chegirma TASDIQLOVCHISIZ bo'la olmaydi.

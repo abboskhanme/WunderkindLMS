@@ -368,6 +368,24 @@ export async function endDiscount(id: string, endsOn: string): Promise<DiscountR
   return data
 }
 
+export interface DeleteDiscountResult {
+  id: string
+  name: string
+  /** Months whose debt went back up. */
+  restoredInvoices: number
+  /** The net sum put back on them (so'm, server-computed). */
+  restoredTotal: number
+}
+
+/**
+ * Delete a discount for good: the months it reduced get their debt back and it leaves the list.
+ * Not the same as `endDiscount`, which only stops it from a month on.
+ */
+export async function deleteDiscount(id: string): Promise<DeleteDiscountResult> {
+  const { data } = await api.delete<DeleteDiscountResult>(`${BASE}/discounts/${id}`)
+  return data
+}
+
 /* ---------- Moliya sozlamalari (F14.01) ---------- */
 
 export interface BillingSettingsInput {

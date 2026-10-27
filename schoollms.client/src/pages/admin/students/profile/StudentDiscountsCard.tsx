@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { CalendarOff, Clock, Plus } from 'lucide-react'
+import { CalendarOff, Clock, Plus, Trash2 } from 'lucide-react'
 import type { DiscountRecord } from '@/api/services/billingCatalog'
-import { attachDiscount, endDiscount, getDiscounts } from '@/api/services/billingCatalog'
+import { attachDiscount, deleteDiscount, endDiscount, getDiscounts } from '@/api/services/billingCatalog'
 import { billingErrorMessage } from '@/api/services/billingError'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
@@ -11,6 +11,7 @@ import { AsyncBlock, IconBtn, StatusPill } from '@/pages/admin/billing/BillingUi
 import { useBillingAccess } from '@/pages/admin/billing/access'
 import type { AttachDiscountValues } from '@/pages/admin/billing/AttachDiscountModal'
 import { AttachDiscountModal } from '@/pages/admin/billing/AttachDiscountModal'
+import { DeleteDiscountModal } from '@/pages/admin/billing/DeleteDiscountModal'
 import { EndDiscountModal } from '@/pages/admin/billing/EndDiscountModal'
 import type { StudentDiscountState } from '@/pages/admin/billing/discountUtils'
 import {
@@ -72,6 +73,8 @@ function attachedMessage(adjustedInvoices: number, adjustedTotal: number): strin
 export function StudentDiscountsCard({ studentId, studentName, onChanged, archived = false }: Props) {
   const { canManageSubscriptions } = useBillingAccess()
   const canAttach = canManageSubscriptions && !archived
+  // Deleting brings the debt back — not for an archived pupil (the server refuses it too).
+  const canDelete = canManageSubscriptions && !archived
 
   const [rows, setRows] = useState<DiscountRecord[]>([])
   const [loading, setLoading] = useState(true)
@@ -79,6 +82,7 @@ export function StudentDiscountsCard({ studentId, studentName, onChanged, archiv
 
   const [attachOpen, setAttachOpen] = useState(false)
   const [ending, setEnding] = useState<DiscountRecord | null>(null)
+  const [deleting, setDeleting] = useState<DiscountRecord | null>(null)
   const [busy, setBusy] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
   const [toast, setToast] = useState<string | null>(null)
@@ -151,6 +155,26 @@ export function StudentDiscountsCard({ studentId, studentName, onChanged, archiv
     }
   }
 
+  const handleDelete = async (id: string) => {
+    setBusy(true)
+    setActionError(null)
+    try {
+      const result = await deleteDiscount(id)
+      setDeleting(null)
+      setToast(
+        result.restoredInvoices > 0
+          ? `"${result.name}" chegirmasi o'chirildi: ${result.restoredInvoices} ta oy qarziga ${formatMoney(result.restoredTotal)} qaytdi.`
+          : `"${result.name}" chegirmasi o'chirildi.`,
+      )
+      load()
+      onChanged?.()
+    } catch (e: unknown) {
+      setActionError(billingErrorMessage(e, "Chegirmani o'chirib bo'lmadi"))
+    } finally {
+      setBusy(false)
+    }
+  }
+
   return (
     <>
       <Card className="p-0">
@@ -217,7 +241,7 @@ export function StudentDiscountsCard({ studentId, studentName, onChanged, archiv
                     </td>
                     <td className="px-4 py-3">
                       <span className="flex justify-end gap-0.5">
-                        {canManageSubscriptions && state === 'running' ? (
+                        {canManageSubscriptions && state === 'running' && (
                           <IconBtn
                             icon={CalendarOff}
                             title="Tugatish"
@@ -227,7 +251,19 @@ export function StudentDiscountsCard({ studentId, studentName, onChanged, archiv
                               setEnding(row)
                             }}
                           />
-                        ) : (
+                        )}
+                        {canDelete && (
+                          <IconBtn
+                            icon={Trash2}
+                            title="Butunlay o'chirish"
+                            tone="danger"
+                            onClick={() => {
+                              setActionError(null)
+                              setDeleting(row)
+                            }}
+                          />
+                        )}
+                        {!canDelete && !(canManageSubscriptions && state === 'running') && (
                           <span className="text-xs text-slate-300">—</span>
                         )}
                       </span>
@@ -258,6 +294,14 @@ export function StudentDiscountsCard({ studentId, studentName, onChanged, archiv
             error={actionError}
             onClose={() => setEnding(null)}
             onConfirm={handleEnd}
+          />
+          <DeleteDiscountModal
+            open={deleting !== null}
+            discount={deleting}
+            busy={busy}
+            error={actionError}
+            onClose={() => setDeleting(null)}
+            onConfirm={handleDelete}
           />
         </>
       )}

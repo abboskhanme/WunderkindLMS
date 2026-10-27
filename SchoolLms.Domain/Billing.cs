@@ -198,7 +198,13 @@ public static class DiscountStatus
     public const string Approved = "approved";
     /// <summary>Rad etilgan. Tarix uchun qoladi, hisob-kitobga kirmaydi.</summary>
     public const string Rejected = "rejected";
+    /// <summary>
+    /// Butunlay o'chirilgan (mijoz, 2026-10-27): ro'yxatda ko'rinmaydi, hisob-kitobga kirmaydi, u
+    /// kamaytirgan oylar qarzi qaytarilgan. Qator o'chmaydi — tuzatish yozuvlari unga bog'langan.
+    /// </summary>
+    public const string Deleted = "deleted";
 
+    /// <summary>Filtrlash mumkin bo'lgan holatlar — <see cref="Deleted"/> ataylab yo'q.</summary>
     public static readonly IReadOnlyList<string> All = [Pending, Approved, Rejected];
 }
 
@@ -268,6 +274,12 @@ public static class InvoiceAdjustmentKind
     /// month was prorated (billing-plans.md §10.4) — a correction of old invoices.
     /// </summary>
     public const string LateStart = "late_start";
+    /// <summary>
+    /// The OPPOSITE direction: a deleted discount's share that accrual wrote into the invoice
+    /// itself is taken back — <see cref="Invoice.Discount"/> goes DOWN, the debt up. Its own
+    /// reversal (month removal) gives it back.
+    /// </summary>
+    public const string DiscountUndo = "discount_undo";
 }
 
 /// <summary>

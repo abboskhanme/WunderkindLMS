@@ -98,7 +98,8 @@ public sealed class DiscountService(IAppDbContext db, AuditService audit) : IDis
         ArgumentNullException.ThrowIfNull(query);
 
         // Filtr ENTITY ustida — ya'ni SQL'da (`QueryAsync` izohiga qarang).
-        var source = db.Discounts.AsNoTracking();
+        // O'chirilgani hech qayerda ko'rinmaydi (2026-10-27) — qator faqat tuzatishlar uchun qoladi.
+        var source = db.Discounts.AsNoTracking().Where(d => d.Status != DiscountStatus.Deleted);
 
         if (!string.IsNullOrWhiteSpace(query.StudentId))
             source = source.Where(d => d.StudentId == query.StudentId);
