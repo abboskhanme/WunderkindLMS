@@ -104,6 +104,10 @@ services:
       Tenancy__RootDomain: "${ROOT_DOMAIN}"
       App__Host: "test.${ROOT_DOMAIN}"     # FAQAT shu host ilovani (SPA) ochadi; qolganlari → landing
       Jwt__Key: "${JWT_KEY}"               # >=32 belgi; prod'da MAJBURIY
+      # Gemini (AI): dars tahlili xulosasi va HR topshiriq loyihalari (docs/modules/hr-ai-tasks.md).
+      # .env dagi GEMINI_API_KEY — PULLIK tarifdagi kalit (xodimlar ma'lumoti boradi). Bo'sh = AI o'chiq.
+      # 2026-10-27 gacha bu qator yo'q edi — .env ga kalit yozilsa ham ilova uni ko'rmasdi.
+      Gemini__ApiKey: "${GEMINI_API_KEY:-}"
     volumes:
       - uploads:/app/uploads               # yuklangan fayllar (rasm, hujjat) saqlanadi
       - dpkeys:/app/keys                    # DataProtection kalitlari — deploylar oralig'ida saqlanadi

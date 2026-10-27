@@ -89,6 +89,10 @@ transcribes it itself; there is no separate speech-to-text. Never throws: a fail
 error, and the director gets "AI javob bermadi, birozdan keyin qayta urinib ko'ring".
 **No key → the director gets "AI hali yoqilmagan" and nothing is called.**
 
+**On the server the key goes into `.env` as `GEMINI_API_KEY=…`** — `docker-compose.yml` passes it to the
+backend as `Gemini__ApiKey` (added 2026-10-27; before that the compose file passed no Gemini key at all, so a
+key written to `.env` never reached the app). Then `docker compose … up -d backend`.
+
 **The key must be a paid-tier key** — the free tier may use submitted data for training, and this sends
 staff names and instructions. Checked 2026-10-24: `Gemini__ApiKey` is **not set on prod** (so the
 lesson-analysis AI summary does not run there either).
