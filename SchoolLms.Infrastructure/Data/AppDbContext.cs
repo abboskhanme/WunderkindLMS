@@ -140,6 +140,8 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
 
     // Kelmaganlik haqida ota-onaga Telegram xabarlari (2026-10-11). Konfiguratsiya: AbsenceNoticeModel.cs.
     public DbSet<AbsenceNotice> AbsenceNotices => Set<AbsenceNotice>();
+    // Sinf rahbarining kelmagan kunga izohi (2026-10-26). Konfiguratsiya: AbsenceNoticeModel.cs.
+    public DbSet<AbsenceComment> AbsenceComments => Set<AbsenceComment>();
     public DbSet<BroadcastRecipient> BroadcastRecipients => Set<BroadcastRecipient>();
 
     // Qo'shimcha qo'ng'iroq jadvallari (2026-10-11). Konfiguratsiya: BellScheduleModel.cs.

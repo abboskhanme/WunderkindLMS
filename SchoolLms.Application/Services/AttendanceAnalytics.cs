@@ -1,3 +1,4 @@
+using System.Globalization;
 using Microsoft.EntityFrameworkCore;
 using SchoolLms.Application.Abstractions;
 using SchoolLms.Application.Dtos;
@@ -374,12 +375,27 @@ public static class AttendanceAnalytics
             .OrderBy(r => r.RowName, StringComparer.Ordinal)
             .ThenBy(r => r.FullName, StringComparer.Ordinal)
             .ToList();
-        var eventRows = events
+        var shownEvents = events
             .Where(e => nameOf.ContainsKey(e.StudentId))
             .OrderByDescending(e => e.Date, StringComparer.Ordinal)
             .ThenBy(e => rowName.GetValueOrDefault(e.Row, ""), StringComparer.Ordinal)
             .ThenBy(e => nameOf[e.StudentId], StringComparer.Ordinal)
             .Take(maxEvents + 1)
+            .ToList();
+        // The homeroom teacher's "why" of a missed day (2026-10-26) — one query for the shown rows.
+        var commentOf = new Dictionary<(string, string), string>();
+        if (shownEvents.Count > 0 && maxEvents > 0)
+        {
+            var fromDay = DateOnly.ParseExact(fromDate, "yyyy-MM-dd", CultureInfo.InvariantCulture);
+            var toDay = DateOnly.ParseExact(toDate, "yyyy-MM-dd", CultureInfo.InvariantCulture);
+            var eventStudents = shownEvents.Select(e => e.StudentId).Distinct(StringComparer.Ordinal).ToList();
+            foreach (var c in await db.AbsenceComments.AsNoTracking()
+                         .Where(c => c.Date >= fromDay && c.Date <= toDay && eventStudents.Contains(c.StudentId))
+                         .Select(c => new { c.StudentId, c.Date, c.Comment })
+                         .ToListAsync())
+                commentOf[(c.StudentId, c.Date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture))] = c.Comment;
+        }
+        var eventRows = shownEvents
             .Select(e =>
             {
                 var day = e.Day;
@@ -393,7 +409,8 @@ public static class AttendanceAnalytics
                     e.Status, reasons,
                     day.MainReason is { } main && unexcusedIds.Contains(main),
                     [.. isLate ? day.LatePeriods : day.AbsentPeriods],
-                    day.Held);
+                    day.Held,
+                    commentOf.GetValueOrDefault((e.StudentId, e.Date)));
             })
             .ToList();
         var truncated = eventRows.Count > maxEvents;
