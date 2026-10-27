@@ -4466,6 +4466,84 @@ namespace SchoolLms.Infrastructure.Migrations
                     b.ToTable("holidays", (string)null);
                 });
 
+            modelBuilder.Entity("SchoolLms.Domain.HrAiDraft", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasMaxLength(36)
+                        .HasColumnType("character varying(36)")
+                        .HasColumnName("id");
+
+                    b.Property<long>("ChatId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("chat_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<DateTimeOffset?>("DecidedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("decided_at");
+
+                    b.Property<string>("Error")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("error");
+
+                    b.Property<string>("InputText")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("input_text");
+
+                    b.Property<long?>("MessageId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("message_id");
+
+                    b.Property<string>("Proposal")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("proposal");
+
+                    b.Property<string>("Result")
+                        .HasColumnType("jsonb")
+                        .HasColumnName("result");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(8)
+                        .HasColumnType("character varying(8)")
+                        .HasColumnName("source");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(12)
+                        .HasColumnType("character varying(12)")
+                        .HasColumnName("status");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<string>("UserId")
+                        .IsRequired()
+                        .HasMaxLength(36)
+                        .HasColumnType("character varying(36)")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_hr_ai_drafts");
+
+                    b.HasIndex("UserId", "CreatedAt")
+                        .HasDatabaseName("ix_hr_ai_drafts_user_created");
+
+                    b.ToTable("hr_ai_drafts", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_hr_ai_draft_source", "source in ('text','voice')");
+
+                            t.HasCheckConstraint("ck_hr_ai_draft_status", "status in ('pending','editing','approving','approved','cancelled','expired','replaced','failed')");
+                        });
+                });
+
             modelBuilder.Entity("SchoolLms.Domain.HrEmployee", b =>
                 {
                     b.Property<string>("Id")
@@ -11553,6 +11631,16 @@ namespace SchoolLms.Infrastructure.Migrations
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.SetNull)
                         .HasConstraintName("fk_guardians_users_user_id");
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.HrAiDraft", b =>
+                {
+                    b.HasOne("SchoolLms.Domain.AppUser", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_hr_ai_drafts_users_user_id");
                 });
 
             modelBuilder.Entity("SchoolLms.Domain.HrEmployee", b =>

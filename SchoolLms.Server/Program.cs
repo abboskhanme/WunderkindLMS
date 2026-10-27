@@ -396,6 +396,11 @@ builder.Services.AddSingleton<SchoolLms.Application.HrTasks.IHrTelegramSender,
 builder.Services.AddSingleton<SchoolLms.Application.HrTasks.IHrFileStore,
                               SchoolLms.Application.HrTasks.LocalHrFileStore>();
 builder.Services.AddHostedService<SchoolLms.Application.HrTasks.HrTasksScheduler>();
+// AI task proposals from a director's bot messages (docs/modules/hr-ai-tasks.md). The same Gemini
+// config as the lesson analysis; no key → the bot tells the director AI is off.
+builder.Services.AddHttpClient<SchoolLms.Application.HrTasks.IHrTaskAi,
+                               SchoolLms.Application.HrTasks.GeminiHrTaskAi>(
+    c => c.Timeout = TimeSpan.FromSeconds(90));
 
 // ---------- Moliya (billing) ----------
 // DIQQAT: qolgan moliya xizmatlari (to'lov, smena, hisob-faktura, chek) hali

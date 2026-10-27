@@ -255,6 +255,8 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<HrTaskReminder> HrTaskReminders => Set<HrTaskReminder>();
     public DbSet<HrSettings> HrSettings => Set<HrSettings>();
     public DbSet<HrJobRun> HrJobRuns => Set<HrJobRun>();
+    // AI task drafts (docs/modules/hr-ai-tasks.md). Configuration: HrAiModel.cs.
+    public DbSet<HrAiDraft> HrAiDrafts => Set<HrAiDraft>();
 
     // Taklif va shikoyatlar workflow (FeedbackWorkflow.cs). Configuration: FeedbackModel.cs.
     public DbSet<FeedbackDepartment> FeedbackDepartments => Set<FeedbackDepartment>();
@@ -546,6 +548,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
 
         // ----- HR topshiriqlari: positions, employees, templates, tasks, proofs, jobs (hr-tasks.md §4) -----
         HrTasksModel.Apply(b);
+        HrAiModel.Apply(b);
 
         // Taklif va shikoyatlar: bo'limlar, mas'ullar, tarix (client, 2026-10-07).
         FeedbackModel.Apply(b);

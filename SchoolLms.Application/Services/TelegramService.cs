@@ -384,6 +384,103 @@ public class TelegramService(
         }
     }
 
+    // =====================================================================
+    //  Interactive cards (AI task drafts, docs/modules/hr-ai-tasks.md §4.7, 2026-10-27)
+    // =====================================================================
+
+    /// <summary><c>sendMessage</c> (HTML) that returns the new message's id, so the card can be edited later; null — not sent.</summary>
+    public async Task<long?> SendHtmlForIdAsync(long chatId, string html, object? replyMarkup = null, CancellationToken ct = default)
+    {
+        var result = await CallAsync("sendMessage", new Dictionary<string, object?>
+        {
+            ["chat_id"] = chatId, ["text"] = html, ["parse_mode"] = "HTML", ["disable_web_page_preview"] = true,
+            ["reply_markup"] = replyMarkup,
+        }, ct);
+        return result is { ValueKind: JsonValueKind.Object } r && r.TryGetProperty("message_id", out var id) && id.TryGetInt64(out var n)
+            ? n : null;
+    }
+
+    /// <summary><c>editMessageText</c> (HTML); no <paramref name="replyMarkup"/> — the buttons go away.</summary>
+    public async Task<bool> EditMessageHtmlAsync(long chatId, long messageId, string html, object? replyMarkup = null, CancellationToken ct = default) =>
+        await CallAsync("editMessageText", new Dictionary<string, object?>
+        {
+            ["chat_id"] = chatId, ["message_id"] = messageId, ["text"] = html, ["parse_mode"] = "HTML",
+            ["disable_web_page_preview"] = true, ["reply_markup"] = replyMarkup,
+        }, ct) is not null;
+
+    /// <summary><c>answerCallbackQuery</c> — stops the button's spinner; <paramref name="text"/> shows as a toast.</summary>
+    public async Task<bool> AnswerCallbackAsync(string callbackId, string? text = null, CancellationToken ct = default) =>
+        await CallAsync("answerCallbackQuery", new Dictionary<string, object?>
+        {
+            ["callback_query_id"] = callbackId, ["text"] = text,
+        }, ct) is not null;
+
+    /// <summary><c>sendChatAction</c> ("typing", "record_voice"…) — best effort.</summary>
+    public async Task<bool> SendChatActionAsync(long chatId, string action, CancellationToken ct = default) =>
+        await CallAsync("sendChatAction", new Dictionary<string, object?> { ["chat_id"] = chatId, ["action"] = action }, ct) is not null;
+
+    /// <summary>
+    /// <c>getFile</c> + download (a voice note sent to the bot). Null — not found, larger than
+    /// <paramref name="maxBytes"/>, or a network failure. The file URL carries the token: never logged.
+    /// </summary>
+    public async Task<byte[]?> DownloadFileAsync(string fileId, long maxBytes, CancellationToken ct = default)
+    {
+        var file = await CallAsync("getFile", new Dictionary<string, object?> { ["file_id"] = fileId }, ct);
+        if (file is not { ValueKind: JsonValueKind.Object } f || !f.TryGetProperty("file_path", out var pathEl)
+            || pathEl.GetString() is not { Length: > 0 } path)
+            return null;
+        if (f.TryGetProperty("file_size", out var sizeEl) && sizeEl.TryGetInt64(out var size) && size > maxBytes) return null;
+        try
+        {
+            // Files live under ".../file/bot<token>/<path>" — the API base with "/file" in front of the bot part.
+            var url = $"{ApiBase.Replace("/bot", "/file/bot", StringComparison.Ordinal)}/{path}";
+            using var resp = await Client().GetAsync(url, HttpCompletionOption.ResponseHeadersRead, ct);
+            if (!resp.IsSuccessStatusCode) return null;
+            if (resp.Content.Headers.ContentLength > maxBytes) return null;
+            var bytes = await resp.Content.ReadAsByteArrayAsync(ct);
+            return bytes.Length > maxBytes ? null : bytes;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning("Telegram faylini yuklab bo'lmadi: {Error}", ex.GetType().Name);
+            return null;
+        }
+    }
+
+    private static readonly JsonElement JsonTrue = ParseTrue();
+
+    private static JsonElement ParseTrue()
+    {
+        using var doc = JsonDocument.Parse("true");
+        return doc.RootElement.Clone();
+    }
+
+    /// <summary>One JSON Bot API call; null fields are left out. The answer's <c>result</c>, or null on any failure.</summary>
+    private async Task<JsonElement?> CallAsync(string method, Dictionary<string, object?> payload, CancellationToken ct)
+    {
+        if (!IsConfigured) return null;
+        try
+        {
+            var body = payload.Where(p => p.Value is not null).ToDictionary(p => p.Key, p => p.Value);
+            using var content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
+            using var resp = await Client().PostAsync($"{ApiBase}/{method}", content, ct);
+            if (!resp.IsSuccessStatusCode)
+            {
+                logger.LogWarning("Telegram {Method}: {Status}", method, (int)resp.StatusCode);
+                return null;
+            }
+            var text = await resp.Content.ReadAsStringAsync(ct);
+            using var doc = JsonDocument.Parse(string.IsNullOrWhiteSpace(text) ? "{}" : text);
+            // `true` for calls without a payload; an object for messages and files.
+            return doc.RootElement.TryGetProperty("result", out var result) ? result.Clone() : JsonTrue;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(ex, "Telegram {Method} xatosi", method);
+            return null;
+        }
+    }
+
     /// <summary>
     /// getUpdates (long polling). Telegram javobidagi "result" massivini (xom JSON) qaytaradi.
     /// Token yo'q yoki xato bo'lsa — null.
@@ -391,7 +488,8 @@ public class TelegramService(
     public async Task<JsonElement?> GetUpdatesAsync(long offset, int timeoutSec, CancellationToken ct = default)
     {
         if (!IsConfigured) return null;
-        var url = $"{ApiBase}/getUpdates?offset={offset}&timeout={timeoutSec}&allowed_updates=%5B%22message%22%5D";
+        // callback_query (2026-10-27): the buttons of the AI task card (docs/modules/hr-ai-tasks.md).
+        var url = $"{ApiBase}/getUpdates?offset={offset}&timeout={timeoutSec}&allowed_updates=%5B%22message%22,%22callback_query%22%5D";
         var resp = await Client().GetAsync(url, HttpCompletionOption.ResponseHeadersRead, ct);
         if (!resp.IsSuccessStatusCode) return null;
         await using var stream = await resp.Content.ReadAsStreamAsync(ct);

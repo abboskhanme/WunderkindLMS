@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using SchoolLms.Application.Abstractions;
+using SchoolLms.Application.HrTasks;
 using SchoolLms.Domain;
 using System.Text.Json;
 
@@ -28,6 +29,9 @@ public class TelegramBotService(
     public string? MiniAppUrl { get; set; } = TelegramPanelKeys.MiniAppUrl(sp.GetService<IConfiguration>());
 
     private const string PanelHint = "Panelni ochish uchun pastdagi «🏫 Panelni ochish» tugmasini bosing.";
+
+    /// <summary>The AI behind director messages (docs/modules/hr-ai-tasks.md); null — the registered one. Tests set it.</summary>
+    public IHrTaskAi? HrTaskAi { get; set; }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -169,9 +173,18 @@ public class TelegramBotService(
     /// <summary>Bitta update. Testlar to'g'ridan-to'g'ri chaqiradi (polling'siz).</summary>
     public async Task HandleUpdateAsync(JsonElement upd, CancellationToken ct)
     {
+        if (upd.TryGetProperty("callback_query", out var callback))
+        {
+            await HandleCallbackAsync(callback, ct);
+            return;
+        }
         if (!upd.TryGetProperty("message", out var msg)) return;
         if (!msg.TryGetProperty("chat", out var chat) || !chat.TryGetProperty("id", out var chatIdEl)) return;
         var chatId = chatIdEl.GetInt64();
+
+        // A director's text or voice note → an AI task proposal (2026-10-27). Anyone else, and any
+        // /command, gets the usual answer below.
+        if (await WithHrAiAsync(s => s.HandleMessageAsync(msg, ct), ct)) return;
 
         // No phone sharing any more (client, 2026-10-08: "telefon raqam ulashish ... kerakmas, botdan buni
         // butunlay olib tashla"). An old keyboard may still offer it — the contact is not stored; the
@@ -203,6 +216,38 @@ public class TelegramBotService(
                 "Panelga kirish uchun shu tugmani bosing va maktab bergan login-parolni bir marta kiriting. " +
                 "Shundan keyin maktab xabarlari ham shu chatga keladi.",
                 TelegramPanelKeys.SignInButton(url), ct);
+    }
+
+    /// <summary>Buttons: the AI task card's (<c>hai:…</c>); any other just stops its spinner.</summary>
+    private async Task HandleCallbackAsync(JsonElement callback, CancellationToken ct)
+    {
+        if (await WithHrAiAsync(s => s.HandleCallbackAsync(callback, ct), ct)) return;
+        if (callback.TryGetProperty("id", out var id) && id.GetString() is { } callbackId)
+            await telegram.AnswerCallbackAsync(callbackId, null, ct);
+    }
+
+    /// <summary>
+    /// Runs the AI task flow in its own scope, sending through THIS bot's <see cref="TelegramService"/>
+    /// (employee notifications too). A failure is logged and the bot carries on as before.
+    /// </summary>
+    private async Task<bool> WithHrAiAsync(Func<HrAiTaskService, Task<bool>> action, CancellationToken ct)
+    {
+        try
+        {
+            using var scope = sp.CreateScope();
+            var services = scope.ServiceProvider;
+            var db = services.GetRequiredService<IAppDbContext>();
+            var hr = new HrTasksService(db, new TelegramHrSender(telegram), services.GetRequiredService<IHrFileStore>(),
+                services.GetRequiredService<ILogger<HrTasksService>>());
+            var ai = HrTaskAi ?? services.GetService<IHrTaskAi>();
+            if (ai is null) return false;
+            return await action(new HrAiTaskService(db, hr, ai, telegram, logger));
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(ex, "HR AI: xabarni qayta ishlashda xato");
+            return false;
+        }
     }
 
     /// <summary>The answer to a phone shared through an old keyboard.</summary>

@@ -334,6 +334,8 @@ public interface IAppDbContext
     DbSet<HrTaskReminder> HrTaskReminders { get; }
     DbSet<HrSettings> HrSettings { get; }
     DbSet<HrJobRun> HrJobRuns { get; }
+    /// <summary>AI task proposals waiting for the director (docs/modules/hr-ai-tasks.md).</summary>
+    DbSet<HrAiDraft> HrAiDrafts { get; }
 
     /// <summary>Taklif va shikoyatlar workflow: departments, their responsible people, item history.</summary>
     DbSet<FeedbackDepartment> FeedbackDepartments { get; }
