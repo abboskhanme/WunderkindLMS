@@ -65,3 +65,24 @@ public record SaveAttendanceRedListSettingsRequest(
 /// <param name="Open">Open cases after the scan.</param>
 /// <param name="Notified">Teacher chats that got the "new case" notice.</param>
 public record AttendanceScanResultDto(int Pupils, int Opened, int Updated, int Open, int Notified);
+
+/* ================= Sinf rahbari: kelmaganlar izohi (2026-10-26) ================= */
+
+/// <summary>An absence reason the homeroom teacher may pick (late reasons are not offered).</summary>
+public record HomeroomAbsenceReasonDto(string Id, string Name, bool Unexcused);
+
+/// <summary>
+/// One of my pupils who missed school that day: the whole day (<c>absent</c>) or some lessons
+/// (<c>partial</c>), the day's reason, and my comment.
+/// </summary>
+public record HomeroomAbsenceDto(
+    string StudentId, string FullName, string Group, string Status, List<int> Periods, int HeldLessons,
+    string? ReasonId, bool Unexcused, string? Comment, string? CommentBy, DateTimeOffset? CommentAt);
+
+/// <summary>The homeroom teacher's absences of one day.</summary>
+public record HomeroomAbsencesDto(
+    DateOnly Date, IReadOnlyList<string> Groups, IReadOnlyList<HomeroomAbsenceReasonDto> Reasons,
+    IReadOnlyList<HomeroomAbsenceDto> Rows);
+
+/// <summary>Saving a day: the new reason (null — unchanged) and the comment (empty — removed).</summary>
+public record SaveHomeroomAbsenceRequest(string? ReasonId, string? Comment);

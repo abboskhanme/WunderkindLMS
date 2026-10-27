@@ -67,6 +67,12 @@ export const teacherApi = {
   addRedListAction: (caseId, body) =>
     api.post(`${BASE}/homeroom/red-list/${encodeURIComponent(caseId)}/actions`, body),
 
+  /** Sinfim · Kelmaganlar (2026-10-26): shu kuni kelmagan o'quvchilarim, sabab va izoh. */
+  homeroomAbsences: (date) => api.get(`${BASE}/homeroom/absences?date=${encodeURIComponent(date)}`),
+  /** Kelmagan kunning sababi va/yoki izohi: `{ reasonId, comment }` — yangilangan qatorni qaytaradi. */
+  saveHomeroomAbsence: (studentId, date, body) =>
+    api.put(`${BASE}/homeroom/absences/${encodeURIComponent(studentId)}/${encodeURIComponent(date)}`, body),
+
   /** Telegramdan tashqarida (brauzerda) — o'sha Excel to'g'ridan-to'g'ri yuklab olinadi. */
   downloadHomeroomDebts: async ({ group, all } = {}) => {
     const token = tokenStore.get()

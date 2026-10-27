@@ -91,3 +91,30 @@ public class AbsenceNotice
 
     public DateTimeOffset SentAt { get; set; }
 }
+
+/// <summary>
+/// Sinf rahbarining kelmagan kunga yozgan izohi — "nega kelmadi" (mijoz, 2026-10-26: "sinf rahbarlari
+/// o'zlariga biriktirilgan o'quvchilar kelmagan kunda ular nega kelmagani haqida izoh yoza olsin").
+/// Bitta o'quvchiga bir kunda BITTA izoh — qayta yozilsa yangilanadi. Sabab o'zi jurnalda qoladi
+/// (<see cref="JournalEntry.ReasonId"/>); bu yerda faqat matn va kim yozgani.
+/// </summary>
+public class AbsenceComment
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+
+    /// <summary>students.id</summary>
+    public string StudentId { get; set; } = string.Empty;
+
+    /// <summary>Qaysi kun uchun.</summary>
+    public DateOnly Date { get; set; }
+
+    public string Comment { get; set; } = string.Empty;
+
+    /// <summary>Kim yozdi (users.id) — JWT'dan.</summary>
+    public string UpdatedBy { get; set; } = string.Empty;
+
+    /// <summary>Yozganning ismi — admin ekranida qo'shimcha so'rovsiz ko'rsatish uchun.</summary>
+    public string UpdatedByName { get; set; } = string.Empty;
+
+    public DateTimeOffset UpdatedAt { get; set; }
+}

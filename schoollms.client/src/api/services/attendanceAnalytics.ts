@@ -123,6 +123,8 @@ export interface AttendanceEvent {
   periods: number[]
   /** O'sha kuni o'tilgan darslar soni */
   heldLessons: number
+  /** Sinf rahbarining "nega kelmadi" izohi (2026-10-26) */
+  comment?: string | null
 }
 
 const emptyTally: AttendanceTally = {

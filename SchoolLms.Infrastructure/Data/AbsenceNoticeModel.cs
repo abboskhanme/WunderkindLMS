@@ -22,6 +22,18 @@ internal static class AbsenceNoticeModel
             e.HasIndex(x => x.Date).HasDatabaseName("ix_absence_notices_date");
         });
 
+        // Sinf rahbarining kelmagan kunga izohi (2026-10-26) — o'quvchiga bir kunda bitta.
+        b.Entity<AbsenceComment>(e =>
+        {
+            e.ToTable("absence_comments");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasDefaultValueSql("gen_random_uuid()");
+            e.Property(x => x.Comment).HasMaxLength(1000);
+            e.HasOne<Student>().WithMany().HasForeignKey(x => x.StudentId).OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(x => new { x.StudentId, x.Date }).IsUnique().HasDatabaseName("ux_absence_comments_student_date");
+            e.HasIndex(x => x.Date).HasDatabaseName("ix_absence_comments_date");
+        });
+
         // E'lon oluvchilari (2026-10-11) — e'lon o'chsa birga o'chadi.
         b.Entity<BroadcastRecipient>(e =>
         {

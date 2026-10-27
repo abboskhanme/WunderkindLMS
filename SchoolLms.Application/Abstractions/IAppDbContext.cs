@@ -177,6 +177,9 @@ public interface IAppDbContext
     /// <summary>Kelmaganlik haqida ota-onaga yuborilgan Telegram xabarlari (2026-10-11).</summary>
     DbSet<AbsenceNotice> AbsenceNotices { get; }
 
+    /// <summary>Sinf rahbarining kelmagan kunga izohi (2026-10-26).</summary>
+    DbSet<AbsenceComment> AbsenceComments { get; }
+
     /// <summary>E'lonning har bir oluvchisi va yetkazilish holati (2026-10-11).</summary>
     DbSet<BroadcastRecipient> BroadcastRecipients { get; }
 

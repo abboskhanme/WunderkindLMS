@@ -118,9 +118,11 @@ public record AttendanceStudentRowDto(
 /// <param name="ReasonIds">The day's absence reasons, the main one first (late: the late reason).</param>
 /// <param name="Unexcused">The main reason counts as unexcused.</param>
 /// <param name="Periods">Missed lessons (late: the lessons the student was late to).</param>
+/// <param name="Comment">The homeroom teacher's note on why the pupil was away (absence_comments, 2026-10-26).</param>
 public record AttendanceEventDto(
     string Date, string StudentId, string FullName, string RowId, string RowName,
-    string Status, List<string> ReasonIds, bool Unexcused, List<int> Periods, int HeldLessons);
+    string Status, List<string> ReasonIds, bool Unexcused, List<int> Periods, int HeldLessons,
+    string? Comment = null);
 
 /* ================= O'zlashtirish (fanlar bo'yicha) ================= */
 
