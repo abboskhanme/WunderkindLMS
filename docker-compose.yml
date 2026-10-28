@@ -110,6 +110,8 @@ services:
       Gemini__ApiKey: "${GEMINI_API_KEY:-}"
       # Bo'sh = koddagi standart model. Google eski modelni yopsa, .env da GEMINI_MODEL=... + compose up.
       Gemini__Model: "${GEMINI_MODEL:-}"
+      # Asosiy model band (503) yoki yopilgan (404) bo'lsa so'raladigan zaxira. Bo'sh = koddagi standart.
+      Gemini__FallbackModel: "${GEMINI_FALLBACK_MODEL:-}"
     volumes:
       - uploads:/app/uploads               # yuklangan fayllar (rasm, hujjat) saqlanadi
       - dpkeys:/app/keys                    # DataProtection kalitlari — deploylar oralig'ida saqlanadi

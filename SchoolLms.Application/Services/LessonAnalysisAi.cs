@@ -212,9 +212,6 @@ public sealed class GeminiLessonAnalysisAi(HttpClient http, IConfiguration confi
         if (string.IsNullOrWhiteSpace(apiKey))
             return new LessonAiResult(null, MissingKeyError);
 
-        var model = config["Gemini:Model"];
-        if (string.IsNullOrWhiteSpace(model)) model = DefaultModel;
-
         var payload = new Dictionary<string, object>
         {
             ["system_instruction"] = new { parts = new[] { new { text = LessonAiPrompt.SystemPrompt } } },
@@ -229,21 +226,15 @@ public sealed class GeminiLessonAnalysisAi(HttpClient http, IConfiguration confi
             ["generationConfig"] = new { temperature = 0.4, responseMimeType = "application/json" },
         };
 
-        var url = $"https://generativelanguage.googleapis.com/v1beta/models/{Uri.EscapeDataString(model.Trim())}:generateContent";
         string text;
         try
         {
-            using var request = new HttpRequestMessage(HttpMethod.Post, url)
-            {
-                Content = JsonContent.Create(payload),
-            };
-            request.Headers.Add("x-goog-api-key", apiKey.Trim());
-
-            using var response = await http.SendAsync(request, ct);
-            var body = await response.Content.ReadAsStringAsync(ct);
-            if (!response.IsSuccessStatusCode)
+            // retries an overloaded model, then asks the fallback model (GeminiRest)
+            var response = await GeminiRest.GenerateAsync(http, apiKey, GeminiRest.Models(config), payload, ct);
+            var body = response.Body;
+            if (!response.IsSuccess)
                 return new LessonAiResult(null,
-                    $"Gemini API xatosi ({(int)response.StatusCode}): {(body.Length > 300 ? body[..300] : body)}");
+                    $"Gemini API xatosi ({response.StatusCode}, {response.Model}): {(body.Length > 300 ? body[..300] : body)}");
 
             using var doc = JsonDocument.Parse(body);
             text = doc.RootElement.GetProperty("candidates")[0]

@@ -401,6 +401,78 @@ public class HrAiTasksTests(ApiFixture fixture)
         Assert.Contains("FAQAT", body.RootElement.GetProperty("system_instruction").GetProperty("parts")[0].GetProperty("text").GetString());
     }
 
+    [Fact]
+    public async Task Gemini_band_bolsa_qayta_urinadi_keyin_zaxira_modelga_otadi()
+    {
+        var ok = JsonSerializer.Serialize(new
+        {
+            candidates = new[] { new { content = new { parts = new[] { new { text = """{"status":"not_task","tasks":[]}""" } } } } },
+        });
+        // primary: 503 three times (1 try + 2 retries), then the fallback answers
+        var handler = new GeminiScript((503, "{\"error\":{\"code\":503}}"), (503, "{}"), (503, "{}"), (200, ok));
+        var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?> { ["Gemini:ApiKey"] = "k" }).Build();
+        var ai = new GeminiHrTaskAi(new HttpClient(handler), config) { RetryDelays = [TimeSpan.Zero, TimeSpan.Zero] };
+
+        var reply = await ai.ProposeAsync(Request(null));
+
+        Assert.Null(reply.Error);
+        Assert.Equal("""{"status":"not_task","tasks":[]}""", reply.Json);
+        Assert.Equal(4, handler.Urls.Count);
+        Assert.All(handler.Urls.Take(3), u => Assert.Contains($"/models/{GeminiLessonAnalysisAi.DefaultModel}:", u));
+        Assert.Contains($"/models/{GeminiRest.DefaultFallbackModel}:", handler.Urls[3]);
+    }
+
+    [Fact]
+    public async Task Gemini_yopilgan_model_404_zaxiraga_otadi_400_esa_darhol_qaytadi()
+    {
+        var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["Gemini:ApiKey"] = "k", ["Gemini:Model"] = "m-old", ["Gemini:FallbackModel"] = "m-new",
+        }).Build();
+
+        // 404 is not retried on the same model — it goes straight to the fallback
+        var gone = new GeminiScript((404, "{}"), (200, "{\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"{}\"}]}}]}"));
+        var reply = await new GeminiHrTaskAi(new HttpClient(gone), config) { RetryDelays = [TimeSpan.Zero] }
+            .ProposeAsync(Request(null));
+        Assert.Null(reply.Error);
+        Assert.Equal(["m-old", "m-new"], gone.Urls.Select(u => u.Split("/models/")[1].Split(':')[0]));
+
+        // a bad request would fail on any model — one call, error names status and model
+        var bad = new GeminiScript((400, "{\"error\":\"bad\"}"));
+        var failed = await new GeminiHrTaskAi(new HttpClient(bad), config) { RetryDelays = [TimeSpan.Zero] }
+            .ProposeAsync(Request(null));
+        Assert.Single(bad.Urls);
+        Assert.Contains("(400, m-old)", failed.Error);
+    }
+
+    [Fact]
+    public void Gemini_zaxira_asosiy_bilan_bir_xil_bolsa_bir_marta()
+    {
+        var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["Gemini:Model"] = " gemini-3.6-flash ", ["Gemini:FallbackModel"] = "",
+        }).Build();
+        Assert.Equal(["gemini-3.6-flash"], GeminiRest.Models(config));
+        Assert.Equal([GeminiLessonAnalysisAi.DefaultModel, GeminiRest.DefaultFallbackModel],
+            GeminiRest.Models(new ConfigurationBuilder().Build()));
+    }
+
+    /// <summary>Answers each call with the next scripted (status, body); records the URLs.</summary>
+    private sealed class GeminiScript(params (int Status, string Body)[] answers) : HttpMessageHandler
+    {
+        public List<string> Urls { get; } = [];
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
+        {
+            Urls.Add(request.RequestUri!.ToString());
+            var (status, body) = answers[Urls.Count - 1];
+            return Task.FromResult(new HttpResponseMessage((HttpStatusCode)status)
+            {
+                Content = new StringContent(body, Encoding.UTF8, "application/json"),
+            });
+        }
+    }
+
     private static HrAiRequest Request(HrAiAudio? audio) => new(
         audio is null ? "salom" : null, audio, new DateTime(2026, 10, 27, 14, 30, 0), "Asia/Tashkent",
         [new HrAiEmployeeRef("e1", "Aliyev Ali", "Buxgalter")], [new HrAiPositionRef("p1", "Buxgalter")]);
