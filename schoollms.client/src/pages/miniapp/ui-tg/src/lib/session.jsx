@@ -49,6 +49,16 @@ export function SessionProvider({ children }) {
         }
         return
       }
+      // Veb-paneldagi "Akkauntlar"dan o'tilgan (2026-10-28): panel yangi akkaunt tokenini shu yerga
+      // qo'ygan — botdagi tugmadan ochilganda kalit sahifa almashganda yo'qoladi, token esa qoladi.
+      if (tokenStore.get()) {
+        try {
+          setState({ status: 'ready', user: await api.get('/auth/me'), error: null })
+          return
+        } catch {
+          tokenStore.clear()
+        }
+      }
       // Brauzerda ochilgan: imzo yo'q, ya'ni kim ekanini isbotlab bo'lmaydi.
       setState({ status: 'outside', user: null, error: null })
       return
