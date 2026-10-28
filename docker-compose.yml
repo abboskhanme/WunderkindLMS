@@ -108,6 +108,8 @@ services:
       # .env dagi GEMINI_API_KEY — PULLIK tarifdagi kalit (xodimlar ma'lumoti boradi). Bo'sh = AI o'chiq.
       # 2026-10-27 gacha bu qator yo'q edi — .env ga kalit yozilsa ham ilova uni ko'rmasdi.
       Gemini__ApiKey: "${GEMINI_API_KEY:-}"
+      # Bo'sh = koddagi standart model. Google eski modelni yopsa, .env da GEMINI_MODEL=... + compose up.
+      Gemini__Model: "${GEMINI_MODEL:-}"
     volumes:
       - uploads:/app/uploads               # yuklangan fayllar (rasm, hujjat) saqlanadi
       - dpkeys:/app/keys                    # DataProtection kalitlari — deploylar oralig'ida saqlanadi

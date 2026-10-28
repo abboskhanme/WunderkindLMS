@@ -129,7 +129,7 @@ public static class HrAiPrompt
 /// <summary>
 /// Gemini over REST — the same call and config as <see cref="Services.GeminiLessonAnalysisAi"/>:
 /// <c>Gemini:ApiKey</c> (env <c>Gemini__ApiKey</c>, never in the repo; must be a paid-tier key — staff
-/// names go to it), <c>Gemini:Model</c> (default <c>gemini-2.5-flash</c>), key in the header.
+/// names go to it), <c>Gemini:Model</c> (default <see cref="Services.GeminiLessonAnalysisAi.DefaultModel"/>), key in the header.
 /// </summary>
 public sealed class GeminiHrTaskAi(HttpClient http, IConfiguration config) : IHrTaskAi
 {
@@ -160,7 +160,8 @@ public sealed class GeminiHrTaskAi(HttpClient http, IConfiguration config) : IHr
             using var response = await http.SendAsync(message, ct);
             var body = await response.Content.ReadAsStringAsync(ct);
             if (!response.IsSuccessStatusCode)
-                return new HrAiReply(null, $"Gemini API xatosi ({(int)response.StatusCode})");
+                return new HrAiReply(null,
+                    $"Gemini API xatosi ({(int)response.StatusCode}): {(body.Length > 300 ? body[..300] : body)}");
             using var doc = JsonDocument.Parse(body);
             var text = doc.RootElement.GetProperty("candidates")[0]
                 .GetProperty("content").GetProperty("parts")[0]

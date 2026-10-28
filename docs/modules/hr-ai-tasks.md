@@ -83,7 +83,7 @@ Planned 2026-10-24 and parked the same day (*"bu ishni rejaga olib tur"*).
 
 `IHrTaskAi` (fake in tests), production `GeminiHrTaskAi`: the same REST call and config as
 `GeminiLessonAnalysisAi` (`Gemini:ApiKey` / env `Gemini__ApiKey`, `Gemini:Model`, default
-`gemini-2.5-flash`, key in the `x-goog-api-key` header), `responseMimeType = application/json`,
+`gemini-3.8-flash` since 2026-10-28 — 2.5 is closed to new keys; env `GEMINI_MODEL` overrides), key in the `x-goog-api-key` header), `responseMimeType = application/json`,
 temperature 0.2. Voice goes as `inline_data` (base64, the file's MIME type, e.g. `audio/ogg`) — Gemini
 transcribes it itself; there is no separate speech-to-text. Never throws: a failure is a result with an
 error, and the director gets "AI javob bermadi, birozdan keyin qayta urinib ko'ring".

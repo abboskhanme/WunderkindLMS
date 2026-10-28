@@ -391,7 +391,7 @@ public class HrAiTasksTests(ApiFixture fixture)
         Assert.Equal(answer, reply.Json);
         Assert.Equal("k-123", handler.Key);
         Assert.DoesNotContain("k-123", handler.Url);
-        Assert.EndsWith("/models/gemini-2.5-flash:generateContent", handler.Url);
+        Assert.EndsWith($"/models/{GeminiLessonAnalysisAi.DefaultModel}:generateContent", handler.Url);
         using var body = JsonDocument.Parse(handler.Body!);
         var parts = body.RootElement.GetProperty("contents")[0].GetProperty("parts");
         Assert.Contains("e1 — Aliyev Ali — Buxgalter", parts[0].GetProperty("text").GetString());
