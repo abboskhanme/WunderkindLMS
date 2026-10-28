@@ -594,9 +594,21 @@ public record SaveHolidayRequest(string Date, string? Name);
 /// </param>
 /// <param name="Description">Sabab izohi — qachon qo'yiladi, nimani anglatadi (§6.3, 5-qadam).</param>
 /// <param name="IsActive">false = yangi ball qo'yishda tanlanmaydi; eski yozuvlar joyida qoladi.</param>
+/// <param name="OwnerUserIds">
+/// Mas'ullar (<c>users.id</c> — o'qituvchi yoki xodim). Bo'sh = faqat admin qo'ya oladi. Davomat
+/// sabablarida har doim bo'sh. <c>CanUse</c> — so'rovchi shu sabab bilan ball qo'ya oladimi.
+/// </param>
 public record DisciplineReasonDto(
     string Id, string Name, int Points, string Kind,
-    bool NotifyParent = false, string? Description = null, bool IsActive = true);
+    bool NotifyParent = false, string? Description = null, bool IsActive = true,
+    IReadOnlyList<string>? OwnerUserIds = null, string Period = SchoolLms.Domain.DisciplinePeriod.None,
+    bool CanUse = true);
+
+/// <summary>
+/// A person who can be made an owner of a behaviour reason: <c>Kind</c> = teacher | staff, <c>Label</c> —
+/// "Sinf rahbari", "O'qituvchi" or the staff position.
+/// </summary>
+public record DisciplineOwnerCandidateDto(string UserId, string FullName, string Kind, string Label, bool IsArchived);
 
 /// <summary>
 /// Sababni yaratish/tahrirlash. Yangi maydonlar NULL bo'lishi mumkin — eski mijoz
@@ -607,9 +619,13 @@ public record DisciplineReasonDto(
 /// stored points are <c>|Points|</c> with the type's sign and 0 is refused; missing (an older client) —
 /// <c>Points</c> is stored as sent, as before.
 /// </param>
+/// <param name="OwnerUserIds">
+/// Mas'ullar (<c>users.id</c>). <c>null</c> = o'zgarmaydi (eski mijoz); <c>[]</c> = faqat admin qo'yadi.
+/// </param>
 public record SaveDisciplineReasonRequest(
     string Name, int Points,
-    bool? NotifyParent = null, string? Description = null, bool? IsActive = null, string? Type = null);
+    bool? NotifyParent = null, string? Description = null, bool? IsActive = null, string? Type = null,
+    List<string>? OwnerUserIds = null, string? Period = null);
 /// <summary>Davomat sababiga ball belgilash so'rovi.</summary>
 public record SetReasonPointsRequest(int Points);
 
@@ -670,7 +686,7 @@ public record AddDisciplinePointRequest(string StudentId, string ReasonId, strin
 /// </summary>
 public record AddClassDisciplinePointRequest(string ClassId, string ReasonId, string? Note);
 /// <summary>Sinf bo'ylab ball kiritish natijasi: nechta o'quvchiga yozildi, nechtasiga ota-onaga xabar ketdi.</summary>
-public record ClassDisciplinePointResultDto(int Applied, int NotifiedParents, List<DisciplinePointDto> Items);
+public record ClassDisciplinePointResultDto(int Applied, int NotifiedParents, List<DisciplinePointDto> Items, int Skipped = 0);
 /// <summary>Bitta intizomiy ball yozuvi (tarix). <c>Source</c>: "manual" (qo'lda, o'chirsa bo'ladi) yoki "attendance" (jurnal davomati, faqat ko'rish).</summary>
 /// <param name="NotifiedParents">
 /// Shu ball haqida ota-onaga HAQIQATAN yuborilgan Telegram xabarlari soni (§6.3, 4-qadam).
@@ -731,7 +747,8 @@ public record DisciplineCoverageDto(
 
 /// <summary>An active behaviour reason as a teacher picks it: <c>Type</c> = positive | negative.</summary>
 public record TeacherDisciplineReasonDto(
-    string Id, string Name, int Points, string Type, string? Description, bool NotifyParent);
+    string Id, string Name, int Points, string Type, string? Description, bool NotifyParent,
+    string Period = SchoolLms.Domain.DisciplinePeriod.None);
 
 /// <summary>One pupil of a lesson roster: the 100-based score and today's manual points (all authors).</summary>
 public record TeacherDisciplineScoreDto(string StudentId, int Remaining, int Today);
@@ -747,7 +764,7 @@ public record TeacherDisciplinePointDto(
 /// <summary>A pupil's behaviour for the teacher: score, today's points and the recent history.</summary>
 public record TeacherStudentDisciplineDto(
     string StudentId, string FullName, int Remaining, int Plus, int Minus, int Today,
-    IReadOnlyList<TeacherDisciplinePointDto> Items);
+    IReadOnlyList<TeacherDisciplinePointDto> Items, IReadOnlyList<string>? TakenReasonIds = null);
 /// <summary>O'quvchini arxivdan qaytarish — ixtiyoriy yangi parol (arxivlanganda parol bloklangan edi).</summary>
 public record RestoreStudentRequest(string? NewPassword);
 

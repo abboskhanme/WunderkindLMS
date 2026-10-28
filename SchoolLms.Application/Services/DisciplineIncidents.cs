@@ -115,6 +115,45 @@ public static class DisciplineIncidents
             && owners.Contains(s.OwnerId) && s.Date == today, ct);
     }
 
+    /// <summary>The refusal when a periodic reason was already given in its window.</summary>
+    public static string PeriodTakenMessage(DisciplineReason reason) =>
+        $"«{reason.Name}» sababi bilan bu o'quvchiga {DisciplinePeriod.Label(reason.Period)} ball qo'yilgan.";
+
+    /// <summary>
+    /// Pupils who already have an entry with this reason in the window of <paramref name="day"/>
+    /// (<see cref="DisciplineReason.Period"/>). Empty for a reason without a period.
+    /// <paramref name="exceptPointId"/> — the entry being edited, which does not block itself.
+    /// </summary>
+    public static async Task<HashSet<string>> PeriodTakenAsync(
+        IAppDbContext db, DisciplineReason reason, IReadOnlyCollection<string> studentIds,
+        DateOnly day, string? exceptPointId = null, CancellationToken ct = default)
+    {
+        var window = DisciplinePeriod.Window(reason.Period, day);
+        if (window is null || studentIds.Count == 0) return new(StringComparer.Ordinal);
+        // CreatedAt is ISO in school time, so the date prefix compares as text.
+        var from = window.Value.From.ToString("yyyy-MM-dd");
+        var until = window.Value.Until.ToString("yyyy-MM-dd");
+        var taken = await db.DisciplinePoints.AsNoTracking()
+            .Where(p => p.ReasonId == reason.Id && studentIds.Contains(p.StudentId)
+                && string.Compare(p.CreatedAt, from) >= 0 && string.Compare(p.CreatedAt, until) < 0
+                && (exceptPointId == null || p.Id != exceptPointId))
+            .Select(p => p.StudentId).Distinct().ToListAsync(ct);
+        return taken.ToHashSet(StringComparer.Ordinal);
+    }
+
+    /// <summary>
+    /// Of these reasons, the ones this pupil cannot be given again in the current window — the teacher
+    /// sheet greys them out.
+    /// </summary>
+    public static async Task<List<string>> TakenReasonIdsAsync(
+        IAppDbContext db, string studentId, IEnumerable<DisciplineReason> reasons, CancellationToken ct = default)
+    {
+        var result = new List<string>();
+        foreach (var r in reasons.Where(r => r.Period != DisciplinePeriod.None))
+            if ((await PeriodTakenAsync(db, r, [studentId], AppClock.Today, ct: ct)).Count > 0) result.Add(r.Id);
+        return result;
+    }
+
     /// <summary>A teacher takes back only their own entry, and only on the day it was made.</summary>
     public static bool TeacherMayDelete(DisciplinePoint point, string userId) =>
         !string.IsNullOrEmpty(userId) && point.CreatedByUserId == userId

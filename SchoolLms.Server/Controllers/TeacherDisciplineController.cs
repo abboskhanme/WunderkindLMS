@@ -48,7 +48,13 @@ public sealed class TeacherDisciplineController(
 
     private DisciplineParentNotifier Notifier => new(db, telegram, notifierLogger);
 
-    /// <summary>Active behaviour reasons with their type (positive | negative), by type then name.</summary>
+    /// <summary>A teacher gives only the reasons they are an owner of (DisciplineOwners).</summary>
+    private bool Owns(DisciplineReason r) => DisciplineOwners.MayUse(r, Uid, isFullAdmin: false);
+
+    /// <summary>
+    /// Active behaviour reasons with their type (positive | negative), by type then name — only those
+    /// the teacher is an owner of.
+    /// </summary>
     [HttpGet("reasons")]
     public async Task<ActionResult<IEnumerable<TeacherDisciplineReasonDto>>> Reasons(CancellationToken ct)
     {
@@ -60,8 +66,9 @@ public sealed class TeacherDisciplineController(
             .Where(r => r.IsActive && r.Points != 0)
             .OrderBy(r => r.Name).ToListAsync(ct);
         return reasons
+            .Where(Owns)
             .Select(r => new TeacherDisciplineReasonDto(
-                r.Id, r.Name, r.Points, DisciplineType.Of(r.Points), r.Description, r.NotifyParent))
+                r.Id, r.Name, r.Points, DisciplineType.Of(r.Points), r.Description, r.NotifyParent, r.Period))
             .ToList();
     }
 
@@ -133,7 +140,9 @@ public sealed class TeacherDisciplineController(
 
         return new TeacherStudentDisciplineDto(
             student.Id, student.FullName, DisciplineIncidents.BaseScore + plus - minus, plus, minus, today,
-            [.. items.OrderByDescending(i => i.CreatedAt, StringComparer.Ordinal).Take(RecentItems)]);
+            [.. items.OrderByDescending(i => i.CreatedAt, StringComparer.Ordinal).Take(RecentItems)],
+            await DisciplineIncidents.TakenReasonIdsAsync(db, student.Id,
+                await db.DisciplineReasons.AsNoTracking().Where(r => r.IsActive && r.Period != DisciplinePeriod.None).ToListAsync(ct), ct));
     }
 
     /// <summary>
@@ -157,6 +166,11 @@ public sealed class TeacherDisciplineController(
         var reason = await db.DisciplineReasons.FirstOrDefaultAsync(r => r.Id == req.ReasonId, ct);
         if (reason is null) return BadRequest(new { message = "Sabab tanlanmadi" });
         if (!reason.IsActive) return BadRequest(new { message = "Bu sabab faol emas" });
+        if (!Owns(reason))
+            return StatusCode(StatusCodes.Status403Forbidden,
+                new { message = DisciplineOwners.NotOwnerMessage });
+        if ((await DisciplineIncidents.PeriodTakenAsync(db, reason, [student.Id], AppClock.Today, ct: ct)).Count > 0)
+            return Conflict(new { message = DisciplineIncidents.PeriodTakenMessage(reason) });
 
         var point = new DisciplinePoint
         {

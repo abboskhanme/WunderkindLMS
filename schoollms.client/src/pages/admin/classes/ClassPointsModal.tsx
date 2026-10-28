@@ -48,7 +48,7 @@ export function ClassPointsModal({ open, classId, className, onClose, onDone }: 
     setType('negative')
     setReasonId('')
     getDisciplineReasons().then((all) => {
-      setReasons(all.filter((r) => r.kind === 'other' && r.isActive))
+      setReasons(all.filter((r) => r.kind === 'other' && r.isActive && r.canUse !== false))
     })
   }, [open])
 
@@ -72,7 +72,8 @@ export function ClassPointsModal({ open, classId, className, onClose, onDone }: 
       const result = await addClassDisciplinePoint(classId, reasonId, note.trim() || undefined)
       alert(
         `${result.applied} ta o'quvchiga ball qo'yildi`
-          + (result.notifiedParents > 0 ? ` — ${result.notifiedParents} ta ota-onaga xabar yuborildi` : ''),
+          + (result.notifiedParents > 0 ? ` — ${result.notifiedParents} ta ota-onaga xabar yuborildi` : '')
+          + (result.skipped ? ` — ${result.skipped} ta o'quvchi bu muddatda allaqachon olgan, o'tkazib yuborildi` : ''),
       )
       onDone()
     } catch (e) {

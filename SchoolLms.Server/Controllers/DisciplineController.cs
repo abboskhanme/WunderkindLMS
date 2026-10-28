@@ -59,12 +59,11 @@ public class DisciplineController(
     public async Task<ActionResult<IEnumerable<DisciplineReasonDto>>> GetReasons(
         [FromQuery] bool activeOnly = false)
     {
-        var other = await db.DisciplineReasons
+        var other = (await db.DisciplineReasons.AsNoTracking()
             .Where(r => !activeOnly || r.IsActive)
             .OrderBy(r => r.Name)
-            .Select(r => new DisciplineReasonDto(
-                r.Id, r.Name, r.Points, "other", r.NotifyParent, r.Description, r.IsActive))
-            .ToListAsync();
+            .ToListAsync())
+            .Select(Dto).ToList();
         var attendance = await db.AbsenceReasons.OrderBy(r => r.Name)
             .Select(r => new DisciplineReasonDto(r.Id, r.Name, r.Points, "attendance", false, null, true))
             .ToListAsync();
@@ -76,6 +75,10 @@ public class DisciplineController(
     {
         if (string.IsNullOrWhiteSpace(req.Name)) return BadRequest(new { message = "Sabab nomi kerak" });
         if (TypedPoints(req, out var points) is { } typeError) return BadRequest(new { message = typeError });
+        var owners = await OwnersAsync(req.OwnerUserIds);
+        if (owners is null) return BadRequest(new { message = "Mas'ul o'qituvchi topilmadi" });
+        if (req.Period is { } period && !DisciplinePeriod.IsValid(period))
+            return BadRequest(new { message = "Muddat noto'g'ri (none, week yoki month)" });
         var r = new DisciplineReason
         {
             Name = req.Name.Trim(),
@@ -84,6 +87,8 @@ public class DisciplineController(
             NotifyParent = req.NotifyParent ?? false,
             Description = Trimmed(req.Description),
             IsActive = req.IsActive ?? true,
+            OwnerUserIds = owners,
+            Period = req.Period ?? DisciplinePeriod.None,
         };
         db.DisciplineReasons.Add(r);
         await db.SaveChangesAsync();
@@ -96,6 +101,18 @@ public class DisciplineController(
         var r = await db.DisciplineReasons.FindAsync(id);
         if (r is null) return NotFound();
         if (TypedPoints(req, out var points) is { } typeError) return BadRequest(new { message = typeError });
+        if (req.OwnerUserIds is not null)
+        {
+            var owners = await OwnersAsync(req.OwnerUserIds);
+            if (owners is null) return BadRequest(new { message = "Mas'ul o'qituvchi topilmadi" });
+            r.OwnerUserIds = owners;
+        }
+        if (req.Period is { } period)
+        {
+            if (!DisciplinePeriod.IsValid(period))
+                return BadRequest(new { message = "Muddat noto'g'ri (none, week yoki month)" });
+            r.Period = period;
+        }
         r.Name = (req.Name ?? "").Trim();
         r.Points = points;
         // Berilmagan maydon O'ZGARMAYDI — eski mijoz sababni tahrirlaganda xabar
@@ -111,6 +128,53 @@ public class DisciplineController(
         string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
     /// <summary>
+    /// The owner list as stored: distinct, blanks dropped; null when an id is not a teacher or staff
+    /// account. No list (an older client) is an empty one — only admins can give such a reason.
+    /// </summary>
+    private async Task<List<string>?> OwnersAsync(List<string>? ids)
+    {
+        var owners = (ids ?? []).Where(id => !string.IsNullOrWhiteSpace(id)).Distinct().ToList();
+        if (owners.Count == 0) return owners;
+        var known = await db.Users.CountAsync(u =>
+            owners.Contains(u.Id) && (u.Role == Roles.Teacher || u.Role == Roles.Staff));
+        return known == owners.Count ? owners : null;
+    }
+
+    /// <summary>Admin and superadmin give every reason; a staff account only the reasons it owns.</summary>
+    private bool IsFullAdmin => User.IsInRole(Roles.Admin) || User.IsInRole(Roles.SuperAdmin);
+
+    private bool MayUse(DisciplineReason r) => DisciplineOwners.MayUse(r, Uid, IsFullAdmin);
+
+    private ObjectResult NotOwner() =>
+        StatusCode(StatusCodes.Status403Forbidden, new { message = DisciplineOwners.NotOwnerMessage });
+
+    /// <summary>
+    /// Who can be made an owner of a reason: teachers (homeroom teachers too) and staff accounts
+    /// (a deputy director, ...) — the "Mas'ullar" picker of the reason form.
+    /// </summary>
+    [HttpGet("owner-candidates")]
+    public async Task<ActionResult<IEnumerable<DisciplineOwnerCandidateDto>>> OwnerCandidates(CancellationToken ct)
+    {
+        var homerooms = await db.ClassHomeroomTeachers.AsNoTracking()
+            .Join(db.Teachers, h => h.TeacherId, t => t.Id, (h, t) => t.UserId)
+            .Distinct().ToListAsync(ct);
+        var teachers = await db.Teachers.AsNoTracking()
+            .Where(t => t.UserId != null && t.UserId != "")
+            .Select(t => new { t.UserId, t.FullName, t.IsArchived }).ToListAsync(ct);
+        var staff = await db.Users.AsNoTracking().Where(u => u.Role == Roles.Staff)
+            .Select(u => new { u.Id, u.FullName, u.Position }).ToListAsync(ct);
+
+        return teachers
+            .Select(t => new DisciplineOwnerCandidateDto(
+                t.UserId!, t.FullName, Roles.Teacher,
+                homerooms.Contains(t.UserId) ? "Sinf rahbari" : "O'qituvchi", t.IsArchived))
+            .Concat(staff.Select(s => new DisciplineOwnerCandidateDto(
+                s.Id, s.FullName, Roles.Staff, string.IsNullOrWhiteSpace(s.Position) ? "Xodim" : s.Position, false)))
+            .OrderBy(c => c.FullName, StringComparer.CurrentCulture)
+            .ToList();
+    }
+
+    /// <summary>
     /// The stored points of a reason form: with <c>type</c> (the "Ijobiy / Salbiy" selector) the sign
     /// comes from the type and 0 is refused; without it (an older client) the points as sent.
     /// </summary>
@@ -124,8 +188,9 @@ public class DisciplineController(
         return null;
     }
 
-    private static DisciplineReasonDto Dto(DisciplineReason r) =>
-        new(r.Id, r.Name, r.Points, "other", r.NotifyParent, r.Description, r.IsActive);
+    private DisciplineReasonDto Dto(DisciplineReason r) =>
+        new(r.Id, r.Name, r.Points, "other", r.NotifyParent, r.Description, r.IsActive, r.OwnerUserIds, r.Period,
+            MayUse(r));
 
     [HttpDelete("reasons/{id}")]
     public async Task<IActionResult> DeleteReason(string id)
@@ -265,6 +330,9 @@ public class DisciplineController(
         {
             // Faolsizlantirilgan sabab bilan YANGI ball qo'yilmaydi; eski yozuvlar joyida qoladi.
             if (!dr.IsActive) return BadRequest(new { message = "Bu sabab faol emas" });
+            if (!MayUse(dr)) return NotOwner();
+            if ((await DisciplineIncidents.PeriodTakenAsync(db, dr, [student.Id], AppClock.Today, ct: ct)).Count > 0)
+                return Conflict(new { message = DisciplineIncidents.PeriodTakenMessage(dr) });
             name = dr.Name; pts = dr.Points;
         }
         else
@@ -324,10 +392,17 @@ public class DisciplineController(
         var dr = await db.DisciplineReasons.FindAsync([req.ReasonId], ct);
         if (dr is null) return BadRequest(new { message = "Sabab tanlanmadi" });
         if (!dr.IsActive) return BadRequest(new { message = "Bu sabab faol emas" });
+        if (!MayUse(dr)) return NotOwner();
 
         var students = await db.Students
             .Where(s => !s.IsArchived && s.ClassName == cls.Name).ToListAsync(ct);
         if (students.Count == 0) return BadRequest(new { message = "Bu sinfda faol o'quvchi yo'q" });
+
+        // A periodic reason skips the pupils who already have it in this week / month.
+        var taken = await DisciplineIncidents.PeriodTakenAsync(
+            db, dr, students.Select(s => s.Id).ToList(), AppClock.Today, ct: ct);
+        var skipped = students.RemoveAll(s => taken.Contains(s.Id));
+        if (students.Count == 0) return Conflict(new { message = DisciplineIncidents.PeriodTakenMessage(dr) });
 
         var user = await db.Users.FindAsync([Uid], ct);
         var note = (req.Note ?? "").Trim();
@@ -367,7 +442,7 @@ public class DisciplineController(
                 p.Id, p.StudentId, dr.Name, dr.Points, p.Note, p.CreatedAt, p.CreatedBy, "manual", notified, p.ReasonId));
         }
 
-        return new ClassDisciplinePointResultDto(items.Count, notifiedTotal, items);
+        return new ClassDisciplinePointResultDto(items.Count, notifiedTotal, items, skipped);
     }
 
     /// <summary>O'quvchining ball tarixi: qo'lda kiritilgan (o'chirsa bo'ladi) + jurnal davomati (faqat ko'rish).</summary>
@@ -626,6 +701,13 @@ public class DisciplineController(
             if (dr is not null)
             {
                 if (!dr.IsActive) return BadRequest(new { message = "Bu sabab faol emas" });
+                if (!MayUse(dr)) return NotOwner();
+                // The entry keeps its date, so the window is the one it was recorded in.
+                var day = p.CreatedAt.Length >= 10 && DateOnly.TryParseExact(p.CreatedAt[..10], "yyyy-MM-dd",
+                    System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var d)
+                    ? d : AppClock.Today;
+                if ((await DisciplineIncidents.PeriodTakenAsync(db, dr, [p.StudentId], day, p.Id, ct)).Count > 0)
+                    return Conflict(new { message = DisciplineIncidents.PeriodTakenMessage(dr) });
                 (p.ReasonName, p.Points) = (dr.Name, dr.Points);
             }
             else
