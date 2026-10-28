@@ -39,6 +39,15 @@ export const teacherApi = {
   /** Dars beradigan sinflar (sinf rahbarligi ham shu ro'yxatda). */
   classes: () => api.get(`${BASE}/classes`),
 
+  /* ---------- mavsumiy baholash (2026-10-28) — docs/modules/admission-and-testing.md §6.6 ---------- */
+
+  /** Faqat o'qituvchi dars beradigan sinf·fan juftlari. `seasonalMarks` ruxsati bo'lmasa — 403. */
+  seasonalScope: () => api.get(`${BASE}/seasonal-marks/scope`),
+  /** Bitta juftning davrdagi o'quvchilari, saqlangan ball va izoh bilan. */
+  seasonalStudents: (query) => api.get(`${BASE}/seasonal-marks/students${qs(query)}`),
+  /** Faqat o'zgargan qatorlar; ball ham izoh ham bo'sh — shu davrdagi bahoni o'chirish. */
+  seasonalBulk: (body) => api.post(`${BASE}/seasonal-marks/bulk`, body),
+
   /* ---------- jadval ---------- */
 
   /** Bir haftalik darslar. quarter/week berilmasa — server joriysini oladi. */

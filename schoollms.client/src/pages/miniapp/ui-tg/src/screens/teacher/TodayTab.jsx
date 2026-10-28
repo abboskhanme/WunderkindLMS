@@ -36,8 +36,9 @@ const POLLS_API = {
 }
 import { LessonAnalysisCard } from './LessonAnalysis'
 import { boardingSessions } from './BoardingScreen'
+import { SeasonalCard } from './SeasonalScreen'
 
-export function TodayTab({ profile, meta, onOpenAttendance, onOpenBoarding }) {
+export function TodayTab({ profile, meta, onOpenAttendance, onOpenBoarding, onOpenSeasonal }) {
   const perms = profile.permissions || []
   const canSchedule = perms.includes('schedule')
   const canJournal = perms.includes('journal')
@@ -119,6 +120,9 @@ export function TodayTab({ profile, meta, onOpenAttendance, onOpenBoarding }) {
 
             {/* Komendant (2026-10-12) — faqat roli bor o'qituvchida. */}
             {hasBoarding && <CommandantCard profile={profile} onOpen={onOpenBoarding} />}
+
+            {/* Mavsumiy baholash (2026-10-28) — har o'qituvchida; ruxsati yo'q bo'lsa ichida "Bo'lim yopiq". */}
+            {onOpenSeasonal && <SeasonalCard onOpen={onOpenSeasonal} />}
 
             {/* Qizil ro'yxat (2026-10-15): ota-ona bilan bog'lanish kerak bo'lgan o'quvchilar — faqat holat bo'lsa. */}
             {profile.homeroomClass && <RedListCard />}
