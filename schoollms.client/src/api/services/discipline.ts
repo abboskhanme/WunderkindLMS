@@ -6,6 +6,7 @@ import type {
   DisciplineFeed,
   DisciplineFeedFilters,
   DisciplineType,
+  DisciplinePeriod,
 } from '@/types'
 import { api, USE_MOCK } from '../client'
 
@@ -30,6 +31,30 @@ export interface SaveDisciplineReasonInput {
   isActive: boolean
   /** "Ijobiy / Salbiy" (docs/modules/behaviour.md). Omitted — `points` is stored as sent. */
   type?: DisciplineType
+  /** Mas'ullar (user id). `[]` = faqat admin qo'yadi; berilmasa — o'zgarmaydi. */
+  ownerUserIds?: string[]
+  period?: DisciplinePeriod
+}
+
+/** Ball sababining mas'uli bo'la oladigan odam: o'qituvchi (sinf rahbari ham) yoki xodim. */
+export interface DisciplineOwnerCandidate {
+  userId: string
+  fullName: string
+  kind: 'teacher' | 'staff'
+  /** "Sinf rahbari", "O'qituvchi" yoki xodim lavozimi */
+  label: string
+  isArchived: boolean
+}
+
+export async function getDisciplineOwnerCandidates(): Promise<DisciplineOwnerCandidate[]> {
+  const { data } = await api.get<DisciplineOwnerCandidate[]>('/admin/discipline/owner-candidates')
+  return data
+}
+
+export const disciplinePeriodLabel: Record<DisciplinePeriod, string> = {
+  none: 'Cheklovsiz',
+  week: 'Haftasiga 1 marta',
+  month: 'Oyiga 1 marta',
 }
 
 /** The type of a reason or an entry — the sign of its points. */
@@ -90,6 +115,8 @@ export interface ClassDisciplinePointResult {
   applied: number
   notifiedParents: number
   items: DisciplinePoint[]
+  /** Muddatli sabab: shu hafta / oy allaqachon olgan, shuning uchun o'tkazib yuborilgan o'quvchilar. */
+  skipped?: number
 }
 
 /**

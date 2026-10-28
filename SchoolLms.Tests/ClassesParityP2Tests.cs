@@ -440,7 +440,15 @@ public class ClassesParityP2Tests(ApiFixture fixture)
             new { classId = cls.Id, reasonId = reason.Id });
         Assert.Equal(HttpStatusCode.Forbidden, forbidden.StatusCode);
 
-        using var withPerm = await fixture.Api.ClientAsAsync(Roles.Staff, "discipline");
+        // With the key AND as the reason's owner — a point is given only through an owner.
+        var (staffUser, _) = await fixture.Api.SeedUserAsync(Roles.Staff, permissions: ["discipline"]);
+        await fixture.Api.WithDbAsync(async db =>
+        {
+            (await db.DisciplineReasons.SingleAsync(r => r.Id == reason.Id)).OwnerUserIds = [staffUser.Id];
+            await db.SaveChangesAsync();
+        });
+        using var withPerm = fixture.Api.ClientWithToken(
+            fixture.Api.TokenFor(Roles.Staff, staffUser.Id, staffUser.FullName, staffUser.Email));
         var ok = await withPerm.PostAsJsonAsync($"{Discipline}/points/class",
             new { classId = cls.Id, reasonId = reason.Id });
         Assert.Equal(HttpStatusCode.OK, ok.StatusCode);

@@ -40,7 +40,9 @@ export function BehaviourSheet({ student, reasons, onClose, onChanged }) {
     () => reasons.filter((r) => r.type === type).sort((a, b) => a.name.localeCompare(b.name)),
     [reasons, type],
   )
-  const selected = ofType.find((r) => r.id === reasonId) || null
+  // Muddatli sabab (haftasiga / oyiga bir marta) shu o'quvchiga shu muddatda qo'yilgan bo'lsa — tanlanmaydi.
+  const taken = useMemo(() => new Set(q.data?.takenReasonIds ?? []), [q.data])
+  const selected = ofType.find((r) => r.id === reasonId && !taken.has(r.id)) || null
 
   const pickType = (next) => {
     haptic()
@@ -131,23 +133,26 @@ export function BehaviourSheet({ student, reasons, onClose, onChanged }) {
 
       {ofType.length === 0 ? (
         <p className="mt-4 text-[13px] text-slate-400">
-          Bu turdagi sabab hali kiritilmagan. Maktab ma'muriyati «Ball sabablar» bo'limida qo'shadi.
+          Sizga biriktirilgan bu turdagi sabab yo'q. Maktab ma'muriyati «Ball sabablar» bo'limida mas'ul qilib
+          biriktiradi.
         </p>
       ) : (
         <div className="mt-3 flex flex-wrap gap-2">
           {ofType.map((r) => {
             const on = r.id === reasonId
+            const used = taken.has(r.id)
             return (
               <button
                 key={r.id}
                 type="button"
+                disabled={used}
                 onClick={() => {
                   haptic()
                   setReasonId(on ? null : r.id)
                 }}
                 title={r.description || r.name}
                 className={
-                  'rounded-xl px-3 py-2 text-left text-[14px] font-semibold ' +
+                  'rounded-xl px-3 py-2 text-left text-[14px] font-semibold disabled:opacity-50 ' +
                   (on ? 'bg-brand-ink text-brand' : 'bg-slate-100 text-slate-700')
                 }
               >
@@ -155,6 +160,13 @@ export function BehaviourSheet({ student, reasons, onClose, onChanged }) {
                 <span className={on ? '' : r.points < 0 ? 'text-red-600' : 'text-emerald-700'}>
                   {signedPoints(r.points)}
                 </span>
+                {r.period && r.period !== 'none' && (
+                  <span className="block text-[11px] font-medium text-slate-400">
+                    {used
+                      ? r.period === 'week' ? 'Shu hafta qo\'yilgan' : 'Shu oy qo\'yilgan'
+                      : r.period === 'week' ? 'Haftasiga 1 marta' : 'Oyiga 1 marta'}
+                  </span>
+                )}
               </button>
             )
           })}

@@ -103,7 +103,7 @@ export function IncidentFormModal({ open, student, editing, onClose, onSaved }: 
 
   /** Active reasons of the chosen type; the edited entry's reason stays listed even if retired. */
   const options = useMemo(() => {
-    const list = reasons.filter((r) => disciplineTypeOf(r.points) === type && (r.isActive || r.id === editing?.reasonId))
+    const list = reasons.filter((r) => disciplineTypeOf(r.points) === type && ((r.isActive && r.canUse !== false) || r.id === editing?.reasonId))
     return [...list].sort((a, b) => a.name.localeCompare(b.name))
   }, [reasons, type, editing])
   const selected = reasons.find((r) => r.id === reasonId) ?? null

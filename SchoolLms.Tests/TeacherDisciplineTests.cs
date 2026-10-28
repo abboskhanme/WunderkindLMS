@@ -73,6 +73,127 @@ public class TeacherDisciplineTests(ApiFixture fixture)
     }
 
     [Fact]
+    public async Task Reason_with_owners_is_seen_and_used_only_by_them()
+    {
+        var w = await SeedAsync();
+        await fixture.Api.WithDbAsync(async db =>
+        {
+            var reason = await db.DisciplineReasons.SingleAsync(r => r.Id == w.NegativeId);
+            reason.OwnerUserIds = [w.TUserId];
+            await db.SaveChangesAsync();
+        });
+
+        // T is the owner: sees both reasons and records with the owned one.
+        var mine = await ArrayAsync(w.T, $"{Base}/reasons");
+        Assert.Contains(mine, r => Str(r, "id") == w.NegativeId);
+        Assert.Contains(mine, r => Str(r, "id") == w.PositiveId);
+        Assert.Equal(HttpStatusCode.OK, (await Add(w.T, w.A1, w.NegativeId)).StatusCode);
+
+        // H2 reaches the same pupil but is not an owner: the reason is hidden and refused.
+        var theirs = await ArrayAsync(w.H2, $"{Base}/reasons");
+        Assert.DoesNotContain(theirs, r => Str(r, "id") == w.NegativeId);
+        Assert.Contains(theirs, r => Str(r, "id") == w.PositiveId);
+        Assert.Equal(HttpStatusCode.Forbidden, (await Add(w.H2, w.A1, w.NegativeId)).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await Add(w.H2, w.A1, w.PositiveId)).StatusCode);
+    }
+
+    [Fact]
+    public async Task Reason_without_owners_is_given_by_nobody_but_admin()
+    {
+        var w = await SeedAsync();
+        await fixture.Api.WithDbAsync(async db =>
+        {
+            (await db.DisciplineReasons.SingleAsync(r => r.Id == w.NegativeId)).OwnerUserIds = [];
+            await db.SaveChangesAsync();
+        });
+
+        Assert.DoesNotContain(await ArrayAsync(w.T, $"{Base}/reasons"), r => Str(r, "id") == w.NegativeId);
+        Assert.Equal(HttpStatusCode.Forbidden, (await Add(w.T, w.A1, w.NegativeId)).StatusCode);
+
+        // A staff account (a deputy director) with the discipline key is bound by owners too; admin is not.
+        using var staff = await fixture.Api.ClientAsAsync(Roles.Staff, "discipline");
+        Assert.Equal(HttpStatusCode.Forbidden,
+            (await staff.PostAsJsonAsync("/api/admin/discipline/points", new { studentId = w.A1, reasonId = w.NegativeId })).StatusCode);
+        using var admin = await fixture.Api.ClientAsAsync(Roles.Admin);
+        Assert.Equal(HttpStatusCode.OK,
+            (await admin.PostAsJsonAsync("/api/admin/discipline/points", new { studentId = w.A1, reasonId = w.NegativeId })).StatusCode);
+    }
+
+    [Fact]
+    public async Task Monthly_reason_is_given_once_per_pupil_in_a_month()
+    {
+        var w = await SeedAsync();
+        await fixture.Api.WithDbAsync(async db =>
+        {
+            (await db.DisciplineReasons.SingleAsync(r => r.Id == w.PositiveId)).Period = DisciplinePeriod.Month;
+            await db.SaveChangesAsync();
+        });
+
+        Assert.Equal(HttpStatusCode.OK, (await Add(w.T, w.A1, w.PositiveId)).StatusCode);
+        // Again this month — by anyone, admin included — is refused; another pupil is fine.
+        Assert.Equal(HttpStatusCode.Conflict, (await Add(w.H2, w.A1, w.PositiveId)).StatusCode);
+        using var admin = await fixture.Api.ClientAsAsync(Roles.Admin);
+        Assert.Equal(HttpStatusCode.Conflict,
+            (await admin.PostAsJsonAsync("/api/admin/discipline/points", new { studentId = w.A1, reasonId = w.PositiveId })).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await Add(w.T, w.A2, w.PositiveId)).StatusCode);
+
+        // The sheet marks the reason as taken for that pupil only.
+        var a1 = await (await w.T.GetAsync($"{Base}/points?studentId={w.A1}")).Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Contains(w.PositiveId, a1.GetProperty("takenReasonIds").EnumerateArray().Select(x => x.GetString()));
+
+        // An entry from last month does not block this month.
+        await fixture.Api.WithDbAsync(async db =>
+        {
+            var lastMonth = AppClock.Now.AddMonths(-1).ToString("o");
+            foreach (var p in await db.DisciplinePoints.Where(p => p.ReasonId == w.PositiveId).ToListAsync())
+                p.CreatedAt = lastMonth;
+            await db.SaveChangesAsync();
+        });
+        Assert.Equal(HttpStatusCode.OK, (await Add(w.T, w.A1, w.PositiveId)).StatusCode);
+    }
+
+    [Theory]
+    [InlineData("2026-10-28", DisciplinePeriod.Week, "2026-10-26", "2026-11-02")]
+    [InlineData("2026-11-01", DisciplinePeriod.Week, "2026-10-26", "2026-11-02")]
+    [InlineData("2026-10-26", DisciplinePeriod.Week, "2026-10-26", "2026-11-02")]
+    [InlineData("2026-09-15", DisciplinePeriod.Month, "2026-09-01", "2026-10-01")]
+    [InlineData("2026-12-31", DisciplinePeriod.Month, "2026-12-01", "2027-01-01")]
+    public void Period_window_is_the_calendar_week_or_month(string day, string period, string from, string until)
+    {
+        var w = DisciplinePeriod.Window(period, DateOnly.Parse(day))!.Value;
+        Assert.Equal(DateOnly.Parse(from), w.From);
+        Assert.Equal(DateOnly.Parse(until), w.Until);
+        Assert.Null(DisciplinePeriod.Window(DisciplinePeriod.None, DateOnly.Parse(day)));
+    }
+
+    [Fact]
+    public async Task Admin_assigns_owners_and_an_unknown_teacher_is_refused()
+    {
+        var w = await SeedAsync();
+        var ownerId = w.TUserId;
+        using var admin = await fixture.Api.ClientAsAsync(Roles.Admin, "discipline");
+        const string reasons = "/api/admin/discipline/reasons";
+
+        var created = await admin.PostAsJsonAsync(reasons, new
+        {
+            name = $"Mas'ulli {Guid.NewGuid():N}", points = 2, type = "positive", ownerUserIds = new[] { ownerId },
+        });
+        Assert.Equal(HttpStatusCode.OK, created.StatusCode);
+        var body = await created.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal([ownerId], body.GetProperty("ownerUserIds").EnumerateArray().Select(x => x.GetString()));
+
+        // Editing without the field (an older client) keeps the owners.
+        var id = Str(body, "id");
+        var kept = await admin.PutAsJsonAsync($"{reasons}/{id}", new { name = "Yangi nom", points = 2, type = "positive" });
+        Assert.Equal(ownerId, (await kept.Content.ReadFromJsonAsync<JsonElement>())
+            .GetProperty("ownerUserIds")[0].GetString());
+
+        var unknown = await admin.PutAsJsonAsync($"{reasons}/{id}",
+            new { name = "Yangi nom", points = 2, type = "positive", ownerUserIds = new[] { "yoq-ustoz" } });
+        Assert.Equal(HttpStatusCode.BadRequest, unknown.StatusCode);
+    }
+
+    [Fact]
     public async Task Subject_teacher_records_for_a_pupil_of_their_class_author_from_the_token()
     {
         var w = await SeedAsync();
@@ -284,13 +405,18 @@ public class TeacherDisciplineTests(ApiFixture fixture)
             null!, "", "", null!, null!, null!);
 
         var (tUser, t) = await TeacherAsync(w0, TeacherPermissions.Journal, lessonInA: true);
-        var (_, h) = await TeacherAsync(w0, TeacherPermissions.Journal, homeroomOf: classB.Id);
+        var (hUser, h) = await TeacherAsync(w0, TeacherPermissions.Journal, homeroomOf: classB.Id);
         // A second teacher of class A (homeroom) — a colleague whose entries T cannot delete.
-        var (_, h2) = await TeacherAsync(w0, TeacherPermissions.Journal, homeroomOf: classA.Id);
+        var (h2User, h2) = await TeacherAsync(w0, TeacherPermissions.Journal, homeroomOf: classA.Id);
         var (sUser, s) = await TeacherAsync(w0, TeacherPermissions.Journal);
 
         await fixture.Api.WithDbAsync(async db =>
         {
+            // A point is given only through an owner — the four teachers own the active reasons.
+            List<string> everyone = [tUser.Id, hUser.Id, h2User.Id, sUser.Id];
+            foreach (var r in await db.DisciplineReasons.Where(r => r.Id == positive.Id || r.Id == negative.Id).ToListAsync())
+                r.OwnerUserIds = everyone;
+
             var substitute = await db.Teachers.SingleAsync(x => x.UserId == sUser.Id);
             db.LessonSubstitutions.Add(new LessonSubstitution
             {

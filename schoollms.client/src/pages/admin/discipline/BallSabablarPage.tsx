@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Plus, Pencil, Trash2, CalendarCheck, Send } from 'lucide-react'
-import type { DisciplineReason, DisciplineType } from '@/types'
+import { Plus, Pencil, Trash2, CalendarCheck, Send, Users, Search, Repeat } from 'lucide-react'
+import type { DisciplineReason, DisciplineType, DisciplinePeriod } from '@/types'
 import {
   getDisciplineReasons,
   createDisciplineReason,
@@ -9,6 +9,9 @@ import {
   setAttendanceReasonPoints,
   disciplineTypeLabel,
   disciplineTypeOf,
+  disciplinePeriodLabel,
+  getDisciplineOwnerCandidates,
+  type DisciplineOwnerCandidate,
 } from '@/api/services/discipline'
 import { cn } from '@/lib/utils'
 import { Card } from '@/components/ui/Card'
@@ -32,12 +35,33 @@ export function BallSabablarPage() {
   const [notifyParent, setNotifyParent] = useState(false)
   const [description, setDescription] = useState('')
   const [isActive, setIsActive] = useState(true)
+  // Mas'ullar (o'qituvchi, sinf rahbari, xodim): ball FAQAT ular orqali qo'yiladi; bo'sh = faqat admin.
+  const [candidates, setCandidates] = useState<DisciplineOwnerCandidate[]>([])
+  const [ownerIds, setOwnerIds] = useState<string[]>([])
+  const [ownerSearch, setOwnerSearch] = useState('')
+  const [period, setPeriod] = useState<DisciplinePeriod>('none')
 
   useEffect(() => {
     getDisciplineReasons()
       .then(setReasons)
       .finally(() => setLoading(false))
+    getDisciplineOwnerCandidates()
+      .then(setCandidates)
+      .catch(() => setCandidates([]))
   }, [])
+
+  const ownerName = useMemo(() => new Map(candidates.map((c) => [c.userId, c.fullName])), [candidates])
+  // Arxivdagi o'qituvchi tanlanmaydi, lekin oldin biriktirilgan bo'lsa ro'yxatda qoladi (olib tashlash uchun).
+  const ownerOptions = useMemo(() => {
+    const q = ownerSearch.trim().toLowerCase()
+    return candidates.filter(
+      (c) =>
+        (!c.isArchived || ownerIds.includes(c.userId)) &&
+        (!q || c.fullName.toLowerCase().includes(q) || c.label.toLowerCase().includes(q)),
+    )
+  }, [candidates, ownerIds, ownerSearch])
+  const toggleOwner = (id: string) =>
+    setOwnerIds((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]))
 
   const attendance = useMemo(() => reasons.filter((r) => r.kind === 'attendance'), [reasons])
   const other = useMemo(
@@ -56,6 +80,9 @@ export function BallSabablarPage() {
     setNotifyParent(false)
     setDescription('')
     setIsActive(true)
+    setOwnerIds([])
+    setOwnerSearch('')
+    setPeriod('none')
     setOpen(true)
   }
   const openEdit = (r: DisciplineReason) => {
@@ -66,6 +93,9 @@ export function BallSabablarPage() {
     setNotifyParent(r.notifyParent)
     setDescription(r.description ?? '')
     setIsActive(r.isActive)
+    setOwnerIds(r.ownerUserIds ?? [])
+    setOwnerSearch('')
+    setPeriod(r.period ?? 'none')
     setOpen(true)
   }
 
@@ -80,6 +110,8 @@ export function BallSabablarPage() {
       notifyParent,
       description: description.trim(),
       isActive,
+      ownerUserIds: ownerIds,
+      period,
     }
     let saved: DisciplineReason
     if (editing) {
@@ -124,6 +156,28 @@ export function BallSabablarPage() {
       {disciplineTypeLabel[t]}
     </span>
   )
+
+  const OwnersCell = ({ ids }: { ids: string[] }) => {
+    if (ids.length === 0)
+      return (
+        <span
+          title="Mas'ul biriktirilmagan — bu sabab bilan faqat admin ball qo'ya oladi"
+          className="rounded-md bg-amber-50 px-1.5 py-0.5 text-xs font-medium text-amber-600"
+        >
+          Biriktirilmagan
+        </span>
+      )
+    const names = ids.map((id) => ownerName.get(id) ?? "Noma'lum")
+    return (
+      <span
+        title={names.join('\n')}
+        className="inline-flex max-w-[14rem] items-center gap-1 rounded-md bg-violet-50 px-1.5 py-0.5 text-xs font-medium text-violet-600"
+      >
+        <Users className="h-3 w-3 shrink-0" />
+        <span className="truncate">{names.length === 1 ? names[0] : `${names.length} ta mas'ul`}</span>
+      </span>
+    )
+  }
 
   return (
     <div className="space-y-6">
@@ -231,6 +285,7 @@ export function BallSabablarPage() {
                     <th className="px-4 py-3">Sabab</th>
                     <th className="px-4 py-3">Turi</th>
                     <th className="px-4 py-3">Ball</th>
+                    <th className="px-4 py-3">Mas'ullar</th>
                     <th className="px-4 py-3 text-right">Amallar</th>
                   </tr>
                 </thead>
@@ -251,6 +306,14 @@ export function BallSabablarPage() {
                               <Send className="h-3 w-3" /> Ota-onaga xabar
                             </span>
                           )}
+                          {r.period && r.period !== 'none' && (
+                            <span
+                              title="Bitta o'quvchiga shu muddat ichida faqat bir marta qo'yiladi"
+                              className="inline-flex items-center gap-1 rounded-md bg-amber-50 px-1.5 py-0.5 text-xs font-medium text-amber-700"
+                            >
+                              <Repeat className="h-3 w-3" /> {disciplinePeriodLabel[r.period]}
+                            </span>
+                          )}
                           {!r.isActive && (
                             <span className="rounded-md bg-slate-100 px-1.5 py-0.5 text-xs text-slate-400">
                               Faol emas
@@ -264,6 +327,9 @@ export function BallSabablarPage() {
                       </td>
                       <td className="px-4 py-3">
                         <PointsBadge p={r.points} />
+                      </td>
+                      <td className="px-4 py-3">
+                        <OwnersCell ids={r.ownerUserIds ?? []} />
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center justify-end gap-0.5">
@@ -289,7 +355,7 @@ export function BallSabablarPage() {
                   ))}
                   {other.length === 0 && (
                     <tr>
-                      <td colSpan={5} className="px-4 py-8 text-center text-slate-400">
+                      <td colSpan={6} className="px-4 py-8 text-center text-slate-400">
                         {typeFilter === 'all'
                           ? 'Hali sabab qo\'shilmagan — "Yangi sabab" tugmasi orqali qo\'shing'
                           : `${disciplineTypeLabel[typeFilter]} sabab yo'q`}
@@ -387,6 +453,86 @@ export function BallSabablarPage() {
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
               />
+              <div>
+                <span className="mb-1 block text-sm font-medium text-slate-700">Muddat</span>
+                <div className="grid grid-cols-3 gap-2">
+                  {(['none', 'week', 'month'] as const).map((p) => (
+                    <button
+                      key={p}
+                      type="button"
+                      onClick={() => setPeriod(p)}
+                      className={cn(
+                        'rounded-lg border px-2 py-2 text-xs font-semibold transition-colors',
+                        period === p
+                          ? 'border-brand-300 bg-brand-50 text-brand-700'
+                          : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50',
+                      )}
+                    >
+                      {disciplinePeriodLabel[p]}
+                    </button>
+                  ))}
+                </div>
+                <p className="mt-1 text-xs text-slate-400">
+                  {period === 'none'
+                    ? 'Bitta o\'quvchiga xohlagancha qo\'yiladi.'
+                    : period === 'week'
+                      ? "Bitta o'quvchiga shu hafta (dushanba–yakshanba) ichida faqat bir marta qo'yiladi."
+                      : "Bitta o'quvchiga shu oy ichida faqat bir marta qo'yiladi (masalan, sentabr uchun qo'yilsa — sentabr tugaguncha qayta qo'yilmaydi)."}
+                </p>
+              </div>
+              <div>
+                <div className="mb-1 flex items-center justify-between gap-2">
+                  <span className="text-sm font-medium text-slate-700">Mas'ullar</span>
+                  {ownerIds.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setOwnerIds([])}
+                      className="text-xs font-medium text-slate-400 hover:text-slate-600"
+                    >
+                      Tozalash
+                    </button>
+                  )}
+                </div>
+                <p className="mb-2 text-xs text-slate-400">
+                  {ownerIds.length === 0
+                    ? "Hech kim tanlanmagan — bu sabab bilan faqat admin ball qo'ya oladi. Ball qo'yadigan o'qituvchi, sinf rahbari yoki xodimni belgilang."
+                    : `Sabab faqat tanlangan ${ownerIds.length} ta mas'ulga ko'rinadi va faqat ular shu sabab bilan ball qo'ya oladi.`}
+                </p>
+                <div className="rounded-lg border border-slate-200">
+                  <div className="flex items-center gap-2 border-b border-slate-100 px-3 py-2">
+                    <Search className="h-4 w-4 shrink-0 text-slate-400" />
+                    <input
+                      value={ownerSearch}
+                      onChange={(e) => setOwnerSearch(e.target.value)}
+                      placeholder="Ism yoki lavozim bo'yicha qidirish"
+                      className="w-full bg-transparent text-sm text-slate-700 outline-none placeholder:text-slate-400"
+                    />
+                  </div>
+                  <div className="max-h-48 overflow-y-auto py-1">
+                    {ownerOptions.map((c) => (
+                      <label
+                        key={c.userId}
+                        className="flex cursor-pointer items-center gap-2 px-3 py-1.5 text-sm hover:bg-slate-50"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={ownerIds.includes(c.userId)}
+                          onChange={() => toggleOwner(c.userId)}
+                          className="h-4 w-4 shrink-0 rounded border-slate-300 accent-brand-600"
+                        />
+                        <span className={cn('min-w-0 flex-1 truncate', c.isArchived ? 'text-slate-400' : 'text-slate-700')}>
+                          {c.fullName}
+                          {c.isArchived && ' (arxiv)'}
+                        </span>
+                        <span className="shrink-0 text-xs text-slate-400">{c.label}</span>
+                      </label>
+                    ))}
+                    {ownerOptions.length === 0 && (
+                      <p className="px-3 py-3 text-center text-xs text-slate-400">Hech kim topilmadi</p>
+                    )}
+                  </div>
+                </div>
+              </div>
               <label className="flex cursor-pointer items-start gap-2">
                 <input
                   type="checkbox"
