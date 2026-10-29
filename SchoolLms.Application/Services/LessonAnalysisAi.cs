@@ -194,13 +194,13 @@ public static class LessonAiPrompt
 /// <summary>
 /// Gemini over REST (<c>generativelanguage.googleapis.com/v1beta/models/{model}:generateContent</c>).
 /// Config: <c>Gemini:ApiKey</c> (env <c>Gemini__ApiKey</c>, never in the repo) and
-/// <c>Gemini:Model</c> (env <c>Gemini__Model</c>, default <c>gemini-3.8-flash</c>). The key travels in the
+/// <c>Gemini:Model</c> (env <c>Gemini__Model</c>, default <c>gemini-3.5-flash-lite</c>). The key travels in the
 /// <c>x-goog-api-key</c> header, never in the URL — a query string ends up in logs.
 /// </summary>
 public sealed class GeminiLessonAnalysisAi(HttpClient http, IConfiguration config) : ILessonAnalysisAi
 {
     // gemini-2.5-flash answers 404 "no longer available to new users" to newly created keys (seen 2026-10-28).
-    public const string DefaultModel = "gemini-3.8-flash";
+    public const string DefaultModel = "gemini-3.5-flash-lite";
 
     public const string MissingKeyError =
         "Gemini API kaliti sozlanmagan. Administrator serverdagi .env faylga "

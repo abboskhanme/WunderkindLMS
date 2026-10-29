@@ -127,7 +127,7 @@ Port `ai.py` 1:1: same system prompt (verbatim), same observation text, same JSO
 output keys (`umumiy_xulosa`, `kuchli_tomonlar`, `rivojlantirish`, `tavsiyalar`), REST
 `generativelanguage.googleapis.com/v1beta/models/{model}:generateContent` with
 `HttpClient`. Config `Gemini:ApiKey` (env `Gemini__ApiKey`, never in the repo),
-`Gemini:Model` default `gemini-3.8-flash` (env `GEMINI_MODEL`). Best-effort: any failure → `ai_error`, the
+`Gemini:Model` default `gemini-3.5-flash-lite` (env `GEMINI_MODEL`). Best-effort: any failure → `ai_error`, the
 observation still completes; missing key → a clear `ai_error`, no call. Tests never hit
 the network.
 
