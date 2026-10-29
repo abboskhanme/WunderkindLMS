@@ -23,6 +23,56 @@ namespace SchoolLms.Infrastructure.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("SchoolLms.Domain.AbsenceComment", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<string>("Comment")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("comment");
+
+                    b.Property<DateOnly>("Date")
+                        .HasColumnType("date")
+                        .HasColumnName("date");
+
+                    b.Property<string>("StudentId")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("student_id");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<string>("UpdatedBy")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("updated_by");
+
+                    b.Property<string>("UpdatedByName")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("updated_by_name");
+
+                    b.HasKey("Id")
+                        .HasName("pk_absence_comments");
+
+                    b.HasIndex("Date")
+                        .HasDatabaseName("ix_absence_comments_date");
+
+                    b.HasIndex("StudentId", "Date")
+                        .IsUnique()
+                        .HasDatabaseName("ux_absence_comments_student_date");
+
+                    b.ToTable("absence_comments", (string)null);
+                });
+
             modelBuilder.Entity("SchoolLms.Domain.AbsenceNotice", b =>
                 {
                     b.Property<Guid>("Id")
@@ -2865,6 +2915,20 @@ namespace SchoolLms.Infrastructure.Migrations
                         .HasDefaultValue(false)
                         .HasColumnName("notify_parent");
 
+                    b.PrimitiveCollection<List<string>>("OwnerUserIds")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("text[]")
+                        .HasColumnName("owner_user_ids")
+                        .HasDefaultValueSql("'{}'::text[]");
+
+                    b.Property<string>("Period")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("text")
+                        .HasDefaultValue("none")
+                        .HasColumnName("period");
+
                     b.Property<int>("Points")
                         .HasColumnType("integer")
                         .HasColumnName("points");
@@ -2872,7 +2936,10 @@ namespace SchoolLms.Infrastructure.Migrations
                     b.HasKey("Id")
                         .HasName("pk_discipline_reasons");
 
-                    b.ToTable("discipline_reasons", (string)null);
+                    b.ToTable("discipline_reasons", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_discipline_reasons_period", "period in ('none','week','month')");
+                        });
                 });
 
             modelBuilder.Entity("SchoolLms.Domain.Discount", b =>
@@ -10893,6 +10960,16 @@ namespace SchoolLms.Infrastructure.Migrations
                         {
                             t.HasCheckConstraint("ck_week_assignments_owner_kind", "owner_kind in ('class','group')");
                         });
+                });
+
+            modelBuilder.Entity("SchoolLms.Domain.AbsenceComment", b =>
+                {
+                    b.HasOne("SchoolLms.Domain.Student", null)
+                        .WithMany()
+                        .HasForeignKey("StudentId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_absence_comments_students_student_id");
                 });
 
             modelBuilder.Entity("SchoolLms.Domain.AbsenceNotice", b =>

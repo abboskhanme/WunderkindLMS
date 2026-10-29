@@ -243,35 +243,8 @@ public sealed partial class AttendanceRedListService(
     /// their active pupils — each pupil once, under the first of those groups (classes, then groups).
     /// The same circle as the homeroom debts card (HomeroomDebts).
     /// </summary>
-    public async Task<(List<string> Groups, Dictionary<string, string> GroupOf)> TeacherScopeAsync(
-        string teacherId, CancellationToken ct = default)
-    {
-        var classNames = (await HomeroomDirectory.ClassesOfAsync(db, teacherId, ct)).Select(c => c.Name).ToList();
-        var tracks = await (from gt in db.StudyGroupTeachers.AsNoTracking()
-                            join g in db.StudyGroups.AsNoTracking() on gt.GroupId equals g.Id
-                            where gt.TeacherId == teacherId && g.IsTrack && !g.IsArchived
-                            orderby g.Name
-                            select new { g.Id, g.Name }).ToListAsync(ct);
-        var groups = classNames.Concat(tracks.Select(t => t.Name)).Distinct(StringComparer.Ordinal).ToList();
-        var groupOf = new Dictionary<string, string>(StringComparer.Ordinal);
-        if (groups.Count == 0) return (groups, groupOf);
-
-        var classPupils = await db.Students.AsNoTracking()
-            .Where(s => !s.IsArchived && classNames.Contains(s.ClassName))
-            .Select(s => new { s.Id, s.ClassName })
-            .ToListAsync(ct);
-        foreach (var p in classPupils.OrderBy(p => classNames.IndexOf(p.ClassName))) groupOf.TryAdd(p.Id, p.ClassName);
-
-        var trackIds = tracks.Select(t => t.Id).ToList();
-        var trackName = tracks.ToDictionary(t => t.Id, t => t.Name);
-        var members = await (from m in db.StudyGroupMembers.AsNoTracking()
-                             join s in db.Students.AsNoTracking() on m.StudentId equals s.Id
-                             where trackIds.Contains(m.GroupId) && m.LeftOn == null && !s.IsArchived
-                             select new { m.StudentId, m.GroupId }).ToListAsync(ct);
-        foreach (var m in members.OrderBy(m => trackName[m.GroupId], StringComparer.Ordinal))
-            groupOf.TryAdd(m.StudentId, trackName[m.GroupId]);
-        return (groups, groupOf);
-    }
+    public Task<(List<string> Groups, Dictionary<string, string> GroupOf)> TeacherScopeAsync(
+        string teacherId, CancellationToken ct = default) => HomeroomDirectory.PupilsAsync(db, teacherId, ct);
 
     // =====================================================================
     //  Actions

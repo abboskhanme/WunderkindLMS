@@ -132,6 +132,8 @@ public class AuditService(IAppDbContext db, IHttpContextAccessor http)
     public const string EntityHoliday = "Holiday";
     /// <summary>Contract templates and sent contracts (Shartnomalar).</summary>
     public const string EntityContract = "Contract";
+    /// <summary>A homeroom teacher changed the reason of a missed day or wrote why the pupil was away.</summary>
+    public const string EntityAttendanceDay = "AttendanceDay";
 
     /// <summary>
     /// Changed fields only: <paramref name="before"/> and <paramref name="after"/> are flattened

@@ -129,18 +129,19 @@ public static class HrAiPrompt
 /// <summary>
 /// Gemini over REST — the same call and config as <see cref="Services.GeminiLessonAnalysisAi"/>:
 /// <c>Gemini:ApiKey</c> (env <c>Gemini__ApiKey</c>, never in the repo; must be a paid-tier key — staff
-/// names go to it), <c>Gemini:Model</c> (default <c>gemini-2.5-flash</c>), key in the header.
+/// names go to it), <c>Gemini:Model</c> (default <see cref="Services.GeminiLessonAnalysisAi.DefaultModel"/>), key in the header.
 /// </summary>
 public sealed class GeminiHrTaskAi(HttpClient http, IConfiguration config) : IHrTaskAi
 {
+    /// <summary>Pauses between retries on an overloaded model; tests set it to zero.</summary>
+    public IReadOnlyList<TimeSpan> RetryDelays { get; init; } = Services.GeminiRest.DefaultRetryDelays;
+
     public bool IsConfigured => !string.IsNullOrWhiteSpace(config["Gemini:ApiKey"]);
 
     public async Task<HrAiReply> ProposeAsync(HrAiRequest request, CancellationToken ct = default)
     {
         var apiKey = config["Gemini:ApiKey"];
         if (string.IsNullOrWhiteSpace(apiKey)) return new HrAiReply(null, Services.GeminiLessonAnalysisAi.MissingKeyError);
-        var model = config["Gemini:Model"];
-        if (string.IsNullOrWhiteSpace(model)) model = Services.GeminiLessonAnalysisAi.DefaultModel;
 
         var parts = new List<object> { new { text = HrAiPrompt.BuildContext(request) } };
         if (request.Audio is { } audio)
@@ -152,15 +153,14 @@ public sealed class GeminiHrTaskAi(HttpClient http, IConfiguration config) : IHr
             ["generationConfig"] = new { temperature = 0.2, responseMimeType = "application/json" },
         };
 
-        var url = $"https://generativelanguage.googleapis.com/v1beta/models/{Uri.EscapeDataString(model.Trim())}:generateContent";
         try
         {
-            using var message = new HttpRequestMessage(HttpMethod.Post, url) { Content = JsonContent.Create(payload) };
-            message.Headers.Add("x-goog-api-key", apiKey.Trim());
-            using var response = await http.SendAsync(message, ct);
-            var body = await response.Content.ReadAsStringAsync(ct);
-            if (!response.IsSuccessStatusCode)
-                return new HrAiReply(null, $"Gemini API xatosi ({(int)response.StatusCode})");
+            var response = await Services.GeminiRest.GenerateAsync(
+                http, apiKey, Services.GeminiRest.Models(config), payload, ct, RetryDelays);
+            var body = response.Body;
+            if (!response.IsSuccess)
+                return new HrAiReply(null,
+                    $"Gemini API xatosi ({response.StatusCode}, {response.Model}): {(body.Length > 300 ? body[..300] : body)}");
             using var doc = JsonDocument.Parse(body);
             var text = doc.RootElement.GetProperty("candidates")[0]
                 .GetProperty("content").GetProperty("parts")[0]

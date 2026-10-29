@@ -320,6 +320,11 @@ export function EventsList({
                         })}
                       </span>
                     )}
+                    {e.comment && (
+                      <p className="mt-1 max-w-xs whitespace-pre-line break-words text-xs text-slate-500" title="Sinf rahbari izohi">
+                        «{e.comment}»
+                      </p>
+                    )}
                   </td>
                   <td className="whitespace-nowrap px-4 py-3 tabular-nums text-slate-500">{lessonsText(e)}</td>
                 </tr>

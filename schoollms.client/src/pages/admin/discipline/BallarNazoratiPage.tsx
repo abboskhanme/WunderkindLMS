@@ -69,7 +69,7 @@ export function BallarNazoratiPage() {
       .then(([s, r]) => {
         setScores(s)
         // Faolsizlantirilgan sabab bilan yangi ball qo'yilmaydi (server ham rad etadi).
-        setReasons(r.filter((x) => x.isActive))
+        setReasons(r.filter((x) => x.isActive && x.canUse !== false))
       })
       .finally(() => setLoading(false))
   }, [])

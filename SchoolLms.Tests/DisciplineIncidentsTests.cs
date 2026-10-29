@@ -141,7 +141,16 @@ public class DisciplineIncidentsTests(ApiFixture fixture)
         Assert.Equal(HttpStatusCode.Forbidden, (await viewer.DeleteAsync($"{Base}/points/{pointId}")).StatusCode);
         Assert.Equal(HttpStatusCode.Forbidden, (await teacher.DeleteAsync($"{Base}/points/{pointId}")).StatusCode);
 
-        using var editor = await fixture.Api.ClientAsAsync(Roles.Staff, "discipline");
+        // A staff editor moves the entry to a reason only when they are its owner.
+        var (editorUser, _) = await fixture.Api.SeedUserAsync(Roles.Staff, permissions: ["discipline"]);
+        using var editor = fixture.Api.ClientWithToken(
+            fixture.Api.TokenFor(Roles.Staff, editorUser.Id, editorUser.FullName, editorUser.Email));
+        Assert.Equal(HttpStatusCode.Forbidden, (await editor.PutAsJsonAsync($"{Base}/points/{pointId}", body)).StatusCode);
+        await fixture.Api.WithDbAsync(async db =>
+        {
+            (await db.DisciplineReasons.SingleAsync(r => r.Id == w.PositiveId)).OwnerUserIds = [editorUser.Id];
+            await db.SaveChangesAsync();
+        });
         Assert.Equal(HttpStatusCode.OK, (await editor.PutAsJsonAsync($"{Base}/points/{pointId}", body)).StatusCode);
         Assert.Equal(HttpStatusCode.NoContent, (await editor.DeleteAsync($"{Base}/points/{pointId}")).StatusCode);
 

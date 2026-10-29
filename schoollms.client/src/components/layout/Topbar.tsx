@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { unlinkTelegramSession } from '@/api/services/auth'
-import { ChevronDown, LogOut, PanelLeftClose, PanelLeftOpen, Settings } from 'lucide-react'
+import { telegramOfToken, unlinkTelegramSession } from '@/api/services/auth'
+import { ChevronDown, LogOut, PanelLeftClose, PanelLeftOpen, Settings, Users } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '@/context/auth-context'
 import { NotificationsBell } from './NotificationsBell'
@@ -9,6 +9,7 @@ import { Modal } from '@/components/ui/Modal'
 import { UserAvatar } from '@/components/ui/UserAvatar'
 import { Toast } from '@/components/ui/Toast'
 import { AccountSettings } from '@/pages/admin/account/AccountSettings'
+import { TelegramAccounts } from './TelegramAccounts'
 
 interface TopbarProps {
   /** Yon menyu hozir ochiqmi — tugma belgisi shunga qarab o'zgaradi. */
@@ -26,6 +27,10 @@ export function Topbar({ sidebarOpen, onMenuClick }: TopbarProps) {
   const [toast, setToast] = useState<string | null>(null)
   const closeToast = useCallback(() => setToast(null), [])
   const closeAccount = useCallback(() => setAccountOpen(false), [])
+  // Telegram'dan ochilgan panel (2026-10-28): shu Telegram'dagi akkauntlar orasida chiqmasdan almashish.
+  const [accountsOpen, setAccountsOpen] = useState(false)
+  const closeAccounts = useCallback(() => setAccountsOpen(false), [])
+  const fromTelegram = Boolean(telegramOfToken(localStorage.getItem('token')))
 
   // Tashqariga bosilganda yoki Escape bosilganda profil menyusini yopamiz
   useEffect(() => {
@@ -119,6 +124,19 @@ export function Topbar({ sidebarOpen, onMenuClick }: TopbarProps) {
                 <Settings className="h-4 w-4 text-slate-400" />
                 Akkaunt sozlamalari
               </button>
+              {fromTelegram && (
+                <button
+                  role="menuitem"
+                  onClick={() => {
+                    setMenuOpen(false)
+                    setAccountsOpen(true)
+                  }}
+                  className="flex w-full items-center gap-2 px-4 py-2.5 text-sm text-slate-700 transition-colors hover:bg-slate-50"
+                >
+                  <Users className="h-4 w-4 text-slate-400" />
+                  Akkauntlar
+                </button>
+              )}
               <button
                 role="menuitem"
                 onClick={handleLogout}
@@ -139,6 +157,9 @@ export function Topbar({ sidebarOpen, onMenuClick }: TopbarProps) {
             setToast('Akkaunt ma\'lumotlari saqlandi')
           }}
         />
+      </Modal>
+      <Modal open={accountsOpen} onClose={closeAccounts} title="Akkauntlar" size="sm">
+        {accountsOpen && <TelegramAccounts />}
       </Modal>
       <Toast message={toast} onClose={closeToast} />
     </header>

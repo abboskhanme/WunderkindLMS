@@ -39,6 +39,15 @@ export const teacherApi = {
   /** Dars beradigan sinflar (sinf rahbarligi ham shu ro'yxatda). */
   classes: () => api.get(`${BASE}/classes`),
 
+  /* ---------- mavsumiy baholash (2026-10-28) — docs/modules/admission-and-testing.md §6.6 ---------- */
+
+  /** Faqat o'qituvchi dars beradigan sinf·fan juftlari. `seasonalMarks` ruxsati bo'lmasa — 403. */
+  seasonalScope: () => api.get(`${BASE}/seasonal-marks/scope`),
+  /** Bitta juftning davrdagi o'quvchilari, saqlangan ball va izoh bilan. */
+  seasonalStudents: (query) => api.get(`${BASE}/seasonal-marks/students${qs(query)}`),
+  /** Faqat o'zgargan qatorlar; ball ham izoh ham bo'sh — shu davrdagi bahoni o'chirish. */
+  seasonalBulk: (body) => api.post(`${BASE}/seasonal-marks/bulk`, body),
+
   /* ---------- jadval ---------- */
 
   /** Bir haftalik darslar. quarter/week berilmasa — server joriysini oladi. */
@@ -75,6 +84,12 @@ export const teacherApi = {
   /** Holatga amal: `{ status, comment, callbackOn }` — yangilangan holatni qaytaradi. */
   addRedListAction: (caseId, body) =>
     api.post(`${BASE}/homeroom/red-list/${encodeURIComponent(caseId)}/actions`, body),
+
+  /** Sinfim · Kelmaganlar (2026-10-26): shu kuni kelmagan o'quvchilarim, sabab va izoh. */
+  homeroomAbsences: (date) => api.get(`${BASE}/homeroom/absences?date=${encodeURIComponent(date)}`),
+  /** Kelmagan kunning sababi va/yoki izohi: `{ reasonId, comment }` — yangilangan qatorni qaytaradi. */
+  saveHomeroomAbsence: (studentId, date, body) =>
+    api.put(`${BASE}/homeroom/absences/${encodeURIComponent(studentId)}/${encodeURIComponent(date)}`, body),
 
   /** Telegramdan tashqarida (brauzerda) — o'sha Excel to'g'ridan-to'g'ri yuklab olinadi. */
   downloadHomeroomDebts: async ({ group, all } = {}) => {

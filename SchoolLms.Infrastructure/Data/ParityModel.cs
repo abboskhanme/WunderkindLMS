@@ -232,6 +232,13 @@ internal static class ParityModel
 
             // Mavjud sabablar faol bo'lib qoladi — sukut `true`.
             e.Property(x => x.IsActive).HasDefaultValue(true);
+
+            // Mas'ulsiz = hammaga ko'rinadi: mavjud sabablar bo'sh ro'yxat oladi.
+            e.Property(x => x.OwnerUserIds).HasDefaultValueSql("'{}'::text[]");
+
+            // Mavjud sabablar muddatsiz qoladi — xatti-harakat o'zgarmaydi.
+            e.Property(x => x.Period).HasDefaultValue(DisciplinePeriod.None);
+            e.ToTable(t => t.HasCheckConstraint("ck_discipline_reasons_period", "period in ('none','week','month')"));
         });
     }
 

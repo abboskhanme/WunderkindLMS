@@ -112,3 +112,39 @@ export async function unlinkTelegramSession(): Promise<void> {
     /* the logout goes on regardless */
   }
 }
+
+// ---------------------------------------------------------------------------
+//  Several accounts on one Telegram (client, 2026-10-08; staff panel 2026-10-28) — the same
+//  /api/tg/accounts the Mini App uses. Works only in a session opened from Telegram (tg_uid).
+// ---------------------------------------------------------------------------
+
+export interface TelegramSavedAccount {
+  userId: string
+  fullName: string
+  role: string
+  subtitle: string
+  active: boolean
+}
+
+/** The accounts this Telegram can switch to — the active one first. */
+export async function listTelegramAccounts(): Promise<TelegramSavedAccount[]> {
+  const { data } = await api.get<{ accounts: TelegramSavedAccount[] }>('/tg/accounts')
+  return data.accounts
+}
+
+/** Switches to a saved account — no password; answers with that account's session. */
+export async function switchTelegramAccount(userId: string): Promise<LoginResult> {
+  const { data } = await api.post<LoginResult>(`/tg/accounts/${encodeURIComponent(userId)}/switch`)
+  return data
+}
+
+/** Adds an account with its own login and password and switches to it. */
+export async function addTelegramAccount(login: string, password: string): Promise<LoginResult> {
+  const { data } = await api.post<LoginResult>('/tg/accounts', { login, password })
+  return data
+}
+
+/** Drops a saved account from this Telegram's list (never the active one). */
+export async function forgetTelegramAccount(userId: string): Promise<void> {
+  await api.delete(`/tg/accounts/${encodeURIComponent(userId)}`)
+}

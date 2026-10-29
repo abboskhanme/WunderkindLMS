@@ -194,12 +194,13 @@ public static class LessonAiPrompt
 /// <summary>
 /// Gemini over REST (<c>generativelanguage.googleapis.com/v1beta/models/{model}:generateContent</c>).
 /// Config: <c>Gemini:ApiKey</c> (env <c>Gemini__ApiKey</c>, never in the repo) and
-/// <c>Gemini:Model</c> (default <c>gemini-2.5-flash</c>). The key travels in the
+/// <c>Gemini:Model</c> (env <c>Gemini__Model</c>, default <c>gemini-3.8-flash</c>). The key travels in the
 /// <c>x-goog-api-key</c> header, never in the URL — a query string ends up in logs.
 /// </summary>
 public sealed class GeminiLessonAnalysisAi(HttpClient http, IConfiguration config) : ILessonAnalysisAi
 {
-    public const string DefaultModel = "gemini-2.5-flash";
+    // gemini-2.5-flash answers 404 "no longer available to new users" to newly created keys (seen 2026-10-28).
+    public const string DefaultModel = "gemini-3.8-flash";
 
     public const string MissingKeyError =
         "Gemini API kaliti sozlanmagan. Administrator serverdagi .env faylga "
@@ -210,9 +211,6 @@ public sealed class GeminiLessonAnalysisAi(HttpClient http, IConfiguration confi
         var apiKey = config["Gemini:ApiKey"];
         if (string.IsNullOrWhiteSpace(apiKey))
             return new LessonAiResult(null, MissingKeyError);
-
-        var model = config["Gemini:Model"];
-        if (string.IsNullOrWhiteSpace(model)) model = DefaultModel;
 
         var payload = new Dictionary<string, object>
         {
@@ -228,21 +226,15 @@ public sealed class GeminiLessonAnalysisAi(HttpClient http, IConfiguration confi
             ["generationConfig"] = new { temperature = 0.4, responseMimeType = "application/json" },
         };
 
-        var url = $"https://generativelanguage.googleapis.com/v1beta/models/{Uri.EscapeDataString(model.Trim())}:generateContent";
         string text;
         try
         {
-            using var request = new HttpRequestMessage(HttpMethod.Post, url)
-            {
-                Content = JsonContent.Create(payload),
-            };
-            request.Headers.Add("x-goog-api-key", apiKey.Trim());
-
-            using var response = await http.SendAsync(request, ct);
-            var body = await response.Content.ReadAsStringAsync(ct);
-            if (!response.IsSuccessStatusCode)
+            // retries an overloaded model, then asks the fallback model (GeminiRest)
+            var response = await GeminiRest.GenerateAsync(http, apiKey, GeminiRest.Models(config), payload, ct);
+            var body = response.Body;
+            if (!response.IsSuccess)
                 return new LessonAiResult(null,
-                    $"Gemini API xatosi ({(int)response.StatusCode}): {(body.Length > 300 ? body[..300] : body)}");
+                    $"Gemini API xatosi ({response.StatusCode}, {response.Model}): {(body.Length > 300 ? body[..300] : body)}");
 
             using var doc = JsonDocument.Parse(body);
             text = doc.RootElement.GetProperty("candidates")[0]
