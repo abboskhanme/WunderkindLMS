@@ -446,6 +446,45 @@ public class HrAiTasksTests(ApiFixture fixture)
     }
 
     [Fact]
+    public async Task Gemini_javob_bermasa_qayta_kutmaydi_zaxira_modelga_otadi()
+    {
+        var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["Gemini:ApiKey"] = "k", ["Gemini:Model"] = "m-slow", ["Gemini:FallbackModel"] = "m-new",
+        }).Build();
+
+        // the primary hangs (2026-10-29: TaskCanceledException after 90 s) — one attempt, then the fallback
+        var handler = new GeminiHang(hangModel: "m-slow", "{\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"{}\"}]}}]}");
+        var reply = await new GeminiHrTaskAi(new HttpClient(handler), config)
+            { RetryDelays = [TimeSpan.Zero, TimeSpan.Zero], AttemptTimeout = TimeSpan.FromMilliseconds(200) }
+            .ProposeAsync(Request(null));
+        Assert.Null(reply.Error);
+        Assert.Equal(["m-slow", "m-new"], handler.Models);
+
+        // both hang — the director gets an error naming the timeout, not an exception
+        var both = new GeminiHang(hangModel: null, "");
+        var failed = await new GeminiHrTaskAi(new HttpClient(both), config)
+            { RetryDelays = [TimeSpan.Zero], AttemptTimeout = TimeSpan.FromMilliseconds(200) }
+            .ProposeAsync(Request(null));
+        Assert.Equal(["m-slow", "m-new"], both.Models);
+        Assert.Contains($"({GeminiRest.TimeoutStatus}, m-new)", failed.Error);
+    }
+
+    /// <summary>Never answers for <c>hangModel</c> (null = every model); the others get <c>body</c>.</summary>
+    private sealed class GeminiHang(string? hangModel, string body) : HttpMessageHandler
+    {
+        public List<string> Models { get; } = [];
+
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
+        {
+            var model = request.RequestUri!.ToString().Split("/models/")[1].Split(':')[0];
+            Models.Add(model);
+            if (hangModel is null || model == hangModel) await Task.Delay(Timeout.Infinite, ct);
+            return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(body, Encoding.UTF8, "application/json") };
+        }
+    }
+
+    [Fact]
     public void Gemini_zaxira_asosiy_bilan_bir_xil_bolsa_bir_marta()
     {
         var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>

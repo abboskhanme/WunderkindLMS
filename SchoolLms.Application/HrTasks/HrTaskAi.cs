@@ -136,6 +136,12 @@ public sealed class GeminiHrTaskAi(HttpClient http, IConfiguration config) : IHr
     /// <summary>Pauses between retries on an overloaded model; tests set it to zero.</summary>
     public IReadOnlyList<TimeSpan> RetryDelays { get; init; } = Services.GeminiRest.DefaultRetryDelays;
 
+    /// <summary>
+    /// One attempt's limit: a hung model gives way to the fallback, and the director hears back well
+    /// inside the client's 90 s timeout (primary 35 s + fallback 35 s).
+    /// </summary>
+    public TimeSpan AttemptTimeout { get; init; } = TimeSpan.FromSeconds(35);
+
     public bool IsConfigured => !string.IsNullOrWhiteSpace(config["Gemini:ApiKey"]);
 
     public async Task<HrAiReply> ProposeAsync(HrAiRequest request, CancellationToken ct = default)
@@ -156,7 +162,7 @@ public sealed class GeminiHrTaskAi(HttpClient http, IConfiguration config) : IHr
         try
         {
             var response = await Services.GeminiRest.GenerateAsync(
-                http, apiKey, Services.GeminiRest.Models(config), payload, ct, RetryDelays);
+                http, apiKey, Services.GeminiRest.Models(config), payload, ct, RetryDelays, AttemptTimeout);
             var body = response.Body;
             if (!response.IsSuccess)
                 return new HrAiReply(null,
