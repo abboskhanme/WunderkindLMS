@@ -2915,6 +2915,20 @@ namespace SchoolLms.Infrastructure.Migrations
                         .HasDefaultValue(false)
                         .HasColumnName("notify_parent");
 
+                    b.PrimitiveCollection<List<string>>("OwnerUserIds")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("text[]")
+                        .HasColumnName("owner_user_ids")
+                        .HasDefaultValueSql("'{}'::text[]");
+
+                    b.Property<string>("Period")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("text")
+                        .HasDefaultValue("none")
+                        .HasColumnName("period");
+
                     b.Property<int>("Points")
                         .HasColumnType("integer")
                         .HasColumnName("points");
@@ -2922,7 +2936,10 @@ namespace SchoolLms.Infrastructure.Migrations
                     b.HasKey("Id")
                         .HasName("pk_discipline_reasons");
 
-                    b.ToTable("discipline_reasons", (string)null);
+                    b.ToTable("discipline_reasons", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_discipline_reasons_period", "period in ('none','week','month')");
+                        });
                 });
 
             modelBuilder.Entity("SchoolLms.Domain.Discount", b =>

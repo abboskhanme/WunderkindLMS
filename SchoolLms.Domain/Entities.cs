@@ -650,6 +650,63 @@ public class DisciplineReason
     /// Sukut bo'yicha true — mavjud sabablarning hammasi faol.
     /// </summary>
     public bool IsActive { get; set; } = true;
+
+    /// <summary>
+    /// Sababning mas'ullari — <c>users.id</c> ro'yxati (mijoz, 2026-10-28): o'qituvchi (sinf rahbari
+    /// ham) yoki xodim (masalan direktor o'rinbosari). Ball FAQAT mas'ul orqali qo'yiladi — sabab
+    /// faqat mas'ullariga ko'rinadi; bo'sh = hech bir o'qituvchi/xodim uni tanlay olmaydi. Admin va
+    /// superadmin cheklanmaydi — mas'ullarni aynan ular biriktiradi.
+    /// </summary>
+    public List<string> OwnerUserIds { get; set; } = new();
+
+    /// <summary>
+    /// Takrorlanish muddati (<see cref="DisciplinePeriod"/>, mijoz, 2026-10-28): <c>none</c> = cheklovsiz;
+    /// <c>week</c> / <c>month</c> = bitta o'quvchiga shu sabab bilan kalendar haftasi (du–ya) / oyi ichida
+    /// faqat BIR marta ball qo'yiladi. Masalan "Kitob o'qib topshirdi" — oyiga bir marta.
+    /// </summary>
+    public string Period { get; set; } = DisciplinePeriod.None;
+}
+
+/// <summary>Who may give a behaviour reason (<see cref="DisciplineReason.OwnerUserIds"/>).</summary>
+public static class DisciplineOwners
+{
+    /// <summary>Admin and superadmin give every reason; everyone else only the reasons they own.</summary>
+    public static bool MayUse(DisciplineReason reason, string userId, bool isFullAdmin) =>
+        isFullAdmin || (!string.IsNullOrEmpty(userId) && reason.OwnerUserIds.Contains(userId));
+
+    public const string NotOwnerMessage = "Bu sabab bilan faqat biriktirilgan mas'ullar ball qo'ya oladi.";
+}
+
+/// <summary>
+/// How often one reason may be given to one pupil (<see cref="DisciplineReason.Period"/>). The window is
+/// the calendar week (Monday–Sunday) or month of the entry's school-time date.
+/// </summary>
+public static class DisciplinePeriod
+{
+    public const string None = "none";
+    public const string Week = "week";
+    public const string Month = "month";
+
+    public static bool IsValid(string? value) => value is None or Week or Month;
+
+    /// <summary>The window containing <paramref name="day"/> — <c>[From, Until)</c>; null for <see cref="None"/>.</summary>
+    public static (DateOnly From, DateOnly Until)? Window(string? period, DateOnly day)
+    {
+        switch (period)
+        {
+            case Week:
+                var monday = day.AddDays(-(((int)day.DayOfWeek + 6) % 7));
+                return (monday, monday.AddDays(7));
+            case Month:
+                var first = new DateOnly(day.Year, day.Month, 1);
+                return (first, first.AddMonths(1));
+            default:
+                return null;
+        }
+    }
+
+    /// <summary>"shu hafta" / "shu oy" — for refusal messages.</summary>
+    public static string Label(string? period) => period == Week ? "shu hafta" : "shu oy";
 }
 
 /// <summary>

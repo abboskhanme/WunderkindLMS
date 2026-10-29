@@ -152,6 +152,45 @@ public class TeacherPortalController(
     }
 
     /// <summary>
+    /// Qarz bo'yicha izohlar tarixi (mijoz, 2026-10-29: "sinf rahbari ota-ona bilan bog'lanib aniqlashtirib
+    /// izoh yozishi kerak"). Admin'dagi "Moliya → Qarzdorlar → Izoh" bilan BITTA tarix (`debtor_actions`):
+    /// rahbar admin yozganini, admin rahbar yozganini ko'radi. Faqat o'z o'quvchisi — boshqasi 404.
+    /// </summary>
+    [HttpGet("homeroom/debts/{studentId}/comments")]
+    [BillingFault]
+    public async Task<ActionResult<IEnumerable<SchoolLms.Application.Dtos.Billing.DebtorActionDto>>> HomeroomDebtComments(
+        string studentId, CancellationToken ct = default)
+    {
+        var t = await Me();
+        if (t is null || !await LeadsPupilAsync(t, studentId, ct)) return NotFound();
+        return Ok(await new DebtorWorkflowService(db).ActionsAsync(studentId, ct));
+    }
+
+    /// <summary>
+    /// Rahbar izoh yozadi — faqat matn (admin oynasi kabi: holat va va'da sanasi yo'q). Kim yozgani
+    /// JWT'dan; bo'sh izoh — 400. O'chirish rahbarga berilmagan: tarixni admin boshqaradi.
+    /// </summary>
+    [HttpPost("homeroom/debts/{studentId}/comments")]
+    [BillingFault]
+    public async Task<ActionResult<SchoolLms.Application.Dtos.Billing.DebtorActionDto>> AddHomeroomDebtComment(
+        string studentId, [FromBody] HomeroomDebtCommentRequest request, CancellationToken ct = default)
+    {
+        var t = await Me();
+        if (t?.UserId is null || !await LeadsPupilAsync(t, studentId, ct)) return NotFound();
+        return Ok(await new DebtorWorkflowService(db).AddActionAsync(
+            studentId, new SchoolLms.Application.Dtos.Billing.CreateDebtorActionRequest(request.Comment), t.UserId, ct));
+    }
+
+    /// <summary>O'quvchi rahbarlikdagi sinf yoki yo'nalish guruhidami — qarzlar kartasi va qizil ro'yxat bilan bir doira.</summary>
+    private async Task<bool> LeadsPupilAsync(Teacher t, string studentId, CancellationToken ct)
+    {
+        var (_, groupOf) = await new AttendanceRedListService(db, telegram).TeacherScopeAsync(t.Id, ct);
+        return groupOf.ContainsKey(studentId);
+    }
+
+    public sealed record HomeroomDebtCommentRequest(string Comment);
+
+    /// <summary>
     /// Rahbarning ro'yxati Excel'da — ekrandagi filtr bilan: <paramref name="group"/> (sinf yoki guruh,
     /// bo'sh = hammasi) va <paramref name="all"/> (true = qarzi yo'qlar ham). Web-portal va brauzer uchun.
     /// </summary>

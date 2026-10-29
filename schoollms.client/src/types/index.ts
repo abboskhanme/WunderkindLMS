@@ -1183,7 +1183,16 @@ export interface DisciplineReason {
   description: string | null
   /** false = yangi ball qo'yishda tanlanmaydi; eski yozuvlar joyida qoladi. */
   isActive: boolean
+  /** Mas'ullar (user id — o'qituvchi yoki xodim). Bo'sh = faqat admin ball qo'ya oladi. */
+  ownerUserIds?: string[] | null
+  /** Takrorlanish muddati: bitta o'quvchiga hafta / oy ichida bir marta. */
+  period?: DisciplinePeriod
+  /** Joriy foydalanuvchi shu sabab bilan ball qo'ya oladimi (admin — har doim). */
+  canUse?: boolean
 }
+
+/** none — cheklovsiz; week — haftasiga bir marta (du–ya); month — oyiga bir marta. */
+export type DisciplinePeriod = 'none' | 'week' | 'month'
 
 /** Ballar nazorati qatori: o'quvchi, sinf, plus, minus, qoldi (100 + plus − minus) */
 export interface DisciplineScoreRow {

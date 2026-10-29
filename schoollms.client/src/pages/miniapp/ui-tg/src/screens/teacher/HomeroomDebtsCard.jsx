@@ -8,17 +8,21 @@
  *                        bo'yicha filtr va Excel (2026-10-12): Telegram ichida fayl bot orqali
  *                        o'qituvchining o'z chatiga keladi, brauzerda — to'g'ridan-to'g'ri yuklanadi.
  *
+ *   PupilView          — o'quvchi bosilsa (2026-10-29: "sinf rahbari ota-ona bilan bog'lanib
+ *                        aniqlashtirib izoh yozishi kerak"): qarz, telefon, izoh yozish va tarix.
+ *                        Admin'dagi "Moliya → Qarzdorlar → Izoh" bilan BITTA tarix.
+ *
  * Faqat rahbarga: rahbarligi yo'q o'qituvchida karta umuman chizilmaydi (server ham bo'sh
- * ro'yxat qaytaradi). Faqat ko'rish — to'lov va chegirmalar bu yerda yo'q. Raqamlar admin'dagi
+ * ro'yxat qaytaradi). To'lov va chegirmalar bu yerda yo'q — faqat ko'rish va izoh. Raqamlar admin'dagi
  * "Qarzdorlar" hisoboti bilan bir xil (`GET /api/teacher/homeroom/debts`).
  */
-import { useCallback, useEffect, useState } from 'react'
-import { ChevronRight, FileSpreadsheet, Phone, Users, Wallet, X } from 'lucide-react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { ChevronRight, FileSpreadsheet, MessageSquareText, Phone, Users, Wallet, X } from 'lucide-react'
 import { Badge, Card, EmptyState, Hero, Row, Segmented, StatGrid } from '../../components/ui'
 import { useAsync } from '../../lib/useAsync'
 import { teacherApi } from '../../lib/teacherApi'
-import { money, monthTitle, sum } from '../../lib/format'
-import { haptic, hapticNotify, inTelegram, showBackButton } from '../../lib/telegram'
+import { dateTime, money, monthTitle, sum } from '../../lib/format'
+import { haptic, hapticNotify, inTelegram, showBackButton, useKeyboardOpen } from '../../lib/telegram'
 
 /** "2026-09-01" → "Sentabr" (shu yil) yoki "Sentabr 2025" (boshqa yil). */
 function monthLabel(iso) {
@@ -113,11 +117,15 @@ export function HomeroomDebtsSheet({ onClose }) {
   /** Sinf yoki guruh nomi; '' — hammasi. */
   const [group, setGroup] = useState('')
   const [excel, setExcel] = useState({ busy: false, note: null, error: null })
+  /** Ochilgan o'quvchi (izoh sahifasi); null — ro'yxat. */
+  const [selectedId, setSelectedId] = useState(null)
+  const keyboardOpen = useKeyboardOpen()
 
-  const back = useCallback(() => onClose(), [onClose])
+  const back = useCallback(() => (selectedId ? setSelectedId(null) : onClose()), [selectedId, onClose])
   useEffect(() => showBackButton(back), [back])
 
   const d = q.data
+  const selected = d?.pupils.find((p) => p.studentId === selectedId) ?? null
   const manyGroups = (d?.groups.length ?? 0) > 1
   // Hamma raqam tanlangan sinf/guruh bo'yicha — ekran va Excel bir xil narsani ko'rsatsin.
   const inGroup = d ? d.pupils.filter((p) => !group || p.group === group) : []
@@ -154,8 +162,14 @@ export function HomeroomDebtsSheet({ onClose }) {
     <div role="dialog" aria-label="Sinfim" className="fixed inset-0 z-40 overflow-y-auto overscroll-contain bg-ground">
       <div className="pb-[calc(24px+var(--tg-safe-bottom))]">
         <Hero
-          title="Sinfim"
-          subtitle={d ? `${d.groups.join(', ')} · ${d.pupilCount} ta o'quvchi` : undefined}
+          title={selected ? selected.fullName : 'Sinfim'}
+          subtitle={
+            selected
+              ? selected.group
+              : d
+                ? `${d.groups.join(', ')} · ${d.pupilCount} ta o'quvchi`
+                : undefined
+          }
           right={
             <button
               type="button"
@@ -168,7 +182,7 @@ export function HomeroomDebtsSheet({ onClose }) {
           }
         >
           {/* O'tkagich sariq fon uchun chizilgan (Segmented) — shuning uchun Hero ichida. */}
-          {d && (
+          {d && !selected && (
             <Segmented
               value={filter}
               onChange={setFilter}
@@ -184,6 +198,8 @@ export function HomeroomDebtsSheet({ onClose }) {
           <p className="px-4 py-6 text-center text-[14px] text-slate-500">Yuklanmoqda…</p>
         ) : q.error ? (
           <p className="px-4 py-6 text-center text-[14px] text-red-600">{q.error}</p>
+        ) : selected ? (
+          <PupilView key={selected.studentId} p={selected} onSaved={() => q.reload()} />
         ) : (
           <>
             {/* Sinf / guruh filtri — bir nechta rahbarlik bo'lsagina (2026-10-12). */}
@@ -220,7 +236,17 @@ export function HomeroomDebtsSheet({ onClose }) {
               {shown.length === 0 ? (
                 <EmptyState icon={<Users className="h-9 w-9" />} title="Qarzdor yo'q" note="Hamma o'quvchi to'lagan." />
               ) : (
-                shown.map((p) => <PupilRow key={p.studentId} p={p} showGroup={manyGroups} />)
+                shown.map((p) => (
+                  <PupilRow
+                    key={p.studentId}
+                    p={p}
+                    showGroup={manyGroups}
+                    onOpen={() => {
+                      haptic('light')
+                      setSelectedId(p.studentId)
+                    }}
+                  />
+                ))
               )}
             </Card>
 
@@ -240,10 +266,13 @@ export function HomeroomDebtsSheet({ onClose }) {
             </div>
 
             <p className="mx-6 mt-3 text-center text-[12px] text-slate-400">
-              Qarz buxgalteriyadagi bilan bir xil. To'lov faqat kassada qabul qilinadi.
+              Qarz buxgalteriyadagi bilan bir xil. To'lov faqat kassada qabul qilinadi. Izoh yozish uchun
+              o'quvchini bosing.
             </p>
           </>
         )}
+        {/* Klaviatura "Saqlash" ni yopmasin — qizil ro'yxatdagi bilan bir xil joy (2026-10-26). */}
+        {keyboardOpen && <div aria-hidden="true" className="h-[50vh]" />}
       </div>
     </div>
   )
@@ -251,10 +280,17 @@ export function HomeroomDebtsSheet({ onClose }) {
 
 /* ------------------------------------------------------------------ qatorlar */
 
-function PupilRow({ p, showGroup }) {
+function PupilRow({ p, showGroup, onOpen }) {
   const tel = p.parentPhone ? telHref(p.parentPhone) : null
   return (
-    <div className="flex w-full items-start gap-3 border-t border-slate-100 px-4 py-3 first:border-t-0">
+    // Telefon havolasi ichida bo'lgani uchun <button> emas (ichma-ich interaktiv element bo'lmaydi).
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={onOpen}
+      onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && onOpen()}
+      className="flex w-full cursor-pointer items-start gap-3 border-t border-slate-100 px-4 py-3 text-left first:border-t-0"
+    >
       <Initial name={p.fullName} />
       <div className="min-w-0 flex-1">
         <p className="break-words text-[15px] font-semibold leading-snug">{p.fullName}</p>
@@ -269,10 +305,22 @@ function PupilRow({ p, showGroup }) {
           </div>
         )}
         {tel && (
-          <a href={tel} className="mt-1.5 inline-flex items-center gap-1.5 text-[13px] font-medium text-slate-600">
+          <a
+            href={tel}
+            onClick={(e) => e.stopPropagation()}
+            className="mt-1.5 inline-flex items-center gap-1.5 text-[13px] font-medium text-slate-600"
+          >
             <Phone className="h-3.5 w-3.5" />
             {p.parentPhone}
           </a>
+        )}
+        {p.lastComment ? (
+          <p className="mt-1.5 flex items-start gap-1.5 text-[13px] text-slate-500">
+            <MessageSquareText className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            <span className="line-clamp-2 break-words">{p.lastComment}</span>
+          </p>
+        ) : (
+          p.debt > 0 && <p className="mt-1.5 text-[12px] font-medium text-amber-600">Izoh yozilmagan</p>
         )}
       </div>
       {p.debt > 0 ? (
@@ -284,6 +332,133 @@ function PupilRow({ p, showGroup }) {
         <Badge tone="success">Qarzi yo'q</Badge>
       )}
     </div>
+  )
+}
+
+/* ------------------------------------------------------------------ bitta o'quvchi */
+
+function PupilView({ p, onSaved }) {
+  const history = useAsync(() => teacherApi.homeroomDebtComments(p.studentId), [p.studentId])
+  const [comment, setComment] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState(null)
+  const saveRef = useRef(null)
+  const tel = p.parentPhone ? telHref(p.parentPhone) : null
+
+  // Klaviatura ochilib bo'lgach "Saqlash" ko'rinadigan joyga suriladi (qizil ro'yxat bilan bir xil).
+  const revealSave = () =>
+    window.setTimeout(() => saveRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' }), 350)
+
+  const save = async () => {
+    if (busy) return
+    if (!comment.trim()) {
+      setError('Izoh yozing: ota-ona bilan nima gaplashildi.')
+      return
+    }
+    setBusy(true)
+    setError(null)
+    try {
+      await teacherApi.addHomeroomDebtComment(p.studentId, comment.trim())
+      hapticNotify('success')
+      setComment('')
+      history.reload()
+      onSaved()
+    } catch (e) {
+      hapticNotify('error')
+      setError(e?.message || 'Saqlanmadi')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const actions = history.data ?? []
+
+  return (
+    <>
+      <Card>
+        <div className="space-y-2 px-4 py-4">
+          <div className="flex items-baseline justify-between gap-3">
+            <span className="text-[14px] text-slate-500">Qarz</span>
+            {p.debt > 0 ? (
+              <span className="text-[20px] font-bold text-red-600">{money(p.debt)}</span>
+            ) : (
+              <Badge tone="success">Qarzi yo'q</Badge>
+            )}
+          </div>
+          {p.daysOverdue > 0 && <p className="text-[13px] text-red-500">{p.daysOverdue} kun kechikkan</p>}
+          {p.unpaidMonths.length > 0 && (
+            <div className="flex flex-wrap gap-1.5">
+              {p.unpaidMonths.map((m) => (
+                <span key={m.month} className="rounded-lg bg-red-50 px-2 py-0.5 text-[12px] text-red-700">
+                  {monthLabel(m.month)}: {sum(m.amount)}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      </Card>
+
+      <Card title="Ota-ona">
+        {tel ? (
+          <a href={tel} className="flex items-center gap-3 px-4 py-3">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700">
+              <Phone className="h-5 w-5" />
+            </div>
+            <p className="text-[15px] font-semibold">{p.parentPhone}</p>
+          </a>
+        ) : (
+          <p className="px-4 pb-4 text-[14px] text-slate-400">Telefon kiritilmagan — maktab ma'muriyatidan so'rang.</p>
+        )}
+      </Card>
+
+      <Card title="Izoh">
+        <div className="space-y-3 px-4 pb-4 pt-2">
+          <textarea
+            value={comment}
+            onChange={(e) => setComment(e.target.value)}
+            onFocus={revealSave}
+            rows={3}
+            maxLength={2000}
+            placeholder="Masalan: onasiga qo'ng'iroq qilindi, oylik olgach 5-noyabrgacha to'lashini aytdi"
+            className="w-full rounded-xl border border-slate-200 bg-white px-3 py-3 text-[15px]"
+          />
+          {error && <p className="text-[13px] text-red-600">{error}</p>}
+          <button
+            ref={saveRef}
+            type="button"
+            onClick={save}
+            disabled={busy}
+            className="w-full rounded-2xl bg-brand-ink py-3.5 text-[16px] font-semibold text-brand disabled:opacity-50"
+          >
+            {busy ? 'Saqlanmoqda…' : 'Saqlash'}
+          </button>
+        </div>
+      </Card>
+
+      <Card title="Izohlar tarixi">
+        {history.loading && !history.data ? (
+          <p className="px-4 pb-4 text-[14px] text-slate-400">Yuklanmoqda…</p>
+        ) : history.error ? (
+          <p className="px-4 pb-4 text-[14px] text-red-600">{history.error}</p>
+        ) : actions.length === 0 ? (
+          <p className="px-4 pb-4 text-[14px] text-slate-400">Hali hech kim izoh yozmagan.</p>
+        ) : (
+          <div className="pt-1">
+            {actions.map((a) => (
+              <div key={a.id} className="border-t border-slate-100 px-4 py-3 first:border-t-0">
+                <p className="whitespace-pre-line break-words text-[14px] text-slate-700">{a.comment}</p>
+                <p className="mt-0.5 text-[12px] text-slate-400">
+                  {a.createdByName} · {dateTime(a.createdAt)}
+                </p>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+      <p className="mx-6 mt-3 text-center text-[12px] text-slate-400">
+        Izohni maktab ma'muriyati ham ko'radi (Moliya → Qarzdorlar).
+      </p>
+    </>
   )
 }
 

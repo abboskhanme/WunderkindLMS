@@ -199,6 +199,12 @@ export default function HomeroomScreen({ onBack }) {
                             ` · ${debtById[s.studentId].unpaidMonths.map((m) => monthName(m.month)).join(', ')}`}
                         </p>
                       )}
+                      {/* Qarz izohi (2026-10-29) — yozish Telegram ilovasida: Bugun → Sinfim → o'quvchi. */}
+                      {debtById[s.studentId]?.lastComment && (
+                        <p className="text-[12px] text-muted mt-0.5 line-clamp-2">
+                          Izoh: {debtById[s.studentId].lastComment}
+                        </p>
+                      )}
                     </div>
                     {accepted ? (
                       <span className="px-3 py-2.5 rounded-xl bg-success/10 flex items-center gap-1.5 text-[13px] font-bold text-success">

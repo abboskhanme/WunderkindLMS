@@ -89,7 +89,7 @@ public class HomeroomDebtsTests(ApiFixture fixture)
         // Default: debtors of every group, largest first, with a total.
         var all = await SheetAsync(w.Teacher, "");
         Assert.Contains("qarzdorlar", all[0][0]);
-        Assert.Equal(["№", "O'quvchi", "Sinf / guruh", "Qarz, so'm", "To'lanmagan oylar", "Kechikkan, kun", "Ota-ona telefoni"], all[2]);
+        Assert.Equal(["№", "O'quvchi", "Sinf / guruh", "Qarz, so'm", "To'lanmagan oylar", "Kechikkan, kun", "Ota-ona telefoni", "Oxirgi izoh"], all[2]);
         var body = all.Skip(3).ToList();
         Assert.Equal([$"Ali {w.Tag}", $"Doniyor {w.Tag}"], body.SkipLast(1).Select(r => r[1]).ToArray());
         Assert.Equal("2600000.00", body[0][3]);
@@ -122,6 +122,36 @@ public class HomeroomDebtsTests(ApiFixture fixture)
         });
         // The test host has no bot token: linked, but nothing can be sent.
         Assert.Equal(HttpStatusCode.ServiceUnavailable, (await w.Teacher.PostAsync($"{Url}/telegram", null)).StatusCode);
+    }
+
+    [Fact]
+    public async Task Rahbar_oz_oquvchisiga_izoh_yozadi_admin_ham_koradi_begonasiga_404()
+    {
+        var w = await SeedAsync();
+        var comments = $"{Url}/{w.Ali}/comments";
+
+        // Empty comment — 400, other class's pupil — 404 (as if it did not exist).
+        Assert.Equal(HttpStatusCode.BadRequest,
+            (await w.Teacher.PostAsJsonAsync(comments, new { comment = "  " })).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound,
+            (await w.Teacher.PostAsJsonAsync($"{Url}/{w.OtherClassPupil}/comments", new { comment = "x" })).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await w.Teacher.GetAsync($"{Url}/{w.OtherClassPupil}/comments")).StatusCode);
+
+        var res = await w.Teacher.PostAsJsonAsync(comments, new { comment = "Onasi 5-noyabrgacha to'laydi" });
+        Assert.Equal(HttpStatusCode.OK, res.StatusCode);
+
+        // The teacher's own history and the list row.
+        var history = (await w.Teacher.GetFromJsonAsync<List<SchoolLms.Application.Dtos.Billing.DebtorActionDto>>(comments))!;
+        Assert.Equal("Onasi 5-noyabrgacha to'laydi", Assert.Single(history).Comment);
+        var ali = (await w.Teacher.GetFromJsonAsync<HomeroomDebtsDto>(Url))!.Pupils.Single(p => p.StudentId == w.Ali);
+        Assert.Equal("Onasi 5-noyabrgacha to'laydi", ali.LastComment);
+        Assert.Equal(1, ali.CommentCount);
+
+        // The admin's "Qarzdorlar → Izoh" reads the same history.
+        using var admin = await fixture.Api.ClientAsAsync(Roles.Admin);
+        var adminHistory = (await admin.GetFromJsonAsync<List<SchoolLms.Application.Dtos.Billing.DebtorActionDto>>(
+            $"/api/admin/finance/debtors/{w.Ali}/actions"))!;
+        Assert.Equal(w.TeacherUserId, Assert.Single(adminHistory).CreatedBy);
     }
 
     private static async Task<List<List<string>>> SheetAsync(HttpClient client, string query)
