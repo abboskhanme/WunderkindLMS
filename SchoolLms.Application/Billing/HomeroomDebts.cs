@@ -31,9 +31,16 @@ public record HomeroomDebtsDto(
 /// <param name="Group">The class or track group the pupil is listed under.</param>
 /// <param name="Debt">0 = owes nothing.</param>
 /// <param name="DaysOverdue">As in the "Qarzdorlar" report; 0 = not overdue.</param>
+/// <param name="LastComment">The latest live debt comment (debtor_actions, 2026-10-29) — the admin's or the
+/// homeroom teacher's, it is one history. null = nobody has written yet.</param>
+/// <param name="LastCommentAt">When it was written.</param>
+/// <param name="LastCommentBy">Who wrote it.</param>
+/// <param name="CommentCount">Live comments on the pupil.</param>
 public record HomeroomDebtRowDto(
     string StudentId, string FullName, string Group, string? ParentPhone,
-    decimal Debt, int DaysOverdue, IReadOnlyList<HomeroomUnpaidMonthDto> UnpaidMonths);
+    decimal Debt, int DaysOverdue, IReadOnlyList<HomeroomUnpaidMonthDto> UnpaidMonths,
+    string? LastComment = null, DateTimeOffset? LastCommentAt = null, string? LastCommentBy = null,
+    int CommentCount = 0);
 
 /// <summary>One unpaid invoice month and what is still owed for it.</summary>
 public record HomeroomUnpaidMonthDto(DateOnly Month, decimal Amount);
@@ -81,14 +88,32 @@ public static class HomeroomDebts
             .ToDictionary(d => d.StudentId, StringComparer.Ordinal);
         var months = await reports.UnpaidMonthsAsync(ids, ct);
 
+        // Debt comments (client, 2026-10-29: "sinf rahbari ota-ona bilan bog'lanib aniqlashtirib izoh yozishi
+        // kerak") — the same debtor_actions the admin's "Qarzdorlar → Izoh" writes and reads.
+        var comments = (await db.DebtorActions.AsNoTracking()
+                .Where(a => ids.Contains(a.StudentId) && a.DeletedAt == null)
+                .Select(a => new { a.StudentId, a.Comment, a.CreatedAt, a.CreatedBy })
+                .ToListAsync(ct))
+            .GroupBy(a => a.StudentId, StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => (Last: g.MaxBy(a => a.CreatedAt)!, Count: g.Count()), StringComparer.Ordinal);
+        var authorIds = comments.Values.Select(c => c.Last.CreatedBy).Distinct(StringComparer.Ordinal).ToList();
+        var authors = await db.Users.AsNoTracking()
+            .Where(u => authorIds.Contains(u.Id))
+            .ToDictionaryAsync(u => u.Id, u => u.FullName, ct);
+
         var rows = pupils
             .Select(p =>
             {
                 debtors.TryGetValue(p.Id, out var d);
+                var commented = comments.TryGetValue(p.Id, out var c);
                 return new HomeroomDebtRowDto(
                     p.Id, p.FullName, p.Group, string.IsNullOrWhiteSpace(p.ParentPhone) ? null : p.ParentPhone,
                     d?.Debt ?? 0m, d?.DaysOverdue ?? 0,
-                    d is null ? [] : [.. months.GetValueOrDefault(p.Id, []).Select(m => new HomeroomUnpaidMonthDto(m.Month, m.Amount))]);
+                    d is null ? [] : [.. months.GetValueOrDefault(p.Id, []).Select(m => new HomeroomUnpaidMonthDto(m.Month, m.Amount))],
+                    commented ? c.Last.Comment : null,
+                    commented ? c.Last.CreatedAt : null,
+                    commented ? authors.GetValueOrDefault(c.Last.CreatedBy, "Noma'lum") : null,
+                    commented ? c.Count : 0);
             })
             .OrderByDescending(r => r.Debt)
             .ThenBy(r => r.FullName, StringComparer.Ordinal)
@@ -122,7 +147,7 @@ public static class HomeroomDebts
                     + AppClock.Today.ToString("dd.MM.yyyy", CultureInfo.InvariantCulture);
 
         IReadOnlyList<string> headers =
-            ["№", "O'quvchi", "Sinf / guruh", "Qarz, so'm", "To'lanmagan oylar", "Kechikkan, kun", "Ota-ona telefoni"];
+            ["№", "O'quvchi", "Sinf / guruh", "Qarz, so'm", "To'lanmagan oylar", "Kechikkan, kun", "Ota-ona telefoni", "Oxirgi izoh"];
         var table = rows.Select((p, i) => (IReadOnlyList<ExcelExport.XlsxCell>)
         [
             (i + 1).ToString(CultureInfo.InvariantCulture),
@@ -133,13 +158,14 @@ public static class HomeroomDebts
                 $"{Months[m.Month.Month - 1]} {m.Month.Year}: {m.Amount.ToString("#,0", CultureInfo.InvariantCulture).Replace(',', ' ')}")),
             p.DaysOverdue > 0 ? p.DaysOverdue.ToString(CultureInfo.InvariantCulture) : "",
             p.ParentPhone,
+            p.LastComment,
         ]).ToList();
         IReadOnlyList<ExcelExport.XlsxCell> totals =
             ["", $"Jami: {rows.Count(r => r.Debt > 0m)} ta qarzdor", "", ExcelExport.XlsxCell.Num(rows.Sum(r => r.Debt))];
 
         return ExcelExport.BuildTables(
         [
-            new ExcelExport.TableSpec("Qarzdorlar", headers, table, totals, title, [6, 36, 16, 15, 44, 14, 20]),
+            new ExcelExport.TableSpec("Qarzdorlar", headers, table, totals, title, [6, 36, 16, 15, 44, 14, 20, 50]),
         ]);
     }
 

@@ -55,6 +55,15 @@ export const teacherApi = {
    * yuklab olish ishonchsiz, chatga kelgan faylni esa har telefon ochadi (ota-ona chekidagi yo'l).
    * `group` — sinf/guruh (bo'sh = hammasi), `all` — qarzi yo'qlar ham.
    */
+  /**
+   * Qarz bo'yicha izohlar (2026-10-29): admin "Qarzdorlar → Izoh" bilan bitta tarix. Faqat o'z o'quvchisi.
+   */
+  homeroomDebtComments: (studentId) =>
+    api.get(`${BASE}/homeroom/debts/${encodeURIComponent(studentId)}/comments`),
+  /** Izoh yozish: `{ comment }` — ota-ona bilan nima kelishildi. */
+  addHomeroomDebtComment: (studentId, comment) =>
+    api.post(`${BASE}/homeroom/debts/${encodeURIComponent(studentId)}/comments`, { comment }),
+
   homeroomDebtsToTelegram: ({ group, all } = {}) =>
     api.post(`${BASE}/homeroom/debts/telegram${qs({ group, all: all || undefined })}`),
 
