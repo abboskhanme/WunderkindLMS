@@ -107,6 +107,48 @@ public class ContractAutoNumberTests(ApiFixture fixture) : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Qayta_raqamlash_eski_raqamlarni_sinf_tartibida_almashtiradi()
+    {
+        // The site's case (2026-10-30): old "WK-000001…" numbers, not in class order.
+        var (db, user) = await NewDbAsync("renumber");
+        var w = await SeedAsync(db);
+        db.StudentContracts.AddRange(
+            new StudentContract { StudentId = w.Eshon, Number = "WK-000001", Source = StudentContractSource.Uploaded, CreatedBy = user, CreatedAt = AppClock.NowInstant },
+            new StudentContract { StudentId = w.Vali, Number = "WK-000002", Source = StudentContractSource.Uploaded, CreatedBy = user, CreatedAt = AppClock.NowInstant },
+            new StudentContract { StudentId = w.Bobur, Number = null, Source = StudentContractSource.Uploaded, CreatedBy = user, CreatedAt = AppClock.NowInstant });
+        await db.SaveChangesAsync();
+
+        // Without the flag the old numbers stay and are skipped.
+        var plain = Value(await Controller(db, user).AutoNumber(new AutoNumberContractsRequest("WK-", 1)));
+        Assert.Equal(2, plain.Skipped);
+
+        var plan = Value(await Controller(db, user).AutoNumber(new AutoNumberContractsRequest("WK-", 1, Renumber: true)));
+        Assert.Equal(["new", "draft", "renumber", "new", "renumber"], plan.Rows.Select(r => r.Action).ToArray());
+        Assert.Equal(5, plan.Assigned);
+
+        var res = Value(await Controller(db, user).AutoNumber(new AutoNumberContractsRequest("WK-", 1, Apply: true, Renumber: true)));
+        Assert.True(res.Applied);
+        db.ChangeTracker.Clear();
+        var numbers = await db.StudentContracts.ToDictionaryAsync(c => c.StudentId, c => c.Number);
+        Assert.Equal(5, numbers.Count); // the two old rows were renumbered in place, no extra rows
+        Assert.Equal(["WK-1", "WK-2", "WK-3", "WK-4", "WK-5"],
+            new[] { w.Ali, w.Bobur, w.Vali, w.Doniyor, w.Eshon }.Select(id => numbers[id]!).ToArray());
+        Assert.DoesNotContain(numbers.Values, n => n!.StartsWith("WK-0") || n.StartsWith('~'));
+
+        // A pupil joins 1-A between Ali and Bobur: everyone after shifts by one — numbers swap between
+        // rows (WK-2 moves from Bobur to the new pupil and so on), which needs the two-phase write.
+        db.Students.Add(Pupil("Asqarov Asqar", "1-A"));
+        await db.SaveChangesAsync();
+        var shifted = Value(await Controller(db, user).AutoNumber(new AutoNumberContractsRequest("WK-", 1, Apply: true, Renumber: true)));
+        Assert.True(shifted.Applied);
+        Assert.Equal("same", shifted.Rows[0].Action); // Ali keeps WK-1
+        db.ChangeTracker.Clear();
+        numbers = await db.StudentContracts.ToDictionaryAsync(c => c.StudentId, c => c.Number);
+        Assert.Equal("WK-3", numbers[w.Bobur]);
+        Assert.Equal("WK-6", numbers[w.Eshon]);
+    }
+
+    [Fact]
     public async Task Notogri_prefiks_va_boshlangich_400()
     {
         var (db, user) = await NewDbAsync("bad");
