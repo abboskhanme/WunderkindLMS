@@ -69,10 +69,12 @@ public static class StudentProfileBuilder
         var markDays = AttendanceDisciplineDays.Collapse(entries
             .Where(e => e.ReasonId != null)
             .Select(e => new AttendanceDisciplineDays.Mark(e.Id, e.StudentId, e.Date, e.ReasonId!)));
+        // The score counts from the school's start day; the list below keeps the whole history.
+        var since = await DisciplineIncidents.ScoreSinceAsync(db);
         int plus = 0, minus = 0;
         void Apply(int pts) { if (pts > 0) plus += pts; else if (pts < 0) minus += -pts; }
-        foreach (var m in manual) Apply(m.Points);
-        foreach (var d in markDays)
+        foreach (var m in manual.Where(m => DisciplineIncidents.Counts(m.CreatedAt, since))) Apply(m.Points);
+        foreach (var d in markDays.Where(d => DisciplineIncidents.Counts(d.Date, since)))
             if (reasonMap.TryGetValue(d.ReasonId, out var r) && r.Points != 0) Apply(r.Points);
         var disciplineScore = 100 + plus - minus;
 

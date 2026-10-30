@@ -392,7 +392,10 @@ public class StudentPortalController(
         var s = await TargetAsync(studentId);
         if (s is null) return NotFound();
 
-        var manual = await db.DisciplinePoints.Where(p => p.StudentId == s.Id).ToListAsync();
+        // A new count (SchoolMeta.DisciplineScoreSince) shows the parent only the entries that add up to it.
+        var since = await DisciplineIncidents.ScoreSinceAsync(db);
+        var manual = await db.DisciplinePoints
+            .Where(p => p.StudentId == s.Id && (since == null || string.Compare(p.CreatedAt, since) >= 0)).ToListAsync();
         var drNames = await db.DisciplineReasons.ToDictionaryAsync(r => r.Id, r => r.Name);
         var absReasons = await db.AbsenceReasons.ToDictionaryAsync(r => r.Id, r => new { r.Name, r.Points });
 
@@ -403,7 +406,7 @@ public class StudentPortalController(
 
         // Bitta kun + bitta sabab = bitta hodisa (AttendanceDisciplineDays): 7 darsga kelmasa ham ball bir marta.
         var journal = await db.JournalEntries
-            .Where(e => e.StudentId == s.Id && e.ReasonId != null)
+            .Where(e => e.StudentId == s.Id && e.ReasonId != null && (since == null || string.Compare(e.Date, since) >= 0))
             .Select(e => new AttendanceDisciplineDays.Mark(e.Id, e.StudentId, e.Date, e.ReasonId!)).ToListAsync();
         foreach (var d in AttendanceDisciplineDays.Collapse(journal))
         {

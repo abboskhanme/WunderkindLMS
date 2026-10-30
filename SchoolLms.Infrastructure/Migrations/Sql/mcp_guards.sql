@@ -92,7 +92,7 @@ BEGIN
                 'salary_rate_mutaxasis', 'work_start_time', 'late_grace_minutes',
                 'archive_only_non_debtor_students', 'is_student_grade_required',
                 'make_attendance_reason_required', 'show_learning_progress_in_parent_dashboard',
-                'group_lessons_enabled', 'contract_number_mode']);
+                'group_lessons_enabled', 'contract_number_mode', 'discipline_score_since']);
         EXECUTE format('GRANT SELECT (%s) ON public.school_meta TO app_ro', cols);
     END IF;
 

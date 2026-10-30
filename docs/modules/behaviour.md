@@ -24,6 +24,14 @@ pupil profile.
 Score = 100 + Σ everywhere: Ballar nazorati, the profile overview, the profile sidebar (it used to show
 the raw Σ — fixed), the teacher screen and the parent card.
 
+**Start day** (client, 2026-10-30: "yangi o'quv yili uchun hisob yangidan boshlanadi"):
+`school_meta.discipline_score_since` ("yyyy-MM-dd", '' = whole history). Only manual points with
+`created_at >=` it and attendance days with `date >=` it count — in every score above, the attendance
+report's "Qoldi" and the MCP tool. Nothing is deleted: the Harakatlar feed, the admin history and the
+profile list keep every entry; the parent card and the teacher sheet list only the counted ones so the
+number adds up. Set on Ballar nazorati → "Hisob: … O'zgartirish" (`GET/PUT /api/admin/discipline/score-since`,
+full `discipline` key, not in the future, audited). Set on prod to 2026-10-30 — everyone at 100.
+
 ## Office (`[AdminPerm("discipline")]`, staff read, full key writes)
 
 - `POST/PUT /api/admin/discipline/reasons` — optional `type` (`positive|negative`): stored points are

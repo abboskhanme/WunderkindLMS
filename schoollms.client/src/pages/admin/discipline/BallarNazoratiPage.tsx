@@ -18,6 +18,8 @@ import {
   getStudentDisciplinePoints,
   deleteDisciplinePoint,
   downloadDisciplineScores,
+  getDisciplineScoreSince,
+  setDisciplineScoreSince,
 } from '@/api/services/discipline'
 import { cn, formatDate } from '@/lib/utils'
 import { Card } from '@/components/ui/Card'
@@ -59,15 +61,22 @@ export function BallarNazoratiPage() {
   const [note, setNote] = useState('')
   const [saving, setSaving] = useState(false)
 
+  // Hisob boshlanish kuni ('' — butun tarix). Yangi o'quv yili: shu kundan hamma 100 dan.
+  const [since, setSince] = useState('')
+  const [sinceOpen, setSinceOpen] = useState(false)
+  const [sinceDraft, setSinceDraft] = useState('')
+  const [sinceSaving, setSinceSaving] = useState(false)
+
   // Tarix modali
   const [historyOf, setHistoryOf] = useState<DisciplineScoreRow | null>(null)
   const [history, setHistory] = useState<DisciplinePoint[]>([])
   const [historyLoading, setHistoryLoading] = useState(false)
 
   useEffect(() => {
-    Promise.all([getDisciplineScores(), getDisciplineReasons()])
-      .then(([s, r]) => {
+    Promise.all([getDisciplineScores(), getDisciplineReasons(), getDisciplineScoreSince()])
+      .then(([s, r, from]) => {
         setScores(s)
+        setSince(from)
         // Faolsizlantirilgan sabab bilan yangi ball qo'yilmaydi (server ham rad etadi).
         setReasons(r.filter((x) => x.isActive && x.canUse !== false))
       })
@@ -175,7 +184,19 @@ export function BallarNazoratiPage() {
   const removePoint = async (p: DisciplinePoint) => {
     await deleteDisciplinePoint(p.id)
     setHistory((prev) => prev.filter((x) => x.id !== p.id))
-    applyDelta(p.studentId, -p.points)
+    // Hisob boshlanishidan oldingi yozuv qoldiga kirmagan — o'chirilsa ham qoldi o'zgarmaydi.
+    if (!since || p.createdAt >= since) applyDelta(p.studentId, -p.points)
+  }
+
+  const saveSince = async (value: string) => {
+    setSinceSaving(true)
+    try {
+      setSince(await setDisciplineScoreSince(value))
+      setScores(await getDisciplineScores())
+      setSinceOpen(false)
+    } finally {
+      setSinceSaving(false)
+    }
   }
 
   const reasonLabel = (r: DisciplineReason) =>
@@ -190,6 +211,19 @@ export function BallarNazoratiPage() {
           <h1 className="text-xl font-semibold text-slate-800">Ballar nazorati</h1>
           <p className="text-sm text-slate-400">
             Har o'quvchi 100 balldan boshlaydi. Sabab bo'yicha ball kiriting — qoldi avtomatik hisoblanadi.
+          </p>
+          <p className="mt-1 text-sm text-slate-500">
+            Hisob: {since ? `${formatDate(since)} dan` : 'butun tarix bo\'yicha'}
+            <button
+              type="button"
+              className="ml-2 text-brand-600 hover:underline"
+              onClick={() => {
+                setSinceDraft(since || todayIso())
+                setSinceOpen(true)
+              }}
+            >
+              O'zgartirish
+            </button>
           </p>
         </div>
         <Button variant="secondary" onClick={exportXlsx} disabled={exporting || rows.length === 0}>
@@ -478,6 +512,45 @@ export function BallarNazoratiPage() {
           </div>
         )}
       </Modal>
+
+      <Modal
+        open={sinceOpen}
+        onClose={() => setSinceOpen(false)}
+        title="Hisob boshlanishi"
+        size="sm"
+        footer={
+          <>
+            {since && (
+              <Button variant="secondary" onClick={() => saveSince('')} disabled={sinceSaving}>
+                Butun tarix
+              </Button>
+            )}
+            <Button onClick={() => saveSince(sinceDraft)} disabled={sinceSaving || !sinceDraft}>
+              {sinceSaving ? 'Saqlanmoqda...' : 'Saqlash'}
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-3">
+          <p className="text-sm text-slate-500">
+            Shu kundan oldingi ballar qoldiga kirmaydi — hamma 100 dan boshlaydi. Yozuvlar o'chmaydi,
+            "Harakatlar" va o'quvchi profilida ko'rinib turadi.
+          </p>
+          <input
+            type="date"
+            className={cn(control, 'w-full')}
+            value={sinceDraft}
+            max={todayIso()}
+            onChange={(e) => setSinceDraft(e.target.value)}
+          />
+        </div>
+      </Modal>
     </div>
   )
+}
+
+/** Bugungi sana "yyyy-MM-dd" (mahalliy vaqt bo'yicha, UTC emas). */
+function todayIso() {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }

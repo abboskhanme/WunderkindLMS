@@ -222,6 +222,37 @@ public class DisciplineController(
         => await BuildScoresAsync();
 
     /// <summary>
+    /// The day the score counts from (client, 2026-10-30: a new year restarts the count at 100).
+    /// Empty = the whole history. Older entries are kept — they only stop moving the score.
+    /// </summary>
+    [HttpGet("score-since")]
+    public async Task<ActionResult<DisciplineScoreSinceDto>> GetScoreSince()
+        => new DisciplineScoreSinceDto(await DisciplineIncidents.ScoreSinceAsync(db) ?? "");
+
+    /// <summary>Sets the start day ("yyyy-MM-dd", not in the future) or clears it (empty). Audited.</summary>
+    [HttpPut("score-since")]
+    public async Task<ActionResult<DisciplineScoreSinceDto>> SetScoreSince([FromBody] DisciplineScoreSinceDto req)
+    {
+        var value = (req.Since ?? "").Trim();
+        if (value.Length > 0)
+        {
+            if (!DateOnly.TryParseExact(value, "yyyy-MM-dd", out var day))
+                return BadRequest(new { message = "Sana noto'g'ri (yyyy-MM-dd)." });
+            if (day > AppClock.Today)
+                return BadRequest(new { message = "Kelajakdagi sanani tanlab bo'lmaydi." });
+        }
+        var meta = await db.SchoolMeta.FirstOrDefaultAsync();
+        if (meta is null) return NotFound(new { message = "Maktab sozlamalari topilmadi" });
+        var before = meta.DisciplineScoreSince;
+        meta.DisciplineScoreSince = value;
+        audit.Record("SchoolMeta", meta.Id, "update",
+            value.Length > 0 ? $"Xulq-atvor balli {value} dan hisoblanadi" : "Xulq-atvor balli butun tarix bo'yicha hisoblanadi",
+            before: new { disciplineScoreSince = before }, after: new { disciplineScoreSince = value });
+        await db.SaveChangesAsync();
+        return new DisciplineScoreSinceDto(value);
+    }
+
+    /// <summary>
     /// Ballar nazorati Excel (.xlsx) ga — ekrandagi FILTRLAR bilan bir xil qatorlar.
     /// Filtrlar sahifada mijoz tarafida qo'llanadi (<c>/scores</c> butun ro'yxatni qaytaradi),
     /// shuning uchun eksport ham xuddi shu filtrlarni qabul qiladi — yuklangan fayl ekranda
@@ -276,10 +307,14 @@ public class DisciplineController(
     {
         var students = await db.Students.Where(s => !s.IsArchived)
             .Select(s => new { s.Id, s.FullName, s.ClassName }).ToListAsync();
-        var manual = await db.DisciplinePoints.Select(p => new { p.StudentId, p.Points }).ToListAsync();
+        // Only entries since the school's start day count (DisciplineIncidents.ScoreSinceAsync).
+        var since = await DisciplineIncidents.ScoreSinceAsync(db);
+        var manual = await db.DisciplinePoints.Where(p => since == null || string.Compare(p.CreatedAt, since) >= 0)
+            .Select(p => new { p.StudentId, p.Points }).ToListAsync();
         var absPts = await db.AbsenceReasons.ToDictionaryAsync(r => r.Id, r => r.Points);
         // One event per pupil, day and reason (AttendanceDisciplineDays): seven absent lessons, one penalty.
-        var journal = await db.JournalEntries.Where(e => e.ReasonId != null)
+        var journal = await db.JournalEntries
+            .Where(e => e.ReasonId != null && (since == null || string.Compare(e.Date, since) >= 0))
             .Select(e => new { e.StudentId, e.ReasonId, e.Date }).Distinct().ToListAsync();
 
         var plusBy = new Dictionary<string, int>();

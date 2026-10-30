@@ -264,6 +264,9 @@ internal static class ParityModel
             // Client, 2026-10-15: the nurse takes attendance, teachers do not — the migration
             // switches the existing school over at once (`ADD COLUMN ... DEFAULT false`).
             e.Property(x => x.TeachersMarkAttendance).HasDefaultValue(false);
+
+            // Client, 2026-10-30: empty = the score counts the whole history, as before.
+            e.Property(x => x.DisciplineScoreSince).HasDefaultValue("");
         });
     }
 }

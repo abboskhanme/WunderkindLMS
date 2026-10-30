@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using Microsoft.EntityFrameworkCore;
 using ModelContextProtocol.Server;
+using SchoolLms.Application.Services;
 
 namespace SchoolLms.Server.Mcp.Tools;
 
@@ -61,6 +62,9 @@ public sealed class DisciplineTools(McpToolContext t)
         // Current academic year only (the web screen counts all history; an AI call should not
         // scan every journal row ever written). Year start = quarter 1 start, else 1 September.
         var yearStart = await AcademicYearStartAsync(ct);
+        // A school-set start day (DisciplineIncidents.ScoreSinceAsync) later in the year wins.
+        if (await DisciplineIncidents.ScoreSinceAsync(db, ct) is { } since && string.CompareOrdinal(since, yearStart) > 0)
+            yearStart = since;
         var students = await db.Students.Where(s => !s.IsArchived)
             .Where(s => className == null || s.ClassName == className.Trim())
             .Select(s => new { s.Id, s.FullName, s.ClassName }).ToListAsync(ct);

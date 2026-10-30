@@ -673,6 +673,9 @@ public record SetEvaluationGradeRequest(
 
 /// <summary>O'quvchining bitta fan bo'yicha oylik baholashlari (shaxsiy daftarda "fan kesimida").</summary>
 public record SubjectEvaluationDto(string SubjectId, string SubjectName, double Avg, List<MonthlyEvaluationDto> Evaluations);
+/// <summary>The day the behaviour score counts from ("yyyy-MM-dd"); empty = the whole history.</summary>
+public record DisciplineScoreSinceDto(string? Since);
+
 /// <summary>Ballar nazorati qatori: o'quvchi, sinf, plus (rag'bat), minus (jazo), qoldi (100+plus−minus).</summary>
 public record DisciplineScoreRowDto(
     string StudentId, string FullName, string ClassName, int Plus, int Minus, int Remaining);
