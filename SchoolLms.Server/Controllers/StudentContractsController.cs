@@ -438,12 +438,19 @@ public partial class StudentContractsController(
 
     /// <summary>
     /// Faol o'quvchilarga ketma-ket raqam: sinflar ro'yxatdagi tartibda (daraja, nom — 1-A … 11-B), sinf ichida
-    /// F.I.SH. bo'yicha, xuddi sinf ro'yxatidagidek. Raqami bor o'quvchi TEGILMAYDI va raqam olmaydi;
-    /// raqamsiz (qoralama) yozuvi bor o'quvchida o'sha yozuvga raqam qo'yiladi, yo'q bo'lsa yangi yozuv.
+    /// F.I.SH. bo'yicha, xuddi sinf ro'yxatidagidek. Raqamsiz (qoralama) yozuvi bor o'quvchida o'sha yozuvga
+    /// raqam qo'yiladi, yo'q bo'lsa yangi yozuv.
     ///
     /// <para>
-    /// <c>apply = false</c> — faqat reja (hech narsa yozilmaydi). <c>apply = true</c> — hammasi BITTA
-    /// <c>SaveChanges</c> da: yo yarmi emas, hammasi. Biror raqam band bo'lsa — 409, hech narsa yozilmaydi.
+    /// <b>Raqami bor o'quvchi:</b> sukut bo'yicha TEGILMAYDI va raqam olmaydi. <c>renumber = true</c> bo'lsa u ham
+    /// ketma-ketlikka kiradi va eng oxirgi raqamli yozuvining raqami almashtiriladi (eski raqam audit'da qoladi) —
+    /// saytdagi sentabrda kiritilgan "WK-000001…" larni qayta raqamlash uchun (2026-10-30).
+    /// </para>
+    /// <para>
+    /// <c>apply = false</c> — faqat reja (hech narsa yozilmaydi). <c>apply = true</c> — bitta tranzaksiyada:
+    /// yo hammasi, yo hech narsa. Biror raqam almashtirilmaydigan yozuvda band bo'lsa — 409. Almashtirish
+    /// ikki bosqichda (avval vaqtinchalik raqam), chunki unikal indeks har qatorda darhol tekshiriladi va
+    /// ikki o'quvchining raqamini o'zaro almashtirish aks holda 23505 berardi.
     /// </para>
     /// </summary>
     [HttpPost("auto-number")]
@@ -470,71 +477,102 @@ public partial class StudentContractsController(
             .ToListAsync(ct);
         var numbered = contracts.Where(c => c.Number != null)
             .GroupBy(c => c.StudentId)
-            .ToDictionary(g => g.Key, g => g.OrderByDescending(c => c.CreatedAt).First().Number!, StringComparer.Ordinal);
+            .ToDictionary(g => g.Key, g => g.OrderByDescending(c => c.CreatedAt).First(), StringComparer.Ordinal);
         var drafts = contracts.Where(c => c.Number == null)
             .GroupBy(c => c.StudentId)
             .ToDictionary(g => g.Key, g => g.OrderByDescending(c => c.CreatedAt).First(), StringComparer.Ordinal);
+
+        // Band raqamlar — shu partiyada ALMASHTIRILMAYDIGAN yozuvlarniki.
+        var replaced = req.Renumber ? numbered.Values.Select(c => c.Id).ToHashSet() : [];
         var taken = (await db.StudentContracts.AsNoTracking()
-                .Where(c => c.Number != null).Select(c => c.Number!).ToListAsync(ct))
+                .Where(c => c.Number != null).Select(c => new { c.Id, Number = c.Number! }).ToListAsync(ct))
+            .Where(c => !replaced.Contains(c.Id))
+            .Select(c => c.Number)
             .ToHashSet(StringComparer.Ordinal);
 
         var rows = new List<AutoNumberContractRowDto>(pupils.Count);
         var next = req.Start;
         foreach (var p in pupils)
         {
-            if (numbered.TryGetValue(p.Id, out var existing))
+            numbered.TryGetValue(p.Id, out var current);
+            if (current is not null && !req.Renumber)
             {
-                rows.Add(new(p.Id, p.FullName, p.ClassName, null, "skip", existing));
+                rows.Add(new(p.Id, p.FullName, p.ClassName, null, "skip", current.Number));
                 continue;
             }
             var number = prefix + next.ToString(CultureInfo.InvariantCulture);
             next++;
-            var action = taken.Contains(number) ? "taken" : drafts.ContainsKey(p.Id) ? "draft" : "new";
-            rows.Add(new(p.Id, p.FullName, p.ClassName, number, action, null));
+            var action = current?.Number == number ? "same"
+                : taken.Contains(number) ? "taken"
+                : current is not null ? "renumber"
+                : drafts.ContainsKey(p.Id) ? "draft"
+                : "new";
+            rows.Add(new(p.Id, p.FullName, p.ClassName, number, action, current?.Number));
         }
 
-        var assigned = rows.Where(r => r.Number != null).ToList();
+        var numberedRows = rows.Where(r => r.Number != null).ToList();
+        var changes = numberedRows.Where(r => r.Action is "new" or "draft" or "renumber").ToList();
         var conflicts = rows.Count(r => r.Action == "taken");
         var result = new AutoNumberContractsResultDto(
-            false, assigned.Count, rows.Count(r => r.Action == "skip"), conflicts, withoutClass,
-            assigned.FirstOrDefault()?.Number, assigned.LastOrDefault()?.Number, rows);
+            false, changes.Count, rows.Count(r => r.Action is "skip" or "same"), conflicts, withoutClass,
+            numberedRows.FirstOrDefault()?.Number, numberedRows.LastOrDefault()?.Number, rows);
 
         if (!req.Apply) return result;
         if (conflicts > 0) return Conflict(new { message = ConflictsMessage, result });
-        if (assigned.Count == 0) return result with { Applied = true };
+        if (changes.Count == 0) return result with { Applied = true };
 
         var actor = CurrentUserId();
-        foreach (var r in assigned)
-        {
-            if (drafts.TryGetValue(r.StudentId, out var draft))
-            {
-                draft.Number = r.Number;
-                audit.Record(AuditEntity, draft.Id.ToString(), "update",
-                    $"Shartnomaga raqam qo'yildi (ommaviy): № {r.Number} ({r.StudentName})",
-                    after: new { draft.Number }, studentId: r.StudentId);
-                continue;
-            }
-            var row = new StudentContract
-            {
-                StudentId = r.StudentId,
-                Number = r.Number,
-                Source = StudentContractSource.Uploaded,
-                CreatedBy = actor,
-                CreatedAt = AppClock.NowInstant,
-            };
-            db.StudentContracts.Add(row);
-            audit.Record(AuditEntity, row.Id.ToString(), "create",
-                $"Shartnomaga raqam qo'yildi (ommaviy): № {r.Number} ({r.StudentName})",
-                after: new { row.Number, row.Source }, studentId: r.StudentId);
-        }
-
         try
         {
+            await using var tx = await db.Database.BeginTransactionAsync(ct);
+
+            // 1-bosqich: almashtiriladigan raqamlarni bo'shatish (vaqtinchalik, takrorlanmas qiymat).
+            var renumbered = changes.Where(r => r.Action == "renumber").ToList();
+            foreach (var r in renumbered)
+                numbered[r.StudentId].Number = $"~{numbered[r.StudentId].Id:N}";
+            if (renumbered.Count > 0) await db.SaveChangesAsync(ct);
+
+            // 2-bosqich: yangi raqamlar.
+            foreach (var r in changes)
+            {
+                if (r.Action == "renumber")
+                {
+                    var row = numbered[r.StudentId];
+                    row.Number = r.Number;
+                    audit.Record(AuditEntity, row.Id.ToString(), "update",
+                        $"Shartnoma raqami almashtirildi (ommaviy): № {r.ExistingNumber} → № {r.Number} ({r.StudentName})",
+                        before: new { Number = r.ExistingNumber }, after: new { row.Number }, studentId: r.StudentId);
+                }
+                else if (r.Action == "draft")
+                {
+                    var draft = drafts[r.StudentId];
+                    draft.Number = r.Number;
+                    audit.Record(AuditEntity, draft.Id.ToString(), "update",
+                        $"Shartnomaga raqam qo'yildi (ommaviy): № {r.Number} ({r.StudentName})",
+                        after: new { draft.Number }, studentId: r.StudentId);
+                }
+                else
+                {
+                    var row = new StudentContract
+                    {
+                        StudentId = r.StudentId,
+                        Number = r.Number,
+                        Source = StudentContractSource.Uploaded,
+                        CreatedBy = actor,
+                        CreatedAt = AppClock.NowInstant,
+                    };
+                    db.StudentContracts.Add(row);
+                    audit.Record(AuditEntity, row.Id.ToString(), "create",
+                        $"Shartnomaga raqam qo'yildi (ommaviy): № {r.Number} ({r.StudentName})",
+                        after: new { row.Number, row.Source }, studentId: r.StudentId);
+                }
+            }
             await db.SaveChangesAsync(ct);
+            await tx.CommitAsync(ct);
         }
         catch (DbUpdateException ex) when (ex.InnerException is System.Data.Common.DbException { SqlState: "23505" })
         {
-            // Reja bilan yozish orasida kimdir shu raqamlardan birini band qildi — hech narsa yozilmadi.
+            // Reja bilan yozish orasida kimdir shu raqamlardan birini band qildi — tranzaksiya qaytarildi.
             return Conflict(new { message = ConflictsMessage });
         }
         return result with { Applied = true };

@@ -160,9 +160,12 @@ public record BulkAttachContractRowDto(
 /// Hamma o'quvchiga ketma-ket raqam (mijoz, 2026-10-29: "1a sinfidagi ro'yxatdagi birinchi o'quvchidan
 /// (WK-1) 11b sinfidagi oxirgi o'quvchigacha (WK-467)"). <see cref="Apply"/> = false — faqat reja.
 /// </summary>
-public record AutoNumberContractsRequest(string? Prefix, int Start = 1, bool Apply = false);
+/// <param name="Renumber">true — raqami bor o'quvchilar ham ketma-ketlikka kiradi va raqami almashtiriladi
+/// (mijoz, 2026-10-30: saytdagi 89 ta eski "WK-000001…" raqamni ham qayta raqamlash).</param>
+public record AutoNumberContractsRequest(string? Prefix, int Start = 1, bool Apply = false, bool Renumber = false);
 
 /// <param name="Action">new — yangi yozuv; draft — raqamsiz yozuviga raqam qo'yiladi;
+/// renumber — eski raqami almashtiriladi; same — raqami allaqachon shu (o'zgarmaydi);
 /// skip — allaqachon raqami bor (o'zgarmaydi); taken — bu raqam boshqa yozuvda band.</param>
 public record AutoNumberContractRowDto(
     string StudentId, string StudentName, string ClassName, string? Number, string Action, string? ExistingNumber);

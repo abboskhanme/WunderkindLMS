@@ -29,6 +29,8 @@ const errorText = (e: unknown, fallback: string) =>
 const actionLabels = {
   new: 'Yangi',
   draft: 'Qoralamaga',
+  renumber: 'Almashtiriladi',
+  same: "O'zgarmaydi",
   skip: 'Raqami bor',
   taken: 'Band',
 } as const
@@ -36,6 +38,8 @@ const actionLabels = {
 export function AutoNumberContractsModal({ open, onClose, onDone }: Props) {
   const [prefix, setPrefix] = useState('WK-')
   const [start, setStart] = useState('1')
+  /** Raqami borlarni ham qayta raqamlash (2026-10-30: saytdagi eski "WK-000001…" lar). */
+  const [renumber, setRenumber] = useState(false)
   const [plan, setPlan] = useState<AutoNumberContractsResult | null>(null)
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -55,7 +59,7 @@ export function AutoNumberContractsModal({ open, onClose, onDone }: Props) {
       setLoading(true)
       setError(null)
       try {
-        const data = await autoNumberContracts({ prefix, start: startNumber, apply: false })
+        const data = await autoNumberContracts({ prefix, start: startNumber, apply: false, renumber })
         if (!cancelled) setPlan(data)
       } catch (e) {
         if (!cancelled) {
@@ -70,20 +74,22 @@ export function AutoNumberContractsModal({ open, onClose, onDone }: Props) {
       cancelled = true
       clearTimeout(timer)
     }
-  }, [open, prefix, startNumber])
+  }, [open, prefix, startNumber, renumber])
 
   const apply = async () => {
     if (!plan || plan.assigned === 0 || plan.conflicts > 0 || saving) return
+    const replacing = plan.rows.filter((r) => r.action === 'renumber').length
     if (
       !confirm(
-        `${plan.assigned} ta o'quvchiga ${plan.firstNumber} dan ${plan.lastNumber} gacha raqam qo'yilsinmi?`,
+        `${plan.assigned} ta o'quvchiga ${plan.firstNumber} dan ${plan.lastNumber} gacha raqam qo'yilsinmi?` +
+          (replacing > 0 ? `\n\nDiqqat: ${replacing} ta o'quvchining eski raqami almashtiriladi.` : ''),
       )
     )
       return
     setSaving(true)
     setError(null)
     try {
-      const result = await autoNumberContracts({ prefix, start: startNumber, apply: true })
+      const result = await autoNumberContracts({ prefix, start: startNumber, apply: true, renumber })
       onDone(result)
     } catch (e) {
       setError(errorText(e, "Raqam qo'yib bo'lmadi"))
@@ -128,10 +134,26 @@ export function AutoNumberContractsModal({ open, onClose, onDone }: Props) {
           />
         </div>
 
+        <label className="flex items-start gap-2 rounded-xl border border-slate-200 p-3 text-sm">
+          <input
+            type="checkbox"
+            checked={renumber}
+            onChange={(e) => setRenumber(e.target.checked)}
+            className="mt-0.5 h-4 w-4"
+          />
+          <span>
+            <span className="font-medium text-slate-800">Raqami borlarni ham qayta raqamlash</span>
+            <span className="block text-slate-500">
+              Hamma o'quvchi ketma-ketlikka kiradi, eski raqam almashtiriladi (u tarixda qoladi). Qog'ozda
+              imzolangan shartnomadagi raqam bilan farq qilishi mumkin.
+            </span>
+          </span>
+        </label>
+
         <p className="text-sm text-slate-500">
-          Tartib sinflar ro'yxatidagidek (1-A … 11-B), sinf ichida F.I.SH. bo'yicha. Raqami bor
-          o'quvchi o'zgarmaydi. Avval quyidagi reja ko'rsatiladi — «Raqam qo'yish» bosilmaguncha hech
-          narsa yozilmaydi.
+          Tartib sinflar ro'yxatidagidek (1-A … 11-B), sinf ichida F.I.SH. bo'yicha.
+          {renumber ? '' : " Raqami bor o'quvchi o'zgarmaydi."} Avval quyidagi reja ko'rsatiladi — «Raqam
+          qo'yish» bosilmaguncha hech narsa yozilmaydi.
         </p>
 
         {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
@@ -157,6 +179,12 @@ export function AutoNumberContractsModal({ open, onClose, onDone }: Props) {
                   </p>
                 ) : (
                   <p className="font-medium">Raqam qo'yiladigan o'quvchi yo'q</p>
+                )}
+                {plan.rows.some((r) => r.action === 'renumber') && (
+                  <p>
+                    {plan.rows.filter((r) => r.action === 'renumber').length} ta o'quvchining eski raqami
+                    almashtiriladi.
+                  </p>
                 )}
                 {plan.skipped > 0 && <p>{plan.skipped} ta o'quvchida raqam allaqachon bor — o'zgarmaydi.</p>}
                 {plan.conflicts > 0 && (
@@ -185,6 +213,11 @@ export function AutoNumberContractsModal({ open, onClose, onDone }: Props) {
                     <tr key={r.studentId} className={r.action === 'skip' ? 'text-slate-400' : ''}>
                       <td className="whitespace-nowrap px-3 py-2 font-medium">
                         {r.number ?? `№ ${r.existingNumber}`}
+                        {r.action === 'renumber' && (
+                          <span className="ml-1.5 text-xs font-normal text-slate-400 line-through">
+                            {r.existingNumber}
+                          </span>
+                        )}
                       </td>
                       <td className="px-3 py-2">{r.studentName}</td>
                       <td className="whitespace-nowrap px-3 py-2">{r.className}</td>
@@ -192,6 +225,7 @@ export function AutoNumberContractsModal({ open, onClose, onDone }: Props) {
                         className={cn(
                           'whitespace-nowrap px-3 py-2 text-xs',
                           r.action === 'taken' && 'font-semibold text-red-600',
+                          r.action === 'renumber' && 'font-medium text-amber-600',
                         )}
                       >
                         {actionLabels[r.action]}

@@ -206,6 +206,8 @@ export interface AutoNumberContractsInput {
   start: number
   /** false — faqat reja, hech narsa yozilmaydi. */
   apply: boolean
+  /** true — raqami borlar ham ketma-ketlikka kiradi, eski raqami almashtiriladi. */
+  renumber?: boolean
 }
 
 export interface AutoNumberContractRow {
@@ -213,8 +215,11 @@ export interface AutoNumberContractRow {
   studentName: string
   className: string
   number: string | null
-  /** new — yangi yozuv; draft — qoralamaga raqam; skip — raqami bor; taken — raqam band. */
-  action: 'new' | 'draft' | 'skip' | 'taken'
+  /**
+   * new — yangi yozuv; draft — qoralamaga raqam; renumber — eski raqam almashtiriladi;
+   * same — raqami allaqachon shu; skip — raqami bor (tegilmaydi); taken — raqam band.
+   */
+  action: 'new' | 'draft' | 'renumber' | 'same' | 'skip' | 'taken'
   existingNumber: string | null
 }
 
