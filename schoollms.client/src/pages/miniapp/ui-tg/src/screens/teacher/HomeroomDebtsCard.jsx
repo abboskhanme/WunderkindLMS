@@ -2,26 +2,29 @@
  * SINFIM — sinf rahbarining o'quvchilari va ularning qarzi (mijoz, 2026-10-12: "o'qituvchi sinf
  * rahbar ham bo'lsa ... o'zini rahbarligidagi guruh yoki sinfini ko'radimi asosan qarzdorliklar uchun").
  *
- *   HomeroomDebtsCard  — "Bugun" dagi karta: jami qarz, qarzdorlar soni va eng katta uchtasi.
+ *   HomeroomDebtsCard  — "Bugun" dagi karta: qarzdorlar soni va eng ko'p kechikkan uchtasi.
  *   HomeroomDebtsSheet — butun ekran: qarzdorlar (yoki hamma) ro'yxati — to'lanmagan oylar va
  *                        ota-ona telefoni (eslatish uchun bosib qo'ng'iroq qilinadi). Sinf / guruh
  *                        bo'yicha filtr va Excel (2026-10-12): Telegram ichida fayl bot orqali
  *                        o'qituvchining o'z chatiga keladi, brauzerda — to'g'ridan-to'g'ri yuklanadi.
  *
  *   PupilView          — o'quvchi bosilsa (2026-10-29: "sinf rahbari ota-ona bilan bog'lanib
- *                        aniqlashtirib izoh yozishi kerak"): qarz, telefon, izoh yozish va tarix.
+ *                        aniqlashtirib izoh yozishi kerak"): qarzdorligi, telefon, izoh yozish va tarix.
  *                        Admin'dagi "Moliya → Qarzdorlar → Izoh" bilan BITTA tarix.
  *
  * Faqat rahbarga: rahbarligi yo'q o'qituvchida karta umuman chizilmaydi (server ham bo'sh
  * ro'yxat qaytaradi). To'lov va chegirmalar bu yerda yo'q — faqat ko'rish va izoh. Raqamlar admin'dagi
  * "Qarzdorlar" hisoboti bilan bir xil (`GET /api/teacher/homeroom/debts`).
+ *
+ * SUMMA YO'Q (mijoz, 2026-10-30: "sinf rahbarlarida o'quvchi qarzdorligi summasi ko'rinmasin, faqat
+ * qarzdor bo'lib ko'rinsin"): server summani umuman yubormaydi — faqat qarzdor / qarzi yo'q va oylar.
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { ChevronRight, FileSpreadsheet, MessageSquareText, Phone, Users, Wallet, X } from 'lucide-react'
 import { Badge, Card, EmptyState, Hero, Row, Segmented, StatGrid } from '../../components/ui'
 import { useAsync } from '../../lib/useAsync'
 import { teacherApi } from '../../lib/teacherApi'
-import { dateTime, money, monthTitle, sum } from '../../lib/format'
+import { dateTime, monthTitle } from '../../lib/format'
 import { haptic, hapticNotify, inTelegram, showBackButton, useKeyboardOpen } from '../../lib/telegram'
 
 /** "2026-09-01" → "Sentabr" (shu yil) yoki "Sentabr 2025" (boshqa yil). */
@@ -46,7 +49,7 @@ export function HomeroomDebtsCard() {
   // Rahbarligi yo'q o'qituvchi — karta yo'q (xato bo'lsa ham "Bugun" ekrani buzilmasin).
   if (q.error || (d && d.groups.length === 0)) return null
 
-  const debtors = d ? d.pupils.filter((p) => p.debt > 0) : []
+  const debtors = d ? d.pupils.filter((p) => p.isDebtor) : []
   const openSheet = () => {
     haptic('light')
     setOpen(true)
@@ -79,8 +82,8 @@ export function HomeroomDebtsCard() {
             <>
               <Row
                 lead={<DebtIcon />}
-                title={money(d.totalDebt)}
-                subtitle={`${d.debtorCount} ta qarzdor · ${d.pupilCount} ta o'quvchidan`}
+                title={`${d.debtorCount} ta qarzdor`}
+                subtitle={`${d.pupilCount} ta o'quvchidan`}
                 right={<ChevronRight className="h-5 w-5 text-slate-400" />}
                 onClick={openSheet}
               />
@@ -90,7 +93,7 @@ export function HomeroomDebtsCard() {
                   lead={<Initial name={p.fullName} />}
                   title={p.fullName}
                   subtitle={monthsLine(p)}
-                  right={<span className="shrink-0 text-[15px] font-bold text-red-600">{sum(p.debt)}</span>}
+                  right={<Badge tone="danger">Qarzdor</Badge>}
                   onClick={openSheet}
                 />
               ))}
@@ -129,9 +132,8 @@ export function HomeroomDebtsSheet({ onClose }) {
   const manyGroups = (d?.groups.length ?? 0) > 1
   // Hamma raqam tanlangan sinf/guruh bo'yicha — ekran va Excel bir xil narsani ko'rsatsin.
   const inGroup = d ? d.pupils.filter((p) => !group || p.group === group) : []
-  const debtors = inGroup.filter((p) => p.debt > 0)
+  const debtors = inGroup.filter((p) => p.isDebtor)
   const shown = filter === 'debtors' ? debtors : inGroup
-  const total = debtors.reduce((acc, p) => acc + p.debt, 0)
 
   const pickGroup = (g) => {
     haptic('light')
@@ -206,7 +208,7 @@ export function HomeroomDebtsSheet({ onClose }) {
             {manyGroups && (
               <div className="mt-3 flex gap-2 overflow-x-auto px-4">
                 {['', ...d.groups].map((g) => {
-                  const count = d.pupils.filter((p) => (!g || p.group === g) && p.debt > 0).length
+                  const count = d.pupils.filter((p) => (!g || p.group === g) && p.isDebtor).length
                   const active = group === g
                   return (
                     <button
@@ -227,8 +229,8 @@ export function HomeroomDebtsSheet({ onClose }) {
 
             <StatGrid
               items={[
-                { label: "Jami qarz, so'm", value: sum(total) },
-                { label: 'Qarzdorlar', value: `${debtors.length}/${inGroup.length}`, note: "o'quvchidan" },
+                { label: 'Qarzdorlar', value: String(debtors.length), note: "o'quvchi" },
+                { label: "Qarzi yo'q", value: String(inGroup.length - debtors.length), note: `${inGroup.length} tadan` },
               ]}
             />
 
@@ -266,7 +268,7 @@ export function HomeroomDebtsSheet({ onClose }) {
             </div>
 
             <p className="mx-6 mt-3 text-center text-[12px] text-slate-400">
-              Qarz buxgalteriyadagi bilan bir xil. To'lov faqat kassada qabul qilinadi. Izoh yozish uchun
+              Qarz summasi buxgalteriyada. To'lov faqat kassada qabul qilinadi. Izoh yozish uchun
               o'quvchini bosing.
             </p>
           </>
@@ -299,7 +301,7 @@ function PupilRow({ p, showGroup, onOpen }) {
           <div className="mt-1.5 flex flex-wrap gap-1.5">
             {p.unpaidMonths.map((m) => (
               <span key={m.month} className="rounded-lg bg-red-50 px-2 py-0.5 text-[12px] text-red-700">
-                {monthLabel(m.month)}: {sum(m.amount)}
+                {monthLabel(m.month)}
               </span>
             ))}
           </div>
@@ -320,12 +322,12 @@ function PupilRow({ p, showGroup, onOpen }) {
             <span className="line-clamp-2 break-words">{p.lastComment}</span>
           </p>
         ) : (
-          p.debt > 0 && <p className="mt-1.5 text-[12px] font-medium text-amber-600">Izoh yozilmagan</p>
+          p.isDebtor && <p className="mt-1.5 text-[12px] font-medium text-amber-600">Izoh yozilmagan</p>
         )}
       </div>
-      {p.debt > 0 ? (
+      {p.isDebtor ? (
         <div className="shrink-0 text-right">
-          <p className="text-[15px] font-bold text-red-600">{sum(p.debt)}</p>
+          <Badge tone="danger">Qarzdor</Badge>
           {p.daysOverdue > 0 && <p className="text-[11px] text-red-400">{p.daysOverdue} kun kechikkan</p>}
         </div>
       ) : (
@@ -378,9 +380,9 @@ function PupilView({ p, onSaved }) {
       <Card>
         <div className="space-y-2 px-4 py-4">
           <div className="flex items-baseline justify-between gap-3">
-            <span className="text-[14px] text-slate-500">Qarz</span>
-            {p.debt > 0 ? (
-              <span className="text-[20px] font-bold text-red-600">{money(p.debt)}</span>
+            <span className="text-[14px] text-slate-500">Holat</span>
+            {p.isDebtor ? (
+              <Badge tone="danger">Qarzdor</Badge>
             ) : (
               <Badge tone="success">Qarzi yo'q</Badge>
             )}
@@ -390,7 +392,7 @@ function PupilView({ p, onSaved }) {
             <div className="flex flex-wrap gap-1.5">
               {p.unpaidMonths.map((m) => (
                 <span key={m.month} className="rounded-lg bg-red-50 px-2 py-0.5 text-[12px] text-red-700">
-                  {monthLabel(m.month)}: {sum(m.amount)}
+                  {monthLabel(m.month)}
                 </span>
               ))}
             </div>

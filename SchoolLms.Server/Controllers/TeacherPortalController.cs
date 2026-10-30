@@ -139,7 +139,7 @@ public class TeacherPortalController(
     }
 
     /// <summary>
-    /// Sinf rahbarining o'quvchilari va ularning qarzi (mijoz, 2026-10-12) — rahbarlikdagi sinflar va
+    /// Sinf rahbarining o'quvchilari va kim qarzdorligi (mijoz, 2026-10-12; summasiz — 2026-10-30) — rahbarlikdagi sinflar va
     /// yo'nalish guruhlari. Faqat rahbarga: oddiy fan o'qituvchisi pulni ko'rmaydi (bo'sh ro'yxat).
     /// Mini App va web-portal ikkalasi shu endpointni o'qiydi. Batafsil: <c>HomeroomDebts.cs</c>.
     /// </summary>
@@ -237,7 +237,7 @@ public class TeacherPortalController(
         var bytes = HomeroomDebts.Workbook(dto, group, all, t.FullName);
         var rows = HomeroomDebts.Rows(dto, group, all);
         var caption = $"{(string.IsNullOrWhiteSpace(group) ? string.Join(", ", dto.Groups) : group)} — "
-                      + $"{rows.Count(r => r.Debt > 0m)} ta qarzdor, jami {AuditService.Money(rows.Sum(r => r.Debt))} so'm";
+                      + $"{rows.Count(r => r.IsDebtor)} ta qarzdor";
         var delivered = false;
         foreach (var chat in chats)
             delivered |= await telegram.SendDocumentAsync(chat, bytes, HomeroomDebts.FileName(dto, group), caption, ct);

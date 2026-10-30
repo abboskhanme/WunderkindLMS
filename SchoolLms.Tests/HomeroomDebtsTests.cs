@@ -31,31 +31,35 @@ public class HomeroomDebtsTests(ApiFixture fixture)
 
         var res = await w.Teacher.GetAsync(Url);
         Assert.Equal(HttpStatusCode.OK, res.StatusCode);
-        var dto = (await res.Content.ReadFromJsonAsync<HomeroomDebtsDto>())!;
+        var raw = await res.Content.ReadAsStringAsync();
+        var dto = System.Text.Json.JsonSerializer.Deserialize<HomeroomDebtsDto>(raw, new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web))!;
 
         Assert.Equal([w.LedClass, w.TrackName], dto.Groups);
         // Ali and Bobur (the class) and Doniyor (the track group) — not the archived pupil, not the other class.
         Assert.Equal(3, dto.PupilCount);
         Assert.Equal(2, dto.DebtorCount);
-        Assert.Equal(3_100_000m, dto.TotalDebt);
+        // No amount reaches the teacher (client, 2026-10-30) — not even in the raw JSON.
+        Assert.DoesNotContain("debt\"", raw, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("amount", raw, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("2600000", raw);
         Assert.DoesNotContain(dto.Pupils, p => p.StudentId == w.Archived || p.StudentId == w.OtherClassPupil);
 
-        // Largest debt first, with what is left of each month.
+        // Debtors first, with the unpaid months.
         var ali = dto.Pupils[0];
         Assert.Equal(w.Ali, ali.StudentId);
         Assert.Equal(w.LedClass, ali.Group);
-        Assert.Equal(2_600_000m, ali.Debt);
+        Assert.True(ali.IsDebtor);
         Assert.Equal("+998901112233", ali.ParentPhone);
         Assert.Equal(
-            [new HomeroomUnpaidMonthDto(September, 1_600_000m), new HomeroomUnpaidMonthDto(October, 1_000_000m)],
+            [new HomeroomUnpaidMonthDto(September), new HomeroomUnpaidMonthDto(October)],
             ali.UnpaidMonths);
 
         var doniyor = dto.Pupils.Single(p => p.StudentId == w.Doniyor);
         Assert.Equal(w.TrackName, doniyor.Group);
-        Assert.Equal(500_000m, doniyor.Debt);
+        Assert.True(doniyor.IsDebtor);
 
         var bobur = dto.Pupils.Single(p => p.StudentId == w.Bobur);
-        Assert.Equal(0m, bobur.Debt);
+        Assert.False(bobur.IsDebtor);
         Assert.Empty(bobur.UnpaidMonths);
         Assert.Equal(w.Bobur, dto.Pupils[^1].StudentId);
     }
@@ -69,7 +73,7 @@ public class HomeroomDebtsTests(ApiFixture fixture)
         var dto = (await plain.GetFromJsonAsync<HomeroomDebtsDto>(Url))!;
         Assert.Empty(dto.Groups);
         Assert.Empty(dto.Pupils);
-        Assert.Equal(0m, dto.TotalDebt);
+        Assert.Equal(0, dto.DebtorCount);
     }
 
     [Fact]
@@ -86,16 +90,17 @@ public class HomeroomDebtsTests(ApiFixture fixture)
     {
         var w = await SeedAsync();
 
-        // Default: debtors of every group, largest first, with a total.
+        // Default: debtors of every group, with a count — no sums.
         var all = await SheetAsync(w.Teacher, "");
         Assert.Contains("qarzdorlar", all[0][0]);
-        Assert.Equal(["№", "O'quvchi", "Sinf / guruh", "Qarz, so'm", "To'lanmagan oylar", "Kechikkan, kun", "Ota-ona telefoni", "Oxirgi izoh"], all[2]);
+        Assert.Equal(["№", "O'quvchi", "Sinf / guruh", "Holat", "To'lanmagan oylar", "Kechikkan, kun", "Ota-ona telefoni", "Oxirgi izoh"], all[2]);
         var body = all.Skip(3).ToList();
         Assert.Equal([$"Ali {w.Tag}", $"Doniyor {w.Tag}"], body.SkipLast(1).Select(r => r[1]).ToArray());
-        Assert.Equal("2600000.00", body[0][3]);
-        Assert.Equal("Sentabr 2026: 1 600 000; Oktabr 2026: 1 000 000", body[0][4]);
+        Assert.Equal("Qarzdor", body[0][3]);
+        Assert.Equal("Sentabr 2026; Oktabr 2026", body[0][4]);
         Assert.Equal("+998901112233", body[0][6]);
-        Assert.Equal("3100000.00", body[^1][3]);
+        Assert.Equal("Jami: 2 ta qarzdor", body[^1][1]);
+        Assert.DoesNotContain(all, r => r.Any(c => c.Contains("00000")));
 
         // One track group.
         var track = await SheetAsync(w.Teacher, $"?group={Uri.EscapeDataString(w.TrackName)}");

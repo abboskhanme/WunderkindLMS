@@ -14,22 +14,24 @@ namespace SchoolLms.Application.Billing;
 //  Until now no teacher saw a pupil's money (P1-21, SPEC §4.3) and an ordinary subject teacher
 //  still does not. The exception is narrow: only the pupils of the classes the teacher leads
 //  (class_homeroom_teachers) and of the track groups they teach (a track group's "rahbar" is its
-//  teacher — HomeroomDirectory). Read-only, and only what a reminder needs: the debt, the unpaid
-//  months and the parent's phone — no payments, no discounts.
+//  teacher — HomeroomDirectory). Read-only, and only what a reminder needs: WHO owes, the unpaid
+//  months and the parent's phone — no payments, no discounts, and NO AMOUNTS (client, 2026-10-30:
+//  "sinf rahbarlarida o'quvchi qarzdorligi summasi ko'rinmasin, faqat qarzdor bo'lib ko'rinsin").
+//  No sum leaves the server here — not in the JSON, not in the Excel, not in the Telegram caption.
 //
-//  The debt is the admin "Qarzdorlar" report's own number (FinanceReportQueries.DebtorsAsync), so
-//  the teacher and the accountant never see two different amounts for one pupil.
+//  Who is a debtor comes from the admin "Qarzdorlar" report (FinanceReportQueries.DebtorsAsync), so
+//  the teacher and the accountant never disagree on who owes.
 // ===========================================================================
 
 /// <summary>The homeroom teacher's pupils with their debts.</summary>
 /// <param name="Groups">The classes and track groups the teacher leads, in order ("7-A", "Aniq fanlar").</param>
-/// <param name="Pupils">Every pupil, debtors first (largest debt first), then the rest by name.</param>
+/// <param name="Pupils">Every pupil, debtors first (longest overdue first), then the rest by name.</param>
 public record HomeroomDebtsDto(
-    IReadOnlyList<string> Groups, int PupilCount, int DebtorCount, decimal TotalDebt,
+    IReadOnlyList<string> Groups, int PupilCount, int DebtorCount,
     IReadOnlyList<HomeroomDebtRowDto> Pupils);
 
 /// <param name="Group">The class or track group the pupil is listed under.</param>
-/// <param name="Debt">0 = owes nothing.</param>
+/// <param name="IsDebtor">Owes something — how much is not shown to the teacher (2026-10-30).</param>
 /// <param name="DaysOverdue">As in the "Qarzdorlar" report; 0 = not overdue.</param>
 /// <param name="LastComment">The latest live debt comment (debtor_actions, 2026-10-29) — the admin's or the
 /// homeroom teacher's, it is one history. null = nobody has written yet.</param>
@@ -38,12 +40,12 @@ public record HomeroomDebtsDto(
 /// <param name="CommentCount">Live comments on the pupil.</param>
 public record HomeroomDebtRowDto(
     string StudentId, string FullName, string Group, string? ParentPhone,
-    decimal Debt, int DaysOverdue, IReadOnlyList<HomeroomUnpaidMonthDto> UnpaidMonths,
+    bool IsDebtor, int DaysOverdue, IReadOnlyList<HomeroomUnpaidMonthDto> UnpaidMonths,
     string? LastComment = null, DateTimeOffset? LastCommentAt = null, string? LastCommentBy = null,
     int CommentCount = 0);
 
-/// <summary>One unpaid invoice month and what is still owed for it.</summary>
-public record HomeroomUnpaidMonthDto(DateOnly Month, decimal Amount);
+/// <summary>One unpaid invoice month (no amount — 2026-10-30).</summary>
+public record HomeroomUnpaidMonthDto(DateOnly Month);
 
 /// <summary>Builds <see cref="HomeroomDebtsDto"/> for one teacher. File header.</summary>
 public static class HomeroomDebts
@@ -60,7 +62,7 @@ public static class HomeroomDebts
                             orderby g.Name
                             select new { g.Id, g.Name }).ToListAsync(ct);
         var groups = classNames.Concat(tracks.Select(t => t.Name)).Distinct(StringComparer.Ordinal).ToList();
-        if (groups.Count == 0) return new HomeroomDebtsDto([], 0, 0, 0m, []);
+        if (groups.Count == 0) return new HomeroomDebtsDto([], 0, 0, []);
 
         // Pupils, each once, under the first of their groups.
         var classPupils = await db.Students.AsNoTracking()
@@ -108,19 +110,20 @@ public static class HomeroomDebts
                 var commented = comments.TryGetValue(p.Id, out var c);
                 return new HomeroomDebtRowDto(
                     p.Id, p.FullName, p.Group, string.IsNullOrWhiteSpace(p.ParentPhone) ? null : p.ParentPhone,
-                    d?.Debt ?? 0m, d?.DaysOverdue ?? 0,
-                    d is null ? [] : [.. months.GetValueOrDefault(p.Id, []).Select(m => new HomeroomUnpaidMonthDto(m.Month, m.Amount))],
+                    d is not null && d.Debt > 0m, d?.DaysOverdue ?? 0,
+                    d is null ? [] : [.. months.GetValueOrDefault(p.Id, []).Select(m => new HomeroomUnpaidMonthDto(m.Month))],
                     commented ? c.Last.Comment : null,
                     commented ? c.Last.CreatedAt : null,
                     commented ? authors.GetValueOrDefault(c.Last.CreatedBy, "Noma'lum") : null,
                     commented ? c.Count : 0);
             })
-            .OrderByDescending(r => r.Debt)
+            .OrderByDescending(r => r.IsDebtor)
+            .ThenByDescending(r => r.DaysOverdue)
             .ThenBy(r => r.FullName, StringComparer.Ordinal)
             .ToList();
 
         return new HomeroomDebtsDto(
-            groups, rows.Count, rows.Count(r => r.Debt > 0m), rows.Sum(r => r.Debt), rows);
+            groups, rows.Count, rows.Count(r => r.IsDebtor), rows);
     }
 
     // =====================================================================
@@ -129,7 +132,7 @@ public static class HomeroomDebts
 
     /// <summary>The rows the screen shows: one class / group (null = all of them), debtors only or everyone.</summary>
     public static IReadOnlyList<HomeroomDebtRowDto> Rows(HomeroomDebtsDto dto, string? group, bool everyone) =>
-        [.. dto.Pupils.Where(p => (everyone || p.Debt > 0m)
+        [.. dto.Pupils.Where(p => (everyone || p.IsDebtor)
                                   && (string.IsNullOrWhiteSpace(group) || string.Equals(p.Group, group, StringComparison.Ordinal)))];
 
     private static readonly string[] Months =
@@ -147,21 +150,21 @@ public static class HomeroomDebts
                     + AppClock.Today.ToString("dd.MM.yyyy", CultureInfo.InvariantCulture);
 
         IReadOnlyList<string> headers =
-            ["№", "O'quvchi", "Sinf / guruh", "Qarz, so'm", "To'lanmagan oylar", "Kechikkan, kun", "Ota-ona telefoni", "Oxirgi izoh"];
+            ["№", "O'quvchi", "Sinf / guruh", "Holat", "To'lanmagan oylar", "Kechikkan, kun", "Ota-ona telefoni", "Oxirgi izoh"];
         var table = rows.Select((p, i) => (IReadOnlyList<ExcelExport.XlsxCell>)
         [
             (i + 1).ToString(CultureInfo.InvariantCulture),
             p.FullName,
             p.Group,
-            ExcelExport.XlsxCell.Num(p.Debt),
+            p.IsDebtor ? "Qarzdor" : "Qarzi yo'q",
             string.Join("; ", p.UnpaidMonths.Select(m =>
-                $"{Months[m.Month.Month - 1]} {m.Month.Year}: {m.Amount.ToString("#,0", CultureInfo.InvariantCulture).Replace(',', ' ')}")),
+                $"{Months[m.Month.Month - 1]} {m.Month.Year}")),
             p.DaysOverdue > 0 ? p.DaysOverdue.ToString(CultureInfo.InvariantCulture) : "",
             p.ParentPhone,
             p.LastComment,
         ]).ToList();
         IReadOnlyList<ExcelExport.XlsxCell> totals =
-            ["", $"Jami: {rows.Count(r => r.Debt > 0m)} ta qarzdor", "", ExcelExport.XlsxCell.Num(rows.Sum(r => r.Debt))];
+            ["", $"Jami: {rows.Count(r => r.IsDebtor)} ta qarzdor"];
 
         return ExcelExport.BuildTables(
         [

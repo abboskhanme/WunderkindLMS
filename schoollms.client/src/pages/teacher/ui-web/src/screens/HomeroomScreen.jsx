@@ -9,8 +9,6 @@ import { useFetch } from '../lib/session'
 import { api } from '../lib/api'
 import { MONTH_NAMES } from '../lib/seasonal'
 
-/** 1600000 → "1 600 000". */
-const sum = (n) => Math.round(Number(n) || 0).toLocaleString('ru-RU').replace(/\s/g, ' ')
 /** "2026-09-01" → "sentabr". */
 const monthName = (iso) => (MONTH_NAMES[Number(String(iso).slice(5, 7)) - 1] || '').toLowerCase()
 
@@ -140,7 +138,7 @@ export default function HomeroomScreen({ onBack }) {
                     style={{ color: debts.data.debtorCount > 0 ? '#EF4444' : 'var(--primary)' }}
                   >
                     {debts.data.debtorCount > 0
-                      ? `Qarzdorlar: ${debts.data.debtorCount} ta · jami ${sum(debts.data.totalDebt)} so'm (${debts.data.groups.join(', ')})`
+                      ? `Qarzdorlar: ${debts.data.debtorCount} ta (${debts.data.groups.join(', ')})`
                       : "Qarzdor o'quvchi yo'q."}
                   </span>
                   {debts.data.debtorCount > 0 && (
@@ -192,9 +190,9 @@ export default function HomeroomScreen({ onBack }) {
                           Qizil ro'yxat: {redReason(redById[s.studentId])}
                         </p>
                       )}
-                      {debtById[s.studentId]?.debt > 0 && (
+                      {debtById[s.studentId]?.isDebtor && (
                         <p className="text-[12.5px] font-semibold text-danger mt-0.5">
-                          Qarz: {sum(debtById[s.studentId].debt)} so'm
+                          Qarzdor
                           {debtById[s.studentId].unpaidMonths.length > 0 &&
                             ` · ${debtById[s.studentId].unpaidMonths.map((m) => monthName(m.month)).join(', ')}`}
                         </p>
