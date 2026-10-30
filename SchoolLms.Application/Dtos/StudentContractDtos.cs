@@ -156,6 +156,26 @@ public record BulkAttachContractRowDto(
     Guid? ContractId,
     string? Reason);
 
+/// <summary>
+/// Hamma o'quvchiga ketma-ket raqam (mijoz, 2026-10-29: "1a sinfidagi ro'yxatdagi birinchi o'quvchidan
+/// (WK-1) 11b sinfidagi oxirgi o'quvchigacha (WK-467)"). <see cref="Apply"/> = false — faqat reja.
+/// </summary>
+public record AutoNumberContractsRequest(string? Prefix, int Start = 1, bool Apply = false);
+
+/// <param name="Action">new — yangi yozuv; draft — raqamsiz yozuviga raqam qo'yiladi;
+/// skip — allaqachon raqami bor (o'zgarmaydi); taken — bu raqam boshqa yozuvda band.</param>
+public record AutoNumberContractRowDto(
+    string StudentId, string StudentName, string ClassName, string? Number, string Action, string? ExistingNumber);
+
+/// <param name="Applied">true — yozildi; false — faqat reja.</param>
+/// <param name="Assigned">Raqam oladigan (olgan) o'quvchilar.</param>
+/// <param name="Skipped">Allaqachon raqami borlar.</param>
+/// <param name="Conflicts">Band raqamlar — bor bo'lsa hech narsa yozilmaydi.</param>
+/// <param name="WithoutClass">Sinfi yo'q (yoki arxivdagi sinfda) faol o'quvchilar — raqamlanmaydi.</param>
+public record AutoNumberContractsResultDto(
+    bool Applied, int Assigned, int Skipped, int Conflicts, int WithoutClass,
+    string? FirstNumber, string? LastNumber, IReadOnlyList<AutoNumberContractRowDto> Rows);
+
 /// <summary>Ommaviy biriktirish yakuni — har bir tanlangan o'quvchi bo'yicha bitta qator.</summary>
 public record BulkAttachContractResultDto(
     int Attached,

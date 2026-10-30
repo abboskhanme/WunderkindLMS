@@ -197,6 +197,48 @@ export interface BulkAttachContractResult {
  * uchun (bitta raqam — bitta yozuv) faqat BITTASI muvaffaqiyatli bo'ladi;
  * qolganlari ANIQ sababi bilan qaytadi (allaqachon raqami bor / raqam band).
  */
+/* =========================================================================
+ *  Hammaga ketma-ket raqam (2026-10-29): 1-A birinchi o'quvchidan 11-B oxirgisigacha
+ * ========================================================================= */
+
+export interface AutoNumberContractsInput {
+  prefix: string
+  start: number
+  /** false — faqat reja, hech narsa yozilmaydi. */
+  apply: boolean
+}
+
+export interface AutoNumberContractRow {
+  studentId: string
+  studentName: string
+  className: string
+  number: string | null
+  /** new — yangi yozuv; draft — qoralamaga raqam; skip — raqami bor; taken — raqam band. */
+  action: 'new' | 'draft' | 'skip' | 'taken'
+  existingNumber: string | null
+}
+
+export interface AutoNumberContractsResult {
+  applied: boolean
+  assigned: number
+  skipped: number
+  conflicts: number
+  withoutClass: number
+  firstNumber: string | null
+  lastNumber: string | null
+  rows: AutoNumberContractRow[]
+}
+
+export async function autoNumberContracts(
+  input: AutoNumberContractsInput,
+): Promise<AutoNumberContractsResult> {
+  const { data } = await api.post<AutoNumberContractsResult>(
+    '/admin/student-contracts/auto-number',
+    input,
+  )
+  return data
+}
+
 export async function attachContractsMany(
   input: BulkAttachContractInput,
 ): Promise<BulkAttachContractResult> {

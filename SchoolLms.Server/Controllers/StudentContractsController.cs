@@ -42,7 +42,7 @@ namespace SchoolLms.Server.Controllers;
 [Authorize]
 [AdminPerm("contracts")]
 [Route("api/admin/student-contracts")]
-public class StudentContractsController(
+public partial class StudentContractsController(
     AppDbContext db, ContractService contracts, AuditService audit) : ControllerBase
 {
     /// <summary>
@@ -429,6 +429,118 @@ public class StudentContractsController(
     }
 
     // =====================================================================
+    //  2b. HAMMAGA KETMA-KET RAQAM (2026-10-29)
+    // =====================================================================
+
+    public const string PrefixMessage = "Prefiks 20 belgidan oshmasin va raqam bilan tugamasin";
+    public const string StartMessage = "Boshlang'ich raqam 1 dan kichik bo'lmasin";
+    public const string ConflictsMessage = "Ba'zi raqamlar allaqachon band — hech narsa yozilmadi. Prefiks yoki boshlang'ich raqamni o'zgartiring.";
+
+    /// <summary>
+    /// Faol o'quvchilarga ketma-ket raqam: sinflar ro'yxatdagi tartibda (daraja, nom — 1-A … 11-B), sinf ichida
+    /// F.I.SH. bo'yicha, xuddi sinf ro'yxatidagidek. Raqami bor o'quvchi TEGILMAYDI va raqam olmaydi;
+    /// raqamsiz (qoralama) yozuvi bor o'quvchida o'sha yozuvga raqam qo'yiladi, yo'q bo'lsa yangi yozuv.
+    ///
+    /// <para>
+    /// <c>apply = false</c> — faqat reja (hech narsa yozilmaydi). <c>apply = true</c> — hammasi BITTA
+    /// <c>SaveChanges</c> da: yo yarmi emas, hammasi. Biror raqam band bo'lsa — 409, hech narsa yozilmaydi.
+    /// </para>
+    /// </summary>
+    [HttpPost("auto-number")]
+    public async Task<ActionResult<AutoNumberContractsResultDto>> AutoNumber(
+        AutoNumberContractsRequest req, CancellationToken ct = default)
+    {
+        var prefix = (req.Prefix ?? "").Trim();
+        if (prefix.Length > 20 || (prefix.Length > 0 && char.IsDigit(prefix[^1])))
+            return BadRequest(new { message = PrefixMessage });
+        if (req.Start < 1) return BadRequest(new { message = StartMessage });
+
+        // Sinf ro'yxatidagi tartib (ClassesController: Grade, Name; o'quvchilar: FullName) — bazada saralanadi.
+        var pupils = await (from s in db.Students.AsNoTracking()
+                            join c in db.Classes.AsNoTracking() on s.ClassName equals c.Name
+                            where !s.IsArchived && !c.IsArchived
+                            orderby c.Grade, c.Name, s.FullName
+                            select new { s.Id, s.FullName, s.ClassName }).ToListAsync(ct);
+        var withoutClass = await db.Students.AsNoTracking()
+            .CountAsync(s => !s.IsArchived && !db.Classes.Any(c => c.Name == s.ClassName && !c.IsArchived), ct);
+
+        var ids = pupils.Select(p => p.Id).ToList();
+        var contracts = await db.StudentContracts
+            .Where(c => ids.Contains(c.StudentId))
+            .ToListAsync(ct);
+        var numbered = contracts.Where(c => c.Number != null)
+            .GroupBy(c => c.StudentId)
+            .ToDictionary(g => g.Key, g => g.OrderByDescending(c => c.CreatedAt).First().Number!, StringComparer.Ordinal);
+        var drafts = contracts.Where(c => c.Number == null)
+            .GroupBy(c => c.StudentId)
+            .ToDictionary(g => g.Key, g => g.OrderByDescending(c => c.CreatedAt).First(), StringComparer.Ordinal);
+        var taken = (await db.StudentContracts.AsNoTracking()
+                .Where(c => c.Number != null).Select(c => c.Number!).ToListAsync(ct))
+            .ToHashSet(StringComparer.Ordinal);
+
+        var rows = new List<AutoNumberContractRowDto>(pupils.Count);
+        var next = req.Start;
+        foreach (var p in pupils)
+        {
+            if (numbered.TryGetValue(p.Id, out var existing))
+            {
+                rows.Add(new(p.Id, p.FullName, p.ClassName, null, "skip", existing));
+                continue;
+            }
+            var number = prefix + next.ToString(CultureInfo.InvariantCulture);
+            next++;
+            var action = taken.Contains(number) ? "taken" : drafts.ContainsKey(p.Id) ? "draft" : "new";
+            rows.Add(new(p.Id, p.FullName, p.ClassName, number, action, null));
+        }
+
+        var assigned = rows.Where(r => r.Number != null).ToList();
+        var conflicts = rows.Count(r => r.Action == "taken");
+        var result = new AutoNumberContractsResultDto(
+            false, assigned.Count, rows.Count(r => r.Action == "skip"), conflicts, withoutClass,
+            assigned.FirstOrDefault()?.Number, assigned.LastOrDefault()?.Number, rows);
+
+        if (!req.Apply) return result;
+        if (conflicts > 0) return Conflict(new { message = ConflictsMessage, result });
+        if (assigned.Count == 0) return result with { Applied = true };
+
+        var actor = CurrentUserId();
+        foreach (var r in assigned)
+        {
+            if (drafts.TryGetValue(r.StudentId, out var draft))
+            {
+                draft.Number = r.Number;
+                audit.Record(AuditEntity, draft.Id.ToString(), "update",
+                    $"Shartnomaga raqam qo'yildi (ommaviy): № {r.Number} ({r.StudentName})",
+                    after: new { draft.Number }, studentId: r.StudentId);
+                continue;
+            }
+            var row = new StudentContract
+            {
+                StudentId = r.StudentId,
+                Number = r.Number,
+                Source = StudentContractSource.Uploaded,
+                CreatedBy = actor,
+                CreatedAt = AppClock.NowInstant,
+            };
+            db.StudentContracts.Add(row);
+            audit.Record(AuditEntity, row.Id.ToString(), "create",
+                $"Shartnomaga raqam qo'yildi (ommaviy): № {r.Number} ({r.StudentName})",
+                after: new { row.Number, row.Source }, studentId: r.StudentId);
+        }
+
+        try
+        {
+            await db.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateException ex) when (ex.InnerException is System.Data.Common.DbException { SqlState: "23505" })
+        {
+            // Reja bilan yozish orasida kimdir shu raqamlardan birini band qildi — hech narsa yozilmadi.
+            return Conflict(new { message = ConflictsMessage });
+        }
+        return result with { Applied = true };
+    }
+
+    // =====================================================================
     //  3. ANDOZADAN HOSIL QILISH (K-2)
     // =====================================================================
 
@@ -559,6 +671,11 @@ public class StudentContractsController(
     /// bo'shigacha oshiriladi.
     /// </para>
     /// <para>
+    /// <b>Prefiksli raqam</b> ("WK-467", 2026-10-29 ommaviy raqamlash): raqamsiz prefiks + son ko'rinishi
+    /// ham sanaladi: prefiks eng oxirgi qo'yilgan raqamdan olinadi va son shu prefiksdagi eng
+    /// kattasidan davom etadi ("WK-467" dan keyin "WK-468"; eski "A-77" xalaqit bermaydi).
+    /// </para>
+    /// <para>
     /// Avtomatik/qo'lda tanlash sozlamasi (K-6) — P2, Batch C. Bugun raqam
     /// kiritilsa qo'lda, kiritilmasa avtomatik ishlaydi.
     /// </para>
@@ -569,18 +686,31 @@ public class StudentContractsController(
             ? await db.Contracts.AsNoTracking().MaxAsync(c => c.Number, ct)
             : 0;
 
-        var used = await db.StudentContracts.AsNoTracking()
-            .Where(c => c.Number != null).Select(c => c.Number!).ToListAsync(ct);
+        var rows = await db.StudentContracts.AsNoTracking()
+            .Where(c => c.Number != null).Select(c => new { Number = c.Number!, c.CreatedAt }).ToListAsync(ct);
+        var used = rows.Select(r => r.Number).ToList();
 
-        var own = used
-            .Select(n => int.TryParse(n, NumberStyles.None, CultureInfo.InvariantCulture, out var v) ? v : 0)
-            .DefaultIfEmpty(0).Max();
+        var parsed = rows
+            .Select(r => (r.CreatedAt, Match: PrefixedNumber().Match(r.Number)))
+            .Where(x => x.Match.Success
+                        && int.TryParse(x.Match.Groups[2].Value, NumberStyles.None, CultureInfo.InvariantCulture, out _))
+            .Select(x => (x.CreatedAt, Prefix: x.Match.Groups[1].Value,
+                          Value: int.Parse(x.Match.Groups[2].Value, CultureInfo.InvariantCulture)))
+            .ToList();
+        // Prefiks — eng oxirgi qo'yilgan raqamniki; son — shu prefiksdagi eng kattasidan.
+        var prefix = parsed.OrderByDescending(x => x.CreatedAt).Select(x => x.Prefix).FirstOrDefault() ?? "";
+        var own = parsed.Where(x => x.Prefix == prefix).Select(x => x.Value).DefaultIfEmpty(0).Max();
 
         var taken = used.ToHashSet(StringComparer.Ordinal);
-        var next = Math.Max(sent, own) + 1;
-        while (taken.Contains(next.ToString(CultureInfo.InvariantCulture))) next++;
-        return next.ToString(CultureInfo.InvariantCulture);
+        // Yuborilgan shartnomalar (contracts.number) — sof son, faqat prefikssiz ketma-ketlik bilan bo'lishadi.
+        var next = (prefix.Length == 0 ? Math.Max(sent, own) : own) + 1;
+        while (taken.Contains(prefix + next.ToString(CultureInfo.InvariantCulture))) next++;
+        return prefix + next.ToString(CultureInfo.InvariantCulture);
     }
+
+    /// <summary>"467" yoki "WK-467": raqamsiz prefiks (bo'sh bo'lishi mumkin) + son.</summary>
+    [System.Text.RegularExpressions.GeneratedRegex(@"^(\D*)(\d+)$")]
+    private static partial System.Text.RegularExpressions.Regex PrefixedNumber();
 
     private async Task<bool> NumberTakenAsync(string number, Guid? exceptId, CancellationToken ct) =>
         await db.StudentContracts.AsNoTracking()

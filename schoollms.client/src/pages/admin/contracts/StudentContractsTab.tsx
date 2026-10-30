@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Download, FileSignature, Pencil, Plus, Search, Trash2, Wand2 } from 'lucide-react'
+import { Download, FileSignature, ListOrdered, Pencil, Plus, Search, Trash2, Wand2 } from 'lucide-react'
 import type { SchoolClass } from '@/types'
 import { getClasses } from '@/api/services/classes'
 import type {
@@ -21,6 +21,7 @@ import { Card } from '@/components/ui/Card'
 import { Input, Select } from '@/components/ui/Input'
 import { Loader } from '@/components/ui/Loader'
 import { cn } from '@/lib/utils'
+import { AutoNumberContractsModal } from './AutoNumberContractsModal'
 import { GenerateContractModal } from './GenerateContractModal'
 import { StudentContractFormModal } from './StudentContractFormModal'
 import { DatePicker } from '@/components/ui/DatePicker'
@@ -62,6 +63,7 @@ export function StudentContractsTab() {
   const [formOpen, setFormOpen] = useState(false)
   const [editing, setEditing] = useState<StudentContract | null>(null)
   const [generateFor, setGenerateFor] = useState<{ id: string; fullName: string } | null>(null)
+  const [autoNumberOpen, setAutoNumberOpen] = useState(false)
 
   useEffect(() => {
     getClasses().then(setClasses).catch(() => setClasses([]))
@@ -214,14 +216,19 @@ export function StudentContractsTab() {
       <Card className="p-0">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 p-4">
           <p className="text-sm text-slate-500">{total} ta shartnoma</p>
-          <Button
-            onClick={() => {
-              setEditing(null)
-              setFormOpen(true)
-            }}
-          >
-            <Plus className="h-4 w-4" /> Yangi yozuv
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="secondary" onClick={() => setAutoNumberOpen(true)}>
+              <ListOrdered className="h-4 w-4" /> Raqamlarni avtomatik qo'yish
+            </Button>
+            <Button
+              onClick={() => {
+                setEditing(null)
+                setFormOpen(true)
+              }}
+            >
+              <Plus className="h-4 w-4" /> Yangi yozuv
+            </Button>
+          </div>
         </div>
 
         {loading && rows.length === 0 ? (
@@ -359,6 +366,17 @@ export function StudentContractsTab() {
         onClose={() => setFormOpen(false)}
         onSubmit={submitForm}
       />
+      {autoNumberOpen && (
+        <AutoNumberContractsModal
+          open
+          onClose={() => setAutoNumberOpen(false)}
+          onDone={(result) => {
+            setAutoNumberOpen(false)
+            alert(`${result.assigned} ta o'quvchiga raqam qo'yildi: ${result.firstNumber} — ${result.lastNumber}`)
+            load()
+          }}
+        />
+      )}
       <GenerateContractModal
         open={generateFor !== null}
         studentId={generateFor?.id ?? null}
