@@ -155,7 +155,10 @@ public static class AttendanceDisciplineReport
             .ToDictionary(g => g.Key, g => g.Sum(p => p.Points), StringComparer.Ordinal);
 
         // ---- Qoldi (butun tarix) — Ballar nazorati bilan bir xil raqam chiqsin ----
+        // Since the school's start day (DisciplineIncidents.ScoreSinceAsync) — "butun tarix" otherwise.
+        var since = await DisciplineIncidents.ScoreSinceAsync(db);
         var allManual = (await db.DisciplinePoints.AsNoTracking()
+                .Where(p => since == null || string.Compare(p.CreatedAt, since) >= 0)
                 .GroupBy(p => p.StudentId)
                 .Select(g => new { StudentId = g.Key, Points = g.Sum(p => p.Points) })
                 .ToListAsync())
@@ -163,7 +166,7 @@ public static class AttendanceDisciplineReport
         // Kuniga bir sabab — bir marta (AttendanceDisciplineDays): kunlar soni, darslar emas.
         var allJournalPoints = new Dictionary<string, int>(StringComparer.Ordinal);
         foreach (var row in await db.JournalEntries.AsNoTracking()
-            .Where(e => e.ReasonId != null)
+            .Where(e => e.ReasonId != null && (since == null || string.Compare(e.Date, since) >= 0))
             .Select(e => new { e.StudentId, e.ReasonId, e.Date })
             .Distinct()
             .GroupBy(e => new { e.StudentId, e.ReasonId })

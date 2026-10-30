@@ -96,6 +96,18 @@ export async function getDisciplineScores(): Promise<DisciplineScoreRow[]> {
   return data
 }
 
+/** Ball qaysi kundan hisoblanadi ("yyyy-MM-dd"); bo'sh — butun tarix. Eski yozuvlar o'chmaydi. */
+export async function getDisciplineScoreSince(): Promise<string> {
+  if (USE_MOCK) return ''
+  const { data } = await api.get<{ since: string | null }>('/admin/discipline/score-since')
+  return data.since ?? ''
+}
+
+export async function setDisciplineScoreSince(since: string): Promise<string> {
+  const { data } = await api.put<{ since: string | null }>('/admin/discipline/score-since', { since })
+  return data.since ?? ''
+}
+
 /** O'quvchiga sabab bo'yicha ball kiritish. */
 export async function addDisciplinePoint(
   studentId: string,

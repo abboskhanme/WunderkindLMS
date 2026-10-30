@@ -321,7 +321,8 @@ export const navByRole: Record<Role, NavItem[]> = {
       ],
     },
     {
-      label: 'Xulq-atvor',
+      // Client, 2026-10-30: the section is called "Gamifikatsiya" (was "Xulq-atvor").
+      label: 'Gamifikatsiya',
       to: '/admin/discipline',
       icon: ShieldAlert,
       perm: 'discipline',

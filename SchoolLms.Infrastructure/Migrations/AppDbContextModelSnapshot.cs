@@ -8408,6 +8408,13 @@ namespace SchoolLms.Infrastructure.Migrations
                         .HasColumnType("text")
                         .HasColumnName("director");
 
+                    b.Property<string>("DisciplineScoreSince")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("text")
+                        .HasDefaultValue("")
+                        .HasColumnName("discipline_score_since");
+
                     b.Property<string>("District")
                         .IsRequired()
                         .HasColumnType("text")

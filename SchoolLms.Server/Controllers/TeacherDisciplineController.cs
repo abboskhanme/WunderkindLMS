@@ -116,8 +116,10 @@ public sealed class TeacherDisciplineController(
         var (plus, minus) = (await DisciplineIncidents.TotalsAsync(db, [student.Id], ct)).GetValueOrDefault(student.Id);
         var today = (await DisciplineIncidents.TodayAsync(db, [student.Id], ct)).GetValueOrDefault(student.Id);
 
+        // The same start day as the score (DisciplineIncidents.ScoreSinceAsync), so the list adds up to it.
+        var since = await DisciplineIncidents.ScoreSinceAsync(db, ct);
         var manual = await db.DisciplinePoints.AsNoTracking()
-            .Where(p => p.StudentId == student.Id)
+            .Where(p => p.StudentId == student.Id && (since == null || string.Compare(p.CreatedAt, since) >= 0))
             .OrderByDescending(p => p.CreatedAt).Take(RecentItems).ToListAsync(ct);
         var items = manual.Select(p => new TeacherDisciplinePointDto(
             p.Id, p.ReasonName, p.Points, p.Note, p.CreatedAt, p.CreatedBy, "manual",
@@ -129,7 +131,8 @@ public sealed class TeacherDisciplineController(
         if (reasonRows.Count > 0)
         {
             var marks = await db.JournalEntries.AsNoTracking()
-                .Where(e => e.StudentId == student.Id && e.ReasonId != null)
+                .Where(e => e.StudentId == student.Id && e.ReasonId != null
+                    && (since == null || string.Compare(e.Date, since) >= 0))
                 .Select(e => new AttendanceDisciplineDays.Mark(e.Id, e.StudentId, e.Date, e.ReasonId!))
                 .ToListAsync(ct);
             foreach (var d in AttendanceDisciplineDays.Collapse(marks))

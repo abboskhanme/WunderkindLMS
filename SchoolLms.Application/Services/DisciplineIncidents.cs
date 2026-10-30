@@ -18,6 +18,8 @@ namespace SchoolLms.Application.Services;
 //  ---------
 //  100 + manual points + attendance-reason points once per pupil, day and reason
 //  (AttendanceDisciplineDays) — the same number as Ballar nazorati, the profile and the portal.
+//  Only entries on or after SchoolMeta.DisciplineScoreSince count (ScoreSinceAsync) — the school
+//  restarts the count for a new year without deleting the history.
 // ===========================================================================
 
 /// <summary>Score totals and teacher reach for behaviour incidents.</summary>
@@ -31,6 +33,21 @@ public static class DisciplineIncidents
 
     /// <summary>Today in the ISO prefix form of <see cref="DisciplinePoint.CreatedAt"/>.</summary>
     public static string TodayIso => AppClock.Today.ToString("yyyy-MM-dd");
+
+    /// <summary>
+    /// The day the score counts from (<see cref="SchoolMeta.DisciplineScoreSince"/>, "yyyy-MM-dd"), or
+    /// <c>null</c> for the whole history. Manual points compare on <c>CreatedAt</c>, attendance marks on
+    /// <c>Date</c> — both ISO text, so a plain ordinal "&gt;=" is the day boundary.
+    /// </summary>
+    public static async Task<string?> ScoreSinceAsync(IAppDbContext db, CancellationToken ct = default)
+    {
+        var since = await db.SchoolMeta.AsNoTracking().Select(m => m.DisciplineScoreSince).FirstOrDefaultAsync(ct);
+        return DateOnly.TryParseExact(since, "yyyy-MM-dd", out _) ? since : null;
+    }
+
+    /// <summary>True when an entry dated <paramref name="isoDate"/> moves the score.</summary>
+    public static bool Counts(string isoDate, string? since)
+        => since is null || string.CompareOrdinal(isoDate, since) >= 0;
 
     /// <summary>
     /// Plus and minus per pupil (manual entries and attendance-reason days). Pupils without any
@@ -50,8 +67,9 @@ public static class DisciplineIncidents
             result[id] = (plus, minus);
         }
 
+        var since = await ScoreSinceAsync(db, ct);
         var manual = await db.DisciplinePoints.AsNoTracking()
-            .Where(p => studentIds.Contains(p.StudentId))
+            .Where(p => studentIds.Contains(p.StudentId) && (since == null || string.Compare(p.CreatedAt, since) >= 0))
             .Select(p => new { p.StudentId, p.Points })
             .ToListAsync(ct);
         foreach (var m in manual) Apply(m.StudentId, m.Points);
@@ -62,7 +80,8 @@ public static class DisciplineIncidents
         if (reasonPoints.Count > 0)
         {
             var marks = await db.JournalEntries.AsNoTracking()
-                .Where(e => studentIds.Contains(e.StudentId) && e.ReasonId != null)
+                .Where(e => studentIds.Contains(e.StudentId) && e.ReasonId != null
+                    && (since == null || string.Compare(e.Date, since) >= 0))
                 .Select(e => new AttendanceDisciplineDays.Mark(e.Id, e.StudentId, e.Date, e.ReasonId!))
                 .ToListAsync(ct);
             foreach (var d in AttendanceDisciplineDays.Collapse(marks))

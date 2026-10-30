@@ -1063,6 +1063,14 @@ public class SchoolMeta
     /// </summary>
     public bool TeachersMarkAttendance { get; set; }
 
+    /// <summary>
+    /// Behaviour score counted from this day ("yyyy-MM-dd"), empty = the whole history (client,
+    /// 2026-10-30: "yangi o'quv yili uchun hisob yangidan boshlanadi"). Older entries stay in the
+    /// history and the Harakatlar feed; they no longer move the 100-based score
+    /// (<c>DisciplineIncidents.ScoreSinceAsync</c>).
+    /// </summary>
+    public string DisciplineScoreSince { get; set; } = string.Empty;
+
     // =======================================================================
     //  O'quv guruhlari — students-parity.md §2.1.4, §4.3 (cut-over).
     // =======================================================================
