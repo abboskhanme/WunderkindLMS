@@ -18,7 +18,7 @@ import { api } from '../lib/api'
 import { useAsync } from '../lib/useAsync'
 import { useSession } from '../lib/session'
 import { haptic } from '../lib/telegram'
-import { Card } from './ui'
+import { Card, PasswordField } from './ui'
 import { LogoutButton } from './LogoutButton'
 
 const inputClass =
@@ -195,10 +195,9 @@ function AddAccountSheet({ onClose, onAdded }) {
           placeholder="Login"
           className={inputClass}
         />
-        <input
+        <PasswordField
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          type="password"
           autoCapitalize="none"
           autoCorrect="off"
           spellCheck={false}

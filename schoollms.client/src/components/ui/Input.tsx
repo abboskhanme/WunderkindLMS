@@ -1,3 +1,5 @@
+import { useState } from 'react'
+import { Eye, EyeOff } from 'lucide-react'
 import type { InputHTMLAttributes, SelectHTMLAttributes, TextareaHTMLAttributes, ReactNode } from 'react'
 import { cn } from '@/lib/utils'
 
@@ -32,6 +34,31 @@ export function Input({ label, required, className, ...rest }: InputProps) {
     </Label>
   )
 }
+
+/**
+ * Parol maydoni + "ko'rsatish / yashirish" tugmasi (mijoz, 2026-10-30: parol yashirin bo'lgani uchun
+ * ota-onalar va xodimlar terishda adashib ketyapti).
+ */
+export function PasswordInput({ label, required, className, ...rest }: Omit<InputProps, 'type'>) {
+  const [shown, setShown] = useState(false)
+  return (
+    <Label label={label} required={required}>
+      <span className="relative block">
+        <input type={shown ? 'text' : 'password'} className={cn(base, 'pr-10', className)} {...rest} />
+        <button
+          type="button"
+          onClick={() => setShown((v) => !v)}
+          aria-label={shown ? 'Parolni yashirish' : "Parolni ko'rsatish"}
+          aria-pressed={shown}
+          className="absolute inset-y-0 right-0 flex w-10 items-center justify-center text-slate-400 hover:text-slate-600"
+        >
+          {shown ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+        </button>
+      </span>
+    </Label>
+  )
+}
+
 
 interface SelectProps extends SelectHTMLAttributes<HTMLSelectElement>, FieldWrap {}
 

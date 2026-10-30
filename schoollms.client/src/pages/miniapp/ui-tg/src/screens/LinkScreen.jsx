@@ -18,7 +18,7 @@ import { useSession } from '../lib/session'
 import { haptic, initData } from '../lib/telegram'
 import { linkTicket } from '../lib/linkTicket'
 import { setPanelKey } from '../lib/panelKey'
-import { Hero, Screen } from '../components/ui'
+import { Hero, PasswordField, Screen } from '../components/ui'
 
 const inputClass =
   'mt-3 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-[16px] outline-none focus:border-brand'
@@ -82,10 +82,9 @@ export function LinkScreen() {
           placeholder="Login"
           className={inputClass}
         />
-        <input
+        <PasswordField
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          type="password"
           autoCapitalize="none"
           autoCorrect="off"
           spellCheck={false}

@@ -3,7 +3,7 @@ import type { FormEvent } from 'react'
 import { Navigate, useLocation, useNavigate } from 'react-router-dom'
 import axios from 'axios'
 import { Button } from '@/components/ui/Button'
-import { Input } from '@/components/ui/Input'
+import { Input, PasswordInput } from '@/components/ui/Input'
 import { useAuth } from '@/context/auth-context'
 import { homeByRole } from '@/config/navigation'
 
@@ -72,9 +72,8 @@ export function LoginPage() {
             onChange={(e) => setEmail(e.target.value)}
             required
           />
-          <Input
+          <PasswordInput
             label="Parol"
-            type="password"
             autoComplete="current-password"
             placeholder="parol"
             value={password}

@@ -9,7 +9,8 @@
  * Ranglar `tailwind.config.js` da: `brand` (#FFD006), `brand.dark` (#E8BD02),
  * `brand.ink` (#0E1520), `ground` (#F0F0F0).
  */
-import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { useState } from 'react'
+import { ChevronLeft, ChevronRight, Eye, EyeOff } from 'lucide-react'
 import { useKeyboardOpen } from '../lib/telegram'
 
 /* ------------------------------------------------------------------ karkas */
@@ -311,5 +312,28 @@ export function TabBar({ tabs, value, onChange }) {
         })}
       </div>
     </nav>
+  )
+}
+
+/**
+ * Parol maydoni + "ko'rsatish / yashirish" tugmasi (mijoz, 2026-10-30: parol yashirin bo'lgani uchun
+ * ota-onalar va xodimlar terishda adashib ketyapti). `className` — maydonning o'zi uchun (tepa
+ * oralig'i ham shu yerda): tugma pastga yopishgani uchun `mt-*` uni siljitmaydi.
+ */
+export function PasswordField({ className = '', ...rest }) {
+  const [shown, setShown] = useState(false)
+  return (
+    <div className="relative">
+      <input {...rest} type={shown ? 'text' : 'password'} className={`${className} pr-12`} />
+      <button
+        type="button"
+        onClick={() => setShown((v) => !v)}
+        aria-label={shown ? 'Parolni yashirish' : "Parolni ko'rsatish"}
+        aria-pressed={shown}
+        className="absolute bottom-0 right-0 flex h-[50px] w-12 items-center justify-center text-slate-400 active:text-slate-600"
+      >
+        {shown ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+      </button>
+    </div>
   )
 }
