@@ -222,6 +222,8 @@ export interface AddParticipantsRequest {
   studentIds?: string[]
   /** Expands to every non-archived pupil of those classes; idempotent. */
   classIds?: string[]
+  /** Yo'nalish guruhlari (9–11-sinflar) — guruhning faol a'zolari qo'shiladi. */
+  groupIds?: string[]
 }
 
 export interface AddParticipantsResult {
@@ -332,6 +334,8 @@ export interface ResultRow {
   scoredAt: string | null
   /** Per-subject breakdown, when the server includes it. */
   scores?: ResultSubjectScore[]
+  /** O'quvchining test kunidagi yo'nalish guruhi (9–11-sinflar), yo'q bo'lsa null. */
+  trackName?: string | null
 }
 
 export interface ResultListQuery {
@@ -340,6 +344,8 @@ export interface ResultListQuery {
   search?: string
   examId?: string
   classId?: string
+  /** Yo'nalish guruhi id'si. */
+  groupId?: string
   subjectId?: string
   status?: ParticipantStatus
 }

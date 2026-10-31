@@ -143,7 +143,7 @@ public sealed class ExamResultsController(AppDbContext db) : ControllerBase
         var examId = ExamService.Clean(query.ExamId);
         var columns = examId is null ? null : await ExamService.ColumnsAsync(db, examId, ct);
 
-        var headers = new List<string> { "Imtihon", "Sana", "F.I.SH", "Sinf", "Holati" };
+        var headers = new List<string> { "Imtihon", "Sana", "F.I.SH", "Sinf", "Yo'nalish", "Holati" };
         if (columns is null) headers.Add("Fanlar");
         else headers.AddRange(columns.Select(c => ResultImportService.SectionHeader(c.Name, c.MaxScore)));
         headers.AddRange(["Jami ball", "Maks. ball", "Foiz"]);
@@ -152,7 +152,8 @@ public sealed class ExamResultsController(AppDbContext db) : ControllerBase
         {
             var cells = new List<ExcelExport.XlsxCell>
             {
-                r.ExamTitle, Day(r.ExamDate), r.FullName, r.ClassName ?? "", ExamService.ParticipantStatusLabel(r.Status),
+                r.ExamTitle, Day(r.ExamDate), r.FullName, r.ClassName ?? "", r.TrackName ?? "",
+                ExamService.ParticipantStatusLabel(r.Status),
             };
             if (columns is null)
             {

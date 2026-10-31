@@ -1202,6 +1202,8 @@ export interface DisciplineScoreRow {
   plus: number
   minus: number
   remaining: number
+  /** Faol yo'nalish guruhi (9–11-sinflar), yo'q bo'lsa null */
+  trackName?: string | null
 }
 
 /** Bitta intizomiy ball yozuvi (tarix) */

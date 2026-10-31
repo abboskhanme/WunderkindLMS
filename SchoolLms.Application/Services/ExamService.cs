@@ -183,12 +183,13 @@ public static class ExamService
         "Bekor qilingan yoki yopilgan imtihonning ishtirokchilar ro'yxatini o'zgartirib bo'lmaydi";
     public const string NothingToAddMessage = "Qo'shiladigan ishtirokchi tanlanmagan";
     public const string AdmissionTakesLeadsMessage = "Qabul imtihoniga faqat nomzodlar (lidlar) biriktiriladi";
-    public const string BlockTakesStudentsMessage = "Blok testga faqat o'quvchilar yoki sinflar qo'shiladi";
+    public const string BlockTakesStudentsMessage = "Blok testga faqat o'quvchilar, sinflar yoki yo'nalishlar qo'shiladi";
     public const string AdmissionPermMessage =
         "Qabul imtihoniga nomzod biriktirish uchun 'Qabul' ruxsati ham kerak";
     public const string LeadNotFoundMessage = "Tanlangan nomzod topilmadi — ro'yxatni yangilang";
     public const string StudentNotFoundMessage = "Tanlangan o'quvchi topilmadi — ro'yxatni yangilang";
     public const string ClassNotFoundMessage = "Tanlangan sinf topilmadi — ro'yxatni yangilang";
+    public const string TrackNotFoundMessage = "Tanlangan yo'nalish topilmadi — ro'yxatni yangilang";
     public const string AttemptExistsMessage =
         "Ishtirokchi imtihonni boshlagan — uni ro'yxatdan chiqarib bo'lmaydi";
     public const string ConcurrentChangeMessage =
@@ -1134,13 +1135,14 @@ public static class ExamService
         var leadIds = Ids(request.LeadIds);
         var studentIds = Ids(request.StudentIds);
         var classIds = Ids(request.ClassIds);
-        if (leadIds.Count + studentIds.Count + classIds.Count == 0)
+        var groupIds = Ids(request.GroupIds);
+        if (leadIds.Count + studentIds.Count + classIds.Count + groupIds.Count == 0)
             return ExamError.BadRequest("validation", NothingToAddMessage);
 
         int added, skipped;
         if (exam.Kind == ExamKind.Admission)
         {
-            if (studentIds.Count > 0 || classIds.Count > 0)
+            if (studentIds.Count > 0 || classIds.Count > 0 || groupIds.Count > 0)
                 return ExamError.BadRequest("validation", AdmissionTakesLeadsMessage);
             if (!callerHasAdmission) return ExamError.Forbidden(AdmissionPermMessage);
 
@@ -1192,9 +1194,25 @@ public static class ExamService
                     .ToListAsync(ct);
             if (named.Count != studentIds.Count) return ExamError.NotFound("student_not_found", StudentNotFoundMessage);
 
+            // Yo'nalish guruhlari (9–11-sinflar): guruhning faol a'zolari. Sinf nusxasi
+            // (ClassId) baribir o'quvchining o'z sinfi (9-A ...) — hujjat va hisobotlar uchun.
+            var trackMemberIds = new List<string>();
+            foreach (var gid in groupIds)
+            {
+                var track = await TrackMembership.ActiveMembersAsync(db, gid, ct);
+                if (track is null) return ExamError.NotFound("group_not_found", TrackNotFoundMessage);
+                trackMemberIds.AddRange(track.Value.StudentIds);
+            }
+            var fromTracks = trackMemberIds.Count == 0
+                ? []
+                : await db.Students.AsNoTracking()
+                    .Where(s => !s.IsArchived && trackMemberIds.Contains(s.Id))
+                    .Select(s => new { s.Id, s.ClassName, s.IsArchived })
+                    .ToListAsync(ct);
+
             // Every pupil once; an archived pupil named explicitly is skipped
-            // (class expansion never picks one).
-            var wanted = fromClasses.Concat(named.Where(s => !s.IsArchived))
+            // (class and track expansion never pick one).
+            var wanted = fromClasses.Concat(fromTracks).Concat(named.Where(s => !s.IsArchived))
                 .GroupBy(s => s.Id).Select(g => g.First()).ToList();
             var archivedNamed = named.Count(s => s.IsArchived);
 
@@ -1236,7 +1254,7 @@ public static class ExamService
         {
             Audit(db, actor, AuditEntityExamParticipant, examId, "add",
                 $"«{exam.Title}» imtihoniga {added} ta ishtirokchi qo'shildi",
-                after: new { Added = added, Skipped = skipped, LeadIds = leadIds, StudentIds = studentIds, ClassIds = classIds });
+                after: new { Added = added, Skipped = skipped, LeadIds = leadIds, StudentIds = studentIds, ClassIds = classIds, GroupIds = groupIds });
             try { await db.SaveChangesAsync(ct); }
             catch (DbUpdateException ex) when (IsUniqueViolation(ex))
             {
@@ -1716,6 +1734,14 @@ public static class ExamService
 
         if (Clean(query.ExamId) is { } examId) q = q.Where(v => v.P.ExamId == examId);
         if (Clean(query.ClassId) is { } classId) q = q.Where(v => v.P.ClassId == classId);
+        if (Clean(query.GroupId) is { } groupId)
+        {
+            // Yo'nalish: guruhda a'zo bo'lgan (hozir yoki avval) o'quvchilar — eski testlar ham chiqadi.
+            if (!Guid.TryParse(groupId, out var gid))
+                return ExamError.BadRequest("validation", $"Noma'lum qiymat: groupId='{groupId}'");
+            q = q.Where(v => v.P.StudentId != null
+                && db.StudyGroupMembers.Any(m => m.GroupId == gid && m.StudentId == v.P.StudentId));
+        }
         if (Clean(query.SubjectId) is { } subjectId)
             q = q.Where(v => db.ExamSections.Any(sec => sec.ExamId == v.P.ExamId && sec.SubjectId == subjectId));
         if (status is not null) q = q.Where(v => v.P.Status == status);
@@ -1755,6 +1781,28 @@ public static class ExamService
                 .ToListAsync(ct))
             .ToDictionary(s => (s.ParticipantId, s.SectionId));
 
+        // Yo'nalish — o'quvchi TEST KUNI a'zo bo'lgan yo'nalish guruhi (a'zolik sanali);
+        // sanasi yo'q (yoki o'sha kuni a'zolik yo'q) bo'lsa — hozirgi faol yo'nalish.
+        var pupilIds = views.Select(v => v.P.StudentId).OfType<string>().Distinct().ToList();
+        var memberships = pupilIds.Count == 0
+            ? []
+            : await (from m in db.StudyGroupMembers.AsNoTracking()
+                     join g in db.StudyGroups.AsNoTracking() on m.GroupId equals g.Id
+                     where g.IsTrack && pupilIds.Contains(m.StudentId)
+                     select new { m.StudentId, m.JoinedOn, m.LeftOn, g.Name, g.IsArchived })
+                .ToListAsync(ct);
+        var membershipsBy = memberships.GroupBy(m => m.StudentId, StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => g.OrderByDescending(m => m.JoinedOn).ToList(), StringComparer.Ordinal);
+        string? TrackOf(ResultView v)
+        {
+            if (v.P.StudentId is null || !membershipsBy.TryGetValue(v.P.StudentId, out var list)) return null;
+            var date = v.E.ExamDate ?? v.E.OpensAt?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+            if (DateOnly.TryParseExact(date, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var day)
+                && list.FirstOrDefault(m => m.JoinedOn <= day && (m.LeftOn == null || m.LeftOn > day)) is { } onDay)
+                return onDay.Name;
+            return list.FirstOrDefault(m => m.LeftOn == null && !m.IsArchived)?.Name;
+        }
+
         return views.Select(v =>
         {
             var perSubject = sections.GetValueOrDefault(v.P.ExamId)?.Select(s =>
@@ -1770,7 +1818,7 @@ public static class ExamService
                 DisplayName(v.P, v.StudentName, v.LeadName),
                 v.P.ClassId, DisplayClass(v.ClassName, v.StudentClassName),
                 v.P.Status, v.P.TotalPoints, v.P.MaxPoints, v.P.Percent, v.P.ScoredAt,
-                perSubject);
+                perSubject, TrackOf(v));
         }).ToList();
     }
 

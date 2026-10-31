@@ -207,10 +207,13 @@ public sealed class ExamParticipantListQuery
 /// <summary>
 /// <c>POST /api/admin/exams/{id}/participants</c> — <c>{ leadIds?, studentIds?, classIds? }</c>.
 /// An admission exam takes <c>leadIds</c> only; a block exam takes
-/// <c>studentIds</c> and <c>classIds</c> only.
+/// <c>studentIds</c>, <c>classIds</c> and <c>groupIds</c> only.
+/// <c>groupIds</c> — yo'nalish guruhlari (9–11-sinflar): guruhning faol a'zolari qo'shiladi;
+/// har yo'nalish o'z fanlari bilan alohida blok test topshiradi (mijoz, 2026-10-30).
 /// </summary>
 public sealed record ExamAddParticipantsRequest(
-    IReadOnlyList<string>? LeadIds, IReadOnlyList<string>? StudentIds, IReadOnlyList<string>? ClassIds);
+    IReadOnlyList<string>? LeadIds, IReadOnlyList<string>? StudentIds, IReadOnlyList<string>? ClassIds,
+    IReadOnlyList<string>? GroupIds = null);
 
 /// <summary>
 /// <c>{ added, skipped }</c>. <c>skipped</c> = already on the exam, or an
@@ -318,7 +321,8 @@ public sealed record ExamResultRowDto(
     decimal? MaxPoints,
     decimal? Percent,
     DateTime? ScoredAt,
-    IReadOnlyList<ExamResultScoreDto> Scores);
+    IReadOnlyList<ExamResultScoreDto> Scores,
+    string? TrackName = null);
 
 /// <summary><c>GET /api/admin/exams/results</c> and <c>/results/export</c> query.</summary>
 public sealed class ExamResultListQuery
@@ -333,6 +337,9 @@ public sealed class ExamResultListQuery
 
     /// <summary>The class snapshot taken when the pupil was added (§5.7).</summary>
     public string? ClassId { get; set; }
+
+    /// <summary>Yo'nalish guruhi: shu guruhda a'zo bo'lgan (yoki bo'lgan) o'quvchilarning natijalari.</summary>
+    public string? GroupId { get; set; }
 
     /// <summary>Participants of exams that have a section for this subject.</summary>
     public string? SubjectId { get; set; }

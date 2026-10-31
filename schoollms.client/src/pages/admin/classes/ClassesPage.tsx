@@ -48,7 +48,8 @@ export function ClassesPage() {
   /** Sinf guruhlarini boshqarish oynasi (Guruhlar tugmasi bilan ochiladi) */
   const [groupsFor, setGroupsFor] = useState<SchoolClass | null>(null)
   /** Sinfga ball qo'yish oynasi (C-6) */
-  const [pointsFor, setPointsFor] = useState<SchoolClass | null>(null)
+  /** Butun sinfga — yoki yo'nalish guruhiga (9–11-sinflar) — bitta ball. */
+  const [pointsFor, setPointsFor] = useState<{ id: string; name: string; isTrack?: boolean } | null>(null)
   /** Sinfni arxivlash oynasi — ketish sababi bilan (student-flow.md) */
   const [archiveFor, setArchiveFor] = useState<SchoolClass | null>(null)
   /** Arxivlangan sinflar ro'yxati + arxiv ko'rinishi yoqilganmi */
@@ -407,6 +408,11 @@ export function ClassesPage() {
                             onClick={() => navigate(`/admin/groups/${g.id}/students`)}
                           />
                           <IconBtn
+                            icon={ShieldAlert}
+                            title="Yo'nalishga ball qo'yish"
+                            onClick={() => setPointsFor({ id: g.id, name: g.name, isTrack: true })}
+                          />
+                          <IconBtn
                             icon={Pencil}
                             title="Tahrirlash"
                             onClick={() => navigate(`/admin/groups/${g.id}`)}
@@ -449,6 +455,7 @@ export function ClassesPage() {
         open={!!pointsFor}
         classId={pointsFor?.id ?? ''}
         className={pointsFor?.name ?? ''}
+        isTrack={pointsFor?.isTrack}
         onClose={() => setPointsFor(null)}
         onDone={() => setPointsFor(null)}
       />

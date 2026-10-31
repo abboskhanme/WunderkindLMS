@@ -87,6 +87,11 @@ export function BallarNazoratiPage() {
     () => [...new Set(scores.map((s) => s.className).filter(Boolean))].sort(),
     [scores],
   )
+  /** 9–11-sinflar yo'nalish bo'yicha o'qiydi — filtrda sinflardan keyin yo'nalishlar. */
+  const trackNames = useMemo(
+    () => [...new Set(scores.map((s) => s.trackName).filter((t): t is string => !!t))].sort(),
+    [scores],
+  )
 
   const rows = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -94,7 +99,7 @@ export function BallarNazoratiPage() {
     const max = maxPoints === '' ? null : Number(maxPoints)
     const list = scores.filter(
       (s) =>
-        (classFilter === 'all' || s.className === classFilter) &&
+        (classFilter === 'all' || s.className === classFilter || s.trackName === classFilter) &&
         (!q || s.fullName.toLowerCase().includes(q)) &&
         (min === null || Number.isNaN(min) || s.remaining >= min) &&
         (max === null || Number.isNaN(max) || s.remaining <= max),
@@ -272,12 +277,21 @@ export function BallarNazoratiPage() {
             />
           </div>
           <select value={classFilter} onChange={(e) => setClassFilter(e.target.value)} className={control}>
-            <option value="all">Barcha sinflar</option>
+            <option value="all">Barcha sinf / yo'nalishlar</option>
             {classNames.map((c) => (
               <option key={c} value={c}>
                 {c}
               </option>
             ))}
+            {trackNames.length > 0 && (
+              <optgroup label="Yo'nalishlar">
+                {trackNames.map((t) => (
+                  <option key={`track-${t}`} value={t}>
+                    {t}
+                  </option>
+                ))}
+              </optgroup>
+            )}
           </select>
           <div className="flex items-center gap-2">
             <input
@@ -334,6 +348,11 @@ export function BallarNazoratiPage() {
                       <span className="rounded-md bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
                         {r.className}
                       </span>
+                      {r.trackName && (
+                        <span className="ml-1 rounded-md bg-violet-100 px-2 py-0.5 text-xs font-medium text-violet-700">
+                          {r.trackName}
+                        </span>
+                      )}
                     </td>
                     <td className="px-4 py-3 text-center font-medium text-emerald-600">
                       {r.plus > 0 ? `+${r.plus}` : '—'}

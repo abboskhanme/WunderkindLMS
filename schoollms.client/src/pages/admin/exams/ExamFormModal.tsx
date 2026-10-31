@@ -38,6 +38,7 @@ import {
 } from '@/api/services/exams'
 import { getSubjects } from '@/api/services/subjects'
 import { getClasses } from '@/api/services/classes'
+import { getGroups, type StudyGroupListItem } from '@/api/services/groups'
 import type { SchoolClass, Subject } from '@/types'
 import { Button } from '@/components/ui/Button'
 import { DatePicker } from '@/components/ui/DatePicker'
@@ -80,7 +81,12 @@ interface Lookups {
   types: ExamType[]
   subjects: Subject[]
   classes: SchoolClass[]
+  /** Faol yo'nalish guruhlari (9–11-sinflar) — sinf o'rnida tanlanadi. */
+  tracks: StudyGroupListItem[]
 }
+
+/** Tanlovda yo'nalish guruhi id'si shu old qo'shimcha bilan saqlanadi (sinf id'sidan ajratish uchun). */
+const TRACK = 'track:'
 
 type LoadState =
   | { status: 'loading' }
@@ -98,9 +104,14 @@ export function ExamFormModal({ examId, canAdmission, onClose, onSaved, onChange
       getSubjects(),
       getClasses(),
       examId ? getExam(examId) : Promise.resolve(null),
+      // Yo'nalishlar yuklanmasa forma baribir ochiladi — faqat sinflar bilan.
+      getGroups().catch(() => [] as StudyGroupListItem[]),
     ])
-      .then(([types, subjects, classes, exam]) => {
-        if (!cancelled) setState({ status: 'ready', lookups: { types, subjects, classes }, exam })
+      .then(([types, subjects, classes, exam, groups]) => {
+        const tracks = groups
+          .filter((g) => g.isTrack && !g.isArchived)
+          .sort((a, b) => a.name.localeCompare(b.name, 'uz'))
+        if (!cancelled) setState({ status: 'ready', lookups: { types, subjects, classes, tracks }, exam })
       })
       .catch((err: unknown) => {
         if (!cancelled) {
@@ -256,7 +267,7 @@ function ExamForm({ title, exam, lookups, canAdmission, onClose, onSaved, onChan
 
   const problem = useMemo((): string | null => {
     if (!name.trim()) return 'Imtihon nomini kiriting'
-    if (isBlock && isNew && classIds.size === 0) return 'Kamida bitta sinfni tanlang'
+    if (isBlock && isNew && classIds.size === 0) return "Kamida bitta sinf yoki yo'nalishni tanlang"
     if (!isBlock && grade === '') return 'Qaysi sinfga qabul ekanini tanlang'
     if (isManual) {
       if (!examDate) return 'Imtihon sanasini tanlang'
@@ -377,7 +388,11 @@ function ExamForm({ title, exam, lookups, canAdmission, onClose, onSaved, onChan
     let message = creating ? `"${exam.title}" imtihoni yaratildi` : `"${exam.title}" saqlandi`
     if (isBlock && classIds.size > 0) {
       try {
-        const result = await addParticipants(exam.id, { classIds: [...classIds] })
+        const chosen = [...classIds]
+        const result = await addParticipants(exam.id, {
+          classIds: chosen.filter((id) => !id.startsWith(TRACK)),
+          groupIds: chosen.filter((id) => id.startsWith(TRACK)).map((id) => id.slice(TRACK.length)),
+        })
         message += ` · ${result.added} ta o'quvchi qo'shildi`
         if (result.skipped > 0) message += ` (${result.skipped} tasi avvaldan bor edi)`
       } catch (err) {
@@ -704,11 +719,13 @@ function ExamForm({ title, exam, lookups, canAdmission, onClose, onSaved, onChan
           <div>
             <div className="mb-2 flex flex-wrap items-baseline justify-between gap-3">
               <span className="text-sm font-medium text-slate-600">
-                {isNew ? 'Sinflar' : "Yana sinf qo'shish"}
+                {isNew ? "Sinflar / yo'nalishlar" : "Yana sinf yoki yo'nalish qo'shish"}
                 {isNew && <span className="text-red-500"> *</span>}
               </span>
               <span className="text-xs text-slate-400">
-                {classIds.size > 0 ? `${classIds.size} ta sinf tanlandi` : "Sinfdagi barcha faol o'quvchilar qo'shiladi"}
+                {classIds.size > 0
+                  ? `${classIds.size} ta tanlandi`
+                  : "Sinf yoki yo'nalishdagi barcha faol o'quvchilar qo'shiladi"}
               </span>
             </div>
             {!isNew && (
@@ -716,7 +733,7 @@ function ExamForm({ title, exam, lookups, canAdmission, onClose, onSaved, onChan
                 Imtihonda allaqachon bor o'quvchilar takrorlanmaydi — faqat yangilari qo'shiladi.
               </p>
             )}
-            {classOptions.length === 0 ? (
+            {classOptions.length === 0 && lookups.tracks.length === 0 ? (
               <p className="rounded-lg bg-slate-50 px-3 py-3 text-sm text-slate-500">
                 Faol sinf yo'q — avval "Sinflar" bo'limida sinf yarating.
               </p>
@@ -746,7 +763,34 @@ function ExamForm({ title, exam, lookups, canAdmission, onClose, onSaved, onChan
                     </button>
                   )
                 })}
+                {/* Yo'nalishlar (9–11-sinflar): har yo'nalish o'z fanlari bilan alohida test topshiradi. */}
+                {lookups.tracks.map((g) => {
+                  const key = TRACK + g.id
+                  const on = classIds.has(key)
+                  return (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => toggleClass(key)}
+                      aria-pressed={on}
+                      title={`Yo'nalish · ${g.memberCount} ta o'quvchi`}
+                      className={cn(
+                        'rounded-lg border px-2.5 py-1 text-sm transition-colors',
+                        on
+                          ? 'border-violet-300 bg-violet-50 font-medium text-violet-700'
+                          : 'border-violet-200 bg-white text-violet-600 hover:bg-violet-50/60',
+                      )}
+                    >
+                      {g.name}
+                    </button>
+                  )
+                })}
               </div>
+            )}
+            {lookups.tracks.length > 0 && (
+              <p className="mt-1.5 text-xs text-slate-400">
+                Binafsha — yo'nalishlar. Har yo'nalishga o'z fanlari bilan alohida blok test yarating.
+              </p>
             )}
           </div>
         ) : (
