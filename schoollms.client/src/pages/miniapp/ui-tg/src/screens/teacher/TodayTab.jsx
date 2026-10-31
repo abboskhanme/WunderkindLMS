@@ -12,7 +12,7 @@ import { BedDouble, CalendarOff, ChevronRight, Clock, Moon } from 'lucide-react'
 import {
   Badge, Card, DateChip, EmptyState, Hero, HeroProgress, Row, Screen, StatGrid,
 } from '../../components/ui'
-import { AccountsButton } from '../../components/AccountSwitcher'
+import { AccountStrip, AccountsButton, useTgAccounts } from '../../components/AccountSwitcher'
 import { useAsync } from '../../lib/useAsync'
 import { teacherApi } from '../../lib/teacherApi'
 import { todayISO } from '../../lib/weeks'
@@ -46,6 +46,8 @@ export function TodayTab({ profile, meta, onOpenAttendance, onOpenBoarding, onOp
   const canMark = profile.canMarkAttendance === true
   const quarter = meta.currentQuarter
   const week = meta.currentWeek
+  // Shu Telegram'dagi boshqa akkauntlar (masalan, farzandi) — hero'da ko'rinib turadi (2026-10-31).
+  const accounts = useTgAccounts()
 
   // Har daqiqada qayta chizamiz — "hozir dars ketmoqda" va "qoldi" jonli qolsin.
   const [, setTick] = useState(0)
@@ -98,6 +100,11 @@ export function TodayTab({ profile, meta, onOpenAttendance, onOpenBoarding, onOp
   return (
     <Screen>
       <Hero title={profile.fullName} subtitle={subtitle} right={<AccountsButton />}>
+        {accounts.length > 1 && (
+          <div className="mb-4">
+            <AccountStrip accounts={accounts} />
+          </div>
+        )}
         <HeroProgress
           value={done}
           max={total}

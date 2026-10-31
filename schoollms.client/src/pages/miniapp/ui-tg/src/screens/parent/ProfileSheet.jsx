@@ -101,10 +101,6 @@ export function ProfileSheet({ user, panelChildren, activeChildId, onPickChild, 
               <>
                 <IdentityCard me={me} />
 
-                {/* No "Akkaunt qo'shish" here (client, 2026-10-08): the family is in the switcher at the
-                    top. The list shows only with several accounts — a teacher back to their own. */}
-                <AccountsCard onSwitched={onClose} canAdd={false} />
-
                 <Card title="Ma'lumotlar">
                   {me.login && <InfoRow label="Login" value={me.login} />}
                   <InfoRow label="Maktab" value={me.schoolName || '—'} />
@@ -134,6 +130,10 @@ export function ProfileSheet({ user, panelChildren, activeChildId, onPickChild, 
                     ))
                   )}
                 </Card>
+
+                {/* "Akkaunt qo'shish" is back (client, 2026-10-31): teachers' children study here too —
+                    a teacher adds their child (or the child adds the teacher) once, then switches. */}
+                <AccountsCard onSwitched={onClose} />
               </>
             )
           }}
