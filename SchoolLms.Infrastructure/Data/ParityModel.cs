@@ -128,6 +128,7 @@ internal static class ParityModel
             e.Property(x => x.IsScored).HasDefaultValue(false);
             e.Property(x => x.UsesLevel).HasDefaultValue(false);
             e.Property(x => x.LevelOptions).HasMaxLength(500);
+            e.Property(x => x.ExamCredits).HasMaxLength(500);
             e.Property(x => x.IsActive).HasDefaultValue(true);
             e.Property(x => x.CreatedAt).HasDefaultValueSql("now()");
 

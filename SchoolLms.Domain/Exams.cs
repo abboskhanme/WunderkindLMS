@@ -440,6 +440,12 @@ public class ExamSectionScore
     /// <summary>Copied from <see cref="ExamSection.MaxScore"/>.</summary>
     public decimal MaxPoints { get; set; }
 
+    /// <summary>
+    /// The certificate this section was credited from — the pupil was exempt and got the
+    /// type's level → percent of the ceiling (client, 2026-10-31). <c>on delete set null</c>.
+    /// </summary>
+    public Guid? CertificateId { get; set; }
+
     public DateTime UpdatedAt { get; set; } = AppClock.Now;
 }
 

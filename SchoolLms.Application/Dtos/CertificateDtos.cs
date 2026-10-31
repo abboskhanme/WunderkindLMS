@@ -23,11 +23,12 @@ namespace SchoolLms.Application.Dtos;
 /// "o'chirib bo'lmaydi" tugmasini brauzer o'zi o'ylab topmasin.</param>
 public record CertificateTypeDto(
     Guid Id, string Name, bool IsScored, bool IsActive, int CertificateCount,
-    bool UsesLevel = false, IReadOnlyList<string>? LevelOptions = null);
+    bool UsesLevel = false, IReadOnlyList<string>? LevelOptions = null, string? ExamCredits = null);
 
 /// <summary>Tur formasi.</summary>
 public record CertificateTypePayload(
-    string Name, bool IsScored, bool IsActive, bool UsesLevel = false, string? LevelOptions = null);
+    string Name, bool IsScored, bool IsActive, bool UsesLevel = false, string? LevelOptions = null,
+    string? ExamCredits = null);
 
 /// <summary>
 /// Bitta sertifikat — ro'yxat va kartochka uchun.

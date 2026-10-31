@@ -78,3 +78,25 @@ its own subjects and per-subject points), home classes (9-A …) stay for docume
   (dated membership), else the current one; `groupId` filter (pupils who ever were in that track);
   Excel column "Yo'nalish". Shared helper: `TrackMembership` (Application/Services).
 - No migration. Tests: `TrackGamificationExamTests`.
+
+## DTM-shaped block tests and certificate credit — 2026-10-31
+
+Client: *"yo'nalishlar xuddi DTM imtixonidek test topshirishadi … 1-blok 3,1 / 2-blok 2,1 / 3-4-5 bloklar
+1,1 ball … umumiy 189 ball … Sertifikati bor o'quvchilar sertifikat olgan fanidan imtixondan ozod
+qilinadi va sertifikat natijasiga teng ball avtomatik qo'shib beriladi."*
+
+- **Section = questions × points per correct answer.** A manual section with `question_count` and
+  `points_per_correct` gets their product as its ceiling (30 × 3.1 = 93). Without them — a plain
+  ceiling, as before.
+- **"DTM shabloni (189 ball)"** in the form fills five blocks: block 1 30 × 3.1, block 2 30 × 2.1 (the
+  track's subjects — picked by hand), blocks 3–5 10 × 1.1 (native language, maths, history — matched by
+  name). One test per track; only blocks 1–2 differ.
+- **Entry:** a DTM cell takes the **number of correct answers**; the server computes the points and
+  keeps `exam_section_scores.correct_count`. The Excel import still takes points.
+- **Certificate credit:** `certificate_types.exam_credits` — a "level=percent" table (`A+=100; A=93.3`),
+  or for a scored type "minimum score=percent" (`7=100; 6.5=90`, the highest threshold reached). A pupil
+  holding a certificate in the section's subject that is valid on the exam day (issued ≤ day ≤ expiry)
+  gets a locked cell worth `ceiling × percent`; `exam_section_scores.certificate_id` records which
+  document. The credit is written when the row is saved (grid or import); a value sent for that cell is
+  ignored. Results show such a subject in violet with the certificate name.
+- Migration `ExamDtmCertificateCredits`. Tests: `ExamDtmCreditTests`.

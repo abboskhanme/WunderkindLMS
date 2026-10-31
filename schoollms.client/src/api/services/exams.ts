@@ -162,6 +162,8 @@ export interface ExamSectionInput {
   questionCount?: number | null
   maxScore?: number | null
   order: number
+  /** Manual only — the DTM shape: weight of one correct answer (needs `questionCount`). */
+  pointsPerCorrect?: number | null
 }
 
 /** `ExamUpsertDto`, verbatim from §6.3. */
@@ -240,6 +242,16 @@ export interface EntryColumn {
   subjectId: string
   name: string
   maxScore: number
+  /** DTM-shaped section: the cell takes correct answers (0…questionCount). */
+  questionCount?: number | null
+  pointsPerCorrect?: number | null
+}
+
+/** A certificate credit: the pupil is exempt from this block and gets these points. */
+export interface EntryCredit {
+  certificateId: string
+  label: string
+  points: number
 }
 
 export interface EntryRow {
@@ -252,6 +264,10 @@ export interface EntryRow {
   totalPoints: number | null
   maxPoints: number | null
   percent: number | null
+  /** DTM-shaped columns: `sectionId → correct answers`. */
+  correct?: Record<string, number | null> | null
+  /** Certificate-credited cells — locked, filled by the server on save. */
+  credits?: Record<string, EntryCredit> | null
 }
 
 export interface EntryTable {
@@ -264,7 +280,9 @@ export interface EntryTable {
 
 export interface EntrySaveScore {
   sectionId: string
-  points: number
+  points?: number
+  /** DTM-shaped section: correct answers instead of points. */
+  correct?: number
 }
 
 export interface EntrySaveRow {
@@ -313,6 +331,8 @@ export interface ResultSubjectScore {
   name: string
   points: number | null
   maxPoints: number
+  /** "IELTS 7.5" — the block was credited from this certificate. */
+  certificate?: string | null
 }
 
 /** `ResultRowDto` — one participant of one exam. */

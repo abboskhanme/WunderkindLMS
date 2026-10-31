@@ -68,6 +68,9 @@ public class CertificateTypesController(AppDbContext db, AuditService audit) : C
             return BadRequest(new { message = error });
         var (levels, levelError) = CertificateService.NormalizeLevelOptions(p.UsesLevel ? p.LevelOptions : null);
         if (levelError is not null) return BadRequest(new { message = levelError });
+        var (credits, creditError) = CertificateService.NormalizeExamCredits(
+            p.ExamCredits, p.IsScored, p.UsesLevel, levels);
+        if (creditError is not null) return BadRequest(new { message = creditError });
 
         var type = new CertificateType
         {
@@ -76,13 +79,14 @@ public class CertificateTypesController(AppDbContext db, AuditService audit) : C
             IsActive = p.IsActive,
             UsesLevel = p.UsesLevel,
             LevelOptions = levels,
+            ExamCredits = credits,
         };
         db.CertificateTypes.Add(type);
 
         audit.Record(CertificateService.AuditEntityType, type.Id.ToString(), "create",
             $"Sertifikat turi qo'shildi: «{type.Name}»"
             + (type.IsScored ? " (ballik)" : "") + (type.UsesLevel ? " (darajali)" : ""),
-            after: new { type.Name, type.IsScored, type.IsActive, type.UsesLevel, type.LevelOptions });
+            after: new { type.Name, type.IsScored, type.IsActive, type.UsesLevel, type.LevelOptions, type.ExamCredits });
 
         await db.SaveChangesAsync(ct);
         return ToDto(type, 0);
@@ -122,17 +126,21 @@ public class CertificateTypesController(AppDbContext db, AuditService audit) : C
             });
         var (levels, levelError) = CertificateService.NormalizeLevelOptions(p.UsesLevel ? p.LevelOptions : null);
         if (levelError is not null) return BadRequest(new { message = levelError });
+        var (credits, creditError) = CertificateService.NormalizeExamCredits(
+            p.ExamCredits, p.IsScored, p.UsesLevel, levels);
+        if (creditError is not null) return BadRequest(new { message = creditError });
 
-        var before = new { type.Name, type.IsScored, type.IsActive, type.UsesLevel, type.LevelOptions };
+        var before = new { type.Name, type.IsScored, type.IsActive, type.UsesLevel, type.LevelOptions, type.ExamCredits };
         type.Name = p.Name.Trim();
         type.IsScored = p.IsScored;
         type.IsActive = p.IsActive;
         type.UsesLevel = p.UsesLevel;
         type.LevelOptions = levels;
+        type.ExamCredits = credits;
 
         audit.Record(CertificateService.AuditEntityType, type.Id.ToString(), "update",
             $"Sertifikat turi tahrirlandi: «{type.Name}»",
-            before: before, after: new { type.Name, type.IsScored, type.IsActive, type.UsesLevel, type.LevelOptions });
+            before: before, after: new { type.Name, type.IsScored, type.IsActive, type.UsesLevel, type.LevelOptions, type.ExamCredits });
 
         await db.SaveChangesAsync(ct);
         return ToDto(type, used);
@@ -162,5 +170,5 @@ public class CertificateTypesController(AppDbContext db, AuditService audit) : C
     }
 
     private static CertificateTypeDto ToDto(CertificateType t, int count) =>
-        new(t.Id, t.Name, t.IsScored, t.IsActive, count, t.UsesLevel, CertificateService.LevelOptionsOf(t.LevelOptions));
+        new(t.Id, t.Name, t.IsScored, t.IsActive, count, t.UsesLevel, CertificateService.LevelOptionsOf(t.LevelOptions), t.ExamCredits);
 }

@@ -451,12 +451,14 @@ export function ResultsPage() {
                           {row.scores.map((s) => (
                             <span
                               key={s.sectionId}
-                              title={s.name}
+                              title={s.certificate ? `${s.name} — sertifikat bilan ozod: ${s.certificate}` : s.name}
                               className={cn(
                                 'inline-flex items-center gap-1 whitespace-nowrap rounded-md px-1.5 py-0.5 text-xs',
                                 filters.subjectId === s.subjectId
                                   ? 'bg-brand-50 text-brand-700'
-                                  : 'bg-slate-100 text-slate-600',
+                                  : s.certificate
+                                    ? 'bg-violet-50 text-violet-700'
+                                    : 'bg-slate-100 text-slate-600',
                               )}
                             >
                               <span className="max-w-[7rem] truncate">{s.name}</span>

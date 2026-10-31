@@ -18,7 +18,7 @@ namespace SchoolLms.Infrastructure.Migrations
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .HasAnnotation("ProductVersion", "10.0.12")
+                .HasAnnotation("ProductVersion", "10.0.14")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
@@ -2388,6 +2388,11 @@ namespace SchoolLms.Infrastructure.Migrations
                         .HasColumnName("created_at")
                         .HasDefaultValueSql("now()");
 
+                    b.Property<string>("ExamCredits")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("exam_credits");
+
                     b.Property<bool>("IsActive")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("boolean")
@@ -3792,6 +3797,10 @@ namespace SchoolLms.Infrastructure.Migrations
                         .HasColumnType("text")
                         .HasColumnName("section_id");
 
+                    b.Property<Guid?>("CertificateId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("certificate_id");
+
                     b.Property<int?>("CorrectCount")
                         .HasColumnType("integer")
                         .HasColumnName("correct_count");
@@ -3818,6 +3827,9 @@ namespace SchoolLms.Infrastructure.Migrations
 
                     b.HasKey("ParticipantId", "SectionId")
                         .HasName("pk_exam_section_scores");
+
+                    b.HasIndex("CertificateId")
+                        .HasDatabaseName("ix_exam_section_scores_certificate_id");
 
                     b.HasIndex("SectionId")
                         .HasDatabaseName("ix_exam_section_scores_section_id");
@@ -11591,6 +11603,12 @@ namespace SchoolLms.Infrastructure.Migrations
 
             modelBuilder.Entity("SchoolLms.Domain.ExamSectionScore", b =>
                 {
+                    b.HasOne("SchoolLms.Domain.Certificate", null)
+                        .WithMany()
+                        .HasForeignKey("CertificateId")
+                        .OnDelete(DeleteBehavior.SetNull)
+                        .HasConstraintName("fk_exam_section_scores_certificates_certificate_id");
+
                     b.HasOne("SchoolLms.Domain.ExamParticipant", null)
                         .WithMany()
                         .HasForeignKey("ParticipantId")

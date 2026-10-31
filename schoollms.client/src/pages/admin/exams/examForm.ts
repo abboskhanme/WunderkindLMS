@@ -12,7 +12,10 @@ export interface SectionDraft {
   maxScore: string
   /** Online exams. */
   bankId: string
+  /** Online: drawn from the bank. Manual: the DTM shape, with `pointsPerCorrect`. */
   questionCount: string
+  /** Manual only — weight of one correct answer (30 × 3.1); blank = a plain ceiling. */
+  pointsPerCorrect: string
 }
 
 export function newSectionDraft(patch: Partial<SectionDraft> = {}): SectionDraft {
@@ -22,6 +25,7 @@ export function newSectionDraft(patch: Partial<SectionDraft> = {}): SectionDraft
     maxScore: '',
     bankId: '',
     questionCount: '',
+    pointsPerCorrect: '',
     ...patch,
   }
 }
@@ -58,3 +62,28 @@ export function move<T>(list: T[], index: number, delta: -1 | 1): T[] {
   next.splice(target, 0, item)
   return next
 }
+
+/**
+ * A manual section's DTM shape (client, 2026-10-31: "1-blok 30 × 3,1"): both the question
+ * count and the weight typed → `{ count, weight, max }`; neither → `null` (a plain ceiling);
+ * only one, or a bad value → `'bad'`.
+ */
+export function weightedSection(s: SectionDraft): { count: number; weight: number; max: number } | null | 'bad' {
+  if (!s.questionCount.trim() && !s.pointsPerCorrect.trim()) return null
+  const count = parsePositiveInt(s.questionCount)
+  const weight = parseDecimal(s.pointsPerCorrect)
+  if (count === null || Number.isNaN(count) || weight === null || Number.isNaN(weight) || weight <= 0) return 'bad'
+  return { count, weight, max: Math.round(count * weight * 100) / 100 }
+}
+
+/**
+ * DTM block test (client, 2026-10-31): blocks 1–2 are the track's own subjects (30 × 3.1 and
+ * 30 × 2.1), blocks 3–5 are the same for every track (10 × 1.1 each) — 189 in total.
+ */
+export const DTM_BLOCKS: { count: number; weight: number; match: RegExp | null }[] = [
+  { count: 30, weight: 3.1, match: null },
+  { count: 30, weight: 2.1, match: null },
+  { count: 10, weight: 1.1, match: /ona\s*tili/i },
+  { count: 10, weight: 1.1, match: /matem/i },
+  { count: 10, weight: 1.1, match: /tarix/i },
+]
