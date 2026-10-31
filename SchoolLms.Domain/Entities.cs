@@ -15,9 +15,9 @@ public class AppUser
     public string? AvatarUrl { get; set; }
     public string PasswordHash { get; set; } = string.Empty;
     /// <summary>
-    /// Admin yaratgan/tiklagan dastlabki parol — OCHIQ matnda, FAQAT foydalanuvchi hali u bilan
-    /// kirmaguncha. Superadmin'ga ko'rsatish/eksport uchun. Birinchi login'da yoki foydalanuvchi
-    /// o'zi parolni o'zgartirsa null bo'ladi (faqat hash qoladi).
+    /// Admin yaratgan/tiklagan parol — OCHIQ matnda, maktab ko'rishi uchun (kirgandan keyin ham —
+    /// mijoz, 2026-10-30). Foydalanuvchi parolni o'zi o'zgartirsa yoki login bloklansa null bo'ladi
+    /// (faqat hash qoladi).
     /// </summary>
     public string? InitialPassword { get; set; }
     /// <summary>Birinchi muvaffaqiyatli login vaqti (ISO "yyyy-MM-ddTHH:mm:ss") — "ilova aktivlashtirilgan" sifatida ishlatiladi.</summary>

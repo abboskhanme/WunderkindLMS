@@ -49,9 +49,9 @@ public static class SessionFactory
     /// <see cref="IsBlockedAsync"/> tekshirilgan bo'lishi kerak.
     ///
     /// <para>
-    /// Dastlabki OCHIQ parol shu yerda o'chiriladi — Telegram orqali kirganda ham.
-    /// Foydalanuvchi tizimga kirdi, ya'ni superadmin ekranida uning ochiq parolini
-    /// ushlab turishning ma'nosi qolmadi (parolni tiklash yo'li baribir bor).
+    /// Rahbariyatning (admin, superadmin) dastlabki OCHIQ paroli shu yerda o'chiriladi —
+    /// Telegram orqali kirganda ham. O'quvchi va xodimlarniki ko'rinib qoladi
+    /// (<see cref="AccountExtensions.PasswordStaysVisible"/>).
     /// </para>
     /// </summary>
     /// <param name="telegramUserId">The Telegram account a Mini App session comes from (see <see cref="JwtTokenService.TelegramClaim"/>).</param>
@@ -61,10 +61,11 @@ public static class SessionFactory
         var now = AppClock.Now.ToString("yyyy-MM-ddTHH:mm:ss");
         if (string.IsNullOrEmpty(user.FirstLoginAt)) user.FirstLoginAt = now;
         user.LastLoginAt = now;
-        // A pupil's password stays visible to the school after sign-in (client, 2026-10-08: "o'quvchi
-        // akkauntida parol yana ko'rinmaydigan bo'lib qolibdi") — families sign in with it and come
-        // back for it. It goes only when the pupil sets their own (`SetOwnPassword`). Staff: as before.
-        if (user.Role != Roles.Student) user.InitialPassword = null;
+        // The admin-set password stays visible to the school after sign-in — pupils since 2026-10-08,
+        // staff too since 2026-10-30 (client: "hodimlar va o'quvchilar login paroli kirganda doim ko'rinib
+        // tursin"). It goes only when the person sets their own (`SetOwnPassword`) or is blocked.
+        // Leadership (admin, superadmin) is the exception: theirs goes at sign-in (2026-10-31).
+        if (!user.PasswordStaysVisible()) user.InitialPassword = null;
         await db.SaveChangesAsync(ct);
 
         return new LoginResponse(

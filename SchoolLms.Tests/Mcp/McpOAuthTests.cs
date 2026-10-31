@@ -427,7 +427,7 @@ public class McpOAuthHardeningTests(ApiFixture fixture)
         await fixture.Api.WithDbAsync(async db =>
         {
             var u = await db.Users.SingleAsync(x => x.Id == user.Id);
-            Assert.Null(u.InitialPassword);
+            Assert.Null(u.InitialPassword); // admin — rahbariyat paroli ko'rinmaydi (2026-10-31)
             Assert.NotNull(u.LastLoginAt);
             Assert.NotNull(u.FirstLoginAt);
         });

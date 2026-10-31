@@ -286,12 +286,12 @@ public sealed class McpOAuthController(
                     "Sizning akkauntingizga AI ulanish ruxsati berilmagan. Bu imkoniyat faqat rahbariyat uchun — "
                     + "kerak bo'lsa, direktorga murojaat qiling (Boshqaruv → Rollar → «AI ulanish»)."), 403);
             }
-            // Same first-login bookkeeping as SessionFactory: the user has now logged in, so the
-            // superadmin screen must not keep showing the initial password in the clear.
+            // Same first-login bookkeeping as SessionFactory (the admin-set password stays visible —
+            // client, 2026-10-30 — except leadership's, 2026-10-31).
             var nowIso = AppClock.Now.ToString("yyyy-MM-ddTHH:mm:ss");
             if (string.IsNullOrEmpty(user!.FirstLoginAt)) user.FirstLoginAt = nowIso;
             user.LastLoginAt = nowIso;
-            user.InitialPassword = null;
+            if (!user.PasswordStaysVisible()) user.InitialPassword = null;
             await db.SaveChangesAsync(ct);
 
             var consent = Protect(req with { UserId = user.Id }, TimeSpan.FromMinutes(5));

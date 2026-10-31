@@ -133,14 +133,15 @@ public class StaffController(AppDbContext db, AuditService audit) : ControllerBa
         return NoContent();
     }
 
-    /// <summary>Xodim akkaunti logini. Parol xavfsizlik uchun saqlanmaydi — bo'sh qaytadi
-    /// (ko'rsatish kerak bo'lsa <see cref="ResetPassword"/> orqali yangisini yarating).</summary>
+    /// <summary>Xodim akkaunti logini va admin bergan paroli (o'zi o'zgartirmaguncha). Rahbariyatning
+    /// (egasi — superadmin) paroli ko'rsatilmaydi — bo'sh (2026-10-31).</summary>
     [HttpGet("{id}/credentials")]
     public async Task<ActionResult<CredentialsDto>> Credentials(string id)
     {
         var (user, denied) = await FindListedAsync(id);
         if (user is null) return denied!;
-        return new CredentialsDto(user.Email, user.InitialPassword ?? "", user.Role);
+        var password = user.PasswordStaysVisible() ? user.InitialPassword ?? "" : "";
+        return new CredentialsDto(user.Email, password, user.Role);
     }
 
     /// <summary>Xodimga yangi tasodifiy parol generatsiya qiladi va uni BIR MARTA qaytaradi
