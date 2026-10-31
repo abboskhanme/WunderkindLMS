@@ -57,12 +57,14 @@ import {
   kindLabel,
 } from './examLabels'
 import {
+  DTM_BLOCKS,
   MAX_SECTION_SCORE,
   move,
   newSectionDraft,
   parseDecimal,
   parsePositiveInt,
   type SectionDraft,
+  weightedSection,
 } from './examForm'
 
 interface Props {
@@ -206,6 +208,8 @@ function draftsFrom(exam: Exam | null): SectionDraft[] {
         maxScore: s.maxScore === null ? '' : formatPoints(s.maxScore),
         bankId: s.bankId ?? '',
         questionCount: s.questionCount === null ? '' : String(s.questionCount),
+        // Qo'lda kiritiladigan DTM bo'limi (30 × 3,1). Onlayn bo'limning og'irligi bazadan keladi.
+        pointsPerCorrect: s.bankId === null && s.pointsPerCorrect !== null ? formatPoints(s.pointsPerCorrect) : '',
       }),
     )
 }
@@ -290,6 +294,12 @@ function ExamForm({ title, exam, lookups, canAdmission, onClose, onSaved, onChan
         if (!s.subjectId) return `${n}-qatorda fanni tanlang`
         if (seen.has(s.subjectId)) return `${n}-qatordagi fan takrorlangan`
         seen.add(s.subjectId)
+        const weighted = weightedSection(s)
+        if (weighted === 'bad') return `${n}-qatorda savollar soni va bitta savol balini to'liq kiriting`
+        if (weighted) {
+          if (weighted.max > MAX_SECTION_SCORE) return `${n}-qatordagi maksimal ball juda katta`
+          continue
+        }
         const max = parseDecimal(s.maxScore)
         if (max === null) return `${n}-qatorda maksimal ballni kiriting`
         if (Number.isNaN(max) || max <= 0 || max > MAX_SECTION_SCORE) {
@@ -339,10 +349,22 @@ function ExamForm({ title, exam, lookups, canAdmission, onClose, onSaved, onChan
           questionCount: s.questionCount,
           maxScore: s.maxScore,
           order: s.order,
+          pointsPerCorrect: s.bankId === null ? s.pointsPerCorrect : null,
         }))
     }
-    return sections.map((s, order) =>
-      isManual
+    return sections.map((s, order) => {
+      const weighted = isManual ? weightedSection(s) : null
+      if (weighted && weighted !== 'bad') {
+        return {
+          subjectId: s.subjectId,
+          bankId: null,
+          questionCount: weighted.count,
+          pointsPerCorrect: weighted.weight,
+          maxScore: weighted.max,
+          order,
+        }
+      }
+      return isManual
         ? { subjectId: s.subjectId, bankId: null, questionCount: null, maxScore: parseDecimal(s.maxScore), order }
         : {
             subjectId: s.subjectId,
@@ -350,8 +372,8 @@ function ExamForm({ title, exam, lookups, canAdmission, onClose, onSaved, onChan
             questionCount: parsePositiveInt(s.questionCount),
             maxScore: null,
             order,
-          },
-    )
+          }
+    })
   }
 
   const buildPayload = (): ExamUpsert => ({
@@ -423,6 +445,41 @@ function ExamForm({ title, exam, lookups, canAdmission, onClose, onSaved, onChan
       .filter((s) => s.id === current || (s.isActive !== false && !taken.has(s.id)))
       .sort((a, b) => a.name.localeCompare(b.name, 'uz'))
   }
+
+  /**
+   * DTM shabloni (mijoz, 2026-10-31): 1–2-bloklar — yo'nalish fanlari (tanlanadi),
+   * 3–5-bloklar hamma yo'nalishda bir xil (ona tili, matematika, tarix — nomidan topiladi).
+   */
+  const applyDtm = () => {
+    const used = new Set<string>()
+    const pick = (match: RegExp | null) => {
+      if (!match) return ''
+      const hit = lookups.subjects
+        .filter((s) => s.isActive !== false && !used.has(s.id) && match.test(s.name))
+        .sort((a, b) => a.name.length - b.name.length)[0]
+      if (hit) used.add(hit.id)
+      return hit?.id ?? ''
+    }
+    setSections(
+      DTM_BLOCKS.map((b) =>
+        newSectionDraft({
+          subjectId: pick(b.match),
+          questionCount: String(b.count),
+          pointsPerCorrect: formatPoints(b.weight),
+          maxScore: formatPoints(Math.round(b.count * b.weight * 100) / 100),
+        }),
+      ),
+    )
+  }
+
+  /** Bo'limlar jami bali — DTM'da 189. */
+  const manualTotal = isManual
+    ? sections.reduce((sum, s) => {
+        const w = weightedSection(s)
+        const max = w && w !== 'bad' ? w.max : parseDecimal(s.maxScore)
+        return max && !Number.isNaN(max) ? sum + max : sum
+      }, 0)
+    : 0
 
   const changeKind = (next: ExamKind) => {
     if (next === kind) return
@@ -589,6 +646,23 @@ function ExamForm({ title, exam, lookups, canAdmission, onClose, onSaved, onChan
             {!isManual && totalQuestions > 0 && (
               <span className="text-xs text-slate-400">Jami {totalQuestions} ta savol</span>
             )}
+            {isManual && !frozen && (
+              <span className="flex items-center gap-3">
+                {manualTotal > 0 && (
+                  <span className="text-xs text-slate-400">Jami {formatPoints(Math.round(manualTotal * 100) / 100)} ball</span>
+                )}
+                {isBlock && (
+                  <button
+                    type="button"
+                    onClick={applyDtm}
+                    title="1-blok 30 × 3,1 · 2-blok 30 × 2,1 · 3–5-bloklar 10 × 1,1"
+                    className="rounded-lg px-2 py-1 text-xs font-medium text-brand-600 transition-colors hover:bg-brand-50"
+                  >
+                    DTM shabloni (189 ball)
+                  </button>
+                )}
+              </span>
+            )}
           </div>
 
           {frozen && saved ? (
@@ -607,7 +681,8 @@ function ExamForm({ title, exam, lookups, canAdmission, onClose, onSaved, onChan
                         {s.subjectName || subjectsById.get(s.subjectId)?.name || s.subjectId}
                       </span>
                       <span className="text-slate-500">
-                        {s.questionCount !== null && `${s.questionCount} ta savol · `}
+                        {s.questionCount !== null &&
+                          `${s.questionCount} ta savol${s.pointsPerCorrect !== null ? ` × ${formatPoints(s.pointsPerCorrect)}` : ''} · `}
                         maks. {s.maxScore === null ? '—' : formatPoints(s.maxScore)} ball
                       </span>
                     </li>
@@ -617,7 +692,8 @@ function ExamForm({ title, exam, lookups, canAdmission, onClose, onSaved, onChan
           ) : isManual ? (
             <div className="space-y-2">
               {sections.map((s, index) => {
-                const max = parseDecimal(s.maxScore)
+                const weighted = weightedSection(s)
+                const max = weighted && weighted !== 'bad' ? weighted.max : parseDecimal(s.maxScore)
                 const maxBad = max === null || Number.isNaN(max) || max <= 0 || max > MAX_SECTION_SCORE
                 return (
                   <div key={s.key} className="flex flex-wrap items-center gap-2">
@@ -635,15 +711,41 @@ function ExamForm({ title, exam, lookups, canAdmission, onClose, onSaved, onChan
                         </option>
                       ))}
                     </select>
-                    <label className="flex items-center gap-2 text-sm text-slate-500">
-                      Maks. ball
+                    <label className="flex items-center gap-1.5 text-sm text-slate-500" title="Savollar soni (DTM: 30 yoki 10)">
                       <input
-                        value={s.maxScore}
+                        value={s.questionCount}
+                        onChange={(e) => patchSection(index, { questionCount: e.target.value })}
+                        inputMode="numeric"
+                        placeholder="savol"
+                        aria-label={`${index + 1}-fan: savollar soni`}
+                        className={cn(field, 'w-16 px-2 text-center', submitted && weighted === 'bad' && 'border-red-300')}
+                      />
+                      ×
+                      <input
+                        value={s.pointsPerCorrect}
+                        onChange={(e) => patchSection(index, { pointsPerCorrect: e.target.value })}
+                        inputMode="decimal"
+                        placeholder="ball"
+                        aria-label={`${index + 1}-fan: bitta to'g'ri javob bali`}
+                        className={cn(field, 'w-16 px-2 text-center', submitted && weighted === 'bad' && 'border-red-300')}
+                      />
+                    </label>
+                    <label className="flex items-center gap-2 text-sm text-slate-500">
+                      Maks.
+                      <input
+                        value={weighted && weighted !== 'bad' ? formatPoints(weighted.max) : s.maxScore}
                         onChange={(e) => patchSection(index, { maxScore: e.target.value })}
+                        readOnly={weighted !== null}
                         inputMode="decimal"
                         placeholder="100"
                         aria-label={`${index + 1}-fan: maksimal ball`}
-                        className={cn(field, 'w-24 text-center', submitted && maxBad && 'border-red-300')}
+                        title={weighted ? 'Savollar soni × bitta savol bali' : undefined}
+                        className={cn(
+                          field,
+                          'w-20 text-center',
+                          weighted !== null && 'bg-slate-50 text-slate-500',
+                          submitted && maxBad && 'border-red-300',
+                        )}
                       />
                     </label>
                     <div className="flex items-center">

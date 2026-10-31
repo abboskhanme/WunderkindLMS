@@ -47,6 +47,7 @@ import {
   type EntryColumn,
   type EntryRow,
   type EntrySaveRow,
+  type EntrySaveScore,
   type EntryTable,
   type Exam,
 } from '@/api/services/exams'
@@ -105,12 +106,29 @@ function rowLocked(row: EntryRow): boolean {
   return row.status === 'cancelled' || row.status === 'in_progress'
 }
 
+/** DTM-shaped column (30 × 3.1): the cell is the number of correct answers, not points. */
+function isWeighted(column: EntryColumn): boolean {
+  return column.pointsPerCorrect != null && column.questionCount != null
+}
+
+/** The server's value of a cell as the grid shows it: correct answers for a DTM column, else points. */
+function storedValue(row: EntryRow, column: EntryColumn): number | null {
+  return isWeighted(column) ? (row.correct?.[column.sectionId] ?? null) : (row.scores[column.sectionId] ?? null)
+}
+
+/** The certificate credit of a cell — the pupil is exempt; the server writes it on save. */
+function creditOf(row: EntryRow, column: EntryColumn) {
+  return row.credits?.[column.sectionId] ?? null
+}
+
 /** Does the draft say exactly what the server already has? Then it is not a change. */
-function sameAsServer(row: EntryRow, draft: RowDraft): boolean {
+function sameAsServer(row: EntryRow, draft: RowDraft, columns: EntryColumn[]): boolean {
   if (draft.absent !== (row.status === 'absent')) return false
-  for (const [sectionId, text] of Object.entries(draft.scores)) {
+  for (const column of columns) {
+    const text = draft.scores[column.sectionId]
+    if (text === undefined || creditOf(row, column)) continue
     const typed = parseDecimal(text)
-    const stored = row.scores[sectionId] ?? null
+    const stored = storedValue(row, column)
     if (typed === null && stored === null) continue
     if (typed === null || stored === null || Number.isNaN(typed) || typed !== stored) return false
   }
@@ -119,6 +137,7 @@ function sameAsServer(row: EntryRow, draft: RowDraft): boolean {
 
 /** Why a cell cannot be saved, in Uzbek — or `null` when it can. */
 function cellProblem(row: EntryRow, column: EntryColumn, text: string): string | null {
+  if (creditOf(row, column)) return null
   const value = parseDecimal(text)
   if (value === null) {
     const stored = row.scores[column.sectionId]
@@ -127,6 +146,12 @@ function cellProblem(row: EntryRow, column: EntryColumn, text: string): string |
       : "Ballni o'chirib bo'lmaydi — 0 kiriting yoki \"Kelmadi\" belgilang"
   }
   if (Number.isNaN(value)) return 'Son kiriting, masalan 42 yoki 42.5'
+  if (isWeighted(column)) {
+    const total = column.questionCount ?? 0
+    return Number.isInteger(value) && value >= 0 && value <= total
+      ? null
+      : `To'g'ri javoblar soni 0 dan ${total} gacha butun son bo'lsin`
+  }
   if (value < 0 || value > column.maxScore) {
     return `Ball 0 dan ${formatPoints(column.maxScore)} gacha bo'lishi kerak`
   }
@@ -204,7 +229,7 @@ export function ResultEntryPage() {
     if (!table) return out
     for (const row of table.rows) {
       const draft = drafts[row.participantId]
-      if (draft && !sameAsServer(row, draft)) out.add(row.participantId)
+      if (draft && !sameAsServer(row, draft, table.columns)) out.add(row.participantId)
     }
     return out
   }, [table, drafts])
@@ -252,8 +277,8 @@ export function ResultEntryPage() {
   }, [table])
 
   const cellText = useCallback(
-    (row: EntryRow, sectionId: string): string =>
-      drafts[row.participantId]?.scores[sectionId] ?? toText(row.scores[sectionId]),
+    (row: EntryRow, column: EntryColumn): string =>
+      drafts[row.participantId]?.scores[column.sectionId] ?? toText(storedValue(row, column)),
     [drafts],
   )
 
@@ -268,7 +293,7 @@ export function ResultEntryPage() {
       const draft = drafts[row.participantId]
       if (!draft || draft.absent || !dirtyIds.has(row.participantId)) continue
       for (const column of table.columns) {
-        const problem = cellProblem(row, column, cellText(row, column.sectionId))
+        const problem = cellProblem(row, column, cellText(row, column))
         if (problem) out.set(`${row.participantId}:${column.sectionId}`, problem)
       }
     }
@@ -331,10 +356,13 @@ export function ResultEntryPage() {
       .map((row) => {
         const draft = drafts[row.participantId]
         if (draft.absent) return { participantId: row.participantId, scores: [], absent: true }
-        const scores = table.columns.flatMap((column) => {
-          const value = parseDecimal(cellText(row, column.sectionId))
-          return value === null || Number.isNaN(value)
-            ? []
+        // Sertifikat bilan ozod qilingan kataklar yuborilmaydi — kreditni server yozadi.
+        const scores = table.columns.flatMap((column): EntrySaveScore[] => {
+          if (creditOf(row, column)) return []
+          const value = parseDecimal(cellText(row, column))
+          if (value === null || Number.isNaN(value)) return []
+          return isWeighted(column)
+            ? [{ sectionId: column.sectionId, correct: value }]
             : [{ sectionId: column.sectionId, points: value }]
         })
         return { participantId: row.participantId, scores, absent: false }
@@ -606,8 +634,15 @@ export function ResultEntryPage() {
                           {column.name}
                         </span>
                         <span className="block text-[10px] font-normal normal-case text-slate-400">
-                          maks. {formatPoints(column.maxScore)}
+                          {isWeighted(column)
+                            ? `${column.questionCount} savol × ${formatPoints(column.pointsPerCorrect ?? 0)}`
+                            : `maks. ${formatPoints(column.maxScore)}`}
                         </span>
+                        {isWeighted(column) && (
+                          <span className="block text-[10px] font-normal normal-case text-brand-500">
+                            to'g'ri javoblar
+                          </span>
+                        )}
                       </th>
                     ))}
                     <th className="border-b border-slate-100 px-3 py-2 text-center font-medium">Kelmadi</th>
@@ -637,14 +672,27 @@ export function ResultEntryPage() {
                         </td>
                         {grid.columns.map((column, colIndex) => {
                           const key = `${row.participantId}:${column.sectionId}`
-                          const text = cellText(row, column.sectionId)
+                          const text = cellText(row, column)
                           const problem = problems.get(key) ?? null
                           const typedHere =
                             dirty && drafts[row.participantId]?.scores[column.sectionId] !== undefined
                           const showBad = problem !== null && (showProblems || typedHere)
+                          const credit = creditOf(row, column)
+                          const typedPoints =
+                            isWeighted(column) && !absent && text !== '' && problem === null
+                              ? (parseDecimal(text) ?? 0) * (column.pointsPerCorrect ?? 0)
+                              : null
                           return (
                             <td key={column.sectionId} className="border-b border-slate-100 px-2 py-1.5 text-center">
-                              {locked ? (
+                              {credit && !absent ? (
+                                <span
+                                  className="inline-flex flex-col items-center rounded-md bg-violet-50 px-2 py-0.5 text-violet-700 ring-1 ring-violet-100"
+                                  title={`Sertifikat bilan ozod: ${credit.label}. Ball saqlanganda avtomatik yoziladi.`}
+                                >
+                                  <span className="font-medium">{formatPoints(credit.points)}</span>
+                                  <span className="max-w-[6rem] truncate text-[10px]">{credit.label}</span>
+                                </span>
+                              ) : locked ? (
                                 <span className={cn('text-slate-700', absent && 'text-slate-300')}>
                                   {absent ? DASH : text || DASH}
                                 </span>
@@ -675,6 +723,9 @@ export function ResultEntryPage() {
                                     absent && 'cursor-not-allowed border-slate-100 bg-slate-50',
                                   )}
                                 />
+                              )}
+                              {typedPoints !== null && !credit && (
+                                <span className="block text-[10px] text-slate-400">= {formatPoints(typedPoints)} ball</span>
                               )}
                             </td>
                           )

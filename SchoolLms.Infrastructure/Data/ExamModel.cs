@@ -341,6 +341,9 @@ internal static class ExamModel
                 .OnDelete(DeleteBehavior.Cascade);
             e.HasOne<ExamSection>().WithMany().HasForeignKey(x => x.SectionId)
                 .OnDelete(DeleteBehavior.Cascade);
+            // SET NULL: deleting the certificate keeps the credited points as history.
+            e.HasOne<Certificate>().WithMany().HasForeignKey(x => x.CertificateId)
+                .OnDelete(DeleteBehavior.SetNull);
         });
     }
 

@@ -61,6 +61,14 @@ public class CertificateType
     /// </summary>
     public string? LevelOptions { get; set; }
 
+    /// <summary>
+    /// Block-test credit (client, 2026-10-31): a pupil holding this certificate in a subject is
+    /// exempt from that subject's block and gets a share of its ceiling. "key=percent" pairs,
+    /// semicolon-separated: a level for a level type ("A+=100;A=93.3"), a minimum score for a
+    /// scored type ("7=100;6.5=90" — the highest threshold reached wins). Null — no credit.
+    /// </summary>
+    public string? ExamCredits { get; set; }
+
     /// <summary>false = yangi sertifikatda tanlanmaydi; eski hujjatlar joyida qoladi.</summary>
     public bool IsActive { get; set; } = true;
 

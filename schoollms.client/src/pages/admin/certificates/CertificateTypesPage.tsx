@@ -34,6 +34,7 @@ export function CertificateTypesPage() {
   const [isScored, setIsScored] = useState(false)
   const [usesLevel, setUsesLevel] = useState(false)
   const [levelOptions, setLevelOptions] = useState('')
+  const [examCredits, setExamCredits] = useState('')
   const [isActive, setIsActive] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -50,6 +51,7 @@ export function CertificateTypesPage() {
     setIsScored(false)
     setUsesLevel(false)
     setLevelOptions('')
+    setExamCredits('')
     setIsActive(true)
     setError('')
     setOpen(true)
@@ -61,6 +63,7 @@ export function CertificateTypesPage() {
     setIsScored(t.isScored)
     setUsesLevel(t.usesLevel)
     setLevelOptions(t.levelOptions.join(', '))
+    setExamCredits(t.examCredits ?? '')
     setIsActive(t.isActive)
     setError('')
     setOpen(true)
@@ -78,6 +81,7 @@ export function CertificateTypesPage() {
         isActive,
         usesLevel,
         levelOptions: usesLevel && levelOptions.trim() ? levelOptions.trim() : null,
+        examCredits: (isScored || usesLevel) && examCredits.trim() ? examCredits.trim() : null,
       }
       if (editing) {
         const saved = await updateCertificateType(editing.id, payload)
@@ -174,6 +178,14 @@ export function CertificateTypesPage() {
                               Daraja
                               {t.levelOptions.length > 0 &&
                                 `: ${t.levelOptions[0]}–${t.levelOptions[t.levelOptions.length - 1]}`}
+                            </span>
+                          )}
+                          {t.examCredits && (
+                            <span
+                              className="rounded-full bg-violet-50 px-2 py-0.5 text-xs font-medium text-violet-700"
+                              title={`Blok testda kredit: ${t.examCredits}`}
+                            >
+                              Blok kredit
                             </span>
                           )}
                         </div>
@@ -299,6 +311,23 @@ export function CertificateTypesPage() {
               />
               <p className="mt-1 text-xs text-slate-400">
                 Bo'sh qoldirilsa — daraja erkin yoziladi. Tartib "Natijalar"da saralash uchun kerak.
+              </p>
+            </div>
+          )}
+
+          {(isScored || usesLevel) && (
+            <div>
+              <Input
+                label="Blok testda kredit (daraja = blok foizi)"
+                placeholder={usesLevel ? 'A+=100; A=93.3; B+=86.7; B=80' : '7=100; 6.5=90; 6=80'}
+                value={examCredits}
+                onChange={(e) => setExamCredits(e.target.value)}
+              />
+              <p className="mt-1 text-xs text-slate-400">
+                Shu sertifikati bor o'quvchi o'sha fan blokidan ozod qilinadi va blok maksimal
+                balining shu foizi avtomatik yoziladi (masalan, A+ = 100% → 1-blokda 93 ball).
+                {usesLevel ? ' Kalit — daraja.' : ' Kalit — eng kam ball: eng yuqori yetgan chegara olinadi.'}{' '}
+                Bo'sh qoldirilsa — kredit berilmaydi.
               </p>
             </div>
           )}

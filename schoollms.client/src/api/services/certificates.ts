@@ -21,6 +21,8 @@ export interface CertificateType {
   usesLevel: boolean
   /** Ruxsat etilgan darajalar, pastdan yuqoriga. Bo'sh — erkin matn. */
   levelOptions: string[]
+  /** Blok test krediti: "A+=100; A=93.3" (daraja yoki eng kam ball → blok foizi). null — yo'q. */
+  examCredits?: string | null
 }
 
 export interface CertificateTypePayload {
@@ -30,6 +32,8 @@ export interface CertificateTypePayload {
   usesLevel: boolean
   /** Vergul bilan, pastdan yuqoriga: "A1, A2, B1, B2, C1, C2". Bo'sh — erkin matn. */
   levelOptions: string | null
+  /** Blok test krediti — "daraja=foiz" juftlari, nuqta-vergul bilan. Bo'sh — kredit yo'q. */
+  examCredits: string | null
 }
 
 /** Bitta sertifikat — ro'yxat qatori (nomlari bilan). */

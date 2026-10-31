@@ -96,6 +96,76 @@ public static class CertificateService
         return (string.Join(",", options), null);
     }
 
+    /// <summary>One block-test credit rule: a level ("A+") or a minimum score ("7") → percent of the block.</summary>
+    public sealed record ExamCreditRule(string Key, decimal Percent);
+
+    /// <summary>Parses <see cref="CertificateType.ExamCredits"/> — malformed pairs are skipped.</summary>
+    public static List<ExamCreditRule> ExamCreditRulesOf(string? raw) =>
+        (raw ?? "").Split([';', '\n'],StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(pair => pair.Split('=', 2, StringSplitOptions.TrimEntries))
+            .Where(kv => kv.Length == 2 && kv[0].Length > 0)
+            .Select(kv => decimal.TryParse(kv[1].Replace(',', '.').TrimEnd('%'),
+                    System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture, out var pct)
+                ? new ExamCreditRule(kv[0], pct) : null)
+            .OfType<ExamCreditRule>()
+            .ToList();
+
+    /// <summary>
+    /// Checks the form's credit table (client, 2026-10-31). A level type's keys must be its levels
+    /// (when the list is fixed); a scored type's keys must be numbers. Empty → null (no credit).
+    /// </summary>
+    public static (string? Value, string? Error) NormalizeExamCredits(
+        string? raw, bool isScored, bool usesLevel, string? levelOptions)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return (null, null);
+        var pairs = raw.Split([';', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var rules = ExamCreditRulesOf(raw);
+        if (rules.Count != pairs.Length)
+            return (null, "Imtihon krediti «daraja=foiz» ko'rinishida bo'lsin, masalan: A+=100; A=93.3");
+        if (!isScored && !usesLevel)
+            return (null, "Imtihon krediti faqat ballik yoki darajali sertifikat turida bo'ladi");
+        if (rules.Any(r => r.Percent is <= 0m or > 100m))
+            return (null, "Kredit foizi 0 dan katta va 100 dan oshmasin");
+        if (rules.Select(r => r.Key.ToLowerInvariant()).Distinct().Count() != rules.Count)
+            return (null, "Imtihon kreditida bir daraja ikki marta yozilgan");
+
+        var levels = LevelOptionsOf(levelOptions);
+        foreach (var r in rules)
+        {
+            var isNumber = decimal.TryParse(r.Key.Replace(',', '.'), System.Globalization.NumberStyles.Number,
+                System.Globalization.CultureInfo.InvariantCulture, out _);
+            if (usesLevel && !isNumber && levels.Count > 0 && LevelRank(levels, r.Key) < 0)
+                return (null, $"«{r.Key}» bu turning darajalari ro'yxatida yo'q");
+            if (!usesLevel && !isNumber)
+                return (null, $"«{r.Key}» — ballik turda kalit raqam (eng kam ball) bo'lsin");
+        }
+        return (string.Join("; ", rules.Select(r =>
+            $"{r.Key}={r.Percent.ToString(System.Globalization.CultureInfo.InvariantCulture)}")), null);
+    }
+
+    /// <summary>
+    /// The percent of a block this certificate is worth, or null when the type gives no credit or
+    /// the certificate's level/score matches no rule. A level matches by name; a score takes the
+    /// highest numeric threshold it reaches.
+    /// </summary>
+    public static decimal? ExamCreditPercent(string? rawRules, string? level, decimal? score)
+    {
+        var rules = ExamCreditRulesOf(rawRules);
+        if (rules.Count == 0) return null;
+        if (level is not null
+            && rules.FirstOrDefault(r => string.Equals(r.Key, level.Trim(), StringComparison.OrdinalIgnoreCase)) is { } byLevel)
+            return byLevel.Percent;
+        if (score is not { } s) return null;
+        decimal? best = null, bestKey = null;
+        foreach (var r in rules)
+        {
+            if (!decimal.TryParse(r.Key.Replace(',', '.'), System.Globalization.NumberStyles.Number,
+                    System.Globalization.CultureInfo.InvariantCulture, out var min) || s < min) continue;
+            if (bestKey is null || min > bestKey) { bestKey = min; best = r.Percent; }
+        }
+        return best;
+    }
+
     /// <summary>
     /// A level's rank in the type's list (higher is better); -1 when the list is empty or the level
     /// is not in it (such a level is shown, just not ranked).

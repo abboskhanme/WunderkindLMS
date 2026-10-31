@@ -509,6 +509,7 @@ public static class ExamService
             {
                 ExamId = exam.Id, SubjectId = s.SubjectId, BankId = s.BankId,
                 QuestionCount = s.QuestionCount, MaxScore = s.MaxScore, Order = s.Order,
+                PointsPerCorrect = s.PointsPerCorrect,
             });
         }
         db.Exams.Add(exam);
@@ -583,7 +584,8 @@ public static class ExamService
         DateTime? OpensAt, DateTime? ClosesAt, int? TimeLimitMin);
 
     /// <summary>One validated section, in final order.</summary>
-    private sealed record SectionPlan(string SubjectId, string? BankId, int? QuestionCount, decimal MaxScore, int Order);
+    private sealed record SectionPlan(
+        string SubjectId, string? BankId, int? QuestionCount, decimal MaxScore, int Order, decimal? PointsPerCorrect = null);
 
     private static async Task<(HeaderPlan Plan, List<string> Errors)> ValidateHeaderAsync(
         IAppDbContext db, ExamUpsertRequest r, string kind, string delivery, string status, CancellationToken ct)
@@ -697,6 +699,32 @@ public static class ExamService
                 if (subjectId is null) { errors.Add($"{n}-fan: fanni tanlang"); continue; }
                 if (!subjects.ContainsKey(subjectId)) { errors.Add($"{n}-fan: fan topilmadi"); continue; }
                 if (!seen.Add(subjectId)) { errors.Add($"{n}-fan takrorlangan"); continue; }
+
+                // DTM shape (client, 2026-10-31): N questions × weight — the ceiling is their
+                // product and the grid takes correct answers. Both or neither.
+                if (s.QuestionCount is not null || s.PointsPerCorrect is not null)
+                {
+                    if (s.QuestionCount is not { } qc || qc < 1 || qc > 500)
+                    {
+                        errors.Add($"{n}-fan: savollar soni 1 dan 500 gacha bo'lsin");
+                        continue;
+                    }
+                    if (s.PointsPerCorrect is not { } rawWeight || ExamScoringService.RoundPoints(rawWeight) <= 0m)
+                    {
+                        errors.Add($"{n}-fan: bitta to'g'ri javob balini kiriting");
+                        continue;
+                    }
+                    var weight = ExamScoringService.RoundPoints(rawWeight);
+                    var product = ExamScoringService.RoundPoints(qc * weight);
+                    if (product > MaxSectionScore)
+                    {
+                        errors.Add($"{n}-fan: maksimal ball {ExamScoringService.Format(MaxSectionScore)} dan oshmasin");
+                        continue;
+                    }
+                    plan.Add(new SectionPlan(subjectId, null, qc, product, plan.Count, weight));
+                    continue;
+                }
+
                 if (s.MaxScore is not { } rawMax) { errors.Add($"{n}-fan: maksimal ballni kiriting"); continue; }
                 var max = ExamScoringService.RoundPoints(rawMax);
                 if (max <= 0m || max > MaxSectionScore)
@@ -738,7 +766,13 @@ public static class ExamService
             else
             {
                 if (subject is null) return true;
-                if (b.MaxScore is not { } max || ExamScoringService.RoundPoints(max) != a.MaxScore) return true;
+                var weight = b.PointsPerCorrect is { } w ? ExamScoringService.RoundPoints(w) : (decimal?)null;
+                if (weight != a.PointsPerCorrect) return true;
+                if (weight is not null)
+                {
+                    if (b.QuestionCount != a.QuestionCount) return true;
+                }
+                else if (b.MaxScore is not { } max || ExamScoringService.RoundPoints(max) != a.MaxScore) return true;
             }
         }
         return false;
@@ -760,7 +794,8 @@ public static class ExamService
                 s.BankId = p.BankId;
                 s.QuestionCount = p.QuestionCount;
                 s.MaxScore = p.MaxScore;
-                s.PointsPerCorrect = null;
+                // Online: written at publish. Manual: the DTM weight, or null.
+                s.PointsPerCorrect = p.PointsPerCorrect;
                 s.Order = p.Order;
             }
             else
@@ -769,6 +804,7 @@ public static class ExamService
                 {
                     ExamId = exam.Id, SubjectId = p.SubjectId, BankId = p.BankId,
                     QuestionCount = p.QuestionCount, MaxScore = p.MaxScore, Order = p.Order,
+                    PointsPerCorrect = p.PointsPerCorrect,
                 });
             }
         }
@@ -1324,17 +1360,37 @@ public static class ExamService
             .OrderBy(v => v.ClassName ?? v.StudentClassName).ThenBy(v => v.StudentName ?? v.LeadName).ThenBy(v => v.P.Id)
             .ToListAsync(ct);
         var scores = await ScoresOfExamAsync(db, examId, ct);
+        var correct = (await (from score in db.ExamSectionScores.AsNoTracking()
+                              join p in db.ExamParticipants.AsNoTracking() on score.ParticipantId equals p.Id
+                              where p.ExamId == examId && score.CorrectCount != null
+                              select new { score.ParticipantId, score.SectionId, score.CorrectCount })
+                .ToListAsync(ct))
+            .ToDictionary(x => (x.ParticipantId, x.SectionId), x => x.CorrectCount);
+
+        // Sertifikat bilan ozod qilinganlar (2026-10-31): katak qulflangan, ball — kredit.
+        var credits = exam.Delivery == ExamDelivery.Manual
+            ? await ExamCertificateCredits.ForAsync(db, exam,
+                await db.ExamSections.AsNoTracking().Where(s => s.ExamId == examId).ToListAsync(ct),
+                views.Select(v => (v.P.Id, v.P.StudentId)).ToList(), ct)
+            : new Dictionary<string, Dictionary<string, ExamCertificateCredits.Credit>>(StringComparer.Ordinal);
 
         var rows = views.Select(v =>
         {
             var mine = scores.GetValueOrDefault(v.P.Id);
+            var myCredits = credits.GetValueOrDefault(v.P.Id);
             var cells = columns.ToDictionary(
                 c => c.SectionId,
-                c => mine is not null && mine.TryGetValue(c.SectionId, out var pts) ? pts : (decimal?)null,
+                c => mine is not null && mine.TryGetValue(c.SectionId, out var pts) ? pts
+                    : myCredits?.GetValueOrDefault(c.SectionId)?.Points,
                 StringComparer.Ordinal);
+            var counts = columns.Where(c => c.PointsPerCorrect is not null).ToDictionary(
+                c => c.SectionId, c => correct.GetValueOrDefault((v.P.Id, c.SectionId)), StringComparer.Ordinal);
             return new ExamEntryRowDto(
                 v.P.Id, DisplayName(v.P, v.StudentName, v.LeadName), DisplayClass(v.ClassName, v.StudentClassName),
-                v.P.Status, cells, v.P.TotalPoints, v.P.MaxPoints, v.P.Percent);
+                v.P.Status, cells, v.P.TotalPoints, v.P.MaxPoints, v.P.Percent,
+                counts.Count > 0 ? counts : null,
+                myCredits?.ToDictionary(kv => kv.Key, kv => new ExamEntryCreditDto(kv.Value.CertificateId, kv.Value.Label, kv.Value.Points),
+                    StringComparer.Ordinal));
         }).ToList();
 
         return new ExamEntryTableDto(exam.Id, exam.Title, exam.ExamDate, columns, rows);
@@ -1393,6 +1449,12 @@ public static class ExamService
         var subjectNames = await db.Subjects.AsNoTracking().Where(s => subjectIds.Contains(s.Id))
             .ToDictionaryAsync(s => s.Id, s => s.Name, ct);
 
+        // Sertifikat krediti (2026-10-31) — shu kataklar qo'lda kiritilmaydi, kredit yoziladi.
+        var credits = await ExamCertificateCredits.ForAsync(db, exam, exam.Sections,
+            participants.Values.Select(p => (p.Id, p.StudentId)).ToList(), ct);
+        // (participant, section) → correct answers / certificate of the cell being written.
+        var cellMeta = new Dictionary<(string, string), (int? Correct, Guid? CertificateId)>();
+
         var errors = new List<string>();
         var plans = new List<(ExamParticipant P, bool Absent, Dictionary<string, decimal> Points)>(rows.Count);
         for (var i = 0; i < rows.Count; i++)
@@ -1424,6 +1486,26 @@ public static class ExamService
                 }
                 var subject = subjectNames.GetValueOrDefault(section.SubjectId) ?? section.SubjectId;
                 if (points.ContainsKey(sectionId)) { errors.Add($"{who}, {subject}: ball ikki marta yuborilgan"); continue; }
+                // Ozod qilingan blok — yuborilgan qiymat e'tiborga olinmaydi, kredit pastda yoziladi.
+                if (credits.GetValueOrDefault(p.Id)?.ContainsKey(sectionId) == true) continue;
+
+                if (cell.Correct is { } right)
+                {
+                    if (section.BankId is not null || section.PointsPerCorrect is not { } weight
+                        || section.QuestionCount is not { } total)
+                    {
+                        errors.Add($"{who}, {subject}: bu fanda ball kiritiladi, to'g'ri javoblar soni emas");
+                        continue;
+                    }
+                    if (right < 0 || right > total)
+                    {
+                        errors.Add($"{who}, {subject}: to'g'ri javoblar 0 dan {total} gacha bo'lsin");
+                        continue;
+                    }
+                    points[sectionId] = ExamScoringService.RoundPoints(right * weight);
+                    cellMeta[(p.Id, sectionId)] = (right, null);
+                    continue;
+                }
                 if (cell.Points is not { } raw) { errors.Add($"{who}, {subject}: ball kiritilmagan"); continue; }
 
                 var value = ExamScoringService.RoundPoints(raw);
@@ -1434,6 +1516,12 @@ public static class ExamService
                 }
                 points[sectionId] = value;
             }
+            if (!row.Absent && credits.GetValueOrDefault(p.Id) is { } mine)
+                foreach (var (sectionId, credit) in mine)
+                {
+                    points[sectionId] = credit.Points;
+                    cellMeta[(p.Id, sectionId)] = (null, credit.CertificateId);
+                }
             plans.Add((p, row.Absent, points));
         }
         if (errors.Count > 0) return ExamError.BadRequest("validation", errors[0], errors);
@@ -1466,7 +1554,8 @@ public static class ExamService
             else
             {
                 var changed = p.Status == ExamParticipantStatus.Absent
-                    || points.Any(kv => current.FirstOrDefault(s => s.SectionId == kv.Key) is not { } s || s.Points != kv.Value);
+                    || points.Any(kv => current.FirstOrDefault(s => s.SectionId == kv.Key) is not { } s || s.Points != kv.Value
+                        || (s.CorrectCount, s.CertificateId) != cellMeta.GetValueOrDefault((p.Id, kv.Key)));
                 if (!changed) continue;
 
                 var merged = current.ToDictionary(s => s.SectionId, s => s.Points, StringComparer.Ordinal);
@@ -1474,8 +1563,20 @@ public static class ExamService
 
                 if (merged.Count > 0)
                 {
+                    var kept = current.ToDictionary(s => s.SectionId, s => (s.CorrectCount, s.QuestionCount, s.CertificateId),
+                        StringComparer.Ordinal);
                     var score = ExamScoringService.SummarizeManual(scoringSections, merged);
                     current = WriteResult(db, p, score, current, actor.UserId, now);
+                    // WriteResult knows points only; the cell's correct answers / certificate are ours.
+                    foreach (var row in current)
+                    {
+                        var (right, certificateId) = points.ContainsKey(row.SectionId)
+                            ? cellMeta.GetValueOrDefault((p.Id, row.SectionId))
+                            : (kept.GetValueOrDefault(row.SectionId).CorrectCount, kept.GetValueOrDefault(row.SectionId).CertificateId);
+                        row.CorrectCount = right;
+                        row.QuestionCount = right is null ? null : sections[row.SectionId].QuestionCount;
+                        row.CertificateId = certificateId;
+                    }
                     if (p.LeadId is { } leadId && leads.TryGetValue(leadId, out var lead)) AdvanceLeadToTested(lead);
                 }
                 else
@@ -1601,7 +1702,9 @@ public static class ExamService
                join subject in db.Subjects.AsNoTracking() on s.SubjectId equals subject.Id
                where s.ExamId == examId
                orderby s.Order, s.Id
-               select new ExamEntryColumnDto(s.Id, s.SubjectId, subject.Name, s.MaxScore))
+               select new ExamEntryColumnDto(s.Id, s.SubjectId, subject.Name, s.MaxScore,
+                   s.BankId == null && s.PointsPerCorrect != null ? s.QuestionCount : null,
+                   s.BankId == null ? s.PointsPerCorrect : null))
             .ToListAsync(ct);
 
     /// <summary>A participant row of the grid/template, with display name and class — no scores.</summary>
@@ -1777,9 +1880,19 @@ public static class ExamService
 
         var scores = (await db.ExamSectionScores.AsNoTracking()
                 .Where(s => participantIds.Contains(s.ParticipantId))
-                .Select(s => new { s.ParticipantId, s.SectionId, s.Points, s.MaxPoints })
+                .Select(s => new { s.ParticipantId, s.SectionId, s.Points, s.MaxPoints, s.CertificateId })
                 .ToListAsync(ct))
             .ToDictionary(s => (s.ParticipantId, s.SectionId));
+
+        // Sertifikat bilan ozod qilingan bloklar — "IELTS 7.5" yorlig'i.
+        var certIds = scores.Values.Select(s => s.CertificateId).OfType<Guid>().Distinct().ToList();
+        var certLabels = certIds.Count == 0
+            ? new Dictionary<Guid, string>()
+            : (await (from c in db.Certificates.AsNoTracking()
+                      join t in db.CertificateTypes.AsNoTracking() on c.TypeId equals t.Id
+                      where certIds.Contains(c.Id)
+                      select new { c.Id, t.Name, c.Level, c.Score }).ToListAsync(ct))
+                .ToDictionary(c => c.Id, c => ExamCertificateCredits.LabelOf(c.Name, c.Level, c.Score));
 
         // Yo'nalish — o'quvchi TEST KUNI a'zo bo'lgan yo'nalish guruhi (a'zolik sanali);
         // sanasi yo'q (yoki o'sha kuni a'zolik yo'q) bo'lsa — hozirgi faol yo'nalish.
@@ -1808,7 +1921,8 @@ public static class ExamService
             var perSubject = sections.GetValueOrDefault(v.P.ExamId)?.Select(s =>
             {
                 var hit = scores.GetValueOrDefault((v.P.Id, s.Id));
-                return new ExamResultScoreDto(s.Id, s.SubjectId, s.Name, hit?.Points, hit?.MaxPoints ?? s.MaxScore);
+                return new ExamResultScoreDto(s.Id, s.SubjectId, s.Name, hit?.Points, hit?.MaxPoints ?? s.MaxScore,
+                    hit?.CertificateId is { } cid ? certLabels.GetValueOrDefault(cid, "Sertifikat") : null);
             }).ToList() ?? [];
 
             return new ExamResultRowDto(

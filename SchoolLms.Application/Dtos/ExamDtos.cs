@@ -132,11 +132,17 @@ public sealed record ExamUpsertRequest(
 /// <summary>One section of <see cref="ExamUpsertRequest"/>.</summary>
 /// <param name="SubjectId">Online: may be omitted — it is taken from the bank.</param>
 /// <param name="BankId">Online only.</param>
-/// <param name="QuestionCount">Online only; omitted = the bank's <c>questions_per_test</c> at publish.</param>
+/// <param name="QuestionCount">
+/// Online: omitted = the bank's <c>questions_per_test</c> at publish. Manual: optional, with
+/// <paramref name="PointsPerCorrect"/> — the DTM shape (30 × 3.1): the ceiling becomes their
+/// product and the grid takes correct answers.
+/// </param>
+/// <param name="PointsPerCorrect">Manual only — the weight of one correct answer; needs <paramref name="QuestionCount"/>.</param>
 /// <param name="MaxScore">Manual only — required there. Ignored for online (written at publish).</param>
 /// <param name="Order">Display order; the list is sorted by it and renumbered 0…n-1.</param>
 public sealed record ExamSectionInput(
-    string? SubjectId, string? BankId, int? QuestionCount, decimal? MaxScore, int Order);
+    string? SubjectId, string? BankId, int? QuestionCount, decimal? MaxScore, int Order,
+    decimal? PointsPerCorrect = null);
 
 /// <summary><c>POST /api/admin/exams/{id}/cancel</c> — <c>{ reason }</c>.</summary>
 public sealed record ExamCancelRequest(string? Reason);
@@ -227,7 +233,17 @@ public sealed record ExamAddParticipantsResultDto(int Added, int Skipped);
 // ---------------------------------------------------------------------------
 
 /// <summary>One subject column of the grid.</summary>
-public sealed record ExamEntryColumnDto(string SectionId, string SubjectId, string Name, decimal MaxScore);
+/// <param name="QuestionCount">DTM-shaped section (manual): the number of questions — the cell takes correct answers.</param>
+/// <param name="PointsPerCorrect">DTM-shaped section: the weight of one correct answer.</param>
+public sealed record ExamEntryColumnDto(
+    string SectionId, string SubjectId, string Name, decimal MaxScore,
+    int? QuestionCount = null, decimal? PointsPerCorrect = null);
+
+/// <summary>
+/// A certificate credit in one cell: the pupil is exempt from the block and gets
+/// <paramref name="Points"/> — the type's percent of the ceiling (client, 2026-10-31).
+/// </summary>
+public sealed record ExamEntryCreditDto(Guid CertificateId, string Label, decimal Points);
 
 /// <summary>
 /// One participant row. <c>scores</c> has a key for EVERY column —
@@ -241,7 +257,9 @@ public sealed record ExamEntryRowDto(
     IReadOnlyDictionary<string, decimal?> Scores,
     decimal? TotalPoints,
     decimal? MaxPoints,
-    decimal? Percent);
+    decimal? Percent,
+    IReadOnlyDictionary<string, int?>? Correct = null,
+    IReadOnlyDictionary<string, ExamEntryCreditDto>? Credits = null);
 
 /// <summary><c>EntryTableDto</c> — bare (not paged), capped at 500 rows.</summary>
 public sealed record ExamEntryTableDto(
@@ -262,8 +280,12 @@ public sealed record ExamEntrySaveRequest(IReadOnlyList<ExamEntrySaveRow>? Rows)
 /// </summary>
 public sealed record ExamEntrySaveRow(string? ParticipantId, IReadOnlyList<ExamEntrySaveScore>? Scores, bool Absent);
 
-/// <summary>One cell. <c>points</c> is rounded half-up to two decimals, then range-checked.</summary>
-public sealed record ExamEntrySaveScore(string? SectionId, decimal? Points);
+/// <summary>
+/// One cell. <c>points</c> is rounded half-up to two decimals, then range-checked. A DTM-shaped
+/// section takes <c>correct</c> instead (0…question count) and the points are computed. A cell
+/// of a certificate-credited section is ignored — the credit is applied.
+/// </summary>
+public sealed record ExamEntrySaveScore(string? SectionId, decimal? Points, int? Correct = null);
 
 /// <summary>
 /// <c>{ saved }</c> — the number of rows that changed something. A row that
@@ -298,7 +320,9 @@ public sealed record ExamResultImportResultDto(
 // ---------------------------------------------------------------------------
 
 /// <summary>One subject of one result row. <c>points</c> is <c>null</c> when nothing was entered.</summary>
-public sealed record ExamResultScoreDto(string SectionId, string SubjectId, string Name, decimal? Points, decimal MaxPoints);
+public sealed record ExamResultScoreDto(
+    string SectionId, string SubjectId, string Name, decimal? Points, decimal MaxPoints,
+    string? Certificate = null);
 
 /// <summary>
 /// <c>ResultRow</c> — one participant of one exam. <c>examDate</c> is the
