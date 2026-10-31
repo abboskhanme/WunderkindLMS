@@ -676,9 +676,11 @@ public record SubjectEvaluationDto(string SubjectId, string SubjectName, double 
 /// <summary>The day the behaviour score counts from ("yyyy-MM-dd"); empty = the whole history.</summary>
 public record DisciplineScoreSinceDto(string? Since);
 
-/// <summary>Ballar nazorati qatori: o'quvchi, sinf, plus (rag'bat), minus (jazo), qoldi (100+plus−minus).</summary>
+/// <summary>Ballar nazorati qatori: o'quvchi, sinf, plus (rag'bat), minus (jazo), qoldi (100+plus−minus).
+/// <c>TrackName</c> — o'quvchining faol yo'nalish guruhi (9–11-sinflar), yo'q bo'lsa null.</summary>
 public record DisciplineScoreRowDto(
-    string StudentId, string FullName, string ClassName, int Plus, int Minus, int Remaining);
+    string StudentId, string FullName, string ClassName, int Plus, int Minus, int Remaining,
+    string? TrackName = null);
 /// <summary>O'quvchiga ball kiritish so'rovi (sabab bo'yicha).</summary>
 public record AddDisciplinePointRequest(string StudentId, string ReasonId, string? Note);
 /// <summary>
@@ -686,6 +688,8 @@ public record AddDisciplinePointRequest(string StudentId, string ReasonId, strin
 /// BIR faol o'quvchisiga bir xil sabab bilan alohida yozuv qo'shiladi — EduSchool'dagi
 /// <c>editBehaviorIncidents</c> / <c>POST /behavior-incidents/class</c> naqshi. Faqat mustaqil
 /// intizomiy sabab ("other") — davomat sababi jurnal orqali qo'yiladi, bu yerdan emas.
+/// <c>ClassId</c> yo'nalish guruhining id'si ham bo'lishi mumkin — unda ball guruhning faol
+/// a'zolariga yoziladi (9–11-sinflar yo'nalish bo'yicha o'qiydi, track-groups-as-classes.md).
 /// </summary>
 public record AddClassDisciplinePointRequest(string ClassId, string ReasonId, string? Note);
 /// <summary>Sinf bo'ylab ball kiritish natijasi: nechta o'quvchiga yozildi, nechtasiga ota-onaga xabar ketdi.</summary>

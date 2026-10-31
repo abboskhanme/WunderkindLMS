@@ -58,3 +58,23 @@ timetable, attendance and journal. Confirmed answers:
   visible with switch off, ordinary group lessons hidden with switch off; daily attendance list order
   and marking a track lesson; journal on a track lesson; the class-hiding rule; migration up/down.
 - Full suite green; client `tsc -b`, eslint on changed files, `vite build` green.
+
+## Gamification and block tests by track — 2026-10-30
+
+Client (Uzbek, 2026-10-30): pupils of grades 9–11 study by track, mixed across grades; points and
+monthly block tests must work per track too. Decisions: **one block test per track** (each track has
+its own subjects and per-subject points), home classes (9-A …) stay for documents.
+
+- **Ballar nazorati:** each row carries `trackName` (the pupil's active track group); the class filter
+  also lists the tracks ("Yo'nalishlar"), the Excel export has a "Yo'nalish" column.
+- **Whole-group points:** `POST /api/admin/discipline/points/class` accepts a track group id in
+  `classId` — points go to its active, non-archived members. Ordinary groups → 404. Button
+  "Yo'nalishga ball qo'yish" on the track rows of O'quv bo'limi → Sinflar. Teachers already reach
+  track pupils through their lessons (`TeacherReachesAsync` → group membership).
+- **Block test participants:** `POST /api/admin/exams/{id}/participants` takes `groupIds` (track groups
+  only, else 404 `group_not_found`); the exam form lists the tracks after the classes. The class
+  snapshot stays the pupil's home class.
+- **Results:** rows carry `trackName` — the track the pupil was a member of **on the exam date**
+  (dated membership), else the current one; `groupId` filter (pupils who ever were in that track);
+  Excel column "Yo'nalish". Shared helper: `TrackMembership` (Application/Services).
+- No migration. Tests: `TrackGamificationExamTests`.

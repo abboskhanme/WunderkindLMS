@@ -45,6 +45,7 @@ import {
   type ResultRow,
 } from '@/api/services/exams'
 import { getClasses } from '@/api/services/classes'
+import { getGroups, type StudyGroupListItem } from '@/api/services/groups'
 import { getSubjects } from '@/api/services/subjects'
 import type { SchoolClass, Subject } from '@/types'
 import { useAuth } from '@/context/auth-context'
@@ -79,6 +80,8 @@ interface Notice {
 interface FilterState {
   examId: string
   classId: string
+  /** Yo'nalish guruhi (9–11-sinflar) — sinf o'rnida tanlanadi. */
+  groupId: string
   subjectId: string
   status: '' | ParticipantStatus
 }
@@ -105,6 +108,7 @@ export function ResultsPage() {
   const initial: FilterState = {
     examId: linkedExamId,
     classId: '',
+    groupId: '',
     subjectId: '',
     status: DEFAULT_STATUS,
   }
@@ -123,6 +127,7 @@ export function ResultsPage() {
   const [exams, setExams] = useState<Lookup<ExamRow>>({ items: [], failed: false })
   const [classes, setClasses] = useState<Lookup<SchoolClass>>({ items: [], failed: false })
   const [subjects, setSubjects] = useState<Lookup<Subject>>({ items: [], failed: false })
+  const [tracks, setTracks] = useState<StudyGroupListItem[]>([])
 
   const [exporting, setExporting] = useState(false)
   const [opened, setOpened] = useState<ResultRow | null>(null)
@@ -141,6 +146,10 @@ export function ResultsPage() {
     getSubjects()
       .then((data) => !cancelled && setSubjects({ items: data, failed: false }))
       .catch(() => !cancelled && setSubjects({ items: [], failed: true }))
+    // Yo'nalishlar (9–11-sinflar) — sinf tanlagichining oxirida; yuklanmasa faqat sinflar qoladi.
+    getGroups()
+      .then((data) => !cancelled && setTracks(data.filter((g) => g.isTrack && !g.isArchived)))
+      .catch(() => !cancelled && setTracks([]))
     return () => {
       cancelled = true
     }
@@ -158,6 +167,7 @@ export function ResultsPage() {
     () => ({
       examId: filters.examId || undefined,
       classId: filters.classId || undefined,
+      groupId: filters.groupId || undefined,
       subjectId: filters.subjectId || undefined,
       status: filters.status || undefined,
       search: debouncedSearch.trim() || undefined,
@@ -169,6 +179,7 @@ export function ResultsPage() {
   const filtersActive =
     Boolean(query.examId) ||
     Boolean(query.classId) ||
+    Boolean(query.groupId) ||
     Boolean(query.subjectId) ||
     Boolean(query.search) ||
     query.status !== DEFAULT_STATUS
@@ -207,7 +218,7 @@ export function ResultsPage() {
     setPage(1)
     setSearch('')
     setDebouncedSearch('')
-    setFilters({ examId: '', classId: '', subjectId: '', status: DEFAULT_STATUS })
+    setFilters({ examId: '', classId: '', groupId: '', subjectId: '', status: DEFAULT_STATUS })
   }
 
   const handleExport = async () => {
@@ -281,19 +292,33 @@ export function ResultsPage() {
             ))}
           </select>
 
+          {/* Sinf YOKI yo'nalish — bitta tanlagich; yo'nalish qiymati "track:<id>". */}
           <select
-            value={filters.classId}
-            onChange={(e) => set({ classId: e.target.value })}
-            disabled={classes.failed}
-            aria-label="Sinf"
+            value={filters.groupId ? `track:${filters.groupId}` : filters.classId}
+            onChange={(e) => {
+              const v = e.target.value
+              if (v.startsWith('track:')) set({ classId: '', groupId: v.slice('track:'.length) })
+              else set({ classId: v, groupId: '' })
+            }}
+            disabled={classes.failed && tracks.length === 0}
+            aria-label="Sinf yoki yo'nalish"
             className={cn(control, classes.failed && 'text-slate-400')}
           >
-            <option value="">{classes.failed ? 'Sinflar yuklanmadi' : 'Barcha sinflar'}</option>
+            <option value="">{classes.failed ? 'Sinflar yuklanmadi' : "Barcha sinf / yo'nalishlar"}</option>
             {classOptions.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.name}
               </option>
             ))}
+            {tracks.length > 0 && (
+              <optgroup label="Yo'nalishlar">
+                {tracks.map((g) => (
+                  <option key={g.id} value={`track:${g.id}`}>
+                    {g.name}
+                  </option>
+                ))}
+              </optgroup>
+            )}
           </select>
 
           <select
@@ -408,7 +433,12 @@ export function ResultsPage() {
                         <span className="text-xs text-brand-600">Nomzod</span>
                       )}
                     </td>
-                    <td className="whitespace-nowrap px-4 py-3 text-slate-500">{row.className ?? DASH}</td>
+                    <td className="whitespace-nowrap px-4 py-3 text-slate-500">
+                      {row.className ?? DASH}
+                      {row.trackName && (
+                        <span className="mt-0.5 block text-xs font-medium text-violet-600">{row.trackName}</span>
+                      )}
+                    </td>
                     <td className="px-4 py-3">
                       <span className="block max-w-[14rem] truncate text-slate-700" title={row.examTitle}>
                         {row.examTitle}

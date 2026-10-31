@@ -265,10 +265,10 @@ public class DisciplineController(
     {
         var rows = FilterScores(await BuildScoresAsync(), className, search, minPoints, maxPoints, sort);
 
-        var headers = new[] { "F.I.SH.", "Sinf", "Rag'bat (+)", "Jazo (−)", "Qoldi" };
+        var headers = new[] { "F.I.SH.", "Sinf", "Yo'nalish", "Rag'bat (+)", "Jazo (−)", "Qoldi" };
         var cells = rows.Select(r => (IReadOnlyList<string>)new[]
         {
-            r.FullName, r.ClassName, r.Plus.ToString(), r.Minus.ToString(), r.Remaining.ToString(),
+            r.FullName, r.ClassName, r.TrackName ?? "", r.Plus.ToString(), r.Minus.ToString(), r.Remaining.ToString(),
         });
 
         var bytes = ExcelExport.Build("Ballar nazorati", headers, cells);
@@ -287,7 +287,9 @@ public class DisciplineController(
     {
         var q = (search ?? "").Trim();
         var list = rows.Where(r =>
-                (string.IsNullOrWhiteSpace(className) || className == "all" || r.ClassName == className)
+                // Filtr sinf YOKI yo'nalish nomi bo'lishi mumkin (sahifadagi bitta tanlagich).
+                (string.IsNullOrWhiteSpace(className) || className == "all"
+                    || r.ClassName == className || r.TrackName == className)
                 && (q.Length == 0 || r.FullName.Contains(q, StringComparison.OrdinalIgnoreCase))
                 && (minPoints is null || r.Remaining >= minPoints)
                 && (maxPoints is null || r.Remaining <= maxPoints))
@@ -328,11 +330,15 @@ public class DisciplineController(
         foreach (var j in journal)
             if (j.ReasonId is not null && absPts.TryGetValue(j.ReasonId, out var p)) Apply(j.StudentId, p);
 
+        // 9–11-sinflar yo'nalish bo'yicha o'qiydi — qatorda yo'nalish ham chiqadi (filtr shu bilan).
+        var tracks = await TrackMembership.ByStudentAsync(db);
+
         return students.Select(s =>
         {
             var plus = plusBy.GetValueOrDefault(s.Id);
             var minus = minusBy.GetValueOrDefault(s.Id);
-            return new DisciplineScoreRowDto(s.Id, s.FullName, s.ClassName, plus, minus, BaseScore + plus - minus);
+            return new DisciplineScoreRowDto(s.Id, s.FullName, s.ClassName, plus, minus, BaseScore + plus - minus,
+                tracks.GetValueOrDefault(s.Id)?.Name);
         })
         .OrderBy(r => r.ClassName, StringComparer.OrdinalIgnoreCase)
         .ThenBy(r => r.FullName, StringComparer.OrdinalIgnoreCase)
@@ -421,17 +427,24 @@ public class DisciplineController(
     public async Task<ActionResult<ClassDisciplinePointResultDto>> AddPointForClass(
         AddClassDisciplinePointRequest req, CancellationToken ct = default)
     {
+        // Ega — sinf yoki YO'NALISH guruhi: 9–11-sinflar yo'nalish bo'yicha o'qiydi, shuning uchun
+        // "sinfga ball" ular uchun yo'nalish guruhining faol a'zolariga yoziladi.
         var cls = await db.Classes.AsNoTracking().FirstOrDefaultAsync(c => c.Id == req.ClassId, ct);
-        if (cls is null) return NotFound(new { message = "Sinf topilmadi" });
+        var track = cls is null ? await TrackMembership.ActiveMembersAsync(db, req.ClassId ?? "", ct) : null;
+        if (cls is null && track is null) return NotFound(new { message = "Sinf yoki yo'nalish topilmadi" });
+        var ownerLabel = cls is not null ? $"sinf {cls.Name}" : $"yo'nalish {track!.Value.Track.Name}";
 
         var dr = await db.DisciplineReasons.FindAsync([req.ReasonId], ct);
         if (dr is null) return BadRequest(new { message = "Sabab tanlanmadi" });
         if (!dr.IsActive) return BadRequest(new { message = "Bu sabab faol emas" });
         if (!MayUse(dr)) return NotOwner();
 
-        var students = await db.Students
-            .Where(s => !s.IsArchived && s.ClassName == cls.Name).ToListAsync(ct);
-        if (students.Count == 0) return BadRequest(new { message = "Bu sinfda faol o'quvchi yo'q" });
+        var memberIds = track?.StudentIds ?? [];
+        var students = cls is not null
+            ? await db.Students.Where(s => !s.IsArchived && s.ClassName == cls.Name).ToListAsync(ct)
+            : await db.Students.Where(s => !s.IsArchived && memberIds.Contains(s.Id)).ToListAsync(ct);
+        if (students.Count == 0)
+            return BadRequest(new { message = cls is not null ? "Bu sinfda faol o'quvchi yo'q" : "Bu yo'nalishda faol o'quvchi yo'q" });
 
         // A periodic reason skips the pupils who already have it in this week / month.
         var taken = await DisciplineIncidents.PeriodTakenAsync(
@@ -460,7 +473,7 @@ public class DisciplineController(
             db.DisciplinePoints.Add(p);
             pairs.Add((student, p));
             audit.Record(AuditService.EntityDisciplinePoint, p.Id, "create",
-                $"Intizomiy ball (sinf {cls.Name}): {student.FullName} — {dr.Name} ({Signed(dr.Points)})"
+                $"Intizomiy ball ({ownerLabel}): {student.FullName} — {dr.Name} ({Signed(dr.Points)})"
                 + (note.Length > 0 ? $": \"{note}\"" : ""),
                 after: PointView(p), studentId: student.Id);
         }

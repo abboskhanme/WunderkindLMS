@@ -15,6 +15,8 @@ interface Props {
   open: boolean
   classId: string
   className: string
+  /** Yo'nalish guruhi (9–11-sinflar): `classId` — guruh id'si, ball guruhning faol a'zolariga. */
+  isTrack?: boolean
   onClose: () => void
   onDone: () => void
 }
@@ -32,7 +34,7 @@ interface Props {
  * EduSchool tartibi (2026-10-15, docs/modules/behaviour.md): avval TURI (Ijobiy / Salbiy), keyin
  * faqat o'sha turdagi sabablar.
  */
-export function ClassPointsModal({ open, classId, className, onClose, onDone }: Props) {
+export function ClassPointsModal({ open, classId, className, isTrack = false, onClose, onDone }: Props) {
   const [reasons, setReasons] = useState<DisciplineReason[]>([])
   const [type, setType] = useState<DisciplineType>('negative')
   const [reasonId, setReasonId] = useState('')
@@ -90,7 +92,7 @@ export function ClassPointsModal({ open, classId, className, onClose, onDone }: 
     <Modal
       open={open}
       onClose={onClose}
-      title={`${className} — sinfga ball qo'yish`}
+      title={`${className} — ${isTrack ? "yo'nalishga" : 'sinfga'} ball qo'yish`}
       size="sm"
       footer={
         <>
@@ -105,7 +107,8 @@ export function ClassPointsModal({ open, classId, className, onClose, onDone }: 
     >
       <div className="space-y-4">
         <div className="rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-600">
-          Sinfning <b>har bir faol o'quvchisiga</b> shu sabab bilan alohida yozuv qo'shiladi.
+          {isTrack ? "Yo'nalishning" : 'Sinfning'} <b>har bir faol o'quvchisiga</b> shu sabab bilan alohida
+          yozuv qo'shiladi.
         </div>
 
         <div>

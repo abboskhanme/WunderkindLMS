@@ -267,11 +267,12 @@ public class ExamsTests(ApiFixture fixture)
         Assert.Equal(XlsxMime, export.Content.Headers.ContentType?.MediaType);
         var fileName = export.Content.Headers.ContentDisposition?.FileNameStar ?? export.Content.Headers.ContentDisposition?.FileName;
         Assert.StartsWith($"natijalar_{examId[..8]}_", fileName?.Trim('"'));
-        var sheet = ExcelImport.ReadRows(new MemoryStream(await export.Content.ReadAsByteArrayAsync()), 10);
-        Assert.Equal("Jami ball", sheet[0][7]);
+        var sheet = ExcelImport.ReadRows(new MemoryStream(await export.Content.ReadAsByteArrayAsync()), 11);
+        Assert.Equal("Yo'nalish", sheet[0][4]);
+        Assert.Equal("Jami ball", sheet[0][8]);
         var line = sheet.Single(r => r[2] == pupils[0].Name);
-        Assert.Equal("72.13", line[7]);
-        Assert.Equal("90.16", line[9]);
+        Assert.Equal("72.13", line[8]);
+        Assert.Equal("90.16", line[10]);
 
         // ---- remove a participant: 204, gone from the grid ----
         Assert.Equal(HttpStatusCode.NoContent, (await admin.DeleteAsync($"{Exams}/{examId}/participants/{p3}")).StatusCode);
