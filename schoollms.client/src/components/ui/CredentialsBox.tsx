@@ -6,16 +6,16 @@ import { copyText } from '@/lib/utils'
 interface Props {
   credentials: Credentials | null
   loading?: boolean
-  /** Berilsa — "Yangi parol yaratish" tugmasi ko'rsatiladi (parol xavfsizlik uchun saqlanmaydi). */
+  /** Berilsa — "Yangi parol yaratish" tugmasi ko'rsatiladi. */
   onReset?: () => Promise<void>
 }
 
 /**
  * O'quvchi/o'qituvchi profilida tizimga kirish ma'lumotlarini (login/parol) ko'rsatadi.
  *
- * Parol XAVFSIZLIK uchun bazada saqlanmaydi — faqat hash. Shuning uchun ochiq parol odatda
- * bo'sh keladi; admin "Yangi parol yaratish" tugmasi orqali yangi parol generatsiya qiladi
- * va u BIR MARTA shu yerda ko'rsatiladi (topshirib olgach yo'qoladi).
+ * Admin bergan parol kirgandan keyin ham ko'rinib turadi (mijoz, 2026-10-30: "hodimlar va
+ * o'quvchilar login paroli kirganda doim ko'rinib tursin"). Foydalanuvchi parolni o'zi
+ * o'zgartirsa — faqat hash qoladi va bu yerda bo'sh; admin "Yangi parol yaratish" bilan yangisini beradi.
  */
 export function CredentialsBox({ credentials, loading, onReset }: Props) {
   const [resetting, setResetting] = useState(false)
@@ -44,8 +44,8 @@ export function CredentialsBox({ credentials, loading, onReset }: Props) {
             <CredRow label="Parol" value={credentials.password} />
           ) : (
             <p className="px-1 text-xs text-slate-400">
-              Foydalanuvchi allaqachon ilovaga kirgan — dastlabki parol endi ko'rinmaydi. Kerak bo'lsa
-              yangi parol yarating (u faqat bir marta ko'rsatiladi).
+              Parol ko'rinmaydi — foydalanuvchi uni o'zi o'zgartirgan yoki u ilgari kirgan. Kerak bo'lsa
+              yangi parol yarating — u shu yerda doim ko'rinib turadi.
             </p>
           )}
           {onReset && (

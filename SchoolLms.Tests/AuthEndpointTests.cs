@@ -104,13 +104,33 @@ public class AuthEndpointTests(ApiFixture fixture)
         using var meBody = JsonDocument.Parse(await me.Content.ReadAsStringAsync());
         Assert.Equal(user.Id, meBody.RootElement.GetProperty("id").GetString());
 
-        // Login kuzatuvi: LastLoginAt/FirstLoginAt yoziladi, ochiq dastlabki parol o'chadi.
+        // Login kuzatuvi: LastLoginAt/FirstLoginAt yoziladi; admin (rahbariyat) ochiq paroli o'chadi (2026-10-31).
         await fixture.Api.WithDbAsync(async db =>
         {
             var fresh = await db.Users.SingleAsync(u => u.Id == user.Id);
             Assert.Null(fresh.InitialPassword);
             Assert.False(string.IsNullOrEmpty(fresh.LastLoginAt));
             Assert.Equal(fresh.FirstLoginAt, fresh.LastLoginAt);
+        });
+    }
+
+    [Theory]
+    [InlineData("staff")]
+    [InlineData("teacher")]
+    public async Task Login_xodim_paroli_kirgandan_keyin_ham_korinib_qoladi(string role)
+    {
+        // Rahbariyatdan tashqari hammaniki (mijoz, 2026-10-31). O'quvchi — Student qatori kerak,
+        // uning holati 2026-10-08 dan beri boshqa testlarda.
+        var (user, password) = await fixture.Api.SeedUserAsync(role);
+        using var client = fixture.Api.AnonymousClient();
+
+        var response = await client.PostAsJsonAsync("/api/auth/login", new { email = user.Email, password });
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        await fixture.Api.WithDbAsync(async db =>
+        {
+            var fresh = await db.Users.SingleAsync(u => u.Id == user.Id);
+            Assert.Equal(password, fresh.InitialPassword);
         });
     }
 

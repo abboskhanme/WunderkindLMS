@@ -24,6 +24,7 @@ import {
 import { showBackButton } from '../lib/telegram'
 import { SHOW_PARENT_FINANCE } from '../lib/flags'
 import { ChildSwitcher } from './parent/ChildSwitcher'
+import { AccountStrip, useTgAccounts } from '../components/AccountSwitcher'
 import { HomeTab } from './parent/HomeTab'
 import { GradesTab } from './parent/GradesTab'
 import { ScheduleTab } from './parent/ScheduleTab'
@@ -52,6 +53,8 @@ export function ParentPanel({ user }) {
     (t) => (showGrades || t.value !== 'grades') && (SHOW_PARENT_FINANCE || t.value !== 'finance'),
   )
   const children = state.data ?? []
+  // Shu Telegram'dagi boshqa akkauntlar (o'qituvchi ota-ona) — hero'da ko'rinib turadi.
+  const accounts = useTgAccounts()
   // Tanlanmagan bo'lsa — birinchi farzand. Tanlangani ro'yxatdan chiqib
   // ketsa (arxivlandi, bog'lanish o'chdi) yana birinchisiga qaytamiz: bo'sh
   // ekran ko'rsatgandan ko'ra ishlaydigan ekran ko'rsatgan ma'qul.
@@ -102,9 +105,14 @@ export function ParentPanel({ user }) {
           subtitle={subtitle}
           right={<ProfileButton fullName={user.fullName} onClick={() => setProfileOpen(true)} />}
         >
-          {/* Bitta farzandda `null` — `Hero` bo'sh joy ham qoldirmaydi. */}
-          {children.length > 1 ? (
-            <ChildSwitcher items={children} value={child?.id} onChange={setChildId} />
+          {/* Bitta akkaunt va bitta farzandda `null` — `Hero` bo'sh joy ham qoldirmaydi. */}
+          {accounts.length > 1 || children.length > 1 ? (
+            <div className="space-y-3">
+              <AccountStrip accounts={accounts} />
+              {children.length > 1 && (
+                <ChildSwitcher items={children} value={child?.id} onChange={setChildId} />
+              )}
+            </div>
           ) : null}
         </Hero>
 

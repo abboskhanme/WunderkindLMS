@@ -9,6 +9,8 @@
  *
  *   AccountsCard   — profil varag'idagi bo'lim (ota-ona / o'quvchi paneli).
  *   AccountsButton — o'qituvchi hero'sidagi tugma: varaqda ro'yxat, qo'shish va "Chiqish".
+ *   AccountStrip   — sariq hero ichidagi qator: 2+ akkaunt bo'lsa hammasi ko'rinib turadi, bir bosishda
+ *                    o'tiladi (mijoz, 2026-10-31: o'qituvchi va farzandi profili "ikkalasi ham ko'rinib tursin").
  *
  * Brauzerda (Telegram'siz) server `telegram_only` deydi — bo'lim umuman ko'rinmaydi.
  */
@@ -32,9 +34,9 @@ function initials(fullName) {
 /**
  * "Akkauntlar" bo'limi. `onSwitched` — varaqni yopish uchun.
  *
- * `canAdd={false}` — ota-ona / o'quvchi profili (mijoz, 2026-10-08: "endi akkaunt qo'shish degan joyi
- * kerakmas"): oiladagi farzandlar tepadagi almashtirgichda, qo'shish shart emas. Ro'yxat u yerda faqat
- * bir nechta akkaunt bo'lsa chiqadi — o'qituvchi farzandi akkauntidan o'z akkauntiga qaytishi uchun.
+ * `canAdd={false}` — qo'shish qatorisiz; bitta akkauntda bo'lim umuman chiqmaydi. Ota-ona / o'quvchi
+ * profilida qo'shish 2026-10-08 da olib tashlangan edi, 2026-10-31 da qaytarildi: o'qituvchilarning
+ * farzandlari ham o'qiydi — har safar chiqib qayta login qilmasin.
  */
 export function AccountsCard({ onSwitched, canAdd = true }) {
   const { user, switchAccount } = useSession()
@@ -132,7 +134,7 @@ export function AccountsCard({ onSwitched, canAdd = true }) {
           </span>
           <span className="min-w-0 flex-1">
             <span className="block text-[15px] font-semibold">Akkaunt qo'shish</span>
-            <span className="block text-[13px] text-slate-500">Farzandingiz logini — bir marta</span>
+            <span className="block text-[13px] text-slate-500">Farzand yoki o'z logini — bir marta</span>
           </span>
         </button>
         )}
@@ -223,6 +225,76 @@ function AddAccountSheet({ onClose, onAdded }) {
         </button>
       </form>
     </BottomSheet>
+  )
+}
+
+/** Shu Telegram'dagi akkauntlar (faol birinchi). Telegram'siz yoki xatoda — bo'sh ro'yxat. */
+export function useTgAccounts() {
+  const { user } = useSession()
+  const q = useAsync(() => api.get('/tg/accounts'), [user?.id])
+  return q.data?.accounts ?? []
+}
+
+/** "Baxtiyorjonova Marjonaxon Baxriddin qizi" → "Marjonaxon B." — `ChildSwitcher` bilan bir xil. */
+function shortName(fullName) {
+  const parts = String(fullName ?? '').trim().split(/\s+/)
+  if (parts.length < 2) return parts[0] ?? ''
+  return `${parts[1]} ${parts[0].charAt(0)}.`
+}
+
+/**
+ * Hero ichidagi akkauntlar qatori. Ikkita bo'lsa — teng ikki tugma, ko'p bo'lsa — o'z ichida
+ * suriladigan qator. Bitta akkauntda `null` (chaqiruvchi bo'sh joy qoldirmasligi uchun sonini o'zi tekshiradi).
+ */
+export function AccountStrip({ accounts }) {
+  const { switchAccount } = useSession()
+  const [busyId, setBusyId] = useState(null)
+  const [error, setError] = useState(null)
+
+  if (accounts.length < 2) return null
+  const two = accounts.length === 2
+
+  const pick = async (account) => {
+    if (account.active || busyId) return
+    haptic('light')
+    setBusyId(account.userId)
+    setError(null)
+    try {
+      await switchAccount(account.userId)
+      haptic('medium')
+    } catch (e) {
+      setError(e.message)
+      setBusyId(null)
+    }
+  }
+
+  return (
+    <div>
+      <div className="-mx-4 overflow-x-auto px-4">
+        <div className={'flex gap-2 rounded-2xl bg-brand-dark/60 p-1 ' + (two ? '' : 'w-max')}>
+          {accounts.map((a) => (
+            <button
+              key={a.userId}
+              type="button"
+              onClick={() => pick(a)}
+              disabled={Boolean(busyId)}
+              aria-pressed={a.active}
+              className={
+                'rounded-xl px-3 py-2 text-left transition ' +
+                (two ? 'min-w-0 flex-1 ' : 'shrink-0 ') +
+                (a.active ? 'bg-brand-ink text-brand' : 'text-brand-ink/70')
+              }
+            >
+              <span className="block truncate text-[14px] font-semibold">{shortName(a.fullName)}</span>
+              <span className="block truncate text-[12px] opacity-70">
+                {busyId === a.userId ? 'Almashtirilmoqda…' : a.subtitle}
+              </span>
+            </button>
+          ))}
+        </div>
+      </div>
+      {error && <p className="mt-2 text-[13px] text-red-700">{error}</p>}
+    </div>
   )
 }
 
