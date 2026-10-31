@@ -45,8 +45,19 @@ export function AccountsCard({ onSwitched, canAdd = true }) {
   const [busyId, setBusyId] = useState(null)
   const [error, setError] = useState(null)
 
-  // Telegram'siz sessiya — almashtirish yo'q, bo'lim ham yo'q.
-  if (q.error && /telegram/i.test(q.error)) return null
+  // Telegram'siz sessiya (login-parol bilan kirilgan) — almashtirish yo'q. Bo'limni yashirmaymiz
+  // (2026-10-31: varaqda faqat "Chiqish" qolib, "akkaunt qo'shish nega yo'q" deyilgan) — yo'lini aytamiz.
+  if (q.error && /telegram/i.test(q.error)) {
+    if (!canAdd) return null
+    return (
+      <Card title="Akkauntlar">
+        <p className="px-4 pb-4 text-[14px] leading-relaxed text-slate-500">
+          Akkaunt qo'shish va almashtirish uchun ilovani botdagi «🏫 Panelni ochish» tugmasi orqali oching.
+          Hozir login va parol bilan kirilgan — bu holatda akkauntlar saqlanmaydi.
+        </p>
+      </Card>
+    )
+  }
 
   const accounts = q.data?.accounts ?? []
   // Without the add row, a single account has nothing to switch to — no section at all.
